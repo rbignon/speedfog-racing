@@ -68,14 +68,14 @@ Chaque projet garde son propre venv. Le seul lien est le chemin `SPEEDFOG_PATH`.
 
 ### Stack technique
 
-| Composant | Technologie | Justification |
-|-----------|-------------|---------------|
-| Serveur | FastAPI + SQLAlchemy async | Réutilise patterns er-fog-vizu, WebSocket natif |
-| Base de données | PostgreSQL | Robuste, JSON support pour configs |
-| Frontend | SvelteKit | Réactivité native, léger, bon pour temps réel |
-| Mod | Rust + ImGui | Fork er-fog-vizu, injection DLL |
-| Communication | WebSocket | Temps réel bidirectionnel |
-| Auth | Twitch OAuth | Cible communauté streaming |
+| Composant       | Technologie                | Justification                                   |
+| --------------- | -------------------------- | ----------------------------------------------- |
+| Serveur         | FastAPI + SQLAlchemy async | Réutilise patterns er-fog-vizu, WebSocket natif |
+| Base de données | PostgreSQL                 | Robuste, JSON support pour configs              |
+| Frontend        | SvelteKit                  | Réactivité native, léger, bon pour temps réel   |
+| Mod             | Rust + ImGui               | Fork er-fog-vizu, injection DLL                 |
+| Communication   | WebSocket                  | Temps réel bidirectionnel                       |
+| Auth            | Twitch OAuth               | Cible communauté streaming                      |
 
 ### Flux de données principal
 
@@ -295,12 +295,14 @@ Mod Rust <--WebSocket--> Serveur FastAPI <--WebSocket--> Frontend Svelte
 ### Fork er-fog-vizu
 
 **Conservé :**
+
 - `core/` : Types, map_utils, warp_tracker
 - `eldenring/` : Memory reading, game_state, animations
 - `dll/ui.rs` : Rendu ImGui overlay
 - `dll/websocket.rs` : Client WebSocket (à adapter)
 
 **Supprimé :**
+
 - `launcher/` : Pas de GUI launcher
 
 **Config (speedfog_race.toml) :**
@@ -476,12 +478,12 @@ speedfog-racing/web/
 
 ### Visibilité DAG par rôle
 
-| Phase | Spectateur/Orga | Joueur |
-|-------|-----------------|--------|
-| Avant départ | Flouté | Flouté |
-| Pendant race | DAG complet + positions | Flouté |
-| Joueur termine | - | DAG révélé |
-| Race terminée | DAG + résultats | DAG + résultats |
+| Phase          | Spectateur/Orga         | Joueur          |
+| -------------- | ----------------------- | --------------- |
+| Avant départ   | Flouté                  | Flouté          |
+| Pendant race   | DAG complet + positions | Flouté          |
+| Joueur termine | -                       | DAG révélé      |
+| Race terminée  | DAG + résultats         | DAG + résultats |
 
 ### Overlays OBS (fond transparent)
 
@@ -613,40 +615,40 @@ async def generate_player_zips(race: Race) -> dict[UUID, Path]:
 
 **Objectif :** Une race fonctionnelle de bout en bout
 
-| Composant | Tâches |
-|-----------|--------|
-| **Serveur** | Setup FastAPI, DB, Twitch OAuth, modèles |
-| **Serveur** | Endpoints REST basiques (races CRUD, auth) |
-| **Serveur** | WebSocket basique (mod + spectateur) |
-| **Serveur** | Gestion pool simple (1 pool, assign seed, generate zips) |
-| **Frontend** | Setup SvelteKit, auth Twitch, pages basiques |
-| **Frontend** | Page création race, page race (leaderboard simple) |
-| **Mod** | Fork er-fog-vizu, adapter protocole, overlay minimal |
+| Composant    | Tâches                                                   |
+| ------------ | -------------------------------------------------------- |
+| **Serveur**  | Setup FastAPI, DB, Twitch OAuth, modèles                 |
+| **Serveur**  | Endpoints REST basiques (races CRUD, auth)               |
+| **Serveur**  | WebSocket basique (mod + spectateur)                     |
+| **Serveur**  | Gestion pool simple (1 pool, assign seed, generate zips) |
+| **Frontend** | Setup SvelteKit, auth Twitch, pages basiques             |
+| **Frontend** | Page création race, page race (leaderboard simple)       |
+| **Mod**      | Fork er-fog-vizu, adapter protocole, overlay minimal     |
 
 **Résultat :** Orga crée race -> Joueurs download zip -> Course avec leaderboard
 
 ### Phase 2 : Expérience complète
 
-| Composant | Tâches |
-|-----------|--------|
-| **Frontend** | Visualisation DAG horizontal |
-| **Frontend** | Overlays OBS (dag + leaderboard) |
-| **Frontend** | Multi-pools avec sélection |
-| **Mod** | Overlay complet (classement, exits, countdown) |
-| **Serveur** | Dashboard admin (stats seeds) |
-| **Serveur** | Countdown synchronisé |
+| Composant    | Tâches                                         |
+| ------------ | ---------------------------------------------- |
+| **Frontend** | Visualisation DAG horizontal                   |
+| **Frontend** | Overlays OBS (dag + leaderboard)               |
+| **Frontend** | Multi-pools avec sélection                     |
+| **Mod**      | Overlay complet (classement, exits, countdown) |
+| **Serveur**  | Dashboard admin (stats seeds)                  |
+| **Serveur**  | Countdown synchronisé                          |
 
 **Résultat :** Expérience de visionnage complète pour casteurs
 
 ### Phase 3 : Polish et features avancées
 
-| Composant | Tâches |
-|-----------|--------|
-| **Mod** | Events EMEVD customs (tracking précis) |
+| Composant    | Tâches                                   |
+| ------------ | ---------------------------------------- |
+| **Mod**      | Events EMEVD customs (tracking précis)   |
 | **Frontend** | Affichage progressif chemin pour joueurs |
-| **Serveur** | Races asynchrones |
-| **Serveur** | Historique / statistiques joueurs |
-| **Infra** | Génération seeds à la demande (Wine) |
+| **Serveur**  | Races asynchrones                        |
+| **Serveur**  | Historique / statistiques joueurs        |
+| **Infra**    | Génération seeds à la demande (Wine)     |
 
 ### Ordre de développement suggéré (Phase 1)
 

@@ -5,6 +5,7 @@ Competitive racing platform for SpeedFog - race against other players on randomi
 ## Overview
 
 SpeedFog Racing enables multiplayer races on SpeedFog seeds with:
+
 - Real-time leaderboard and position tracking
 - In-game overlay showing race status
 - Spectator view with DAG visualization

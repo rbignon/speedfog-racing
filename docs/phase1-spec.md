@@ -344,22 +344,26 @@ src/lib/
 ### 4.3 Pages
 
 **Home `/`:**
+
 - List of open/running races
 - "Create Race" button (if logged in)
 - Login with Twitch button
 
 **Create Race `/race/new`:**
+
 - Name input
 - Pool selection (show available count)
 - Create button -> redirect to manage page
 
 **Race View `/race/{id}`:**
+
 - Left sidebar: Leaderboard
 - Center: Race info (name, status, countdown)
 - Organizer: link to manage page
 - Player: download button if registered
 
 **Manage Race `/race/{id}/manage`:**
+
 - Add participants by Twitch username
 - List participants with remove button
 - "Generate Zips" button
@@ -380,6 +384,7 @@ src/lib/
 ### 5.2 Key Changes
 
 **protocol.rs:**
+
 ```rust
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -411,6 +416,7 @@ pub enum ServerMessage {
 ```
 
 **Overlay (Phase 1 - minimal):**
+
 - Zone name + IGT
 - Connection status
 - Basic leaderboard (name + layer)
@@ -534,6 +540,7 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 ## 7. Implementation Order
 
 ### Step 1: Server Foundation
+
 - [ ] Create pyproject.toml with dependencies
 - [ ] Setup FastAPI app skeleton
 - [ ] Configure Pydantic settings
@@ -542,18 +549,21 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [ ] Implement database models
 
 ### Step 2: Twitch Auth
+
 - [ ] Implement OAuth flow (redirect, callback)
 - [ ] User creation/update on login
 - [ ] API token generation
 - [ ] Auth middleware/dependency
 
 ### Step 3: Race CRUD
+
 - [ ] Create race endpoint
 - [ ] List races endpoint
 - [ ] Get race details endpoint
 - [ ] Add/remove participants
 
 ### Step 4: Frontend Foundation
+
 - [ ] Setup SvelteKit project
 - [ ] Implement API client
 - [ ] Create auth store
@@ -561,28 +571,33 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [ ] Home page with race list
 
 ### Step 5: Race Management UI
+
 - [ ] Create race form
 - [ ] Race detail page
 - [ ] Manage page (add participants)
 
 ### Step 6: Seed Pool
+
 - [ ] Pool scanner service
 - [ ] Assign seed to race
 - [ ] Zip generation service
 - [ ] Download endpoint
 
 ### Step 7: WebSocket - Server
+
 - [ ] Connection manager
 - [ ] Mod handler (auth, status updates)
 - [ ] Leaderboard calculation
 - [ ] Broadcast to spectators
 
 ### Step 8: WebSocket - Frontend
+
 - [ ] WebSocket client with reconnect
 - [ ] Race state store
 - [ ] Live leaderboard component
 
 ### Step 9: Mod Fork
+
 - [ ] Fork er-fog-vizu/mod
 - [ ] Strip launcher code
 - [ ] Adapt protocol
@@ -590,6 +605,7 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [ ] Build and test injection
 
 ### Step 10: Integration Testing
+
 - [ ] End-to-end race flow
 - [ ] Multi-player simulation
 - [ ] Error handling
