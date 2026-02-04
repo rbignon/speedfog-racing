@@ -20,7 +20,7 @@ speedfog-racing/
 └── tools/           # Pool generation scripts
 ```
 
-See [design document](../speedfog/docs/plans/2026-02-04-speedfog-racing-design.md) for full architecture.
+See [design document](docs/2026-02-04-speedfog-racing-design.md) for full architecture.
 
 ## Development Status
 
