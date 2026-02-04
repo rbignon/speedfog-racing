@@ -573,13 +573,13 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] Zip generation service
 - [x] Download endpoint
 
-### Step 6: Frontend Foundation
+### Step 6: Frontend Foundation ✅
 
-- [ ] Setup SvelteKit project
-- [ ] Implement API client
-- [ ] Create auth store
-- [ ] Twitch login flow
-- [ ] Home page with race list
+- [x] Setup SvelteKit project
+- [x] Implement API client
+- [x] Create auth store
+- [x] Twitch login flow
+- [x] Home page with race list
 
 ### Step 7: Race Management UI
 

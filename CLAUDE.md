@@ -68,8 +68,8 @@ server/speedfog_racing/
 
 Phase 1 in progress. See `docs/phase1-spec.md` section 7 for step tracking.
 
-**Completed:** Steps 1-5 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation)
-**Next:** Step 6 (Frontend Foundation)
+**Completed:** Steps 1-6 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation)
+**Next:** Step 7 (Race Management UI)
 
 ## Related Projects
 
