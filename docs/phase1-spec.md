@@ -555,11 +555,11 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] API token generation
 - [x] Auth middleware/dependency
 
-### Step 3: Seed Pool (Basic)
+### Step 3: Seed Pool (Basic) ✅
 
-- [ ] Pool scanner service
-- [ ] Assign seed to race
-- [ ] Seed service with get available / mark consumed
+- [x] Pool scanner service
+- [x] Assign seed to race
+- [x] Seed service with get available / mark consumed
 
 ### Step 4: Race CRUD
 

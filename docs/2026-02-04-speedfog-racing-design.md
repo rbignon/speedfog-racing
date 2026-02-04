@@ -3,101 +3,101 @@
 **Date:** 2026-02-04
 **Status:** Draft
 
-## 1. Vue d'ensemble et objectifs
+## 1. Overview and Objectives
 
-**SpeedFog Racing** est une plateforme de courses compétitives pour SpeedFog, permettant à plusieurs joueurs de s'affronter sur une même seed avec tracking en temps réel.
+**SpeedFog Racing** is a competitive racing platform for SpeedFog, allowing multiple players to race on the same seed with real-time tracking.
 
-### Objectifs
+### Objectives
 
-1. **Joueurs** : Overlay in-game affichant leur progression, le classement live, et les infos de zone
-2. **Organisateurs** : Interface web pour créer des races, gérer les participants, distribuer les .zip personnalisés
-3. **Spectateurs/Casteurs** : Visualisation du DAG avec positions des joueurs en temps réel (overlay Twitch)
+1. **Players**: In-game overlay displaying their progression, live leaderboard, and zone info
+2. **Organizers**: Web interface to create races, manage participants, distribute personalized .zip files
+3. **Spectators/Casters**: DAG visualization with real-time player positions (Twitch overlay)
 
-### Scope MVP
+### MVP Scope
 
-- Authentification Twitch
-- Création de races (mode synchrone avec countdown)
-- Pool de seeds pré-générées (multi-pools avec settings différents)
-- Distribution de .zip personnalisés (token par joueur)
-- Mod Rust avec overlay in-game (zone, IGT, classement)
-- WebSocket temps réel (mod <-> serveur <-> frontend)
-- Page spectateur avec DAG horizontal
-- Overlays OBS (fond transparent)
+- Twitch authentication
+- Race creation (synchronous mode with countdown)
+- Pre-generated seed pool (multi-pools with different settings)
+- Personalized .zip distribution (token per player)
+- Rust mod with in-game overlay (zone, IGT, leaderboard)
+- Real-time WebSocket (mod <-> server <-> frontend)
+- Spectator page with horizontal DAG
+- OBS overlays (transparent background)
 
-### Hors scope MVP (futur)
+### Out of MVP Scope (future)
 
-- Races asynchrones
-- Génération de seeds à la demande (nécessite Wine sur serveur)
-- Brackets/tournois
-- Statistiques historiques par joueur
-- Events EMEVD customs pour tracking précis
-- Affichage progressif du chemin pour joueurs
+- Asynchronous races
+- On-demand seed generation (requires Wine on server)
+- Brackets/tournaments
+- Historical player statistics
+- Custom EMEVD events for precise tracking
+- Progressive path display for players
 
 ---
 
-## 2. Architecture technique
+## 2. Technical Architecture
 
 ### Repositories
 
 ```
-speedfog/                    # Existant - Générateur de seeds
-├── speedfog/                # Package Python (DAG generation)
+speedfog/                    # Existing - Seed generator
+├── speedfog/                # Python package (DAG generation)
 ├── writer/                  # C# wrappers (FogMod, ItemRandomizer)
-└── output/                  # Seeds générées
+└── output/                  # Generated seeds
 
-speedfog-racing/             # Nouveau - Plateforme de courses
+speedfog-racing/             # New - Racing platform
 ├── server/                  # Python/FastAPI
 ├── web/                     # Svelte/SvelteKit
 ├── mod/                     # Rust (fork er-fog-vizu)
 └── tools/                   # Scripts (generate_pool.py)
 ```
 
-### Dépendance speedfog-racing -> speedfog
+### speedfog-racing -> speedfog Dependency
 
-Découplage via CLI. Le script `generate_pool.py` appelle speedfog en subprocess :
+Decoupled via CLI. The `generate_pool.py` script calls speedfog as a subprocess:
 
 ```python
 subprocess.run(
     ["uv", "run", "speedfog", str(config_file), "-o", str(output_dir)],
-    cwd=SPEEDFOG_PATH,  # Env var ou config
+    cwd=SPEEDFOG_PATH,  # Env var or config
     check=True,
 )
 ```
 
-Chaque projet garde son propre venv. Le seul lien est le chemin `SPEEDFOG_PATH`.
+Each project maintains its own venv. The only link is the `SPEEDFOG_PATH` path.
 
-### Stack technique
+### Tech Stack
 
-| Composant       | Technologie                | Justification                                   |
-| --------------- | -------------------------- | ----------------------------------------------- |
-| Serveur         | FastAPI + SQLAlchemy async | Réutilise patterns er-fog-vizu, WebSocket natif |
-| Base de données | PostgreSQL                 | Robuste, JSON support pour configs              |
-| Frontend        | SvelteKit                  | Réactivité native, léger, bon pour temps réel   |
-| Mod             | Rust + ImGui               | Fork er-fog-vizu, injection DLL                 |
-| Communication   | WebSocket                  | Temps réel bidirectionnel                       |
-| Auth            | Twitch OAuth               | Cible communauté streaming                      |
+| Component     | Technology                 | Justification                                      |
+| ------------- | -------------------------- | -------------------------------------------------- |
+| Server        | FastAPI + SQLAlchemy async | Reuses er-fog-vizu patterns, native WebSocket      |
+| Database      | PostgreSQL                 | Robust, JSON support for configs                   |
+| Frontend      | SvelteKit                  | Native reactivity, lightweight, good for real-time |
+| Mod           | Rust + ImGui               | Fork er-fog-vizu, DLL injection                    |
+| Communication | WebSocket                  | Bidirectional real-time                            |
+| Auth          | Twitch OAuth               | Targets streaming community                        |
 
-### Flux de données principal
+### Main Data Flow
 
 ```
-Mod Rust <--WebSocket--> Serveur FastAPI <--WebSocket--> Frontend Svelte
+Rust Mod <--WebSocket--> FastAPI Server <--WebSocket--> Svelte Frontend
    |                           |                              |
-   | Envoie:                   | Stocke:                      | Affiche:
-   | - IGT                     | - Etat races                 | - DAG + positions
-   | - Zone actuelle           | - Progression joueurs        | - Classement
-   | - Traversées fog          | - IGT                        | - Stats live
+   | Sends:                    | Stores:                      | Displays:
+   | - IGT                     | - Race state                 | - DAG + positions
+   | - Current zone            | - Player progression         | - Leaderboard
+   | - Fog traversals          | - IGT                        | - Live stats
    | - Death count             |                              |
-   |                           | Broadcast:                   |
-   | Reçoit:                   | - Updates à tous             |
-   | - Classement              |   les clients                |
-   | - Etat autres joueurs     |                              |
+   |                           | Broadcasts:                  |
+   | Receives:                 | - Updates to all             |
+   | - Leaderboard             |   clients                    |
+   | - Other players' state    |                              |
 ```
 
 ---
 
-## 3. Modèle de données
+## 3. Data Model
 
-### Entités principales
+### Main Entities
 
 ```
 ┌─────────────┐       ┌─────────────┐       ┌─────────────┐
@@ -133,15 +133,15 @@ Mod Rust <--WebSocket--> Serveur FastAPI <--WebSocket--> Frontend Svelte
                       └─────────────┘
 ```
 
-### Statuts
+### Statuses
 
-**Race.status** : `draft` -> `open` -> `countdown` -> `running` -> `finished`
+**Race.status**: `draft` -> `open` -> `countdown` -> `running` -> `finished`
 
-**Participant.status** : `registered` -> `ready` -> `playing` -> `finished` | `abandoned`
+**Participant.status**: `registered` -> `ready` -> `playing` -> `finished` | `abandoned`
 
-**Seed.status** : `available` -> `consumed`
+**Seed.status**: `available` -> `consumed`
 
-### Config Race (JSON)
+### Race Config (JSON)
 
 ```json
 {
@@ -153,82 +153,82 @@ Mod Rust <--WebSocket--> Serveur FastAPI <--WebSocket--> Frontend Svelte
 
 ---
 
-## 4. Workflows utilisateur
+## 4. User Workflows
 
-### Création d'une race (Organisateur)
+### Creating a Race (Organizer)
 
-1. **Connexion Twitch** : Redirect OAuth -> callback -> session créée
-2. **Nouvelle race** :
-   - Nom, config (show_finished_names, max_participants)
-   - Sélection du pool (Sprint/Standard/Marathon) avec affichage des settings
-   - Seed assignée aléatoirement depuis le pool choisi
-   - Race créée en status "draft"
-3. **Gestion participants** :
-   - Ajouter joueurs par pseudo Twitch
-   - Si compte existant -> ajouté directement
-   - Si pas de compte -> génère lien invitation `/invite/{token}`
-4. **Lancement** :
-   - Définir scheduled_start (datetime picker avec timezone)
-   - Clic "Générer les .zip" -> serveur génère zip personnalisé par joueur
-   - Chaque joueur télécharge son .zip
-   - Clic "Lancer" quand tout le monde ready -> countdown synchronisé
+1. **Twitch Login**: OAuth redirect -> callback -> session created
+2. **New Race**:
+   - Name, config (show_finished_names, max_participants)
+   - Pool selection (Sprint/Standard/Marathon) with settings display
+   - Seed randomly assigned from chosen pool
+   - Race created with "draft" status
+3. **Participant Management**:
+   - Add players by Twitch username
+   - If account exists -> added directly
+   - If no account -> generates invitation link `/invite/{token}`
+4. **Launch**:
+   - Set scheduled_start (datetime picker with timezone)
+   - Click "Generate .zips" -> server generates personalized zip per player
+   - Each player downloads their .zip
+   - Click "Start" when everyone is ready -> synchronized countdown
 
-### Participation à une race (Joueur)
+### Participating in a Race (Player)
 
-1. **Rejoindre** : Connexion Twitch -> inscription via lien ou ajout par orga
-2. **Préparation** :
-   - Télécharge son .zip personnalisé
-   - Dézip, lance `launch_speedfog.bat`
-   - Mod se connecte au serveur (token dans config)
-   - Status passe à "ready" quand connecté
-3. **Course** :
-   - Countdown affiché dans l'overlay (calculé depuis scheduled_start)
-   - GO ! -> Nouveau personnage, IGT commence
-   - Progression trackée via traversées de fog gates
-   - Classement mis à jour en temps réel
-4. **Fin** : Boss final vaincu -> status "finished", IGT enregistré
+1. **Join**: Twitch login -> registration via link or added by organizer
+2. **Preparation**:
+   - Download personalized .zip
+   - Unzip, run `launch_speedfog.bat`
+   - Mod connects to server (token in config)
+   - Status changes to "ready" when connected
+3. **Race**:
+   - Countdown displayed in overlay (calculated from scheduled_start)
+   - GO! -> New character, IGT starts
+   - Progression tracked via fog gate traversals
+   - Leaderboard updated in real-time
+4. **Finish**: Final boss defeated -> status "finished", IGT recorded
 
 ---
 
-## 5. Protocole WebSocket
+## 5. WebSocket Protocol
 
-### Connexions
+### Connections
 
 ```
-/ws/mod/{race_id}      # Mod Rust -> Serveur (auth par mod_token)
-/ws/race/{race_id}     # Frontend -> Serveur (spectateurs, organisateur)
+/ws/mod/{race_id}      # Rust Mod -> Server (auth via mod_token)
+/ws/race/{race_id}     # Frontend -> Server (spectators, organizer)
 ```
 
-### Messages Mod -> Serveur
+### Mod -> Server Messages
 
 ```typescript
-// Authentification
+// Authentication
 { type: "auth", mod_token: "abc123" }
 
-// Joueur prêt (connecté, en jeu)
+// Player ready (connected, in game)
 { type: "ready" }
 
-// Mise à jour périodique (toutes les ~2-5 sec)
+// Periodic update (every ~2-5 sec)
 { type: "status_update",
   igt_ms: 123456,
   current_zone: "altus_sagescave",
   current_layer: 3,
   death_count: 7 }
 
-// Traversée de fog gate
+// Fog gate traversal
 { type: "zone_entered",
   from_zone: "caelid_gaolcave_boss",
   to_zone: "altus_sagescave",
   igt_ms: 98765 }
 
-// Course terminée (boss final vaincu)
+// Race finished (final boss defeated)
 { type: "finished", igt_ms: 6543210 }
 ```
 
-### Messages Serveur -> Mod
+### Server -> Mod Messages
 
 ```typescript
-// Auth OK + état initial
+// Auth OK + initial state
 { type: "auth_ok",
   race: { name, status, scheduled_start },
   seed: { total_layers },
@@ -237,7 +237,7 @@ Mod Rust <--WebSocket--> Serveur FastAPI <--WebSocket--> Frontend Svelte
 // GO!
 { type: "race_start" }
 
-// Mise à jour classement (broadcast à tous les mods)
+// Leaderboard update (broadcast to all mods)
 { type: "leaderboard_update",
   participants: [
     { name: "Player1", layer: 8, igt_ms: null, death_count: 3, finished: false },
@@ -245,25 +245,25 @@ Mod Rust <--WebSocket--> Serveur FastAPI <--WebSocket--> Frontend Svelte
   ]}
 ```
 
-### Messages Serveur -> Frontend (spectateurs)
+### Server -> Frontend Messages (spectators)
 
 ```typescript
-// État complet de la race
+// Complete race state
 { type: "race_state",
   race: { name, status, scheduled_start },
-  seed: { graph_json },  // Pour afficher le DAG
+  seed: { graph_json },  // For displaying the DAG
   participants: [
     { name, zone_id, layer, igt_ms, death_count, status }
   ]}
 
-// Mise à jour position d'un joueur
+// Player position update
 { type: "player_update",
   player: { name, zone_id, layer, igt_ms, death_count, status }}
 ```
 
 ---
 
-## 6. Overlay in-game (Mod Rust)
+## 6. In-Game Overlay (Rust Mod)
 
 ### Layout
 
@@ -272,40 +272,40 @@ Mod Rust <--WebSocket--> Serveur FastAPI <--WebSocket--> Frontend Svelte
 │ Altus Sagescave              01:23:45  │  <- Zone | IGT
 │ Tier 8                          3/12   │  <- Scaling | Layer
 ├────────────────────────────────────────┤
-│ 1. Player4 [FIN]   01:45:32         ✓  │  <- Terminés en haut (tri IGT)
-│ 2. Player1         ██████████    8/12  │  <- En cours (tri layer)
-│ 3. Toi             ███████       6/12  │  <- Highlight couleur
+│ 1. Player4 [FIN]   01:45:32         ✓  │  <- Finished at top (sorted by IGT)
+│ 2. Player1         ██████████    8/12  │  <- In progress (sorted by layer)
+│ 3. You             ███████       6/12  │  <- Color highlight
 │ 4. Player3         █████         5/12  │
 ├────────────────────────────────────────┤
-│ > Exits (F11 pour replier)             │  <- Optionnel/repliable
+│ > Exits (F11 to collapse)              │  <- Optional/collapsible
 │   <- Caelid Gaol Cave (origin)         │
 │   -> ??? (undiscovered)                │
 └────────────────────────────────────────┘
 ```
 
-### Logique de classement
+### Leaderboard Logic
 
-1. **Joueurs terminés** en haut, triés par IGT de fin (le plus rapide en premier)
-2. **Joueurs en cours** en dessous, triés par progression (layer)
+1. **Finished players** at top, sorted by finish IGT (fastest first)
+2. **In-progress players** below, sorted by progression (layer)
 
-### Config organisateur
+### Organizer Config
 
-- `show_finished_names: true/false` - Afficher les noms des joueurs terminés
+- `show_finished_names: true/false` - Display finished players' names
 
-### Fork er-fog-vizu
+### er-fog-vizu Fork
 
-**Conservé :**
+**Kept:**
 
-- `core/` : Types, map_utils, warp_tracker
-- `eldenring/` : Memory reading, game_state, animations
-- `dll/ui.rs` : Rendu ImGui overlay
-- `dll/websocket.rs` : Client WebSocket (à adapter)
+- `core/`: Types, map_utils, warp_tracker
+- `eldenring/`: Memory reading, game_state, animations
+- `dll/ui.rs`: ImGui overlay rendering
+- `dll/websocket.rs`: WebSocket client (to adapt)
 
-**Supprimé :**
+**Removed:**
 
-- `launcher/` : Pas de GUI launcher
+- `launcher/`: No GUI launcher
 
-**Config (speedfog_race.toml) :**
+**Config (speedfog_race.toml):**
 
 ```toml
 [server]
@@ -324,7 +324,7 @@ toggle_exits = "f11"
 
 ### Injection
 
-Via ModEngine2 (inclus dans le .zip) :
+Via ModEngine2 (included in .zip):
 
 ```toml
 # config_speedfog/config.toml (ModEngine2)
@@ -334,7 +334,7 @@ external_dlls = ["speedfog_race.dll"]
 
 ---
 
-## 7. Serveur FastAPI
+## 7. FastAPI Server
 
 ### Structure
 
@@ -350,48 +350,48 @@ speedfog-racing/server/
 │   ├── api/
 │   │   ├── auth.py          # /api/auth/twitch, /api/auth/callback
 │   │   ├── races.py         # CRUD races, participants
-│   │   ├── seeds.py         # Stats admin
-│   │   └── users.py         # Profil
+│   │   ├── seeds.py         # Admin stats
+│   │   └── users.py         # Profile
 │   │
 │   ├── websocket/
-│   │   ├── manager.py       # RaceRoom, connexions par race
-│   │   ├── mod.py           # Handler connexions mod
-│   │   └── spectator.py     # Handler connexions spectateurs
+│   │   ├── manager.py       # RaceRoom, connections per race
+│   │   ├── mod.py           # Mod connections handler
+│   │   └── spectator.py     # Spectator connections handler
 │   │
 │   └── services/
-│       ├── race_service.py  # Logique métier races
+│       ├── race_service.py  # Race business logic
 │       ├── seed_service.py  # Pool management, zip generation
-│       └── leaderboard.py   # Calcul classement temps réel
+│       └── leaderboard.py   # Real-time leaderboard calculation
 │
-├── alembic/                 # Migrations DB
+├── alembic/                 # DB migrations
 ├── tests/
 ├── pyproject.toml
 └── .env.example
 ```
 
-### Endpoints principaux
+### Main Endpoints
 
 ```
 Auth:
-  GET  /api/auth/twitch              -> Redirect OAuth Twitch
-  GET  /api/auth/callback            -> Callback, crée session
-  GET  /api/auth/me                  -> User courant
+  GET  /api/auth/twitch              -> Twitch OAuth redirect
+  GET  /api/auth/callback            -> Callback, creates session
+  GET  /api/auth/me                  -> Current user
 
 Races:
-  POST /api/races                    -> Créer race (organizer)
-  GET  /api/races/{id}               -> Détails race
-  POST /api/races/{id}/participants  -> Ajouter joueur (by twitch name)
-  POST /api/races/{id}/generate-zips -> Générer .zip personnalisés
-  POST /api/races/{id}/start         -> Définir scheduled_start, lancer
-  GET  /api/races/{id}/download/{token} -> Télécharger son .zip
+  POST /api/races                    -> Create race (organizer)
+  GET  /api/races/{id}               -> Race details
+  POST /api/races/{id}/participants  -> Add player (by twitch name)
+  POST /api/races/{id}/generate-zips -> Generate personalized .zips
+  POST /api/races/{id}/start         -> Set scheduled_start, launch
+  GET  /api/races/{id}/download/{token} -> Download personal .zip
 
 Seeds (admin):
-  GET  /api/admin/seeds              -> Stats pool (available/consumed)
-  POST /api/admin/seeds/scan         -> Rescan du dossier
+  GET  /api/admin/seeds              -> Pool stats (available/consumed)
+  POST /api/admin/seeds/scan         -> Rescan directory
 
 WebSocket:
-  WS   /ws/mod/{race_id}             -> Connexion mod
-  WS   /ws/race/{race_id}            -> Connexion spectateur/orga
+  WS   /ws/mod/{race_id}             -> Mod connection
+  WS   /ws/race/{race_id}            -> Spectator/organizer connection
 ```
 
 ### Configuration
@@ -409,7 +409,7 @@ WEBSOCKET_URL=wss://speedfog-racing.example.com
 
 ---
 
-## 8. Frontend SvelteKit
+## 8. SvelteKit Frontend
 
 ### Structure
 
@@ -417,30 +417,30 @@ WEBSOCKET_URL=wss://speedfog-racing.example.com
 speedfog-racing/web/
 ├── src/
 │   ├── lib/
-│   │   ├── api.ts              # Client API REST
-│   │   ├── websocket.ts        # Client WebSocket avec reconnect
+│   │   ├── api.ts              # REST API client
+│   │   ├── websocket.ts        # WebSocket client with reconnect
 │   │   ├── stores/
 │   │   │   ├── auth.ts         # User session
-│   │   │   ├── race.ts         # État race courante
-│   │   │   └── leaderboard.ts  # Classement temps réel
+│   │   │   ├── race.ts         # Current race state
+│   │   │   └── leaderboard.ts  # Real-time leaderboard
 │   │   └── components/
-│   │       ├── DagView.svelte       # Visualisation DAG horizontal
-│   │       ├── Leaderboard.svelte   # Classement joueurs
-│   │       ├── Countdown.svelte     # Timer avant départ
-│   │       └── PlayerMarker.svelte  # Marqueur joueur sur DAG
+│   │       ├── DagView.svelte       # Horizontal DAG visualization
+│   │       ├── Leaderboard.svelte   # Player leaderboard
+│   │       ├── Countdown.svelte     # Pre-start timer
+│   │       └── PlayerMarker.svelte  # Player marker on DAG
 │   │
 │   ├── routes/
-│   │   ├── +layout.svelte      # Layout global, auth check
+│   │   ├── +layout.svelte      # Global layout, auth check
 │   │   ├── +page.svelte        # Home
 │   │   ├── auth/callback/+page.svelte
 │   │   ├── race/
-│   │   │   ├── new/+page.svelte       # Créer race
+│   │   │   ├── new/+page.svelte       # Create race
 │   │   │   └── [id]/
-│   │   │       ├── +page.svelte       # Vue race
-│   │   │       ├── join/+page.svelte  # Rejoindre
+│   │   │       ├── +page.svelte       # Race view
+│   │   │       ├── join/+page.svelte  # Join race
 │   │   │       └── manage/+page.svelte
 │   │   ├── overlay/[id]/
-│   │   │   ├── dag/+page.svelte       # Overlay DAG
+│   │   │   ├── dag/+page.svelte       # DAG overlay
 │   │   │   └── leaderboard/+page.svelte
 │   │   ├── invite/[token]/+page.svelte
 │   │   └── admin/+page.svelte
@@ -451,43 +451,43 @@ speedfog-racing/web/
 └── package.json
 ```
 
-### Page race `/race/{id}`
+### Race Page `/race/{id}`
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ SPEEDFOG RACE - "Sunday Showdown"                              [Logout] │
 ├────────────────────┬────────────────────────────────────────────────────┤
-│  SIDEBAR           │              ZONE CENTRALE                         │
+│  SIDEBAR           │              CENTER AREA                           │
 │                    │                                                    │
 │  ┌──────────────┐  │   ┌────────────────────────────────────────────┐   │
 │  │ Leaderboard  │  │   │                                            │   │
-│  │ 1. P1   8/12 │  │   │         [DAG / PLAN DE METRO]              │   │
+│  │ 1. P1   8/12 │  │   │         [DAG / METRO MAP]                  │   │
 │  │ 2. P2   6/12 │  │   │                                            │   │
-│  │ ...          │  │   │    (flouté avant le départ)                │   │
-│  └──────────────┘  │   │    (visible spectateurs pendant)           │   │
-│                    │   │    (flouté joueurs pendant)                │   │
+│  │ ...          │  │   │    (blurred before start)                  │   │
+│  └──────────────┘  │   │    (visible for spectators during race)    │   │
+│                    │   │    (blurred for players during race)       │   │
 │  ┌──────────────┐  │   │                                            │   │
 │  │ OVERLAYS     │  │   └────────────────────────────────────────────┘   │
 │  │ > DAG (OBS)  │  │                                                    │
 │  │ > Leaderboard│  │                                                    │
 │  └──────────────┘  │                                                    │
 │                    │                                                    │
-│  [Actions rôle]    │                                                    │
+│  [Role actions]    │                                                    │
 └────────────────────┴────────────────────────────────────────────────────┘
 ```
 
-### Visibilité DAG par rôle
+### DAG Visibility by Role
 
-| Phase          | Spectateur/Orga         | Joueur          |
-| -------------- | ----------------------- | --------------- |
-| Avant départ   | Flouté                  | Flouté          |
-| Pendant race   | DAG complet + positions | Flouté          |
-| Joueur termine | -                       | DAG révélé      |
-| Race terminée  | DAG + résultats         | DAG + résultats |
+| Phase           | Spectator/Organizer  | Player        |
+| --------------- | -------------------- | ------------- |
+| Before start    | Blurred              | Blurred       |
+| During race     | Full DAG + positions | Blurred       |
+| Player finishes | -                    | DAG revealed  |
+| Race finished   | DAG + results        | DAG + results |
 
-### Overlays OBS (fond transparent)
+### OBS Overlays (transparent background)
 
-**DAG horizontal** `/overlay/{id}/dag` :
+**Horizontal DAG** `/overlay/{id}/dag`:
 
 ```
                ●───●───●───●───●───●───●───●───●───●───●───●───○
@@ -498,7 +498,7 @@ speedfog-racing/web/
                        |player2
 ```
 
-**Leaderboard vertical** `/overlay/{id}/leaderboard` :
+**Vertical Leaderboard** `/overlay/{id}/leaderboard`:
 
 ```
 ┌─────────────────────────┐
@@ -515,85 +515,85 @@ speedfog-racing/web/
 
 ---
 
-## 9. Gestion du pool de seeds
+## 9. Seed Pool Management
 
-### Structure multi-pools
+### Multi-Pool Structure
 
 ```
 /data/seeds/
-├── pools.toml                    # Définition des pools
+├── pools.toml                    # Pool definitions
 │
-├── sprint/                       # Pool "Sprint" (~30min)
-│   ├── config.toml               # Settings fixes pour ce pool
+├── sprint/                       # "Sprint" pool (~30min)
+│   ├── config.toml               # Fixed settings for this pool
 │   ├── available/
 │   │   └── seed_XXXXX/
 │   └── consumed/
 │
-├── standard/                     # Pool "Standard" (~1h)
+├── standard/                     # "Standard" pool (~1h)
 │   ├── config.toml
 │   ├── available/
 │   └── consumed/
 │
-└── marathon/                     # Pool "Marathon" (~2h)
+└── marathon/                     # "Marathon" pool (~2h)
     ├── config.toml
     ├── available/
     └── consumed/
 ```
 
-### Définition des pools
+### Pool Definitions
 
 ```toml
 # pools.toml
 [sprint]
 display_name = "Sprint (~30min)"
-description = "Course rapide, peu de zones, scaling modéré"
+description = "Fast race, few zones, moderate scaling"
 
 [standard]
 display_name = "Standard (~1h)"
-description = "Format classique, bon équilibre"
+description = "Classic format, good balance"
 
 [marathon]
 display_name = "Marathon (~2h)"
-description = "Course longue, nombreuses zones"
+description = "Long race, many zones"
 ```
 
-### Génération du pool
+### Pool Generation
 
 ```bash
-# Utilise le config.toml du pool spécifié
+# Uses the specified pool's config.toml
 python tools/generate_pool.py --pool standard --count 10
 
 # Workflow:
-# 1. Charge /data/seeds/standard/config.toml
-# 2. Appelle speedfog via CLI (cwd=SPEEDFOG_PATH)
-# 3. Ajoute speedfog_race.dll dans l'output
-# 4. Crée speedfog_race.toml template
-# 5. Place dans standard/available/
+# 1. Load /data/seeds/standard/config.toml
+# 2. Call speedfog via CLI (cwd=SPEEDFOG_PATH)
+# 3. Add speedfog_race.dll to output
+# 4. Create speedfog_race.toml template
+# 5. Place in standard/available/
 ```
 
-### Génération des .zip par joueur
+### Per-Player .zip Generation
 
 ```python
 async def generate_player_zips(race: Race) -> dict[UUID, Path]:
     seed_dir = Path(race.seed.zip_path)
 
     for participant in race.participants:
-        # Copier la seed
+        # Copy the seed
         player_dir = temp_dir / f"{race.id}_{participant.user.twitch_name}"
         shutil.copytree(seed_dir, player_dir)
 
-        # Modifier config avec token du joueur
+        # Modify config with player's token
         config = toml.load(player_dir / "speedfog_race.toml")
         config["server"]["mod_token"] = participant.mod_token
         config["server"]["race_id"] = str(race.id)
         config["server"]["url"] = settings.websocket_url
         toml.dump(config, player_dir / "speedfog_race.toml")
 
-        # Zipper
+        # Create zip
         shutil.make_archive(...)
 ```
 
-### Dashboard admin
+### Admin Dashboard
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -609,73 +609,73 @@ async def generate_player_zips(race: Race) -> dict[UUID, Path]:
 
 ---
 
-## 10. Phases d'implémentation
+## 10. Implementation Phases
 
-### Phase 1 : Fondations (MVP minimal)
+### Phase 1: Foundations (Minimal MVP)
 
-**Objectif :** Une race fonctionnelle de bout en bout
+**Objective:** A functional race from end to end
 
-| Composant    | Tâches                                                   |
-| ------------ | -------------------------------------------------------- |
-| **Serveur**  | Setup FastAPI, DB, Twitch OAuth, modèles                 |
-| **Serveur**  | Endpoints REST basiques (races CRUD, auth)               |
-| **Serveur**  | WebSocket basique (mod + spectateur)                     |
-| **Serveur**  | Gestion pool simple (1 pool, assign seed, generate zips) |
-| **Frontend** | Setup SvelteKit, auth Twitch, pages basiques             |
-| **Frontend** | Page création race, page race (leaderboard simple)       |
-| **Mod**      | Fork er-fog-vizu, adapter protocole, overlay minimal     |
+| Component    | Tasks                                                       |
+| ------------ | ----------------------------------------------------------- |
+| **Server**   | Setup FastAPI, DB, Twitch OAuth, models                     |
+| **Server**   | Basic REST endpoints (races CRUD, auth)                     |
+| **Server**   | Basic WebSocket (mod + spectator)                           |
+| **Server**   | Simple pool management (1 pool, assign seed, generate zips) |
+| **Frontend** | Setup SvelteKit, Twitch auth, basic pages                   |
+| **Frontend** | Race creation page, race page (simple leaderboard)          |
+| **Mod**      | Fork er-fog-vizu, adapt protocol, minimal overlay           |
 
-**Résultat :** Orga crée race -> Joueurs download zip -> Course avec leaderboard
+**Result:** Organizer creates race -> Players download zip -> Race with leaderboard
 
-### Phase 2 : Expérience complète
+### Phase 2: Complete Experience
 
-| Composant    | Tâches                                         |
-| ------------ | ---------------------------------------------- |
-| **Frontend** | Visualisation DAG horizontal                   |
-| **Frontend** | Overlays OBS (dag + leaderboard)               |
-| **Frontend** | Multi-pools avec sélection                     |
-| **Mod**      | Overlay complet (classement, exits, countdown) |
-| **Serveur**  | Dashboard admin (stats seeds)                  |
-| **Serveur**  | Countdown synchronisé                          |
+| Component    | Tasks                                        |
+| ------------ | -------------------------------------------- |
+| **Frontend** | Horizontal DAG visualization                 |
+| **Frontend** | OBS overlays (dag + leaderboard)             |
+| **Frontend** | Multi-pools with selection                   |
+| **Mod**      | Full overlay (leaderboard, exits, countdown) |
+| **Server**   | Admin dashboard (seed stats)                 |
+| **Server**   | Synchronized countdown                       |
 
-**Résultat :** Expérience de visionnage complète pour casteurs
+**Result:** Complete viewing experience for casters
 
-### Phase 3 : Polish et features avancées
+### Phase 3: Polish and Advanced Features
 
-| Composant    | Tâches                                   |
-| ------------ | ---------------------------------------- |
-| **Mod**      | Events EMEVD customs (tracking précis)   |
-| **Frontend** | Affichage progressif chemin pour joueurs |
-| **Serveur**  | Races asynchrones                        |
-| **Serveur**  | Historique / statistiques joueurs        |
-| **Infra**    | Génération seeds à la demande (Wine)     |
+| Component    | Tasks                                  |
+| ------------ | -------------------------------------- |
+| **Mod**      | Custom EMEVD events (precise tracking) |
+| **Frontend** | Progressive path display for players   |
+| **Server**   | Asynchronous races                     |
+| **Server**   | Player history / statistics            |
+| **Infra**    | On-demand seed generation (Wine)       |
 
-### Ordre de développement suggéré (Phase 1)
+### Suggested Development Order (Phase 1)
 
-1. Server : setup + auth Twitch + DB
-2. Frontend : setup + login Twitch
-3. Server : modèles + endpoints races
-4. Frontend : création/liste races
-5. Mod : fork + connexion WebSocket basique
-6. Server : WebSocket mod + leaderboard
-7. Server : gestion pool + génération zips
-8. Frontend : page race + download zip
-9. Mod : overlay complet
-10. Tests end-to-end
+1. Server: setup + Twitch auth + DB
+2. Frontend: setup + Twitch login
+3. Server: models + race endpoints
+4. Frontend: race creation/list
+5. Mod: fork + basic WebSocket connection
+6. Server: mod WebSocket + leaderboard
+7. Server: pool management + zip generation
+8. Frontend: race page + zip download
+9. Mod: full overlay
+10. End-to-end tests
 
 ---
 
-## Annexes
+## Appendices
 
-### Timing et classement
+### Timing and Leaderboard
 
-- Toujours basé sur l'IGT (In-Game Time) pour équité
-- Classement :
-  1. Joueurs terminés (triés par IGT croissant)
-  2. Joueurs en cours (triés par layer décroissant)
+- Always based on IGT (In-Game Time) for fairness
+- Leaderboard:
+  1. Finished players (sorted by ascending IGT)
+  2. In-progress players (sorted by descending layer)
 
-### TODO techniques à explorer
+### Technical TODOs to Explore
 
-- [ ] Events EMEVD customs dans FogModWrapper pour tracking précis des traversées
-- [ ] Mécanisme de détection fin de course (boss final vaincu)
-- [ ] Gestion déconnexion/reconnexion mod pendant une race
+- [ ] Custom EMEVD events in FogModWrapper for precise traversal tracking
+- [ ] Race finish detection mechanism (final boss defeated)
+- [ ] Mod disconnection/reconnection handling during a race
