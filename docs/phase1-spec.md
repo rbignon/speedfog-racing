@@ -561,12 +561,12 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] Assign seed to race
 - [x] Seed service with get available / mark consumed
 
-### Step 4: Race CRUD
+### Step 4: Race CRUD ✅
 
-- [ ] Create race endpoint (with seed assignment)
-- [ ] List races endpoint
-- [ ] Get race details endpoint
-- [ ] Add/remove participants
+- [x] Create race endpoint (with seed assignment)
+- [x] List races endpoint
+- [x] Get race details endpoint
+- [x] Add/remove participants
 
 ### Step 5: Seed Pool (Zip Generation)
 
