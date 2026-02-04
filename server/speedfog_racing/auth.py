@@ -1,0 +1,170 @@
+"""Twitch OAuth authentication and user management."""
+
+import secrets
+from dataclasses import dataclass
+
+import httpx
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from speedfog_racing.config import settings
+from speedfog_racing.database import get_db
+from speedfog_racing.models import User
+
+
+@dataclass
+class TwitchUser:
+    """Twitch user info from API."""
+
+    id: str
+    login: str
+    display_name: str
+    profile_image_url: str | None = None
+
+
+def generate_token() -> str:
+    """Generate a secure random token."""
+    return secrets.token_urlsafe(32)
+
+
+def get_twitch_oauth_url(state: str) -> str:
+    """Generate Twitch OAuth authorization URL."""
+    return (
+        f"https://id.twitch.tv/oauth2/authorize"
+        f"?client_id={settings.twitch_client_id}"
+        f"&redirect_uri={settings.twitch_redirect_uri}"
+        f"&response_type=code"
+        f"&scope=user:read:email"
+        f"&state={state}"
+    )
+
+
+async def exchange_code_for_token(code: str) -> str | None:
+    """Exchange OAuth authorization code for access token."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            "https://id.twitch.tv/oauth2/token",
+            data={
+                "client_id": settings.twitch_client_id,
+                "client_secret": settings.twitch_client_secret,
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": settings.twitch_redirect_uri,
+            },
+        )
+        if resp.status_code == 200:
+            return resp.json().get("access_token")
+        return None
+
+
+async def get_twitch_user(access_token: str) -> TwitchUser | None:
+    """Get Twitch user info from access token."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://api.twitch.tv/helix/users",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Client-Id": settings.twitch_client_id,
+            },
+        )
+        if resp.status_code == 200:
+            data = resp.json()["data"][0]
+            return TwitchUser(
+                id=data["id"],
+                login=data["login"],
+                display_name=data["display_name"],
+                profile_image_url=data.get("profile_image_url"),
+            )
+        return None
+
+
+async def get_or_create_user(db: AsyncSession, twitch_user: TwitchUser) -> User:
+    """Get existing user or create new one from Twitch info."""
+    result = await db.execute(select(User).where(User.twitch_id == twitch_user.id))
+    user = result.scalar_one_or_none()
+
+    if user:
+        # Update user info from Twitch
+        user.twitch_username = twitch_user.login
+        user.twitch_display_name = twitch_user.display_name
+        user.twitch_avatar_url = twitch_user.profile_image_url
+        return user
+
+    # Create new user
+    user = User(
+        twitch_id=twitch_user.id,
+        twitch_username=twitch_user.login,
+        twitch_display_name=twitch_user.display_name,
+        twitch_avatar_url=twitch_user.profile_image_url,
+        api_token=generate_token(),
+    )
+    db.add(user)
+    return user
+
+
+async def get_user_by_token(db: AsyncSession, token: str) -> User | None:
+    """Get user by API token."""
+    result = await db.execute(select(User).where(User.api_token == token))
+    return result.scalar_one_or_none()
+
+
+async def get_user_by_twitch_username(db: AsyncSession, username: str) -> User | None:
+    """Get user by Twitch username (case-insensitive)."""
+    result = await db.execute(select(User).where(User.twitch_username.ilike(username)))
+    return result.scalar_one_or_none()
+
+
+# =============================================================================
+# FastAPI Dependencies
+# =============================================================================
+
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Dependency to get the current authenticated user. Raises 401 if not authenticated."""
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = await get_user_by_token(db, credentials.credentials)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user
+
+
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """Dependency to get current user if authenticated, None otherwise."""
+    if not credentials:
+        return None
+    return await get_user_by_token(db, credentials.credentials)
+
+
+async def require_admin(
+    user: User = Depends(get_current_user),
+) -> User:
+    """Dependency to require admin role."""
+    from speedfog_racing.models import UserRole
+
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user

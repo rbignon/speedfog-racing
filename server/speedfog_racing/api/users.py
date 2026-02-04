@@ -1,14 +1,31 @@
 """User API routes."""
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+from speedfog_racing.auth import get_current_user
+from speedfog_racing.models import User
 
 router = APIRouter()
 
 
-@router.get("/me")
-async def get_me() -> dict:
-    """Get current user profile.
+class UserProfileResponse(BaseModel):
+    """User profile response."""
 
-    TODO: Implement in Step 2.
-    """
-    return {"message": "TODO: Get current user"}
+    id: str
+    twitch_username: str
+    twitch_display_name: str | None
+    twitch_avatar_url: str | None
+    role: str
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/me", response_model=UserProfileResponse)
+async def get_my_profile(
+    user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """Get current user's profile."""
+    return user
