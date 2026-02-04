@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { currentUser, isLoggedIn, isLoading, logout } from '$lib/stores/auth';
-	import { fetchRaces, getTwitchLoginUrl, type Race } from '$lib/api';
+	import { fetchRaces, type Race } from '$lib/api';
 
 	let races: Race[] = $state([]);
 	let loadingRaces = $state(true);
@@ -40,19 +39,6 @@
 		}
 	}
 
-	function getStatusBadgeClass(status: string): string {
-		switch (status) {
-			case 'open':
-				return 'badge-open';
-			case 'countdown':
-				return 'badge-countdown';
-			case 'running':
-				return 'badge-running';
-			default:
-				return '';
-		}
-	}
-
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleDateString();
 	}
@@ -61,28 +47,6 @@
 <svelte:head>
 	<title>SpeedFog Racing</title>
 </svelte:head>
-
-<header>
-	<div class="header-content">
-		<h1>SpeedFog Racing</h1>
-		<nav>
-			{#if $isLoading}
-				<span class="loading">Loading...</span>
-			{:else if $isLoggedIn}
-				<span class="user-info">
-					{#if $currentUser?.twitch_avatar_url}
-						<img src={$currentUser.twitch_avatar_url} alt="" class="avatar" />
-					{/if}
-					<span>{$currentUser?.twitch_display_name || $currentUser?.twitch_username}</span>
-				</span>
-				<a href="/race/new" class="btn btn-primary">Create Race</a>
-				<button onclick={() => logout()} class="btn btn-secondary">Logout</button>
-			{:else}
-				<a href={getTwitchLoginUrl()} class="btn btn-twitch">Login with Twitch</a>
-			{/if}
-		</nav>
-	</div>
-</header>
 
 <main>
 	{#if errorMessage}
@@ -105,7 +69,7 @@
 					<a href="/race/{race.id}" class="race-card">
 						<div class="race-header">
 							<span class="race-name">{race.name}</span>
-							<span class="badge {getStatusBadgeClass(race.status)}">{race.status}</span>
+							<span class="badge badge-{race.status}">{race.status}</span>
 						</div>
 						<div class="race-info">
 							<span
@@ -127,80 +91,6 @@
 </main>
 
 <style>
-	header {
-		background: #16213e;
-		padding: 1rem 2rem;
-		border-bottom: 1px solid #0f3460;
-	}
-
-	.header-content {
-		max-width: 1200px;
-		margin: 0 auto;
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-
-	h1 {
-		margin: 0;
-		font-size: 1.5rem;
-		color: #9b59b6;
-	}
-
-	nav {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	.user-info {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.avatar {
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-	}
-
-	.btn {
-		padding: 0.5rem 1rem;
-		border: none;
-		border-radius: 4px;
-		cursor: pointer;
-		text-decoration: none;
-		font-size: 0.9rem;
-	}
-
-	.btn-primary {
-		background: #9b59b6;
-		color: white;
-	}
-
-	.btn-primary:hover {
-		background: #8e44ad;
-	}
-
-	.btn-secondary {
-		background: #34495e;
-		color: white;
-	}
-
-	.btn-secondary:hover {
-		background: #2c3e50;
-	}
-
-	.btn-twitch {
-		background: #6441a5;
-		color: white;
-	}
-
-	.btn-twitch:hover {
-		background: #563d7c;
-	}
-
 	main {
 		max-width: 1200px;
 		margin: 0 auto;
@@ -267,28 +157,6 @@
 	.race-name {
 		font-size: 1.1rem;
 		font-weight: 500;
-	}
-
-	.badge {
-		padding: 0.25rem 0.5rem;
-		border-radius: 4px;
-		font-size: 0.75rem;
-		text-transform: uppercase;
-	}
-
-	.badge-open {
-		background: #27ae60;
-		color: white;
-	}
-
-	.badge-countdown {
-		background: #f39c12;
-		color: white;
-	}
-
-	.badge-running {
-		background: #e74c3c;
-		color: white;
 	}
 
 	.race-info {

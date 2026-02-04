@@ -1,0 +1,176 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { isLoggedIn, isInitialized } from '$lib/stores/auth';
+	import { createRace, fetchPoolStats, type PoolStats } from '$lib/api';
+
+	let name = $state('');
+	let poolName = $state('standard');
+	let pools: PoolStats = $state({});
+	let loading = $state(true);
+	let creating = $state(false);
+	let error = $state<string | null>(null);
+
+	onMount(async () => {
+		// Wait for auth to initialize
+		const unsubscribe = isInitialized.subscribe(async (initialized) => {
+			if (initialized) {
+				unsubscribe();
+
+				// Redirect if not logged in
+				if (!$isLoggedIn) {
+					goto('/');
+					return;
+				}
+
+				// Fetch pool stats
+				try {
+					pools = await fetchPoolStats();
+				} catch (e) {
+					console.error('Failed to fetch pools:', e);
+					error = 'Failed to load seed pools.';
+				} finally {
+					loading = false;
+				}
+			}
+		});
+	});
+
+	async function handleSubmit(e: Event) {
+		e.preventDefault();
+		if (!name.trim()) {
+			error = 'Please enter a race name.';
+			return;
+		}
+
+		creating = true;
+		error = null;
+
+		try {
+			const race = await createRace(name.trim(), poolName);
+			goto(`/race/${race.id}/manage`);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to create race.';
+			creating = false;
+		}
+	}
+
+	function getPoolOptions(pools: PoolStats): [string, number][] {
+		return Object.entries(pools).map(([name, stats]) => [name, stats.available]);
+	}
+</script>
+
+<svelte:head>
+	<title>Create Race - SpeedFog Racing</title>
+</svelte:head>
+
+<main>
+	<h1>Create Race</h1>
+
+	{#if loading}
+		<p class="loading">Loading...</p>
+	{:else}
+		<form onsubmit={handleSubmit}>
+			{#if error}
+				<div class="error">{error}</div>
+			{/if}
+
+			<div class="form-group">
+				<label for="name">Race Name</label>
+				<input
+					type="text"
+					id="name"
+					bind:value={name}
+					placeholder="Enter race name"
+					disabled={creating}
+					required
+				/>
+			</div>
+
+			<div class="form-group">
+				<label for="pool">Seed Pool</label>
+				<select id="pool" bind:value={poolName} disabled={creating}>
+					{#each getPoolOptions(pools) as [pool, available]}
+						<option value={pool} disabled={available === 0}>
+							{pool} ({available} available)
+						</option>
+					{:else}
+						<option value="standard">standard (unknown)</option>
+					{/each}
+				</select>
+			</div>
+
+			<button type="submit" class="btn btn-primary" disabled={creating}>
+				{creating ? 'Creating...' : 'Create Race'}
+			</button>
+		</form>
+	{/if}
+</main>
+
+<style>
+	main {
+		max-width: 500px;
+		margin: 0 auto;
+		padding: 2rem;
+	}
+
+	h1 {
+		color: #9b59b6;
+		margin-bottom: 2rem;
+	}
+
+	form {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+
+	.form-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	label {
+		font-weight: 500;
+		color: #bdc3c7;
+	}
+
+	input,
+	select {
+		padding: 0.75rem;
+		border: 1px solid #0f3460;
+		border-radius: 4px;
+		background: #16213e;
+		color: #eee;
+		font-size: 1rem;
+	}
+
+	input:focus,
+	select:focus {
+		outline: none;
+		border-color: #9b59b6;
+	}
+
+	input:disabled,
+	select:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.error {
+		background: #c0392b;
+		color: white;
+		padding: 0.75rem;
+		border-radius: 4px;
+	}
+
+	.loading {
+		color: #7f8c8d;
+		font-style: italic;
+	}
+
+	button {
+		align-self: flex-start;
+	}
+</style>

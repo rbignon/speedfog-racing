@@ -581,11 +581,11 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] Twitch login flow
 - [x] Home page with race list
 
-### Step 7: Race Management UI
+### Step 7: Race Management UI ✅
 
-- [ ] Create race form
-- [ ] Race detail page
-- [ ] Manage page (add participants)
+- [x] Create race form
+- [x] Race detail page
+- [x] Manage page (add participants)
 
 ### Step 8: WebSocket - Server
 
