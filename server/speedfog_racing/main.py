@@ -11,7 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from speedfog_racing import __version__
 from speedfog_racing.api import api_router
 from speedfog_racing.config import settings
-from speedfog_racing.database import init_db
+from speedfog_racing.database import get_db_context, init_db
+from speedfog_racing.services import scan_pool
 
 # Configure logging
 logging.basicConfig(
@@ -31,6 +32,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Database initialized")
     except Exception as e:
         logger.warning(f"Database initialization skipped: {e}")
+
+    # Scan seed pool
+    try:
+        async with get_db_context() as db:
+            added = await scan_pool(db, "standard")
+            logger.info(f"Seed pool scanned: {added} new seeds added")
+    except Exception as e:
+        logger.warning(f"Seed pool scan failed: {e}")
 
     yield
 
