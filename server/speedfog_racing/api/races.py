@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -18,6 +19,8 @@ from speedfog_racing.schemas import (
     AddParticipantRequest,
     AddParticipantResponse,
     CreateRaceRequest,
+    DownloadInfo,
+    GenerateZipsResponse,
     InviteResponse,
     ParticipantResponse,
     RaceDetailResponse,
@@ -26,7 +29,11 @@ from speedfog_racing.schemas import (
     StartRaceRequest,
     UserResponse,
 )
-from speedfog_racing.services import assign_seed_to_race
+from speedfog_racing.services import (
+    assign_seed_to_race,
+    generate_race_zips,
+    get_participant_zip_path,
+)
 
 router = APIRouter()
 
@@ -343,23 +350,73 @@ async def start_race(
 
 
 # =============================================================================
-# Endpoints for Step 5 (Zip Generation) - Stubs
+# Zip Generation Endpoints
 # =============================================================================
 
 
-@router.post("/{race_id}/generate-zips")
-async def generate_zips(race_id: UUID) -> dict:
-    """Generate personalized zips for all participants.
+@router.post("/{race_id}/generate-zips", response_model=GenerateZipsResponse)
+async def generate_zips(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> GenerateZipsResponse:
+    """Generate personalized zips for all participants."""
+    race = await _get_race_or_404(db, race_id, load_participants=True)
+    _require_organizer(race, user)
 
-    TODO: Implement in Step 5.
-    """
-    return {"message": "TODO: Generate zips", "race_id": str(race_id)}
+    if not race.participants:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Race has no participants",
+        )
+
+    try:
+        zip_paths = await generate_race_zips(db, race)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Seed folder not found: {e}",
+        ) from e
+
+    # Build download URLs
+    downloads = []
+    for participant in race.participants:
+        if participant.id in zip_paths:
+            downloads.append(
+                DownloadInfo(
+                    participant_id=participant.id,
+                    twitch_username=participant.user.twitch_username,
+                    url=f"/api/races/{race_id}/download/{participant.mod_token}",
+                )
+            )
+
+    return GenerateZipsResponse(downloads=downloads)
 
 
 @router.get("/{race_id}/download/{mod_token}")
-async def download_zip(race_id: UUID, mod_token: str) -> dict:
-    """Download personalized zip for a participant.
+async def download_zip(
+    race_id: UUID,
+    mod_token: str,
+    db: AsyncSession = Depends(get_db),
+) -> FileResponse:
+    """Download personalized zip for a participant."""
+    result = await get_participant_zip_path(race_id, mod_token, db)
 
-    TODO: Implement in Step 5.
-    """
-    return {"message": "TODO: Download zip", "race_id": str(race_id), "mod_token": mod_token}
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Zip not found. Make sure the race organizer has generated the zips.",
+        )
+
+    zip_path, participant = result
+
+    return FileResponse(
+        path=zip_path,
+        filename=f"speedfog_{participant.user.twitch_username}.zip",
+        media_type="application/zip",
+    )

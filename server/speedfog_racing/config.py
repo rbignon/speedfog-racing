@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Seeds
     seeds_pool_dir: str = "/data/seeds"
     speedfog_path: str = ""  # Path to speedfog repo for seed generation
+    zips_output_dir: str = "/data/zips"  # Output directory for generated race zips
 
     # Server
     log_level: str = "INFO"

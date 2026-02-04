@@ -132,3 +132,17 @@ class AcceptInviteResponse(BaseModel):
 
     participant: ParticipantResponse
     race_id: UUID
+
+
+class DownloadInfo(BaseModel):
+    """Download information for a participant's zip."""
+
+    participant_id: UUID
+    twitch_username: str
+    url: str
+
+
+class GenerateZipsResponse(BaseModel):
+    """Response when generating zips for a race."""
+
+    downloads: list[DownloadInfo]

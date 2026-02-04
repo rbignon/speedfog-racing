@@ -568,10 +568,10 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] Get race details endpoint
 - [x] Add/remove participants
 
-### Step 5: Seed Pool (Zip Generation)
+### Step 5: Seed Pool (Zip Generation) ✅
 
-- [ ] Zip generation service
-- [ ] Download endpoint
+- [x] Zip generation service
+- [x] Download endpoint
 
 ### Step 6: Frontend Foundation
 
