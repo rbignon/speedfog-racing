@@ -1,6 +1,7 @@
 //! DLL module - SpeedFog Racing mod
 
 pub mod config;
+pub mod hotkey;
 pub mod tracker;
 pub mod ui;
 pub mod websocket;
