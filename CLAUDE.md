@@ -8,7 +8,7 @@ Competitive racing platform for SpeedFog (Elden Ring randomizer with fog gates).
 speedfog-racing/
 ├── server/          # Python/FastAPI backend
 ├── web/             # SvelteKit frontend
-├── mod/             # Rust mod injected into the game (not yet implemented)
+├── mod/             # Rust mod injected into the game
 ├── tools/           # Seed pool generation scripts
 └── docs/            # Specs and design documents
 ```
@@ -120,6 +120,66 @@ web/src/
 - TypeScript strict mode
 - Vite proxy for API calls during development
 
+## Mod (Rust)
+
+### Commands
+
+```bash
+cd mod
+
+# Check (Linux - won't build DLL but checks syntax)
+cargo check --lib
+
+# Build (Windows only - requires MSVC toolchain)
+cargo build --lib --release
+
+# Tests (works on Linux)
+cargo test
+```
+
+### Structure
+
+```
+mod/src/
+├── lib.rs              # DLL entry point
+├── core/               # Platform-independent types
+│   ├── mod.rs
+│   ├── race_protocol.rs  # WebSocket message types
+│   ├── map_utils.rs      # Map ID formatting
+│   └── types.rs          # PlayerPosition etc.
+├── dll/                # Windows-only DLL code
+│   ├── mod.rs
+│   ├── race_config.rs    # TOML config loading
+│   ├── race_tracker.rs   # Main orchestrator
+│   ├── race_ui.rs        # ImGui overlay
+│   └── race_websocket.rs # WebSocket client
+└── eldenring/          # Game memory reading
+    ├── mod.rs
+    ├── game_state.rs
+    ├── game_man.rs
+    └── ...
+```
+
+### Protocol
+
+The mod communicates with the server via WebSocket at `/ws/mod/{race_id}`:
+
+**Client → Server:**
+
+- `auth { mod_token }` - authenticate
+- `ready` - player ready to race
+- `status_update { igt_ms, current_zone, current_layer, death_count }` - periodic update
+- `zone_entered { from_zone, to_zone, igt_ms }` - zone change
+- `finished { igt_ms }` - race complete
+
+**Server → Client:**
+
+- `auth_ok { race, seed, participants }` - authentication success
+- `auth_error { message }` - authentication failed
+- `race_start` - race has begun
+- `leaderboard_update { participants }` - updated standings
+- `race_status_change { status }` - race state changed
+
 ## Documentation
 
 - `docs/2026-02-04-speedfog-racing-design.md` - Overall design
@@ -129,8 +189,8 @@ web/src/
 
 Phase 1 in progress. See `docs/phase1-spec.md` section 7 for step tracking.
 
-**Completed:** Steps 1-9 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend)
-**Next:** Step 10 (Mod Fork)
+**Completed:** Steps 1-10 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork)
+**Next:** Step 11 (Integration Testing)
 
 ## Related Projects
 
