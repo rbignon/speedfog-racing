@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { currentUser, isInitialized } from '$lib/stores/auth';
+	import { get } from 'svelte/store';
 	import {
 		addParticipant,
 		removeParticipant,
@@ -16,6 +17,7 @@
 	let race: RaceDetail = $state(data.race);
 
 	let authorized = $state(false);
+	let authChecked = $state(false);
 	let newUsername = $state('');
 	let addingParticipant = $state(false);
 	let generatingZips = $state(false);
@@ -25,24 +27,22 @@
 	let downloads = $state<DownloadInfo[]>([]);
 	let scheduledStart = $state('');
 
-	onMount(() => {
-		// Check authorization
-		const unsubscribe = isInitialized.subscribe((initialized) => {
-			if (initialized) {
-				unsubscribe();
-				if (!$currentUser || $currentUser.id !== race.organizer.id) {
-					goto(`/race/${race.id}`);
-				} else {
-					authorized = true;
-				}
+	$effect(() => {
+		if (get(isInitialized) && !authChecked) {
+			authChecked = true;
+			const user = get(currentUser);
+			if (!user || user.id !== race.organizer.id) {
+				goto(`/race/${race.id}`);
+			} else {
+				authorized = true;
 			}
-		});
+		}
+	});
 
+	onMount(() => {
 		// Set default scheduled start to 5 minutes from now
 		const defaultStart = new Date(Date.now() + 5 * 60 * 1000);
 		scheduledStart = defaultStart.toISOString().slice(0, 16);
-
-		return () => unsubscribe();
 	});
 
 	async function handleAddParticipant(e: Event) {
