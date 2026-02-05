@@ -133,12 +133,22 @@ impl RaceTracker {
 
         // Detect zone changes
         if let Some(ref zone) = current_zone {
-            if self.last_zone.as_ref() != Some(zone) {
-                let from_zone = self.last_zone.clone().unwrap_or_default();
-                info!(from = %from_zone, to = %zone, "[RACE] Zone change");
-                self.ws_client
-                    .send_zone_entered(from_zone, zone.clone(), igt_ms);
-                self.last_zone = Some(zone.clone());
+            match &self.last_zone {
+                None => {
+                    // First zone - just store it, don't send zone_entered
+                    info!(zone = %zone, "[RACE] Initial zone");
+                    self.last_zone = Some(zone.clone());
+                }
+                Some(last) if last != zone => {
+                    // Zone changed - send zone_entered
+                    info!(from = %last, to = %zone, "[RACE] Zone change");
+                    self.ws_client
+                        .send_zone_entered(last.clone(), zone.clone(), igt_ms);
+                    self.last_zone = Some(zone.clone());
+                }
+                _ => {
+                    // Same zone, nothing to do
+                }
             }
         }
 
