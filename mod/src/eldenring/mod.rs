@@ -11,6 +11,8 @@ mod memory;
 mod sp_effect;
 pub mod warp_hook;
 
+#[allow(unused_imports)]
 pub use game_man::GameMan;
 pub use game_state::GameState;
+#[allow(unused_imports)]
 pub use sp_effect::SpEffect;

@@ -1,5 +1,6 @@
 //! Core module - platform-independent types
 
+pub mod constants;
 pub mod map_utils;
 pub mod protocol;
 pub mod traits;
