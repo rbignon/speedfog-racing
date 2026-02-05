@@ -10,6 +10,7 @@ pub mod entity_utils;
 pub mod io_traits;
 pub mod map_utils;
 pub mod protocol;
+pub mod race_protocol;
 pub mod session;
 pub mod status_template;
 pub mod traits;
@@ -26,3 +27,6 @@ pub use status_template::{render_template, RenderedLine, RenderedStatus, Templat
 pub use traits::{GameStateReader, SpEffectChecker, WarpDetector};
 pub use types::{PlayerPosition, WarpInfo};
 pub use warp_tracker::{DiscoveryEvent, PendingWarp, WarpTracker};
+
+// Race protocol re-exports
+pub use race_protocol::{ClientMessage, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage};
