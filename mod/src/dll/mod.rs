@@ -15,6 +15,7 @@ pub mod icon_atlas;
 pub mod log_reader;
 pub mod logging;
 pub mod race_config;
+pub mod race_tracker;
 pub mod race_websocket;
 pub mod tracker;
 pub mod ui;
