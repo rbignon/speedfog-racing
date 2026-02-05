@@ -49,7 +49,6 @@ pub struct RaceTracker {
 
     // Player state tracking
     last_zone: Option<String>,
-    last_layer: Option<u8>,
 
     // Status update throttle
     last_status_update: Instant,
@@ -93,7 +92,6 @@ impl RaceTracker {
             race_state: RaceState::default(),
             show_ui: true,
             last_zone: None,
-            last_layer: None,
             last_status_update: Instant::now(),
             ready_sent: false,
         })
@@ -220,12 +218,6 @@ impl RaceTracker {
         // TODO: Integrate with zone tracking when seed data is available
         let pos = self.game_state.read_position()?;
         Some(pos.map_id_str.clone())
-    }
-
-    fn calculate_layer(&self) -> u8 {
-        // Placeholder - would need to track discovered links vs graph
-        // For now return 0
-        0
     }
 
     // Public getters for UI
