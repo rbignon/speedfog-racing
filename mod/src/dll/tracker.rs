@@ -123,7 +123,6 @@ impl RaceTracker {
         let igt_ms = self.game_state.read_igt().unwrap_or(0);
         let deaths = self.game_state.read_deaths().unwrap_or(0);
         let current_zone = self.read_current_zone();
-        let current_layer = self.calculate_layer();
 
         // Send ready once connected (if not already sent)
         if !self.ready_sent {
@@ -143,18 +142,11 @@ impl RaceTracker {
             }
         }
 
-        // Track layer changes
-        if self.last_layer != Some(current_layer) {
-            info!(layer = current_layer, "[RACE] Layer change");
-            self.last_layer = Some(current_layer);
-        }
-
         // Send periodic status updates (every 1 second)
         if self.last_status_update.elapsed() >= Duration::from_secs(1) {
             self.ws_client.send_status_update(
                 igt_ms,
                 current_zone.clone().unwrap_or_default(),
-                current_layer,
                 deaths,
             );
             self.last_status_update = Instant::now();

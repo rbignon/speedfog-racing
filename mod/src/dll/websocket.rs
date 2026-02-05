@@ -36,7 +36,6 @@ pub enum OutgoingMessage {
     StatusUpdate {
         igt_ms: u32,
         current_zone: String,
-        current_layer: u8,
         death_count: u32,
     },
     ZoneEntered {
@@ -160,18 +159,11 @@ impl RaceWebSocketClient {
         }
     }
 
-    pub fn send_status_update(
-        &self,
-        igt_ms: u32,
-        current_zone: String,
-        current_layer: u8,
-        death_count: u32,
-    ) {
+    pub fn send_status_update(&self, igt_ms: u32, current_zone: String, death_count: u32) {
         if let Some(tx) = &self.tx {
             let _ = tx.try_send(OutgoingMessage::StatusUpdate {
                 igt_ms,
                 current_zone,
-                current_layer,
                 death_count,
             });
         }
@@ -378,13 +370,11 @@ fn message_loop(
             Ok(OutgoingMessage::StatusUpdate {
                 igt_ms,
                 current_zone,
-                current_layer,
                 death_count,
             }) => {
                 let msg = ClientMessage::StatusUpdate {
                     igt_ms,
                     current_zone,
-                    current_layer,
                     death_count,
                 };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;

@@ -20,7 +20,6 @@ pub enum ClientMessage {
     StatusUpdate {
         igt_ms: u32,
         current_zone: String,
-        current_layer: u8,
         death_count: u32,
     },
     /// Player entered a new zone
@@ -110,13 +109,12 @@ mod tests {
         let msg = ClientMessage::StatusUpdate {
             igt_ms: 123456,
             current_zone: "Limgrave".to_string(),
-            current_layer: 3,
             death_count: 5,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"status_update""#));
         assert!(json.contains(r#""igt_ms":123456"#));
-        assert!(json.contains(r#""current_layer":3"#));
+        assert!(!json.contains("current_layer"));
     }
 
     #[test]
