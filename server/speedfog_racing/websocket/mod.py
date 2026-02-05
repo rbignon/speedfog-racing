@@ -68,7 +68,12 @@ async def handle_mod_websocket(websocket: WebSocket, race_id: uuid.UUID, db: Asy
         # Main message loop
         while True:
             data = await websocket.receive_text()
-            msg = json.loads(data)
+            try:
+                msg = json.loads(data)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Invalid JSON from mod (ignored): {e}")
+                continue
+
             msg_type = msg.get("type")
 
             if msg_type == "ready":
@@ -84,8 +89,6 @@ async def handle_mod_websocket(websocket: WebSocket, race_id: uuid.UUID, db: Asy
 
     except WebSocketDisconnect:
         logger.info(f"Mod disconnected: race={race_id}")
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON from mod: {e}")
     except Exception as e:
         logger.error(f"Error in mod websocket: {e}")
     finally:

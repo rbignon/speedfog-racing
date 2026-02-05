@@ -659,11 +659,11 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] **Race finish detection** - Placeholder with finished_sent flag (detection mechanism TBD Phase 2)
 - [ ] Build and test injection (requires Windows/MSVC)
 
-### Step 11: Integration Testing
+### Step 11: Integration Testing ✅
 
-- [ ] End-to-end race flow
-- [ ] Multi-player simulation
-- [ ] Error handling
+- [x] End-to-end race flow (3-player complete race with leaderboard verification)
+- [x] Multi-player simulation (sequential connections to avoid WebSocket threading issues)
+- [x] Error handling (invalid auth, malformed JSON, duplicate connection, unknown message types)
 
 ---
 

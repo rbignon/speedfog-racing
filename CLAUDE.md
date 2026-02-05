@@ -192,8 +192,8 @@ See `docs/PROTOCOL.md` for complete reference.
 
 Phase 1 in progress. See `docs/phase1-spec.md` section 7 for step tracking.
 
-**Completed:** Steps 1-10 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork)
-**Next:** Step 11 (Integration Testing), then build/test injection on Windows
+**Completed:** Steps 1-11 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork, Integration Testing)
+**Next:** Build/test mod injection on Windows
 
 ## Related Projects
 
