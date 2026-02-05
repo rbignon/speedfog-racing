@@ -55,6 +55,9 @@ pub struct RaceTracker {
 
     // Ready sent flag
     ready_sent: bool,
+
+    // Finished sent flag
+    finished_sent: bool,
 }
 
 impl RaceTracker {
@@ -94,6 +97,7 @@ impl RaceTracker {
             last_zone: None,
             last_status_update: Instant::now(),
             ready_sent: false,
+            finished_sent: false,
         })
     }
 
@@ -149,6 +153,19 @@ impl RaceTracker {
                 }
             }
         }
+
+        // TODO: Race finish detection
+        // For Phase 1, this is a placeholder. Proper detection requires either:
+        // 1. A specific "finish zone" from seed info
+        // 2. Boss defeat detection from game memory
+        // 3. Manual trigger (not ideal for races)
+        //
+        // Example implementation:
+        // if self.detect_race_finish() && !self.finished_sent {
+        //     self.ws_client.send_finished(igt_ms);
+        //     self.finished_sent = true;
+        //     info!(igt_ms = igt_ms, "[RACE] Finished!");
+        // }
 
         // Send periodic status updates (every 1 second)
         if self.last_status_update.elapsed() >= Duration::from_secs(1) {
