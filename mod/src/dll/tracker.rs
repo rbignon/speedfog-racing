@@ -11,6 +11,7 @@ use crate::core::traits::GameStateReader;
 use crate::eldenring::GameState;
 
 use super::config::RaceConfig;
+use super::hotkey::begin_hotkey_frame;
 use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 
 // =============================================================================
@@ -99,6 +100,15 @@ impl RaceTracker {
     }
 
     pub fn update(&mut self) {
+        // Process hotkeys at start of frame
+        begin_hotkey_frame();
+
+        // Check toggle_ui hotkey
+        if self.config.keybindings.toggle_ui.is_just_pressed() {
+            self.show_ui = !self.show_ui;
+            info!(show_ui = self.show_ui, "[HOTKEY] Toggle UI");
+        }
+
         // Poll WebSocket
         while let Some(msg) = self.ws_client.poll() {
             self.handle_ws_message(msg);
