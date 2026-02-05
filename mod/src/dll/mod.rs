@@ -1,23 +1,20 @@
-//! DLL module - Elden Ring mod entry point, UI, and configuration
-//!
-//! This module contains the DLL-specific code including:
-//! - FogRandoTracker: main tracker logic and state
-//! - UI overlay rendering
-//! - Configuration loading
-//! - WebSocket client for server communication
-//! - Hotkey handling
-//! - Logging setup
+//! DLL module - SpeedFog Racing mod
 
+pub mod race_config;
+pub mod race_tracker;
+pub mod race_ui;
+pub mod race_websocket;
+
+// Re-export tracker for lib.rs
+pub use race_tracker::RaceTracker;
+
+// Keep old modules for now - will be cleaned in Task 10
 pub mod config;
 mod frame_state;
 pub mod hotkey;
 pub mod icon_atlas;
 pub mod log_reader;
 pub mod logging;
-pub mod race_config;
-pub mod race_tracker;
-pub mod race_ui;
-pub mod race_websocket;
 pub mod tracker;
 pub mod ui;
 pub mod websocket;
