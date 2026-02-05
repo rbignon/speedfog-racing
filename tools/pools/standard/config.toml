@@ -1,0 +1,38 @@
+# SpeedFog Racing - Standard Pool Configuration
+# ~1 hour races
+
+[run]
+seed = 0  # Auto-reroll until valid DAG found
+
+[budget]
+total_weight = 30
+tolerance = 5
+
+[requirements]
+legacy_dungeons = 1
+bosses = 5
+mini_dungeons = 5
+
+[structure]
+max_parallel_paths = 3
+min_layers = 6
+max_layers = 10
+final_tier = 25
+split_probability = 0.3
+merge_probability = 0.3
+max_branches = 3
+
+[starting_items]
+academy_key = true
+pureblood_medal = true
+drawing_room_key = true
+great_runes = true
+golden_seeds = 5
+sacred_tears = 3
+starting_runes = 50000
+
+[item_randomizer]
+enabled = true
+difficulty = 50
+remove_requirements = true
+auto_upgrade_weapons = true

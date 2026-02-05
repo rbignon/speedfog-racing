@@ -1,0 +1,61 @@
+name: Build Mod (Windows)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "mod/**"
+      - ".github/workflows/build-mod.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "mod/**"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: mod
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            mod/target
+          key: ${{ runner.os }}-cargo-mod-${{ hashFiles('mod/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-mod-
+
+      - name: Run tests
+        run: cargo test --lib
+
+      - name: Build release DLL
+        run: cargo build --lib --release
+
+      - name: Get version from Cargo.toml
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(cargo metadata --format-version=1 --no-deps | jq -r '.packages[0].version')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Upload DLL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: speedfog-race-mod-v${{ steps.version.outputs.version }}
+          path: mod/target/release/speedfog_race_mod.dll
+          if-no-files-found: error

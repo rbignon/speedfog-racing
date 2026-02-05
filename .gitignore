@@ -40,6 +40,7 @@ target/
 # Generated
 *.zip
 /zips/
+/tools/output/
 
 # OS
 .DS_Store
