@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { isLoggedIn, isInitialized } from '$lib/stores/auth';
 	import { createRace, fetchPoolStats, type PoolStats } from '$lib/api';
+	import { get } from 'svelte/store';
 
 	let name = $state('');
 	let poolName = $state('standard');
@@ -10,31 +10,33 @@
 	let loading = $state(true);
 	let creating = $state(false);
 	let error = $state<string | null>(null);
+	let authChecked = $state(false);
 
-	onMount(async () => {
-		// Wait for auth to initialize
-		const unsubscribe = isInitialized.subscribe(async (initialized) => {
-			if (initialized) {
-				unsubscribe();
+	$effect(() => {
+		if (get(isInitialized) && !authChecked) {
+			authChecked = true;
 
-				// Redirect if not logged in
-				if (!$isLoggedIn) {
-					goto('/');
-					return;
-				}
-
-				// Fetch pool stats
-				try {
-					pools = await fetchPoolStats();
-				} catch (e) {
-					console.error('Failed to fetch pools:', e);
-					error = 'Failed to load seed pools.';
-				} finally {
-					loading = false;
-				}
+			// Redirect if not logged in
+			if (!get(isLoggedIn)) {
+				goto('/');
+				return;
 			}
-		});
+
+			// Fetch pool stats
+			loadPools();
+		}
 	});
+
+	async function loadPools() {
+		try {
+			pools = await fetchPoolStats();
+		} catch (e) {
+			console.error('Failed to fetch pools:', e);
+			error = 'Failed to load seed pools.';
+		} finally {
+			loading = false;
+		}
+	}
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();

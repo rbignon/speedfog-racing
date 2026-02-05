@@ -177,9 +177,11 @@ export async function fetchCurrentUser(): Promise<User | null> {
 
 /**
  * Get the Twitch OAuth login URL.
+ * Redirects to /auth/callback after successful authentication.
  */
 export function getTwitchLoginUrl(): string {
-  return `${API_BASE}/auth/twitch`;
+  const callbackUrl = `${window.location.origin}/auth/callback`;
+  return `${API_BASE}/auth/twitch?redirect_url=${encodeURIComponent(callbackUrl)}`;
 }
 
 /**

@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # App
     secret_key: str = "dev-secret-key-change-in-production"
-    base_url: str = "http://localhost:8000"
+    oauth_redirect_url: str = "http://localhost:5173/auth/callback"  # Where to redirect after OAuth
     websocket_url: str = "ws://localhost:8000"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8000"]
 

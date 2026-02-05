@@ -1,6 +1,7 @@
 """Authentication API routes."""
 
 import secrets
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -28,7 +29,7 @@ _oauth_states: dict[str, str] = {}
 class UserResponse(BaseModel):
     """User info response."""
 
-    id: str
+    id: uuid.UUID
     twitch_username: str
     twitch_display_name: str | None
     twitch_avatar_url: str | None
@@ -54,7 +55,7 @@ async def twitch_login(
     state = secrets.token_urlsafe(32)
 
     # Store redirect URL in state (in production, encrypt or use session)
-    _oauth_states[state] = redirect_url or settings.base_url
+    _oauth_states[state] = redirect_url or settings.oauth_redirect_url
 
     oauth_url = get_twitch_oauth_url(state)
     return RedirectResponse(url=oauth_url, status_code=status.HTTP_302_FOUND)
