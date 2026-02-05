@@ -5,7 +5,7 @@ import secrets
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -120,6 +120,7 @@ class Participant(Base):
     """A user participating in a race."""
 
     __tablename__ = "participants"
+    __table_args__ = (UniqueConstraint("race_id", "user_id", name="uq_participants_race_user"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     race_id: Mapped[uuid.UUID] = mapped_column(
