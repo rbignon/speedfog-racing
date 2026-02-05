@@ -1,0 +1,20 @@
+# SpeedFog Racing Mod Configuration
+# Copy this file to speedfog_race.toml and fill in your race details
+
+[server]
+# Server URL (provided in your race zip)
+url = "wss://speedfog-racing.example.com"
+# Your unique participant token (provided in your race zip)
+mod_token = "YOUR_TOKEN_HERE"
+# Race ID (provided in your race zip)
+race_id = "YOUR_RACE_ID_HERE"
+
+[overlay]
+# Enable/disable the overlay
+enabled = true
+# Font size in pixels
+font_size = 16
+
+[keybindings]
+# Key to toggle UI visibility
+toggle_ui = "f9"
