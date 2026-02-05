@@ -9,6 +9,8 @@ use tracing::{error, info};
 use windows::Win32::Foundation::HINSTANCE;
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 
+use super::hotkey::Hotkey;
+
 /// Server connection settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerSettings {
@@ -61,18 +63,14 @@ impl Default for OverlaySettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyBindings {
     /// Toggle UI visibility
-    #[serde(default = "default_toggle_ui")]
-    pub toggle_ui: String,
-}
-
-fn default_toggle_ui() -> String {
-    "f9".to_string()
+    #[serde(default)]
+    pub toggle_ui: Hotkey,
 }
 
 impl Default for KeyBindings {
     fn default() -> Self {
         Self {
-            toggle_ui: default_toggle_ui(),
+            toggle_ui: Hotkey::default(),
         }
     }
 }
