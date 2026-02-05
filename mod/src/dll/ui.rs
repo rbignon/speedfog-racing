@@ -114,7 +114,7 @@ impl RaceTracker {
                 .as_deref()
                 .unwrap_or(&p.twitch_username);
 
-            let time_str = format_time(p.igt_ms as u32);
+            let time_str = format_time(p.igt_ms);
 
             let status_indicator = match p.status.as_str() {
                 "finished" => "✓",
@@ -149,7 +149,11 @@ impl RaceTracker {
     }
 }
 
-fn format_time(ms: u32) -> String {
+fn format_time(ms: i32) -> String {
+    if ms < 0 {
+        return "--:--".to_string();
+    }
+    let ms = ms as u32;
     let secs = ms / 1000;
     let mins = secs / 60;
     let hours = mins / 60;

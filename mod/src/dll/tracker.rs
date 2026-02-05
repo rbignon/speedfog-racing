@@ -8,7 +8,7 @@ use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
-use crate::eldenring::{GameMan, GameState};
+use crate::eldenring::GameState;
 
 use super::config::RaceConfig;
 use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
@@ -31,9 +31,8 @@ pub struct RaceState {
 // =============================================================================
 
 pub struct RaceTracker {
-    // Game readers
+    // Game reader
     game_state: GameState,
-    game_man: GameMan,
 
     // WebSocket
     pub(crate) ws_client: RaceWebSocketClient,
@@ -80,8 +79,6 @@ impl RaceTracker {
         let game_state = GameState::new();
         game_state.wait_for_game_loaded();
 
-        let game_man = GameMan::new(game_state.base_addresses());
-
         // Create WebSocket client
         let mut ws_client = RaceWebSocketClient::new(config.server.clone());
         ws_client.connect();
@@ -90,7 +87,6 @@ impl RaceTracker {
 
         Some(Self {
             game_state,
-            game_man,
             ws_client,
             config,
             race_state: RaceState::default(),

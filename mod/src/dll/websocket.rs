@@ -79,7 +79,6 @@ pub struct RaceWebSocketClient {
     thread_handle: Option<JoinHandle<()>>,
     shutdown_flag: Arc<AtomicBool>,
     current_status: ConnectionStatus,
-    last_error: Option<String>,
 }
 
 impl RaceWebSocketClient {
@@ -91,7 +90,6 @@ impl RaceWebSocketClient {
             thread_handle: None,
             shutdown_flag: Arc::new(AtomicBool::new(false)),
             current_status: ConnectionStatus::Disconnected,
-            last_error: None,
         }
     }
 
@@ -201,9 +199,6 @@ impl RaceWebSocketClient {
             Ok(msg) => {
                 if let IncomingMessage::StatusChanged(status) = &msg {
                     self.current_status = *status;
-                }
-                if let IncomingMessage::Error(err) = &msg {
-                    self.last_error = Some(err.clone());
                 }
                 Some(msg)
             }
