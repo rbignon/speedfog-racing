@@ -192,9 +192,8 @@ See `docs/PROTOCOL.md` for complete reference.
 
 Phase 1 in progress. See `docs/phase1-spec.md` section 7 for step tracking.
 
-**Completed:** Steps 1-9 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend)
-**In Progress:** Step 10 (Mod Fork) - basic structure done, missing: hotkey system, zone_entered tracking, finished detection
-**Next:** Complete Step 10, then Step 11 (Integration Testing)
+**Completed:** Steps 1-10 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork)
+**Next:** Step 11 (Integration Testing), then build/test injection on Windows
 
 ## Related Projects
 

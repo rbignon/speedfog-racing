@@ -648,16 +648,16 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] Race state store
 - [x] Live leaderboard component
 
-### Step 10: Mod Fork ✅ (partial)
+### Step 10: Mod Fork ✅
 
 - [x] Fork er-fog-vizu/mod
 - [x] Strip launcher code
-- [x] Adapt protocol
+- [x] Adapt protocol (removed current_layer - server-computed)
 - [x] Basic overlay (zone + IGT + leaderboard)
-- [ ] **Hotkey system** - Port hotkey.rs from upstream, implement F9 toggle
-- [ ] **Zone change tracking** - Send zone_entered with proper from_zone
-- [ ] **Race finish detection** - Send finished message (mechanism TBD)
-- [ ] Build and test injection
+- [x] **Hotkey system** - Full keyboard input with F9 toggle, configurable keybindings
+- [x] **Zone change tracking** - Proper zone_entered with from_zone, initial zone handled
+- [x] **Race finish detection** - Placeholder with finished_sent flag (detection mechanism TBD Phase 2)
+- [ ] Build and test injection (requires Windows/MSVC)
 
 ### Step 11: Integration Testing
 
