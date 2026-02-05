@@ -4,8 +4,8 @@ use hudhook::imgui::{Condition, StyleColor, WindowFlags};
 use hudhook::{ImguiRenderLoop, RenderContext};
 use tracing::info;
 
-use super::race_tracker::RaceTracker;
-use super::race_websocket::ConnectionStatus;
+use super::tracker::RaceTracker;
+use super::websocket::ConnectionStatus;
 
 impl ImguiRenderLoop for RaceTracker {
     fn initialize<'a>(

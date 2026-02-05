@@ -6,12 +6,12 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
-use crate::core::race_protocol::{ParticipantInfo, RaceInfo, SeedInfo};
+use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
 use crate::eldenring::{GameMan, GameState};
 
-use super::race_config::RaceConfig;
-use super::race_websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
+use super::config::RaceConfig;
+use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 
 // =============================================================================
 // RACE STATE

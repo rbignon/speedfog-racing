@@ -1,9 +1,9 @@
 //! DLL module - SpeedFog Racing mod
 
-pub mod race_config;
-pub mod race_tracker;
-pub mod race_ui;
-pub mod race_websocket;
+pub mod config;
+pub mod tracker;
+pub mod ui;
+pub mod websocket;
 
 // Re-export tracker for lib.rs
-pub use race_tracker::RaceTracker;
+pub use tracker::RaceTracker;

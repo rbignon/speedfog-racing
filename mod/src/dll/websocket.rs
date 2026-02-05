@@ -12,10 +12,8 @@ use tracing::{debug, error, info, warn};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
-use super::race_config::ServerSettings;
-use crate::core::race_protocol::{
-    ClientMessage, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage,
-};
+use super::config::ServerSettings;
+use crate::core::protocol::{ClientMessage, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage};
 
 // =============================================================================
 // TYPES

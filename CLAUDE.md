@@ -144,15 +144,15 @@ mod/src/
 ├── lib.rs              # DLL entry point
 ├── core/               # Platform-independent types
 │   ├── mod.rs
-│   ├── race_protocol.rs  # WebSocket message types
+│   ├── protocol.rs       # WebSocket message types
 │   ├── map_utils.rs      # Map ID formatting
 │   └── types.rs          # PlayerPosition etc.
 ├── dll/                # Windows-only DLL code
 │   ├── mod.rs
-│   ├── race_config.rs    # TOML config loading
-│   ├── race_tracker.rs   # Main orchestrator
-│   ├── race_ui.rs        # ImGui overlay
-│   └── race_websocket.rs # WebSocket client
+│   ├── config.rs         # TOML config loading
+│   ├── tracker.rs        # Main orchestrator
+│   ├── ui.rs             # ImGui overlay
+│   └── websocket.rs      # WebSocket client
 └── eldenring/          # Game memory reading
     ├── mod.rs
     ├── game_state.rs
