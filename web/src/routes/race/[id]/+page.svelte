@@ -1,94 +1,83 @@
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
 	import { currentUser } from '$lib/stores/auth';
-	import type { RaceDetail, Participant } from '$lib/api';
+	import { raceStore, leaderboard, isConnected, raceInfo, seedInfo } from '$lib/stores/race';
+	import Leaderboard from '$lib/components/Leaderboard.svelte';
+	import RaceStatus from '$lib/components/RaceStatus.svelte';
+	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
+	import type { RaceDetail } from '$lib/api';
 
 	let { data } = $props();
-	let race: RaceDetail = $derived(data.race);
+
+	// Initial data from server-side load
+	let initialRace: RaceDetail = $derived(data.race);
+
+	// Live data from WebSocket (falls back to initial data if not connected)
+	let liveRace = $derived($raceInfo);
+	let liveSeed = $derived($seedInfo);
+	let liveParticipants = $derived($leaderboard);
+	let connected = $derived($isConnected);
+
+	// Use live data if available, otherwise fall back to initial
+	let raceName = $derived(liveRace?.name ?? initialRace.name);
+	let raceStatus = $derived(liveRace?.status ?? initialRace.status);
+	let scheduledStart = $derived(liveRace?.scheduled_start ?? initialRace.scheduled_start);
+	let totalLayers = $derived(liveSeed?.total_layers ?? initialRace.seed_total_layers);
+	let participantCount = $derived(liveParticipants.length || initialRace.participant_count);
+
+	onMount(() => {
+		// Connect to WebSocket for live updates
+		raceStore.connect(initialRace.id);
+	});
+
+	onDestroy(() => {
+		// Disconnect when leaving the page
+		raceStore.disconnect();
+	});
 
 	function isOrganizer(): boolean {
-		return $currentUser?.id === race.organizer.id;
+		return $currentUser?.id === initialRace.organizer.id;
 	}
 
 	function isParticipant(): boolean {
 		if (!$currentUser) return false;
-		return race.participants.some((p) => p.user.id === $currentUser?.id);
-	}
-
-	function formatIgt(ms: number): string {
-		const totalSeconds = Math.floor(ms / 1000);
-		const hours = Math.floor(totalSeconds / 3600);
-		const minutes = Math.floor((totalSeconds % 3600) / 60);
-		const seconds = totalSeconds % 60;
-		if (hours > 0) {
-			return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+		// Check in live participants first, then initial
+		if (liveParticipants.length > 0) {
+			return liveParticipants.some((p) => {
+				// Live participants have twitch_username directly
+				return p.twitch_username === $currentUser?.twitch_username;
+			});
 		}
-		return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+		return initialRace.participants.some((p) => p.user.id === $currentUser?.id);
 	}
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleString();
 	}
-
-	function getSortedParticipants(): Participant[] {
-		return [...race.participants].sort((a, b) => {
-			// Finished players first, sorted by finish time (igt_ms)
-			if (a.status === 'finished' && b.status !== 'finished') return -1;
-			if (b.status === 'finished' && a.status !== 'finished') return 1;
-			if (a.status === 'finished' && b.status === 'finished') {
-				return a.igt_ms - b.igt_ms;
-			}
-			// Then by layer (higher = better)
-			if (a.current_layer !== b.current_layer) {
-				return b.current_layer - a.current_layer;
-			}
-			// Then by IGT (lower = better)
-			return a.igt_ms - b.igt_ms;
-		});
-	}
 </script>
 
 <svelte:head>
-	<title>{race.name} - SpeedFog Racing</title>
+	<title>{raceName} - SpeedFog Racing</title>
 </svelte:head>
 
 <div class="race-page">
 	<aside class="sidebar">
-		<h2>Leaderboard</h2>
-		{#if race.participants.length === 0}
-			<p class="empty">No participants yet</p>
-		{:else}
-			<ol class="leaderboard">
-				{#each getSortedParticipants() as participant, index}
-					<li class="participant" class:finished={participant.status === 'finished'}>
-						<span class="rank">{index + 1}</span>
-						<div class="participant-info">
-							<span class="name">
-								{participant.user.twitch_display_name || participant.user.twitch_username}
-							</span>
-							<span class="stats">
-								Layer {participant.current_layer}
-								{#if race.seed_total_layers}/ {race.seed_total_layers}{/if}
-								• {formatIgt(participant.igt_ms)}
-							</span>
-						</div>
-						{#if participant.status === 'finished'}
-							<span class="finished-badge">✓</span>
-						{/if}
-					</li>
-				{/each}
-			</ol>
-		{/if}
+		<Leaderboard participants={liveParticipants} {totalLayers} />
 	</aside>
 
 	<main class="main-content">
 		<header class="race-header">
 			<div>
-				<h1>{race.name}</h1>
+				<h1>{raceName}</h1>
 				<p class="organizer">
-					Organized by {race.organizer.twitch_display_name || race.organizer.twitch_username}
+					Organized by {initialRace.organizer.twitch_display_name ||
+						initialRace.organizer.twitch_username}
 				</p>
 			</div>
-			<span class="badge badge-{race.status}">{race.status}</span>
+			<div class="header-right">
+				<ConnectionStatus {connected} />
+				<RaceStatus status={raceStatus} {scheduledStart} />
+			</div>
 		</header>
 
 		<div class="dag-placeholder">
@@ -103,31 +92,31 @@
 			<div class="info-grid">
 				<div class="info-item">
 					<span class="label">Seed</span>
-					<span class="value">{race.seed_total_layers || '?'} layers</span>
+					<span class="value">{totalLayers || '?'} layers</span>
 				</div>
 				<div class="info-item">
 					<span class="label">Pool</span>
-					<span class="value">{race.pool_name || 'standard'}</span>
+					<span class="value">{initialRace.pool_name || 'standard'}</span>
 				</div>
 				<div class="info-item">
 					<span class="label">Participants</span>
-					<span class="value">{race.participant_count}</span>
+					<span class="value">{participantCount}</span>
 				</div>
 				<div class="info-item">
 					<span class="label">Created</span>
-					<span class="value">{formatDate(race.created_at)}</span>
+					<span class="value">{formatDate(initialRace.created_at)}</span>
 				</div>
-				{#if race.scheduled_start}
+				{#if scheduledStart}
 					<div class="info-item">
 						<span class="label">Scheduled Start</span>
-						<span class="value">{formatDate(race.scheduled_start)}</span>
+						<span class="value">{formatDate(scheduledStart)}</span>
 					</div>
 				{/if}
 			</div>
 
 			<div class="actions">
 				{#if isOrganizer()}
-					<a href="/race/{race.id}/manage" class="btn btn-primary">Manage Race</a>
+					<a href="/race/{initialRace.id}/manage" class="btn btn-primary">Manage Race</a>
 				{/if}
 				{#if isParticipant() && !isOrganizer()}
 					<span class="participant-note">You are participating in this race</span>
@@ -149,77 +138,6 @@
 		border-right: 1px solid #0f3460;
 		padding: 1.5rem;
 		flex-shrink: 0;
-	}
-
-	.sidebar h2 {
-		color: #9b59b6;
-		margin: 0 0 1rem 0;
-		font-size: 1.1rem;
-	}
-
-	.leaderboard {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.participant {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		padding: 0.75rem;
-		background: #1a1a2e;
-		border-radius: 4px;
-		border: 1px solid #0f3460;
-	}
-
-	.participant.finished {
-		border-color: #27ae60;
-	}
-
-	.rank {
-		width: 24px;
-		height: 24px;
-		background: #0f3460;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 0.8rem;
-		font-weight: bold;
-		flex-shrink: 0;
-	}
-
-	.participant-info {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.name {
-		display: block;
-		font-weight: 500;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.stats {
-		display: block;
-		font-size: 0.8rem;
-		color: #7f8c8d;
-	}
-
-	.finished-badge {
-		color: #27ae60;
-		font-size: 1.2rem;
-	}
-
-	.empty {
-		color: #7f8c8d;
-		font-style: italic;
 	}
 
 	.main-content {
@@ -244,6 +162,13 @@
 	.organizer {
 		margin: 0.25rem 0 0 0;
 		color: #7f8c8d;
+	}
+
+	.header-right {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.5rem;
 	}
 
 	.dag-placeholder {

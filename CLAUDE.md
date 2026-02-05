@@ -95,8 +95,14 @@ npm run format
 web/src/
 ├── lib/
 │   ├── api.ts           # REST API client + types
-│   └── stores/
-│       └── auth.ts      # Auth store (isLoggedIn, currentUser)
+│   ├── websocket.ts     # WebSocket client with reconnect
+│   ├── stores/
+│   │   ├── auth.ts      # Auth store (isLoggedIn, currentUser)
+│   │   └── race.ts      # Race state store (live WebSocket data)
+│   └── components/
+│       ├── Leaderboard.svelte      # Live leaderboard
+│       ├── RaceStatus.svelte       # Status badge + countdown
+│       └── ConnectionStatus.svelte # WebSocket connection indicator
 └── routes/
     ├── +layout.svelte   # Global layout with navbar
     ├── +page.svelte     # Home (race list)
@@ -123,8 +129,8 @@ web/src/
 
 Phase 1 in progress. See `docs/phase1-spec.md` section 7 for step tracking.
 
-**Completed:** Steps 1-8 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server)
-**Next:** Step 9 (WebSocket - Frontend)
+**Completed:** Steps 1-9 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend)
+**Next:** Step 10 (Mod Fork)
 
 ## Related Projects
 

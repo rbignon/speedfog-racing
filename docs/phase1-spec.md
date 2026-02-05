@@ -594,11 +594,11 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] Leaderboard calculation
 - [x] Broadcast to spectators
 
-### Step 9: WebSocket - Frontend
+### Step 9: WebSocket - Frontend ✅
 
-- [ ] WebSocket client with reconnect
-- [ ] Race state store
-- [ ] Live leaderboard component
+- [x] WebSocket client with reconnect
+- [x] Race state store
+- [x] Live leaderboard component
 
 ### Step 10: Mod Fork
 
