@@ -71,6 +71,12 @@ Examples:
         default=None,
         help="Path to speedfog repository (default: SPEEDFOG_PATH env var)",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show speedfog output in real-time",
+    )
     return parser.parse_args()
 
 
@@ -98,11 +104,13 @@ def run_speedfog(
     config_path: Path,
     output_dir: Path,
     game_dir: Path,
+    *,
+    verbose: bool = False,
 ) -> Path | None:
     """Run speedfog to generate a single seed.
 
     Returns the path to the generated seed directory, or None on failure.
-    Output is streamed in real-time to the terminal.
+    If verbose is True, output is streamed in real-time to the terminal.
     """
     try:
         subprocess.run(
@@ -119,6 +127,8 @@ def run_speedfog(
             ],
             cwd=speedfog_path,
             check=True,
+            stdout=None if verbose else subprocess.DEVNULL,
+            stderr=None if verbose else subprocess.DEVNULL,
         )
 
         # Find the generated seed directory (should be a single numeric directory)
@@ -169,7 +179,7 @@ def add_dll_to_config(seed_dir: Path) -> bool:
 
         # Find the external_dlls line and add our DLL
         # Pattern matches: external_dlls = [...]
-        dll_entry = f'    "lib\\\\\\\\{DLL_NAME}",'
+        dll_entry = f'    "lib\\\\{DLL_NAME}",'
 
         # Look for existing external_dlls array
         pattern = r"(external_dlls\s*=\s*\[)([^\]]*?)(\])"
@@ -308,7 +318,11 @@ def main() -> int:
 
             # Generate seed
             seed_dir = run_speedfog(
-                speedfog_path, pool_config, temp_path, args.game_dir
+                speedfog_path,
+                pool_config,
+                temp_path,
+                args.game_dir,
+                verbose=args.verbose,
             )
             if seed_dir is None:
                 print("  Failed: speedfog generation error")
