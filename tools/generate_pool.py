@@ -102,6 +102,7 @@ def run_speedfog(
     """Run speedfog to generate a single seed.
 
     Returns the path to the generated seed directory, or None on failure.
+    Output is streamed in real-time to the terminal.
     """
     try:
         subprocess.run(
@@ -117,8 +118,6 @@ def run_speedfog(
                 str(game_dir),
             ],
             cwd=speedfog_path,
-            capture_output=True,
-            text=True,
             check=True,
         )
 
@@ -131,11 +130,7 @@ def run_speedfog(
         return None
 
     except subprocess.CalledProcessError as e:
-        print(f"  Error running speedfog: {e}")
-        if e.stdout:
-            print(f"  stdout: {e.stdout}")
-        if e.stderr:
-            print(f"  stderr: {e.stderr}")
+        print(f"  Error running speedfog (exit code {e.returncode})")
         return None
 
 
