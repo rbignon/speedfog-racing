@@ -272,12 +272,12 @@ WS /ws/mod/{race_id}
 # Ready signal
 -> { "type": "ready" }
 
-# Status updates (periodic)
+# Status updates (periodic, every ~1 sec)
 -> { "type": "status_update",
      "igt_ms": 123456,
      "current_zone": "zone_id",
-     "current_layer": 3,
      "death_count": 5 }
+     # Note: current_layer removed - server computes from zone_entered
 
 # Zone change
 -> { "type": "zone_entered",
@@ -291,6 +291,9 @@ WS /ws/mod/{race_id}
 # Server broadcasts
 <- { "type": "race_start" }
 <- { "type": "leaderboard_update", "participants": [...] }
+     # Participants pre-sorted: finished (by IGT asc), then playing (by layer desc)
+<- { "type": "race_status_change", "status": "running" }
+<- { "type": "player_update", "player": {...} }  # Single player optimization
 ```
 
 ### 3.2 Spectator Connection
@@ -394,8 +397,8 @@ pub enum ClientMessage {
     StatusUpdate {
         igt_ms: u32,
         current_zone: String,
-        current_layer: u8,
         death_count: u32,
+        // Note: current_layer removed - server computes from zone_entered events
     },
     ZoneEntered {
         from_zone: String,
@@ -411,15 +414,60 @@ pub enum ServerMessage {
     AuthOk { race: RaceInfo, seed: SeedInfo, participants: Vec<Participant> },
     AuthError { message: String },
     RaceStart,
-    LeaderboardUpdate { participants: Vec<Participant> },
+    LeaderboardUpdate { participants: Vec<Participant> },  // Pre-sorted by server
+    RaceStatusChange { status: String },
+    PlayerUpdate { player: Participant },
 }
 ```
 
 **Overlay (Phase 1 - minimal):**
 
-- Zone name + IGT
-- Connection status
-- Basic leaderboard (name + layer)
+- Zone name + IGT + death count
+- Connection status indicator
+- Basic leaderboard (name + layer + status)
+- F9 hotkey to toggle visibility
+
+### 5.4 Hotkey System
+
+The mod must implement keyboard input handling for the F9 toggle:
+
+```rust
+// Required functionality:
+// 1. Read keyboard state each frame
+// 2. Detect F9 key press (with debounce to avoid rapid toggling)
+// 3. Toggle show_ui boolean
+// 4. Respect the configured key from config.keybindings.toggle_ui
+
+// Can be ported from upstream er-fog-vizu/mod hotkey.rs
+```
+
+### 5.5 Zone Change Detection
+
+The mod must track zone changes properly:
+
+```rust
+// Required functionality:
+// 1. Store previous_zone on each frame
+// 2. When current_zone != previous_zone:
+//    - Send zone_entered { from_zone: previous_zone, to_zone: current_zone, igt_ms }
+//    - Update previous_zone = current_zone
+// 3. Initialize previous_zone on first zone read (don't send zone_entered for initial zone)
+```
+
+### 5.6 Race Finish Detection
+
+The mod must detect when the player completes the race:
+
+```rust
+// Phase 1 approach (simple):
+// - Detect when player enters a designated "finish zone" (configurable or from seed info)
+// - Or: detect specific game event (boss defeat animation/flag)
+//
+// Send: finished { igt_ms }
+// Then stop sending status_update (or mark as finished locally)
+```
+
+**Note:** Exact finish detection mechanism TBD based on what's readable from game memory. May require Phase 2 custom EMEVD events for precise detection.
 
 ### 5.3 Config
 
@@ -600,12 +648,15 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] Race state store
 - [x] Live leaderboard component
 
-### Step 10: Mod Fork
+### Step 10: Mod Fork ✅ (partial)
 
-- [ ] Fork er-fog-vizu/mod
-- [ ] Strip launcher code
-- [ ] Adapt protocol
-- [ ] Basic overlay (zone + IGT + leaderboard)
+- [x] Fork er-fog-vizu/mod
+- [x] Strip launcher code
+- [x] Adapt protocol
+- [x] Basic overlay (zone + IGT + leaderboard)
+- [ ] **Hotkey system** - Port hotkey.rs from upstream, implement F9 toggle
+- [ ] **Zone change tracking** - Send zone_entered with proper from_zone
+- [ ] **Race finish detection** - Send finished message (mechanism TBD)
 - [ ] Build and test injection
 
 ### Step 11: Integration Testing

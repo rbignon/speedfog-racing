@@ -162,13 +162,14 @@ mod/src/
 
 ### Protocol
 
-The mod communicates with the server via WebSocket at `/ws/mod/{race_id}`:
+The mod communicates with the server via WebSocket at `/ws/mod/{race_id}`.
+See `docs/PROTOCOL.md` for complete reference.
 
 **Client → Server:**
 
 - `auth { mod_token }` - authenticate
 - `ready` - player ready to race
-- `status_update { igt_ms, current_zone, current_layer, death_count }` - periodic update
+- `status_update { igt_ms, current_zone, death_count }` - periodic update (layer computed server-side)
 - `zone_entered { from_zone, to_zone, igt_ms }` - zone change
 - `finished { igt_ms }` - race complete
 
@@ -177,20 +178,23 @@ The mod communicates with the server via WebSocket at `/ws/mod/{race_id}`:
 - `auth_ok { race, seed, participants }` - authentication success
 - `auth_error { message }` - authentication failed
 - `race_start` - race has begun
-- `leaderboard_update { participants }` - updated standings
+- `leaderboard_update { participants }` - updated standings (pre-sorted)
 - `race_status_change { status }` - race state changed
+- `player_update { player }` - single player update
 
 ## Documentation
 
 - `docs/2026-02-04-speedfog-racing-design.md` - Overall design
 - `docs/phase1-spec.md` - Phase 1 MVP detailed spec
+- `docs/PROTOCOL.md` - API and WebSocket protocol reference
 
 ## Current State
 
 Phase 1 in progress. See `docs/phase1-spec.md` section 7 for step tracking.
 
-**Completed:** Steps 1-10 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork)
-**Next:** Step 11 (Integration Testing)
+**Completed:** Steps 1-9 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend)
+**In Progress:** Step 10 (Mod Fork) - basic structure done, missing: hotkey system, zone_entered tracking, finished detection
+**Next:** Complete Step 10, then Step 11 (Integration Testing)
 
 ## Related Projects
 

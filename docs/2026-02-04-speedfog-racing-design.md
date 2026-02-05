@@ -208,12 +208,12 @@ Rust Mod <--WebSocket--> FastAPI Server <--WebSocket--> Svelte Frontend
 // Player ready (connected, in game)
 { type: "ready" }
 
-// Periodic update (every ~2-5 sec)
+// Periodic update (every ~1 sec)
 { type: "status_update",
   igt_ms: 123456,
   current_zone: "altus_sagescave",
-  current_layer: 3,
   death_count: 7 }
+// Note: current_layer removed - server computes from zone_entered events
 
 // Fog gate traversal
 { type: "zone_entered",
@@ -238,10 +238,11 @@ Rust Mod <--WebSocket--> FastAPI Server <--WebSocket--> Svelte Frontend
 { type: "race_start" }
 
 // Leaderboard update (broadcast to all mods)
+// Pre-sorted: finished first (by IGT asc), then playing (by layer desc)
 { type: "leaderboard_update",
   participants: [
-    { name: "Player1", layer: 8, igt_ms: null, death_count: 3, finished: false },
-    { name: "Player2", layer: 6, igt_ms: 654321, death_count: 5, finished: true }
+    { name: "Player2", layer: 6, igt_ms: 654321, death_count: 5, status: "finished" },
+    { name: "Player1", layer: 8, igt_ms: null, death_count: 3, status: "playing" }
   ]}
 ```
 
@@ -629,16 +630,53 @@ async def generate_player_zips(race: Race) -> dict[UUID, Path]:
 
 ### Phase 2: Complete Experience
 
-| Component    | Tasks                                        |
-| ------------ | -------------------------------------------- |
-| **Frontend** | Horizontal DAG visualization                 |
-| **Frontend** | OBS overlays (dag + leaderboard)             |
-| **Frontend** | Multi-pools with selection                   |
-| **Mod**      | Full overlay (leaderboard, exits, countdown) |
-| **Server**   | Admin dashboard (seed stats)                 |
-| **Server**   | Synchronized countdown                       |
+| Component    | Tasks                                         |
+| ------------ | --------------------------------------------- |
+| **Frontend** | Horizontal DAG visualization                  |
+| **Frontend** | OBS overlays (dag + leaderboard)              |
+| **Frontend** | Multi-pools with selection                    |
+| **Mod**      | Full overlay (exits section, countdown)       |
+| **Mod**      | Debug overlay (optional, for troubleshooting) |
+| **Mod**      | Template system for status display            |
+| **Server**   | Admin dashboard (seed stats)                  |
+| **Server**   | Synchronized countdown                        |
+| **Server**   | Server-computed zone info (see below)         |
 
 **Result:** Complete viewing experience for casters
+
+#### Phase 2: Server-Side Zone/Exit Computation
+
+**Design Decision:** The server computes and sends zone/exit information rather than the mod reading `graph.json` locally.
+
+**Rationale:**
+
+1. **Anti-spoiler:** `graph.json` can be removed from player zips, preventing players from reading the file to learn the map layout
+2. **Simpler mod:** Mod becomes a "dumb display" with no graph parsing logic
+3. **Consistency:** Server already tracks player state via `zone_entered` messages
+4. **Flexibility:** Server can control what information to reveal (e.g., hide undiscovered exits based on race settings)
+
+**Protocol Extension:**
+
+```json
+{
+  "type": "zone_info",
+  "current_zone": {
+    "name": "Altus Sagescave",
+    "layer": 8
+  },
+  "exits": [
+    { "name": "Caelid Gaol Cave", "direction": "origin", "discovered": true },
+    { "name": "???", "direction": "forward", "discovered": false }
+  ]
+}
+```
+
+**Implications:**
+
+- Server must track which zones each player has discovered
+- Server computes layer from the traversal graph
+- `graph.json` removed from player zips (kept only in seed pool for server use)
+- Mod displays exits as received, no local computation
 
 ### Phase 3: Polish and Advanced Features
 
