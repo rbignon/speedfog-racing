@@ -1,9 +1,11 @@
 """Integration tests for complete race flow."""
 
+import io
 import json
 import os
 import tempfile
 import uuid
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -504,3 +506,56 @@ def test_unknown_message_type_ignored(integration_client, race_with_participants
         mod.send_ready()
         response = mod.receive()
         assert response["type"] == "leaderboard_update"
+
+
+# =============================================================================
+# Scenario 3: Zip Generation Verification
+# =============================================================================
+
+
+def test_zip_contains_player_specific_config(integration_client, race_with_participants):
+    """Test that each player's zip contains their specific config with correct mod_token.
+
+    This verifies the full API flow:
+    1. Zips are generated via API
+    2. Each player can download their zip
+    3. The zip contains speedfog_race.toml with their unique mod_token and race_id
+    """
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    # Zips were already generated in the fixture, get download URLs
+    race_response = integration_client.get(f"/api/races/{race_id}")
+    assert race_response.status_code == 200
+
+    # Download and verify each player's zip
+    for player_data in players:
+        mod_token = player_data["mod_token"]
+        username = player_data["user"].twitch_username
+
+        # Download the zip using mod_token
+        download_response = integration_client.get(f"/api/races/{race_id}/download/{mod_token}")
+        assert download_response.status_code == 200, f"Failed to download zip for {username}"
+        assert download_response.headers["content-type"] == "application/zip"
+
+        # Extract and verify the config file
+        zip_content = io.BytesIO(download_response.content)
+        with zipfile.ZipFile(zip_content, "r") as zf:
+            # Find the config file (speedfog_race.toml)
+            config_files = [n for n in zf.namelist() if n.endswith("speedfog_race.toml")]
+            assert len(config_files) == 1, f"Expected 1 config file, found {config_files}"
+
+            config_content = zf.read(config_files[0]).decode("utf-8")
+
+            # Verify the config contains this player's unique mod_token
+            assert mod_token in config_content, (
+                f"Config for {username} should contain their mod_token"
+            )
+
+            # Verify the config contains the race_id
+            assert race_id in config_content, f"Config for {username} should contain the race_id"
+
+            # Verify basic TOML structure
+            assert "[server]" in config_content
+            assert "[overlay]" in config_content
+            assert "[keybindings]" in config_content
