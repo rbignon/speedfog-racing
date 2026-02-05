@@ -198,7 +198,7 @@ export async function fetchRace(id: string): Promise<RaceDetail> {
  * Fetch pool statistics (available/consumed seeds per pool).
  */
 export async function fetchPoolStats(): Promise<PoolStats> {
-  const response = await fetch(`${API_BASE}/admin/pools`, {
+  const response = await fetch(`${API_BASE}/pools`, {
     headers: getAuthHeaders(),
   });
   return handleResponse<PoolStats>(response);
