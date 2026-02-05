@@ -4,6 +4,7 @@ import enum
 import secrets
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSON, UUID
@@ -80,7 +81,7 @@ class Seed(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     seed_number: Mapped[int] = mapped_column(Integer, nullable=False)
     pool_name: Mapped[str] = mapped_column(String(50), nullable=False)  # "standard", "sprint"
-    graph_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    graph_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     total_layers: Mapped[int] = mapped_column(Integer, nullable=False)
     folder_path: Mapped[str] = mapped_column(String(500), nullable=False)
     status: Mapped[SeedStatus] = mapped_column(Enum(SeedStatus), default=SeedStatus.AVAILABLE)
@@ -104,7 +105,7 @@ class Race(Base):
         UUID(as_uuid=True), ForeignKey("seeds.id"), nullable=True
     )
     status: Mapped[RaceStatus] = mapped_column(Enum(RaceStatus), default=RaceStatus.DRAFT)
-    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     scheduled_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

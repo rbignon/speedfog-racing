@@ -134,7 +134,7 @@ async def get_me(
 async def logout(
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> dict[str, str]:
     """Regenerate API token to invalidate current sessions."""
     from speedfog_racing.auth import generate_token
 

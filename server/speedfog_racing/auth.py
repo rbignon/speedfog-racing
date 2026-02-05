@@ -55,7 +55,8 @@ async def exchange_code_for_token(code: str) -> str | None:
             },
         )
         if resp.status_code == 200:
-            return resp.json().get("access_token")
+            token: str | None = resp.json().get("access_token")
+            return token
         return None
 
 

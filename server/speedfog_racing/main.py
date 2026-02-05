@@ -70,7 +70,7 @@ app.include_router(api_router, prefix="/api")
 
 
 @app.get("/health")
-async def health_check() -> dict:
+async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok", "version": __version__}
 
