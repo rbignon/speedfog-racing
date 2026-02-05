@@ -2,17 +2,19 @@
 
 import argparse
 import logging
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from speedfog_racing import __version__
 from speedfog_racing.api import api_router
 from speedfog_racing.config import settings
-from speedfog_racing.database import get_db_context, init_db
+from speedfog_racing.database import async_session_maker, get_db_context, init_db
 from speedfog_racing.services import scan_pool
+from speedfog_racing.websocket import handle_mod_websocket, handle_spectator_websocket
 
 # Configure logging
 logging.basicConfig(
@@ -71,6 +73,23 @@ app.include_router(api_router, prefix="/api")
 async def health_check() -> dict:
     """Health check endpoint."""
     return {"status": "ok", "version": __version__}
+
+
+# WebSocket routes
+
+
+@app.websocket("/ws/mod/{race_id}")
+async def websocket_mod(websocket: WebSocket, race_id: uuid.UUID) -> None:
+    """WebSocket endpoint for mod connections."""
+    async with async_session_maker() as db:
+        await handle_mod_websocket(websocket, race_id, db)
+
+
+@app.websocket("/ws/race/{race_id}")
+async def websocket_spectator(websocket: WebSocket, race_id: uuid.UUID) -> None:
+    """WebSocket endpoint for spectator connections."""
+    async with async_session_maker() as db:
+        await handle_spectator_websocket(websocket, race_id, db)
 
 
 def main() -> None:

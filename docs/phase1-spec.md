@@ -587,12 +587,12 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] Race detail page
 - [x] Manage page (add participants)
 
-### Step 8: WebSocket - Server
+### Step 8: WebSocket - Server ✅
 
-- [ ] Connection manager
-- [ ] Mod handler (auth, status updates)
-- [ ] Leaderboard calculation
-- [ ] Broadcast to spectators
+- [x] Connection manager
+- [x] Mod handler (auth, status updates)
+- [x] Leaderboard calculation
+- [x] Broadcast to spectators
 
 ### Step 9: WebSocket - Frontend
 

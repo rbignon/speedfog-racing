@@ -48,7 +48,11 @@ server/speedfog_racing/
 │   ├── auth.py      # /api/auth/*
 │   ├── races.py     # /api/races/*
 │   └── users.py     # /api/users/*
-├── websocket/       # WebSocket handlers (not yet implemented)
+├── websocket/       # WebSocket handlers
+│   ├── manager.py   # Connection manager for race rooms
+│   ├── mod.py       # Mod WebSocket handler
+│   ├── spectator.py # Spectator WebSocket handler
+│   └── schemas.py   # WebSocket message schemas
 ├── services/        # Business logic
 │   ├── seed.py      # Seed pool management
 │   └── zip_service.py # Zip generation for participants
@@ -119,8 +123,8 @@ web/src/
 
 Phase 1 in progress. See `docs/phase1-spec.md` section 7 for step tracking.
 
-**Completed:** Steps 1-7 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI)
-**Next:** Step 8 (WebSocket - Server)
+**Completed:** Steps 1-8 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server)
+**Next:** Step 9 (WebSocket - Frontend)
 
 ## Related Projects
 
