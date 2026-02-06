@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { login } from '$lib/stores/auth';
+	import { auth } from '$lib/stores/auth.svelte';
 
 	let { data } = $props();
 
 	onMount(async () => {
 		if (data.token) {
-			const success = await login(data.token);
+			const success = await auth.login(data.token);
 			if (success) {
 				goto('/');
 			} else {

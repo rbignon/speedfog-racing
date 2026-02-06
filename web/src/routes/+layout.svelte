@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { initAuth, currentUser, isLoggedIn, isLoading, logout } from '$lib/stores/auth';
+	import { auth } from '$lib/stores/auth.svelte';
 	import { getTwitchLoginUrl } from '$lib/api';
 
 	let { children } = $props();
 
 	onMount(() => {
-		initAuth();
+		auth.init();
 	});
 </script>
 
@@ -15,17 +15,17 @@
 		<div class="header-content">
 			<a href="/" class="logo">SpeedFog Racing</a>
 			<nav>
-				{#if $isLoading}
+				{#if auth.loading}
 					<span class="loading">Loading...</span>
-				{:else if $isLoggedIn}
+				{:else if auth.isLoggedIn}
 					<span class="user-info">
-						{#if $currentUser?.twitch_avatar_url}
-							<img src={$currentUser.twitch_avatar_url} alt="" class="avatar" />
+						{#if auth.user?.twitch_avatar_url}
+							<img src={auth.user.twitch_avatar_url} alt="" class="avatar" />
 						{/if}
-						<span>{$currentUser?.twitch_display_name || $currentUser?.twitch_username}</span>
+						<span>{auth.user?.twitch_display_name || auth.user?.twitch_username}</span>
 					</span>
 					<a href="/race/new" class="btn btn-primary">Create Race</a>
-					<button onclick={() => logout()} class="btn btn-secondary">Logout</button>
+					<button onclick={() => auth.logout()} class="btn btn-secondary">Logout</button>
 				{:else}
 					<a href={getTwitchLoginUrl()} class="btn btn-twitch">Login with Twitch</a>
 				{/if}

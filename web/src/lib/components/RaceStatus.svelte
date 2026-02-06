@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-
 	interface Props {
 		status: string;
 		scheduledStart?: string | null;
@@ -9,7 +7,6 @@
 	let { status, scheduledStart = null }: Props = $props();
 
 	let countdown = $state<string | null>(null);
-	let interval: ReturnType<typeof setInterval> | null = null;
 
 	function updateCountdown() {
 		if (!scheduledStart || status !== 'countdown') {
@@ -37,15 +34,10 @@
 		}
 	}
 
-	onMount(() => {
+	$effect(() => {
 		updateCountdown();
-		interval = setInterval(updateCountdown, 1000);
-	});
-
-	onDestroy(() => {
-		if (interval) {
-			clearInterval(interval);
-		}
+		const interval = setInterval(updateCountdown, 1000);
+		return () => clearInterval(interval);
 	});
 
 	function getStatusLabel(s: string): string {

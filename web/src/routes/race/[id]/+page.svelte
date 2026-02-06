@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	import { currentUser } from '$lib/stores/auth';
-	import { raceStore, leaderboard, isConnected, raceInfo, seedInfo } from '$lib/stores/race';
+	import { auth } from '$lib/stores/auth.svelte';
+	import { raceStore } from '$lib/stores/race.svelte';
 	import Leaderboard from '$lib/components/Leaderboard.svelte';
 	import RaceStatus from '$lib/components/RaceStatus.svelte';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
@@ -13,10 +12,10 @@
 	let initialRace: RaceDetail = $derived(data.race);
 
 	// Live data from WebSocket (falls back to initial data if not connected)
-	let liveRace = $derived($raceInfo);
-	let liveSeed = $derived($seedInfo);
-	let liveParticipants = $derived($leaderboard);
-	let connected = $derived($isConnected);
+	let liveRace = $derived(raceStore.race);
+	let liveSeed = $derived(raceStore.seed);
+	let liveParticipants = $derived(raceStore.leaderboard);
+	let connected = $derived(raceStore.connected);
 
 	// Use live data if available, otherwise fall back to initial
 	let raceName = $derived(liveRace?.name ?? initialRace.name);
@@ -25,30 +24,30 @@
 	let totalLayers = $derived(liveSeed?.total_layers ?? initialRace.seed_total_layers);
 	let participantCount = $derived(liveParticipants.length || initialRace.participant_count);
 
-	onMount(() => {
+	$effect(() => {
 		// Connect to WebSocket for live updates
 		raceStore.connect(initialRace.id);
-	});
 
-	onDestroy(() => {
-		// Disconnect when leaving the page
-		raceStore.disconnect();
+		return () => {
+			// Disconnect when leaving the page
+			raceStore.disconnect();
+		};
 	});
 
 	function isOrganizer(): boolean {
-		return $currentUser?.id === initialRace.organizer.id;
+		return auth.user?.id === initialRace.organizer.id;
 	}
 
 	function isParticipant(): boolean {
-		if (!$currentUser) return false;
+		if (!auth.user) return false;
 		// Check in live participants first, then initial
 		if (liveParticipants.length > 0) {
 			return liveParticipants.some((p) => {
 				// Live participants have twitch_username directly
-				return p.twitch_username === $currentUser?.twitch_username;
+				return p.twitch_username === auth.user?.twitch_username;
 			});
 		}
-		return initialRace.participants.some((p) => p.user.id === $currentUser?.id);
+		return initialRace.participants.some((p) => p.user.id === auth.user?.id);
 	}
 
 	function formatDate(dateStr: string): string {

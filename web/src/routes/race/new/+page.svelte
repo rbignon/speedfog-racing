@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { isLoggedIn, isInitialized } from '$lib/stores/auth';
+	import { auth } from '$lib/stores/auth.svelte';
 	import { createRace, fetchPoolStats, type PoolStats } from '$lib/api';
-	import { get } from 'svelte/store';
 
 	let name = $state('');
 	let poolName = $state('standard');
@@ -13,11 +12,11 @@
 	let authChecked = $state(false);
 
 	$effect(() => {
-		if (get(isInitialized) && !authChecked) {
+		if (auth.initialized && !authChecked) {
 			authChecked = true;
 
 			// Redirect if not logged in
-			if (!get(isLoggedIn)) {
+			if (!auth.isLoggedIn) {
 				goto('/');
 				return;
 			}

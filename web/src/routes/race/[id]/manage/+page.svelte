@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { currentUser, isInitialized } from '$lib/stores/auth';
-	import { get } from 'svelte/store';
+	import { auth } from '$lib/stores/auth.svelte';
 	import {
 		addParticipant,
 		removeParticipant,
@@ -28,10 +27,9 @@
 	let scheduledStart = $state('');
 
 	$effect(() => {
-		if (get(isInitialized) && !authChecked) {
+		if (auth.initialized && !authChecked) {
 			authChecked = true;
-			const user = get(currentUser);
-			if (!user || user.id !== race.organizer.id) {
+			if (!auth.user || auth.user.id !== race.organizer.id) {
 				goto(`/race/${race.id}`);
 			} else {
 				authorized = true;

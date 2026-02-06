@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { fetchRaces, type Race } from '$lib/api';
 
 	let races: Race[] = $state([]);
@@ -9,7 +9,7 @@
 
 	onMount(async () => {
 		// Check for error in URL
-		const error = $page.url.searchParams.get('error');
+		const error = page.url.searchParams.get('error');
 		if (error) {
 			errorMessage = getErrorMessage(error);
 			// Clear error from URL
