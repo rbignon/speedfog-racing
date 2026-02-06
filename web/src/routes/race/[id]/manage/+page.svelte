@@ -4,12 +4,14 @@
 	import {
 		addParticipant,
 		removeParticipant,
+		removeCaster,
 		generateSeedPacks,
 		startRace,
 		fetchRace,
 		type RaceDetail,
 		type DownloadInfo
 	} from '$lib/api';
+	import ParticipantSearch from '$lib/components/ParticipantSearch.svelte';
 
 	let { data } = $props();
 	let race: RaceDetail = $state(data.race);
@@ -23,6 +25,7 @@
 	let error = $state<string | null>(null);
 	let success = $state<string | null>(null);
 	let downloads = $state<DownloadInfo[]>([]);
+	let showCasterSearch = $state(false);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -113,6 +116,27 @@
 		}
 	}
 
+	async function handleRemoveCaster(casterId: string, username: string) {
+		if (!confirm(`Remove caster ${username}?`)) return;
+
+		error = null;
+		success = null;
+
+		try {
+			await removeCaster(race.id, casterId);
+			success = `Removed caster ${username}.`;
+			race = await fetchRace(race.id);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to remove caster.';
+		}
+	}
+
+	async function handleCasterAdded() {
+		showCasterSearch = false;
+		race = await fetchRace(race.id);
+		success = 'Caster added.';
+	}
+
 	function canStartRace(): boolean {
 		return race.status === 'draft' || race.status === 'open';
 	}
@@ -182,6 +206,48 @@
 						</li>
 					{/each}
 				</ul>
+			{/if}
+		</section>
+
+		<section class="section">
+			<h2>Casters ({race.casters.length})</h2>
+			{#if race.casters.length === 0}
+				<p class="empty">No casters yet.</p>
+			{:else}
+				<ul class="participant-list">
+					{#each race.casters as caster (caster.id)}
+						<li class="participant-item">
+							<div class="participant-info">
+								{#if caster.user.twitch_avatar_url}
+									<img src={caster.user.twitch_avatar_url} alt="" class="avatar" />
+								{/if}
+								<span>
+									{caster.user.twitch_display_name || caster.user.twitch_username}
+								</span>
+							</div>
+							<button
+								class="btn btn-danger btn-small"
+								onclick={() => handleRemoveCaster(caster.id, caster.user.twitch_username)}
+							>
+								Remove
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+
+			{#if showCasterSearch}
+				<div class="caster-search">
+					<ParticipantSearch mode="caster" raceId={race.id} onAdded={handleCasterAdded} />
+				</div>
+			{:else}
+				<button
+					class="btn btn-secondary"
+					style="margin-top: 0.75rem"
+					onclick={() => (showCasterSearch = true)}
+				>
+					+ Add
+				</button>
 			{/if}
 		</section>
 
@@ -362,6 +428,10 @@
 
 	.downloads li {
 		padding: 0.25rem 0;
+	}
+
+	.caster-search {
+		margin-top: 0.75rem;
 	}
 
 	.loading {
