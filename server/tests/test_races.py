@@ -514,13 +514,13 @@ async def test_cannot_start_already_started_race(test_client, organizer, seed):
 
 
 # =============================================================================
-# Zip Generation Tests
+# Seed Pack Generation Tests
 # =============================================================================
 
 
 @pytest.mark.asyncio
-async def test_generate_zips_requires_auth(test_client, organizer, seed):
-    """Generate zips requires authentication."""
+async def test_generate_seed_packs_requires_auth(test_client, organizer, seed):
+    """Generate seed packs requires authentication."""
     async with test_client as client:
         # Create race
         create_response = await client.post(
@@ -531,13 +531,13 @@ async def test_generate_zips_requires_auth(test_client, organizer, seed):
         race_id = create_response.json()["id"]
 
         # Try without auth
-        response = await client.post(f"/api/races/{race_id}/generate-zips")
+        response = await client.post(f"/api/races/{race_id}/generate-seed-packs")
         assert response.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_generate_zips_requires_organizer(test_client, organizer, player, seed):
-    """Generate zips requires being the organizer."""
+async def test_generate_seed_packs_requires_organizer(test_client, organizer, player, seed):
+    """Generate seed packs requires being the organizer."""
     async with test_client as client:
         # Create race
         create_response = await client.post(
@@ -549,15 +549,15 @@ async def test_generate_zips_requires_organizer(test_client, organizer, player, 
 
         # Try as non-organizer
         response = await client.post(
-            f"/api/races/{race_id}/generate-zips",
+            f"/api/races/{race_id}/generate-seed-packs",
             headers={"Authorization": f"Bearer {player.api_token}"},
         )
         assert response.status_code == 403
 
 
 @pytest.mark.asyncio
-async def test_generate_zips_no_participants(test_client, organizer, seed):
-    """Generate zips fails if no participants."""
+async def test_generate_seed_packs_no_participants(test_client, organizer, seed):
+    """Generate seed packs fails if no participants."""
     async with test_client as client:
         # Create race without participants
         create_response = await client.post(
@@ -568,7 +568,7 @@ async def test_generate_zips_no_participants(test_client, organizer, seed):
         race_id = create_response.json()["id"]
 
         response = await client.post(
-            f"/api/races/{race_id}/generate-zips",
+            f"/api/races/{race_id}/generate-seed-packs",
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         assert response.status_code == 400
@@ -576,13 +576,13 @@ async def test_generate_zips_no_participants(test_client, organizer, seed):
 
 
 @pytest.mark.asyncio
-async def test_generate_zips_success(
+async def test_generate_seed_packs_success(
     test_client, organizer, player, seed_with_folder, seed_folder_context
 ):
-    """Generate zips succeeds with participants."""
+    """Generate seed packs succeeds with participants."""
     with tempfile.TemporaryDirectory() as output_dir:
-        with patch("speedfog_racing.services.zip_service.settings") as mock_settings:
-            mock_settings.zips_output_dir = output_dir
+        with patch("speedfog_racing.services.seed_pack_service.settings") as mock_settings:
+            mock_settings.seed_packs_output_dir = output_dir
             mock_settings.websocket_url = "ws://test:8000"
 
             async with test_client as client:
@@ -601,9 +601,9 @@ async def test_generate_zips_success(
                     headers={"Authorization": f"Bearer {organizer.api_token}"},
                 )
 
-                # Generate zips
+                # Generate seed packs
                 response = await client.post(
-                    f"/api/races/{race_id}/generate-zips",
+                    f"/api/races/{race_id}/generate-seed-packs",
                     headers={"Authorization": f"Bearer {organizer.api_token}"},
                 )
 
@@ -616,8 +616,8 @@ async def test_generate_zips_success(
 
 
 @pytest.mark.asyncio
-async def test_download_zip_invalid_token(test_client, organizer, seed):
-    """Download zip returns 404 for invalid token."""
+async def test_download_seed_pack_invalid_token(test_client, organizer, seed):
+    """Download seed pack returns 404 for invalid token."""
     async with test_client as client:
         # Create race
         create_response = await client.post(
@@ -633,8 +633,8 @@ async def test_download_zip_invalid_token(test_client, organizer, seed):
 
 
 @pytest.mark.asyncio
-async def test_download_zip_not_generated(test_client, organizer, player, seed):
-    """Download zip returns 404 if zips not generated yet."""
+async def test_download_seed_pack_not_generated(test_client, organizer, player, seed):
+    """Download seed pack returns 404 if seed packs not generated yet."""
     async with test_client as client:
         # Create race and add participant
         create_response = await client.post(
@@ -657,13 +657,13 @@ async def test_download_zip_not_generated(test_client, organizer, player, seed):
 
 
 @pytest.mark.asyncio
-async def test_download_zip_success(
+async def test_download_seed_pack_success(
     test_client, organizer, player, seed_with_folder, seed_folder_context, async_session
 ):
-    """Download zip succeeds after generation."""
+    """Download seed pack succeeds after generation."""
     with tempfile.TemporaryDirectory() as output_dir:
-        with patch("speedfog_racing.services.zip_service.settings") as mock_settings:
-            mock_settings.zips_output_dir = output_dir
+        with patch("speedfog_racing.services.seed_pack_service.settings") as mock_settings:
+            mock_settings.seed_packs_output_dir = output_dir
             mock_settings.websocket_url = "ws://test:8000"
 
             async with test_client as client:
@@ -682,14 +682,14 @@ async def test_download_zip_success(
                     headers={"Authorization": f"Bearer {organizer.api_token}"},
                 )
 
-                # Generate zips
+                # Generate seed packs
                 gen_response = await client.post(
-                    f"/api/races/{race_id}/generate-zips",
+                    f"/api/races/{race_id}/generate-seed-packs",
                     headers={"Authorization": f"Bearer {organizer.api_token}"},
                 )
                 download_url = gen_response.json()["downloads"][0]["url"]
 
-                # Download zip
+                # Download seed pack
                 response = await client.get(download_url)
                 assert response.status_code == 200
                 assert response.headers["content-type"] == "application/zip"

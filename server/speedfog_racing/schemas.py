@@ -135,14 +135,14 @@ class AcceptInviteResponse(BaseModel):
 
 
 class DownloadInfo(BaseModel):
-    """Download information for a participant's zip."""
+    """Download information for a participant's seed pack."""
 
     participant_id: UUID
     twitch_username: str
     url: str
 
 
-class GenerateZipsResponse(BaseModel):
-    """Response when generating zips for a race."""
+class GenerateSeedPacksResponse(BaseModel):
+    """Response when generating seed packs for a race."""
 
     downloads: list[DownloadInfo]

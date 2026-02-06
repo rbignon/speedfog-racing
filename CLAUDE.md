@@ -55,7 +55,7 @@ server/speedfog_racing/
 │   └── schemas.py   # WebSocket message schemas
 ├── services/        # Business logic
 │   ├── seed.py      # Seed pool management
-│   └── zip_service.py # Zip generation for participants
+│   └── seed_pack_service.py # Seed pack generation for participants
 └── schemas.py       # Pydantic schemas for API responses
 ```
 
@@ -111,7 +111,7 @@ web/src/
         ├── new/         # Create race form
         └── [id]/
             ├── +page    # Race detail (spectator view)
-            └── manage/  # Admin page (participants, zips, start)
+            └── manage/  # Admin page (participants, seed packs, start)
 ```
 
 ### Conventions
@@ -192,7 +192,7 @@ See `docs/PROTOCOL.md` for complete reference.
 
 Phase 1 in progress. See `docs/phase1-spec.md` section 7 for step tracking.
 
-**Completed:** Steps 1-12 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Zip Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork, Integration Testing, Protocol Coherence & Frontend Gaps)
+**Completed:** Steps 1-12 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Seed Pack Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork, Integration Testing, Protocol Coherence & Frontend Gaps)
 **Next:** Phase 1 complete. Phase 2 planning.
 
 ## Related Projects

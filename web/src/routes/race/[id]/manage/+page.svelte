@@ -5,7 +5,7 @@
 	import {
 		addParticipant,
 		removeParticipant,
-		generateZips,
+		generateSeedPacks,
 		startRace,
 		fetchRace,
 		type RaceDetail,
@@ -19,7 +19,7 @@
 	let authChecked = $state(false);
 	let newUsername = $state('');
 	let addingParticipant = $state(false);
-	let generatingZips = $state(false);
+	let generatingSeedPacks = $state(false);
 	let startingRace = $state(false);
 	let error = $state<string | null>(null);
 	let success = $state<string | null>(null);
@@ -84,24 +84,24 @@
 		}
 	}
 
-	async function handleGenerateZips() {
+	async function handleGenerateSeedPacks() {
 		if (race.participants.length === 0) {
 			error = 'Add participants first.';
 			return;
 		}
 
-		generatingZips = true;
+		generatingSeedPacks = true;
 		error = null;
 		success = null;
 
 		try {
-			const result = await generateZips(race.id);
+			const result = await generateSeedPacks(race.id);
 			downloads = result.downloads;
-			success = `Generated ${downloads.length} zip file(s).`;
+			success = `Generated ${downloads.length} seed pack(s).`;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to generate zips.';
+			error = e instanceof Error ? e.message : 'Failed to generate seed packs.';
 		} finally {
-			generatingZips = false;
+			generatingSeedPacks = false;
 		}
 	}
 
@@ -201,14 +201,14 @@
 		</section>
 
 		<section class="section">
-			<h2>Generate Zips</h2>
-			<p class="hint">Generate personalized mod zips for all participants.</p>
+			<h2>Generate Seed Packs</h2>
+			<p class="hint">Generate personalized seed packs for all participants.</p>
 			<button
 				class="btn btn-primary"
-				onclick={handleGenerateZips}
-				disabled={generatingZips || race.participants.length === 0}
+				onclick={handleGenerateSeedPacks}
+				disabled={generatingSeedPacks || race.participants.length === 0}
 			>
-				{generatingZips ? 'Generating...' : 'Generate Zips'}
+				{generatingSeedPacks ? 'Generating...' : 'Generate Seed Packs'}
 			</button>
 
 			{#if downloads.length > 0}

@@ -25,7 +25,7 @@ from speedfog_racing.schemas import (
     AddParticipantResponse,
     CreateRaceRequest,
     DownloadInfo,
-    GenerateZipsResponse,
+    GenerateSeedPacksResponse,
     InviteResponse,
     RaceDetailResponse,
     RaceListResponse,
@@ -34,8 +34,8 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services import (
     assign_seed_to_race,
-    generate_race_zips,
-    get_participant_zip_path,
+    generate_race_seed_packs,
+    get_participant_seed_pack_path,
 )
 
 router = APIRouter()
@@ -317,17 +317,17 @@ async def start_race(
 
 
 # =============================================================================
-# Zip Generation Endpoints
+# Seed Pack Generation Endpoints
 # =============================================================================
 
 
-@router.post("/{race_id}/generate-zips", response_model=GenerateZipsResponse)
-async def generate_zips(
+@router.post("/{race_id}/generate-seed-packs", response_model=GenerateSeedPacksResponse)
+async def generate_seed_packs(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> GenerateZipsResponse:
-    """Generate personalized zips for all participants."""
+) -> GenerateSeedPacksResponse:
+    """Generate personalized seed packs for all participants."""
     race = await _get_race_or_404(db, race_id, load_participants=True)
     _require_organizer(race, user)
 
@@ -338,7 +338,7 @@ async def generate_zips(
         )
 
     try:
-        zip_paths = await generate_race_zips(db, race)
+        seed_pack_paths = await generate_race_seed_packs(db, race)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -353,7 +353,7 @@ async def generate_zips(
     # Build download URLs
     downloads = []
     for participant in race.participants:
-        if participant.id in zip_paths:
+        if participant.id in seed_pack_paths:
             downloads.append(
                 DownloadInfo(
                     participant_id=participant.id,
@@ -362,16 +362,16 @@ async def generate_zips(
                 )
             )
 
-    return GenerateZipsResponse(downloads=downloads)
+    return GenerateSeedPacksResponse(downloads=downloads)
 
 
-@router.get("/{race_id}/my-zip")
-async def download_my_zip(
+@router.get("/{race_id}/my-seed-pack")
+async def download_my_seed_pack(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> FileResponse:
-    """Download the authenticated user's personalized zip for a race."""
+    """Download the authenticated user's personalized seed pack for a race."""
     # Find participant by race_id and user_id
     result = await db.execute(
         select(Participant)
@@ -386,42 +386,42 @@ async def download_my_zip(
             detail="You are not a participant in this race",
         )
 
-    zip_result = await get_participant_zip_path(race_id, participant.mod_token, db)
+    seed_pack_result = await get_participant_seed_pack_path(race_id, participant.mod_token, db)
 
-    if zip_result is None:
+    if seed_pack_result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Zips not generated yet",
+            detail="Seed packs not generated yet",
         )
 
-    zip_path, _ = zip_result
+    seed_pack_path, _ = seed_pack_result
 
     return FileResponse(
-        path=zip_path,
+        path=seed_pack_path,
         filename=f"speedfog_{user.twitch_username}.zip",
         media_type="application/zip",
     )
 
 
 @router.get("/{race_id}/download/{mod_token}")
-async def download_zip(
+async def download_seed_pack(
     race_id: UUID,
     mod_token: str,
     db: AsyncSession = Depends(get_db),
 ) -> FileResponse:
-    """Download personalized zip for a participant."""
-    result = await get_participant_zip_path(race_id, mod_token, db)
+    """Download personalized seed pack for a participant."""
+    result = await get_participant_seed_pack_path(race_id, mod_token, db)
 
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Zip not found. Make sure the race organizer has generated the zips.",
+            detail="Seed pack not found. Make sure the organizer has generated the seed packs.",
         )
 
-    zip_path, participant = result
+    seed_pack_path, participant = result
 
     return FileResponse(
-        path=zip_path,
+        path=seed_pack_path,
         filename=f"speedfog_{participant.user.twitch_username}.zip",
         media_type="application/zip",
     )

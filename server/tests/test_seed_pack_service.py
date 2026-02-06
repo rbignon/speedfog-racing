@@ -1,4 +1,4 @@
-"""Test zip generation service."""
+"""Test seed pack generation service."""
 
 import json
 import tempfile
@@ -13,10 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from speedfog_racing.database import Base
 from speedfog_racing.models import Participant, Race, Seed, SeedStatus, User, UserRole
-from speedfog_racing.services.zip_service import (
-    generate_participant_zip,
+from speedfog_racing.services.seed_pack_service import (
+    generate_participant_seed_pack,
     generate_player_config,
-    generate_race_zips,
+    generate_race_seed_packs,
 )
 
 # =============================================================================
@@ -90,7 +90,7 @@ def seed_folder():
 
 @pytest.fixture
 def output_dir():
-    """Create a temporary output directory for zips."""
+    """Create a temporary output directory for seed packs."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
 
@@ -147,32 +147,32 @@ def test_generate_player_config_custom_websocket_url(mock_participant, mock_race
 
 
 # =============================================================================
-# Zip Generation Tests
+# Seed Pack Generation Tests
 # =============================================================================
 
 
-def test_generate_participant_zip_creates_file(
+def test_generate_participant_seed_pack_creates_file(
     mock_participant, mock_race, mock_seed, seed_folder, output_dir
 ):
-    """Generates a zip file in the output directory."""
+    """Generates a seed pack file in the output directory."""
     mock_race.seed = mock_seed
 
-    zip_path = generate_participant_zip(mock_participant, mock_race, output_dir)
+    seed_pack_path = generate_participant_seed_pack(mock_participant, mock_race, output_dir)
 
-    assert zip_path.exists()
-    assert zip_path.name == "testplayer.zip"
-    assert zip_path.parent == output_dir
+    assert seed_pack_path.exists()
+    assert seed_pack_path.name == "testplayer.zip"
+    assert seed_pack_path.parent == output_dir
 
 
-def test_generate_participant_zip_contents(
+def test_generate_participant_seed_pack_contents(
     mock_participant, mock_race, mock_seed, seed_folder, output_dir
 ):
-    """Zip should contain seed contents plus config file."""
+    """Seed pack should contain seed contents plus config file."""
     mock_race.seed = mock_seed
 
-    zip_path = generate_participant_zip(mock_participant, mock_race, output_dir)
+    seed_pack_path = generate_participant_seed_pack(mock_participant, mock_race, output_dir)
 
-    with zipfile.ZipFile(zip_path, "r") as zf:
+    with zipfile.ZipFile(seed_pack_path, "r") as zf:
         names = zf.namelist()
 
         # Check for expected files
@@ -187,34 +187,34 @@ def test_generate_participant_zip_contents(
         assert mock_participant.mod_token in config_content
 
 
-def test_generate_participant_zip_overwrites_existing(
+def test_generate_participant_seed_pack_overwrites_existing(
     mock_participant, mock_race, mock_seed, seed_folder, output_dir
 ):
-    """Generating zip again overwrites the existing file."""
+    """Generating seed pack again overwrites the existing file."""
     mock_race.seed = mock_seed
 
-    zip_path1 = generate_participant_zip(mock_participant, mock_race, output_dir)
-    mtime1 = zip_path1.stat().st_mtime
+    seed_pack_path1 = generate_participant_seed_pack(mock_participant, mock_race, output_dir)
+    mtime1 = seed_pack_path1.stat().st_mtime
 
     # Generate again
     import time
 
     time.sleep(0.01)  # Ensure different mtime
-    zip_path2 = generate_participant_zip(mock_participant, mock_race, output_dir)
+    seed_pack_path2 = generate_participant_seed_pack(mock_participant, mock_race, output_dir)
 
-    assert zip_path1 == zip_path2
-    assert zip_path2.stat().st_mtime > mtime1
+    assert seed_pack_path1 == seed_pack_path2
+    assert seed_pack_path2.stat().st_mtime > mtime1
 
 
-def test_generate_participant_zip_no_seed_raises(mock_participant, mock_race, output_dir):
+def test_generate_participant_seed_pack_no_seed_raises(mock_participant, mock_race, output_dir):
     """Raises ValueError if race has no seed."""
     mock_race.seed = None
 
     with pytest.raises(ValueError, match="no seed assigned"):
-        generate_participant_zip(mock_participant, mock_race, output_dir)
+        generate_participant_seed_pack(mock_participant, mock_race, output_dir)
 
 
-def test_generate_participant_zip_missing_folder_raises(
+def test_generate_participant_seed_pack_missing_folder_raises(
     mock_participant, mock_race, mock_seed, output_dir
 ):
     """Raises FileNotFoundError if seed folder doesn't exist."""
@@ -222,11 +222,11 @@ def test_generate_participant_zip_missing_folder_raises(
     mock_race.seed = mock_seed
 
     with pytest.raises(FileNotFoundError):
-        generate_participant_zip(mock_participant, mock_race, output_dir)
+        generate_participant_seed_pack(mock_participant, mock_race, output_dir)
 
 
 # =============================================================================
-# Race Zips Generation Tests (integration with real DB)
+# Race Seed Packs Generation Tests (integration with real DB)
 # =============================================================================
 
 
@@ -316,33 +316,33 @@ async def db_race_with_participant(async_db, db_user, db_seed):
 
 
 @pytest.mark.asyncio
-async def test_generate_race_zips(async_db, db_race_with_participant, output_dir):
-    """Generates zips for all participants in a race."""
-    with patch("speedfog_racing.services.zip_service.settings") as mock_settings:
-        mock_settings.zips_output_dir = str(output_dir)
+async def test_generate_race_seed_packs(async_db, db_race_with_participant, output_dir):
+    """Generates seed packs for all participants in a race."""
+    with patch("speedfog_racing.services.seed_pack_service.settings") as mock_settings:
+        mock_settings.seed_packs_output_dir = str(output_dir)
         mock_settings.websocket_url = "ws://test:8000"
 
-        results = await generate_race_zips(async_db, db_race_with_participant)
+        results = await generate_race_seed_packs(async_db, db_race_with_participant)
 
         assert len(results) == 1
 
         participant = db_race_with_participant.participants[0]
         assert participant.id in results
 
-        zip_path = results[participant.id]
-        assert zip_path.exists()
+        seed_pack_path = results[participant.id]
+        assert seed_pack_path.exists()
 
 
 @pytest.mark.asyncio
-async def test_generate_race_zips_creates_race_directory(
+async def test_generate_race_seed_packs_creates_race_directory(
     async_db, db_race_with_participant, output_dir
 ):
     """Creates a directory for the race in output dir."""
-    with patch("speedfog_racing.services.zip_service.settings") as mock_settings:
-        mock_settings.zips_output_dir = str(output_dir)
+    with patch("speedfog_racing.services.seed_pack_service.settings") as mock_settings:
+        mock_settings.seed_packs_output_dir = str(output_dir)
         mock_settings.websocket_url = "ws://test:8000"
 
-        await generate_race_zips(async_db, db_race_with_participant)
+        await generate_race_seed_packs(async_db, db_race_with_participant)
 
         race_dir = output_dir / str(db_race_with_participant.id)
         assert race_dir.exists()
@@ -350,20 +350,20 @@ async def test_generate_race_zips_creates_race_directory(
 
 
 @pytest.mark.asyncio
-async def test_generate_race_zips_no_seed_raises(async_db, mock_participant, output_dir):
+async def test_generate_race_seed_packs_no_seed_raises(async_db, mock_participant, output_dir):
     """Raises ValueError if race has no seed."""
     # Use mock objects to avoid SQLAlchemy lazy loading
     mock_race = MockRace(seed=None, participants=[mock_participant])
 
     with pytest.raises(ValueError, match="no seed assigned"):
-        await generate_race_zips(async_db, mock_race)
+        await generate_race_seed_packs(async_db, mock_race)
 
 
 @pytest.mark.asyncio
-async def test_generate_race_zips_no_participants_raises(async_db, mock_seed, output_dir):
+async def test_generate_race_seed_packs_no_participants_raises(async_db, mock_seed, output_dir):
     """Raises ValueError if race has no participants."""
     # Use mock objects to avoid SQLAlchemy lazy loading
     mock_race = MockRace(seed=mock_seed, participants=[])
 
     with pytest.raises(ValueError, match="no participants"):
-        await generate_race_zips(async_db, mock_race)
+        await generate_race_seed_packs(async_db, mock_race)

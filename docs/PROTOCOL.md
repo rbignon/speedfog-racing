@@ -21,8 +21,9 @@ Reference document for API endpoints and WebSocket messages.
 | GET    | `/api/races/{id}`                      | -      | Race details with participants    |
 | POST   | `/api/races/{id}/participants`         | Bearer | Add participant (organizer)       |
 | DELETE | `/api/races/{id}/participants/{pid}`   | Bearer | Remove participant (organizer)    |
-| POST   | `/api/races/{id}/generate-zips`        | Bearer | Generate personalized zips        |
-| GET    | `/api/races/{id}/download/{mod_token}` | -      | Download participant zip          |
+| POST   | `/api/races/{id}/generate-seed-packs`  | Bearer | Generate personalized seed packs  |
+| GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack            |
+| GET    | `/api/races/{id}/download/{mod_token}` | -      | Download participant seed pack    |
 | POST   | `/api/races/{id}/start`                | Bearer | Start race with scheduled time    |
 
 ### Invites
@@ -333,4 +334,4 @@ Server-computed exit information (anti-spoiler design).
 }
 ```
 
-This allows removing `graph.json` from player zips to prevent spoilers.
+This allows removing `graph.json` from player seed packs to prevent spoilers.

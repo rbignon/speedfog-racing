@@ -197,7 +197,7 @@ def integration_client(integration_db):
 
 @pytest.fixture
 def race_with_participants(integration_db, integration_client, seed_folder):
-    """Create a race with 3 participants and generate zips.
+    """Create a race with 3 participants and generate seed packs.
 
     This is a sync fixture that sets up all the data needed for tests.
     """
@@ -253,8 +253,8 @@ def race_with_participants(integration_db, integration_client, seed_folder):
     organizer, players = asyncio.run(setup())
 
     with tempfile.TemporaryDirectory() as output_dir:
-        with patch("speedfog_racing.services.zip_service.settings") as mock_settings:
-            mock_settings.zips_output_dir = output_dir
+        with patch("speedfog_racing.services.seed_pack_service.settings") as mock_settings:
+            mock_settings.seed_packs_output_dir = output_dir
             mock_settings.websocket_url = "ws://test:8000"
 
             # Create race
@@ -275,9 +275,9 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                 )
                 assert response.status_code == 200
 
-            # Generate zips
+            # Generate seed packs
             response = integration_client.post(
-                f"/api/races/{race_id}/generate-zips",
+                f"/api/races/{race_id}/generate-seed-packs",
                 headers={"Authorization": f"Bearer {organizer.api_token}"},
             )
             assert response.status_code == 200
@@ -545,33 +545,33 @@ def test_unknown_message_type_ignored(integration_client, race_with_participants
 
 
 # =============================================================================
-# Scenario 3: Zip Generation Verification
+# Scenario 3: Seed Pack Generation Verification
 # =============================================================================
 
 
-def test_zip_contains_player_specific_config(integration_client, race_with_participants):
-    """Test that each player's zip contains their specific config with correct mod_token.
+def test_seed_pack_contains_player_specific_config(integration_client, race_with_participants):
+    """Test that each player's seed pack contains their specific config with correct mod_token.
 
     This verifies the full API flow:
-    1. Zips are generated via API
-    2. Each player can download their zip
-    3. The zip contains speedfog_race.toml with their unique mod_token and race_id
+    1. Seed packs are generated via API
+    2. Each player can download their seed pack
+    3. The seed pack contains speedfog_race.toml with their unique mod_token and race_id
     """
     race_id = race_with_participants["race_id"]
     players = race_with_participants["players"]
 
-    # Zips were already generated in the fixture, get download URLs
+    # Seed packs were already generated in the fixture, get download URLs
     race_response = integration_client.get(f"/api/races/{race_id}")
     assert race_response.status_code == 200
 
-    # Download and verify each player's zip
+    # Download and verify each player's seed pack
     for player_data in players:
         mod_token = player_data["mod_token"]
         username = player_data["user"].twitch_username
 
-        # Download the zip using mod_token
+        # Download the seed pack using mod_token
         download_response = integration_client.get(f"/api/races/{race_id}/download/{mod_token}")
-        assert download_response.status_code == 200, f"Failed to download zip for {username}"
+        assert download_response.status_code == 200, f"Failed to download seed pack for {username}"
         assert download_response.headers["content-type"] == "application/zip"
 
         # Extract and verify the config file

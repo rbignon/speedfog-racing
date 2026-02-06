@@ -4,7 +4,7 @@
 	import Leaderboard from '$lib/components/Leaderboard.svelte';
 	import RaceStatus from '$lib/components/RaceStatus.svelte';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
-	import { downloadMyZip, type RaceDetail } from '$lib/api';
+	import { downloadMySeedPack, type RaceDetail } from '$lib/api';
 
 	let downloading = $state(false);
 	let downloadError = $state<string | null>(null);
@@ -13,7 +13,7 @@
 		downloading = true;
 		downloadError = null;
 		try {
-			await downloadMyZip(initialRace.id);
+			await downloadMySeedPack(initialRace.id);
 		} catch (e) {
 			downloadError = e instanceof Error ? e.message : 'Download failed';
 		} finally {

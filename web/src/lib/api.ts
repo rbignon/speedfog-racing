@@ -71,7 +71,7 @@ export interface DownloadInfo {
   url: string;
 }
 
-export interface GenerateZipsResponse {
+export interface GenerateSeedPacksResponse {
   downloads: DownloadInfo[];
 }
 
@@ -263,16 +263,19 @@ export async function removeParticipant(
 }
 
 /**
- * Generate zips for all participants in a race.
+ * Generate seed packs for all participants in a race.
  */
-export async function generateZips(
+export async function generateSeedPacks(
   raceId: string,
-): Promise<GenerateZipsResponse> {
-  const response = await fetch(`${API_BASE}/races/${raceId}/generate-zips`, {
-    method: "POST",
-    headers: getAuthHeaders(),
-  });
-  return handleResponse<GenerateZipsResponse>(response);
+): Promise<GenerateSeedPacksResponse> {
+  const response = await fetch(
+    `${API_BASE}/races/${raceId}/generate-seed-packs`,
+    {
+      method: "POST",
+      headers: getAuthHeaders(),
+    },
+  );
+  return handleResponse<GenerateSeedPacksResponse>(response);
 }
 
 /**
@@ -351,11 +354,11 @@ export async function fetchMyRaces(): Promise<Race[]> {
 // =============================================================================
 
 /**
- * Download the authenticated user's race zip via fetch + blob.
+ * Download the authenticated user's seed pack via fetch + blob.
  * Triggers a browser download since the endpoint requires auth headers.
  */
-export async function downloadMyZip(raceId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/races/${raceId}/my-zip`, {
+export async function downloadMySeedPack(raceId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/my-seed-pack`, {
     headers: getAuthHeaders(),
   });
 

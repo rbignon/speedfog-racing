@@ -74,7 +74,7 @@ CORS_ORIGINS=["http://localhost:5173", "http://localhost:8000"]
 # Seeds (adjust paths as needed)
 SEEDS_POOL_DIR=/data/seeds
 SPEEDFOG_PATH=/path/to/speedfog
-ZIPS_OUTPUT_DIR=/data/zips
+SEED_PACKS_OUTPUT_DIR=/data/seed_packs
 
 # Logging
 LOG_LEVEL=INFO
