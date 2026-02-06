@@ -12,7 +12,7 @@ from speedfog_racing.config import settings
 from speedfog_racing.database import Base
 
 # Import all models to register them with Base.metadata
-from speedfog_racing.models import Invite, Participant, Race, Seed, User  # noqa: F401
+from speedfog_racing.models import Caster, Invite, Participant, Race, Seed, User  # noqa: F401
 
 config = context.config
 

@@ -70,6 +70,7 @@ class User(Base):
     # Relationships
     organized_races: Mapped[list["Race"]] = relationship(back_populates="organizer")
     participations: Mapped[list["Participant"]] = relationship(back_populates="user")
+    caster_roles: Mapped[list["Caster"]] = relationship(back_populates="user")
 
 
 class Seed(Base):
@@ -113,6 +114,9 @@ class Race(Base):
     participants: Mapped[list["Participant"]] = relationship(
         back_populates="race", cascade="all, delete-orphan"
     )
+    casters: Mapped[list["Caster"]] = relationship(
+        back_populates="race", cascade="all, delete-orphan"
+    )
 
 
 class Participant(Base):
@@ -141,10 +145,31 @@ class Participant(Base):
     status: Mapped[ParticipantStatus] = mapped_column(
         Enum(ParticipantStatus), default=ParticipantStatus.REGISTERED
     )
+    color_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    zone_history: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="participants")
     user: Mapped["User"] = relationship(back_populates="participations")
+
+
+class Caster(Base):
+    """A user with caster role for a race (can see the DAG but doesn't play)."""
+
+    __tablename__ = "casters"
+    __table_args__ = (UniqueConstraint("race_id", "user_id", name="uq_casters_race_user"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    race_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("races.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+
+    # Relationships
+    race: Mapped["Race"] = relationship(back_populates="casters")
+    user: Mapped["User"] = relationship(back_populates="caster_roles")
 
 
 class Invite(Base):
