@@ -187,13 +187,14 @@ See `docs/PROTOCOL.md` for complete reference.
 - `docs/2026-02-04-speedfog-racing-design.md` - Overall design
 - `docs/phase1-spec.md` - Phase 1 MVP detailed spec
 - `docs/PROTOCOL.md` - API and WebSocket protocol reference
+- `docs/plans/2026-02-06-phase2-ui-ux.md` - Phase 2 UI/UX specification
 
 ## Current State
 
-Phase 1 in progress. See `docs/phase1-spec.md` section 7 for step tracking.
+Phase 1 complete. Phase 2 in progress.
 
-**Completed:** Steps 1-12 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Seed Pack Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork, Integration Testing, Protocol Coherence & Frontend Gaps)
-**Next:** Phase 1 complete. Phase 2 planning.
+**Phase 1 completed:** Steps 1-12 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Seed Pack Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork, Integration Testing, Protocol Coherence & Frontend Gaps)
+**Phase 2:** Metro DAG visualization, homepage redesign, race detail UX overhaul, caster role. See `docs/plans/2026-02-06-phase2-ui-ux.md`.
 
 ## Related Projects
 
