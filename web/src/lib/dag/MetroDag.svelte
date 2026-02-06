@@ -42,8 +42,9 @@
 	});
 
 	function truncateLabel(name: string): string {
-		if (name.length <= LABEL_MAX_CHARS) return name;
-		return name.slice(0, LABEL_MAX_CHARS - 1) + '\u2026';
+		const short = name.includes(' - ') ? name.split(' - ').pop()! : name;
+		if (short.length <= LABEL_MAX_CHARS) return short;
+		return short.slice(0, LABEL_MAX_CHARS - 1) + '\u2026';
 	}
 
 	function nodeRadius(node: PositionedNode): number {
