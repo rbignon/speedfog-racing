@@ -66,8 +66,11 @@
 	let racerPositions = $state<{ x: number; y: number }[]>([]);
 	let showRacers = $state(false);
 
-	// Racer speed multipliers — fastest finishes visibly before loop resets
-	const RACER_SPEEDS = [1.15, 1.0, 0.92, 0.82];
+	// Racer speed multipliers — fastest finishes first, slowest last
+	const RACER_SPEEDS = [1.15, 1.0, 0.88, 0.76];
+
+	/** Pause at the finish line before restarting (ms) */
+	const FINISH_PAUSE_MS = 2000;
 
 	// Detect prefers-reduced-motion
 	let prefersReducedMotion = $state(false);
@@ -99,39 +102,46 @@
 
 		let rafId: number;
 		let phaseTimeout: ReturnType<typeof setTimeout>;
+		let restartTimeout: ReturnType<typeof setTimeout>;
 		let raceStartTime: number;
 		let cancelled = false;
 
-		// Wait for draw phase + pause, then start racing
-		phaseTimeout = setTimeout(
-			() => {
-				if (cancelled) return;
-				showRacers = true;
-				raceStartTime = performance.now();
+		function startRace() {
+			if (cancelled) return;
+			showRacers = true;
+			raceStartTime = performance.now();
+			rafId = requestAnimationFrame(animate);
+		}
 
-				function animate(now: number) {
-					if (cancelled) return;
-					const elapsed = now - raceStartTime;
-					const loopProgress = (elapsed % RACE_LOOP_DURATION_MS) / RACE_LOOP_DURATION_MS;
+		function animate(now: number) {
+			if (cancelled) return;
+			const elapsed = now - raceStartTime;
+			// Linear progress: 0 → 1 over RACE_LOOP_DURATION_MS
+			const rawProgress = elapsed / RACE_LOOP_DURATION_MS;
 
-					racerPositions = racerPaths.map((rp, i) => {
-						const speed = RACER_SPEEDS[i % RACER_SPEEDS.length];
-						// Each racer progresses at its own speed, wrapping around
-						const progress = (loopProgress * speed) % 1;
-						return interpolatePosition(rp, progress);
-					});
+			let allFinished = true;
+			racerPositions = racerPaths.map((rp, i) => {
+				const speed = RACER_SPEEDS[i % RACER_SPEEDS.length];
+				const progress = Math.min(rawProgress * speed, 1);
+				if (progress < 1) allFinished = false;
+				return interpolatePosition(rp, progress);
+			});
 
-					rafId = requestAnimationFrame(animate);
-				}
-
+			if (allFinished) {
+				// All racers finished — pause then restart
+				restartTimeout = setTimeout(startRace, FINISH_PAUSE_MS);
+			} else {
 				rafId = requestAnimationFrame(animate);
-			},
-			DRAW_PHASE_DURATION_MS + DRAW_TO_RACE_PAUSE_MS,
-		);
+			}
+		}
+
+		// Wait for draw phase + pause, then start first race
+		phaseTimeout = setTimeout(startRace, DRAW_PHASE_DURATION_MS + DRAW_TO_RACE_PAUSE_MS);
 
 		return () => {
 			cancelled = true;
 			clearTimeout(phaseTimeout);
+			clearTimeout(restartTimeout);
 			if (rafId) cancelAnimationFrame(rafId);
 		};
 	});
