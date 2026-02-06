@@ -49,6 +49,7 @@
 	header {
 		background: var(--color-bg);
 		border-bottom: 1px solid var(--color-border);
+		height: 74px;
 	}
 
 	.header-content {
