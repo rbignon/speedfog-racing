@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.api.helpers import (
+    caster_response,
     participant_response,
     race_response,
     user_response,
@@ -19,10 +20,12 @@ from speedfog_racing.auth import (
     get_user_by_twitch_username,
 )
 from speedfog_racing.database import get_db
-from speedfog_racing.models import Invite, Participant, Race, RaceStatus, User
+from speedfog_racing.models import Caster, Invite, Participant, Race, RaceStatus, User
 from speedfog_racing.schemas import (
+    AddCasterRequest,
     AddParticipantRequest,
     AddParticipantResponse,
+    CasterResponse,
     CreateRaceRequest,
     DownloadInfo,
     GenerateSeedPacksResponse,
@@ -42,6 +45,11 @@ router = APIRouter()
 
 def _race_detail_response(race: Race) -> RaceDetailResponse:
     """Convert Race model to RaceDetailResponse."""
+    casters = (
+        [caster_response(c) for c in race.casters]
+        if hasattr(race, "casters") and race.casters is not None
+        else []
+    )
     return RaceDetailResponse(
         id=race.id,
         name=race.name,
@@ -52,22 +60,24 @@ def _race_detail_response(race: Race) -> RaceDetailResponse:
         participant_count=len(race.participants),
         seed_total_layers=race.seed.total_layers if race.seed else None,
         participants=[participant_response(p) for p in race.participants],
+        casters=casters,
     )
 
 
 async def _get_race_or_404(
-    db: AsyncSession, race_id: UUID, load_participants: bool = False
+    db: AsyncSession,
+    race_id: UUID,
+    load_participants: bool = False,
+    load_casters: bool = False,
 ) -> Race:
     """Get race by ID or raise 404."""
     query = select(Race).where(Race.id == race_id)
+    options = [selectinload(Race.organizer), selectinload(Race.seed)]
     if load_participants:
-        query = query.options(
-            selectinload(Race.organizer),
-            selectinload(Race.seed),
-            selectinload(Race.participants).selectinload(Participant.user),
-        )
-    else:
-        query = query.options(selectinload(Race.organizer), selectinload(Race.seed))
+        options.append(selectinload(Race.participants).selectinload(Participant.user))
+    if load_casters:
+        options.append(selectinload(Race.casters).selectinload(Caster.user))
+    query = query.options(*options)
 
     result = await db.execute(query)
     race = result.scalar_one_or_none()
@@ -159,8 +169,8 @@ async def get_race(
     db: AsyncSession = Depends(get_db),
     _user: User | None = Depends(get_current_user_optional),
 ) -> RaceDetailResponse:
-    """Get race details with participants."""
-    race = await _get_race_or_404(db, race_id, load_participants=True)
+    """Get race details with participants and casters."""
+    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
     return _race_detail_response(race)
 
 
@@ -197,6 +207,19 @@ async def add_participant(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="User is already a participant in this race",
                 )
+
+        # Check if user is a caster (mutual exclusion)
+        caster_result = await db.execute(
+            select(Caster).where(
+                Caster.race_id == race.id,
+                Caster.user_id == target_user.id,
+            )
+        )
+        if caster_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User is a caster for this race",
+            )
 
         # Create participant
         participant = Participant(
@@ -283,6 +306,99 @@ async def remove_participant(
         )
 
     await db.delete(participant)
+    await db.commit()
+
+
+# =============================================================================
+# Caster Management Endpoints
+# =============================================================================
+
+
+@router.post(
+    "/{race_id}/casters",
+    response_model=CasterResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_caster(
+    race_id: UUID,
+    request: AddCasterRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CasterResponse:
+    """Add a caster to a race. Works at any race status."""
+    race = await _get_race_or_404(db, race_id, load_participants=True)
+    _require_organizer(race, user)
+
+    # Resolve target user
+    target_user = await get_user_by_twitch_username(db, request.twitch_username)
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Check if already a caster
+    existing = await db.execute(
+        select(Caster).where(
+            Caster.race_id == race.id,
+            Caster.user_id == target_user.id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User is already a caster for this race",
+        )
+
+    # Mutual exclusion: cannot be both caster and participant
+    for p in race.participants:
+        if p.user_id == target_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User is a participant in this race",
+            )
+
+    caster = Caster(
+        race_id=race.id,
+        user_id=target_user.id,
+        user=target_user,
+    )
+    db.add(caster)
+    await db.commit()
+    await db.refresh(caster)
+
+    return caster_response(caster)
+
+
+@router.delete(
+    "/{race_id}/casters/{caster_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_caster(
+    race_id: UUID,
+    caster_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Remove a caster from a race."""
+    race = await _get_race_or_404(db, race_id)
+    _require_organizer(race, user)
+
+    result = await db.execute(
+        select(Caster).where(
+            Caster.id == caster_id,
+            Caster.race_id == race_id,
+        )
+    )
+    caster = result.scalar_one_or_none()
+
+    if not caster:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Caster not found",
+        )
+
+    await db.delete(caster)
     await db.commit()
 
 
