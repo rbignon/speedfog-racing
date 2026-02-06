@@ -1,0 +1,353 @@
+{
+  "version": "3.0",
+  "seed": 824910911,
+  "total_layers": 13,
+  "total_nodes": 16,
+  "total_zones": 18,
+  "total_paths": 4,
+  "options": {
+    "scale": true,
+    "shuffle": true
+  },
+  "nodes": {
+    "chapel_start_4f96": {
+      "type": "start",
+      "display_name": "Chapel of Anticipation",
+      "zones": ["chapel_start"],
+      "layer": 0,
+      "tier": 1,
+      "weight": 1
+    },
+    "liurnia_manor_9103": {
+      "type": "legacy_dungeon",
+      "display_name": "Liurnia - Caria Manor",
+      "zones": ["liurnia_manor"],
+      "layer": 1,
+      "tier": 3,
+      "weight": 10
+    },
+    "academy_d5a9": {
+      "type": "legacy_dungeon",
+      "display_name": "Academy of Raya Lucaria",
+      "zones": ["academy"],
+      "layer": 1,
+      "tier": 3,
+      "weight": 12
+    },
+    "siofra_nokron_gargoyles_fd23": {
+      "type": "boss_arena",
+      "display_name": "Valiant Gargoyles",
+      "zones": ["siofra_nokron_gargoyles"],
+      "layer": 2,
+      "tier": 4,
+      "weight": 2
+    },
+    "flamepeak_grave_boss_1624": {
+      "type": "boss_arena",
+      "display_name": "Flame Peak - Giant-Conquering Hero's Grave - Ancient Hero of Zamor",
+      "zones": ["flamepeak_grave_boss"],
+      "layer": 3,
+      "tier": 6,
+      "weight": 2
+    },
+    "outskirts_grave_ed1c": {
+      "type": "mini_dungeon",
+      "display_name": "Capital Outskirts - Auriza Hero's Grave",
+      "zones": ["outskirts_grave"],
+      "layer": 4,
+      "tier": 7,
+      "weight": 4
+    },
+    "stormveil_db4a": {
+      "type": "legacy_dungeon",
+      "display_name": "Stormveil Castle after Gate",
+      "zones": ["stormveil", "stormveil_start"],
+      "layer": 5,
+      "tier": 9,
+      "weight": 23
+    },
+    "altus_sagescave_1646": {
+      "type": "mini_dungeon",
+      "display_name": "Altus Plateau - Sage's Cave",
+      "zones": ["altus_sagescave"],
+      "layer": 6,
+      "tier": 10,
+      "weight": 4
+    },
+    "outskirts_sealedtunnel_boss_f78e": {
+      "type": "boss_arena",
+      "display_name": "Capital Outskirts - Sealed Tunnel - Onyx Lord",
+      "zones": ["outskirts_sealedtunnel_boss"],
+      "layer": 7,
+      "tier": 12,
+      "weight": 2
+    },
+    "liurnia_tunnel_7ac4": {
+      "type": "mini_dungeon",
+      "display_name": "Liurnia - Raya Lucaria Crystal Tunnel",
+      "zones": ["liurnia_tunnel"],
+      "layer": 8,
+      "tier": 13,
+      "weight": 4
+    },
+    "snowfield_hiddenpath_8ef0": {
+      "type": "mini_dungeon",
+      "display_name": "Hidden Path to the Haligtree",
+      "zones": ["snowfield_hiddenpath", "snowfield_prehiddenpath"],
+      "layer": 8,
+      "tier": 13,
+      "weight": 8
+    },
+    "liurnia_academycave_boss_a41f": {
+      "type": "boss_arena",
+      "display_name": "Liurnia - Academy Crystal Cave - Crystalian Duo",
+      "zones": ["liurnia_academycave_boss"],
+      "layer": 9,
+      "tier": 15,
+      "weight": 2
+    },
+    "limgrave_tunnels_boss_bc8f": {
+      "type": "boss_arena",
+      "display_name": "Limgrave Tunnels - Stonedigger Troll",
+      "zones": ["limgrave_tunnels_boss"],
+      "layer": 9,
+      "tier": 15,
+      "weight": 2
+    },
+    "limgrave_coastalcave_boss_f749": {
+      "type": "boss_arena",
+      "display_name": "Limgrave - Coastal Cave - Demi-Human Chiefs",
+      "zones": ["limgrave_coastalcave_boss"],
+      "layer": 10,
+      "tier": 15,
+      "weight": 2
+    },
+    "altus_tunnel_f17a": {
+      "type": "mini_dungeon",
+      "display_name": "Altus Tunnel",
+      "zones": ["altus_tunnel"],
+      "layer": 11,
+      "tier": 18,
+      "weight": 4
+    },
+    "leyndell_erdtree_ca15": {
+      "type": "final_boss",
+      "display_name": "Leyndell - Erdtree Entrance",
+      "zones": ["leyndell_erdtree"],
+      "layer": 12,
+      "tier": 18,
+      "weight": 4
+    }
+  },
+  "edges": [
+    {
+      "from": "chapel_start_4f96",
+      "to": "liurnia_manor_9103"
+    },
+    {
+      "from": "chapel_start_4f96",
+      "to": "academy_d5a9"
+    },
+    {
+      "from": "academy_d5a9",
+      "to": "siofra_nokron_gargoyles_fd23"
+    },
+    {
+      "from": "liurnia_manor_9103",
+      "to": "siofra_nokron_gargoyles_fd23"
+    },
+    {
+      "from": "siofra_nokron_gargoyles_fd23",
+      "to": "flamepeak_grave_boss_1624"
+    },
+    {
+      "from": "flamepeak_grave_boss_1624",
+      "to": "outskirts_grave_ed1c"
+    },
+    {
+      "from": "outskirts_grave_ed1c",
+      "to": "stormveil_db4a"
+    },
+    {
+      "from": "stormveil_db4a",
+      "to": "altus_sagescave_1646"
+    },
+    {
+      "from": "altus_sagescave_1646",
+      "to": "outskirts_sealedtunnel_boss_f78e"
+    },
+    {
+      "from": "outskirts_sealedtunnel_boss_f78e",
+      "to": "liurnia_tunnel_7ac4"
+    },
+    {
+      "from": "outskirts_sealedtunnel_boss_f78e",
+      "to": "snowfield_hiddenpath_8ef0"
+    },
+    {
+      "from": "snowfield_hiddenpath_8ef0",
+      "to": "liurnia_academycave_boss_a41f"
+    },
+    {
+      "from": "liurnia_tunnel_7ac4",
+      "to": "limgrave_tunnels_boss_bc8f"
+    },
+    {
+      "from": "limgrave_tunnels_boss_bc8f",
+      "to": "limgrave_coastalcave_boss_f749"
+    },
+    {
+      "from": "liurnia_academycave_boss_a41f",
+      "to": "limgrave_coastalcave_boss_f749"
+    },
+    {
+      "from": "limgrave_coastalcave_boss_f749",
+      "to": "altus_tunnel_f17a"
+    },
+    {
+      "from": "altus_tunnel_f17a",
+      "to": "leyndell_erdtree_ca15"
+    }
+  ],
+  "connections": [
+    {
+      "exit_area": "chapel_start",
+      "exit_gate": "m10_01_00_00_AEG099_001_9000",
+      "entrance_area": "liurnia_manor",
+      "entrance_gate": "m60_35_50_00_AEG099_003_9000"
+    },
+    {
+      "exit_area": "chapel_start",
+      "exit_gate": "m12_05_00_00_12052021",
+      "entrance_area": "academy",
+      "entrance_gate": "m14_00_00_00_AEG099_003_9000"
+    },
+    {
+      "exit_area": "academy",
+      "exit_gate": "m14_00_00_00_16002080",
+      "entrance_area": "siofra_nokron_gargoyles",
+      "entrance_gate": "m12_02_00_00_AEG099_002_9002"
+    },
+    {
+      "exit_area": "liurnia_manor",
+      "exit_gate": "m60_35_49_00_755894500",
+      "entrance_area": "siofra_nokron_gargoyles",
+      "entrance_gate": "m12_02_00_00_AEG099_002_9003"
+    },
+    {
+      "exit_area": "siofra_nokron_gargoyles",
+      "exit_gate": "m12_02_00_00_12032502",
+      "entrance_area": "flamepeak_grave_boss",
+      "entrance_gate": "m30_17_00_00_30172840"
+    },
+    {
+      "exit_area": "flamepeak_grave_boss",
+      "exit_gate": "m30_17_00_00_AEG099_001_9000",
+      "entrance_area": "outskirts_grave",
+      "entrance_gate": "m30_10_00_00_AEG099_230_9000"
+    },
+    {
+      "exit_area": "outskirts_grave",
+      "exit_gate": "m30_10_00_00_AEG099_001_9000",
+      "entrance_area": "stormveil_start",
+      "entrance_gate": "m10_00_00_00_AEG099_002_9002"
+    },
+    {
+      "exit_area": "stormveil",
+      "exit_gate": "m10_00_00_00_AEG099_230_9001",
+      "entrance_area": "altus_sagescave",
+      "entrance_gate": "m60_37_52_00_AEG099_232_9000"
+    },
+    {
+      "exit_area": "stormveil",
+      "exit_gate": "m10_00_00_00_AEG099_002_9000",
+      "entrance_area": "altus_sagescave",
+      "entrance_gate": "m31_19_00_00_AEG099_001_9002"
+    },
+    {
+      "exit_area": "altus_sagescave",
+      "exit_gate": "m31_19_00_00_AEG099_001_9000",
+      "entrance_area": "outskirts_sealedtunnel_boss",
+      "entrance_gate": "m34_12_00_00_AEG099_003_9001"
+    },
+    {
+      "exit_area": "outskirts_sealedtunnel_boss",
+      "exit_gate": "m34_12_00_00_34122840",
+      "entrance_area": "liurnia_tunnel",
+      "entrance_gate": "m32_02_00_00_AEG099_230_9000"
+    },
+    {
+      "exit_area": "outskirts_sealedtunnel_boss",
+      "exit_gate": "m34_12_00_00_AEG099_003_9000",
+      "entrance_area": "snowfield_prehiddenpath",
+      "entrance_gate": "m30_20_00_00_AEG099_232_9001"
+    },
+    {
+      "exit_area": "snowfield_hiddenpath",
+      "exit_gate": "m30_20_00_00_AEG099_232_9000",
+      "entrance_area": "liurnia_academycave_boss",
+      "entrance_gate": "m31_06_00_00_AEG099_001_9000"
+    },
+    {
+      "exit_area": "snowfield_hiddenpath",
+      "exit_gate": "m30_20_00_00_AEG099_001_9000",
+      "entrance_area": "liurnia_academycave_boss",
+      "entrance_gate": "m31_06_00_00_AEG099_001_9001"
+    },
+    {
+      "exit_area": "liurnia_tunnel",
+      "exit_gate": "m32_02_00_00_AEG099_001_9000",
+      "entrance_area": "limgrave_tunnels_boss",
+      "entrance_gate": "m32_01_00_00_32012840"
+    },
+    {
+      "exit_area": "limgrave_tunnels_boss",
+      "exit_gate": "m32_01_00_00_AEG099_002_9000",
+      "entrance_area": "limgrave_coastalcave_boss",
+      "entrance_gate": "m31_15_00_00_AEG099_003_9000"
+    },
+    {
+      "exit_area": "liurnia_academycave_boss",
+      "exit_gate": "m31_06_00_00_31062840",
+      "entrance_area": "limgrave_coastalcave_boss",
+      "entrance_gate": "m31_15_00_00_31152840"
+    },
+    {
+      "exit_area": "limgrave_coastalcave_boss",
+      "exit_gate": "m31_15_00_00_AEG099_001_9000",
+      "entrance_area": "altus_tunnel",
+      "entrance_gate": "m60_41_52_00_AEG099_230_9000"
+    },
+    {
+      "exit_area": "altus_tunnel",
+      "exit_gate": "m32_05_00_00_AEG099_003_9000",
+      "entrance_area": "leyndell_erdtree",
+      "entrance_gate": "m11_00_00_00_AEG099_002_9001"
+    }
+  ],
+  "area_tiers": {
+    "chapel_start": 1,
+    "liurnia_manor": 3,
+    "academy": 3,
+    "siofra_nokron_gargoyles": 4,
+    "flamepeak_grave_boss": 6,
+    "outskirts_grave": 7,
+    "stormveil": 9,
+    "stormveil_start": 9,
+    "altus_sagescave": 10,
+    "outskirts_sealedtunnel_boss": 12,
+    "liurnia_tunnel": 13,
+    "snowfield_hiddenpath": 13,
+    "snowfield_prehiddenpath": 13,
+    "liurnia_academycave_boss": 15,
+    "limgrave_tunnels_boss": 15,
+    "limgrave_coastalcave_boss": 15,
+    "altus_tunnel": 18,
+    "leyndell_erdtree": 18
+  },
+  "starting_item_lots": [],
+  "starting_goods": [8109, 2160, 8134, 191, 192, 193, 194, 195, 196],
+  "starting_runes": 100000,
+  "starting_golden_seeds": 5,
+  "starting_sacred_tears": 3
+}

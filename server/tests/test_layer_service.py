@@ -64,3 +64,25 @@ def test_get_node_for_zone_handles_non_dict_nodes():
         }
     }
     assert get_node_for_zone("Limgrave", graph) == "node_2"
+
+
+# =============================================================================
+# Tests against real v3 graph.json fixture
+# =============================================================================
+
+
+def test_get_layer_real_graph(sample_graph_json: dict):
+    """get_layer_for_zone works on real v3 seed data."""
+    area_tiers = sample_graph_json["area_tiers"]
+    # Pick the first zone from area_tiers
+    zone, expected_tier = next(iter(area_tiers.items()))
+    assert get_layer_for_zone(zone, sample_graph_json) == expected_tier
+
+
+def test_get_node_for_zone_real_graph(sample_graph_json: dict):
+    """get_node_for_zone finds nodes in real v3 seed data."""
+    nodes = sample_graph_json["nodes"]
+    # Pick the first node and its first zone
+    node_id, node_data = next(iter(nodes.items()))
+    zone = node_data["zones"][0]
+    assert get_node_for_zone(zone, sample_graph_json) == node_id

@@ -54,22 +54,10 @@ def _make_race(
     return r
 
 
-def _make_seed(
-    graph_json: dict | None = None,
-    total_layers: int = 5,
-) -> Seed:
+def _make_seed(graph_json: dict, total_layers: int) -> Seed:
     s = MagicMock(spec=Seed)
     s.total_layers = total_layers
-    s.graph_json = graph_json or {
-        "total_nodes": 3,
-        "total_paths": 2,
-        "nodes": {
-            "n1": {"zones": ["zone_a"], "connections": ["n2"]},
-            "n2": {"zones": ["zone_b"], "connections": ["n3"]},
-            "n3": {"zones": ["zone_c"], "connections": []},
-        },
-        "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
-    }
+    s.graph_json = graph_json
     return s
 
 
@@ -167,7 +155,7 @@ class TestComputeDagAccess:
 
 
 class TestBuildSeedInfo:
-    """Test SeedInfo construction with DAG access."""
+    """Test SeedInfo construction with DAG access using real v3 graph.json."""
 
     def test_no_seed(self):
         """No seed returns minimal SeedInfo."""
@@ -177,22 +165,24 @@ class TestBuildSeedInfo:
         assert info.total_layers == 0
         assert info.graph_json is None
 
-    def test_with_access_includes_graph(self):
-        """With DAG access, graph_json is included."""
-        seed = _make_seed()
+    def test_with_access_includes_graph(self, sample_graph_json: dict):
+        """With DAG access, graph_json is included with correct v3 stats."""
+        graph = sample_graph_json
+        seed = _make_seed(graph, total_layers=graph["total_layers"])
         race = _make_race(RaceStatus.RUNNING, uuid.uuid4(), seed=seed)
         info = build_seed_info(race, dag_access=True)
         assert info.graph_json is not None
-        assert info.total_layers == 5
-        assert info.total_nodes == 3
-        assert info.total_paths == 2  # n1->n2, n2->n3
+        assert info.total_layers == graph["total_layers"]
+        assert info.total_nodes == graph["total_nodes"]
+        assert info.total_paths == graph["total_paths"]
 
-    def test_without_access_no_graph(self):
+    def test_without_access_no_graph(self, sample_graph_json: dict):
         """Without DAG access, graph_json is None but meta-stats present."""
-        seed = _make_seed()
+        graph = sample_graph_json
+        seed = _make_seed(graph, total_layers=graph["total_layers"])
         race = _make_race(RaceStatus.RUNNING, uuid.uuid4(), seed=seed)
         info = build_seed_info(race, dag_access=False)
         assert info.graph_json is None
-        assert info.total_layers == 5
-        assert info.total_nodes == 3
-        assert info.total_paths == 2
+        assert info.total_layers == graph["total_layers"]
+        assert info.total_nodes == graph["total_nodes"]
+        assert info.total_paths == graph["total_paths"]

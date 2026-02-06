@@ -1,6 +1,8 @@
 """Test configuration and fixtures."""
 
+import json
 import os
+from pathlib import Path
 
 # Set test database URL BEFORE importing app modules
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
@@ -13,6 +15,8 @@ from sqlalchemy.pool import StaticPool
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 # Sync engine for test setup (SQLite)
 SYNC_DATABASE_URL = "sqlite:///./test.db"
@@ -32,6 +36,13 @@ def override_get_db():
         yield db
     finally:
         db.close()
+
+
+@pytest.fixture(scope="session")
+def sample_graph_json() -> dict:
+    """Load a real v3 graph.json shipped as a test fixture."""
+    path = FIXTURES_DIR / "sample_graph.json"
+    return json.loads(path.read_text())
 
 
 @pytest.fixture(scope="session", autouse=True)
