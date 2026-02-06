@@ -67,10 +67,10 @@ export const EDGE_OPACITY = 0.6;
 // Label styling
 // =============================================================================
 
-export const LABEL_MAX_CHARS = 12;
+export const LABEL_MAX_CHARS = 15;
 export const LABEL_FONT_SIZE = 11;
 export const LABEL_COLOR = "#999";
-export const LABEL_OFFSET_Y = 20;
+export const LABEL_OFFSET_Y = 18;
 
 // =============================================================================
 // Player color palette (for future live tracking steps)
@@ -86,3 +86,25 @@ export const PLAYER_COLORS = [
   "#A3E635", // lime
   "#E879F9", // fuchsia
 ];
+
+// =============================================================================
+// Hero animation
+// =============================================================================
+
+/** Duration of the edge-drawing phase (ms) */
+export const DRAW_PHASE_DURATION_MS = 2000;
+
+/** Pause between draw phase completing and racers starting (ms) */
+export const DRAW_TO_RACE_PAUSE_MS = 500;
+
+/** Number of simulated racers in the hero animation */
+export const HERO_RACER_COUNT = 4;
+
+/** Radius of racer dot circles (px) */
+export const RACER_DOT_RADIUS = 6;
+
+/** Duration of one full racer loop (ms) */
+export const RACE_LOOP_DURATION_MS = 8000;
+
+/** Colors assigned to hero racers */
+export const HERO_RACER_COLORS = PLAYER_COLORS.slice(0, 4);

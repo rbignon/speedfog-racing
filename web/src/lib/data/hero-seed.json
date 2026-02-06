@@ -1,0 +1,314 @@
+{
+  "version": "3.0",
+  "seed": 563312642,
+  "total_layers": 16,
+  "total_nodes": 29,
+  "total_paths": 9,
+  "nodes": {
+    "chapel_start_4f96": {
+      "type": "start",
+      "display_name": "Chapel of Anticipation",
+      "zones": ["chapel_start"],
+      "layer": 0,
+      "tier": 1,
+      "weight": 1
+    },
+    "volcano_ac44": {
+      "type": "legacy_dungeon",
+      "display_name": "Volcano Manor Entrance",
+      "zones": ["volcano"],
+      "layer": 1,
+      "tier": 3,
+      "weight": 20
+    },
+    "liurnia_manor_9103": {
+      "type": "legacy_dungeon",
+      "display_name": "Liurnia - Caria Manor",
+      "zones": ["liurnia_manor"],
+      "layer": 1,
+      "tier": 3,
+      "weight": 10
+    },
+    "limgrave_highroadcave_boss_da80": {
+      "type": "boss_arena",
+      "display_name": "Highroad Cave - Guardian Golem",
+      "zones": ["limgrave_highroadcave_boss"],
+      "layer": 2,
+      "tier": 4,
+      "weight": 2
+    },
+    "liurnia_academycave_boss_a41f": {
+      "type": "boss_arena",
+      "display_name": "Academy Crystal Cave - Crystalian Duo",
+      "zones": ["liurnia_academycave_boss"],
+      "layer": 2,
+      "tier": 4,
+      "weight": 2
+    },
+    "outskirts_sealedtunnel_boss_f78e": {
+      "type": "boss_arena",
+      "display_name": "Sealed Tunnel - Onyx Lord",
+      "zones": ["outskirts_sealedtunnel_boss"],
+      "layer": 3,
+      "tier": 5,
+      "weight": 2
+    },
+    "altus_lux_boss_0f6b": {
+      "type": "boss_arena",
+      "display_name": "Lux Ruins - Demi-Human Queen",
+      "zones": ["altus_lux_boss"],
+      "layer": 3,
+      "tier": 5,
+      "weight": 2
+    },
+    "altus_sagescave_1646": {
+      "type": "mini_dungeon",
+      "display_name": "Sage's Cave",
+      "zones": ["altus_sagescave"],
+      "layer": 4,
+      "tier": 6,
+      "weight": 4
+    },
+    "graveyard_cave_e235": {
+      "type": "mini_dungeon",
+      "display_name": "Cave of Knowledge",
+      "zones": ["graveyard_cave"],
+      "layer": 5,
+      "tier": 8,
+      "weight": 8
+    },
+    "stormveil_margit_9a63": {
+      "type": "major_boss",
+      "display_name": "Margit, the Fell Omen",
+      "zones": ["stormveil_margit"],
+      "layer": 6,
+      "tier": 9,
+      "weight": 4
+    },
+    "flamepeak_firegiant_07f0": {
+      "type": "major_boss",
+      "display_name": "Fire Giant",
+      "zones": ["flamepeak_firegiant"],
+      "layer": 6,
+      "tier": 9,
+      "weight": 4
+    },
+    "liurnia_lakesidecave_boss_1dc8": {
+      "type": "boss_arena",
+      "display_name": "Lakeside Crystal Cave",
+      "zones": ["liurnia_lakesidecave_boss"],
+      "layer": 7,
+      "tier": 10,
+      "weight": 2
+    },
+    "caelid_crypt_boss_d1e7": {
+      "type": "boss_arena",
+      "display_name": "Sellia Chair-Crypt - Nox Duo",
+      "zones": ["caelid_crypt_boss"],
+      "layer": 7,
+      "tier": 10,
+      "weight": 2
+    },
+    "peninsula_tunnel_boss_c32a": {
+      "type": "boss_arena",
+      "display_name": "Morne Tunnel - Scaly Misbegotten",
+      "zones": ["peninsula_tunnel_boss"],
+      "layer": 7,
+      "tier": 10,
+      "weight": 2
+    },
+    "snowfield_catacombs_43f5": {
+      "type": "mini_dungeon",
+      "display_name": "Consecrated Snowfield Catacombs",
+      "zones": ["snowfield_catacombs"],
+      "layer": 8,
+      "tier": 11,
+      "weight": 4
+    },
+    "limgrave_highroadcave_545e": {
+      "type": "mini_dungeon",
+      "display_name": "Highroad Cave",
+      "zones": ["limgrave_highroadcave"],
+      "layer": 8,
+      "tier": 11,
+      "weight": 4
+    },
+    "outskirts_sealedtunnel_07eb": {
+      "type": "mini_dungeon",
+      "display_name": "Sealed Tunnel",
+      "zones": ["outskirts_sealedtunnel"],
+      "layer": 8,
+      "tier": 11,
+      "weight": 8
+    },
+    "haligtree_elphael_700b": {
+      "type": "legacy_dungeon",
+      "display_name": "Elphael, Brace of the Haligtree",
+      "zones": ["haligtree_elphael"],
+      "layer": 9,
+      "tier": 13,
+      "weight": 10
+    },
+    "altus_shaded_ec7b": {
+      "type": "legacy_dungeon",
+      "display_name": "Shaded Castle",
+      "zones": ["altus_shaded"],
+      "layer": 9,
+      "tier": 13,
+      "weight": 10
+    },
+    "caelid_redmane_a51c": {
+      "type": "legacy_dungeon",
+      "display_name": "Redmane Castle",
+      "zones": ["caelid_redmane"],
+      "layer": 9,
+      "tier": 13,
+      "weight": 10
+    },
+    "farumazula_maliketh_13ca": {
+      "type": "major_boss",
+      "display_name": "Maliketh the Black Blade",
+      "zones": ["farumazula_maliketh"],
+      "layer": 10,
+      "tier": 14,
+      "weight": 4
+    },
+    "stormveil_godrick_48fd": {
+      "type": "major_boss",
+      "display_name": "Godrick the Grafted",
+      "zones": ["stormveil_godrick"],
+      "layer": 10,
+      "tier": 14,
+      "weight": 8
+    },
+    "leyndell_throne_8eb6": {
+      "type": "major_boss",
+      "display_name": "Leyndell - Elden Throne",
+      "zones": ["leyndell_throne"],
+      "layer": 10,
+      "tier": 14,
+      "weight": 4
+    },
+    "limgrave_coastalcave_boss_f749": {
+      "type": "boss_arena",
+      "display_name": "Coastal Cave - Demi-Human Chiefs",
+      "zones": ["limgrave_coastalcave_boss"],
+      "layer": 11,
+      "tier": 15,
+      "weight": 2
+    },
+    "gelmir_wyndhamcatacombs_boss_86f9": {
+      "type": "boss_arena",
+      "display_name": "Wyndham Catacombs",
+      "zones": ["gelmir_wyndhamcatacombs_boss"],
+      "layer": 11,
+      "tier": 15,
+      "weight": 2
+    },
+    "siofra_nokron_gargoyles_fd23": {
+      "type": "boss_arena",
+      "display_name": "Valiant Gargoyles",
+      "zones": ["siofra_nokron_gargoyles"],
+      "layer": 12,
+      "tier": 15,
+      "weight": 2
+    },
+    "snowfield_hiddenpath_8ef0": {
+      "type": "mini_dungeon",
+      "display_name": "Hidden Path to the Haligtree",
+      "zones": ["snowfield_hiddenpath"],
+      "layer": 13,
+      "tier": 18,
+      "weight": 8
+    },
+    "liurnia_blackknifecatacombs_4eac": {
+      "type": "mini_dungeon",
+      "display_name": "Black Knife Catacombs",
+      "zones": ["liurnia_blackknifecatacombs"],
+      "layer": 14,
+      "tier": 19,
+      "weight": 4
+    },
+    "haligtree_loretta_19ab": {
+      "type": "final_boss",
+      "display_name": "Loretta, Knight of the Haligtree",
+      "zones": ["haligtree_loretta"],
+      "layer": 15,
+      "tier": 18,
+      "weight": 4
+    }
+  },
+  "edges": [
+    { "from": "chapel_start_4f96", "to": "volcano_ac44" },
+    { "from": "chapel_start_4f96", "to": "liurnia_manor_9103" },
+    { "from": "volcano_ac44", "to": "limgrave_highroadcave_boss_da80" },
+    { "from": "liurnia_manor_9103", "to": "liurnia_academycave_boss_a41f" },
+    {
+      "from": "limgrave_highroadcave_boss_da80",
+      "to": "outskirts_sealedtunnel_boss_f78e"
+    },
+    {
+      "from": "liurnia_academycave_boss_a41f",
+      "to": "outskirts_sealedtunnel_boss_f78e"
+    },
+    { "from": "liurnia_academycave_boss_a41f", "to": "altus_lux_boss_0f6b" },
+    { "from": "altus_lux_boss_0f6b", "to": "altus_sagescave_1646" },
+    {
+      "from": "outskirts_sealedtunnel_boss_f78e",
+      "to": "altus_sagescave_1646"
+    },
+    { "from": "altus_sagescave_1646", "to": "graveyard_cave_e235" },
+    { "from": "graveyard_cave_e235", "to": "stormveil_margit_9a63" },
+    { "from": "graveyard_cave_e235", "to": "flamepeak_firegiant_07f0" },
+    { "from": "stormveil_margit_9a63", "to": "liurnia_lakesidecave_boss_1dc8" },
+    { "from": "flamepeak_firegiant_07f0", "to": "caelid_crypt_boss_d1e7" },
+    { "from": "flamepeak_firegiant_07f0", "to": "peninsula_tunnel_boss_c32a" },
+    {
+      "from": "liurnia_lakesidecave_boss_1dc8",
+      "to": "snowfield_catacombs_43f5"
+    },
+    { "from": "caelid_crypt_boss_d1e7", "to": "limgrave_highroadcave_545e" },
+    {
+      "from": "peninsula_tunnel_boss_c32a",
+      "to": "outskirts_sealedtunnel_07eb"
+    },
+    { "from": "snowfield_catacombs_43f5", "to": "haligtree_elphael_700b" },
+    { "from": "limgrave_highroadcave_545e", "to": "altus_shaded_ec7b" },
+    { "from": "outskirts_sealedtunnel_07eb", "to": "caelid_redmane_a51c" },
+    { "from": "haligtree_elphael_700b", "to": "farumazula_maliketh_13ca" },
+    { "from": "altus_shaded_ec7b", "to": "stormveil_godrick_48fd" },
+    { "from": "caelid_redmane_a51c", "to": "leyndell_throne_8eb6" },
+    {
+      "from": "farumazula_maliketh_13ca",
+      "to": "limgrave_coastalcave_boss_f749"
+    },
+    {
+      "from": "stormveil_godrick_48fd",
+      "to": "limgrave_coastalcave_boss_f749"
+    },
+    {
+      "from": "leyndell_throne_8eb6",
+      "to": "gelmir_wyndhamcatacombs_boss_86f9"
+    },
+    {
+      "from": "limgrave_coastalcave_boss_f749",
+      "to": "siofra_nokron_gargoyles_fd23"
+    },
+    {
+      "from": "gelmir_wyndhamcatacombs_boss_86f9",
+      "to": "siofra_nokron_gargoyles_fd23"
+    },
+    {
+      "from": "siofra_nokron_gargoyles_fd23",
+      "to": "snowfield_hiddenpath_8ef0"
+    },
+    {
+      "from": "snowfield_hiddenpath_8ef0",
+      "to": "liurnia_blackknifecatacombs_4eac"
+    },
+    {
+      "from": "liurnia_blackknifecatacombs_4eac",
+      "to": "haligtree_loretta_19ab"
+    }
+  ]
+}
