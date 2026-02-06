@@ -5,6 +5,7 @@
 	import RaceStatus from '$lib/components/RaceStatus.svelte';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
 	import { downloadMySeedPack, type RaceDetail } from '$lib/api';
+	import MetroDag from '$lib/dag/MetroDag.svelte';
 
 	let downloading = $state(false);
 	let downloadError = $state<string | null>(null);
@@ -93,13 +94,18 @@
 			</div>
 		</header>
 
-		<div class="dag-placeholder">
-			<div class="dag-content">
-				<span class="dag-icon">🗺️</span>
-				<p>DAG Visualization</p>
-				<p class="dag-note">Coming in Phase 2</p>
+		{#if liveSeed?.graph_json}
+			<MetroDag graphJson={liveSeed.graph_json} />
+		{:else}
+			<div class="dag-placeholder">
+				<div class="dag-content">
+					<p>
+						{liveSeed?.total_nodes ?? '?'} nodes · {liveSeed?.total_paths ?? '?'} paths · {totalLayers ?? '?'} layers
+					</p>
+					<p class="dag-note">DAG hidden until race starts</p>
+				</div>
 			</div>
-		</div>
+		{/if}
 
 		<div class="race-info">
 			<div class="info-grid">
@@ -202,12 +208,6 @@
 	.dag-content {
 		text-align: center;
 		color: var(--color-text-disabled);
-	}
-
-	.dag-icon {
-		font-size: 3rem;
-		display: block;
-		margin-bottom: 0.5rem;
 	}
 
 	.dag-content p {
