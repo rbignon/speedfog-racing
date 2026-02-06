@@ -239,6 +239,17 @@ async def handle_finished(db: AsyncSession, participant: Participant, msg: dict[
         logger.info(f"Race finished: {participant.race_id}")
         await manager.broadcast_race_status(participant.race_id, "finished")
 
+        # Reload race with casters for DAG access computation
+        race = participant.race
+        await db.refresh(race, ["casters"])
+        for c in race.casters:
+            await db.refresh(c, ["user"])
+
+        # Push full graph + zone_history to all spectators
+        from speedfog_racing.websocket.spectator import broadcast_race_state_update
+
+        await broadcast_race_state_update(participant.race_id, race)
+
     # Broadcast final leaderboard
     for p in participant.race.participants:
         await db.refresh(p, ["user"])

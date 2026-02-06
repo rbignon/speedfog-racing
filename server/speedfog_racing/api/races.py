@@ -39,6 +39,7 @@ from speedfog_racing.services import (
     generate_race_seed_packs,
     get_participant_seed_pack_path,
 )
+from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 
 router = APIRouter()
 
@@ -440,7 +441,7 @@ async def start_race(
     user: User = Depends(get_current_user),
 ) -> RaceResponse:
     """Start the race immediately."""
-    race = await _get_race_or_404(db, race_id, load_participants=True)
+    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
     _require_organizer(race, user)
 
     # Check race status
@@ -454,6 +455,10 @@ async def start_race(
 
     await db.commit()
     await db.refresh(race)
+
+    # Notify connected clients
+    await broadcast_race_start(race_id)
+    await broadcast_race_state_update(race_id, race)
 
     return race_response(race)
 
