@@ -124,7 +124,7 @@ describe("parseDagGraph", () => {
 // =============================================================================
 
 describe("computeLayout — linear path", () => {
-  it("positions 3 nodes with X proportional to weight, Y centered", () => {
+  it("positions 3 nodes with uniform X spacing, Y centered", () => {
     const graph: DagGraph = {
       totalLayers: 3,
       nodes: [
@@ -150,12 +150,7 @@ describe("computeLayout — linear path", () => {
     expect(a.x).toBeLessThan(b.x);
     expect(b.x).toBeLessThan(c.x);
 
-    // X gap after b (weight=10) should be larger than gap after a (weight=1)
-    const gapAfterA = b.x - a.x;
-    const gapAfterB = c.x - b.x;
-    expect(gapAfterB).toBeGreaterThan(gapAfterA);
-
-    // Verify exact X positions
+    // Verify exact X positions (uniform gaps when WEIGHT_SCALE = 0)
     expect(a.x).toBe(PADDING);
     expect(b.x).toBe(PADDING + NODE_AREA + BASE_GAP + 1 * WEIGHT_SCALE);
     expect(c.x).toBe(b.x + NODE_AREA + BASE_GAP + 10 * WEIGHT_SCALE);

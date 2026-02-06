@@ -12,10 +12,10 @@ import type { DagNodeType } from "./types";
 export const PADDING = 90;
 
 /** Minimum gap between layers (px) */
-export const BASE_GAP = 40;
+export const BASE_GAP = 80;
 
-/** Extra px per weight unit for gap after a node */
-export const WEIGHT_SCALE = 6;
+/** Extra px per weight unit for gap after a node (0 = uniform spacing) */
+export const WEIGHT_SCALE = 0;
 
 /** Horizontal space for the station itself (px) */
 export const NODE_AREA = 20;
