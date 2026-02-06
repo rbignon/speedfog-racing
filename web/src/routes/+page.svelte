@@ -161,7 +161,7 @@
 		<div class="hero-dag">
 			<MetroDagAnimated graphJson={heroSeed} />
 		</div>
-		<div class="hero-overlay">
+		<div class="hero-cta">
 			<h1>SpeedFog Racing</h1>
 			<p class="hero-tagline">Competitive Elden Ring racing through randomized fog gates</p>
 			<a href={getTwitchLoginUrl()} class="btn btn-twitch btn-lg">Login with Twitch</a>
@@ -222,29 +222,24 @@
 
 	/* Hero section (anonymous) */
 	.hero {
-		position: relative;
 		width: 100%;
-		max-height: 40vh;
-		overflow: hidden;
 		background: var(--color-surface);
+		padding-bottom: 2.5rem;
 	}
 
 	.hero-dag {
-		opacity: 0.45;
+		opacity: 0.5;
 	}
 
-	.hero-overlay {
-		position: absolute;
-		inset: 0;
+	.hero-cta {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		justify-content: center;
 		text-align: center;
-		padding: 2rem;
+		padding: 0 2rem;
 	}
 
-	.hero-overlay h1 {
+	.hero-cta h1 {
 		font-size: clamp(1.5rem, 4vw, 2.5rem);
 		font-weight: 700;
 		color: var(--color-gold);
@@ -255,7 +250,6 @@
 		color: var(--color-text-secondary);
 		font-size: clamp(0.85rem, 2vw, 1.1rem);
 		margin: 0 0 1.5rem;
-		max-width: 500px;
 	}
 
 	.btn-lg {
