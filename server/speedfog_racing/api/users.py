@@ -2,19 +2,40 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import race_response
+from speedfog_racing.api.helpers import race_response, user_response
 from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Participant, Race, User
-from speedfog_racing.schemas import RaceListResponse
+from speedfog_racing.schemas import RaceListResponse, UserResponse
 
 router = APIRouter()
+
+
+@router.get("/search", response_model=list[UserResponse])
+async def search_users(
+    q: str = Query(..., min_length=1, max_length=100),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[UserResponse]:
+    """Search users by Twitch username or display name prefix."""
+    result = await db.execute(
+        select(User)
+        .where(
+            or_(
+                User.twitch_username.ilike(f"{q}%"),
+                User.twitch_display_name.ilike(f"{q}%"),
+            )
+        )
+        .limit(10)
+    )
+    users = result.scalars().all()
+    return [user_response(u) for u in users]
 
 
 class UserProfileResponse(BaseModel):
