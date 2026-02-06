@@ -293,3 +293,102 @@ async def test_race_detail_empty_casters(test_client, organizer, race_id):
         response = await client.get(f"/api/races/{race_id}")
         assert response.status_code == 200
         assert response.json()["casters"] == []
+
+
+# =============================================================================
+# organizer_participates Tests
+# =============================================================================
+
+
+@pytest.fixture
+async def seed_for_create(async_session):
+    """Create an available seed for race creation tests."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=888888,
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/seed_888888",
+            status=SeedStatus.AVAILABLE,
+        )
+        db.add(seed)
+        await db.commit()
+        await db.refresh(seed)
+        return seed
+
+
+@pytest.mark.asyncio
+async def test_organizer_participates_true(test_client, organizer, seed_for_create):
+    """organizer_participates=true auto-creates a participant for the organizer."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Org Participates", "organizer_participates": True},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 201
+        race_id = response.json()["id"]
+
+        # Check race detail
+        detail = await client.get(f"/api/races/{race_id}")
+        data = detail.json()
+        assert data["participant_count"] == 1
+        assert data["participants"][0]["user"]["twitch_username"] == "organizer"
+        assert data["participants"][0]["color_index"] == 0
+
+
+@pytest.mark.asyncio
+async def test_organizer_participates_false(test_client, organizer, seed_for_create):
+    """organizer_participates=false (default) creates no participant."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Org Does Not Participate"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 201
+        race_id = response.json()["id"]
+
+        detail = await client.get(f"/api/races/{race_id}")
+        assert detail.json()["participant_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_organizer_irreversibility(test_client, organizer, race_id):
+    """Non-participating organizer cannot be added as participant later."""
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "organizer"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 403
+        assert "DAG already visible" in response.json()["detail"]
+
+
+# =============================================================================
+# color_index Sequential Assignment
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_color_index_sequential(test_client, organizer, player, caster_user, race_id):
+    """Participants get sequential color_index values."""
+    async with test_client as client:
+        # Add player1
+        r1 = await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "player1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert r1.json()["participant"]["color_index"] == 0
+
+        # Add caster1 (as participant — need a third user)
+        # caster_user is not a caster in this race, so can be added
+        r2 = await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "caster1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert r2.json()["participant"]["color_index"] == 1

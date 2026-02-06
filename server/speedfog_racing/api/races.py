@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -124,6 +124,17 @@ async def create_race(
             detail=str(e),
         ) from e
 
+    # Auto-add organizer as participant if requested
+    if request.organizer_participates:
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            user=user,
+            race=race,
+            color_index=0,
+        )
+        db.add(participant)
+
     await db.commit()
 
     # Reload race with relationships
@@ -221,12 +232,32 @@ async def add_participant(
                 detail="User is a caster for this race",
             )
 
+        # Organizer irreversibility: non-participating organizer can't join later
+        if target_user.id == race.organizer_id:
+            has_existing = any(p.user_id == target_user.id for p in race.participants)
+            if not has_existing:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Non-participating organizer cannot join as participant"
+                        " — DAG already visible"
+                    ),
+                )
+
+        # Compute next color_index
+        max_result = await db.execute(
+            select(func.max(Participant.color_index)).where(Participant.race_id == race.id)
+        )
+        max_color = max_result.scalar()
+        next_color = (max_color + 1) if max_color is not None else 0
+
         # Create participant
         participant = Participant(
             race_id=race.id,
             user_id=target_user.id,
             user=target_user,
             race=race,
+            color_index=next_color,
         )
         db.add(participant)
         await db.commit()
