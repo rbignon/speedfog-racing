@@ -48,16 +48,14 @@
 
 	header {
 		background: var(--color-bg);
-		padding: 1rem 2rem;
 		border-bottom: 1px solid var(--color-border);
 	}
 
 	.header-content {
-		max-width: 1200px;
-		margin: 0 auto;
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+		padding: 1rem 2rem 1rem 1.5rem;
 	}
 
 	.logo {
