@@ -25,7 +25,7 @@
 		}
 
 		// Fetch active races (doesn't depend on auth)
-		fetchRaces('open,countdown,running')
+		fetchRaces('open,running')
 			.then((r) => (races = r))
 			.catch((e) => console.error('Failed to fetch races:', e))
 			.finally(() => (loadingRaces = false));

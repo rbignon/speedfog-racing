@@ -24,7 +24,7 @@ Reference document for API endpoints and WebSocket messages.
 | POST   | `/api/races/{id}/generate-seed-packs`  | Bearer | Generate personalized seed packs  |
 | GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack            |
 | GET    | `/api/races/{id}/download/{mod_token}` | -      | Download participant seed pack    |
-| POST   | `/api/races/{id}/start`                | Bearer | Start race with scheduled time    |
+| POST   | `/api/races/{id}/start`                | Bearer | Start race immediately            |
 
 ### Invites
 
@@ -120,8 +120,7 @@ Authentication successful. Contains initial race state.
   "race": {
     "id": "uuid",
     "name": "Sunday Showdown",
-    "status": "open",
-    "scheduled_start": "2026-02-05T18:00:00Z"
+    "status": "open"
   },
   "seed": {
     "total_layers": 12
@@ -151,7 +150,7 @@ Authentication failed.
 
 #### `race_start`
 
-Race countdown reached zero.
+Race has started.
 
 ```json
 {
@@ -238,8 +237,7 @@ Sent immediately on connection. Full race state.
   "race": {
     "id": "uuid",
     "name": "Sunday Showdown",
-    "status": "running",
-    "scheduled_start": "2026-02-05T18:00:00Z"
+    "status": "running"
   },
   "seed": {
     "graph_json": { ... },
@@ -293,7 +291,7 @@ Race status changed.
 
 ### Race Status
 
-`draft` → `open` → `countdown` → `running` → `finished`
+`draft` → `open` → `running` → `finished`
 
 ### Participant Status
 

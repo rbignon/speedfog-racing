@@ -2,7 +2,6 @@
 
 import json
 import tempfile
-from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -473,15 +472,13 @@ async def test_start_race(test_client, organizer, seed):
         race_id = create_response.json()["id"]
 
         # Start race
-        scheduled = datetime.now(UTC).isoformat()
         response = await client.post(
             f"/api/races/{race_id}/start",
-            json={"scheduled_start": scheduled},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "countdown"
+        assert data["status"] == "running"
 
 
 @pytest.mark.asyncio
@@ -496,17 +493,14 @@ async def test_cannot_start_already_started_race(test_client, organizer, seed):
         )
         race_id = create_response.json()["id"]
 
-        scheduled = datetime.now(UTC).isoformat()
         await client.post(
             f"/api/races/{race_id}/start",
-            json={"scheduled_start": scheduled},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
 
         # Try to start again
         response = await client.post(
             f"/api/races/{race_id}/start",
-            json={"scheduled_start": scheduled},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         assert response.status_code == 400

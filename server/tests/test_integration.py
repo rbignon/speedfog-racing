@@ -6,7 +6,6 @@ import os
 import tempfile
 import uuid
 import zipfile
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -376,7 +375,6 @@ def test_complete_race_flow(integration_client, race_with_participants):
     # Step 3: Organizer starts the race
     response = integration_client.post(
         f"/api/races/{race_id}/start",
-        json={"scheduled_start": datetime.now(UTC).isoformat()},
         headers={"Authorization": f"Bearer {organizer.api_token}"},
     )
     assert response.status_code == 200

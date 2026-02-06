@@ -15,12 +15,7 @@ export interface User {
   twitch_avatar_url: string | null;
 }
 
-export type RaceStatus =
-  | "draft"
-  | "open"
-  | "countdown"
-  | "running"
-  | "finished";
+export type RaceStatus = "draft" | "open" | "running" | "finished";
 
 export interface Race {
   id: string;
@@ -28,7 +23,6 @@ export interface Race {
   organizer: User;
   status: RaceStatus;
   pool_name: string | null;
-  scheduled_start: string | null;
   created_at: string;
   participant_count: number;
 }
@@ -279,19 +273,12 @@ export async function generateSeedPacks(
 }
 
 /**
- * Start a race with a scheduled start time.
+ * Start a race immediately.
  */
-export async function startRace(
-  raceId: string,
-  scheduledStart: Date,
-): Promise<Race> {
+export async function startRace(raceId: string): Promise<Race> {
   const response = await fetch(`${API_BASE}/races/${raceId}/start`, {
     method: "POST",
-    headers: {
-      ...getAuthHeaders(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ scheduled_start: scheduledStart.toISOString() }),
+    headers: getAuthHeaders(),
   });
   return handleResponse<Race>(response);
 }

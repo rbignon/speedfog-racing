@@ -136,7 +136,6 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
             id=str(race.id),
             name=race.name,
             status=race.status.value,
-            scheduled_start=race.scheduled_start,
         ),
         seed=SeedInfo(
             total_layers=seed.total_layers if seed else 0,

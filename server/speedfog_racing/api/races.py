@@ -30,7 +30,6 @@ from speedfog_racing.schemas import (
     RaceDetailResponse,
     RaceListResponse,
     RaceResponse,
-    StartRaceRequest,
 )
 from speedfog_racing.services import (
     assign_seed_to_race,
@@ -49,7 +48,6 @@ def _race_detail_response(race: Race) -> RaceDetailResponse:
         organizer=user_response(race.organizer),
         status=race.status,
         pool_name=race.seed.pool_name if race.seed else None,
-        scheduled_start=race.scheduled_start,
         created_at=race.created_at,
         participant_count=len(race.participants),
         seed_total_layers=race.seed.total_layers if race.seed else None,
@@ -291,11 +289,10 @@ async def remove_participant(
 @router.post("/{race_id}/start", response_model=RaceResponse)
 async def start_race(
     race_id: UUID,
-    request: StartRaceRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RaceResponse:
-    """Start the race countdown."""
+    """Start the race immediately."""
     race = await _get_race_or_404(db, race_id, load_participants=True)
     _require_organizer(race, user)
 
@@ -306,9 +303,7 @@ async def start_race(
             detail="Race has already started or finished",
         )
 
-    # Update race
-    race.scheduled_start = request.scheduled_start
-    race.status = RaceStatus.COUNTDOWN
+    race.status = RaceStatus.RUNNING
 
     await db.commit()
     await db.refresh(race)

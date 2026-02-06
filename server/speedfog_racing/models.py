@@ -25,7 +25,6 @@ class RaceStatus(enum.Enum):
 
     DRAFT = "draft"  # Race created, not yet open
     OPEN = "open"  # Accepting participants
-    COUNTDOWN = "countdown"  # About to start
     RUNNING = "running"  # Race in progress
     FINISHED = "finished"  # Race completed
 
@@ -106,7 +105,6 @@ class Race(Base):
     )
     status: Mapped[RaceStatus] = mapped_column(Enum(RaceStatus), default=RaceStatus.DRAFT)
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    scheduled_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # Relationships

@@ -101,7 +101,7 @@ web/src/
 │   │   └── race.ts      # Race state store (live WebSocket data)
 │   └── components/
 │       ├── Leaderboard.svelte      # Live leaderboard
-│       ├── RaceStatus.svelte       # Status badge + countdown
+│       ├── RaceStatus.svelte       # Status badge
 │       └── ConnectionStatus.svelte # WebSocket connection indicator
 └── routes/
     ├── +layout.svelte   # Global layout with navbar

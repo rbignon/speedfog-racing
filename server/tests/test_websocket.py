@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -86,14 +86,12 @@ class MockRace:
         id: uuid.UUID | None = None,
         name: str = "Test Race",
         status: RaceStatus = RaceStatus.DRAFT,
-        scheduled_start: datetime | None = None,
         seed: MockSeed | None = None,
         participants: list | None = None,
     ):
         self.id = id or uuid.uuid4()
         self.name = name
         self.status = status
-        self.scheduled_start = scheduled_start
         self.seed = seed or MockSeed()
         self.participants = participants or []
 
@@ -125,7 +123,6 @@ class TestSchemas:
             id="race-123",
             name="Test Race",
             status="running",
-            scheduled_start=datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC),
         )
         assert info.name == "Test Race"
         assert info.status == "running"
@@ -133,7 +130,7 @@ class TestSchemas:
     def test_auth_ok_message(self):
         """Test AuthOkMessage serialization."""
         msg = AuthOkMessage(
-            race=RaceInfo(id="1", name="Race", status="draft", scheduled_start=None),
+            race=RaceInfo(id="1", name="Race", status="draft"),
             seed=SeedInfo(total_layers=10),
             participants=[],
         )
@@ -171,7 +168,7 @@ class TestSchemas:
     def test_race_state_message(self):
         """Test RaceStateMessage for spectators."""
         msg = RaceStateMessage(
-            race=RaceInfo(id="1", name="Race", status="running", scheduled_start=None),
+            race=RaceInfo(id="1", name="Race", status="running"),
             seed=SeedInfo(total_layers=10, graph_json={"layers": []}),
             participants=[],
         )

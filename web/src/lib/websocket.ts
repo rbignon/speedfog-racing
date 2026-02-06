@@ -21,7 +21,6 @@ export interface WsRaceInfo {
   id: string;
   name: string;
   status: string;
-  scheduled_start: string | null;
 }
 
 export interface WsSeedInfo {

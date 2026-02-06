@@ -34,7 +34,6 @@ def race_response(race: Race) -> RaceResponse:
         organizer=user_response(race.organizer),
         status=race.status,
         pool_name=race.seed.pool_name if race.seed else None,
-        scheduled_start=race.scheduled_start,
         created_at=race.created_at,
         participant_count=len(race.participants),
     )

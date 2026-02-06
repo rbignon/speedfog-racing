@@ -35,7 +35,6 @@
 	// Use live data if available, otherwise fall back to initial
 	let raceName = $derived(liveRace?.name ?? initialRace.name);
 	let raceStatus = $derived(liveRace?.status ?? initialRace.status);
-	let scheduledStart = $derived(liveRace?.scheduled_start ?? initialRace.scheduled_start);
 	let totalLayers = $derived(liveSeed?.total_layers ?? initialRace.seed_total_layers);
 	let participantCount = $derived(liveParticipants.length || initialRace.participant_count);
 
@@ -90,7 +89,7 @@
 			</div>
 			<div class="header-right">
 				<ConnectionStatus {connected} />
-				<RaceStatus status={raceStatus} {scheduledStart} />
+				<RaceStatus status={raceStatus} />
 			</div>
 		</header>
 
@@ -120,12 +119,6 @@
 					<span class="label">Created</span>
 					<span class="value">{formatDate(initialRace.created_at)}</span>
 				</div>
-				{#if scheduledStart}
-					<div class="info-item">
-						<span class="label">Scheduled Start</span>
-						<span class="value">{formatDate(scheduledStart)}</span>
-					</div>
-				{/if}
 			</div>
 
 			<div class="actions">

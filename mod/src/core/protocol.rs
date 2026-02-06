@@ -55,7 +55,6 @@ pub struct RaceInfo {
     pub id: String,
     pub name: String,
     pub status: String,
-    pub scheduled_start: Option<String>,
 }
 
 /// Seed info from server
@@ -121,7 +120,7 @@ mod tests {
     fn test_server_auth_ok_deserialize() {
         let json = r#"{
             "type": "auth_ok",
-            "race": {"id": "123", "name": "Test Race", "status": "open", "scheduled_start": null},
+            "race": {"id": "123", "name": "Test Race", "status": "open"},
             "seed": {"total_layers": 5},
             "participants": []
         }"#;

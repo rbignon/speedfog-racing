@@ -23,7 +23,7 @@ depends_on: str | Sequence[str] | None = None
 userrole = postgresql.ENUM("USER", "ADMIN", name="userrole", create_type=False)
 seedstatus = postgresql.ENUM("AVAILABLE", "CONSUMED", name="seedstatus", create_type=False)
 racestatus = postgresql.ENUM(
-    "DRAFT", "OPEN", "COUNTDOWN", "RUNNING", "FINISHED", name="racestatus", create_type=False
+    "DRAFT", "OPEN", "RUNNING", "FINISHED", name="racestatus", create_type=False
 )
 participantstatus = postgresql.ENUM(
     "REGISTERED",
@@ -88,7 +88,6 @@ def upgrade() -> None:
         ),
         sa.Column("status", racestatus, nullable=False, server_default="DRAFT"),
         sa.Column("config", postgresql.JSON(), nullable=False, server_default="{}"),
-        sa.Column("scheduled_start", sa.DateTime(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
     )
 

@@ -27,12 +27,6 @@ class AddParticipantRequest(BaseModel):
     twitch_username: str
 
 
-class StartRaceRequest(BaseModel):
-    """Request to start a race."""
-
-    scheduled_start: datetime
-
-
 # =============================================================================
 # Response Schemas
 # =============================================================================
@@ -72,7 +66,6 @@ class RaceResponse(BaseModel):
     organizer: UserResponse
     status: RaceStatus
     pool_name: str | None
-    scheduled_start: datetime | None
     created_at: datetime
     participant_count: int
 
@@ -87,7 +80,6 @@ class RaceDetailResponse(BaseModel):
     organizer: UserResponse
     status: RaceStatus
     pool_name: str | None
-    scheduled_start: datetime | None
     created_at: datetime
     participant_count: int
     seed_total_layers: int | None

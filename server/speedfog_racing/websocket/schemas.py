@@ -1,6 +1,5 @@
 """WebSocket message schemas."""
 
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -68,7 +67,6 @@ class RaceInfo(BaseModel):
     id: str
     name: str
     status: str
-    scheduled_start: datetime | None
 
 
 class SeedInfo(BaseModel):

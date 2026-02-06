@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
 	import {
@@ -24,7 +23,6 @@
 	let error = $state<string | null>(null);
 	let success = $state<string | null>(null);
 	let downloads = $state<DownloadInfo[]>([]);
-	let scheduledStart = $state('');
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -35,12 +33,6 @@
 				authorized = true;
 			}
 		}
-	});
-
-	onMount(() => {
-		// Set default scheduled start to 5 minutes from now
-		const defaultStart = new Date(Date.now() + 5 * 60 * 1000);
-		scheduledStart = defaultStart.toISOString().slice(0, 16);
 	});
 
 	async function handleAddParticipant(e: Event) {
@@ -106,21 +98,14 @@
 	}
 
 	async function handleStartRace() {
-		if (!scheduledStart) {
-			error = 'Please select a start time.';
-			return;
-		}
-
 		startingRace = true;
 		error = null;
 		success = null;
 
 		try {
-			const startDate = new Date(scheduledStart);
-			await startRace(race.id, startDate);
-			// Refresh race data to get full details
+			await startRace(race.id);
 			race = await fetchRace(race.id);
-			success = 'Race started! Status changed to countdown.';
+			success = 'Race started!';
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to start race.';
 		} finally {
@@ -228,13 +213,9 @@
 		<section class="section">
 			<h2>Start Race</h2>
 			{#if canStartRace()}
-				<p class="hint">Set the countdown start time for the race.</p>
-				<div class="start-form">
-					<input type="datetime-local" bind:value={scheduledStart} disabled={startingRace} />
-					<button class="btn btn-primary" onclick={handleStartRace} disabled={startingRace}>
-						{startingRace ? 'Starting...' : 'Start Race'}
-					</button>
-				</div>
+				<button class="btn btn-primary" onclick={handleStartRace} disabled={startingRace}>
+					{startingRace ? 'Starting...' : 'Start Race'}
+				</button>
 			{:else}
 				<p class="hint">
 					Race is already in <strong>{race.status}</strong> status.
@@ -381,27 +362,6 @@
 
 	.downloads li {
 		padding: 0.25rem 0;
-	}
-
-	.start-form {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-	}
-
-	.start-form input {
-		padding: 0.75rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		background: var(--color-bg);
-		color: var(--color-text);
-		font-family: var(--font-family);
-		font-size: 1rem;
-	}
-
-	.start-form input:focus {
-		outline: none;
-		border-color: var(--color-purple);
 	}
 
 	.loading {
