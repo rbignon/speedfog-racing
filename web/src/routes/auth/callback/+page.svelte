@@ -11,7 +11,7 @@
 			if (success) {
 				const redirect = sessionStorage.getItem('redirect_after_login');
 				sessionStorage.removeItem('redirect_after_login');
-				goto(redirect || '/');
+				goto(redirect?.startsWith('/') ? redirect : '/');
 			} else {
 				goto('/?error=invalid_token');
 			}

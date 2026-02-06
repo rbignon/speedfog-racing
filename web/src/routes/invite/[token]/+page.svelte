@@ -63,7 +63,9 @@
 		{/if}
 
 		<div class="actions">
-			{#if !isLoggedIn}
+			{#if !auth.initialized}
+				<p class="hint">Loading...</p>
+			{:else if !isLoggedIn}
 				<p class="hint">Log in with Twitch to accept this invite.</p>
 				<button class="btn btn-primary" onclick={loginWithRedirect}> Login with Twitch </button>
 			{:else if isCorrectUser}

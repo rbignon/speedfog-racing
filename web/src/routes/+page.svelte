@@ -9,12 +9,13 @@
 	let loadingRaces = $state(true);
 	let loadingMyRaces = $state(false);
 	let errorMessage = $state<string | null>(null);
+	let myRacesFetched = $state(false);
 
 	// IDs of the user's races, for filtering duplicates from active list
 	let myRaceIds = $derived(new Set(myRaces.map((r) => r.id)));
 	let filteredRaces = $derived(races.filter((r) => !myRaceIds.has(r.id)));
 
-	onMount(async () => {
+	onMount(() => {
 		// Check for error in URL
 		const error = page.url.searchParams.get('error');
 		if (error) {
@@ -23,22 +24,24 @@
 			history.replaceState(null, '', '/');
 		}
 
-		// Fetch active races
-		const racesPromise = fetchRaces('open,countdown,running')
+		// Fetch active races (doesn't depend on auth)
+		fetchRaces('open,countdown,running')
 			.then((r) => (races = r))
 			.catch((e) => console.error('Failed to fetch races:', e))
 			.finally(() => (loadingRaces = false));
+	});
 
-		// Fetch user's races if logged in
-		if (auth.isLoggedIn) {
-			loadingMyRaces = true;
-			const myRacesPromise = fetchMyRaces()
-				.then((r) => (myRaces = r))
-				.catch((e) => console.error('Failed to fetch my races:', e))
-				.finally(() => (loadingMyRaces = false));
-			await Promise.all([racesPromise, myRacesPromise]);
-		} else {
-			await racesPromise;
+	// Fetch my races once auth is initialized
+	$effect(() => {
+		if (auth.initialized && !myRacesFetched) {
+			myRacesFetched = true;
+			if (auth.isLoggedIn) {
+				loadingMyRaces = true;
+				fetchMyRaces()
+					.then((r) => (myRaces = r))
+					.catch((e) => console.error('Failed to fetch my races:', e))
+					.finally(() => (loadingMyRaces = false));
+			}
 		}
 	});
 
