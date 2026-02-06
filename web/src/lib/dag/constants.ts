@@ -67,7 +67,7 @@ export const EDGE_OPACITY = 0.6;
 // Label styling
 // =============================================================================
 
-export const LABEL_MAX_CHARS = 20;
+export const LABEL_MAX_CHARS = 15;
 export const LABEL_FONT_SIZE = 11;
 export const LABEL_COLOR = "#999";
 export const LABEL_OFFSET_Y = 20;

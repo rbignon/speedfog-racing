@@ -22,6 +22,26 @@
 		return computeLayout(graph);
 	});
 
+	// Compute which nodes get labels above vs below.
+	// Within each layer, alternate: sorted by Y, even index = below, odd = above.
+	let labelAbove: Set<string> = $derived.by(() => {
+		const above = new Set<string>();
+		const byLayer = new Map<number, PositionedNode[]>();
+		for (const node of layout.nodes) {
+			const list = byLayer.get(node.layer);
+			if (list) list.push(node);
+			else byLayer.set(node.layer, [node]);
+		}
+		for (const nodes of byLayer.values()) {
+			if (nodes.length < 2) continue;
+			const sorted = [...nodes].sort((a, b) => a.y - b.y);
+			for (let i = 0; i < sorted.length; i++) {
+				if (i % 2 === 0) above.add(sorted[i].id);
+			}
+		}
+		return above;
+	});
+
 	function truncateLabel(name: string): string {
 		if (name.length <= LABEL_MAX_CHARS) return name;
 		return name.slice(0, LABEL_MAX_CHARS - 1) + '\u2026';
@@ -33,6 +53,14 @@
 
 	function nodeColor(node: PositionedNode): string {
 		return NODE_COLORS[node.type];
+	}
+
+	function labelY(node: PositionedNode): number {
+		const r = nodeRadius(node);
+		if (labelAbove.has(node.id)) {
+			return node.y - r - 8;
+		}
+		return node.y + r + LABEL_OFFSET_Y;
 	}
 </script>
 
@@ -141,11 +169,12 @@
 					<!-- Label -->
 					<text
 						x={node.x}
-						y={node.y + nodeRadius(node) + LABEL_OFFSET_Y}
-						text-anchor="middle"
+						y={labelY(node)}
+						text-anchor="start"
 						font-size={LABEL_FONT_SIZE}
 						fill={LABEL_COLOR}
 						class="dag-label"
+						transform="rotate(-30, {node.x}, {labelY(node)})"
 					>
 						{truncateLabel(node.displayName)}
 					</text>
