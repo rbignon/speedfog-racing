@@ -3,7 +3,7 @@
 	import { raceStore } from '$lib/stores/race.svelte';
 	import Leaderboard from '$lib/components/Leaderboard.svelte';
 	import RaceStatus from '$lib/components/RaceStatus.svelte';
-	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
+
 	import SpectatorCount from '$lib/components/SpectatorCount.svelte';
 	import ParticipantCard from '$lib/components/ParticipantCard.svelte';
 	import ParticipantSearch from '$lib/components/ParticipantSearch.svelte';
@@ -39,7 +39,7 @@
 	// Live data from WebSocket
 	let liveRace = $derived(raceStore.race);
 	let liveSeed = $derived(raceStore.seed);
-	let connected = $derived(raceStore.connected);
+
 	let spectatorCount = $derived(raceStore.spectatorCount);
 
 	// Use live data if available, otherwise fall back to initial
@@ -125,7 +125,6 @@
 		{/if}
 
 		<div class="sidebar-footer">
-			<ConnectionStatus {connected} />
 			<SpectatorCount count={spectatorCount} />
 		</div>
 	</aside>
@@ -197,7 +196,7 @@
 <style>
 	.race-page {
 		display: flex;
-		min-height: calc(100vh - 60px);
+		min-height: calc(100vh - 75px);
 	}
 
 	.sidebar {
