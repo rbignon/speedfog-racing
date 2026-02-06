@@ -76,15 +76,14 @@ def build_seed_info(race: Race, dag_access: bool) -> SeedInfo:
         return SeedInfo(total_layers=0)
 
     graph_json = seed.graph_json or {}
-    nodes = graph_json.get("nodes", {})
-    total_nodes = len(nodes) if isinstance(nodes, dict) else 0
 
-    # Count paths/edges
-    total_paths = 0
-    if isinstance(nodes, dict):
-        for node_data in nodes.values():
-            if isinstance(node_data, dict):
-                total_paths += len(node_data.get("connections", []))
+    # Prefer top-level fields from v3 graph.json, fall back to counting
+    total_nodes = graph_json.get("total_nodes")
+    if total_nodes is None:
+        nodes = graph_json.get("nodes", {})
+        total_nodes = len(nodes) if isinstance(nodes, dict) else 0
+
+    total_paths = graph_json.get("total_paths", 0)
 
     if dag_access:
         return SeedInfo(

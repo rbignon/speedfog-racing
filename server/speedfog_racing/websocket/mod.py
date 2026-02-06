@@ -22,6 +22,7 @@ from speedfog_racing.websocket.schemas import (
     RaceStartMessage,
     SeedInfo,
 )
+from speedfog_racing.websocket.spectator import broadcast_race_state_update
 
 logger = logging.getLogger(__name__)
 
@@ -246,8 +247,6 @@ async def handle_finished(db: AsyncSession, participant: Participant, msg: dict[
             await db.refresh(c, ["user"])
 
         # Push full graph + zone_history to all spectators
-        from speedfog_racing.websocket.spectator import broadcast_race_state_update
-
         await broadcast_race_state_update(participant.race_id, race)
 
     # Broadcast final leaderboard

@@ -61,6 +61,8 @@ def _make_seed(
     s = MagicMock(spec=Seed)
     s.total_layers = total_layers
     s.graph_json = graph_json or {
+        "total_nodes": 3,
+        "total_paths": 2,
         "nodes": {
             "n1": {"zones": ["zone_a"], "connections": ["n2"]},
             "n2": {"zones": ["zone_b"], "connections": ["n3"]},
