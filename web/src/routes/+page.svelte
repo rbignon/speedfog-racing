@@ -164,7 +164,7 @@
 		<div class="hero-cta">
 			<h1>SpeedFog Racing</h1>
 			<p class="hero-tagline">Competitive Elden Ring racing through randomized fog gates</p>
-			<a href={getTwitchLoginUrl()} class="btn btn-twitch btn-lg">Login with Twitch</a>
+			<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg">Create a race</a>
 		</div>
 	</div>
 
@@ -253,8 +253,11 @@
 	}
 
 	.btn-lg {
-		padding: 0.75rem 2rem;
-		font-size: 1rem;
+		padding: 0.85rem 2.5rem;
+		font-size: 1.05rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		box-shadow: var(--glow-gold);
 	}
 
 	/* Dashboard (connected) */
