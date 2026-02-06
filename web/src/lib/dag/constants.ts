@@ -8,8 +8,8 @@ import type { DagNodeType } from "./types";
 // Layout tuning
 // =============================================================================
 
-/** Padding around the SVG content (px) */
-export const PADDING = 60;
+/** Padding around the SVG content (px) — accounts for rotated label overflow */
+export const PADDING = 90;
 
 /** Minimum gap between layers (px) */
 export const BASE_GAP = 40;
@@ -67,7 +67,7 @@ export const EDGE_OPACITY = 0.6;
 // Label styling
 // =============================================================================
 
-export const LABEL_MAX_CHARS = 15;
+export const LABEL_MAX_CHARS = 12;
 export const LABEL_FONT_SIZE = 11;
 export const LABEL_COLOR = "#999";
 export const LABEL_OFFSET_Y = 20;

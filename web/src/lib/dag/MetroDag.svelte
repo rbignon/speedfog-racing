@@ -55,12 +55,17 @@
 		return NODE_COLORS[node.type];
 	}
 
+	function labelX(node: PositionedNode): number {
+		if (labelAbove.has(node.id)) return node.x;
+		return node.x - 6;
+	}
+
 	function labelY(node: PositionedNode): number {
 		const r = nodeRadius(node);
 		if (labelAbove.has(node.id)) {
 			return node.y - r - 8;
 		}
-		return node.y + r + LABEL_OFFSET_Y;
+		return node.y + r + LABEL_OFFSET_Y - 6;
 	}
 </script>
 
@@ -168,13 +173,13 @@
 
 					<!-- Label -->
 					<text
-						x={node.x}
+						x={labelX(node)}
 						y={labelY(node)}
-						text-anchor="start"
+						text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
 						font-size={LABEL_FONT_SIZE}
 						fill={LABEL_COLOR}
 						class="dag-label"
-						transform="rotate(-30, {node.x}, {labelY(node)})"
+						transform="rotate(-30, {labelX(node)}, {labelY(node)})"
 					>
 						{truncateLabel(node.displayName)}
 					</text>
@@ -202,6 +207,10 @@
 		pointer-events: none;
 		user-select: none;
 		font-family: system-ui, -apple-system, sans-serif;
+		paint-order: stroke;
+		stroke: var(--color-surface, #1a1a2e);
+		stroke-width: 4px;
+		stroke-linejoin: round;
 	}
 
 	.dag-node {
