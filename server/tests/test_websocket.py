@@ -11,6 +11,7 @@ from speedfog_racing.models import ParticipantStatus, RaceStatus
 from speedfog_racing.websocket.manager import (
     ConnectionManager,
     RaceRoom,
+    SpectatorConnection,
     participant_to_info,
     sort_leaderboard,
 )
@@ -233,12 +234,13 @@ class TestConnectionManager:
         manager = ConnectionManager()
         race_id = uuid.uuid4()
         websocket = MagicMock()
+        conn = SpectatorConnection(websocket=websocket)
 
-        await manager.connect_spectator(race_id, websocket)
+        await manager.connect_spectator(race_id, conn)
         room = manager.get_room(race_id)
-        assert websocket in room.spectators
+        assert conn in room.spectators
 
-        await manager.disconnect_spectator(race_id, websocket)
+        await manager.disconnect_spectator(race_id, conn)
         # Room should be cleaned up when empty
         assert manager.get_room(race_id) is None
 
@@ -264,7 +266,10 @@ class TestConnectionManager:
         ws1 = AsyncMock()
         ws2 = AsyncMock()
 
-        room.spectators = [ws1, ws2]
+        room.spectators = [
+            SpectatorConnection(websocket=ws1),
+            SpectatorConnection(websocket=ws2),
+        ]
 
         await room.broadcast_to_spectators('{"type": "test"}')
 
@@ -279,13 +284,15 @@ class TestConnectionManager:
         ws_bad = AsyncMock()
         ws_bad.send_text.side_effect = Exception("Connection closed")
 
-        room.spectators = [ws_bad, ws_good]
+        conn_bad = SpectatorConnection(websocket=ws_bad)
+        conn_good = SpectatorConnection(websocket=ws_good)
+        room.spectators = [conn_bad, conn_good]
 
         await room.broadcast_to_spectators('{"type": "test"}')
 
         # Bad connection should be removed
-        assert ws_bad not in room.spectators
-        assert ws_good in room.spectators
+        assert conn_bad not in room.spectators
+        assert conn_good in room.spectators
 
 
 # --- Leaderboard Tests ---

@@ -27,13 +27,22 @@ class ModConnection:
 
 
 @dataclass
+class SpectatorConnection:
+    """A connected spectator client."""
+
+    websocket: WebSocket
+    user_id: uuid.UUID | None = None
+    dag_access: bool = False
+
+
+@dataclass
 class RaceRoom:
     """A room for a specific race with mod and spectator connections."""
 
     race_id: uuid.UUID
     # participant_id -> connection
     mods: dict[uuid.UUID, ModConnection] = field(default_factory=dict)
-    spectators: list[WebSocket] = field(default_factory=list)
+    spectators: list[SpectatorConnection] = field(default_factory=list)
 
     async def broadcast_to_mods(self, message: str) -> None:
         """Send message to all connected mods."""
@@ -50,9 +59,9 @@ class RaceRoom:
     async def broadcast_to_spectators(self, message: str) -> None:
         """Send message to all connected spectators."""
         disconnected = []
-        for i, ws in enumerate(self.spectators):
+        for i, conn in enumerate(self.spectators):
             try:
-                await ws.send_text(message)
+                await conn.websocket.send_text(message)
             except Exception:
                 disconnected.append(i)
 
@@ -106,18 +115,18 @@ class ConnectionManager:
             if not room.mods and not room.spectators:
                 self.rooms.pop(race_id, None)
 
-    async def connect_spectator(self, race_id: uuid.UUID, websocket: WebSocket) -> None:
+    async def connect_spectator(self, race_id: uuid.UUID, conn: SpectatorConnection) -> None:
         """Register a spectator connection."""
         room = self.get_or_create_room(race_id)
-        room.spectators.append(websocket)
+        room.spectators.append(conn)
         logger.info(f"Spectator connected: race={race_id}")
 
-    async def disconnect_spectator(self, race_id: uuid.UUID, websocket: WebSocket) -> None:
+    async def disconnect_spectator(self, race_id: uuid.UUID, conn: SpectatorConnection) -> None:
         """Remove a spectator connection."""
         room = self.get_room(race_id)
         if room:
             try:
-                room.spectators.remove(websocket)
+                room.spectators.remove(conn)
             except ValueError:
                 pass
             logger.info(f"Spectator disconnected: race={race_id}")
