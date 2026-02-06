@@ -195,6 +195,9 @@
 		background: var(--color-surface, #1a1a2e);
 		border-radius: var(--radius-lg, 8px);
 		min-height: 200px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.metro-dag-svg {

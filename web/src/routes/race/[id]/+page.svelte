@@ -156,21 +156,10 @@
 			</div>
 		{/if}
 
-		{#if totalLayers || liveSeed?.total_nodes || liveSeed?.total_paths}
-			<div class="meta-stats">
-				{totalLayers ?? '?'} layers · {liveSeed?.total_nodes ?? '?'} nodes · {liveSeed?.total_paths ??
-					'?'} paths
-			</div>
-		{/if}
-
 		<CasterList casters={initialRace.casters} />
 
 		<div class="race-info">
 			<div class="info-grid">
-				<div class="info-item">
-					<span class="label">Seed</span>
-					<span class="value">{totalLayers || '?'} layers</span>
-				</div>
 				<div class="info-item">
 					<span class="label">Pool</span>
 					<span class="value">{initialRace.pool_name || 'standard'}</span>
@@ -316,12 +305,6 @@
 		font-size: 0.85rem;
 		font-style: italic;
 		margin: 0;
-	}
-
-	.meta-stats {
-		color: var(--color-text-secondary);
-		font-size: var(--font-size-sm);
-		text-align: center;
 	}
 
 	.race-info {
