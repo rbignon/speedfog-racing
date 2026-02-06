@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus
+from speedfog_racing.services.layer_service import get_layer_for_zone
 from speedfog_racing.websocket.manager import manager, participant_to_info, sort_leaderboard
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
@@ -169,8 +170,6 @@ async def handle_status_update(
         participant.igt_ms = msg["igt_ms"]
     if isinstance(msg.get("current_zone"), str):
         participant.current_zone = msg["current_zone"]
-    if isinstance(msg.get("current_layer"), int):
-        participant.current_layer = msg["current_layer"]
     if isinstance(msg.get("death_count"), int):
         participant.death_count = msg["death_count"]
 
@@ -192,6 +191,10 @@ async def handle_zone_entered(
     """Handle zone change event."""
     if isinstance(msg.get("to_zone"), str):
         participant.current_zone = msg["to_zone"]
+        # Compute layer from seed graph data
+        seed = participant.race.seed
+        if seed and seed.graph_json:
+            participant.current_layer = get_layer_for_zone(msg["to_zone"], seed.graph_json)
     if isinstance(msg.get("igt_ms"), int):
         participant.igt_ms = msg["igt_ms"]
 

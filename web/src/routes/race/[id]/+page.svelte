@@ -4,7 +4,22 @@
 	import Leaderboard from '$lib/components/Leaderboard.svelte';
 	import RaceStatus from '$lib/components/RaceStatus.svelte';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
-	import type { RaceDetail } from '$lib/api';
+	import { downloadMyZip, type RaceDetail } from '$lib/api';
+
+	let downloading = $state(false);
+	let downloadError = $state<string | null>(null);
+
+	async function handleDownload() {
+		downloading = true;
+		downloadError = null;
+		try {
+			await downloadMyZip(initialRace.id);
+		} catch (e) {
+			downloadError = e instanceof Error ? e.message : 'Download failed';
+		} finally {
+			downloading = false;
+		}
+	}
 
 	let { data } = $props();
 
@@ -117,8 +132,16 @@
 				{#if isOrganizer()}
 					<a href="/race/{initialRace.id}/manage" class="btn btn-primary">Manage Race</a>
 				{/if}
-				{#if isParticipant() && !isOrganizer()}
-					<span class="participant-note">You are participating in this race</span>
+				{#if isParticipant()}
+					{#if !isOrganizer()}
+						<span class="participant-note">You are participating in this race</span>
+					{/if}
+					<button class="btn btn-secondary" onclick={handleDownload} disabled={downloading}>
+						{downloading ? 'Downloading...' : 'Download Race Package'}
+					</button>
+					{#if downloadError}
+						<span class="download-error">{downloadError}</span>
+					{/if}
 				{/if}
 			</div>
 		</div>
@@ -239,5 +262,10 @@
 	.participant-note {
 		color: #27ae60;
 		font-style: italic;
+	}
+
+	.download-error {
+		color: #e74c3c;
+		font-size: 0.9rem;
 	}
 </style>

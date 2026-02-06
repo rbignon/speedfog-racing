@@ -9,7 +9,9 @@
 		if (data.token) {
 			const success = await auth.login(data.token);
 			if (success) {
-				goto('/');
+				const redirect = sessionStorage.getItem('redirect_after_login');
+				sessionStorage.removeItem('redirect_after_login');
+				goto(redirect || '/');
 			} else {
 				goto('/?error=invalid_token');
 			}

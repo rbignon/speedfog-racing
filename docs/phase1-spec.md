@@ -87,7 +87,7 @@ class Settings(BaseSettings):
 
     # App
     secret_key: str
-    base_url: str = "http://localhost:8000"
+    oauth_redirect_url: str = "http://localhost:5173"  # Frontend URL for OAuth redirect
     websocket_url: str = "ws://localhost:8000"
 
     # Seeds
@@ -492,20 +492,18 @@ toggle_ui = "f9"
 
 ### 6.1 Initial Setup (Manual)
 
-For Phase 1, use a single "standard" pool:
+For Phase 1, use a single "standard" pool. Seed consumption state is tracked in the database (via `SeedStatus` enum: AVAILABLE/CONSUMED), so no `available/`/`consumed/` subdirectories are needed on disk.
 
 ```
 /data/seeds/
 └── standard/
     ├── config.toml          # SpeedFog config for this pool
-    ├── available/
-    │   ├── seed_123456/
-    │   │   ├── mod/
-    │   │   ├── ModEngine/
-    │   │   ├── graph.json
-    │   │   └── launch_speedfog.bat
-    │   └── seed_789012/
-    └── consumed/
+    ├── seed_123456/
+    │   ├── mod/
+    │   ├── ModEngine/
+    │   ├── graph.json
+    │   └── launch_speedfog.bat
+    └── seed_789012/
 ```
 
 ### 6.2 Pool Scanner
@@ -515,7 +513,7 @@ For Phase 1, use a single "standard" pool:
 
 async def scan_pool(pool_name: str = "standard"):
     """Scan pool directory and sync with database."""
-    pool_dir = Path(settings.seeds_pool_dir) / pool_name / "available"
+    pool_dir = Path(settings.seeds_pool_dir) / pool_name
 
     for seed_dir in pool_dir.iterdir():
         if not seed_dir.is_dir():
@@ -657,13 +655,20 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
 - [x] **Hotkey system** - Full keyboard input with F9 toggle, configurable keybindings
 - [x] **Zone change tracking** - Proper zone_entered with from_zone, initial zone handled
 - [x] **Race finish detection** - Placeholder with finished_sent flag (detection mechanism TBD Phase 2)
-- [ ] Build and test injection (requires Windows/MSVC)
+- [x] Build and test injection on Windows
 
 ### Step 11: Integration Testing ✅
 
 - [x] End-to-end race flow (3-player complete race with leaderboard verification)
 - [x] Multi-player simulation (sequential connections to avoid WebSocket threading issues)
 - [x] Error handling (invalid auth, malformed JSON, duplicate connection, unknown message types)
+
+### Step 12: Protocol Coherence & Frontend Gaps ✅
+
+- [x] **Server-side layer computation** - Server computes `current_layer` from `zone_entered` events using `area_tiers` in the seed's `graph_json`. Removed `current_layer` from `status_update` schema. Layer lookup is ready and tested; production accuracy depends on the mod sending area names via fog events (separate effort, decoupled from this step).
+- [x] **Invite route** - Frontend `/invite/{token}` route with login redirect, username validation, and accept flow
+- [x] **Player download button** - `GET /api/races/{id}/my-zip` authenticated endpoint + download button on race view page for participants
+- [x] **"My Races" section on home page** - `GET /api/users/me/races` endpoint + home page section showing user's races with organizer/participant role badges, duplicates filtered from active races list
 
 ---
 

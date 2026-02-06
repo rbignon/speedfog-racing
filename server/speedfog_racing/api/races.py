@@ -8,6 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.api.helpers import (
+    participant_response,
+    race_response,
+    user_response,
+)
 from speedfog_racing.auth import (
     get_current_user,
     get_current_user_optional,
@@ -22,12 +27,10 @@ from speedfog_racing.schemas import (
     DownloadInfo,
     GenerateZipsResponse,
     InviteResponse,
-    ParticipantResponse,
     RaceDetailResponse,
     RaceListResponse,
     RaceResponse,
     StartRaceRequest,
-    UserResponse,
 )
 from speedfog_racing.services import (
     assign_seed_to_race,
@@ -38,55 +41,19 @@ from speedfog_racing.services import (
 router = APIRouter()
 
 
-def _user_response(user: User) -> UserResponse:
-    """Convert User model to UserResponse."""
-    return UserResponse(
-        id=user.id,
-        twitch_username=user.twitch_username,
-        twitch_display_name=user.twitch_display_name,
-        twitch_avatar_url=user.twitch_avatar_url,
-    )
-
-
-def _participant_response(participant: Participant) -> ParticipantResponse:
-    """Convert Participant model to ParticipantResponse."""
-    return ParticipantResponse(
-        id=participant.id,
-        user=_user_response(participant.user),
-        status=participant.status,
-        current_layer=participant.current_layer,
-        igt_ms=participant.igt_ms,
-        death_count=participant.death_count,
-    )
-
-
-def _race_response(race: Race) -> RaceResponse:
-    """Convert Race model to RaceResponse."""
-    return RaceResponse(
-        id=race.id,
-        name=race.name,
-        organizer=_user_response(race.organizer),
-        status=race.status,
-        pool_name=race.seed.pool_name if race.seed else None,
-        scheduled_start=race.scheduled_start,
-        created_at=race.created_at,
-        participant_count=len(race.participants),
-    )
-
-
 def _race_detail_response(race: Race) -> RaceDetailResponse:
     """Convert Race model to RaceDetailResponse."""
     return RaceDetailResponse(
         id=race.id,
         name=race.name,
-        organizer=_user_response(race.organizer),
+        organizer=user_response(race.organizer),
         status=race.status,
         pool_name=race.seed.pool_name if race.seed else None,
         scheduled_start=race.scheduled_start,
         created_at=race.created_at,
         participant_count=len(race.participants),
         seed_total_layers=race.seed.total_layers if race.seed else None,
-        participants=[_participant_response(p) for p in race.participants],
+        participants=[participant_response(p) for p in race.participants],
     )
 
 
@@ -154,7 +121,7 @@ async def create_race(
     # Reload race with relationships
     race = await _get_race_or_404(db, race.id, load_participants=True)
 
-    return _race_response(race)
+    return race_response(race)
 
 
 @router.get("", response_model=RaceListResponse)
@@ -185,7 +152,7 @@ async def list_races(
     result = await db.execute(query)
     races = list(result.scalars().all())
 
-    return RaceListResponse(races=[_race_response(r) for r in races])
+    return RaceListResponse(races=[race_response(r) for r in races])
 
 
 @router.get("/{race_id}", response_model=RaceDetailResponse)
@@ -244,7 +211,7 @@ async def add_participant(
         await db.commit()
         await db.refresh(participant)
 
-        return AddParticipantResponse(participant=_participant_response(participant))
+        return AddParticipantResponse(participant=participant_response(participant))
 
     else:
         # Check if invite already exists
@@ -346,7 +313,7 @@ async def start_race(
     await db.commit()
     await db.refresh(race)
 
-    return _race_response(race)
+    return race_response(race)
 
 
 # =============================================================================
@@ -396,6 +363,44 @@ async def generate_zips(
             )
 
     return GenerateZipsResponse(downloads=downloads)
+
+
+@router.get("/{race_id}/my-zip")
+async def download_my_zip(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> FileResponse:
+    """Download the authenticated user's personalized zip for a race."""
+    # Find participant by race_id and user_id
+    result = await db.execute(
+        select(Participant)
+        .where(Participant.race_id == race_id, Participant.user_id == user.id)
+        .options(selectinload(Participant.user))
+    )
+    participant = result.scalar_one_or_none()
+
+    if not participant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a participant in this race",
+        )
+
+    zip_result = await get_participant_zip_path(race_id, participant.mod_token, db)
+
+    if zip_result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Zips not generated yet",
+        )
+
+    zip_path, _ = zip_result
+
+    return FileResponse(
+        path=zip_path,
+        filename=f"speedfog_{user.twitch_username}.zip",
+        media_type="application/zip",
+    )
 
 
 @router.get("/{race_id}/download/{mod_token}")

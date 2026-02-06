@@ -20,6 +20,7 @@ from speedfog_racing.database import Base
 from speedfog_racing.main import app
 from speedfog_racing.models import (
     Participant,
+    Race,
     Seed,
     SeedStatus,
     User,
@@ -165,7 +166,15 @@ def seed_folder():
         (seed_dir / "mod" / "speedfog.dll").write_text("mock dll")
         (seed_dir / "ModEngine").mkdir()
         (seed_dir / "ModEngine" / "config.toml").write_text("[config]")
-        (seed_dir / "graph.json").write_text(json.dumps({"total_layers": 5, "nodes": []}))
+        (seed_dir / "graph.json").write_text(
+            json.dumps(
+                {
+                    "total_layers": 5,
+                    "nodes": [],
+                    "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
+                }
+            )
+        )
         (seed_dir / "launch_speedfog.bat").write_text("@echo off")
 
         yield seed_dir
@@ -223,7 +232,11 @@ def race_with_participants(integration_db, integration_client, seed_folder):
             seed = Seed(
                 seed_number=999999,
                 pool_name="standard",
-                graph_json={"total_layers": 5, "nodes": []},
+                graph_json={
+                    "total_layers": 5,
+                    "nodes": [],
+                    "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
+                },
                 total_layers=5,
                 folder_path=str(seed_folder),
                 status=SeedStatus.AVAILABLE,
@@ -269,9 +282,26 @@ def race_with_participants(integration_db, integration_client, seed_folder):
             )
             assert response.status_code == 200
 
-            # Get mod tokens from database
+            # Get mod tokens and ensure seed has area_tiers for layer tests
             async def get_tokens():
                 async with integration_db() as db:
+                    # Ensure the race's seed has area_tiers (real seeds from pool
+                    # scan may not have them)
+                    from sqlalchemy.orm import selectinload as _sinload
+
+                    race_result = await db.execute(
+                        select(Race)
+                        .where(Race.id == uuid.UUID(race_id))
+                        .options(_sinload(Race.seed))
+                    )
+                    race = race_result.scalar_one()
+                    if race.seed:
+                        # Ensure area_tiers contains test zone names
+                        graph = dict(race.seed.graph_json or {})
+                        graph["area_tiers"] = {"zone_a": 1, "zone_b": 2, "zone_c": 3}
+                        race.seed.graph_json = graph
+                        await db.commit()
+
                     result = await db.execute(
                         select(Participant).where(Participant.race_id == uuid.UUID(race_id))
                     )
@@ -352,13 +382,16 @@ def test_complete_race_flow(integration_client, race_with_participants):
     assert response.status_code == 200
 
     # Step 4: Players send zone updates and finish (sequentially to avoid concurrency issues)
-    # Player 0: enters zone
+    # Player 0: enters zone — layer should be computed server-side from area_tiers
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
         mod0.send_zone_entered("start", "zone_a", igt_ms=10000)
         lb = mod0.receive()
         assert lb["type"] == "leaderboard_update"
+        # zone_a has layer 1 in area_tiers
+        p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
+        assert p0["current_layer"] == 1
 
     # Player 1: enters zone
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1:
@@ -367,6 +400,9 @@ def test_complete_race_flow(integration_client, race_with_participants):
         mod1.send_zone_entered("start", "zone_b", igt_ms=15000)
         lb = mod1.receive()
         assert lb["type"] == "leaderboard_update"
+        # zone_b has layer 2 in area_tiers
+        p1 = next(p for p in lb["participants"] if p["twitch_username"] == "player1")
+        assert p1["current_layer"] == 2
 
     # Player 2: enters zone and finishes first (fastest)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws2:

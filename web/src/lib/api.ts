@@ -292,3 +292,90 @@ export async function startRace(
   });
   return handleResponse<Race>(response);
 }
+
+// =============================================================================
+// Invite API
+// =============================================================================
+
+export interface InviteInfo {
+  token: string;
+  race_name: string;
+  organizer_name: string;
+  race_status: RaceStatus;
+  twitch_username: string;
+}
+
+export interface AcceptInviteResponse {
+  participant: Participant;
+  race_id: string;
+}
+
+/**
+ * Get public information about an invite.
+ */
+export async function getInvite(token: string): Promise<InviteInfo> {
+  const response = await fetch(`${API_BASE}/invite/${token}`);
+  return handleResponse<InviteInfo>(response);
+}
+
+/**
+ * Accept an invite and become a participant.
+ */
+export async function acceptInvite(
+  token: string,
+): Promise<AcceptInviteResponse> {
+  const response = await fetch(`${API_BASE}/invite/${token}/accept`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<AcceptInviteResponse>(response);
+}
+
+// =============================================================================
+// User API
+// =============================================================================
+
+/**
+ * Fetch races where the current user is organizer or participant.
+ */
+export async function fetchMyRaces(): Promise<Race[]> {
+  const response = await fetch(`${API_BASE}/users/me/races`, {
+    headers: getAuthHeaders(),
+  });
+  const data = await handleResponse<RaceListResponse>(response);
+  return data.races;
+}
+
+// =============================================================================
+// Download helpers
+// =============================================================================
+
+/**
+ * Download the authenticated user's race zip via fetch + blob.
+ * Triggers a browser download since the endpoint requires auth headers.
+ */
+export async function downloadMyZip(raceId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/my-zip`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  // Extract filename from content-disposition or use default
+  const disposition = response.headers.get("content-disposition");
+  const match = disposition?.match(/filename="?([^"]+)"?/);
+  a.download = match?.[1] ?? `speedfog_race_${raceId}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

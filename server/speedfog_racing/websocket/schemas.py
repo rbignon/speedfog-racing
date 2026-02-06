@@ -27,7 +27,6 @@ class StatusUpdateMessage(BaseModel):
     type: Literal["status_update"] = "status_update"
     igt_ms: int
     current_zone: str
-    current_layer: int
     death_count: int
 
 
