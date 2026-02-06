@@ -23,7 +23,8 @@
 	});
 
 	// Compute which nodes get labels above vs below.
-	// Within each layer, alternate: sorted by Y, even index = below, odd = above.
+	// Only the topmost node in a multi-node layer gets its label above;
+	// all others go below (text flows left, away from outgoing edges).
 	let labelAbove: Set<string> = $derived.by(() => {
 		const above = new Set<string>();
 		const byLayer = new Map<number, PositionedNode[]>();
@@ -34,10 +35,8 @@
 		}
 		for (const nodes of byLayer.values()) {
 			if (nodes.length < 2) continue;
-			const sorted = [...nodes].sort((a, b) => a.y - b.y);
-			for (let i = 0; i < sorted.length; i++) {
-				if (i % 2 === 0) above.add(sorted[i].id);
-			}
+			const top = nodes.reduce((a, b) => (a.y < b.y ? a : b));
+			above.add(top.id);
 		}
 		return above;
 	});
