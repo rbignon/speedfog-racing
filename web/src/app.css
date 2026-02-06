@@ -80,6 +80,12 @@ a:hover {
   transition: all var(--transition);
 }
 
+/* Override link colors on button-links */
+a.btn,
+a.btn:hover {
+  color: inherit;
+}
+
 .btn-primary {
   background: var(--color-gold);
   color: var(--color-bg);
@@ -87,6 +93,7 @@ a:hover {
 
 .btn-primary:hover {
   background: var(--color-gold-hover);
+  color: var(--color-bg);
   box-shadow: var(--glow-gold);
 }
 
