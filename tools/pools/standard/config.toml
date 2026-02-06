@@ -1,8 +1,5 @@
-# SpeedFog Racing - Standard Pool Configuration
-# ~1 hour races
-
 [run]
-seed = 0  # Auto-reroll until valid DAG found
+seed = 0
 
 [budget]
 total_weight = 30
@@ -14,22 +11,25 @@ bosses = 5
 mini_dungeons = 5
 
 [structure]
-max_parallel_paths = 3
-min_layers = 6
-max_layers = 10
-final_tier = 25
-split_probability = 0.3
-merge_probability = 0.3
+max_parallel_paths = 4
+min_layers = 10
+max_layers = 20
+final_tier = 18
+split_probability = 0.5
+merge_probability = 0.5
 max_branches = 3
+first_layer_type = "legacy_dungeon"
+major_boss_ratio = 0.2
+final_boss_candidates = ["all"]  # All major bosses
 
 [starting_items]
-academy_key = true
-pureblood_medal = true
-drawing_room_key = true
+academy_key = true       # Academy Glintstone Key - opens Raya Lucaria
+pureblood_medal = true   # Pureblood Knight's Medal - warps to Mohgwyn Palace
+drawing_room_key = true  # Drawing-Room Key - access Volcano Manor interior
 great_runes = true
-golden_seeds = 5
-sacred_tears = 3
-starting_runes = 50000
+golden_seeds = 7       # Golden Seeds to upgrade flask uses (0-99)
+sacred_tears = 4       # Sacred Tears to upgrade flask potency (0-12)
+starting_runes = 100000 # Given as Lord's Rune items (50k each, use from inventory)
 
 [item_randomizer]
 enabled = true
