@@ -130,3 +130,10 @@ class RaceStatusChangeMessage(BaseModel):
 
     type: Literal["race_status_change"] = "race_status_change"
     status: str
+
+
+class SpectatorCountMessage(BaseModel):
+    """Spectator count update."""
+
+    type: Literal["spectator_count"] = "spectator_count"
+    count: int

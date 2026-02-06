@@ -12,6 +12,7 @@ from speedfog_racing.websocket.schemas import (
     ParticipantInfo,
     PlayerUpdateMessage,
     RaceStatusChangeMessage,
+    SpectatorCountMessage,
 )
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,7 @@ class ConnectionManager:
         room = self.get_or_create_room(race_id)
         room.spectators.append(conn)
         logger.info(f"Spectator connected: race={race_id}")
+        await self._broadcast_spectator_count(room)
 
     async def disconnect_spectator(self, race_id: uuid.UUID, conn: SpectatorConnection) -> None:
         """Remove a spectator connection."""
@@ -130,6 +132,7 @@ class ConnectionManager:
             except ValueError:
                 pass
             logger.info(f"Spectator disconnected: race={race_id}")
+            await self._broadcast_spectator_count(room)
             if not room.mods and not room.spectators:
                 self.rooms.pop(race_id, None)
 
@@ -160,6 +163,11 @@ class ConnectionManager:
 
         message = PlayerUpdateMessage(player=participant_to_info(participant))
         await room.broadcast_to_spectators(message.model_dump_json())
+
+    async def _broadcast_spectator_count(self, room: RaceRoom) -> None:
+        """Broadcast spectator count to all spectators in a room."""
+        msg = SpectatorCountMessage(count=len(room.spectators))
+        await room.broadcast_to_spectators(msg.model_dump_json())
 
     async def broadcast_race_status(self, race_id: uuid.UUID, status: str) -> None:
         """Broadcast race status change to all connections."""

@@ -2,6 +2,8 @@
  * WebSocket client with automatic reconnection for SpeedFog Racing.
  */
 
+import { getStoredToken } from "$lib/api";
+
 // =============================================================================
 // Types (matching backend WebSocket schemas)
 // =============================================================================
@@ -15,6 +17,8 @@ export interface WsParticipant {
   current_layer: number;
   igt_ms: number;
   death_count: number;
+  color_index: number;
+  zone_history: { node_id: string; igt_ms: number }[] | null;
 }
 
 export interface WsRaceInfo {
@@ -26,6 +30,8 @@ export interface WsRaceInfo {
 export interface WsSeedInfo {
   total_layers: number;
   graph_json: Record<string, unknown> | null;
+  total_nodes: number | null;
+  total_paths: number | null;
 }
 
 // Server -> Client messages
@@ -51,11 +57,17 @@ export interface RaceStatusChangeMessage {
   status: string;
 }
 
+export interface SpectatorCountMessage {
+  type: "spectator_count";
+  count: number;
+}
+
 export type ServerMessage =
   | RaceStateMessage
   | LeaderboardUpdateMessage
   | PlayerUpdateMessage
-  | RaceStatusChangeMessage;
+  | RaceStatusChangeMessage
+  | SpectatorCountMessage;
 
 // =============================================================================
 // WebSocket Client
@@ -66,6 +78,7 @@ export interface RaceWebSocketOptions {
   onLeaderboardUpdate?: (msg: LeaderboardUpdateMessage) => void;
   onPlayerUpdate?: (msg: PlayerUpdateMessage) => void;
   onRaceStatusChange?: (msg: RaceStatusChangeMessage) => void;
+  onSpectatorCount?: (msg: SpectatorCountMessage) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: Event) => void;
@@ -106,6 +119,13 @@ export class RaceWebSocket {
     this.ws.onopen = () => {
       console.log(`[WS] Connected to race ${this.raceId}`);
       this.reconnectAttempt = 0;
+
+      // Send auth message if logged in (optional auth per spec Section 9.1)
+      const token = getStoredToken();
+      if (token && this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: "auth", token }));
+      }
+
       this.options.onConnect?.();
     };
 
@@ -170,6 +190,9 @@ export class RaceWebSocket {
         break;
       case "race_status_change":
         this.options.onRaceStatusChange?.(msg);
+        break;
+      case "spectator_count":
+        this.options.onSpectatorCount?.(msg);
         break;
       default:
         console.warn(

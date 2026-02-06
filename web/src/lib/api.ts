@@ -45,11 +45,18 @@ export interface Participant {
   current_layer: number;
   igt_ms: number;
   death_count: number;
+  color_index: number;
+}
+
+export interface Caster {
+  id: string;
+  user: User;
 }
 
 export interface RaceDetail extends Race {
   seed_total_layers: number | null;
   participants: Participant[];
+  casters: Caster[];
 }
 
 export interface PoolStats {
@@ -204,6 +211,7 @@ export async function fetchPoolStats(): Promise<PoolStats> {
 export async function createRace(
   name: string,
   poolName: string = "standard",
+  organizerParticipates: boolean = false,
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races`, {
     method: "POST",
@@ -211,7 +219,11 @@ export async function createRace(
       ...getAuthHeaders(),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ name, pool_name: poolName }),
+    body: JSON.stringify({
+      name,
+      pool_name: poolName,
+      organizer_participates: organizerParticipates,
+    }),
   });
   return handleResponse<Race>(response);
 }
@@ -322,8 +334,63 @@ export async function acceptInvite(
 }
 
 // =============================================================================
+// Caster API
+// =============================================================================
+
+/**
+ * Add a caster to a race by Twitch username.
+ */
+export async function addCaster(
+  raceId: string,
+  twitchUsername: string,
+): Promise<Caster> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/casters`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ twitch_username: twitchUsername }),
+  });
+  return handleResponse<Caster>(response);
+}
+
+/**
+ * Remove a caster from a race.
+ */
+export async function removeCaster(
+  raceId: string,
+  casterId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/races/${raceId}/casters/${casterId}`,
+    {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    },
+  );
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail);
+  }
+}
+
+// =============================================================================
 // User API
 // =============================================================================
+
+/**
+ * Search users by Twitch username or display name (prefix match).
+ */
+export async function searchUsers(query: string): Promise<User[]> {
+  const response = await fetch(
+    `${API_BASE}/users/search?q=${encodeURIComponent(query)}`,
+    { headers: getAuthHeaders() },
+  );
+  return handleResponse<User[]>(response);
+}
 
 /**
  * Fetch races where the current user is organizer or participant.

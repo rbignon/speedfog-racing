@@ -14,6 +14,7 @@ class RaceStore {
   race = $state<WsRaceInfo | null>(null);
   seed = $state<WsSeedInfo | null>(null);
   participants = $state<WsParticipant[]>([]);
+  spectatorCount = $state(0);
   connected = $state(false);
   loading = $state(true);
 
@@ -70,6 +71,7 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
+    this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;
 
@@ -104,6 +106,10 @@ class RaceStore {
           this.race = { ...this.race, status: msg.status };
         }
       },
+
+      onSpectatorCount: (msg) => {
+        this.spectatorCount = msg.count;
+      },
     });
 
     this.ws.connect();
@@ -121,6 +127,7 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
+    this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;
   }

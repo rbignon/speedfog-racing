@@ -233,7 +233,7 @@ class TestConnectionManager:
         """Test spectator connection lifecycle."""
         manager = ConnectionManager()
         race_id = uuid.uuid4()
-        websocket = MagicMock()
+        websocket = AsyncMock()
         conn = SpectatorConnection(websocket=websocket)
 
         await manager.connect_spectator(race_id, conn)
