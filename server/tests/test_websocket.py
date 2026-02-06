@@ -66,6 +66,8 @@ class MockParticipant:
         igt_ms: int = 0,
         death_count: int = 0,
         finished_at: datetime | None = None,
+        color_index: int = 0,
+        zone_history: list[dict] | None = None,
     ):
         self.id = id or uuid.uuid4()
         self.race_id = race_id or uuid.uuid4()
@@ -78,6 +80,8 @@ class MockParticipant:
         self.igt_ms = igt_ms
         self.death_count = death_count
         self.finished_at = finished_at
+        self.color_index = color_index
+        self.zone_history = zone_history
 
 
 class MockRace:

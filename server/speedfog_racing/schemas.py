@@ -19,10 +19,17 @@ class CreateRaceRequest(BaseModel):
     name: str
     pool_name: str = "standard"
     config: dict[str, Any] = {}
+    organizer_participates: bool = False
 
 
 class AddParticipantRequest(BaseModel):
     """Request to add a participant to a race."""
+
+    twitch_username: str
+
+
+class AddCasterRequest(BaseModel):
+    """Request to add a caster to a race."""
 
     twitch_username: str
 
@@ -54,6 +61,16 @@ class ParticipantResponse(BaseModel):
     current_layer: int
     igt_ms: int
     death_count: int
+    color_index: int = 0
+
+
+class CasterResponse(BaseModel):
+    """Caster information in responses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    user: UserResponse
 
 
 class RaceResponse(BaseModel):
@@ -84,6 +101,7 @@ class RaceDetailResponse(BaseModel):
     participant_count: int
     seed_total_layers: int | None
     participants: list[ParticipantResponse]
+    casters: list[CasterResponse] = []
 
 
 class RaceListResponse(BaseModel):

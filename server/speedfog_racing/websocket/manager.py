@@ -162,7 +162,9 @@ class ConnectionManager:
         await room.broadcast_to_all(message.model_dump_json())
 
 
-def participant_to_info(participant: Participant) -> ParticipantInfo:
+def participant_to_info(
+    participant: Participant, *, include_history: bool = False
+) -> ParticipantInfo:
     """Convert a Participant model to ParticipantInfo schema."""
     return ParticipantInfo(
         id=str(participant.id),
@@ -173,6 +175,8 @@ def participant_to_info(participant: Participant) -> ParticipantInfo:
         current_layer=participant.current_layer,
         igt_ms=participant.igt_ms,
         death_count=participant.death_count,
+        color_index=participant.color_index,
+        zone_history=participant.zone_history if include_history else None,
     )
 
 

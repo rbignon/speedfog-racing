@@ -59,6 +59,8 @@ class ParticipantInfo(BaseModel):
     current_layer: int
     igt_ms: int
     death_count: int
+    color_index: int = 0
+    zone_history: list[dict[str, object]] | None = None
 
 
 class RaceInfo(BaseModel):
@@ -74,6 +76,8 @@ class SeedInfo(BaseModel):
 
     total_layers: int
     graph_json: dict[str, object] | None = None  # Only for spectators
+    total_nodes: int | None = None
+    total_paths: int | None = None
 
 
 class AuthOkMessage(BaseModel):

@@ -1,7 +1,12 @@
 """Shared API response helpers."""
 
-from speedfog_racing.models import Participant, Race, User
-from speedfog_racing.schemas import ParticipantResponse, RaceResponse, UserResponse
+from speedfog_racing.models import Caster, Participant, Race, User
+from speedfog_racing.schemas import (
+    CasterResponse,
+    ParticipantResponse,
+    RaceResponse,
+    UserResponse,
+)
 
 
 def user_response(user: User) -> UserResponse:
@@ -23,6 +28,15 @@ def participant_response(participant: Participant) -> ParticipantResponse:
         current_layer=participant.current_layer,
         igt_ms=participant.igt_ms,
         death_count=participant.death_count,
+        color_index=participant.color_index,
+    )
+
+
+def caster_response(caster: Caster) -> CasterResponse:
+    """Convert Caster model to CasterResponse."""
+    return CasterResponse(
+        id=caster.id,
+        user=user_response(caster.user),
     )
 
 
