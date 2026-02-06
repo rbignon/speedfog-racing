@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus
-from speedfog_racing.services.layer_service import get_layer_for_zone
+from speedfog_racing.services.layer_service import get_layer_for_zone, get_node_for_zone
 from speedfog_racing.websocket.manager import manager, participant_to_info, sort_leaderboard
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
@@ -194,6 +194,16 @@ async def handle_zone_entered(
         seed = participant.race.seed
         if seed and seed.graph_json:
             participant.current_layer = get_layer_for_zone(msg["to_zone"], seed.graph_json)
+
+            # Append to zone_history
+            node_id = get_node_for_zone(msg["to_zone"], seed.graph_json)
+            if node_id is not None:
+                igt = msg.get("igt_ms", 0) if isinstance(msg.get("igt_ms"), int) else 0
+                entry = {"node_id": node_id, "igt_ms": igt}
+                old_history = participant.zone_history or []
+                # Use copy pattern for SQLAlchemy JSON mutation detection
+                participant.zone_history = [*old_history, entry]
+
     if isinstance(msg.get("igt_ms"), int):
         participant.igt_ms = msg["igt_ms"]
 

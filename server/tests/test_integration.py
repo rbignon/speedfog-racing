@@ -169,7 +169,11 @@ def seed_folder():
             json.dumps(
                 {
                     "total_layers": 5,
-                    "nodes": [],
+                    "nodes": {
+                        "node_a": {"zones": ["zone_a"]},
+                        "node_b": {"zones": ["zone_b"]},
+                        "node_c": {"zones": ["zone_c"]},
+                    },
                     "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
                 }
             )
@@ -233,7 +237,11 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                 pool_name="standard",
                 graph_json={
                     "total_layers": 5,
-                    "nodes": [],
+                    "nodes": {
+                        "node_a": {"zones": ["zone_a"]},
+                        "node_b": {"zones": ["zone_b"]},
+                        "node_c": {"zones": ["zone_c"]},
+                    },
                     "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
                 },
                 total_layers=5,
@@ -295,9 +303,14 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                     )
                     race = race_result.scalar_one()
                     if race.seed:
-                        # Ensure area_tiers contains test zone names
+                        # Ensure area_tiers and nodes contain test zone names
                         graph = dict(race.seed.graph_json or {})
                         graph["area_tiers"] = {"zone_a": 1, "zone_b": 2, "zone_c": 3}
+                        graph["nodes"] = {
+                            "node_a": {"zones": ["zone_a"]},
+                            "node_b": {"zones": ["zone_b"]},
+                            "node_c": {"zones": ["zone_c"]},
+                        }
                         race.seed.graph_json = graph
                         await db.commit()
 
@@ -593,3 +606,95 @@ def test_seed_pack_contains_player_specific_config(integration_client, race_with
             assert "[server]" in config_content
             assert "[overlay]" in config_content
             assert "[keybindings]" in config_content
+
+
+# =============================================================================
+# Scenario 4: Zone History Accumulation
+# =============================================================================
+
+
+def test_zone_history_accumulates(integration_client, race_with_participants, integration_db):
+    """Verify zone_entered events append to participant.zone_history."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Start the race
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    # Player 0: enters zone_a then zone_b
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        mod0.send_zone_entered("start", "zone_a", igt_ms=10000)
+        mod0.receive()  # leaderboard_update
+
+        mod0.send_zone_entered("zone_a", "zone_b", igt_ms=20000)
+        mod0.receive()  # leaderboard_update
+
+    # Check zone_history in DB
+    async def check_history():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is not None
+    assert len(history) == 2
+    assert history[0]["node_id"] == "node_a"
+    assert history[0]["igt_ms"] == 10000
+    assert history[1]["node_id"] == "node_b"
+    assert history[1]["igt_ms"] == 20000
+
+
+def test_zone_history_unknown_zone_not_appended(
+    integration_client, race_with_participants, integration_db
+):
+    """Zone changes to unknown zones don't add to zone_history."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Start the race
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    # Player 0: enters unknown_zone (not in nodes dict)
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        mod0.send_zone_entered("start", "unknown_zone", igt_ms=5000)
+        mod0.receive()  # leaderboard_update
+
+    # Check zone_history is still None
+    async def check_history():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is None
