@@ -76,6 +76,6 @@
 		font-size: 1.5rem;
 		font-weight: bold;
 		font-variant-numeric: tabular-nums;
-		color: #f39c12;
+		color: var(--color-warning);
 	}
 </style>

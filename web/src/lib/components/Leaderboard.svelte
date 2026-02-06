@@ -44,7 +44,7 @@
 		<ol class="list">
 			{#each participants as participant, index (participant.id)}
 				<li class="participant {getStatusClass(participant.status)}">
-					<span class="rank">{index + 1}</span>
+					<span class="rank" class:rank-first={index === 0}>{index + 1}</span>
 					<div class="info">
 						<span class="name">
 							{participant.twitch_display_name || participant.twitch_username}
@@ -77,9 +77,10 @@
 	}
 
 	h2 {
-		color: #9b59b6;
+		color: var(--color-gold);
 		margin: 0 0 1rem 0;
-		font-size: 1.1rem;
+		font-size: var(--font-size-lg);
+		font-weight: 600;
 	}
 
 	.list {
@@ -98,18 +99,22 @@
 		align-items: center;
 		gap: 0.75rem;
 		padding: 0.75rem;
-		background: #1a1a2e;
-		border-radius: 4px;
-		border: 1px solid #0f3460;
-		transition: border-color 0.2s;
+		background: var(--color-bg);
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--color-border);
+		transition: border-color var(--transition);
+	}
+
+	.participant:hover {
+		background: var(--color-surface-elevated);
 	}
 
 	.participant.finished {
-		border-color: #27ae60;
+		border-color: var(--color-success);
 	}
 
 	.participant.playing {
-		border-color: #f39c12;
+		border-color: var(--color-warning);
 	}
 
 	.participant.abandoned {
@@ -119,18 +124,30 @@
 	.rank {
 		width: 24px;
 		height: 24px;
-		background: #0f3460;
+		background: var(--color-border);
 		border-radius: 50%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 0.8rem;
+		font-size: var(--font-size-sm);
 		font-weight: bold;
 		flex-shrink: 0;
+		color: var(--color-text-secondary);
+	}
+
+	.rank-first {
+		background: var(--color-gold);
+		color: var(--color-bg);
 	}
 
 	.participant.finished .rank {
-		background: #27ae60;
+		background: var(--color-success);
+		color: white;
+	}
+
+	.participant.finished .rank-first {
+		background: var(--color-gold);
+		color: var(--color-bg);
 	}
 
 	.info {
@@ -148,13 +165,15 @@
 
 	.stats {
 		display: block;
-		font-size: 0.8rem;
-		color: #7f8c8d;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.finished-time {
-		color: #27ae60;
+		color: var(--color-success);
 		font-weight: 500;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.status-text {
@@ -162,12 +181,12 @@
 	}
 
 	.finish-icon {
-		color: #27ae60;
+		color: var(--color-success);
 		font-size: 1.2rem;
 	}
 
 	.empty {
-		color: #7f8c8d;
+		color: var(--color-text-disabled);
 		font-style: italic;
 	}
 </style>

@@ -90,7 +90,7 @@
 			{:else}
 				<div class="race-list">
 					{#each myRaces as race}
-						<a href="/race/{race.id}" class="race-card">
+						<a href="/race/{race.id}" class="race-card" class:running={race.status === 'running'}>
 							<div class="race-header">
 								<span class="race-name">{race.name}</span>
 								<div class="race-badges">
@@ -131,7 +131,7 @@
 		{:else}
 			<div class="race-list">
 				{#each filteredRaces as race}
-					<a href="/race/{race.id}" class="race-card">
+					<a href="/race/{race.id}" class="race-card" class:running={race.status === 'running'}>
 						<div class="race-header">
 							<span class="race-name">{race.name}</span>
 							<span class="badge badge-{race.status}">{race.status}</span>
@@ -163,10 +163,10 @@
 	}
 
 	.error-banner {
-		background: #c0392b;
+		background: var(--color-danger-dark);
 		color: white;
 		padding: 1rem;
-		border-radius: 4px;
+		border-radius: var(--radius-sm);
 		margin-bottom: 1rem;
 		display: flex;
 		justify-content: space-between;
@@ -183,12 +183,14 @@
 
 	h2 {
 		margin-bottom: 1rem;
-		color: #9b59b6;
+		color: var(--color-gold);
+		font-size: var(--font-size-lg);
+		font-weight: 600;
 	}
 
 	.loading,
 	.empty {
-		color: #7f8c8d;
+		color: var(--color-text-disabled);
 		font-style: italic;
 	}
 
@@ -203,17 +205,21 @@
 	}
 
 	.race-card {
-		background: #16213e;
-		border: 1px solid #0f3460;
-		border-radius: 8px;
-		padding: 1rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		padding: 1.25rem;
 		text-decoration: none;
 		color: inherit;
-		transition: border-color 0.2s;
+		transition: border-color var(--transition);
 	}
 
 	.race-card:hover {
-		border-color: #9b59b6;
+		border-color: var(--color-purple);
+	}
+
+	.race-card.running {
+		border-left: 3px solid var(--color-gold);
 	}
 
 	.race-header {
@@ -234,24 +240,20 @@
 	}
 
 	.badge-role {
-		background: #2c3e50;
-		color: #bdc3c7;
-		padding: 0.2rem 0.5rem;
-		border-radius: 4px;
-		font-size: 0.75rem;
-		text-transform: uppercase;
+		background: rgba(107, 114, 128, 0.2);
+		color: var(--color-text-secondary);
 	}
 
 	.race-info {
 		display: flex;
 		gap: 1rem;
 		font-size: 0.9rem;
-		color: #95a5a6;
+		color: var(--color-text-secondary);
 		margin-bottom: 0.25rem;
 	}
 
 	.race-date {
-		font-size: 0.8rem;
-		color: #7f8c8d;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-disabled);
 	}
 </style>

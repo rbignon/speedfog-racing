@@ -90,15 +90,17 @@
 	}
 
 	.invite-card {
-		background: #16213e;
-		border: 1px solid #0f3460;
-		border-radius: 8px;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
 		padding: 2rem;
 	}
 
 	h1 {
 		margin: 0 0 1.5rem 0;
-		color: #9b59b6;
+		color: var(--color-text);
+		font-size: var(--font-size-2xl);
+		font-weight: 600;
 	}
 
 	.invite-details {
@@ -115,9 +117,11 @@
 	}
 
 	.label {
-		color: #7f8c8d;
+		color: var(--color-text-secondary);
 		font-size: 0.9rem;
 		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-weight: 500;
 	}
 
 	.value {
@@ -132,17 +136,17 @@
 	}
 
 	.hint {
-		color: #95a5a6;
+		color: var(--color-text-secondary);
 		font-style: italic;
 		margin: 0;
 	}
 
 	.error {
-		background: #c0392b33;
-		border: 1px solid #c0392b;
-		color: #e74c3c;
+		background: rgba(220, 38, 38, 0.15);
+		border: 1px solid var(--color-danger-dark);
+		color: var(--color-danger);
 		padding: 0.75rem 1rem;
-		border-radius: 4px;
+		border-radius: var(--radius-sm);
 		margin-bottom: 1rem;
 	}
 </style>

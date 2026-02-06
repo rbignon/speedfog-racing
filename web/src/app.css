@@ -1,0 +1,178 @@
+:root {
+  /* Foundations */
+  --color-bg: #0f1923;
+  --color-surface: #162032;
+  --color-surface-elevated: #1c2a3f;
+  --color-border: #253550;
+
+  /* Accents */
+  --color-gold: #c8a44e;
+  --color-gold-hover: #ddb95f;
+  --color-purple: #8b5cf6;
+  --color-purple-hover: #a78bfa;
+
+  /* Text */
+  --color-text: #e8e6e1;
+  --color-text-secondary: #9ca3af;
+  --color-text-disabled: #6b7280;
+
+  /* Semantic */
+  --color-success: #10b981;
+  --color-warning: #c8a44e;
+  --color-danger: #ef4444;
+  --color-danger-dark: #dc2626;
+  --color-info: #3b82f6;
+
+  /* Twitch */
+  --color-twitch: #6441a5;
+  --color-twitch-hover: #7c5bbf;
+
+  /* Typography */
+  --font-family:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8rem;
+  --font-size-base: 0.9375rem;
+  --font-size-lg: 1.25rem;
+  --font-size-xl: 1.5rem;
+  --font-size-2xl: 1.75rem;
+
+  /* Spacing */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Effects */
+  --transition: 0.2s ease;
+  --glow-gold: 0 0 12px rgba(200, 164, 78, 0.25);
+}
+
+/* Reset & base */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+
+a {
+  color: var(--color-purple);
+}
+
+a:hover {
+  color: var(--color-purple-hover);
+}
+
+/* Buttons */
+.btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  display: inline-block;
+  transition: all var(--transition);
+}
+
+.btn-primary {
+  background: var(--color-gold);
+  color: var(--color-bg);
+}
+
+.btn-primary:hover {
+  background: var(--color-gold-hover);
+  box-shadow: var(--glow-gold);
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.btn-secondary:hover {
+  border-color: var(--color-purple);
+  color: var(--color-purple-hover);
+}
+
+.btn-twitch {
+  background: var(--color-twitch);
+  color: white;
+}
+
+.btn-twitch:hover {
+  background: var(--color-twitch-hover);
+}
+
+.btn-danger {
+  background: transparent;
+  border: 1px solid var(--color-danger-dark);
+  color: var(--color-danger);
+}
+
+.btn-danger:hover {
+  background: rgba(220, 38, 38, 0.1);
+}
+
+/* Badges */
+.badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Race status badges */
+.badge-draft {
+  background: rgba(107, 114, 128, 0.2);
+  color: var(--color-text-disabled);
+}
+
+.badge-open {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+}
+
+.badge-countdown {
+  background: rgba(200, 164, 78, 0.15);
+  color: var(--color-warning);
+}
+
+.badge-running {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--color-danger);
+}
+
+.badge-finished {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--color-info);
+}
+
+/* Participant status badges */
+.badge-registered {
+  background: rgba(107, 114, 128, 0.2);
+  color: var(--color-text-disabled);
+}
+
+.badge-ready {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+}
+
+.badge-playing {
+  background: rgba(200, 164, 78, 0.15);
+  color: var(--color-warning);
+}
+
+.badge-abandoned {
+  background: rgba(220, 38, 38, 0.2);
+  color: var(--color-danger);
+}

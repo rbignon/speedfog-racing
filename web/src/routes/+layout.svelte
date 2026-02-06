@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '../app.css';
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { getTwitchLoginUrl } from '$lib/api';
@@ -41,129 +42,14 @@
 <style>
 	.app {
 		min-height: 100vh;
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
 		display: flex;
 		flex-direction: column;
 	}
 
-	:global(body) {
-		margin: 0;
-		padding: 0;
-		background-color: #1a1a2e;
-		color: #eee;
-	}
-
-	:global(a) {
-		color: #9b59b6;
-	}
-
-	:global(a:hover) {
-		color: #8e44ad;
-	}
-
-	:global(.btn) {
-		padding: 0.5rem 1rem;
-		border: none;
-		border-radius: 4px;
-		cursor: pointer;
-		text-decoration: none;
-		font-size: 0.9rem;
-		display: inline-block;
-	}
-
-	:global(.btn-primary) {
-		background: #9b59b6;
-		color: white;
-	}
-
-	:global(.btn-primary:hover) {
-		background: #8e44ad;
-	}
-
-	:global(.btn-secondary) {
-		background: #34495e;
-		color: white;
-	}
-
-	:global(.btn-secondary:hover) {
-		background: #2c3e50;
-	}
-
-	:global(.btn-twitch) {
-		background: #6441a5;
-		color: white;
-	}
-
-	:global(.btn-twitch:hover) {
-		background: #563d7c;
-	}
-
-	:global(.btn-danger) {
-		background: #c0392b;
-		color: white;
-	}
-
-	:global(.btn-danger:hover) {
-		background: #a93226;
-	}
-
-	:global(.badge) {
-		padding: 0.25rem 0.5rem;
-		border-radius: 4px;
-		font-size: 0.75rem;
-		text-transform: uppercase;
-	}
-
-	:global(.badge-draft) {
-		background: #7f8c8d;
-		color: white;
-	}
-
-	:global(.badge-open) {
-		background: #27ae60;
-		color: white;
-	}
-
-	:global(.badge-countdown) {
-		background: #f39c12;
-		color: white;
-	}
-
-	:global(.badge-running) {
-		background: #e74c3c;
-		color: white;
-	}
-
-	:global(.badge-finished) {
-		background: #3498db;
-		color: white;
-	}
-
-	/* Participant status badges */
-	:global(.badge-registered) {
-		background: #95a5a6;
-		color: white;
-	}
-
-	:global(.badge-ready) {
-		background: #27ae60;
-		color: white;
-	}
-
-	:global(.badge-playing) {
-		background: #f39c12;
-		color: white;
-	}
-
-	:global(.badge-abandoned) {
-		background: #e74c3c;
-		color: white;
-	}
-
 	header {
-		background: #16213e;
+		background: var(--color-bg);
 		padding: 1rem 2rem;
-		border-bottom: 1px solid #0f3460;
+		border-bottom: 1px solid var(--color-border);
 	}
 
 	.header-content {
@@ -176,14 +62,14 @@
 
 	.logo {
 		margin: 0;
-		font-size: 1.5rem;
-		font-weight: bold;
-		color: #9b59b6;
+		font-size: var(--font-size-xl);
+		font-weight: 700;
+		color: var(--color-gold);
 		text-decoration: none;
 	}
 
 	.logo:hover {
-		color: #8e44ad;
+		color: var(--color-gold-hover);
 	}
 
 	nav {
@@ -202,10 +88,11 @@
 		width: 32px;
 		height: 32px;
 		border-radius: 50%;
+		border: 2px solid var(--color-border);
 	}
 
 	.loading {
-		color: #7f8c8d;
+		color: var(--color-text-disabled);
 		font-style: italic;
 	}
 

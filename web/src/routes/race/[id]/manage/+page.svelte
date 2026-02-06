@@ -260,13 +260,16 @@
 
 	h1 {
 		margin: 0;
-		color: #9b59b6;
+		color: var(--color-text);
+		font-size: var(--font-size-2xl);
+		font-weight: 600;
 	}
 
 	h2 {
-		color: #9b59b6;
+		color: var(--color-gold);
 		margin: 0 0 1rem 0;
-		font-size: 1.1rem;
+		font-size: var(--font-size-lg);
+		font-weight: 600;
 	}
 
 	h3 {
@@ -275,25 +278,25 @@
 	}
 
 	.section {
-		background: #16213e;
-		border-radius: 8px;
+		background: var(--color-surface);
+		border-radius: var(--radius-lg);
 		padding: 1.5rem;
 		margin-bottom: 1.5rem;
 	}
 
 	.message {
 		padding: 1rem;
-		border-radius: 4px;
+		border-radius: var(--radius-sm);
 		margin-bottom: 1rem;
 	}
 
 	.message.error {
-		background: #c0392b;
+		background: var(--color-danger-dark);
 		color: white;
 	}
 
 	.message.success {
-		background: #27ae60;
+		background: var(--color-success);
 		color: white;
 	}
 
@@ -305,16 +308,17 @@
 	.add-form input {
 		flex: 1;
 		padding: 0.75rem;
-		border: 1px solid #0f3460;
-		border-radius: 4px;
-		background: #1a1a2e;
-		color: #eee;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-bg);
+		color: var(--color-text);
+		font-family: var(--font-family);
 		font-size: 1rem;
 	}
 
 	.add-form input:focus {
 		outline: none;
-		border-color: #9b59b6;
+		border-color: var(--color-purple);
 	}
 
 	.participant-list {
@@ -331,8 +335,8 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 0.75rem;
-		background: #1a1a2e;
-		border-radius: 4px;
+		background: var(--color-bg);
+		border-radius: var(--radius-sm);
 	}
 
 	.participant-info {
@@ -353,12 +357,12 @@
 	}
 
 	.empty {
-		color: #7f8c8d;
+		color: var(--color-text-disabled);
 		font-style: italic;
 	}
 
 	.hint {
-		color: #7f8c8d;
+		color: var(--color-text-secondary);
 		margin: 0 0 1rem 0;
 		font-size: 0.9rem;
 	}
@@ -366,7 +370,7 @@
 	.downloads {
 		margin-top: 1rem;
 		padding-top: 1rem;
-		border-top: 1px solid #0f3460;
+		border-top: 1px solid var(--color-border);
 	}
 
 	.downloads ul {
@@ -387,20 +391,21 @@
 
 	.start-form input {
 		padding: 0.75rem;
-		border: 1px solid #0f3460;
-		border-radius: 4px;
-		background: #1a1a2e;
-		color: #eee;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-bg);
+		color: var(--color-text);
+		font-family: var(--font-family);
 		font-size: 1rem;
 	}
 
 	.start-form input:focus {
 		outline: none;
-		border-color: #9b59b6;
+		border-color: var(--color-purple);
 	}
 
 	.loading {
-		color: #7f8c8d;
+		color: var(--color-text-disabled);
 		font-style: italic;
 	}
 </style>

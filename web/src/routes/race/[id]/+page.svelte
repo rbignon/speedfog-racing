@@ -156,8 +156,8 @@
 
 	.sidebar {
 		width: 280px;
-		background: #16213e;
-		border-right: 1px solid #0f3460;
+		background: var(--color-surface);
+		border-right: 1px solid var(--color-border);
 		padding: 1.5rem;
 		flex-shrink: 0;
 	}
@@ -178,12 +178,14 @@
 
 	.race-header h1 {
 		margin: 0;
-		color: #eee;
+		color: var(--color-text);
+		font-size: var(--font-size-2xl);
+		font-weight: 600;
 	}
 
 	.organizer {
 		margin: 0.25rem 0 0 0;
-		color: #7f8c8d;
+		color: var(--color-text-disabled);
 	}
 
 	.header-right {
@@ -196,9 +198,9 @@
 	.dag-placeholder {
 		flex: 1;
 		min-height: 300px;
-		background: #16213e;
-		border: 2px dashed #0f3460;
-		border-radius: 8px;
+		background: var(--color-surface);
+		border: 2px dashed var(--color-border);
+		border-radius: var(--radius-lg);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -206,7 +208,7 @@
 
 	.dag-content {
 		text-align: center;
-		color: #7f8c8d;
+		color: var(--color-text-disabled);
 	}
 
 	.dag-icon {
@@ -225,8 +227,8 @@
 	}
 
 	.race-info {
-		background: #16213e;
-		border-radius: 8px;
+		background: var(--color-surface);
+		border-radius: var(--radius-lg);
 		padding: 1.5rem;
 	}
 
@@ -244,13 +246,16 @@
 	}
 
 	.label {
-		font-size: 0.8rem;
-		color: #7f8c8d;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
 		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-weight: 500;
 	}
 
 	.value {
 		font-weight: 500;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.actions {
@@ -260,12 +265,12 @@
 	}
 
 	.participant-note {
-		color: #27ae60;
+		color: var(--color-success);
 		font-style: italic;
 	}
 
 	.download-error {
-		color: #e74c3c;
+		color: var(--color-danger);
 		font-size: 0.9rem;
 	}
 </style>

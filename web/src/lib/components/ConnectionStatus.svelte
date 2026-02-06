@@ -18,17 +18,17 @@
 		gap: 0.5rem;
 		font-size: 0.85rem;
 		padding: 0.25rem 0.5rem;
-		border-radius: 4px;
+		border-radius: var(--radius-sm);
 	}
 
 	.connected {
-		background: rgba(39, 174, 96, 0.2);
-		color: #27ae60;
+		background: rgba(16, 185, 129, 0.15);
+		color: var(--color-success);
 	}
 
 	.disconnected {
-		background: rgba(243, 156, 18, 0.2);
-		color: #f39c12;
+		background: rgba(200, 164, 78, 0.15);
+		color: var(--color-warning);
 	}
 
 	.indicator {
@@ -38,12 +38,12 @@
 	}
 
 	.connected .indicator {
-		background: #27ae60;
-		box-shadow: 0 0 4px #27ae60;
+		background: var(--color-success);
+		box-shadow: 0 0 4px var(--color-success);
 	}
 
 	.disconnected .indicator {
-		background: #f39c12;
+		background: var(--color-warning);
 		animation: pulse 1s infinite;
 	}
 
