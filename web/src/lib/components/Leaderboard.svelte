@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
+	import { PLAYER_COLORS } from '$lib/dag/constants';
 
 	interface Props {
 		participants: WsParticipant[];
@@ -7,6 +8,11 @@
 	}
 
 	let { participants, totalLayers = null }: Props = $props();
+
+	function rankColor(participant: WsParticipant): string | null {
+		if (participant.status !== 'playing' && participant.status !== 'finished') return null;
+		return PLAYER_COLORS[participant.color_index % PLAYER_COLORS.length];
+	}
 
 	function formatIgt(ms: number): string {
 		const totalSeconds = Math.floor(ms / 1000);
@@ -43,8 +49,11 @@
 	{:else}
 		<ol class="list">
 			{#each participants as participant, index (participant.id)}
+				{@const color = rankColor(participant)}
 				<li class="participant {getStatusClass(participant.status)}">
-					<span class="rank" class:rank-first={index === 0}>{index + 1}</span>
+					<span class="rank" style={color ? `background: ${color}; color: #1a1a2e;` : ''}
+						>{index + 1}</span
+					>
 					<div class="info">
 						<span class="name">
 							{participant.twitch_display_name || participant.twitch_username}
@@ -52,9 +61,15 @@
 						<span class="stats">
 							{#if participant.status === 'finished'}
 								<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
+								{#if participant.death_count > 0}
+									<span class="death-count">{participant.death_count}</span>
+								{/if}
 							{:else if participant.status === 'playing'}
 								Layer {participant.current_layer}{totalLayers ? `/${totalLayers}` : ''}
 								• {formatIgt(participant.igt_ms)}
+								{#if participant.death_count > 0}
+									<span class="death-count">{participant.death_count}</span>
+								{/if}
 							{:else}
 								<span class="status-text">{participant.status}</span>
 							{/if}
@@ -135,19 +150,9 @@
 		color: var(--color-text-secondary);
 	}
 
-	.rank-first {
-		background: var(--color-gold);
-		color: var(--color-bg);
-	}
-
 	.participant.finished .rank {
 		background: var(--color-success);
 		color: white;
-	}
-
-	.participant.finished .rank-first {
-		background: var(--color-gold);
-		color: var(--color-bg);
 	}
 
 	.info {
@@ -183,6 +188,16 @@
 	.finish-icon {
 		color: var(--color-success);
 		font-size: 1.2rem;
+	}
+
+	.death-count {
+		color: var(--color-danger, #ef4444);
+		font-size: var(--font-size-sm);
+	}
+
+	.death-count::before {
+		content: '\1F480';
+		margin-left: 0.25em;
 	}
 
 	.empty {

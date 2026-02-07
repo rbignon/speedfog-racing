@@ -1,6 +1,7 @@
 export { default as MetroDag } from "./MetroDag.svelte";
 export { default as MetroDagAnimated } from "./MetroDagAnimated.svelte";
 export { default as MetroDagBlurred } from "./MetroDagBlurred.svelte";
+export { default as MetroDagLive } from "./MetroDagLive.svelte";
 export { computeLayout } from "./layout";
 export { parseDagGraph } from "./types";
 export { generateFakeDag } from "./fakeDag";

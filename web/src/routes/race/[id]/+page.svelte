@@ -8,12 +8,13 @@
 	import ParticipantCard from '$lib/components/ParticipantCard.svelte';
 	import ParticipantSearch from '$lib/components/ParticipantSearch.svelte';
 	import CasterList from '$lib/components/CasterList.svelte';
-	import { MetroDag, MetroDagBlurred } from '$lib/dag';
+	import { MetroDag, MetroDagBlurred, MetroDagLive } from '$lib/dag';
 	import { downloadMySeedPack, fetchRace, type RaceDetail } from '$lib/api';
 
 	let downloading = $state(false);
 	let downloadError = $state<string | null>(null);
 	let showInviteSearch = $state(false);
+	let elapsedSeconds = $state(0);
 
 	async function handleDownload() {
 		downloading = true;
@@ -65,6 +66,28 @@
 			raceStore.disconnect();
 		};
 	});
+
+	// Cosmetic elapsed clock: starts from 0 on page load, not synced to server.
+	// The authoritative time source is IGT from each player's mod.
+	$effect(() => {
+		if (raceStatus !== 'running') {
+			elapsedSeconds = 0;
+			return;
+		}
+
+		const interval = setInterval(() => {
+			elapsedSeconds += 1;
+		}, 1000);
+
+		return () => clearInterval(interval);
+	});
+
+	function formatElapsed(totalSeconds: number): string {
+		const h = Math.floor(totalSeconds / 3600);
+		const m = Math.floor((totalSeconds % 3600) / 60);
+		const s = totalSeconds % 60;
+		return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+	}
 
 	let isOrganizer = $derived(auth.user?.id === initialRace.organizer.id);
 
@@ -139,10 +162,17 @@
 						initialRace.organizer.twitch_username}
 				</p>
 			</div>
-			<RaceStatus status={raceStatus} />
+			<div class="header-right">
+				<RaceStatus status={raceStatus} />
+				{#if raceStatus === 'running'}
+					<span class="elapsed-clock">{formatElapsed(elapsedSeconds)}</span>
+				{/if}
+			</div>
 		</header>
 
-		{#if liveSeed?.graph_json}
+		{#if liveSeed?.graph_json && raceStatus === 'running'}
+			<MetroDagLive graphJson={liveSeed.graph_json} participants={raceStore.participants} />
+		{:else if liveSeed?.graph_json}
 			<MetroDag graphJson={liveSeed.graph_json} />
 		{:else if liveSeed?.total_nodes && liveSeed?.total_paths && totalLayers}
 			<MetroDagBlurred
@@ -282,6 +312,21 @@
 		color: var(--color-text);
 		font-size: var(--font-size-2xl);
 		font-weight: 600;
+	}
+
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-shrink: 0;
+	}
+
+	.elapsed-clock {
+		font-size: var(--font-size-lg);
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-warning, #f59e0b);
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
 	}
 
 	.organizer {
