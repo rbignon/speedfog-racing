@@ -19,6 +19,7 @@
 
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 	let containerEl: HTMLDivElement | undefined;
+	let inputEl: HTMLInputElement | undefined;
 
 	function handleInput() {
 		error = null;
@@ -91,6 +92,10 @@
 	}
 
 	$effect(() => {
+		inputEl?.focus();
+	});
+
+	$effect(() => {
 		function handleClickOutside(e: MouseEvent) {
 			if (containerEl && !containerEl.contains(e.target as Node)) {
 				showDropdown = false;
@@ -109,6 +114,7 @@
 	<div class="search-input-row">
 		<input
 			type="text"
+			bind:this={inputEl}
 			bind:value={query}
 			oninput={handleInput}
 			onkeydown={handleKeydown}
