@@ -1,5 +1,5 @@
 <script lang="ts">
-	import MetroDagAnimated from '$lib/dag/MetroDagAnimated.svelte';
+	import MetroDag from '$lib/dag/MetroDag.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { getTwitchLoginUrl } from '$lib/api';
 	import heroSeed from '$lib/data/hero-seed.json';
@@ -90,7 +90,7 @@
 			The final destination is always a random major boss. Defeat it to finish the race.
 		</p>
 		<div class="dag-demo">
-			<MetroDagAnimated graphJson={heroSeed} />
+			<MetroDag graphJson={heroSeed} />
 		</div>
 		<p class="dag-caption">
 			An example route map. During a race, the map is blurred for participants to prevent
