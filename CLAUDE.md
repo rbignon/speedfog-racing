@@ -186,18 +186,19 @@ See `docs/PROTOCOL.md` for complete reference.
 ## Documentation
 
 - `docs/ROADMAP.md` - Project roadmap (v1.0, v1.1, v2.0, future)
-- `docs/2026-02-04-speedfog-racing-design.md` - Overall design
-- `docs/phase1-spec.md` - Phase 1 MVP detailed spec
+- `docs/design.md` - Overall design
+- `docs/graphic-charter.md` - Visual identity and color palette
 - `docs/PROTOCOL.md` - API and WebSocket protocol reference
-- `docs/plans/2026-02-06-phase2-ui-ux.md` - Phase 2 UI/UX specification
-- `docs/plans/2026-02-07-emevd-zone-tracking.md` - EMEVD zone tracking spec (v1.0 critical)
+- `docs/specs/phase1.md` - Phase 1 MVP detailed spec
+- `docs/specs/phase2-ui-ux.md` - Phase 2 UI/UX specification
+- `docs/specs/emevd-zone-tracking.md` - EMEVD zone tracking spec (v1.0 critical)
 
 ## Current State
 
 Phase 1 and Phase 2 complete.
 
 **Phase 1 completed:** Steps 1-12 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Seed Pack Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork, Integration Testing, Protocol Coherence & Frontend Gaps)
-**Phase 2 completed:** Steps 1-8 (Data Model & API, Metro DAG Core, Homepage Redesign, Race Detail Lobby/Running/Finished States, Race Creation & Management, Polish). See `docs/plans/2026-02-06-phase2-ui-ux.md`.
+**Phase 2 completed:** Steps 1-8 (Data Model & API, Metro DAG Core, Homepage Redesign, Race Detail Lobby/Running/Finished States, Race Creation & Management, Polish). See `docs/specs/phase2-ui-ux.md`.
 
 ## Deployment
 

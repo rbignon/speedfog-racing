@@ -10,13 +10,13 @@
 
 Server foundation, Twitch OAuth, seed pool management, race CRUD, seed pack generation, SvelteKit frontend, race management UI, WebSocket server (mod + spectator), WebSocket frontend, mod fork (Rust DLL), integration testing, protocol coherence.
 
-**Spec:** `docs/phase1-spec.md`
+**Spec:** `docs/specs/phase1.md`
 
 ### Phase 2 — UI/UX & DAG Visualization
 
 Metro-style DAG visualization (pure SVG, custom layout algorithm), homepage redesign with animated hero DAG, race detail page overhaul (state-driven layouts for lobby/running/finished), caster role, organizer participation toggle, optional WebSocket auth for DAG visibility, player colors, podium, spectator count, participant search with autocomplete, race creation form with pool cards.
 
-**Spec:** `docs/plans/2026-02-06-phase2-ui-ux.md`
+**Spec:** `docs/specs/phase2-ui-ux.md`
 
 ---
 
@@ -27,7 +27,7 @@ Everything needed to run an actual race end-to-end with accurate tracking and a 
 ### EMEVD Event-Based Zone Tracking
 
 **Priority:** Critical (blocker)
-**Spec:** `docs/plans/2026-02-07-emevd-zone-tracking.md`
+**Spec:** `docs/specs/emevd-zone-tracking.md`
 
 Replace map_id-based zone tracking with custom EMEVD event flags for precise fog gate traversal detection and automatic race finish on final boss death. Requires changes to the SpeedFog generator, the racing mod, and the server.
 
@@ -79,9 +79,9 @@ The invite system backend exists (Phase 1 Step 12) but the UX flow is incomplete
 
 The `show_finished_names` config option was proposed in the design doc but never implemented and has no real use case (hiding finished player names doesn't add meaningful anti-spoiler value). Remove all references from:
 
-- `docs/2026-02-04-speedfog-racing-design.md`
-- `docs/phase1-spec.md`
-- `docs/plans/2026-02-06-phase2-ui-ux.md`
+- `docs/design.md`
+- `docs/specs/phase1.md`
+- `docs/specs/phase2-ui-ux.md`
 
 No code changes needed — it was never implemented.
 
