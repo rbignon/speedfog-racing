@@ -234,10 +234,12 @@
 		width: 100%;
 		background: var(--color-surface);
 		padding-bottom: 2.5rem;
+		overflow: hidden;
 	}
 
 	.hero-dag {
-		opacity: 0.5;
+		min-width: 600px;
+		margin: 0 auto;
 	}
 
 	.hero-cta {

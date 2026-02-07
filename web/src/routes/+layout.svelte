@@ -104,4 +104,24 @@
 	.content {
 		flex: 1;
 	}
+
+	@media (max-width: 480px) {
+		.header-content {
+			padding: 0.75rem 1rem;
+		}
+
+		.logo {
+			font-size: var(--font-size-lg);
+			white-space: nowrap;
+		}
+
+		nav {
+			gap: 0.5rem;
+		}
+
+		nav :global(.btn) {
+			font-size: var(--font-size-sm);
+			padding: 0.4rem 0.75rem;
+		}
+	}
 </style>
