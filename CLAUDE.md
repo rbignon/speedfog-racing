@@ -185,10 +185,12 @@ See `docs/PROTOCOL.md` for complete reference.
 
 ## Documentation
 
+- `docs/ROADMAP.md` - Project roadmap (v1.0, v1.1, v2.0, future)
 - `docs/2026-02-04-speedfog-racing-design.md` - Overall design
 - `docs/phase1-spec.md` - Phase 1 MVP detailed spec
 - `docs/PROTOCOL.md` - API and WebSocket protocol reference
 - `docs/plans/2026-02-06-phase2-ui-ux.md` - Phase 2 UI/UX specification
+- `docs/plans/2026-02-07-emevd-zone-tracking.md` - EMEVD zone tracking spec (v1.0 critical)
 
 ## Current State
 
