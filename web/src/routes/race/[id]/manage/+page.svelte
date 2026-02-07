@@ -238,7 +238,7 @@
 
 			{#if showCasterSearch}
 				<div class="caster-search">
-					<ParticipantSearch mode="caster" raceId={race.id} onAdded={handleCasterAdded} />
+					<ParticipantSearch mode="caster" raceId={race.id} onAdded={handleCasterAdded} onCancel={() => (showCasterSearch = false)} />
 				</div>
 			{:else}
 				<button

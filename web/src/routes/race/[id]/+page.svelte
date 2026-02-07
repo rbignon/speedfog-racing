@@ -113,6 +113,7 @@
 								mode="participant"
 								raceId={initialRace.id}
 								onAdded={handleParticipantAdded}
+								onCancel={() => (showInviteSearch = false)}
 							/>
 						</div>
 					{:else}

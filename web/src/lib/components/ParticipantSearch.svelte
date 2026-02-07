@@ -5,9 +5,10 @@
 		mode: 'participant' | 'caster';
 		raceId: string;
 		onAdded: () => void;
+		onCancel?: () => void;
 	}
 
-	let { mode, raceId, onAdded }: Props = $props();
+	let { mode, raceId, onAdded, onCancel }: Props = $props();
 
 	let query = $state('');
 	let results = $state<User[]>([]);
@@ -64,6 +65,11 @@
 	}
 
 	async function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			onCancel?.();
+			return;
+		}
 		if (e.key !== 'Enter') return;
 		if (mode === 'caster') return; // casters must select from dropdown
 		if (!query.trim()) return;
