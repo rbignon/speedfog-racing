@@ -79,6 +79,9 @@
 								<span class="dnf"
 									>DNF (L{participant.current_layer}{totalLayers ? `/${totalLayers}` : ''})</span
 								>
+								{#if participant.death_count > 0}
+									<span class="death-count">{participant.death_count}</span>
+								{/if}
 							{:else if participant.status === 'finished'}
 								<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
 								{#if participant.death_count > 0}

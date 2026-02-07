@@ -142,7 +142,11 @@ class ConnectionManager:
         return room is not None and participant_id in room.mods
 
     async def broadcast_leaderboard(
-        self, race_id: uuid.UUID, participants: list[Participant]
+        self,
+        race_id: uuid.UUID,
+        participants: list[Participant],
+        *,
+        include_history: bool = False,
     ) -> None:
         """Broadcast leaderboard update to all connections in a room."""
         room = self.get_room(race_id)
@@ -150,7 +154,9 @@ class ConnectionManager:
             return
 
         sorted_participants = sort_leaderboard(participants)
-        participant_infos = [participant_to_info(p) for p in sorted_participants]
+        participant_infos = [
+            participant_to_info(p, include_history=include_history) for p in sorted_participants
+        ]
 
         message = LeaderboardUpdateMessage(participants=participant_infos)
         await room.broadcast_to_all(message.model_dump_json())

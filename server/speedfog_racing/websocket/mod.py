@@ -249,10 +249,14 @@ async def handle_finished(db: AsyncSession, participant: Participant, msg: dict[
         # Push full graph + zone_history to all spectators
         await broadcast_race_state_update(participant.race_id, race)
 
-    # Broadcast final leaderboard
+    # Broadcast leaderboard (with zone_history when race is finished)
     for p in participant.race.participants:
         await db.refresh(p, ["user"])
-    await manager.broadcast_leaderboard(participant.race_id, participant.race.participants)
+    await manager.broadcast_leaderboard(
+        participant.race_id,
+        participant.race.participants,
+        include_history=all_finished,
+    )
 
 
 async def broadcast_race_start(race_id: uuid.UUID) -> None:
