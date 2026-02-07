@@ -10,6 +10,7 @@ speedfog-racing/
 ├── web/             # SvelteKit frontend
 ├── mod/             # Rust mod injected into the game
 ├── tools/           # Seed pool generation scripts
+├── deploy/          # VPS deployment (systemd, nginx, deploy script)
 └── docs/            # Specs and design documents
 ```
 
@@ -195,6 +196,16 @@ Phase 1 complete. Phase 2 in progress.
 
 **Phase 1 completed:** Steps 1-12 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Seed Pack Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork, Integration Testing, Protocol Coherence & Frontend Gaps)
 **Phase 2:** Metro DAG visualization, homepage redesign, race detail UX overhaul, caster role. See `docs/plans/2026-02-06-phase2-ui-ux.md`.
+
+## Deployment
+
+VPS deployment with nginx reverse proxy + systemd service. See `deploy/README.md` for full setup.
+
+- Frontend: SvelteKit with `adapter-static` (SPA), built locally and uploaded via scp
+- Backend: uvicorn behind nginx, managed by systemd as `speedfog` user
+- Deploy: `DEPLOY_HOST=user@host ./deploy/deploy.sh` (builds locally, rsync server code, scp frontend, run migrations, restart)
+- Config: `.env` in `server/` read by pydantic-settings (not systemd EnvironmentFile)
+- Permissions: deploy user in `speedfog` group, setgid on `server/` and `web-build/`, sudoers for `speedfog` user and `systemctl restart`
 
 ## Related Projects
 
