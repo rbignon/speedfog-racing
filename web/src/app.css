@@ -121,6 +121,12 @@ a:hover {
   background: rgba(220, 38, 38, 0.1);
 }
 
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* Badges */
 .badge {
   padding: 0.2rem 0.6rem;

@@ -1,33 +1,42 @@
 # Deployment — VPS with nginx/systemd
 
+The frontend is built locally and uploaded to the server. The server only needs Python and system packages.
+
 ## Prerequisites
 
-- Debian/Ubuntu VPS with root access
+**Dev machine (local):**
+
+- Node.js 20+ with npm
+
+**VPS (remote):**
+
+- Debian/Ubuntu with root access
 - PostgreSQL installed and running
 - nginx installed
-- Python 3.11+ with [uv](https://docs.astral.sh/uv/)
-- Node.js 20+ with npm
+- Python 3.11+ (`sudo apt install python3 python3-venv`)
 - A domain pointing to the VPS
 
-## Initial Setup
+## Initial Setup (on the VPS)
 
 ### 1. System user and directories
 
 ```bash
-sudo useradd -r -s /usr/sbin/nologin speedfog
-sudo mkdir -p /opt/speedfog-racing /data/SpeedFog/racing/seeds/standard /data/SpeedFog/racing/seed_packs
-sudo chown speedfog:speedfog /data/SpeedFog -R
+sudo useradd -r -d /opt/speedfog-racing -s /usr/sbin/nologin speedfog
+sudo usermod -aG speedfog rom1  # Allow deploy user to write app files
+sudo mkdir -p /opt/speedfog-racing/server /opt/speedfog-racing/web-build
+sudo mkdir -p /data/SpeedFog/racing/seeds/standard /data/SpeedFog/racing/seed_packs
+sudo chown -R speedfog:speedfog /opt/speedfog-racing /data/SpeedFog
+sudo chmod -R g+w /opt/speedfog-racing/server /opt/speedfog-racing/web-build
+sudo chmod g+s /opt/speedfog-racing/server /opt/speedfog-racing/web-build  # setgid: new files inherit group
 ```
 
-### 2. Clone and configure
+### 2. Configure environment
 
 ```bash
-sudo git clone <repo-url> /opt/speedfog-racing
-cd /opt/speedfog-racing
-sudo cp deploy/.env.example .env
-sudo editor .env  # Fill in all values
-sudo chmod 600 .env
-sudo chown speedfog:speedfog .env
+sudo cp deploy/.env.example /opt/speedfog-racing/server/.env
+sudo editor /opt/speedfog-racing/server/.env  # Fill in all values
+sudo chmod 600 /opt/speedfog-racing/server/.env
+sudo chown speedfog:speedfog /opt/speedfog-racing/server/.env
 ```
 
 Generate a secret key:
@@ -45,18 +54,9 @@ sudo -u postgres createdb -O speedfog speedfog_racing
 sudo -u postgres psql -c "ALTER USER speedfog PASSWORD 'CHANGEME';"
 ```
 
-### 4. Install dependencies and build
+### 4. Initial deploy
 
-```bash
-cd /opt/speedfog-racing/server
-uv sync --no-dev
-uv run alembic upgrade head
-
-cd /opt/speedfog-racing/web
-npm ci
-npm run build
-cp -r build /opt/speedfog-racing/web-build
-```
+Run the deploy script from your dev machine (see [Updating](#updating) below). It will upload the server code, build and upload the frontend, install dependencies, and run migrations.
 
 ### 5. Copy seed files
 
@@ -65,7 +65,7 @@ Copy your seed pool JSON files into `/data/SpeedFog/racing/seeds/standard/`.
 ### 6. systemd service
 
 ```bash
-sudo cp deploy/speedfog-racing.service /etc/systemd/system/
+sudo cp /opt/speedfog-racing/deploy/speedfog-racing.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now speedfog-racing
 sudo journalctl -u speedfog-racing -f  # Check logs
@@ -89,12 +89,21 @@ Update your [Twitch app](https://dev.twitch.tv/console/apps) OAuth redirect URL 
 
 ## Updating
 
+From your dev machine, at the repo root:
+
 ```bash
-cd /opt/speedfog-racing
 ./deploy/deploy.sh
 ```
 
-The script pulls the latest code, installs dependencies, runs migrations, rebuilds the frontend, restarts the service, and checks the health endpoint.
+The script:
+
+1. Builds the SvelteKit frontend locally
+2. Uploads the build archive via scp
+3. Syncs server code via rsync (preserves `.venv` and `.env`)
+4. Installs/updates Python dependencies on the VPS
+5. Runs database migrations
+6. Swaps the frontend build atomically
+7. Restarts the service and checks health
 
 ## Files
 
@@ -103,7 +112,7 @@ The script pulls the latest code, installs dependencies, runs migrations, rebuil
 | `speedfog-racing.service`    | systemd unit — runs uvicorn on `127.0.0.1:8000`            |
 | `speedfog-racing.nginx.conf` | nginx site config — static frontend + API/WS reverse proxy |
 | `.env.example`               | Production environment variable template                   |
-| `deploy.sh`                  | One-command deploy script                                  |
+| `deploy.sh`                  | One-command deploy script (run from dev machine)           |
 
 ## Useful Commands
 

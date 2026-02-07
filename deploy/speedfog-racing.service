@@ -8,7 +8,7 @@ Type=exec
 User=speedfog
 Group=speedfog
 WorkingDirectory=/opt/speedfog-racing/server
-EnvironmentFile=/opt/speedfog-racing/.env
+# .env is read by pydantic-settings from WorkingDirectory
 ExecStart=/opt/speedfog-racing/server/.venv/bin/uvicorn speedfog_racing.main:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=5
