@@ -192,10 +192,10 @@ See `docs/PROTOCOL.md` for complete reference.
 
 ## Current State
 
-Phase 1 complete. Phase 2 in progress.
+Phase 1 and Phase 2 complete.
 
 **Phase 1 completed:** Steps 1-12 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Seed Pack Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork, Integration Testing, Protocol Coherence & Frontend Gaps)
-**Phase 2:** Metro DAG visualization, homepage redesign, race detail UX overhaul, caster role. See `docs/plans/2026-02-06-phase2-ui-ux.md`.
+**Phase 2 completed:** Steps 1-8 (Data Model & API, Metro DAG Core, Homepage Redesign, Race Detail Lobby/Running/Finished States, Race Creation & Management, Polish). See `docs/plans/2026-02-06-phase2-ui-ux.md`.
 
 ## Deployment
 
