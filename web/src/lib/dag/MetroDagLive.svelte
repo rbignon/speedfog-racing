@@ -181,46 +181,48 @@
 				<g class="dag-node" data-type={node.type}>
 					<title>{node.displayName}</title>
 
-					{#if node.type === 'start'}
-						<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-						<polygon
-							points="{node.x - 3},{node.y - 5} {node.x - 3},{node.y + 5} {node.x + 5},{node.y}"
-							fill={BG_COLOR}
-						/>
-					{:else if node.type === 'final_boss'}
-						<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-						<rect x={node.x - 4} y={node.y - 4} width="8" height="8" fill={BG_COLOR} />
-					{:else if node.type === 'mini_dungeon'}
-						<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-					{:else if node.type === 'boss_arena'}
-						<circle
-							cx={node.x}
-							cy={node.y}
-							r={nodeRadius(node)}
-							fill={BG_COLOR}
-							stroke={nodeColor(node)}
-							stroke-width="3"
-						/>
-					{:else if node.type === 'major_boss'}
-						<rect
-							x={node.x - nodeRadius(node) * 0.7}
-							y={node.y - nodeRadius(node) * 0.7}
-							width={nodeRadius(node) * 1.4}
-							height={nodeRadius(node) * 1.4}
-							fill={nodeColor(node)}
-							transform="rotate(45 {node.x} {node.y})"
-						/>
-					{:else if node.type === 'legacy_dungeon'}
-						<circle
-							cx={node.x}
-							cy={node.y}
-							r={nodeRadius(node)}
-							fill="none"
-							stroke={nodeColor(node)}
-							stroke-width="3"
-						/>
-						<circle cx={node.x} cy={node.y} r={nodeRadius(node) * 0.5} fill={nodeColor(node)} />
-					{/if}
+					<g class="dag-node-shape">
+						{#if node.type === 'start'}
+							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+							<polygon
+								points="{node.x - 3},{node.y - 5} {node.x - 3},{node.y + 5} {node.x + 5},{node.y}"
+								fill={BG_COLOR}
+							/>
+						{:else if node.type === 'final_boss'}
+							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+							<rect x={node.x - 4} y={node.y - 4} width="8" height="8" fill={BG_COLOR} />
+						{:else if node.type === 'mini_dungeon'}
+							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+						{:else if node.type === 'boss_arena'}
+							<circle
+								cx={node.x}
+								cy={node.y}
+								r={nodeRadius(node)}
+								fill={BG_COLOR}
+								stroke={nodeColor(node)}
+								stroke-width="3"
+							/>
+						{:else if node.type === 'major_boss'}
+							<rect
+								x={node.x - nodeRadius(node) * 0.7}
+								y={node.y - nodeRadius(node) * 0.7}
+								width={nodeRadius(node) * 1.4}
+								height={nodeRadius(node) * 1.4}
+								fill={nodeColor(node)}
+								transform="rotate(45 {node.x} {node.y})"
+							/>
+						{:else if node.type === 'legacy_dungeon'}
+							<circle
+								cx={node.x}
+								cy={node.y}
+								r={nodeRadius(node)}
+								fill="none"
+								stroke={nodeColor(node)}
+								stroke-width="3"
+							/>
+							<circle cx={node.x} cy={node.y} r={nodeRadius(node) * 0.5} fill={nodeColor(node)} />
+						{/if}
+					</g>
 
 					<!-- Label -->
 					<text
@@ -285,7 +287,17 @@
 	}
 
 	.dag-node {
-		cursor: default;
+		cursor: pointer;
+	}
+
+	.dag-node-shape {
+		transform-box: fill-box;
+		transform-origin: center;
+		transition: transform 0.15s ease;
+	}
+
+	.dag-node:hover .dag-node-shape {
+		transform: scale(1.3);
 	}
 
 	.player-dot {
