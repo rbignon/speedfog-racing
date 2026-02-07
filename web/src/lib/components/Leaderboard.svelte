@@ -5,9 +5,12 @@
 	interface Props {
 		participants: WsParticipant[];
 		totalLayers?: number | null;
+		mode?: 'running' | 'finished';
 	}
 
-	let { participants, totalLayers = null }: Props = $props();
+	let { participants, totalLayers = null, mode = 'running' }: Props = $props();
+
+	const MEDALS = ['🥇', '🥈', '🥉'];
 
 	function rankColor(participant: WsParticipant): string | null {
 		if (participant.status !== 'playing' && participant.status !== 'finished') return null;
@@ -42,7 +45,7 @@
 </script>
 
 <div class="leaderboard">
-	<h2>Leaderboard</h2>
+	<h2>{mode === 'finished' ? 'Results' : 'Leaderboard'}</h2>
 
 	{#if participants.length === 0}
 		<p class="empty">No participants yet</p>
@@ -50,16 +53,33 @@
 		<ol class="list">
 			{#each participants as participant, index (participant.id)}
 				{@const color = rankColor(participant)}
+				{@const medal =
+					mode === 'finished' && participant.status === 'finished' && index < 3
+						? MEDALS[index]
+						: null}
 				<li class="participant {getStatusClass(participant.status)}">
-					<span class="rank" style={color ? `background: ${color}; color: #1a1a2e;` : ''}
-						>{index + 1}</span
-					>
+					{#if medal}
+						<span class="medal">{medal}</span>
+					{:else}
+						<span class="rank" style={color ? `background: ${color}; color: #1a1a2e;` : ''}
+							>{index + 1}</span
+						>
+					{/if}
 					<div class="info">
 						<span class="name">
 							{participant.twitch_display_name || participant.twitch_username}
 						</span>
 						<span class="stats">
-							{#if participant.status === 'finished'}
+							{#if mode === 'finished' && participant.status === 'finished'}
+								<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
+								{#if participant.death_count > 0}
+									<span class="death-count">{participant.death_count}</span>
+								{/if}
+							{:else if mode === 'finished' && participant.status === 'abandoned'}
+								<span class="dnf"
+									>DNF (L{participant.current_layer}{totalLayers ? `/${totalLayers}` : ''})</span
+								>
+							{:else if participant.status === 'finished'}
 								<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
 								{#if participant.death_count > 0}
 									<span class="death-count">{participant.death_count}</span>
@@ -75,7 +95,7 @@
 							{/if}
 						</span>
 					</div>
-					{#if participant.status === 'finished'}
+					{#if mode === 'running' && participant.status === 'finished'}
 						<span class="finish-icon">✓</span>
 					{/if}
 				</li>
@@ -198,6 +218,21 @@
 	.death-count::before {
 		content: '\1F480';
 		margin-left: 0.25em;
+	}
+
+	.medal {
+		width: 24px;
+		height: 24px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1.2rem;
+		flex-shrink: 0;
+	}
+
+	.dnf {
+		color: var(--color-text-disabled);
+		font-style: italic;
 	}
 
 	.empty {

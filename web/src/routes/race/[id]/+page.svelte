@@ -8,7 +8,10 @@
 	import ParticipantCard from '$lib/components/ParticipantCard.svelte';
 	import ParticipantSearch from '$lib/components/ParticipantSearch.svelte';
 	import CasterList from '$lib/components/CasterList.svelte';
-	import { MetroDag, MetroDagBlurred, MetroDagLive } from '$lib/dag';
+	import Podium from '$lib/components/Podium.svelte';
+	import RaceStats from '$lib/components/RaceStats.svelte';
+	import ShareButtons from '$lib/components/ShareButtons.svelte';
+	import { MetroDag, MetroDagBlurred, MetroDagLive, MetroDagResults } from '$lib/dag';
 	import { downloadMySeedPack, fetchRace, type RaceDetail } from '$lib/api';
 
 	let downloading = $state(false);
@@ -144,6 +147,13 @@
 					{/if}
 				{/if}
 			</div>
+		{:else if raceStatus === 'finished'}
+			<div class="sidebar-section">
+				<Leaderboard participants={raceStore.leaderboard} {totalLayers} mode="finished" />
+				<div class="share-section">
+					<ShareButtons />
+				</div>
+			</div>
 		{:else}
 			<Leaderboard participants={raceStore.leaderboard} {totalLayers} />
 		{/if}
@@ -172,6 +182,10 @@
 
 		{#if liveSeed?.graph_json && raceStatus === 'running'}
 			<MetroDagLive graphJson={liveSeed.graph_json} participants={raceStore.participants} />
+		{:else if liveSeed?.graph_json && raceStatus === 'finished'}
+			<Podium participants={raceStore.leaderboard} />
+			<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
+			<RaceStats participants={raceStore.leaderboard} />
 		{:else if liveSeed?.graph_json}
 			<MetroDag graphJson={liveSeed.graph_json} />
 		{:else if liveSeed?.total_nodes && liveSeed?.total_paths && totalLayers}
@@ -282,6 +296,12 @@
 
 	.invite-search {
 		margin-top: 0.75rem;
+	}
+
+	.share-section {
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border);
 	}
 
 	.sidebar-footer {
