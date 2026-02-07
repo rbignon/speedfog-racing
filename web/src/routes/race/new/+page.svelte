@@ -25,6 +25,8 @@
 			)
 	);
 
+	let hasAvailablePool = $derived(sortedPools.some(([, info]) => info.available > 0));
+
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
 			authChecked = true;
@@ -105,29 +107,51 @@
 
 			<div class="form-group">
 				<label>Seed Pool</label>
-				<div class="pool-cards">
-					{#each sortedPools as [pool, info] (pool)}
-						{@const disabled = info.available === 0}
-						<button
-							type="button"
-							class="pool-card"
-							class:selected={poolName === pool}
-							class:disabled
-							onclick={() => { if (!disabled && !creating) poolName = pool; }}
-						>
-							<span class="pool-name">{capitalize(pool)}</span>
-							{#if info.estimated_duration}
-								<span class="pool-duration">{info.estimated_duration}</span>
-							{/if}
-							{#if info.description}
-								<span class="pool-desc">{info.description}</span>
-							{/if}
-							<span class="pool-seeds">
-								{info.available} seed{info.available !== 1 ? 's' : ''} available
-							</span>
-						</button>
-					{/each}
-				</div>
+				{#if sortedPools.length === 0}
+					<p class="empty-pools">
+						No seed pools available. Seeds need to be generated before races can be
+						created.
+					</p>
+				{:else if !hasAvailablePool}
+					<div class="pool-cards">
+						{#each sortedPools as [pool, info] (pool)}
+							<button type="button" class="pool-card disabled">
+								<span class="pool-name">{capitalize(pool)}</span>
+								{#if info.estimated_duration}
+									<span class="pool-duration">{info.estimated_duration}</span>
+								{/if}
+								<span class="pool-seeds">0 seeds available</span>
+							</button>
+						{/each}
+					</div>
+					<p class="empty-pools">
+						All seed pools are empty. New seeds need to be generated.
+					</p>
+				{:else}
+					<div class="pool-cards">
+						{#each sortedPools as [pool, info] (pool)}
+							{@const disabled = info.available === 0}
+							<button
+								type="button"
+								class="pool-card"
+								class:selected={poolName === pool}
+								class:disabled
+								onclick={() => { if (!disabled && !creating) poolName = pool; }}
+							>
+								<span class="pool-name">{capitalize(pool)}</span>
+								{#if info.estimated_duration}
+									<span class="pool-duration">{info.estimated_duration}</span>
+								{/if}
+								{#if info.description}
+									<span class="pool-desc">{info.description}</span>
+								{/if}
+								<span class="pool-seeds">
+									{info.available} seed{info.available !== 1 ? 's' : ''} available
+								</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
 			</div>
 
 			<div class="form-group">
@@ -160,7 +184,7 @@
 				</p>
 			</div>
 
-			<button type="submit" class="btn btn-primary" disabled={creating}>
+			<button type="submit" class="btn btn-primary" disabled={creating || !hasAvailablePool}>
 				{creating ? 'Creating...' : 'Create Race'}
 			</button>
 		</form>
@@ -299,6 +323,16 @@
 		color: var(--color-text);
 		text-transform: none;
 		letter-spacing: normal;
+	}
+
+	.empty-pools {
+		color: var(--color-text-disabled);
+		font-style: italic;
+		margin: 0;
+		padding: 1rem;
+		background: var(--color-surface);
+		border-radius: var(--radius-sm);
+		border: 1px dashed var(--color-border);
 	}
 
 	.hint {
