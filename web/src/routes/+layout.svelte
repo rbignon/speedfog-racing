@@ -2,12 +2,14 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { site } from '$lib/stores/site.svelte';
 	import { getTwitchLoginUrl } from '$lib/api';
 
 	let { children } = $props();
 
 	onMount(() => {
 		auth.init();
+		site.init();
 	});
 </script>
 
@@ -27,6 +29,10 @@
 					</span>
 					<a href="/race/new" class="btn btn-primary">Create Race</a>
 					<button onclick={() => auth.logout()} class="btn btn-secondary">Logout</button>
+				{:else if !site.initialized}
+					<!-- Wait for site config -->
+				{:else if site.comingSoon}
+					<span class="btn btn-twitch btn-disabled">Login with Twitch</span>
 				{:else}
 					<a href={getTwitchLoginUrl()} class="btn btn-twitch">Login with Twitch</a>
 				{/if}

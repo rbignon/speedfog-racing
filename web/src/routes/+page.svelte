@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { site } from '$lib/stores/site.svelte';
 	import { fetchRaces, fetchMyRaces, getTwitchLoginUrl, type Race } from '$lib/api';
 	import MetroDagAnimated from '$lib/dag/MetroDagAnimated.svelte';
 	import RaceCard from '$lib/components/RaceCard.svelte';
@@ -164,41 +165,49 @@
 		<div class="hero-cta">
 			<h1>SpeedFog Racing</h1>
 			<p class="hero-tagline">Competitive Elden Ring racing through randomized fog gates</p>
-			<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg">Create a race</a>
+			{#if !site.initialized}
+				<!-- Wait for site config before showing CTA -->
+			{:else if site.comingSoon}
+				<span class="btn btn-primary btn-lg btn-disabled">Coming soon</span>
+			{:else}
+				<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg">Create a race</a>
+			{/if}
 		</div>
 	</div>
 
-	<main class="public-section">
-		{#if loadingRaces}
-			<p class="loading">Loading races...</p>
-		{:else}
-			{#if liveRaces.length > 0}
-				<section class="public-races">
-					<h2><LiveIndicator dotOnly /> Live Races</h2>
-					<div class="race-grid">
-						{#each liveRaces as race}
-							<RaceCard {race} />
-						{/each}
-					</div>
-				</section>
-			{/if}
+	{#if site.initialized && !site.comingSoon}
+		<main class="public-section">
+			{#if loadingRaces}
+				<p class="loading">Loading races...</p>
+			{:else}
+				{#if liveRaces.length > 0}
+					<section class="public-races">
+						<h2><LiveIndicator dotOnly /> Live Races</h2>
+						<div class="race-grid">
+							{#each liveRaces as race}
+								<RaceCard {race} />
+							{/each}
+						</div>
+					</section>
+				{/if}
 
-			{#if upcomingRaces.length > 0}
-				<section class="public-races">
-					<h2>Upcoming Races</h2>
-					<div class="race-grid">
-						{#each upcomingRaces as race}
-							<RaceCard {race} />
-						{/each}
-					</div>
-				</section>
-			{/if}
+				{#if upcomingRaces.length > 0}
+					<section class="public-races">
+						<h2>Upcoming Races</h2>
+						<div class="race-grid">
+							{#each upcomingRaces as race}
+								<RaceCard {race} />
+							{/each}
+						</div>
+					</section>
+				{/if}
 
-			{#if liveRaces.length === 0 && upcomingRaces.length === 0}
-				<p class="empty-muted">No active races at the moment.</p>
+				{#if liveRaces.length === 0 && upcomingRaces.length === 0}
+					<p class="empty-muted">No active races at the moment.</p>
+				{/if}
 			{/if}
-		{/if}
-	</main>
+		</main>
+	{/if}
 {/if}
 
 <style>

@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     speedfog_path: str = ""  # Path to speedfog repo for seed generation
     seed_packs_output_dir: str = "/data/seed_packs"  # Output directory for generated seed packs
 
+    # Site
+    coming_soon: bool = False
+
     # Server
     log_level: str = "INFO"
     log_json: bool = False

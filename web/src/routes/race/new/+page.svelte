@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { site } from '$lib/stores/site.svelte';
 	import { createRace, fetchPoolStats, type PoolStats, type PoolInfo } from '$lib/api';
 
 	let name = $state('');
@@ -31,7 +32,7 @@
 		if (auth.initialized && !authChecked) {
 			authChecked = true;
 
-			if (!auth.isLoggedIn) {
+			if (!auth.isLoggedIn || site.comingSoon) {
 				goto('/');
 				return;
 			}
