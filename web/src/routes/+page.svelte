@@ -165,13 +165,16 @@
 		<div class="hero-cta">
 			<h1>SpeedFog Racing</h1>
 			<p class="hero-tagline">Competitive Elden Ring racing through randomized fog gates</p>
-			{#if !site.initialized}
-				<!-- Wait for site config before showing CTA -->
-			{:else if site.comingSoon}
-				<span class="btn btn-primary btn-lg btn-disabled">Coming soon</span>
-			{:else}
-				<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg">Create a race</a>
-			{/if}
+			<div class="hero-buttons">
+				{#if !site.initialized}
+					<!-- Wait for site config before showing CTA -->
+				{:else if site.comingSoon}
+					<span class="btn btn-primary btn-lg btn-disabled">Coming soon</span>
+				{:else}
+					<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg">Create a race</a>
+				{/if}
+				<a href="/about" class="btn btn-secondary btn-lg">Learn more</a>
+			</div>
 		</div>
 	</div>
 
@@ -263,12 +266,12 @@
 		margin: 0 0 1.5rem;
 	}
 
-	.btn-lg {
-		padding: 0.85rem 2.5rem;
-		font-size: 1.05rem;
-		font-weight: 600;
-		letter-spacing: 0.02em;
-		box-shadow: var(--glow-gold);
+	.hero-buttons {
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+		flex-wrap: wrap;
+		justify-content: center;
 	}
 
 	/* Dashboard (connected) */

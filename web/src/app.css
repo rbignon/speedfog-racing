@@ -121,6 +121,17 @@ a:hover {
   background: rgba(220, 38, 38, 0.1);
 }
 
+.btn-lg {
+  padding: 0.85rem 2.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.btn-primary.btn-lg {
+  box-shadow: var(--glow-gold);
+}
+
 .btn:disabled,
 .btn-disabled {
   opacity: 0.4;
