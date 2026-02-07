@@ -124,16 +124,6 @@
 			</div>
 		</div>
 	</section>
-
-	<section class="section cta-section">
-		<h2>Ready to race?</h2>
-		<p>Create a race, invite your friends, and see who can conquer the fog first.</p>
-		{#if auth.isLoggedIn}
-			<a href="/race/new" class="btn btn-primary btn-lg">Create a race</a>
-		{:else}
-			<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg">Log in to get started</a>
-		{/if}
-	</section>
 </main>
 
 <style>
@@ -258,12 +248,6 @@
 	.feature-card p {
 		margin: 0;
 		font-size: var(--font-size-sm);
-	}
-
-	/* Footer CTA */
-	.cta-section {
-		text-align: center;
-		padding: 2rem 0 1rem;
 	}
 
 	@media (max-width: 480px) {
