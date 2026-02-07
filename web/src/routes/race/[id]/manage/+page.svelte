@@ -464,4 +464,29 @@
 		color: var(--color-text-disabled);
 		font-style: italic;
 	}
+
+	@media (max-width: 640px) {
+		main {
+			padding: 1rem;
+		}
+
+		header {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		h1 {
+			font-size: var(--font-size-xl);
+		}
+
+		.section {
+			padding: 1rem;
+		}
+
+		.participant-item {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.5rem;
+		}
+	}
 </style>

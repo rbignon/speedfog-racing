@@ -131,6 +131,8 @@
 <style>
 	.about {
 		max-width: 800px;
+		width: 100%;
+		box-sizing: border-box;
 		margin: 0 auto;
 		padding: 2rem;
 	}
@@ -217,8 +219,10 @@
 	.dag-demo {
 		background: var(--color-surface);
 		border-radius: var(--radius-lg);
-		overflow: hidden;
+		overflow-x: auto;
+		overflow-y: hidden;
 		min-width: 0;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.dag-caption {
@@ -252,9 +256,17 @@
 		font-size: var(--font-size-sm);
 	}
 
-	@media (max-width: 480px) {
+	@media (max-width: 640px) {
 		.about {
 			padding: 1rem;
+		}
+
+		.section {
+			margin-top: 2rem;
+		}
+
+		.feature-grid {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>

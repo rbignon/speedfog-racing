@@ -358,4 +358,14 @@
 	button[type='submit'] {
 		align-self: flex-start;
 	}
+
+	@media (max-width: 640px) {
+		main {
+			padding: 1rem;
+		}
+
+		h1 {
+			font-size: var(--font-size-xl);
+		}
+	}
 </style>

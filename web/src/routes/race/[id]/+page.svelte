@@ -419,4 +419,39 @@
 		color: var(--color-danger);
 		font-size: 0.9rem;
 	}
+
+	@media (max-width: 768px) {
+		.race-page {
+			flex-direction: column;
+		}
+
+		.sidebar {
+			width: 100%;
+			border-right: none;
+			border-bottom: 1px solid var(--color-border);
+			padding: 1rem;
+		}
+
+		.main-content {
+			padding: 1rem;
+		}
+
+		.race-header {
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+
+		.race-header h1 {
+			font-size: var(--font-size-xl);
+		}
+
+		.info-grid {
+			grid-template-columns: 1fr 1fr;
+		}
+
+		.actions {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+	}
 </style>

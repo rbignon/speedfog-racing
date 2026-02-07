@@ -149,4 +149,14 @@
 		border-radius: var(--radius-sm);
 		margin-bottom: 1rem;
 	}
+
+	@media (max-width: 640px) {
+		main {
+			padding: 1rem;
+		}
+
+		.invite-card {
+			padding: 1.25rem;
+		}
+	}
 </style>

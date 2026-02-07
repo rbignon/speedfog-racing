@@ -377,4 +377,15 @@
 		color: var(--color-text-disabled);
 		font-style: italic;
 	}
+
+	@media (max-width: 640px) {
+		.dashboard,
+		.public-section {
+			padding: 1rem;
+		}
+
+		.race-grid {
+			grid-template-columns: 1fr;
+		}
+	}
 </style>

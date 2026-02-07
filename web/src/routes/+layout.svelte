@@ -80,6 +80,7 @@
 		min-height: 100vh;
 		display: flex;
 		flex-direction: column;
+		overflow-x: hidden;
 	}
 
 	header {
@@ -135,6 +136,7 @@
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
+		min-width: 0;
 	}
 
 	footer {
@@ -183,9 +185,11 @@
 		color: var(--color-purple);
 	}
 
-	@media (max-width: 480px) {
+	@media (max-width: 640px) {
 		.header-content {
 			padding: 0.75rem 1rem;
+			flex-wrap: wrap;
+			gap: 0.5rem;
 		}
 
 		.logo {
@@ -200,6 +204,10 @@
 		nav :global(.btn) {
 			font-size: var(--font-size-sm);
 			padding: 0.4rem 0.75rem;
+		}
+
+		.user-info span {
+			display: none;
 		}
 
 		footer {
