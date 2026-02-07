@@ -29,7 +29,8 @@ rm /tmp/speedfog-web.tar.gz
 # --- Remote deploy ---
 
 echo "==> Uploading server code..."
-rsync -a --delete --omit-dir-times --chmod=g+w --exclude='.venv' --exclude='__pycache__' --exclude='.env' \
+rsync -a --delete --omit-dir-times --chmod=g+w \
+    --exclude='.venv' --exclude='__pycache__' --exclude='.ruff_cache' --exclude='.mypy_cache' --exclude='.env' \
     "$REPO_DIR/server/" "$SERVER:$APP_DIR/server/"
 
 echo "==> Deploying on server..."
