@@ -3,6 +3,7 @@
 import json
 import logging
 import random
+import tomllib
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -161,3 +162,38 @@ async def get_pool_stats(db: AsyncSession) -> dict[str, dict[str, int]]:
         stats[pool_name][status.value] = count
 
     return stats
+
+
+def get_pool_metadata(seeds_pool_dir: str) -> dict[str, dict[str, str | None]]:
+    """Read display metadata from pool config.toml files.
+
+    Scans subdirectories of seeds_pool_dir for config.toml files and extracts
+    the [display] section from each.
+
+    Returns:
+        Dict mapping pool names to {"estimated_duration": ..., "description": ...}
+    """
+    pool_dir = Path(seeds_pool_dir)
+    if not pool_dir.exists():
+        return {}
+
+    metadata: dict[str, dict[str, str | None]] = {}
+
+    for subdir in pool_dir.iterdir():
+        if not subdir.is_dir():
+            continue
+        config_file = subdir / "config.toml"
+        if not config_file.exists():
+            continue
+        try:
+            with open(config_file, "rb") as f:
+                data = tomllib.load(f)
+            display = data.get("display", {})
+            metadata[subdir.name] = {
+                "estimated_duration": display.get("estimated_duration"),
+                "description": display.get("description"),
+            }
+        except (OSError, tomllib.TOMLDecodeError):
+            logger.warning(f"Failed to read config.toml from {subdir}", exc_info=True)
+
+    return metadata

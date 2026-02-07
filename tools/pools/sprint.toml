@@ -1,6 +1,10 @@
 # SpeedFog Racing - Sprint Pool Configuration
 # ~30 minute races
 
+[display]
+estimated_duration = "~30min"
+description = "Fast-paced race with minimal exploration"
+
 [run]
 seed = 0  # Auto-reroll until valid DAG found
 

@@ -59,12 +59,14 @@ export interface RaceDetail extends Race {
   casters: Caster[];
 }
 
-export interface PoolStats {
-  [poolName: string]: {
-    available: number;
-    consumed: number;
-  };
+export interface PoolInfo {
+  available: number;
+  consumed: number;
+  estimated_duration: string | null;
+  description: string | null;
 }
+
+export type PoolStats = Record<string, PoolInfo>;
 
 export interface DownloadInfo {
   participant_id: string;
@@ -212,6 +214,7 @@ export async function createRace(
   name: string,
   poolName: string = "standard",
   organizerParticipates: boolean = false,
+  config: Record<string, unknown> = {},
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races`, {
     method: "POST",
@@ -223,6 +226,7 @@ export async function createRace(
       name,
       pool_name: poolName,
       organizer_participates: organizerParticipates,
+      config,
     }),
   });
   return handleResponse<Race>(response);

@@ -270,7 +270,7 @@ def main() -> int:
         print(f"Error: Speedfog path does not exist: {speedfog_path}")
         return 1
 
-    pool_config = SCRIPT_DIR / "pools" / args.pool / "config.toml"
+    pool_config = SCRIPT_DIR / "pools" / f"{args.pool}.toml"
     if not pool_config.exists():
         print(f"Error: Pool config not found: {pool_config}")
         return 1
@@ -288,6 +288,9 @@ def main() -> int:
     # Create output directory
     output_pool_dir = args.output / args.pool
     output_pool_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy pool TOML to output dir so the server can read display metadata
+    shutil.copy2(pool_config, output_pool_dir / "config.toml")
 
     print(f"Generating {args.count} seeds for pool '{args.pool}'")
     print(f"  Speedfog: {speedfog_path}")

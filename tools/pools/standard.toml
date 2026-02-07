@@ -1,3 +1,7 @@
+[display]
+estimated_duration = "~1h"
+description = "Balanced race with legacy dungeons and bosses"
+
 [run]
 seed = 0
 
