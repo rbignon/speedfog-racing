@@ -65,8 +65,8 @@
 				<div>
 					<strong>Results</strong>
 					<p>
-						The first player to defeat the final boss wins. The full route map is
-						revealed after the race ends.
+						The first player to defeat the final boss wins. The full route map
+						is revealed to everyone after the race ends.
 					</p>
 				</div>
 			</div>
@@ -76,41 +76,50 @@
 	<section class="section">
 		<h2>The Route Map</h2>
 		<p>
-			Every seed generates a unique directed graph — a network of fog gates connecting
-			areas. SpeedFog Racing visualizes this as a metro-style route map, showing how zones
+			Every seed generates a unique map — a network of fog gates connecting areas.
+			SpeedFog Racing visualizes this as a metro-style route map, showing how zones
 			connect and where each player currently is.
+		</p>
+		<p>
+			Each layer of the map follows a pattern: mini dungeons, legacy dungeons, boss
+			arenas, and major bosses. No matter which path you take, you will face the same
+			types of challenges at each stage. Enemy scaling also increases as you progress
+			deeper into the run, keeping every path equally demanding.
+		</p>
+		<p>
+			The final destination is always a random major boss. Defeat it to finish the race.
 		</p>
 		<div class="dag-demo">
 			<MetroDagAnimated graphJson={heroSeed} />
 		</div>
 		<p class="dag-caption">
-			An example route map. During a race, the map is blurred to prevent spoilers — it
-			only reveals fully once the race ends.
+			An example route map. During a race, the map is blurred for participants to prevent
+			spoilers — it only reveals fully once the race ends.
 		</p>
 	</section>
 
 	<section class="section">
-		<h2>Fair Competition</h2>
-		<div class="fair-grid">
-			<div class="fair-card">
-				<strong>In-Game Time</strong>
+		<h2>Key Features</h2>
+		<div class="feature-grid">
+			<div class="feature-card">
+				<strong>Balanced Paths</strong>
 				<p>
-					Races use in-game time (IGT), not real-world time. Loading screens,
-					pauses, and hardware differences don't affect your standing.
+					Every path through the map has the same structure and difficulty. No
+					shortcut, no lucky route — only execution matters.
 				</p>
 			</div>
-			<div class="fair-card">
-				<strong>Anti-Spoiler DAG</strong>
+			<div class="feature-card">
+				<strong>Live Spectating</strong>
 				<p>
-					The route map is blurred during the race so no one can study the graph
-					for an unfair advantage. Spectators see a blurred version too.
+					Spectators can follow the race in real time, watching each player's
+					position on the full route map as they progress through the fog.
 				</p>
 			</div>
-			<div class="fair-card">
-				<strong>Server-Computed Progression</strong>
+			<div class="feature-card">
+				<strong>In-Game Leaderboard</strong>
 				<p>
-					Zone transitions and player layers are validated server-side. The mod
-					reports raw events and the server determines standings.
+					Players see a live leaderboard directly in-game, ranked by progression
+					through the map. No need to alt-tab — you always know where you stand.
 				</p>
 			</div>
 		</div>
@@ -227,26 +236,26 @@
 		text-align: center;
 	}
 
-	/* Fair competition cards */
-	.fair-grid {
+	/* Feature cards */
+	.feature-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 		gap: 1rem;
 	}
 
-	.fair-card {
+	.feature-card {
 		background: var(--color-surface);
 		border-radius: var(--radius-lg);
 		padding: 1.25rem;
 	}
 
-	.fair-card strong {
+	.feature-card strong {
 		display: block;
 		color: var(--color-text);
 		margin-bottom: 0.5rem;
 	}
 
-	.fair-card p {
+	.feature-card p {
 		margin: 0;
 		font-size: var(--font-size-sm);
 	}
