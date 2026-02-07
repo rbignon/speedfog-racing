@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <!-- Checkerboard dissolve mask -->
+    <linearGradient id="fogFade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="white"/>
+      <stop offset="20%" stop-color="white"/>
+      <stop offset="50%" stop-color="white" stop-opacity="0.25"/>
+      <stop offset="75%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="dissolve">
+      <rect width="1200" height="630" fill="url(#fogFade)"/>
+    </mask>
+
+    <!-- Fog blur filters -->
+    <filter id="fogBlur">
+      <feGaussianBlur stdDeviation="30"/>
+    </filter>
+    <filter id="fogBlurLight">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+
+    <!-- Text glow -->
+    <filter id="textGlow">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#0f1923"/>
+
+  <!-- Checkered pattern as background texture -->
+  <g mask="url(#dissolve)" opacity="0.18">
+    <!-- 8 cols x 6 rows, cell=90px, origin=(0, 30) -->
+    <!-- Row 0 -->
+    <rect x="0" y="30" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="90" y="30" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="180" y="30" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="270" y="30" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="360" y="30" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="450" y="30" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="540" y="30" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="630" y="30" width="90" height="90" fill="#1c2a3f"/>
+    <!-- Row 1 -->
+    <rect x="0" y="120" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="90" y="120" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="180" y="120" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="270" y="120" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="360" y="120" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="450" y="120" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="540" y="120" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="630" y="120" width="90" height="90" fill="#e8e6e1"/>
+    <!-- Row 2 -->
+    <rect x="0" y="210" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="90" y="210" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="180" y="210" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="270" y="210" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="360" y="210" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="450" y="210" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="540" y="210" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="630" y="210" width="90" height="90" fill="#1c2a3f"/>
+    <!-- Row 3 -->
+    <rect x="0" y="300" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="90" y="300" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="180" y="300" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="270" y="300" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="360" y="300" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="450" y="300" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="540" y="300" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="630" y="300" width="90" height="90" fill="#e8e6e1"/>
+    <!-- Row 4 -->
+    <rect x="0" y="390" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="90" y="390" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="180" y="390" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="270" y="390" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="360" y="390" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="450" y="390" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="540" y="390" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="630" y="390" width="90" height="90" fill="#1c2a3f"/>
+    <!-- Row 5 -->
+    <rect x="0" y="480" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="90" y="480" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="180" y="480" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="270" y="480" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="360" y="480" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="450" y="480" width="90" height="90" fill="#e8e6e1"/>
+    <rect x="540" y="480" width="90" height="90" fill="#1c2a3f"/>
+    <rect x="630" y="480" width="90" height="90" fill="#e8e6e1"/>
+  </g>
+
+  <!-- Fog wisps across the image -->
+  <g filter="url(#fogBlur)" opacity="0.35">
+    <ellipse cx="500" cy="150" rx="250" ry="50" fill="#2d4060"/>
+    <ellipse cx="600" cy="350" rx="300" ry="60" fill="#253550"/>
+    <ellipse cx="450" cy="500" rx="220" ry="45" fill="#2d4060"/>
+    <ellipse cx="800" cy="250" rx="200" ry="70" fill="#374a66"/>
+    <ellipse cx="900" cy="450" rx="180" ry="50" fill="#253550"/>
+  </g>
+
+  <!-- Lighter fog layer -->
+  <g filter="url(#fogBlurLight)" opacity="0.2">
+    <ellipse cx="700" cy="200" rx="150" ry="30" fill="#5a7a9a"/>
+    <ellipse cx="650" cy="420" rx="130" ry="25" fill="#5a7a9a"/>
+  </g>
+
+  <!-- Subtle gold atmosphere -->
+  <g filter="url(#fogBlur)" opacity="0.08">
+    <ellipse cx="600" cy="280" rx="300" ry="150" fill="#c8a44e"/>
+  </g>
+
+  <!-- Title: SpeedFog Racing -->
+  <text x="600" y="280" text-anchor="middle"
+        font-family="Inter, sans-serif" font-weight="bold" font-size="96"
+        fill="#e8e6e1" filter="url(#textGlow)">
+    SpeedFog Racing
+  </text>
+
+  <!-- Subtitle -->
+  <text x="600" y="350" text-anchor="middle"
+        font-family="Inter, sans-serif" font-weight="normal" font-size="32"
+        fill="#c8a44e" opacity="0.85">
+    Competitive Elden Ring Randomizer Racing
+  </text>
+
+  <!-- Thin gold accent line -->
+  <rect x="400" y="370" width="400" height="2" rx="1" fill="#c8a44e" opacity="0.4"/>
+</svg>

@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Dissolve mask: solid left, fading right -->
+    <linearGradient id="fogFade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="white"/>
+      <stop offset="25%" stop-color="white"/>
+      <stop offset="60%" stop-color="white" stop-opacity="0.3"/>
+      <stop offset="90%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="dissolve">
+      <rect width="512" height="512" fill="url(#fogFade)"/>
+    </mask>
+
+    <!-- Soft blur for fog wisps -->
+    <filter id="fogBlur">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="fogBlurLight">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="160" fill="#0f1923"/>
+
+  <!-- Checkered flag pattern with dissolution -->
+  <g mask="url(#dissolve)">
+    <!-- 5 cols x 4 rows, cell=72px, origin=(48, 112) -->
+    <!-- Row 0 -->
+    <rect x="48" y="112" width="72" height="72" fill="#e8e6e1"/>
+    <rect x="120" y="112" width="72" height="72" fill="#1c2a3f"/>
+    <rect x="192" y="112" width="72" height="72" fill="#e8e6e1"/>
+    <rect x="264" y="112" width="72" height="72" fill="#1c2a3f"/>
+    <rect x="336" y="112" width="72" height="72" fill="#e8e6e1"/>
+    <!-- Row 1 -->
+    <rect x="48" y="184" width="72" height="72" fill="#1c2a3f"/>
+    <rect x="120" y="184" width="72" height="72" fill="#e8e6e1"/>
+    <rect x="192" y="184" width="72" height="72" fill="#1c2a3f"/>
+    <rect x="264" y="184" width="72" height="72" fill="#e8e6e1"/>
+    <rect x="336" y="184" width="72" height="72" fill="#1c2a3f"/>
+    <!-- Row 2 -->
+    <rect x="48" y="256" width="72" height="72" fill="#e8e6e1"/>
+    <rect x="120" y="256" width="72" height="72" fill="#1c2a3f"/>
+    <rect x="192" y="256" width="72" height="72" fill="#e8e6e1"/>
+    <rect x="264" y="256" width="72" height="72" fill="#1c2a3f"/>
+    <rect x="336" y="256" width="72" height="72" fill="#e8e6e1"/>
+    <!-- Row 3 -->
+    <rect x="48" y="328" width="72" height="72" fill="#1c2a3f"/>
+    <rect x="120" y="328" width="72" height="72" fill="#e8e6e1"/>
+    <rect x="192" y="328" width="72" height="72" fill="#1c2a3f"/>
+    <rect x="264" y="328" width="72" height="72" fill="#e8e6e1"/>
+    <rect x="336" y="328" width="72" height="72" fill="#1c2a3f"/>
+  </g>
+
+  <!-- Fog wisps layered for depth -->
+  <g filter="url(#fogBlur)" opacity="0.45">
+    <ellipse cx="360" cy="150" rx="90" ry="22" fill="#2d4060"/>
+    <ellipse cx="390" cy="240" rx="100" ry="30" fill="#253550"/>
+    <ellipse cx="370" cy="340" rx="85" ry="20" fill="#2d4060"/>
+    <ellipse cx="430" cy="190" rx="65" ry="28" fill="#374a66"/>
+    <ellipse cx="440" cy="300" rx="55" ry="24" fill="#374a66"/>
+  </g>
+
+  <!-- Lighter wisps in front -->
+  <g filter="url(#fogBlurLight)" opacity="0.25">
+    <ellipse cx="400" cy="200" rx="50" ry="14" fill="#5a7a9a"/>
+    <ellipse cx="420" cy="290" rx="45" ry="12" fill="#5a7a9a"/>
+    <ellipse cx="380" cy="370" rx="55" ry="15" fill="#5a7a9a"/>
+  </g>
+
+  <!-- Subtle gold glow in fog zone -->
+  <g filter="url(#fogBlur)" opacity="0.12">
+    <ellipse cx="400" cy="256" rx="70" ry="100" fill="#c8a44e"/>
+  </g>
+</svg>
