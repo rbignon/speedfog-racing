@@ -6,7 +6,6 @@
 	let name = $state('');
 	let poolName = $state('standard');
 	let organizerParticipates = $state(true);
-	let showFinishedNames = $state(true);
 	let pools: PoolStats = $state({});
 	let loading = $state(true);
 	let creating = $state(false);
@@ -64,15 +63,7 @@
 		error = null;
 
 		try {
-			const config: Record<string, unknown> = {
-				show_finished_names: showFinishedNames
-			};
-			const race = await createRace(
-				name.trim(),
-				poolName,
-				organizerParticipates,
-				config
-			);
+			const race = await createRace(name.trim(), poolName, organizerParticipates);
 			goto(`/race/${race.id}/manage`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to create race.';
@@ -166,20 +157,6 @@
 				<p class="hint">
 					If you choose "organize only", you will see the DAG and cannot join as a player
 					later.
-				</p>
-			</div>
-
-			<div class="form-group">
-				<label class="checkbox-label">
-					<input
-						type="checkbox"
-						bind:checked={showFinishedNames}
-						disabled={creating}
-					/>
-					Show finished player names
-				</label>
-				<p class="hint">
-					When enabled, player names are revealed on the leaderboard as they finish.
 				</p>
 			</div>
 
@@ -313,18 +290,6 @@
 	}
 
 	.radio-label {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		cursor: pointer;
-		font-size: 1rem;
-		font-weight: normal;
-		color: var(--color-text);
-		text-transform: none;
-		letter-spacing: normal;
-	}
-
-	.checkbox-label {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
