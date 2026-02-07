@@ -85,7 +85,6 @@
 	header {
 		background: var(--color-bg);
 		border-bottom: 1px solid var(--color-border);
-		height: 74px;
 	}
 
 	.header-content {
@@ -133,6 +132,9 @@
 
 	.content {
 		flex: 1;
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
 	}
 
 	footer {

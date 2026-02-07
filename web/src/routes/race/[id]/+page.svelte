@@ -241,7 +241,8 @@
 <style>
 	.race-page {
 		display: flex;
-		min-height: calc(100vh - 75px);
+		flex: 1;
+		min-height: 0;
 	}
 
 	.sidebar {

@@ -60,6 +60,7 @@ body {
 
 a {
   color: var(--color-purple);
+  text-decoration: none;
 }
 
 a:hover {
