@@ -1,7 +1,5 @@
 <script lang="ts">
 	import MetroDag from '$lib/dag/MetroDag.svelte';
-	import { auth } from '$lib/stores/auth.svelte';
-	import { getTwitchLoginUrl } from '$lib/api';
 	import heroSeed from '$lib/data/hero-seed.json';
 </script>
 
@@ -18,10 +16,14 @@
 	<section class="section">
 		<h2>What is SpeedFog?</h2>
 		<p>
-			SpeedFog is an Elden Ring mod that replaces every fog gate with a randomized
-			connection. Instead of walking through a familiar door into the expected area, each
-			gate teleports you somewhere entirely different. The world becomes an unpredictable
-			maze.
+			SpeedFog is built on top of the
+			<a href="https://www.nexusmods.com/eldenring/mods/3295" target="_blank" rel="noopener noreferrer"
+				>Fog Gate Randomizer</a
+			>
+			by <strong>thefifthmatt</strong> — an Elden Ring mod that replaces every fog gate with
+			a randomized connection. Instead of walking through a familiar door into the expected
+			area, each gate teleports you somewhere entirely different. The world becomes an
+			unpredictable maze.
 		</p>
 		<p>
 			Because the layout changes with every seed, experienced speedrunners and first-time
