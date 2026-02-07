@@ -186,8 +186,8 @@ See `docs/PROTOCOL.md` for complete reference.
 ## Documentation
 
 - `docs/ROADMAP.md` - Project roadmap (v1.0, v1.1, v2.0, future)
-- `docs/design.md` - Overall design
-- `docs/graphic-charter.md` - Visual identity and color palette
+- `docs/DESIGN.md` - Overall design
+- `docs/GRAPHIC_CHARTER.md` - Visual identity and color palette
 - `docs/PROTOCOL.md` - API and WebSocket protocol reference
 - `docs/specs/phase1.md` - Phase 1 MVP detailed spec
 - `docs/specs/phase2-ui-ux.md` - Phase 2 UI/UX specification

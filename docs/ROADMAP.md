@@ -79,7 +79,7 @@ The invite system backend exists (Phase 1 Step 12) but the UX flow is incomplete
 
 The `show_finished_names` config option was proposed in the design doc but never implemented and has no real use case (hiding finished player names doesn't add meaningful anti-spoiler value). Remove all references from:
 
-- `docs/design.md`
+- `docs/DESIGN.md`
 - `docs/specs/phase1.md`
 - `docs/specs/phase2-ui-ux.md`
 
