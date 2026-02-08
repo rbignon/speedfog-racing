@@ -128,6 +128,13 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
     race = participant.race
     seed = race.seed
 
+    # Extract event_ids from graph_json
+    event_ids = None
+    if seed and seed.graph_json:
+        event_map = seed.graph_json.get("event_map", {})
+        if event_map:
+            event_ids = sorted(int(k) for k in event_map.keys())
+
     # Build participant list
     sorted_participants = sort_leaderboard(race.participants)
     participant_infos: list[ParticipantInfo] = [participant_to_info(p) for p in sorted_participants]
@@ -141,6 +148,7 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
         seed=SeedInfo(
             total_layers=seed.total_layers if seed else 0,
             graph_json=None,  # Mods don't need the graph
+            event_ids=event_ids,
         ),
         participants=participant_infos,
     )
