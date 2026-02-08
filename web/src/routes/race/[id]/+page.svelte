@@ -95,20 +95,15 @@
 
 	let isOrganizer = $derived(auth.user?.id === initialRace.organizer.id);
 
-	let isParticipant = $derived.by(() => {
-		if (!auth.user) return false;
-		const liveParticipants = raceStore.leaderboard;
-		if (liveParticipants.length > 0) {
-			return liveParticipants.some((p) => p.twitch_username === auth.user?.twitch_username);
-		}
-		return initialRace.participants.some((p) => p.user.id === auth.user?.id);
-	});
+	let myParticipant = $derived(
+		auth.user
+			? initialRace.participants.find((p) => p.user.id === auth.user?.id)
+			: undefined
+	);
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleString();
 	}
-
-	let isDraftOrOpen = $derived(raceStatus === 'draft' || raceStatus === 'open');
 
 	async function handleParticipantAdded() {
 		showInviteSearch = false;
@@ -160,9 +155,14 @@
 							participant={mp}
 							liveStatus={mp.liveStatus}
 							isOrganizer={mp.user.id === initialRace.organizer.id}
+							isCurrentUser={auth.user?.id === mp.user.id}
 							canRemove={isOrganizer && mp.user.id !== initialRace.organizer.id}
 							onRemove={() =>
 								handleRemoveParticipant(mp.id, mp.user.twitch_username)}
+							canDownload={mp.has_seed_pack}
+							{downloading}
+							onDownload={handleDownload}
+							{downloadError}
 						/>
 					{/each}
 				</div>
@@ -258,21 +258,18 @@
 					<span class="value">{formatDate(initialRace.created_at)}</span>
 				</div>
 			</div>
-
-			{#if isParticipant}
-				<div class="actions">
-					{#if !isOrganizer}
-						<span class="participant-note">You are participating in this race</span>
-					{/if}
-					<button class="btn btn-secondary" onclick={handleDownload} disabled={downloading}>
-						{downloading ? 'Downloading...' : 'Download Race Package'}
-					</button>
-					{#if downloadError}
-						<span class="download-error">{downloadError}</span>
-					{/if}
-				</div>
-			{/if}
 		</div>
+
+		{#if myParticipant?.has_seed_pack}
+			<div class="download-section">
+				<button class="btn btn-secondary" onclick={handleDownload} disabled={downloading}>
+					{downloading ? 'Downloading...' : 'Download Race Package'}
+				</button>
+				{#if downloadError}
+					<span class="download-error">{downloadError}</span>
+				{/if}
+			</div>
+		{/if}
 	</main>
 </div>
 
@@ -420,7 +417,6 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 		gap: 1rem;
-		margin-bottom: 1.5rem;
 	}
 
 	.info-item {
@@ -442,15 +438,10 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	.actions {
+	.download-section {
 		display: flex;
 		gap: 1rem;
 		align-items: center;
-	}
-
-	.participant-note {
-		color: var(--color-success);
-		font-style: italic;
 	}
 
 	.download-error {
@@ -485,11 +476,6 @@
 
 		.info-grid {
 			grid-template-columns: 1fr 1fr;
-		}
-
-		.actions {
-			flex-direction: column;
-			align-items: flex-start;
 		}
 	}
 </style>

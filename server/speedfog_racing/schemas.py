@@ -62,6 +62,7 @@ class ParticipantResponse(BaseModel):
     igt_ms: int
     death_count: int
     color_index: int = 0
+    has_seed_pack: bool = False
 
 
 class CasterResponse(BaseModel):

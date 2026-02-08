@@ -156,6 +156,7 @@ async def generate_race_seed_packs(
         try:
             seed_pack_path = generate_participant_seed_pack(participant, race, output_dir)
             results[participant.id] = seed_pack_path
+            participant.has_seed_pack = True
             logger.info(
                 f"Generated seed pack for participant {participant.id} "
                 f"({participant.user.twitch_username})"
@@ -164,6 +165,7 @@ async def generate_race_seed_packs(
             logger.error(f"Failed to generate seed pack for participant {participant.id}: {e}")
             raise
 
+    await db.flush()
     return results
 
 

@@ -47,6 +47,7 @@ export interface Participant {
   igt_ms: number;
   death_count: number;
   color_index: number;
+  has_seed_pack: boolean;
 }
 
 export interface Caster {
