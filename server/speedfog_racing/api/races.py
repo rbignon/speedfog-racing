@@ -463,6 +463,31 @@ async def start_race(
     return race_response(race)
 
 
+@router.post("/{race_id}/open", response_model=RaceResponse)
+async def open_race(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RaceResponse:
+    """Transition race from DRAFT to OPEN."""
+    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+    _require_organizer(race, user)
+
+    if race.status != RaceStatus.DRAFT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only draft races can be opened",
+        )
+
+    race.status = RaceStatus.OPEN
+    await db.commit()
+    await db.refresh(race)
+
+    await broadcast_race_state_update(race_id, race)
+
+    return race_response(race)
+
+
 # =============================================================================
 # Seed Pack Generation Endpoints
 # =============================================================================

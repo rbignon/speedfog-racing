@@ -754,3 +754,69 @@ def test_event_flag_duplicate_ignored(integration_client, race_with_participants
     assert history is not None
     assert len(history) == 1  # Not duplicated
     assert history[0]["node_id"] == "node_a"
+
+
+# =============================================================================
+# Scenario 6: Open Race (DRAFT → OPEN)
+# =============================================================================
+
+
+def test_open_race(integration_client, race_with_participants):
+    """Test DRAFT → OPEN status transition."""
+    race_id = race_with_participants["race_id"]
+    token = race_with_participants["organizer"].api_token
+
+    # Race starts in DRAFT
+    resp = integration_client.get(
+        f"/api/races/{race_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "draft"
+
+    # Open the race
+    resp = integration_client.post(
+        f"/api/races/{race_id}/open",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "open"
+
+    # Verify it persisted
+    resp = integration_client.get(
+        f"/api/races/{race_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.json()["status"] == "open"
+
+
+def test_open_race_not_organizer(integration_client, race_with_participants):
+    """Non-organizer cannot open a race."""
+    race_id = race_with_participants["race_id"]
+    other_token = race_with_participants["players"][0]["user"].api_token
+
+    resp = integration_client.post(
+        f"/api/races/{race_id}/open",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert resp.status_code == 403
+
+
+def test_open_race_already_open(integration_client, race_with_participants):
+    """Cannot open a race that's not in DRAFT."""
+    race_id = race_with_participants["race_id"]
+    token = race_with_participants["organizer"].api_token
+
+    # Open it first
+    resp = integration_client.post(
+        f"/api/races/{race_id}/open",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+    # Try opening again — should fail
+    resp = integration_client.post(
+        f"/api/races/{race_id}/open",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 400
