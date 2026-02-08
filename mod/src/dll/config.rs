@@ -65,12 +65,20 @@ pub struct KeyBindings {
     /// Toggle UI visibility
     #[serde(default)]
     pub toggle_ui: Hotkey,
+    /// Toggle debug overlay section
+    #[serde(default = "default_toggle_debug")]
+    pub toggle_debug: Hotkey,
+}
+
+fn default_toggle_debug() -> Hotkey {
+    Hotkey { key: 0x72 } // F3
 }
 
 impl Default for KeyBindings {
     fn default() -> Self {
         Self {
             toggle_ui: Hotkey::default(),
+            toggle_debug: default_toggle_debug(),
         }
     }
 }

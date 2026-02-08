@@ -28,6 +28,12 @@ pub struct RaceState {
     pub race_started: bool,
 }
 
+/// Debug overlay info
+pub struct DebugInfo<'a> {
+    pub last_sent: Option<&'a str>,
+    pub last_received: Option<&'a str>,
+}
+
 // =============================================================================
 // RACE TRACKER
 // =============================================================================
@@ -50,6 +56,9 @@ pub struct RaceTracker {
 
     // UI state
     pub(crate) show_ui: bool,
+    pub(crate) show_debug: bool,
+    last_sent_debug: Option<String>,
+    last_received_debug: Option<String>,
 
     // Event flag tracking
     event_ids: Vec<u32>,
@@ -101,6 +110,9 @@ impl RaceTracker {
             config,
             race_state: RaceState::default(),
             show_ui: true,
+            show_debug: false,
+            last_sent_debug: None,
+            last_received_debug: None,
             event_ids: Vec::new(),
             triggered_flags: HashSet::new(),
             last_status_update: Instant::now(),
@@ -116,6 +128,12 @@ impl RaceTracker {
         if self.config.keybindings.toggle_ui.is_just_pressed() {
             self.show_ui = !self.show_ui;
             info!(show_ui = self.show_ui, "[HOTKEY] Toggle UI");
+        }
+
+        // Check toggle_debug hotkey
+        if self.config.keybindings.toggle_debug.is_just_pressed() {
+            self.show_debug = !self.show_debug;
+            info!(show_debug = self.show_debug, "[HOTKEY] Toggle debug");
         }
 
         // Poll WebSocket
@@ -135,6 +153,7 @@ impl RaceTracker {
         // Send ready once connected (if not already sent)
         if !self.ready_sent {
             self.ws_client.send_ready();
+            self.last_sent_debug = Some("ready".to_string());
             self.ready_sent = true;
             info!("[RACE] Sent ready signal");
 
@@ -143,6 +162,7 @@ impl RaceTracker {
                 if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
                     self.triggered_flags.insert(flag_id);
                     self.ws_client.send_event_flag(flag_id, igt_ms);
+                    self.last_sent_debug = Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
                     info!(flag_id, "[RACE] Event flag re-sent after reconnect");
                 }
             }
@@ -154,6 +174,7 @@ impl RaceTracker {
                 if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
                     self.triggered_flags.insert(flag_id);
                     self.ws_client.send_event_flag(flag_id, igt_ms);
+                    self.last_sent_debug = Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
                     info!(flag_id, "[RACE] Event flag triggered");
                 }
             }
@@ -180,6 +201,11 @@ impl RaceTracker {
                 participants,
             } => {
                 info!(race = %race.name, participants = participants.len(), "[WS] Auth OK");
+                self.last_received_debug = Some(format!(
+                    "auth_ok(race={}, {} players)",
+                    race.name,
+                    participants.len()
+                ));
                 self.event_ids = seed.event_ids.clone();
                 self.triggered_flags.clear();
                 self.race_state.race = Some(race);
@@ -187,24 +213,31 @@ impl RaceTracker {
                 self.race_state.participants = participants;
             }
             IncomingMessage::AuthError(msg) => {
+                self.last_received_debug = Some(format!("auth_error({})", msg));
                 error!(message = %msg, "[WS] Auth failed");
             }
             IncomingMessage::RaceStart => {
+                self.last_received_debug = Some("race_start".to_string());
                 info!("[WS] Race started!");
                 self.race_state.race_started = true;
             }
             IncomingMessage::LeaderboardUpdate(participants) => {
+                self.last_received_debug = Some(format!(
+                    "leaderboard_update({} players)",
+                    participants.len()
+                ));
                 debug!(count = participants.len(), "[WS] Leaderboard update");
                 self.race_state.participants = participants;
             }
             IncomingMessage::RaceStatusChange(status) => {
+                self.last_received_debug = Some(format!("race_status_change({})", status));
                 info!(status = %status, "[WS] Race status changed");
                 if let Some(ref mut race) = self.race_state.race {
                     race.status = status;
                 }
             }
             IncomingMessage::PlayerUpdate(player) => {
-                // Update single player in list
+                // Skip debug capture for player_update (too frequent)
                 if let Some(p) = self
                     .race_state
                     .participants
@@ -215,6 +248,7 @@ impl RaceTracker {
                 }
             }
             IncomingMessage::Error(e) => {
+                self.last_received_debug = Some(format!("error({})", e));
                 warn!(error = %e, "[WS] Error");
             }
         }
@@ -251,5 +285,12 @@ impl RaceTracker {
 
     pub fn total_flags(&self) -> usize {
         self.event_ids.len()
+    }
+
+    pub fn debug_info(&self) -> DebugInfo<'_> {
+        DebugInfo {
+            last_sent: self.last_sent_debug.as_deref(),
+            last_received: self.last_received_debug.as_deref(),
+        }
     }
 }

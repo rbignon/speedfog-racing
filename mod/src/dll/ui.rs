@@ -48,6 +48,10 @@ impl ImguiRenderLoop for RaceTracker {
                 self.render_player_status(ui);
                 ui.separator();
                 self.render_leaderboard(ui);
+                if self.show_debug {
+                    ui.separator();
+                    self.render_debug(ui);
+                }
             });
     }
 }
@@ -147,6 +151,38 @@ impl RaceTracker {
         if participants.len() > 10 {
             ui.text_disabled(format!("  + {} more", participants.len() - 10));
         }
+    }
+
+    fn render_debug(&self, ui: &hudhook::imgui::Ui) {
+        ui.text_colored([1.0, 0.85, 0.3, 1.0], "Debug");
+
+        let debug = self.debug_info();
+
+        // Zones: show each participant's current_zone
+        ui.text_disabled("Zones:");
+        let participants = self.participants();
+        if participants.is_empty() {
+            ui.text("  –");
+        } else {
+            for p in participants {
+                let name = p
+                    .twitch_display_name
+                    .as_deref()
+                    .unwrap_or(&p.twitch_username);
+                let zone = p.current_zone.as_deref().unwrap_or("–");
+                ui.text(format!("  {}: {}", name, zone));
+            }
+        }
+
+        // Last sent message
+        ui.text_disabled("Sent:");
+        ui.same_line();
+        ui.text(debug.last_sent.unwrap_or("–"));
+
+        // Last received message
+        ui.text_disabled("Recv:");
+        ui.same_line();
+        ui.text(debug.last_received.unwrap_or("–"));
     }
 }
 
