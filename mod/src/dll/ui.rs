@@ -1,8 +1,10 @@
 //! Race UI - ImGui overlay for SpeedFog Racing
 
-use hudhook::imgui::{Condition, StyleColor, WindowFlags};
+use hudhook::imgui::{Condition, FontConfig, FontGlyphRanges, FontSource, StyleColor, WindowFlags};
 use hudhook::{ImguiRenderLoop, RenderContext};
 use tracing::info;
+
+use crate::core::color::parse_hex_color;
 
 use super::tracker::RaceTracker;
 use super::websocket::ConnectionStatus;
@@ -10,10 +12,35 @@ use super::websocket::ConnectionStatus;
 impl ImguiRenderLoop for RaceTracker {
     fn initialize<'a>(
         &'a mut self,
-        _ctx: &mut hudhook::imgui::Context,
+        ctx: &mut hudhook::imgui::Context,
         _render_context: &'a mut dyn RenderContext,
     ) {
-        info!("Race UI initialized");
+        if let Some(ref font_data) = self.font_data {
+            let font_size = self.config.overlay.font_size;
+
+            // Glyph ranges: Basic Latin + Punctuation + Box/Geometric + Arrows
+            let glyph_ranges = FontGlyphRanges::from_slice(&[
+                0x0020, 0x00FF, // Basic Latin + Latin Supplement
+                0x2000, 0x206F, // General Punctuation
+                0x2500, 0x25FF, // Box Drawing + Block Elements + Geometric Shapes (●)
+                0x2190, 0x21FF, // Arrows (→)
+                0x2700, 0x27BF, // Dingbats (✓)
+                0,
+            ]);
+
+            ctx.fonts().add_font(&[FontSource::TtfData {
+                data: font_data,
+                size_pixels: font_size,
+                config: Some(FontConfig {
+                    glyph_ranges,
+                    ..FontConfig::default()
+                }),
+            }]);
+
+            info!(size = font_size, "Custom font registered with imgui");
+        } else {
+            info!("Using default imgui font");
+        }
     }
 
     fn render(&mut self, ui: &mut hudhook::imgui::Ui) {
@@ -30,11 +57,28 @@ impl ImguiRenderLoop for RaceTracker {
             return;
         }
 
-        let [dw, _dh] = ui.io().display_size;
-        let window_width = 280.0;
+        let s = &self.config.overlay;
 
-        // Semi-transparent background
-        let _bg = ui.push_style_color(StyleColor::WindowBg, [0.08, 0.08, 0.08, 0.85]);
+        // Parse colors from config
+        let bg_color = parse_hex_color(&s.background_color, s.background_opacity);
+        let text_color = parse_hex_color(&s.text_color, 1.0);
+        let text_disabled_color = parse_hex_color(&s.text_disabled_color, 1.0);
+        let border_color = if s.show_border {
+            parse_hex_color(&s.border_color, 1.0)
+        } else {
+            [0.0, 0.0, 0.0, 0.0]
+        };
+
+        // Push style colors (auto-popped when tokens drop)
+        let _bg_token = ui.push_style_color(StyleColor::WindowBg, bg_color);
+        let _text_token = ui.push_style_color(StyleColor::Text, text_color);
+        let _text_disabled_token =
+            ui.push_style_color(StyleColor::TextDisabled, text_disabled_color);
+        let _border_token = ui.push_style_color(StyleColor::Border, border_color);
+
+        let [dw, _dh] = ui.io().display_size;
+        let scale = s.font_size / 16.0;
+        let window_width = 280.0 * scale;
 
         let flags =
             WindowFlags::NO_TITLE_BAR | WindowFlags::ALWAYS_AUTO_RESIZE | WindowFlags::NO_SCROLLBAR;
@@ -131,8 +175,8 @@ impl RaceTracker {
             // Color based on status
             let color = match p.status.as_str() {
                 "finished" => [0.5, 1.0, 0.5, 1.0],
-                "playing" => [1.0, 1.0, 1.0, 1.0],
-                _ => [0.5, 0.5, 0.5, 1.0],
+                "playing" => parse_hex_color(&self.config.overlay.text_color, 1.0),
+                _ => parse_hex_color(&self.config.overlay.text_disabled_color, 1.0),
             };
 
             ui.text_colored(

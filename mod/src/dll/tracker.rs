@@ -3,6 +3,8 @@
 //! Tracks player progress via EMEVD event flags and communicates with the racing server.
 
 use std::collections::HashSet;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
@@ -51,6 +53,9 @@ pub struct RaceTracker {
     // Config
     pub(crate) config: RaceConfig,
 
+    // Font data loaded from file (for ImGui registration)
+    pub(crate) font_data: Option<Vec<u8>>,
+
     // Race state
     pub(crate) race_state: RaceState,
 
@@ -89,6 +94,12 @@ impl RaceTracker {
             return None;
         }
 
+        // Load font data
+        let dll_dir = RaceConfig::get_dll_directory(hmodule);
+        let font_data = dll_dir
+            .as_ref()
+            .and_then(|dir| load_font_data(dir, &config.overlay.font_path));
+
         // Init game state
         let game_state = GameState::new();
         game_state.wait_for_game_loaded();
@@ -108,6 +119,7 @@ impl RaceTracker {
             event_flag_reader,
             ws_client,
             config,
+            font_data,
             race_state: RaceState::default(),
             show_ui: true,
             show_debug: false,
@@ -293,4 +305,58 @@ impl RaceTracker {
             last_received: self.last_received_debug.as_deref(),
         }
     }
+}
+
+// =============================================================================
+// FONT LOADING
+// =============================================================================
+
+/// Load font data from file, following the same resolution strategy as er-fog-vizu:
+///   - Empty path → system default (Segoe UI from C:\Windows\Fonts\)
+///   - Filename only → try C:\Windows\Fonts\, then DLL directory
+///   - Relative path with separators → relative to DLL directory
+///   - Absolute path → use directly
+fn load_font_data(dll_dir: &Path, font_path: &str) -> Option<Vec<u8>> {
+    const WINDOWS_FONTS_DIR: &str = r"C:\Windows\Fonts";
+    const DEFAULT_SYSTEM_FONT: &str = "segoeui.ttf";
+
+    let paths_to_try: Vec<PathBuf> = if font_path.is_empty() {
+        vec![Path::new(WINDOWS_FONTS_DIR).join(DEFAULT_SYSTEM_FONT)]
+    } else {
+        let path = Path::new(font_path);
+        if path.is_absolute() {
+            vec![path.to_path_buf()]
+        } else if !font_path.contains('/') && !font_path.contains('\\') {
+            // Filename only: try Windows Fonts first, then DLL dir
+            vec![
+                Path::new(WINDOWS_FONTS_DIR).join(font_path),
+                dll_dir.join(font_path),
+            ]
+        } else {
+            // Relative path with separators: DLL dir only
+            vec![dll_dir.join(font_path)]
+        }
+    };
+
+    for full_path in &paths_to_try {
+        if full_path.exists() {
+            match fs::read(full_path) {
+                Ok(data) => {
+                    info!(path = %full_path.display(), size = data.len(), "Loaded font");
+                    return Some(data);
+                }
+                Err(e) => {
+                    error!(path = %full_path.display(), error = %e, "Failed to read font file");
+                }
+            }
+        }
+    }
+
+    let tried: String = paths_to_try
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    warn!(tried_paths = %tried, "Font not found, using imgui default");
+    None
 }

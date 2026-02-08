@@ -40,7 +40,23 @@ race_id = "{race.id}"
 
 [overlay]
 enabled = true
-font_size = 16
+# Font to use for the overlay. Can be:
+#   - Empty "" (default): Uses Windows system font (Segoe UI)
+#   - Filename only "arial.ttf": Looks in C:\\Windows\\Fonts\\ then DLL directory
+#   - Relative path "fonts/custom.ttf": Relative to DLL directory
+#   - Absolute path "C:\\Fonts\\MyFont.ttf": Uses the specified file
+font_path = ""
+# Font size in pixels (32.0 recommended for 1080p, 64.0 for 4K)
+font_size = 32.0
+# Background color and opacity
+background_color = "#141414"
+background_opacity = 0.3
+# Text colors
+text_color = "#FFFFFF"
+text_disabled_color = "#808080"
+# Window border
+show_border = false
+border_color = "#404040"
 
 [keybindings]
 toggle_ui = "f9"

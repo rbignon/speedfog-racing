@@ -38,23 +38,78 @@ pub struct OverlaySettings {
     /// Enable overlay
     #[serde(default = "default_enabled")]
     pub enabled: bool,
-    /// Font size
+
+    /// Path to TTF font file.
+    ///   - Empty "": uses Windows system font (Segoe UI)
+    ///   - Filename only "arial.ttf": looks in C:\Windows\Fonts\ then DLL directory
+    ///   - Relative path "fonts/custom.ttf": relative to DLL directory
+    ///   - Absolute path "C:\Fonts\MyFont.ttf": uses the specified file
+    #[serde(default)]
+    pub font_path: String,
+
+    /// Font size in pixels (32.0 recommended for 1080p, 64.0 for 4K)
     #[serde(default = "default_font_size")]
     pub font_size: f32,
+
+    /// Background color as hex "#RRGGBB"
+    #[serde(default = "default_background_color")]
+    pub background_color: String,
+
+    /// Background opacity (0.0 = fully transparent, 1.0 = fully opaque)
+    #[serde(default = "default_background_opacity")]
+    pub background_opacity: f32,
+
+    /// Main text color as hex "#RRGGBB"
+    #[serde(default = "default_text_color")]
+    pub text_color: String,
+
+    /// Secondary/disabled text color as hex "#RRGGBB"
+    #[serde(default = "default_text_disabled_color")]
+    pub text_disabled_color: String,
+
+    /// Show window border
+    #[serde(default)]
+    pub show_border: bool,
+
+    /// Border color as hex "#RRGGBB" (only used if show_border = true)
+    #[serde(default = "default_border_color")]
+    pub border_color: String,
 }
 
 fn default_enabled() -> bool {
     true
 }
 fn default_font_size() -> f32 {
-    16.0
+    32.0
+}
+fn default_background_color() -> String {
+    "#141414".to_string()
+}
+fn default_background_opacity() -> f32 {
+    0.3
+}
+fn default_text_color() -> String {
+    "#FFFFFF".to_string()
+}
+fn default_text_disabled_color() -> String {
+    "#808080".to_string()
+}
+fn default_border_color() -> String {
+    "#404040".to_string()
 }
 
 impl Default for OverlaySettings {
     fn default() -> Self {
         Self {
             enabled: default_enabled(),
+            font_path: String::new(),
             font_size: default_font_size(),
+            background_color: default_background_color(),
+            background_opacity: default_background_opacity(),
+            text_color: default_text_color(),
+            text_disabled_color: default_text_disabled_color(),
+            show_border: false,
+            border_color: default_border_color(),
         }
     }
 }
