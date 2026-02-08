@@ -171,7 +171,7 @@
 				{:else if site.comingSoon}
 					<span class="btn btn-primary btn-lg btn-disabled">Coming soon</span>
 				{:else}
-					<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg">Create a race</a>
+					<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg" data-sveltekit-reload>Create a race</a>
 				{/if}
 				<a href="/about" class="btn btn-secondary btn-lg">Learn more</a>
 			</div>
