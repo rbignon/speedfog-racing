@@ -25,23 +25,21 @@ class StatusUpdateMessage(BaseModel):
 
     type: Literal["status_update"] = "status_update"
     igt_ms: int
-    current_zone: str
     death_count: int
-
-
-class ZoneEnteredMessage(BaseModel):
-    """Player entered a new zone."""
-
-    type: Literal["zone_entered"] = "zone_entered"
-    from_zone: str
-    to_zone: str
-    igt_ms: int
 
 
 class FinishedMessage(BaseModel):
     """Player finished the race."""
 
     type: Literal["finished"] = "finished"
+    igt_ms: int
+
+
+class EventFlagMessage(BaseModel):
+    """Event flag trigger from mod (replaces zone_entered)."""
+
+    type: Literal["event_flag"] = "event_flag"
+    flag_id: int
     igt_ms: int
 
 
@@ -78,6 +76,7 @@ class SeedInfo(BaseModel):
     graph_json: dict[str, object] | None = None  # Only for spectators
     total_nodes: int | None = None
     total_paths: int | None = None
+    event_ids: list[int] | None = None
 
 
 class AuthOkMessage(BaseModel):

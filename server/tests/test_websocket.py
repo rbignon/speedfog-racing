@@ -18,6 +18,7 @@ from speedfog_racing.websocket.manager import (
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     AuthOkMessage,
+    EventFlagMessage,
     LeaderboardUpdateMessage,
     ParticipantInfo,
     RaceInfo,
@@ -187,6 +188,29 @@ class TestSchemas:
         data = json.loads(msg.model_dump_json())
         assert data["type"] == "race_status_change"
         assert data["status"] == "running"
+
+    def test_event_flag_message(self):
+        """Test EventFlagMessage schema."""
+        msg = EventFlagMessage(flag_id=9000003, igt_ms=4532100)
+        data = json.loads(msg.model_dump_json())
+        assert data["type"] == "event_flag"
+        assert data["flag_id"] == 9000003
+        assert data["igt_ms"] == 4532100
+
+    def test_seed_info_with_event_ids(self):
+        """Test SeedInfo includes event_ids."""
+        info = SeedInfo(
+            total_layers=12,
+            event_ids=[9000001, 9000002, 9000003],
+        )
+        data = json.loads(info.model_dump_json())
+        assert data["event_ids"] == [9000001, 9000002, 9000003]
+
+    def test_seed_info_event_ids_default_none(self):
+        """Test SeedInfo event_ids defaults to None."""
+        info = SeedInfo(total_layers=10)
+        data = json.loads(info.model_dump_json())
+        assert data.get("event_ids") is None
 
 
 # --- Manager Tests ---
