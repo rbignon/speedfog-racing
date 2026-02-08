@@ -116,7 +116,7 @@
 					<a href="/race/new" class="btn btn-primary">Create Race</a>
 				</div>
 			{:else}
-				<div class="race-grid">
+				<div class="my-races-grid">
 					{#each myRaces as race}
 						<RaceCard
 							{race}
@@ -344,10 +344,17 @@
 		font-weight: 600;
 	}
 
-	/* Race card grid */
+	/* My Races: full-width single column stack */
+	.my-races-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	/* Public races: fixed 2-column grid */
 	.race-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+		grid-template-columns: repeat(2, 1fr);
 		gap: 1rem;
 	}
 
@@ -388,4 +395,5 @@
 			grid-template-columns: 1fr;
 		}
 	}
+
 </style>
