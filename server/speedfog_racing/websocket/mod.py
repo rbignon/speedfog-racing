@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus
-from speedfog_racing.services.layer_service import get_layer_for_zone, get_node_for_zone
+from speedfog_racing.services.layer_service import get_layer_for_node
 from speedfog_racing.websocket.manager import manager, participant_to_info, sort_leaderboard
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
@@ -82,8 +82,8 @@ async def handle_mod_websocket(websocket: WebSocket, race_id: uuid.UUID, db: Asy
                 await handle_ready(db, participant)
             elif msg_type == "status_update":
                 await handle_status_update(db, participant, msg)
-            elif msg_type == "zone_entered":
-                await handle_zone_entered(db, participant, msg)
+            elif msg_type == "event_flag":
+                await handle_event_flag(db, participant, msg)
             elif msg_type == "finished":
                 await handle_finished(db, participant, msg)
             else:
@@ -173,11 +173,8 @@ async def handle_status_update(
     db: AsyncSession, participant: Participant, msg: dict[str, Any]
 ) -> None:
     """Handle periodic status update from mod."""
-    # Validate and update participant state
     if isinstance(msg.get("igt_ms"), int):
         participant.igt_ms = msg["igt_ms"]
-    if isinstance(msg.get("current_zone"), str):
-        participant.current_zone = msg["current_zone"]
     if isinstance(msg.get("death_count"), int):
         participant.death_count = msg["death_count"]
 
@@ -193,28 +190,46 @@ async def handle_status_update(
     await manager.broadcast_player_update(participant.race_id, participant)
 
 
-async def handle_zone_entered(
+async def handle_event_flag(
     db: AsyncSession, participant: Participant, msg: dict[str, Any]
 ) -> None:
-    """Handle zone change event."""
-    if isinstance(msg.get("to_zone"), str):
-        participant.current_zone = msg["to_zone"]
-        # Compute layer from seed graph data
-        seed = participant.race.seed
-        if seed and seed.graph_json:
-            participant.current_layer = get_layer_for_zone(msg["to_zone"], seed.graph_json)
+    """Handle event flag trigger from mod."""
+    flag_id = msg.get("flag_id")
+    if not isinstance(flag_id, int):
+        return
 
-            # Append to zone_history
-            node_id = get_node_for_zone(msg["to_zone"], seed.graph_json)
-            if node_id is not None:
-                igt = msg.get("igt_ms", 0) if isinstance(msg.get("igt_ms"), int) else 0
-                entry = {"node_id": node_id, "igt_ms": igt}
-                old_history = participant.zone_history or []
-                # Use copy pattern for SQLAlchemy JSON mutation detection
-                participant.zone_history = [*old_history, entry]
+    seed = participant.race.seed
+    if not seed or not seed.graph_json:
+        return
 
-    if isinstance(msg.get("igt_ms"), int):
-        participant.igt_ms = msg["igt_ms"]
+    event_map = seed.graph_json.get("event_map", {})
+    finish_event = seed.graph_json.get("finish_event")
+
+    # Resolve flag_id to node_id
+    node_id = event_map.get(str(flag_id))
+    if node_id is None:
+        logger.warning(f"Unknown event flag {flag_id} from participant {participant.id}")
+        return
+
+    # Update IGT
+    igt = msg.get("igt_ms", 0) if isinstance(msg.get("igt_ms"), int) else 0
+    participant.igt_ms = igt
+
+    # Check if node already discovered (ignore duplicates)
+    old_history = participant.zone_history or []
+    if any(entry.get("node_id") == node_id for entry in old_history):
+        return  # Already discovered
+
+    # Update zone history and layer
+    participant.current_layer = get_layer_for_node(node_id, seed.graph_json)
+    participant.current_zone = node_id
+    entry = {"node_id": node_id, "igt_ms": igt}
+    participant.zone_history = [*old_history, entry]
+
+    # Check if this is the finish event
+    if flag_id == finish_event:
+        await handle_finished(db, participant, {"igt_ms": igt})
+        return
 
     await db.commit()
 

@@ -52,24 +52,22 @@ class ModTestClient:
         """Send ready signal."""
         self.ws.send_json({"type": "ready"})
 
-    def send_status_update(self, igt_ms: int, current_zone: str, death_count: int) -> None:
-        """Send periodic status update (layer computed server-side from zone_entered)."""
+    def send_status_update(self, igt_ms: int, death_count: int) -> None:
+        """Send periodic status update."""
         self.ws.send_json(
             {
                 "type": "status_update",
                 "igt_ms": igt_ms,
-                "current_zone": current_zone,
                 "death_count": death_count,
             }
         )
 
-    def send_zone_entered(self, from_zone: str, to_zone: str, igt_ms: int) -> None:
-        """Send zone change event."""
+    def send_event_flag(self, flag_id: int, igt_ms: int) -> None:
+        """Send event flag trigger."""
         self.ws.send_json(
             {
-                "type": "zone_entered",
-                "from_zone": from_zone,
-                "to_zone": to_zone,
+                "type": "event_flag",
+                "flag_id": flag_id,
                 "igt_ms": igt_ms,
             }
         )
@@ -168,13 +166,21 @@ def seed_folder():
         (seed_dir / "graph.json").write_text(
             json.dumps(
                 {
+                    "version": "4.0",
                     "total_layers": 5,
                     "nodes": {
-                        "node_a": {"zones": ["zone_a"]},
-                        "node_b": {"zones": ["zone_b"]},
-                        "node_c": {"zones": ["zone_c"]},
+                        "start_node": {"zones": ["start"], "layer": 0},
+                        "node_a": {"zones": ["zone_a"], "layer": 1},
+                        "node_b": {"zones": ["zone_b"], "layer": 2},
+                        "node_c": {"zones": ["zone_c"], "layer": 3},
                     },
                     "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
+                    "event_map": {
+                        "9000000": "node_a",
+                        "9000001": "node_b",
+                        "9000002": "node_c",
+                    },
+                    "finish_event": 9000002,
                 }
             )
         )
@@ -236,13 +242,21 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                 seed_number=999999,
                 pool_name="standard",
                 graph_json={
+                    "version": "4.0",
                     "total_layers": 5,
                     "nodes": {
-                        "node_a": {"zones": ["zone_a"]},
-                        "node_b": {"zones": ["zone_b"]},
-                        "node_c": {"zones": ["zone_c"]},
+                        "start_node": {"zones": ["start"], "layer": 0},
+                        "node_a": {"zones": ["zone_a"], "layer": 1},
+                        "node_b": {"zones": ["zone_b"], "layer": 2},
+                        "node_c": {"zones": ["zone_c"], "layer": 3},
                     },
                     "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
+                    "event_map": {
+                        "9000000": "node_a",
+                        "9000001": "node_b",
+                        "9000002": "node_c",
+                    },
+                    "finish_event": 9000002,
                 },
                 total_layers=5,
                 folder_path=str(seed_folder),
@@ -303,14 +317,20 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                     )
                     race = race_result.scalar_one()
                     if race.seed:
-                        # Ensure area_tiers and nodes contain test zone names
                         graph = dict(race.seed.graph_json or {})
                         graph["area_tiers"] = {"zone_a": 1, "zone_b": 2, "zone_c": 3}
                         graph["nodes"] = {
-                            "node_a": {"zones": ["zone_a"]},
-                            "node_b": {"zones": ["zone_b"]},
-                            "node_c": {"zones": ["zone_c"]},
+                            "start_node": {"zones": ["start"], "layer": 0},
+                            "node_a": {"zones": ["zone_a"], "layer": 1},
+                            "node_b": {"zones": ["zone_b"], "layer": 2},
+                            "node_c": {"zones": ["zone_c"], "layer": 3},
                         }
+                        graph["event_map"] = {
+                            "9000000": "node_a",
+                            "9000001": "node_b",
+                            "9000002": "node_c",
+                        }
+                        graph["finish_event"] = 9000002
                         race.seed.graph_json = graph
                         await db.commit()
 
@@ -350,21 +370,21 @@ def race_with_participants(integration_db, integration_client, seed_folder):
 
 
 def test_complete_race_flow(integration_client, race_with_participants):
-    """Test complete race flow with 3 players.
-
-    This test runs the complete flow sequentially to avoid WebSocket threading issues.
-    """
+    """Test complete race flow with event_flag messages."""
     race_id = race_with_participants["race_id"]
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
-    # Step 1: Connect first mod and verify auth
+    # Step 1: Connect first mod and verify auth_ok includes event_ids
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         auth_response = mod0.auth()
         assert auth_response["type"] == "auth_ok"
         assert auth_response["race"]["name"] == "Integration Test Race"
         assert "total_layers" in auth_response["seed"]
+        # Verify event_ids present and sorted
+        event_ids = auth_response["seed"].get("event_ids")
+        assert event_ids == [9000000, 9000001, 9000002]
 
     # Step 2: Connect all 3 mods, send ready, start race
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
@@ -392,73 +412,63 @@ def test_complete_race_flow(integration_client, race_with_participants):
     )
     assert response.status_code == 200
 
-    # Step 4: Players send zone updates and finish (sequentially to avoid concurrency issues)
-    # Player 0: enters zone — layer should be computed server-side from area_tiers
+    # Step 4: Players send event_flag messages
+    # Player 0: triggers flag 9000000 -> node_a (layer 1)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
-        mod0.send_zone_entered("start", "zone_a", igt_ms=10000)
+        mod0.send_event_flag(9000000, igt_ms=10000)
         lb = mod0.receive()
         assert lb["type"] == "leaderboard_update"
-        # zone_a has layer 1 in area_tiers
         p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
         assert p0["current_layer"] == 1
 
-    # Player 1: enters zone
+    # Player 1: triggers flag 9000001 -> node_b (layer 2)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1:
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
         assert mod1.auth()["type"] == "auth_ok"
-        mod1.send_zone_entered("start", "zone_b", igt_ms=15000)
+        mod1.send_event_flag(9000001, igt_ms=15000)
         lb = mod1.receive()
         assert lb["type"] == "leaderboard_update"
-        # zone_b has layer 2 in area_tiers
         p1 = next(p for p in lb["participants"] if p["twitch_username"] == "player1")
         assert p1["current_layer"] == 2
 
-    # Player 2: enters zone and finishes first (fastest)
+    # Player 2: triggers finish_event (9000002) -> node_c + race finish
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws2:
         mod2 = ModTestClient(ws2, players[2]["mod_token"])
         assert mod2.auth()["type"] == "auth_ok"
-        mod2.send_finished(igt_ms=50000)
+        mod2.send_event_flag(9000002, igt_ms=50000)
         lb = mod2.receive()
-        assert lb["type"] == "leaderboard_update", f"Expected leaderboard_update, got: {lb}"
-        # Player 2 should be first (finished)
-        assert "participants" in lb, f"No participants in message: {lb}"
-        assert lb["participants"][0]["twitch_username"] == "player2"
-        assert lb["participants"][0]["status"] == "finished"
+        assert lb["type"] == "leaderboard_update"
+        p2 = next(p for p in lb["participants"] if p["twitch_username"] == "player2")
+        assert p2["status"] == "finished"
 
-    # Player 0: finishes second (slower)
+    # Player 0 finishes
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
-        mod0.send_finished(igt_ms=70000)
+        mod0.send_event_flag(9000002, igt_ms=70000)
         lb = mod0.receive()
-        # Player 2 first, player 0 second
         assert lb["participants"][0]["twitch_username"] == "player2"
         assert lb["participants"][1]["twitch_username"] == "player0"
 
-    # Player 1: finishes last (triggers race completion)
+    # Player 1 finishes last (triggers race completion)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1:
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
         assert mod1.auth()["type"] == "auth_ok"
-        mod1.send_finished(igt_ms=80000)
+        mod1.send_event_flag(9000002, igt_ms=80000)
 
-        # When all players finish, server sends race_status_change THEN leaderboard_update
-        # So we may receive them in either order depending on timing
         msg1 = mod1.receive()
         msg2 = mod1.receive()
 
-        # Identify which message is which
         if msg1["type"] == "race_status_change":
             status, lb = msg1, msg2
         else:
             lb, status = msg1, msg2
 
-        # Verify race status change
         assert status["type"] == "race_status_change"
         assert status["status"] == "finished"
 
-        # Verify final leaderboard: player2 (50k), player0 (70k), player1 (80k)
         assert lb["type"] == "leaderboard_update"
         assert lb["participants"][0]["twitch_username"] == "player2"
         assert lb["participants"][0]["igt_ms"] == 50000
@@ -614,7 +624,7 @@ def test_seed_pack_contains_player_specific_config(integration_client, race_with
 
 
 def test_zone_history_accumulates(integration_client, race_with_participants, integration_db):
-    """Verify zone_entered events append to participant.zone_history."""
+    """Verify event_flag messages append to participant.zone_history."""
     import asyncio
 
     race_id = race_with_participants["race_id"]
@@ -628,15 +638,15 @@ def test_zone_history_accumulates(integration_client, race_with_participants, in
     )
     assert response.status_code == 200
 
-    # Player 0: enters zone_a then zone_b
+    # Player 0: triggers flag 9000000 (node_a) then 9000001 (node_b)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
 
-        mod0.send_zone_entered("start", "zone_a", igt_ms=10000)
+        mod0.send_event_flag(9000000, igt_ms=10000)
         mod0.receive()  # leaderboard_update
 
-        mod0.send_zone_entered("zone_a", "zone_b", igt_ms=20000)
+        mod0.send_event_flag(9000001, igt_ms=20000)
         mod0.receive()  # leaderboard_update
 
     # Check zone_history in DB
@@ -660,10 +670,8 @@ def test_zone_history_accumulates(integration_client, race_with_participants, in
     assert history[1]["igt_ms"] == 20000
 
 
-def test_zone_history_unknown_zone_not_appended(
-    integration_client, race_with_participants, integration_db
-):
-    """Zone changes to unknown zones don't add to zone_history."""
+def test_event_flag_unknown_ignored(integration_client, race_with_participants, integration_db):
+    """Unknown event flag IDs are silently ignored."""
     import asyncio
 
     race_id = race_with_participants["race_id"]
@@ -676,13 +684,17 @@ def test_zone_history_unknown_zone_not_appended(
         headers={"Authorization": f"Bearer {organizer.api_token}"},
     )
 
-    # Player 0: enters unknown_zone (not in nodes dict)
+    # Player 0: sends unknown flag_id (not in event_map)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
 
-        mod0.send_zone_entered("start", "unknown_zone", igt_ms=5000)
-        mod0.receive()  # leaderboard_update
+        mod0.send_event_flag(9999999, igt_ms=5000)
+        # No leaderboard_update expected for unknown flag,
+        # so send a ready to verify connection still works
+        mod0.send_ready()
+        msg = mod0.receive()
+        assert msg["type"] == "leaderboard_update"
 
     # Check zone_history is still None
     async def check_history():
@@ -698,3 +710,47 @@ def test_zone_history_unknown_zone_not_appended(
 
     history = asyncio.run(check_history())
     assert history is None
+
+
+def test_event_flag_duplicate_ignored(integration_client, race_with_participants, integration_db):
+    """Sending the same event flag twice doesn't duplicate zone_history entries."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # Send same flag twice
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        mod0.receive()  # leaderboard_update
+
+        mod0.send_event_flag(9000000, igt_ms=11000)
+        # No leaderboard_update for duplicate -- verify with a ready
+        mod0.send_ready()
+        msg = mod0.receive()
+        assert msg["type"] == "leaderboard_update"
+
+    async def check_history():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is not None
+    assert len(history) == 1  # Not duplicated
+    assert history[0]["node_id"] == "node_a"
