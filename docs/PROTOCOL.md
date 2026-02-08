@@ -77,25 +77,25 @@ Periodic update (every ~1 second).
 {
   "type": "status_update",
   "igt_ms": 123456,
-  "current_zone": "m60_51_36_00",
   "death_count": 5
 }
 ```
 
-Note: `current_layer` was removed from client messages. The server computes the layer from `zone_entered` events.
+Note: `current_zone` removed. Zone tracking is event-based via `event_flag`.
 
-#### `zone_entered`
+#### `event_flag`
 
-Sent when player traverses a fog gate.
+Sent when the mod detects an event flag transition (0 → 1). Replaces `zone_entered`.
 
 ```json
 {
-  "type": "zone_entered",
-  "from_zone": "m60_51_36_00",
-  "to_zone": "m60_35_50_00",
-  "igt_ms": 98765
+  "type": "event_flag",
+  "flag_id": 9000003,
+  "igt_ms": 4532100
 }
 ```
+
+The `flag_id` is an opaque integer — the mod has no knowledge of what it represents. The server resolves it to a DAG node via the seed's `event_map`.
 
 #### `finished`
 
@@ -123,7 +123,8 @@ Authentication successful. Contains initial race state.
     "status": "open"
   },
   "seed": {
-    "total_layers": 12
+    "total_layers": 12,
+    "event_ids": [9000001, 9000002, 9000003, 9000047]
   },
   "participants": [
     {
@@ -136,6 +137,8 @@ Authentication successful. Contains initial race state.
   ]
 }
 ```
+
+`event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod — no mapping to zones or nodes is provided.
 
 #### `auth_error`
 
@@ -297,39 +300,6 @@ Race status changed.
 
 `registered` → `ready` → `playing` → `finished` | `abandoned`
 
-### Zone ID Format
+### Zone Tracking
 
-Map IDs in format `mXX_YY_ZZ_WW` (e.g., `m60_51_36_00` for Limgrave).
-
----
-
-## Phase 2 Extensions (Planned)
-
-### Server → Mod: `zone_info`
-
-Server-computed exit information (anti-spoiler design).
-
-```json
-{
-  "type": "zone_info",
-  "current_zone": {
-    "name": "Altus Sagescave",
-    "display_name": "Altus Sagescave",
-    "layer": 8
-  },
-  "exits": [
-    {
-      "name": "Caelid Gaol Cave",
-      "direction": "origin",
-      "discovered": true
-    },
-    {
-      "name": "???",
-      "direction": "forward",
-      "discovered": false
-    }
-  ]
-}
-```
-
-This allows removing `graph.json` from player seed packs to prevent spoilers.
+Zone tracking uses EMEVD event flags. The mod monitors a list of event flag IDs (received via `auth_ok`) and reports transitions via `event_flag` messages. The server resolves flag IDs to DAG nodes using the seed's `event_map`. See `docs/specs/emevd-zone-tracking.md` for the full specification.
