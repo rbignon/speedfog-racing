@@ -230,6 +230,19 @@ impl RaceTracker {
         };
         ui.text_colored(status_color, debug.flag_reader_status.to_string());
 
+        // Vanilla flag sanity check (category 0 should always exist)
+        let (sanity_color, sanity_label) = match &debug.vanilla_sanity {
+            FlagReadResult::Set => ([0.5, 1.0, 0.5, 1.0], "true"),
+            FlagReadResult::NotSet => (
+                parse_hex_color(&self.config.overlay.text_color, 1.0),
+                "false",
+            ),
+            FlagReadResult::Unreadable => ([1.0, 0.3, 0.3, 1.0], "None"),
+        };
+        ui.text("  vanilla 6:");
+        ui.same_line();
+        ui.text_colored(sanity_color, sanity_label);
+
         if !debug.sample_reads.is_empty() {
             for (flag_id, result) in &debug.sample_reads {
                 let (color, label) = match result {

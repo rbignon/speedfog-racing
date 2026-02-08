@@ -45,6 +45,8 @@ pub struct DebugInfo<'a> {
     pub last_sent: Option<&'a str>,
     pub last_received: Option<&'a str>,
     pub flag_reader_status: FlagReaderStatus,
+    /// Vanilla flag 6 sanity check (category 0 should always exist)
+    pub vanilla_sanity: FlagReadResult,
     pub sample_reads: Vec<(u32, FlagReadResult)>,
 }
 
@@ -201,9 +203,16 @@ impl RaceTracker {
             self.flags_diagnosed = true;
             let status = self.event_flag_reader.diagnose();
             info!("[RACE] Flag reader: {}", status);
+
+            // Test a vanilla flag (category 0 exists in any save) to verify reader works
+            // Flag 6 = "game started" tutorial flag — should be Some(true) or Some(false)
+            let vanilla_test = self.event_flag_reader.is_flag_set(6);
+            info!(result = ?vanilla_test, "[RACE] Vanilla flag 6 (sanity check)");
+
+            // Then test first race event flag
             if let Some(&first_id) = self.event_ids.first() {
                 let sample = self.event_flag_reader.is_flag_set(first_id);
-                info!(flag_id = first_id, result = ?sample, "[RACE] Sample flag read");
+                info!(flag_id = first_id, result = ?sample, "[RACE] Sample event flag read");
             }
         }
 
@@ -343,10 +352,17 @@ impl RaceTracker {
             })
             .collect();
 
+        let vanilla_sanity = match self.event_flag_reader.is_flag_set(6) {
+            None => FlagReadResult::Unreadable,
+            Some(false) => FlagReadResult::NotSet,
+            Some(true) => FlagReadResult::Set,
+        };
+
         DebugInfo {
             last_sent: self.last_sent_debug.as_deref(),
             last_received: self.last_received_debug.as_deref(),
             flag_reader_status,
+            vanilla_sanity,
             sample_reads,
         }
     }
