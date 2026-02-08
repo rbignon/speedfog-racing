@@ -170,13 +170,13 @@ See `docs/PROTOCOL.md` for complete reference.
 
 - `auth { mod_token }` - authenticate
 - `ready` - player ready to race
-- `status_update { igt_ms, current_zone, death_count }` - periodic update (layer computed server-side)
-- `zone_entered { from_zone, to_zone, igt_ms }` - zone change
+- `status_update { igt_ms, death_count }` - periodic update
+- `event_flag { flag_id, igt_ms }` - EMEVD event flag triggered (fog gate traversal or boss kill)
 - `finished { igt_ms }` - race complete
 
 **Server → Client:**
 
-- `auth_ok { race, seed, participants }` - authentication success
+- `auth_ok { race, seed, participants }` - authentication success (seed includes `event_ids`)
 - `auth_error { message }` - authentication failed
 - `race_start` - race has begun
 - `leaderboard_update { participants }` - updated standings (pre-sorted)
