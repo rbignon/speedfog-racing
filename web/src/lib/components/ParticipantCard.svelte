@@ -5,9 +5,17 @@
 		participant: Participant;
 		liveStatus?: string;
 		isOrganizer?: boolean;
+		canRemove?: boolean;
+		onRemove?: () => void;
 	}
 
-	let { participant, liveStatus, isOrganizer = false }: Props = $props();
+	let {
+		participant,
+		liveStatus,
+		isOrganizer = false,
+		canRemove = false,
+		onRemove
+	}: Props = $props();
 
 	let effectiveStatus = $derived(liveStatus ?? participant.status);
 </script>
@@ -27,6 +35,9 @@
 	</div>
 	{#if isOrganizer}
 		<span class="organizer-badge">Org</span>
+	{/if}
+	{#if canRemove}
+		<button class="remove-btn" onclick={onRemove} title="Remove participant">&times;</button>
 	{/if}
 </div>
 
@@ -98,5 +109,20 @@
 		background: rgba(200, 164, 78, 0.15);
 		color: var(--color-gold);
 		flex-shrink: 0;
+	}
+
+	.remove-btn {
+		background: none;
+		border: none;
+		color: var(--color-text-disabled);
+		font-size: 1.2rem;
+		cursor: pointer;
+		padding: 0 0.25rem;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+
+	.remove-btn:hover {
+		color: var(--color-danger);
 	}
 </style>

@@ -313,6 +313,17 @@ export async function startRace(raceId: string): Promise<Race> {
   return handleResponse<Race>(response);
 }
 
+/**
+ * Transition a race from DRAFT to OPEN.
+ */
+export async function openRace(raceId: string): Promise<Race> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/open`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<Race>(response);
+}
+
 // =============================================================================
 // Invite API
 // =============================================================================
