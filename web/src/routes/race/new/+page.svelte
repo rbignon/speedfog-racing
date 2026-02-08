@@ -67,7 +67,7 @@
 
 		try {
 			const race = await createRace(name.trim(), poolName, organizerParticipates);
-			goto(`/race/${race.id}/manage`);
+			goto(`/race/${race.id}`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to create race.';
 			creating = false;
