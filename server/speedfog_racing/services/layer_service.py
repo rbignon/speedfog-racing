@@ -25,3 +25,15 @@ def get_node_for_zone(zone: str, graph_json: dict[str, Any]) -> str | None:
             if zone in zones:
                 return node_id
     return None
+
+
+def get_layer_for_node(node_id: str, graph_json: dict[str, Any]) -> int:
+    """Get layer for a node_id from graph_json nodes.
+
+    Returns 0 if node not found or if layer key is missing.
+    """
+    nodes: dict[str, Any] = graph_json.get("nodes", {})
+    node_data = nodes.get(node_id, {})
+    if isinstance(node_data, dict):
+        return node_data.get("layer", 0)
+    return 0
