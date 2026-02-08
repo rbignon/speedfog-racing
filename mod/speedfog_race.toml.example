@@ -18,3 +18,5 @@ font_size = 16
 [keybindings]
 # Key to toggle UI visibility
 toggle_ui = "f9"
+# Key to toggle debug section (zones, last sent/recv messages)
+toggle_debug = "f3"
