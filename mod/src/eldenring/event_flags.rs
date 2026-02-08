@@ -55,8 +55,9 @@ impl EventFlagReader {
             base_addr = format_args!("0x{:x}", csfd4_virtual_memory_flag),
             "[EVENT_FLAGS] EventFlagReader created"
         );
-        // csfd4_virtual_memory_flag → dereference once to get manager pointer
-        let base_ptr = PointerChain::<usize>::new(&[csfd4_virtual_memory_flag, 0x0]);
+        // csfd4_virtual_memory_flag is the address storing the CSFd4VirtualMemoryFlag*
+        // Single dereference gives us the manager struct pointer
+        let base_ptr = PointerChain::<usize>::new(&[csfd4_virtual_memory_flag]);
         Self { base_ptr }
     }
 
