@@ -75,12 +75,12 @@ def seed_folder():
         seed_dir = Path(tmpdir) / "seed_123456"
         seed_dir.mkdir()
 
-        # Create mock seed content
-        (seed_dir / "mod").mkdir()
-        (seed_dir / "mod" / "speedfog.dll").write_text("mock dll")
+        # Create mock seed content matching real seed structure
+        (seed_dir / "lib").mkdir()
+        (seed_dir / "lib" / "speedfog_race_mod.dll").write_text("mock dll")
 
         (seed_dir / "ModEngine").mkdir()
-        (seed_dir / "ModEngine" / "config.toml").write_text("[config]")
+        (seed_dir / "ModEngine" / "config_eldenring.toml").write_text("[config]")
 
         (seed_dir / "graph.json").write_text(json.dumps({"total_layers": 10, "nodes": []}))
         (seed_dir / "launch_speedfog.bat").write_text("@echo off\necho Launch")
@@ -176,14 +176,14 @@ def test_generate_participant_seed_pack_contents(
         names = zf.namelist()
 
         # Check for expected files
-        assert "speedfog_123456/mod/speedfog.dll" in names
-        assert "speedfog_123456/ModEngine/config.toml" in names
+        assert "speedfog_123456/lib/speedfog_race_mod.dll" in names
+        assert "speedfog_123456/ModEngine/config_eldenring.toml" in names
         assert "speedfog_123456/graph.json" in names
         assert "speedfog_123456/launch_speedfog.bat" in names
-        assert "speedfog_123456/speedfog_race.toml" in names
+        assert "speedfog_123456/lib/speedfog_race.toml" in names
 
         # Check config content
-        config_content = zf.read("speedfog_123456/speedfog_race.toml").decode()
+        config_content = zf.read("speedfog_123456/lib/speedfog_race.toml").decode()
         assert mock_participant.mod_token in config_content
 
 

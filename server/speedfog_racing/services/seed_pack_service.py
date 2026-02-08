@@ -96,9 +96,9 @@ def generate_participant_seed_pack(
         # Copy seed contents
         _copy_seed_contents(seed_folder, player_dir)
 
-        # Generate and write config file
+        # Generate and write config file next to the DLL in lib/
         config_content = generate_player_config(participant, race)
-        config_path = player_dir / "speedfog_race.toml"
+        config_path = player_dir / "lib" / "speedfog_race.toml"
         config_path.write_text(config_content)
 
         # Create zip file
