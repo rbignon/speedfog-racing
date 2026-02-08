@@ -109,6 +109,58 @@ impl EventFlagReader {
         Some((byte_val & (1 << bit_index)) != 0)
     }
 
+    /// Walk the red-black tree and collect category keys (for diagnostics).
+    /// Returns up to `limit` categories via in-order traversal.
+    pub fn dump_categories(&self, limit: usize) -> Option<Vec<u32>> {
+        let manager = self.base_ptr.read()?;
+        if manager == 0 {
+            return None;
+        }
+        let root: usize = PointerChain::<usize>::new(&[manager + 0x38]).read()?;
+        if root == 0 {
+            return Some(Vec::new());
+        }
+
+        let mut categories = Vec::new();
+        let mut stack: Vec<usize> = Vec::new();
+        // Start from root's +0x8 child (same as find_category_page)
+        let mut current: usize = PointerChain::<usize>::new(&[root + 0x8]).read()?;
+
+        // In-order traversal of the red-black tree
+        for _ in 0..10000 {
+            if categories.len() >= limit {
+                break;
+            }
+
+            if current != 0 {
+                let sentinel: u8 = PointerChain::<u8>::new(&[current + 0x19]).read()?;
+                if sentinel != 0 {
+                    // Sentinel node — treat as null
+                    if let Some(parent) = stack.pop() {
+                        let key: u32 = PointerChain::<u32>::new(&[parent + 0x20]).read()?;
+                        categories.push(key);
+                        current = PointerChain::<usize>::new(&[parent + 0x10]).read()?;
+                    } else {
+                        break;
+                    }
+                } else {
+                    stack.push(current);
+                    // Go left: node + 0x0
+                    current = PointerChain::<usize>::new(&[current]).read()?;
+                }
+            } else if let Some(parent) = stack.pop() {
+                let key: u32 = PointerChain::<u32>::new(&[parent + 0x20]).read()?;
+                categories.push(key);
+                // Go right: node + 0x10
+                current = PointerChain::<usize>::new(&[parent + 0x10]).read()?;
+            } else {
+                break;
+            }
+        }
+
+        Some(categories)
+    }
+
     /// Traverse the red-black tree to find the data pointer for a given category.
     ///
     /// The tree is an MSVC std::map with the following node layout:
