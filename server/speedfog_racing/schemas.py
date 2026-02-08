@@ -85,6 +85,7 @@ class RaceResponse(BaseModel):
     pool_name: str | None
     created_at: datetime
     participant_count: int
+    participant_previews: list[UserResponse] = []
 
 
 class RaceDetailResponse(BaseModel):

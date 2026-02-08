@@ -154,7 +154,7 @@ async def list_races(
     query = select(Race).options(
         selectinload(Race.organizer),
         selectinload(Race.seed),
-        selectinload(Race.participants),
+        selectinload(Race.participants).selectinload(Participant.user),
     )
 
     if status_filter:

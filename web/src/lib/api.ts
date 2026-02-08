@@ -25,6 +25,7 @@ export interface Race {
   pool_name: string | null;
   created_at: string;
   participant_count: number;
+  participant_previews: User[];
 }
 
 export interface RaceListResponse {

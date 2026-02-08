@@ -1,14 +1,17 @@
 <script lang="ts">
-	import type { Race } from '$lib/api';
+	import type { Race, RaceStatus } from '$lib/api';
+	import { timeAgo } from '$lib/utils/time';
 	import LiveIndicator from './LiveIndicator.svelte';
 
 	let {
 		race,
 		role,
+		hideOrganizer = false,
 		variant = 'default',
 	}: {
 		race: Race;
 		role?: string;
+		hideOrganizer?: boolean;
 		variant?: 'default' | 'compact';
 	} = $props();
 
@@ -16,12 +19,43 @@
 	let displayName = $derived(
 		race.organizer.twitch_display_name || race.organizer.twitch_username,
 	);
+	let overflowCount = $derived(
+		Math.max(0, race.participant_count - race.participant_previews.length),
+	);
+
+	function statusBorderClass(status: RaceStatus): string {
+		switch (status) {
+			case 'draft':
+				return 'border-draft';
+			case 'open':
+				return 'border-open';
+			case 'running':
+				return 'border-running';
+			case 'finished':
+				return 'border-finished';
+			default:
+				return '';
+		}
+	}
+
+	function actionLabel(
+		status: RaceStatus,
+		userRole?: string,
+	): string | null {
+		if (status === 'running') return 'Watch →';
+		if (status === 'finished') return 'Results →';
+		if (userRole === 'Organizing' && status === 'draft') return 'Set up →';
+		if (userRole === 'Organizing' && status === 'open') return 'Manage →';
+		return null;
+	}
+
+	let action = $derived(actionLabel(race.status, role));
+	let relativeTime = $derived(timeAgo(race.created_at));
 </script>
 
 <a
 	href="/race/{race.id}"
-	class="race-card"
-	class:running={isRunning}
+	class="race-card {statusBorderClass(race.status)}"
 	class:compact={variant === 'compact'}
 >
 	<div class="race-header">
@@ -38,6 +72,36 @@
 			<span class="badge badge-{race.status}">{race.status}</span>
 		</div>
 	</div>
+
+	{#if race.participant_previews.length > 0}
+		<div class="avatar-row">
+			<div class="avatar-stack">
+				{#each race.participant_previews as user}
+					{#if user.twitch_avatar_url}
+						<img
+							src={user.twitch_avatar_url}
+							alt={user.twitch_display_name || user.twitch_username}
+							class="avatar"
+						/>
+					{:else}
+						<span class="avatar avatar-placeholder">
+							{(user.twitch_display_name || user.twitch_username).charAt(0).toUpperCase()}
+						</span>
+					{/if}
+				{/each}
+				{#if overflowCount > 0}
+					<span class="avatar avatar-overflow">+{overflowCount}</span>
+				{/if}
+			</div>
+			<span class="relative-time">{relativeTime}</span>
+		</div>
+	{:else}
+		<div class="avatar-row">
+			<span class="no-participants">No players yet</span>
+			<span class="relative-time">{relativeTime}</span>
+		</div>
+	{/if}
+
 	<div class="race-meta">
 		<span>
 			{race.participant_count} player{race.participant_count !== 1 ? 's' : ''}
@@ -45,13 +109,17 @@
 				&middot; {race.pool_name}
 			{/if}
 		</span>
-		<span class="race-organizer">
-			by
-			{#if race.organizer.twitch_avatar_url}
-				<img src={race.organizer.twitch_avatar_url} alt="" class="organizer-avatar" />
-			{/if}
-			{displayName}
-		</span>
+		{#if action && hideOrganizer}
+			<span class="action-label">{action}</span>
+		{:else if !hideOrganizer}
+			<span class="race-organizer">
+				by
+				{#if race.organizer.twitch_avatar_url}
+					<img src={race.organizer.twitch_avatar_url} alt="" class="organizer-avatar" />
+				{/if}
+				{displayName}
+			</span>
+		{/if}
 	</div>
 </a>
 
@@ -74,20 +142,34 @@
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 	}
 
-	.race-card.running {
-		border-left: 3px solid var(--color-gold);
-	}
-
 	.race-card.compact {
 		padding: 0.75rem 1rem;
 	}
 
+	/* Status left-border accents */
+	.border-draft {
+		border-left: 3px solid var(--color-text-disabled);
+	}
+
+	.border-open {
+		border-left: 3px solid var(--color-success);
+	}
+
+	.border-running {
+		border-left: 3px solid var(--color-gold);
+	}
+
+	.border-finished {
+		border-left: 3px solid var(--color-info);
+	}
+
+	/* Header row */
 	.race-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		gap: 0.5rem;
-		margin-bottom: 0.4rem;
+		margin-bottom: 0.5rem;
 	}
 
 	.race-title {
@@ -105,10 +187,6 @@
 		text-overflow: ellipsis;
 	}
 
-	.compact .race-name {
-		font-size: 0.95rem;
-	}
-
 	.race-badges {
 		display: flex;
 		gap: 0.4rem;
@@ -120,12 +198,76 @@
 		color: var(--color-text-secondary);
 	}
 
+	/* Avatar row */
+	.avatar-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.5rem;
+	}
+
+	.avatar-stack {
+		display: flex;
+		align-items: center;
+	}
+
+	.avatar {
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		border: 2px solid var(--color-surface);
+		margin-left: -6px;
+		object-fit: cover;
+	}
+
+	.avatar:first-child {
+		margin-left: 0;
+	}
+
+	.avatar-placeholder {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--color-surface-elevated);
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+	}
+
+	.avatar-overflow {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--color-surface-elevated);
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+	}
+
+	.no-participants {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-disabled);
+		font-style: italic;
+	}
+
+	.relative-time {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-disabled);
+	}
+
+	/* Meta row */
 	.race-meta {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
+	}
+
+	.action-label {
+		font-size: var(--font-size-sm);
+		color: var(--color-purple);
+		font-weight: 500;
 	}
 
 	.race-organizer {

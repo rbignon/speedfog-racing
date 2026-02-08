@@ -121,7 +121,7 @@
 						<RaceCard
 							{race}
 							role={isOrganizer(race) ? 'Organizing' : 'Participating'}
-							variant="compact"
+							hideOrganizer={isOrganizer(race)}
 						/>
 					{/each}
 				</div>
