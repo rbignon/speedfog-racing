@@ -11,7 +11,7 @@ use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
-use crate::eldenring::{EventFlagReader, GameState};
+use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
 
 use super::config::RaceConfig;
 use super::hotkey::begin_hotkey_frame;
@@ -30,10 +30,22 @@ pub struct RaceState {
     pub race_started: bool,
 }
 
+/// Result of reading a single flag for debug display
+pub enum FlagReadResult {
+    /// Memory read failed
+    Unreadable,
+    /// Flag is not set
+    NotSet,
+    /// Flag is set
+    Set,
+}
+
 /// Debug overlay info
 pub struct DebugInfo<'a> {
     pub last_sent: Option<&'a str>,
     pub last_received: Option<&'a str>,
+    pub flag_reader_status: FlagReaderStatus,
+    pub sample_reads: Vec<(u32, FlagReadResult)>,
 }
 
 // =============================================================================
@@ -74,6 +86,9 @@ pub struct RaceTracker {
 
     // Ready sent flag
     ready_sent: bool,
+
+    // One-time diagnostic log flag
+    flags_diagnosed: bool,
 }
 
 impl RaceTracker {
@@ -129,6 +144,7 @@ impl RaceTracker {
             triggered_flags: HashSet::new(),
             last_status_update: Instant::now(),
             ready_sent: false,
+            flags_diagnosed: false,
         })
     }
 
@@ -177,6 +193,17 @@ impl RaceTracker {
                     self.last_sent_debug = Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
                     info!(flag_id, "[RACE] Event flag re-sent after reconnect");
                 }
+            }
+        }
+
+        // One-time flag reader diagnostic (first poll with event_ids)
+        if !self.flags_diagnosed && !self.event_ids.is_empty() {
+            self.flags_diagnosed = true;
+            let status = self.event_flag_reader.diagnose();
+            info!("[RACE] Flag reader: {}", status);
+            if let Some(&first_id) = self.event_ids.first() {
+                let sample = self.event_flag_reader.is_flag_set(first_id);
+                info!(flag_id = first_id, result = ?sample, "[RACE] Sample flag read");
             }
         }
 
@@ -300,9 +327,27 @@ impl RaceTracker {
     }
 
     pub fn debug_info(&self) -> DebugInfo<'_> {
+        let flag_reader_status = self.event_flag_reader.diagnose();
+
+        let sample_reads: Vec<(u32, FlagReadResult)> = self
+            .event_ids
+            .iter()
+            .take(5)
+            .map(|&flag_id| {
+                let result = match self.event_flag_reader.is_flag_set(flag_id) {
+                    None => FlagReadResult::Unreadable,
+                    Some(false) => FlagReadResult::NotSet,
+                    Some(true) => FlagReadResult::Set,
+                };
+                (flag_id, result)
+            })
+            .collect();
+
         DebugInfo {
             last_sent: self.last_sent_debug.as_deref(),
             last_received: self.last_received_debug.as_deref(),
+            flag_reader_status,
+            sample_reads,
         }
     }
 }

@@ -10,8 +10,33 @@
 //! Algorithm based on SoulMemory/SoulSplitter (C#):
 //! https://github.com/FrankvdStam/SoulSplitter
 
+use std::fmt;
+
 use libeldenring::memedit::PointerChain;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
+
+/// Diagnostic status of the event flag reader.
+pub enum FlagReaderStatus {
+    /// base_ptr.read() returned None — memory not readable
+    NoPtrRead,
+    /// Manager pointer is null (game not fully loaded?)
+    ManagerNull,
+    /// Reader is functional
+    Ok { manager_addr: usize, divisor: u32 },
+}
+
+impl fmt::Display for FlagReaderStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FlagReaderStatus::NoPtrRead => write!(f, "NO BASE PTR"),
+            FlagReaderStatus::ManagerNull => write!(f, "MGR NULL"),
+            FlagReaderStatus::Ok {
+                manager_addr,
+                divisor,
+            } => write!(f, "OK (mgr=0x{:x}, div={})", manager_addr, divisor),
+        }
+    }
+}
 
 /// Reads EMEVD event flags from Elden Ring's VirtualMemoryFlag manager.
 ///
@@ -26,9 +51,31 @@ pub struct EventFlagReader {
 impl EventFlagReader {
     /// Create a new EventFlagReader from the csfd4_virtual_memory_flag base address.
     pub fn new(csfd4_virtual_memory_flag: usize) -> Self {
+        info!(
+            base_addr = format_args!("0x{:x}", csfd4_virtual_memory_flag),
+            "[EVENT_FLAGS] EventFlagReader created"
+        );
         // csfd4_virtual_memory_flag → dereference once to get manager pointer
         let base_ptr = PointerChain::<usize>::new(&[csfd4_virtual_memory_flag, 0x0]);
         Self { base_ptr }
+    }
+
+    /// Diagnose the current state of the flag reader without the ambiguity of Option<bool>.
+    pub fn diagnose(&self) -> FlagReaderStatus {
+        let manager = match self.base_ptr.read() {
+            Some(m) => m,
+            None => return FlagReaderStatus::NoPtrRead,
+        };
+        if manager == 0 {
+            return FlagReaderStatus::ManagerNull;
+        }
+        let divisor: u32 = PointerChain::<u32>::new(&[manager + 0x1c])
+            .read()
+            .unwrap_or(0);
+        FlagReaderStatus::Ok {
+            manager_addr: manager,
+            divisor,
+        }
     }
 
     /// Check if a specific event flag is set in game memory.

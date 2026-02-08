@@ -6,7 +6,9 @@ use tracing::info;
 
 use crate::core::color::parse_hex_color;
 
-use super::tracker::RaceTracker;
+use crate::eldenring::FlagReaderStatus;
+
+use super::tracker::{FlagReadResult, RaceTracker};
 use super::websocket::ConnectionStatus;
 
 impl ImguiRenderLoop for RaceTracker {
@@ -215,6 +217,32 @@ impl RaceTracker {
                     .unwrap_or(&p.twitch_username);
                 let zone = p.current_zone.as_deref().unwrap_or("–");
                 ui.text(format!("  {}: {}", name, zone));
+            }
+        }
+
+        // Flag reader diagnostics
+        ui.text_disabled("Flag reader:");
+        ui.same_line();
+        let status_color = if matches!(debug.flag_reader_status, FlagReaderStatus::Ok { .. }) {
+            [0.5, 1.0, 0.5, 1.0] // green
+        } else {
+            [1.0, 0.3, 0.3, 1.0] // red
+        };
+        ui.text_colored(status_color, debug.flag_reader_status.to_string());
+
+        if !debug.sample_reads.is_empty() {
+            for (flag_id, result) in &debug.sample_reads {
+                let (color, label) = match result {
+                    FlagReadResult::Set => ([0.5, 1.0, 0.5, 1.0], "true"),
+                    FlagReadResult::NotSet => (
+                        parse_hex_color(&self.config.overlay.text_color, 1.0),
+                        "false",
+                    ),
+                    FlagReadResult::Unreadable => ([1.0, 0.3, 0.3, 1.0], "None"),
+                };
+                ui.text(format!("  {}:", flag_id));
+                ui.same_line();
+                ui.text_colored(color, label);
             }
         }
 
