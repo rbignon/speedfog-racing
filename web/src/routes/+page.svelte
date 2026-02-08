@@ -276,9 +276,11 @@
 
 	/* Dashboard (connected) */
 	.dashboard {
+		width: 100%;
 		max-width: 1200px;
 		margin: 0 auto;
 		padding: 2rem;
+		box-sizing: border-box;
 	}
 
 	/* Spotlight for active race */
@@ -324,9 +326,11 @@
 
 	/* Sections */
 	.public-section {
+		width: 100%;
 		max-width: 1200px;
 		margin: 0 auto;
 		padding: 2rem;
+		box-sizing: border-box;
 	}
 
 	.my-races,
