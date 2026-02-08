@@ -5,13 +5,12 @@
 		startRace,
 		fetchRace,
 		type RaceDetail,
-		type RaceStatus,
 		type DownloadInfo
 	} from '$lib/api';
 
 	interface Props {
 		race: RaceDetail;
-		raceStatus: RaceStatus;
+		raceStatus: string;
 		onRaceUpdated: (race: RaceDetail) => void;
 	}
 

@@ -8,11 +8,12 @@
 	import ParticipantCard from '$lib/components/ParticipantCard.svelte';
 	import ParticipantSearch from '$lib/components/ParticipantSearch.svelte';
 	import CasterList from '$lib/components/CasterList.svelte';
+	import RaceControls from '$lib/components/RaceControls.svelte';
 	import Podium from '$lib/components/Podium.svelte';
 	import RaceStats from '$lib/components/RaceStats.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import { MetroDag, MetroDagBlurred, MetroDagLive, MetroDagResults } from '$lib/dag';
-	import { downloadMySeedPack, fetchRace, type RaceDetail } from '$lib/api';
+	import { downloadMySeedPack, removeParticipant, fetchRace, type RaceDetail } from '$lib/api';
 
 	let downloading = $state(false);
 	let downloadError = $state<string | null>(null);
@@ -107,9 +108,25 @@
 		return new Date(dateStr).toLocaleString();
 	}
 
+	let isDraftOrOpen = $derived(raceStatus === 'draft' || raceStatus === 'open');
+
 	async function handleParticipantAdded() {
 		showInviteSearch = false;
 		initialRace = await fetchRace(initialRace.id);
+	}
+
+	async function handleRemoveParticipant(participantId: string, username: string) {
+		if (!confirm(`Remove ${username} from this race?`)) return;
+		try {
+			await removeParticipant(initialRace.id, participantId);
+			initialRace = await fetchRace(initialRace.id);
+		} catch (e) {
+			console.error('Failed to remove participant:', e);
+		}
+	}
+
+	function handleRaceUpdated(updated: RaceDetail) {
+		initialRace = updated;
 	}
 </script>
 
@@ -119,7 +136,22 @@
 
 <div class="race-page">
 	<aside class="sidebar">
-		{#if raceStatus === 'draft' || raceStatus === 'open'}
+		{#if raceStatus === 'finished'}
+			<div class="sidebar-section">
+				<Leaderboard participants={raceStore.leaderboard} {totalLayers} mode="finished" />
+				<div class="share-section">
+					<ShareButtons />
+				</div>
+			</div>
+
+			<CasterList casters={initialRace.casters} />
+		{:else if raceStatus === 'running'}
+			<div class="sidebar-section">
+				<Leaderboard participants={raceStore.leaderboard} {totalLayers} />
+			</div>
+
+			<CasterList casters={initialRace.casters} />
+		{:else}
 			<div class="sidebar-section">
 				<h2>Participants ({mergedParticipants.length})</h2>
 				<div class="participant-list">
@@ -128,6 +160,9 @@
 							participant={mp}
 							liveStatus={mp.liveStatus}
 							isOrganizer={mp.user.id === initialRace.organizer.id}
+							canRemove={isOrganizer && mp.user.id !== initialRace.organizer.id}
+							onRemove={() =>
+								handleRemoveParticipant(mp.id, mp.user.twitch_username)}
 						/>
 					{/each}
 				</div>
@@ -143,19 +178,27 @@
 							/>
 						</div>
 					{:else}
-						<button class="invite-btn" onclick={() => (showInviteSearch = true)}> + Invite </button>
+						<button class="invite-btn" onclick={() => (showInviteSearch = true)}>
+							+ Invite
+						</button>
 					{/if}
 				{/if}
 			</div>
-		{:else if raceStatus === 'finished'}
-			<div class="sidebar-section">
-				<Leaderboard participants={raceStore.leaderboard} {totalLayers} mode="finished" />
-				<div class="share-section">
-					<ShareButtons />
-				</div>
-			</div>
-		{:else}
-			<Leaderboard participants={raceStore.leaderboard} {totalLayers} />
+
+			<CasterList
+				casters={initialRace.casters}
+				editable={isOrganizer}
+				raceId={initialRace.id}
+				onRaceUpdated={handleRaceUpdated}
+			/>
+
+			{#if isOrganizer}
+				<RaceControls
+					race={initialRace}
+					{raceStatus}
+					onRaceUpdated={handleRaceUpdated}
+				/>
+			{/if}
 		{/if}
 
 		<div class="sidebar-footer">
@@ -200,8 +243,6 @@
 			</div>
 		{/if}
 
-		<CasterList casters={initialRace.casters} />
-
 		<div class="race-info">
 			<div class="info-grid">
 				<div class="info-item">
@@ -218,11 +259,8 @@
 				</div>
 			</div>
 
-			<div class="actions">
-				{#if isOrganizer}
-					<a href="/race/{initialRace.id}/manage" class="btn btn-primary">Manage Race</a>
-				{/if}
-				{#if isParticipant}
+			{#if isParticipant}
+				<div class="actions">
 					{#if !isOrganizer}
 						<span class="participant-note">You are participating in this race</span>
 					{/if}
@@ -232,8 +270,8 @@
 					{#if downloadError}
 						<span class="download-error">{downloadError}</span>
 					{/if}
-				{/if}
-			</div>
+				</div>
+			{/if}
 		</div>
 	</main>
 </div>
