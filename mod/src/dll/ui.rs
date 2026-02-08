@@ -76,9 +76,10 @@ impl RaceTracker {
     }
 
     fn render_player_status(&self, ui: &hudhook::imgui::Ui) {
-        // Zone
-        let zone = self.current_zone().unwrap_or("Unknown");
-        ui.text(format!("Zone: {}", zone));
+        // Progress
+        let progress = self.triggered_count();
+        let total = self.total_flags();
+        ui.text(format!("Progress: {}/{}", progress, total));
 
         // IGT
         if let Some(igt_ms) = self.read_igt() {

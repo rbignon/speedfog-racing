@@ -17,19 +17,9 @@ pub enum ClientMessage {
     /// Player is ready to race
     Ready,
     /// Periodic status update
-    StatusUpdate {
-        igt_ms: u32,
-        current_zone: String,
-        death_count: u32,
-    },
-    /// Player entered a new zone
-    ZoneEntered {
-        from_zone: String,
-        to_zone: String,
-        igt_ms: u32,
-    },
-    /// Player finished the race
-    Finished { igt_ms: u32 },
+    StatusUpdate { igt_ms: u32, death_count: u32 },
+    /// EMEVD event flag triggered (fog gate traversal or boss kill)
+    EventFlag { flag_id: u32, igt_ms: u32 },
 }
 
 // =============================================================================
@@ -61,6 +51,8 @@ pub struct RaceInfo {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SeedInfo {
     pub total_layers: i32,
+    #[serde(default)]
+    pub event_ids: Vec<u32>,
 }
 
 /// Messages received from server
@@ -107,13 +99,27 @@ mod tests {
     fn test_client_status_update_serialize() {
         let msg = ClientMessage::StatusUpdate {
             igt_ms: 123456,
-            current_zone: "Limgrave".to_string(),
             death_count: 5,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"status_update""#));
         assert!(json.contains(r#""igt_ms":123456"#));
+        assert!(json.contains(r#""death_count":5"#));
+        // Should NOT contain current_zone or current_layer
+        assert!(!json.contains("current_zone"));
         assert!(!json.contains("current_layer"));
+    }
+
+    #[test]
+    fn test_client_event_flag_serialize() {
+        let msg = ClientMessage::EventFlag {
+            flag_id: 9000042,
+            igt_ms: 60000,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""type":"event_flag""#));
+        assert!(json.contains(r#""flag_id":9000042"#));
+        assert!(json.contains(r#""igt_ms":60000"#));
     }
 
     #[test]
@@ -129,9 +135,37 @@ mod tests {
             ServerMessage::AuthOk { race, seed, .. } => {
                 assert_eq!(race.name, "Test Race");
                 assert_eq!(seed.total_layers, 5);
+                // event_ids defaults to empty vec when absent
+                assert!(seed.event_ids.is_empty());
             }
             _ => panic!("Expected AuthOk"),
         }
+    }
+
+    #[test]
+    fn test_server_auth_ok_with_event_ids_deserialize() {
+        let json = r#"{
+            "type": "auth_ok",
+            "race": {"id": "456", "name": "Flag Race", "status": "running"},
+            "seed": {"total_layers": 3, "event_ids": [9000001, 9000042, 9000100]},
+            "participants": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::AuthOk { seed, .. } => {
+                assert_eq!(seed.event_ids, vec![9000001, 9000042, 9000100]);
+            }
+            _ => panic!("Expected AuthOk"),
+        }
+    }
+
+    #[test]
+    fn test_seed_info_without_event_ids() {
+        // Backward compat: old server sends no event_ids field
+        let json = r#"{"total_layers": 5}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(seed.total_layers, 5);
+        assert!(seed.event_ids.is_empty());
     }
 
     #[test]

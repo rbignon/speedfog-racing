@@ -97,17 +97,6 @@ Sent when the mod detects an event flag transition (0 → 1). Replaces `zone_ent
 
 The `flag_id` is an opaque integer — the mod has no knowledge of what it represents. The server resolves it to a DAG node via the seed's `event_map`.
 
-#### `finished`
-
-Player completed the race (final boss defeated).
-
-```json
-{
-  "type": "finished",
-  "igt_ms": 6543210
-}
-```
-
 ### Server → Client
 
 #### `auth_ok`

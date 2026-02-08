@@ -33,19 +33,8 @@ pub enum ConnectionStatus {
 #[derive(Debug)]
 pub enum OutgoingMessage {
     Ready,
-    StatusUpdate {
-        igt_ms: u32,
-        current_zone: String,
-        death_count: u32,
-    },
-    ZoneEntered {
-        from_zone: String,
-        to_zone: String,
-        igt_ms: u32,
-    },
-    Finished {
-        igt_ms: u32,
-    },
+    StatusUpdate { igt_ms: u32, death_count: u32 },
+    EventFlag { flag_id: u32, igt_ms: u32 },
     Shutdown,
 }
 
@@ -159,29 +148,18 @@ impl RaceWebSocketClient {
         }
     }
 
-    pub fn send_status_update(&self, igt_ms: u32, current_zone: String, death_count: u32) {
+    pub fn send_status_update(&self, igt_ms: u32, death_count: u32) {
         if let Some(tx) = &self.tx {
             let _ = tx.try_send(OutgoingMessage::StatusUpdate {
                 igt_ms,
-                current_zone,
                 death_count,
             });
         }
     }
 
-    pub fn send_zone_entered(&self, from_zone: String, to_zone: String, igt_ms: u32) {
+    pub fn send_event_flag(&self, flag_id: u32, igt_ms: u32) {
         if let Some(tx) = &self.tx {
-            let _ = tx.try_send(OutgoingMessage::ZoneEntered {
-                from_zone,
-                to_zone,
-                igt_ms,
-            });
-        }
-    }
-
-    pub fn send_finished(&self, igt_ms: u32) {
-        if let Some(tx) = &self.tx {
-            let _ = tx.try_send(OutgoingMessage::Finished { igt_ms });
+            let _ = tx.try_send(OutgoingMessage::EventFlag { flag_id, igt_ms });
         }
     }
 
@@ -369,12 +347,10 @@ fn message_loop(
             }
             Ok(OutgoingMessage::StatusUpdate {
                 igt_ms,
-                current_zone,
                 death_count,
             }) => {
                 let msg = ClientMessage::StatusUpdate {
                     igt_ms,
-                    current_zone,
                     death_count,
                 };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
@@ -382,23 +358,8 @@ fn message_loop(
                     .send(Message::Text(json))
                     .map_err(|e| e.to_string())?;
             }
-            Ok(OutgoingMessage::ZoneEntered {
-                from_zone,
-                to_zone,
-                igt_ms,
-            }) => {
-                let msg = ClientMessage::ZoneEntered {
-                    from_zone,
-                    to_zone,
-                    igt_ms,
-                };
-                let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
-                socket
-                    .send(Message::Text(json))
-                    .map_err(|e| e.to_string())?;
-            }
-            Ok(OutgoingMessage::Finished { igt_ms }) => {
-                let msg = ClientMessage::Finished { igt_ms };
+            Ok(OutgoingMessage::EventFlag { flag_id, igt_ms }) => {
+                let msg = ClientMessage::EventFlag { flag_id, igt_ms };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
                     .send(Message::Text(json))

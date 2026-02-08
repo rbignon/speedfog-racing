@@ -1,14 +1,15 @@
 //! Race tracker - main orchestrator for SpeedFog Racing mod
 //!
-//! Tracks player progress and communicates with the racing server.
+//! Tracks player progress via EMEVD event flags and communicates with the racing server.
 
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
-use crate::eldenring::GameState;
+use crate::eldenring::{EventFlagReader, GameState};
 
 use super::config::RaceConfig;
 use super::hotkey::begin_hotkey_frame;
@@ -35,6 +36,9 @@ pub struct RaceTracker {
     // Game reader
     game_state: GameState,
 
+    // Event flag reader
+    event_flag_reader: EventFlagReader,
+
     // WebSocket
     pub(crate) ws_client: RaceWebSocketClient,
 
@@ -47,17 +51,15 @@ pub struct RaceTracker {
     // UI state
     pub(crate) show_ui: bool,
 
-    // Player state tracking
-    last_zone: Option<String>,
+    // Event flag tracking
+    event_ids: Vec<u32>,
+    pub(crate) triggered_flags: HashSet<u32>,
 
     // Status update throttle
     last_status_update: Instant,
 
     // Ready sent flag
     ready_sent: bool,
-
-    // Finished sent flag
-    finished_sent: bool,
 }
 
 impl RaceTracker {
@@ -82,6 +84,10 @@ impl RaceTracker {
         let game_state = GameState::new();
         game_state.wait_for_game_loaded();
 
+        // Init event flag reader
+        let event_flag_reader =
+            EventFlagReader::new(game_state.base_addresses().csfd4_virtual_memory_flag);
+
         // Create WebSocket client
         let mut ws_client = RaceWebSocketClient::new(config.server.clone());
         ws_client.connect();
@@ -90,14 +96,15 @@ impl RaceTracker {
 
         Some(Self {
             game_state,
+            event_flag_reader,
             ws_client,
             config,
             race_state: RaceState::default(),
             show_ui: true,
-            last_zone: None,
+            event_ids: Vec::new(),
+            triggered_flags: HashSet::new(),
             last_status_update: Instant::now(),
             ready_sent: false,
-            finished_sent: false,
         })
     }
 
@@ -124,56 +131,37 @@ impl RaceTracker {
         // Read game state
         let igt_ms = self.game_state.read_igt().unwrap_or(0);
         let deaths = self.game_state.read_deaths().unwrap_or(0);
-        let current_zone = self.read_current_zone();
 
         // Send ready once connected (if not already sent)
         if !self.ready_sent {
             self.ws_client.send_ready();
             self.ready_sent = true;
             info!("[RACE] Sent ready signal");
-        }
 
-        // Detect zone changes
-        if let Some(ref zone) = current_zone {
-            match &self.last_zone {
-                None => {
-                    // First zone - just store it, don't send zone_entered
-                    info!(zone = %zone, "[RACE] Initial zone");
-                    self.last_zone = Some(zone.clone());
-                }
-                Some(last) if last != zone => {
-                    // Zone changed - send zone_entered
-                    info!(from = %last, to = %zone, "[RACE] Zone change");
-                    self.ws_client
-                        .send_zone_entered(last.clone(), zone.clone(), igt_ms);
-                    self.last_zone = Some(zone.clone());
-                }
-                _ => {
-                    // Same zone, nothing to do
+            // Re-scan all flags for reconnect recovery
+            for &flag_id in &self.event_ids {
+                if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                    self.triggered_flags.insert(flag_id);
+                    self.ws_client.send_event_flag(flag_id, igt_ms);
+                    info!(flag_id, "[RACE] Event flag re-sent after reconnect");
                 }
             }
         }
 
-        // TODO: Race finish detection
-        // For Phase 1, this is a placeholder. Proper detection requires either:
-        // 1. A specific "finish zone" from seed info
-        // 2. Boss defeat detection from game memory
-        // 3. Manual trigger (not ideal for races)
-        //
-        // Example implementation:
-        // if self.detect_race_finish() && !self.finished_sent {
-        //     self.ws_client.send_finished(igt_ms);
-        //     self.finished_sent = true;
-        //     info!(igt_ms = igt_ms, "[RACE] Finished!");
-        // }
+        // Event flag polling (every tick)
+        for &flag_id in &self.event_ids {
+            if !self.triggered_flags.contains(&flag_id) {
+                if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                    self.triggered_flags.insert(flag_id);
+                    self.ws_client.send_event_flag(flag_id, igt_ms);
+                    info!(flag_id, "[RACE] Event flag triggered");
+                }
+            }
+        }
 
         // Send periodic status updates (every 1 second)
         if self.last_status_update.elapsed() >= Duration::from_secs(1) {
-            self.ws_client.send_status_update(
-                igt_ms,
-                current_zone.clone().unwrap_or_default(),
-                deaths,
-            );
+            self.ws_client.send_status_update(igt_ms, deaths);
             self.last_status_update = Instant::now();
         }
     }
@@ -192,6 +180,8 @@ impl RaceTracker {
                 participants,
             } => {
                 info!(race = %race.name, participants = participants.len(), "[WS] Auth OK");
+                self.event_ids = seed.event_ids.clone();
+                self.triggered_flags.clear();
                 self.race_state.race = Some(race);
                 self.race_state.seed = Some(seed);
                 self.race_state.participants = participants;
@@ -230,13 +220,6 @@ impl RaceTracker {
         }
     }
 
-    fn read_current_zone(&self) -> Option<String> {
-        // For now, use map_id as zone identifier
-        // TODO: Integrate with zone tracking when seed data is available
-        let pos = self.game_state.read_position()?;
-        Some(pos.map_id_str.clone())
-    }
-
     // Public getters for UI
     pub fn ws_status(&self) -> ConnectionStatus {
         self.ws_client.status()
@@ -262,7 +245,11 @@ impl RaceTracker {
         self.game_state.read_deaths()
     }
 
-    pub fn current_zone(&self) -> Option<&str> {
-        self.last_zone.as_deref()
+    pub fn triggered_count(&self) -> usize {
+        self.triggered_flags.len()
+    }
+
+    pub fn total_flags(&self) -> usize {
+        self.event_ids.len()
     }
 }
