@@ -278,7 +278,7 @@ def main() -> int:
     dll_source = SCRIPT_DIR / "assets" / DLL_NAME
     if not dll_source.exists():
         print(f"Error: DLL not found: {dll_source}")
-        print("Download it from GitHub Actions and place it in tools/assets/")
+        print("Run ./tools/download-mod.sh to fetch it from GitHub Actions")
         return 1
 
     if not args.game_dir.exists():
