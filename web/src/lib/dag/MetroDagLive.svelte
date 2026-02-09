@@ -30,13 +30,11 @@
 		return computeLayout(graph);
 	});
 
-	// Build zone-to-node lookup: maps a zone name to its positioned node
-	let zoneToNode: Map<string, PositionedNode> = $derived.by(() => {
+	// Build node ID lookup: current_zone from the server is always a node ID
+	let nodeById: Map<string, PositionedNode> = $derived.by(() => {
 		const map = new Map<string, PositionedNode>();
 		for (const node of layout.nodes) {
-			for (const zone of node.zones) {
-				map.set(zone, node);
-			}
+			map.set(node.id, node);
 		}
 		return map;
 	});
@@ -64,7 +62,7 @@
 			if (p.status !== 'playing' && p.status !== 'finished') continue;
 			if (!p.current_zone) continue;
 
-			const node = zoneToNode.get(p.current_zone);
+			const node = nodeById.get(p.current_zone);
 			if (!node) continue;
 
 			const group = nodeGroups.get(node.id);
