@@ -209,25 +209,41 @@ impl RaceTracker {
             info!(result = ?vanilla_test, "[RACE] Vanilla flag 6 (sanity check)");
 
             // Dump category tree to see what the game has loaded
-            if let Some(cats) = self.event_flag_reader.dump_categories(200) {
+            if let Some(cats) = self.event_flag_reader.dump_categories(5000) {
                 let total = cats.len();
-                // Show last 20 categories (highest IDs — where 9000 would be)
+                // Show last 20 categories (highest IDs)
                 let tail: Vec<_> = cats.iter().rev().take(20).rev().collect();
                 info!(
                     total,
                     highest_cats = ?tail,
                     "[RACE] Category tree dump"
                 );
-                // Explicitly check for category 9000
+                // Check key categories
                 let has_9000 = cats.contains(&9000);
-                info!(has_9000, "[RACE] Category 9000 present?");
+                let has_1040292 = cats.contains(&1040292);
+                info!(has_9000, has_1040292, "[RACE] Key categories present?");
+                // If FogRando category exists, show nearby categories for context
+                if has_1040292 {
+                    let nearby: Vec<_> = cats
+                        .iter()
+                        .filter(|&&c| (1040290..=1040299).contains(&c))
+                        .collect();
+                    info!(
+                        fogrando_cats = ?nearby,
+                        "[RACE] FogRando category neighborhood"
+                    );
+                }
             }
 
-            // Then test first race event flag
+            // Test first race event flag
             if let Some(&first_id) = self.event_ids.first() {
                 let sample = self.event_flag_reader.is_flag_set(first_id);
                 info!(flag_id = first_id, result = ?sample, "[RACE] Sample event flag read");
             }
+
+            // Test a FogRando flag to confirm their category is readable
+            let fogrando_sample = self.event_flag_reader.is_flag_set(1040292100);
+            info!(result = ?fogrando_sample, "[RACE] FogRando flag 1040292100 read");
         }
 
         // Event flag polling (every tick)
