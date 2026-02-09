@@ -159,8 +159,8 @@ def seed_folder():
         seed_dir = Path(tmpdir) / "seed_999999"
         seed_dir.mkdir()
 
-        (seed_dir / "mod").mkdir()
-        (seed_dir / "mod" / "speedfog.dll").write_text("mock dll")
+        (seed_dir / "lib").mkdir()
+        (seed_dir / "lib" / "speedfog_race_mod.dll").write_text("mock dll")
         (seed_dir / "ModEngine").mkdir()
         (seed_dir / "ModEngine" / "config.toml").write_text("[config]")
         (seed_dir / "graph.json").write_text(

@@ -70,9 +70,9 @@ def seed_folder_context():
         seed_dir = Path(tmpdir) / "seed_123456"
         seed_dir.mkdir()
 
-        # Create mock seed content
-        (seed_dir / "mod").mkdir()
-        (seed_dir / "mod" / "speedfog.dll").write_text("mock dll")
+        # Create mock seed content (must match real seed structure with lib/)
+        (seed_dir / "lib").mkdir()
+        (seed_dir / "lib" / "speedfog_race_mod.dll").write_text("mock dll")
 
         (seed_dir / "ModEngine").mkdir()
         (seed_dir / "ModEngine" / "config.toml").write_text("[config]")
