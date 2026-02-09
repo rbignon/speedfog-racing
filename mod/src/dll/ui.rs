@@ -137,7 +137,7 @@ impl RaceTracker {
 
         // Right-align IGT on the same line
         ui.same_line();
-        ui.set_cursor_pos_x(right_edge - igt_width);
+        ui.set_cursor_pos([right_edge - igt_width, ui.cursor_pos()[1]]);
         ui.text(&igt_str);
 
         // --- Line 2: tier (left), deaths + progress (right) ---
@@ -159,7 +159,7 @@ impl RaceTracker {
 
         // Right-align deaths + progress
         ui.same_line();
-        ui.set_cursor_pos_x(right_edge - right_width);
+        ui.set_cursor_pos([right_edge - right_width, ui.cursor_pos()[1]]);
         ui.text(&right_text);
     }
 
@@ -203,7 +203,7 @@ impl RaceTracker {
 
             // Right-align value
             ui.same_line();
-            ui.set_cursor_pos_x(right_edge - right_width);
+            ui.set_cursor_pos([right_edge - right_width, ui.cursor_pos()[1]]);
             ui.text_colored(color, &right_text);
         }
 
