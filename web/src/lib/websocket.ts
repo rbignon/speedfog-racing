@@ -18,6 +18,7 @@ export interface WsParticipant {
   igt_ms: number;
   death_count: number;
   color_index: number;
+  mod_connected: boolean;
   zone_history: { node_id: string; igt_ms: number }[] | null;
 }
 

@@ -154,8 +154,10 @@ class ConnectionManager:
             return
 
         sorted_participants = sort_leaderboard(participants)
+        connected_ids = set(room.mods.keys())
         participant_infos = [
-            participant_to_info(p, include_history=include_history) for p in sorted_participants
+            participant_to_info(p, include_history=include_history, connected_ids=connected_ids)
+            for p in sorted_participants
         ]
 
         message = LeaderboardUpdateMessage(participants=participant_infos)
@@ -167,7 +169,10 @@ class ConnectionManager:
         if not room:
             return
 
-        message = PlayerUpdateMessage(player=participant_to_info(participant))
+        connected_ids = set(room.mods.keys())
+        message = PlayerUpdateMessage(
+            player=participant_to_info(participant, connected_ids=connected_ids)
+        )
         await room.broadcast_to_spectators(message.model_dump_json())
 
     async def _broadcast_spectator_count(self, room: RaceRoom) -> None:
@@ -186,7 +191,10 @@ class ConnectionManager:
 
 
 def participant_to_info(
-    participant: Participant, *, include_history: bool = False
+    participant: Participant,
+    *,
+    include_history: bool = False,
+    connected_ids: set[uuid.UUID] | None = None,
 ) -> ParticipantInfo:
     """Convert a Participant model to ParticipantInfo schema."""
     return ParticipantInfo(
@@ -199,6 +207,7 @@ def participant_to_info(
         igt_ms=participant.igt_ms,
         death_count=participant.death_count,
         color_index=participant.color_index,
+        mod_connected=participant.id in connected_ids if connected_ids else False,
         zone_history=participant.zone_history if include_history else None,
     )
 

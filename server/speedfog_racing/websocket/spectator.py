@@ -187,9 +187,12 @@ async def send_race_state(
     include_history: bool = False,
 ) -> None:
     """Send race state to spectator with appropriate DAG visibility."""
+    room = manager.get_room(race.id)
+    connected_ids = set(room.mods.keys()) if room else set()
     sorted_participants = sort_leaderboard(race.participants)
     participant_infos: list[ParticipantInfo] = [
-        participant_to_info(p, include_history=include_history) for p in sorted_participants
+        participant_to_info(p, include_history=include_history, connected_ids=connected_ids)
+        for p in sorted_participants
     ]
 
     message = RaceStateMessage(

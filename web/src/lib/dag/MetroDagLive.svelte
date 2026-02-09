@@ -39,7 +39,7 @@
 		return map;
 	});
 
-	// Compute player dot positions with stacking offsets for same-node collisions
+	// Compute player dot positions with orbital layout for same-node collisions
 	let playerDots: {
 		id: string;
 		x: number;
@@ -73,19 +73,26 @@
 			}
 		}
 
-		// Position dots with vertical offset for stacking
-		const DOT_STACK_OFFSET = RACER_DOT_RADIUS * 2.5;
-
+		// Position dots: single player at center, multiple in orbit
 		for (const group of nodeGroups.values()) {
-			const totalOffset = (group.length - 1) * DOT_STACK_OFFSET;
-			const startY = -totalOffset / 2;
+			const count = group.length;
 
-			for (let i = 0; i < group.length; i++) {
+			for (let i = 0; i < count; i++) {
 				const { participant, node } = group[i];
+				let x = node.x;
+				let y = node.y;
+
+				if (count > 1) {
+					const orbitRadius = NODE_RADIUS[node.type] + RACER_DOT_RADIUS + 4;
+					const angle = (i / count) * 2 * Math.PI - Math.PI / 2;
+					x = node.x + Math.cos(angle) * orbitRadius;
+					y = node.y + Math.sin(angle) * orbitRadius;
+				}
+
 				dots.push({
 					id: participant.id,
-					x: node.x,
-					y: node.y + startY + i * DOT_STACK_OFFSET,
+					x,
+					y,
 					color: PLAYER_COLORS[participant.color_index % PLAYER_COLORS.length],
 					displayName: participant.twitch_display_name || participant.twitch_username
 				});

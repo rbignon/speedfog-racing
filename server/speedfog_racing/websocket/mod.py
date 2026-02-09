@@ -136,8 +136,12 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
             event_ids = sorted(int(k) for k in event_map.keys())
 
     # Build participant list
+    room = manager.get_room(race.id)
+    connected_ids = set(room.mods.keys()) if room else set()
     sorted_participants = sort_leaderboard(race.participants)
-    participant_infos: list[ParticipantInfo] = [participant_to_info(p) for p in sorted_participants]
+    participant_infos: list[ParticipantInfo] = [
+        participant_to_info(p, connected_ids=connected_ids) for p in sorted_participants
+    ]
 
     message = AuthOkMessage(
         race=RaceInfo(

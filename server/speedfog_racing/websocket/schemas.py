@@ -58,6 +58,7 @@ class ParticipantInfo(BaseModel):
     igt_ms: int
     death_count: int
     color_index: int = 0
+    mod_connected: bool = False
     zone_history: list[dict[str, object]] | None = None
 
 

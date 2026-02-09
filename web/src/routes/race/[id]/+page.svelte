@@ -13,6 +13,7 @@
 	import RaceStats from '$lib/components/RaceStats.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import { MetroDag, MetroDagBlurred, MetroDagLive, MetroDagResults } from '$lib/dag';
+	import { parseDagGraph } from '$lib/dag/types';
 	import { downloadMySeedPack, removeParticipant, fetchRace, type RaceDetail } from '$lib/api';
 
 	let downloading = $state(false);
@@ -51,6 +52,17 @@
 	let raceName = $derived(liveRace?.name ?? initialRace.name);
 	let raceStatus = $derived(liveRace?.status ?? initialRace.status);
 	let totalLayers = $derived(liveSeed?.total_layers ?? initialRace.seed_total_layers);
+
+	// Build node ID → display name map for leaderboard zone labels
+	let zoneNames: Map<string, string> | null = $derived.by(() => {
+		if (!liveSeed?.graph_json) return null;
+		const graph = parseDagGraph(liveSeed.graph_json);
+		const map = new Map<string, string>();
+		for (const node of graph.nodes) {
+			map.set(node.id, node.displayName);
+		}
+		return map;
+	});
 
 	// Merge REST participants with WS live status
 	let mergedParticipants = $derived.by(() => {
@@ -133,7 +145,7 @@
 	<aside class="sidebar">
 		{#if raceStatus === 'finished'}
 			<div class="sidebar-section">
-				<Leaderboard participants={raceStore.leaderboard} {totalLayers} mode="finished" />
+				<Leaderboard participants={raceStore.leaderboard} {totalLayers} mode="finished" {zoneNames} />
 				<div class="share-section">
 					<ShareButtons />
 				</div>
@@ -142,7 +154,7 @@
 			<CasterList casters={initialRace.casters} />
 		{:else if raceStatus === 'running'}
 			<div class="sidebar-section">
-				<Leaderboard participants={raceStore.leaderboard} {totalLayers} />
+				<Leaderboard participants={raceStore.leaderboard} {totalLayers} {zoneNames} />
 			</div>
 
 			<CasterList casters={initialRace.casters} />

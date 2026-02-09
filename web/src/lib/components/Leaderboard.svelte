@@ -6,9 +6,18 @@
 		participants: WsParticipant[];
 		totalLayers?: number | null;
 		mode?: 'running' | 'finished';
+		zoneNames?: Map<string, string> | null;
 	}
 
-	let { participants, totalLayers = null, mode = 'running' }: Props = $props();
+	let { participants, totalLayers = null, mode = 'running', zoneNames = null }: Props = $props();
+
+	function zoneName(zone: string | null): string | null {
+		if (!zone || !zoneNames) return null;
+		const name = zoneNames.get(zone);
+		if (!name) return null;
+		if (name.length > 20) return name.slice(0, 19) + '\u2026';
+		return name;
+	}
 
 	const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -66,37 +75,56 @@
 						>
 					{/if}
 					<div class="info">
-						<span class="name">
-							{participant.twitch_display_name || participant.twitch_username}
-						</span>
-						<span class="stats">
-							{#if mode === 'finished' && participant.status === 'finished'}
-								<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
-								{#if participant.death_count > 0}
-									<span class="death-count">{participant.death_count}</span>
-								{/if}
-							{:else if mode === 'finished' && participant.status === 'abandoned'}
-								<span class="dnf"
-									>DNF (L{participant.current_layer}{totalLayers ? `/${totalLayers}` : ''})</span
-								>
-								{#if participant.death_count > 0}
-									<span class="death-count">{participant.death_count}</span>
-								{/if}
-							{:else if participant.status === 'finished'}
-								<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
-								{#if participant.death_count > 0}
-									<span class="death-count">{participant.death_count}</span>
-								{/if}
-							{:else if participant.status === 'playing'}
-								Layer {participant.current_layer}{totalLayers ? `/${totalLayers}` : ''}
-								• {formatIgt(participant.igt_ms)}
-								{#if participant.death_count > 0}
-									<span class="death-count">{participant.death_count}</span>
-								{/if}
-							{:else}
-								<span class="status-text">{participant.status}</span>
+						{#if participant.status === 'playing'}
+							{@const zone = zoneName(participant.current_zone)}
+							<div class="name-row">
+								<span class="name">
+									{#if mode === 'running'}
+										<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
+									{/if}
+									{participant.twitch_display_name || participant.twitch_username}
+								</span>
+								<span class="layer-fraction">{participant.current_layer}{totalLayers ? `/${totalLayers}` : ''}</span>
+							</div>
+							{#if zone}
+								<span class="zone" title={zoneNames?.get(participant.current_zone ?? '') ?? ''}>{zone}</span>
 							{/if}
-						</span>
+							<span class="stats">
+								{formatIgt(participant.igt_ms)}
+								{#if participant.death_count > 0}
+									<span class="death-count">{participant.death_count}</span>
+								{/if}
+							</span>
+						{:else}
+							<span class="name">
+								{#if mode === 'running' && (participant.status === 'ready' || participant.status === 'registered')}
+									<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
+								{/if}
+								{participant.twitch_display_name || participant.twitch_username}
+							</span>
+							<span class="stats">
+								{#if mode === 'finished' && participant.status === 'finished'}
+									<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
+									{#if participant.death_count > 0}
+										<span class="death-count">{participant.death_count}</span>
+									{/if}
+								{:else if mode === 'finished' && participant.status === 'abandoned'}
+									<span class="dnf"
+										>DNF (L{participant.current_layer}{totalLayers ? `/${totalLayers}` : ''})</span
+									>
+									{#if participant.death_count > 0}
+										<span class="death-count">{participant.death_count}</span>
+									{/if}
+								{:else if participant.status === 'finished'}
+									<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
+									{#if participant.death_count > 0}
+										<span class="death-count">{participant.death_count}</span>
+									{/if}
+								{:else}
+									<span class="status-text">{participant.status}</span>
+								{/if}
+							</span>
+						{/if}
 					</div>
 					{#if mode === 'running' && participant.status === 'finished'}
 						<span class="finish-icon">✓</span>
@@ -236,6 +264,49 @@
 	.dnf {
 		color: var(--color-text-disabled);
 		font-style: italic;
+	}
+
+	.name-row {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+	}
+
+	.name-row .name {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.layer-fraction {
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-secondary);
+		flex-shrink: 0;
+	}
+
+	.zone {
+		display: block;
+		font-size: var(--font-size-sm);
+		color: var(--color-text);
+		font-weight: 500;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.conn-dot {
+		display: inline-block;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--color-text-disabled, #555);
+		margin-right: 0.25rem;
+		vertical-align: middle;
+	}
+
+	.conn-dot.connected {
+		background: var(--color-success, #22c55e);
 	}
 
 	.empty {

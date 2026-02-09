@@ -77,14 +77,14 @@ export const LABEL_OFFSET_Y = 18;
 // =============================================================================
 
 export const PLAYER_COLORS = [
-  "#C8A44E", // gold
-  "#A78BFA", // purple
-  "#2DD4BF", // teal
+  "#38BDF8", // sky blue
   "#FB7185", // rose
-  "#38BDF8", // sky
+  "#2DD4BF", // teal
+  "#A78BFA", // purple
   "#FB923C", // orange
   "#A3E635", // lime
   "#E879F9", // fuchsia
+  "#F87171", // red
 ];
 
 // =============================================================================
