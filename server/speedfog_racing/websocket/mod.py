@@ -249,7 +249,7 @@ async def handle_finished(db: AsyncSession, participant: Participant, msg: dict[
     participant.status = ParticipantStatus.FINISHED
     if isinstance(msg.get("igt_ms"), int):
         participant.igt_ms = msg["igt_ms"]
-    participant.finished_at = datetime.now(UTC)
+    participant.finished_at = datetime.now(UTC).replace(tzinfo=None)
 
     await db.commit()
     logger.info(f"Participant finished: {participant.id}, igt={participant.igt_ms}ms")
