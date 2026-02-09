@@ -3,10 +3,12 @@
 import logging
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
 
 from fastapi import WebSocket
 
 from speedfog_racing.models import Participant
+from speedfog_racing.services.layer_service import get_tier_for_node
 from speedfog_racing.websocket.schemas import (
     LeaderboardUpdateMessage,
     ParticipantInfo,
@@ -147,6 +149,7 @@ class ConnectionManager:
         participants: list[Participant],
         *,
         include_history: bool = False,
+        graph_json: dict[str, Any] | None = None,
     ) -> None:
         """Broadcast leaderboard update to all connections in a room."""
         room = self.get_room(race_id)
@@ -156,14 +159,25 @@ class ConnectionManager:
         sorted_participants = sort_leaderboard(participants)
         connected_ids = set(room.mods.keys())
         participant_infos = [
-            participant_to_info(p, include_history=include_history, connected_ids=connected_ids)
+            participant_to_info(
+                p,
+                include_history=include_history,
+                connected_ids=connected_ids,
+                graph_json=graph_json,
+            )
             for p in sorted_participants
         ]
 
         message = LeaderboardUpdateMessage(participants=participant_infos)
         await room.broadcast_to_all(message.model_dump_json())
 
-    async def broadcast_player_update(self, race_id: uuid.UUID, participant: Participant) -> None:
+    async def broadcast_player_update(
+        self,
+        race_id: uuid.UUID,
+        participant: Participant,
+        *,
+        graph_json: dict[str, Any] | None = None,
+    ) -> None:
         """Broadcast a single player update to spectators."""
         room = self.get_room(race_id)
         if not room:
@@ -171,7 +185,9 @@ class ConnectionManager:
 
         connected_ids = set(room.mods.keys())
         message = PlayerUpdateMessage(
-            player=participant_to_info(participant, connected_ids=connected_ids)
+            player=participant_to_info(
+                participant, connected_ids=connected_ids, graph_json=graph_json
+            )
         )
         await room.broadcast_to_spectators(message.model_dump_json())
 
@@ -180,13 +196,18 @@ class ConnectionManager:
         msg = SpectatorCountMessage(count=len(room.spectators))
         await room.broadcast_to_spectators(msg.model_dump_json())
 
-    async def broadcast_race_status(self, race_id: uuid.UUID, status: str) -> None:
+    async def broadcast_race_status(
+        self,
+        race_id: uuid.UUID,
+        status: str,
+        started_at: str | None = None,
+    ) -> None:
         """Broadcast race status change to all connections."""
         room = self.get_room(race_id)
         if not room:
             return
 
-        message = RaceStatusChangeMessage(status=status)
+        message = RaceStatusChangeMessage(status=status, started_at=started_at)
         await room.broadcast_to_all(message.model_dump_json())
 
 
@@ -195,8 +216,14 @@ def participant_to_info(
     *,
     include_history: bool = False,
     connected_ids: set[uuid.UUID] | None = None,
+    graph_json: dict[str, Any] | None = None,
 ) -> ParticipantInfo:
     """Convert a Participant model to ParticipantInfo schema."""
+    # Compute tier on the fly from current_zone + graph_json
+    tier: int | None = None
+    if graph_json and participant.current_zone:
+        tier = get_tier_for_node(participant.current_zone, graph_json)
+
     return ParticipantInfo(
         id=str(participant.id),
         twitch_username=participant.user.twitch_username,
@@ -204,6 +231,7 @@ def participant_to_info(
         status=participant.status.value,
         current_zone=participant.current_zone,
         current_layer=participant.current_layer,
+        current_layer_tier=tier,
         igt_ms=participant.igt_ms,
         death_count=participant.death_count,
         color_index=participant.color_index,

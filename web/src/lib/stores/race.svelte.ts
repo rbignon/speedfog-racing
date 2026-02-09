@@ -103,7 +103,11 @@ class RaceStore {
 
       onRaceStatusChange: (msg) => {
         if (this.race) {
-          this.race = { ...this.race, status: msg.status };
+          this.race = {
+            ...this.race,
+            status: msg.status,
+            started_at: msg.started_at ?? this.race.started_at,
+          };
         }
       },
 

@@ -27,6 +27,12 @@ from speedfog_racing.websocket.spectator import broadcast_race_state_update
 logger = logging.getLogger(__name__)
 
 
+def _get_graph_json(participant: Participant) -> dict[str, Any] | None:
+    """Get graph_json from participant's race seed."""
+    seed = participant.race.seed
+    return seed.graph_json if seed else None
+
+
 async def handle_mod_websocket(websocket: WebSocket, race_id: uuid.UUID, db: AsyncSession) -> None:
     """Handle a mod WebSocket connection."""
     await websocket.accept()
@@ -138,16 +144,20 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
     # Build participant list
     room = manager.get_room(race.id)
     connected_ids = set(room.mods.keys()) if room else set()
+    graph = seed.graph_json if seed else None
     sorted_participants = sort_leaderboard(race.participants)
     participant_infos: list[ParticipantInfo] = [
-        participant_to_info(p, connected_ids=connected_ids) for p in sorted_participants
+        participant_to_info(p, connected_ids=connected_ids, graph_json=graph)
+        for p in sorted_participants
     ]
 
     message = AuthOkMessage(
+        participant_id=str(participant.id),
         race=RaceInfo(
             id=str(race.id),
             name=race.name,
             status=race.status.value,
+            started_at=race.started_at.isoformat() if race.started_at else None,
         ),
         seed=SeedInfo(
             total_layers=seed.total_layers if seed else 0,
@@ -170,7 +180,11 @@ async def handle_ready(db: AsyncSession, participant: Participant) -> None:
         await db.refresh(participant.race, ["participants"])
         for p in participant.race.participants:
             await db.refresh(p, ["user"])
-        await manager.broadcast_leaderboard(participant.race_id, participant.race.participants)
+        await manager.broadcast_leaderboard(
+            participant.race_id,
+            participant.race.participants,
+            graph_json=_get_graph_json(participant),
+        )
 
 
 async def handle_status_update(
@@ -191,7 +205,9 @@ async def handle_status_update(
 
     # Broadcast player update to spectators
     await db.refresh(participant, ["user"])
-    await manager.broadcast_player_update(participant.race_id, participant)
+    await manager.broadcast_player_update(
+        participant.race_id, participant, graph_json=_get_graph_json(participant)
+    )
 
 
 async def handle_event_flag(
@@ -241,7 +257,11 @@ async def handle_event_flag(
     await db.refresh(participant.race, ["participants"])
     for p in participant.race.participants:
         await db.refresh(p, ["user"])
-    await manager.broadcast_leaderboard(participant.race_id, participant.race.participants)
+    await manager.broadcast_leaderboard(
+        participant.race_id,
+        participant.race.participants,
+        graph_json=seed.graph_json,
+    )
 
 
 async def handle_finished(db: AsyncSession, participant: Participant, msg: dict[str, Any]) -> None:
@@ -283,10 +303,11 @@ async def handle_finished(db: AsyncSession, participant: Participant, msg: dict[
         participant.race_id,
         participant.race.participants,
         include_history=all_finished,
+        graph_json=_get_graph_json(participant),
     )
 
 
-async def broadcast_race_start(race_id: uuid.UUID) -> None:
+async def broadcast_race_start(race_id: uuid.UUID, started_at: str | None = None) -> None:
     """Broadcast race start to all connections (mods + spectators)."""
     room = manager.get_room(race_id)
     if room:
@@ -294,5 +315,5 @@ async def broadcast_race_start(race_id: uuid.UUID) -> None:
         message = RaceStartMessage()
         await room.broadcast_to_mods(message.model_dump_json())
         # Also notify spectators of status change
-        await manager.broadcast_race_status(race_id, "running")
+        await manager.broadcast_race_status(race_id, "running", started_at=started_at)
         logger.info(f"Race start broadcast: race={race_id}")

@@ -26,6 +26,7 @@ export interface WsRaceInfo {
   id: string;
   name: string;
   status: string;
+  started_at: string | null;
 }
 
 export interface WsSeedInfo {
@@ -56,6 +57,7 @@ export interface PlayerUpdateMessage {
 export interface RaceStatusChangeMessage {
   type: "race_status_change";
   status: string;
+  started_at: string | null;
 }
 
 export interface SpectatorCountMessage {

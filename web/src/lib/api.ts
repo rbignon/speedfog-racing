@@ -24,6 +24,7 @@ export interface Race {
   status: RaceStatus;
   pool_name: string | null;
   created_at: string;
+  started_at: string | null;
   participant_count: number;
   participant_previews: User[];
 }

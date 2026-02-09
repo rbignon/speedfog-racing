@@ -55,6 +55,7 @@ class ParticipantInfo(BaseModel):
     status: str
     current_zone: str | None
     current_layer: int
+    current_layer_tier: int | None = None
     igt_ms: int
     death_count: int
     color_index: int = 0
@@ -68,6 +69,7 @@ class RaceInfo(BaseModel):
     id: str
     name: str
     status: str
+    started_at: str | None = None
 
 
 class SeedInfo(BaseModel):
@@ -84,6 +86,7 @@ class AuthOkMessage(BaseModel):
     """Successful authentication response."""
 
     type: Literal["auth_ok"] = "auth_ok"
+    participant_id: str
     race: RaceInfo
     seed: SeedInfo
     participants: list[ParticipantInfo]
@@ -130,6 +133,7 @@ class RaceStatusChangeMessage(BaseModel):
 
     type: Literal["race_status_change"] = "race_status_change"
     status: str
+    started_at: str | None = None
 
 
 class SpectatorCountMessage(BaseModel):

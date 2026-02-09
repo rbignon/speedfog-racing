@@ -50,6 +50,7 @@ def race_response(race: Race) -> RaceResponse:
         status=race.status,
         pool_name=race.seed.pool_name if race.seed else None,
         created_at=race.created_at,
+        started_at=race.started_at,
         participant_count=len(race.participants),
         participant_previews=[user_response(p.user) for p in race.participants[:5]],
     )

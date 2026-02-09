@@ -85,6 +85,7 @@ class RaceResponse(BaseModel):
     status: RaceStatus
     pool_name: str | None
     created_at: datetime
+    started_at: datetime | None = None
     participant_count: int
     participant_previews: list[UserResponse] = []
 
@@ -100,6 +101,7 @@ class RaceDetailResponse(BaseModel):
     status: RaceStatus
     pool_name: str | None
     created_at: datetime
+    started_at: datetime | None = None
     participant_count: int
     seed_total_layers: int | None
     participants: list[ParticipantResponse]

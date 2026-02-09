@@ -19,7 +19,7 @@
 	let downloading = $state(false);
 	let downloadError = $state<string | null>(null);
 	let showInviteSearch = $state(false);
-	let elapsedSeconds = $state(0);
+	let now = $state(Date.now());
 
 	async function handleDownload() {
 		downloading = true;
@@ -83,16 +83,19 @@
 		};
 	});
 
-	// Cosmetic elapsed clock: starts from 0 on page load, not synced to server.
-	// The authoritative time source is IGT from each player's mod.
+	// Wall-clock elapsed timer based on server's started_at timestamp
+	let startedAt = $derived(liveRace?.started_at ?? initialRace.started_at);
+
+	let elapsedSeconds = $derived.by(() => {
+		if (raceStatus !== 'running' || !startedAt) return 0;
+		return Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
+	});
+
 	$effect(() => {
-		if (raceStatus !== 'running') {
-			elapsedSeconds = 0;
-			return;
-		}
+		if (raceStatus !== 'running' || !startedAt) return;
 
 		const interval = setInterval(() => {
-			elapsedSeconds += 1;
+			now = Date.now();
 		}, 1000);
 
 		return () => clearInterval(interval);

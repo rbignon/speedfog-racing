@@ -189,9 +189,12 @@ async def send_race_state(
     """Send race state to spectator with appropriate DAG visibility."""
     room = manager.get_room(race.id)
     connected_ids = set(room.mods.keys()) if room else set()
+    graph = race.seed.graph_json if race.seed else None
     sorted_participants = sort_leaderboard(race.participants)
     participant_infos: list[ParticipantInfo] = [
-        participant_to_info(p, include_history=include_history, connected_ids=connected_ids)
+        participant_to_info(
+            p, include_history=include_history, connected_ids=connected_ids, graph_json=graph
+        )
         for p in sorted_participants
     ]
 
@@ -200,6 +203,7 @@ async def send_race_state(
             id=str(race.id),
             name=race.name,
             status=race.status.value,
+            started_at=race.started_at.isoformat() if race.started_at else None,
         ),
         seed=build_seed_info(race, dag_access),
         participants=participant_infos,

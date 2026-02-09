@@ -1,5 +1,6 @@
 """Race management API routes."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -58,6 +59,7 @@ def _race_detail_response(race: Race) -> RaceDetailResponse:
         status=race.status,
         pool_name=race.seed.pool_name if race.seed else None,
         created_at=race.created_at,
+        started_at=race.started_at,
         participant_count=len(race.participants),
         seed_total_layers=race.seed.total_layers if race.seed else None,
         participants=[participant_response(p) for p in race.participants],
@@ -452,12 +454,14 @@ async def start_race(
         )
 
     race.status = RaceStatus.RUNNING
+    race.started_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(race)
 
     # Notify connected clients
-    await broadcast_race_start(race_id)
+    started_iso = race.started_at.isoformat() if race.started_at else None
+    await broadcast_race_start(race_id, started_at=started_iso)
     await broadcast_race_state_update(race_id, race)
 
     return race_response(race)

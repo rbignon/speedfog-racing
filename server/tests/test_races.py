@@ -471,6 +471,13 @@ async def test_start_race(test_client, organizer, seed):
         )
         race_id = create_response.json()["id"]
 
+        # Verify started_at is null before start
+        get_response = await client.get(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert get_response.json()["started_at"] is None
+
         # Start race
         response = await client.post(
             f"/api/races/{race_id}/start",
@@ -479,6 +486,7 @@ async def test_start_race(test_client, organizer, seed):
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "running"
+        assert data["started_at"] is not None
 
 
 @pytest.mark.asyncio
