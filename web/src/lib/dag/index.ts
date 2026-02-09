@@ -19,6 +19,7 @@ export type {
 export {
   enumerateAllPaths,
   pickRacerPaths,
+  bfsShortestPath,
   pathToWaypoints,
   buildRacerPath,
   computeEdgeDrawTimings,

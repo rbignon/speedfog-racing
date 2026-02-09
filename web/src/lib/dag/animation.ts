@@ -140,13 +140,58 @@ export function segmentLength(seg: EdgeSegment): number {
 }
 
 /**
+ * BFS shortest path between two nodes in the DAG.
+ * Returns the full path including start and end, or null if unreachable.
+ */
+export function bfsShortestPath(
+  from: string,
+  to: string,
+  adjacency: Map<string, string[]>,
+): string[] | null {
+  if (from === to) return [from];
+
+  const visited = new Set<string>([from]);
+  const parent = new Map<string, string>();
+  const queue: string[] = [from];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const neighbors = adjacency.get(current);
+    if (!neighbors) continue;
+
+    for (const neighbor of neighbors) {
+      if (visited.has(neighbor)) continue;
+      visited.add(neighbor);
+      parent.set(neighbor, current);
+
+      if (neighbor === to) {
+        const path: string[] = [to];
+        let node = to;
+        while (node !== from) {
+          node = parent.get(node)!;
+          path.unshift(node);
+        }
+        return path;
+      }
+
+      queue.push(neighbor);
+    }
+  }
+
+  return null;
+}
+
+/**
  * Convert a node path to waypoints following edge segments.
- * Returns waypoints with cumulative distance for smooth interpolation.
+ * When consecutive visited nodes have no direct edge, BFS fills in
+ * intermediate nodes so the path follows the graph topology.
  */
 export function pathToWaypoints(
   nodeIds: string[],
   layout: DagLayout,
 ): AnimationWaypoint[] {
+  if (nodeIds.length === 0) return [];
+
   const nodeMap = new Map<string, PositionedNode>();
   for (const node of layout.nodes) {
     nodeMap.set(node.id, node);
@@ -158,17 +203,45 @@ export function pathToWaypoints(
     edgeMap.set(`${edge.fromId}->${edge.toId}`, edge);
   }
 
+  // Build adjacency list for BFS gap-filling
+  const adjacency = new Map<string, string[]>();
+  for (const edge of layout.edges) {
+    const list = adjacency.get(edge.fromId);
+    if (list) list.push(edge.toId);
+    else adjacency.set(edge.fromId, [edge.toId]);
+  }
+
+  // Expand path: fill gaps between non-adjacent nodes with BFS
+  const expanded: string[] = [nodeIds[0]];
+  for (let i = 0; i < nodeIds.length - 1; i++) {
+    const from = nodeIds[i];
+    const to = nodeIds[i + 1];
+    if (edgeMap.has(`${from}->${to}`)) {
+      expanded.push(to);
+    } else {
+      const bridge = bfsShortestPath(from, to, adjacency);
+      if (bridge) {
+        for (let j = 1; j < bridge.length; j++) {
+          expanded.push(bridge[j]);
+        }
+      } else {
+        // Unreachable — keep target node (waypoints will have a straight-line gap)
+        expanded.push(to);
+      }
+    }
+  }
+
   const waypoints: AnimationWaypoint[] = [];
   let cumDist = 0;
 
   // Start at first node
-  const firstNode = nodeMap.get(nodeIds[0]);
+  const firstNode = nodeMap.get(expanded[0]);
   if (!firstNode) return [];
   waypoints.push({ x: firstNode.x, y: firstNode.y, cumulativeDistance: 0 });
 
-  // Follow edges between consecutive nodes
-  for (let i = 0; i < nodeIds.length - 1; i++) {
-    const edge = edgeMap.get(`${nodeIds[i]}->${nodeIds[i + 1]}`);
+  // Follow edges between consecutive expanded nodes
+  for (let i = 0; i < expanded.length - 1; i++) {
+    const edge = edgeMap.get(`${expanded[i]}->${expanded[i + 1]}`);
     if (!edge) continue;
 
     for (const seg of edge.segments) {

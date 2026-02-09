@@ -6,6 +6,7 @@ import { computeLayout } from "../layout";
 import {
   enumerateAllPaths,
   pickRacerPaths,
+  bfsShortestPath,
   pathToWaypoints,
   buildRacerPath,
   computeEdgeDrawTimings,
@@ -139,6 +140,52 @@ describe("pickRacerPaths", () => {
 });
 
 // =============================================================================
+// bfsShortestPath
+// =============================================================================
+
+describe("bfsShortestPath", () => {
+  it("returns single-element path when from === to", () => {
+    const adj = new Map([["a", ["b"]]]);
+    expect(bfsShortestPath("a", "a", adj)).toEqual(["a"]);
+  });
+
+  it("finds direct neighbor", () => {
+    const adj = new Map([["a", ["b"]]]);
+    expect(bfsShortestPath("a", "b", adj)).toEqual(["a", "b"]);
+  });
+
+  it("finds shortest path through intermediates", () => {
+    // a → b → c → d
+    const adj = new Map([
+      ["a", ["b"]],
+      ["b", ["c"]],
+      ["c", ["d"]],
+    ]);
+    expect(bfsShortestPath("a", "d", adj)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("picks shortest when multiple paths exist", () => {
+    // a → b → d (length 2)
+    // a → b → c → d (length 3)
+    const adj = new Map([
+      ["a", ["b"]],
+      ["b", ["c", "d"]],
+      ["c", ["d"]],
+    ]);
+    expect(bfsShortestPath("a", "d", adj)).toEqual(["a", "b", "d"]);
+  });
+
+  it("returns null when unreachable", () => {
+    const adj = new Map([["a", ["b"]]]);
+    expect(bfsShortestPath("a", "z", adj)).toBeNull();
+  });
+
+  it("returns null with empty adjacency", () => {
+    expect(bfsShortestPath("a", "b", new Map())).toBeNull();
+  });
+});
+
+// =============================================================================
 // pathToWaypoints
 // =============================================================================
 
@@ -175,6 +222,114 @@ describe("pathToWaypoints", () => {
 
     expect(lastWp.x).toBe(lastNode.x);
     expect(lastWp.y).toBe(lastNode.y);
+  });
+
+  it("fills gap through intermediate nodes when skipping", () => {
+    // Graph: a -> b -> c -> d (linear chain)
+    const layout: DagLayout = {
+      nodes: [
+        {
+          id: "a",
+          x: 0,
+          y: 0,
+          type: "start",
+          displayName: "A",
+          zones: [],
+          layer: 0,
+          tier: 0,
+          weight: 1,
+        },
+        {
+          id: "b",
+          x: 100,
+          y: 0,
+          type: "mini_dungeon",
+          displayName: "B",
+          zones: [],
+          layer: 1,
+          tier: 1,
+          weight: 1,
+        },
+        {
+          id: "c",
+          x: 200,
+          y: 0,
+          type: "mini_dungeon",
+          displayName: "C",
+          zones: [],
+          layer: 2,
+          tier: 2,
+          weight: 1,
+        },
+        {
+          id: "d",
+          x: 300,
+          y: 0,
+          type: "final_boss",
+          displayName: "D",
+          zones: [],
+          layer: 3,
+          tier: 3,
+          weight: 1,
+        },
+      ],
+      edges: [
+        {
+          fromId: "a",
+          toId: "b",
+          segments: [{ x1: 0, y1: 0, x2: 100, y2: 0 }],
+        },
+        {
+          fromId: "b",
+          toId: "c",
+          segments: [{ x1: 100, y1: 0, x2: 200, y2: 0 }],
+        },
+        {
+          fromId: "c",
+          toId: "d",
+          segments: [{ x1: 200, y1: 0, x2: 300, y2: 0 }],
+        },
+      ],
+      width: 400,
+      height: 100,
+    };
+
+    // Player visited a and d, skipping b and c
+    const waypoints = pathToWaypoints(["a", "d"], layout);
+
+    // Should pass through all intermediate nodes
+    expect(waypoints).toHaveLength(4); // a, b, c, d
+    expect(waypoints[0]).toMatchObject({ x: 0, y: 0 });
+    expect(waypoints[1]).toMatchObject({ x: 100, y: 0 });
+    expect(waypoints[2]).toMatchObject({ x: 200, y: 0 });
+    expect(waypoints[3]).toMatchObject({ x: 300, y: 0 });
+  });
+
+  it("fills gap on the hero seed graph", () => {
+    const layout = loadHeroSeed();
+
+    // altus_sagescave -> stormveil_margit requires going through graveyard_cave
+    // (altus_sagescave -> graveyard_cave -> stormveil_margit)
+    const waypoints = pathToWaypoints(
+      ["altus_sagescave_1646", "stormveil_margit_9a63"],
+      layout,
+    );
+
+    // Should have more than 2 waypoints (start + intermediate edges + end)
+    expect(waypoints.length).toBeGreaterThan(2);
+
+    // Should start at altus_sagescave
+    const startNode = layout.nodes.find(
+      (n) => n.id === "altus_sagescave_1646",
+    )!;
+    expect(waypoints[0].x).toBe(startNode.x);
+    expect(waypoints[0].y).toBe(startNode.y);
+
+    // Should end at stormveil_margit
+    const endNode = layout.nodes.find((n) => n.id === "stormveil_margit_9a63")!;
+    const lastWp = waypoints[waypoints.length - 1];
+    expect(lastWp.x).toBe(endNode.x);
+    expect(lastWp.y).toBe(endNode.y);
   });
 });
 
