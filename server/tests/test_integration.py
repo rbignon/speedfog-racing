@@ -4,6 +4,7 @@ import io
 import json
 import os
 import tempfile
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -19,6 +20,7 @@ from speedfog_racing.database import Base
 from speedfog_racing.main import app
 from speedfog_racing.models import (
     Participant,
+    ParticipantStatus,
     Race,
     Seed,
     SeedStatus,
@@ -169,7 +171,7 @@ def seed_folder():
                     "version": "4.0",
                     "total_layers": 5,
                     "nodes": {
-                        "start_node": {"zones": ["start"], "layer": 0, "tier": 1},
+                        "start_node": {"type": "start", "zones": ["start"], "layer": 0, "tier": 1},
                         "node_a": {"zones": ["zone_a"], "layer": 1, "tier": 1},
                         "node_b": {"zones": ["zone_b"], "layer": 2, "tier": 2},
                         "node_c": {"zones": ["zone_c"], "layer": 3, "tier": 3},
@@ -245,7 +247,7 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                     "version": "4.0",
                     "total_layers": 5,
                     "nodes": {
-                        "start_node": {"zones": ["start"], "layer": 0, "tier": 1},
+                        "start_node": {"type": "start", "zones": ["start"], "layer": 0, "tier": 1},
                         "node_a": {"zones": ["zone_a"], "layer": 1, "tier": 1},
                         "node_b": {"zones": ["zone_b"], "layer": 2, "tier": 2},
                         "node_c": {"zones": ["zone_c"], "layer": 3, "tier": 3},
@@ -320,7 +322,12 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                         graph = dict(race.seed.graph_json or {})
                         graph["area_tiers"] = {"zone_a": 1, "zone_b": 2, "zone_c": 3}
                         graph["nodes"] = {
-                            "start_node": {"zones": ["start"], "layer": 0, "tier": 1},
+                            "start_node": {
+                                "type": "start",
+                                "zones": ["start"],
+                                "layer": 0,
+                                "tier": 1,
+                            },
                             "node_a": {"zones": ["zone_a"], "layer": 1, "tier": 1},
                             "node_b": {"zones": ["zone_b"], "layer": 2, "tier": 2},
                             "node_c": {"zones": ["zone_c"], "layer": 3, "tier": 3},
@@ -616,6 +623,65 @@ def test_seed_pack_contains_player_specific_config(integration_client, race_with
             assert "[server]" in config_content
             assert "[overlay]" in config_content
             assert "[keybindings]" in config_content
+
+
+# =============================================================================
+# Scenario 3b: Status Update Places Player in Start Zone
+# =============================================================================
+
+
+def test_status_update_transitions_to_playing_with_start_zone(
+    integration_client, race_with_participants, integration_db
+):
+    """First status_update during running race sets PLAYING and places in start zone."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Connect, auth, send ready
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    # Start the race
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    # Send first status_update — should transition READY → PLAYING + start zone
+    # (player_update only goes to spectators, so verify via DB)
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        time.sleep(0.5)  # Let server process before disconnect
+
+    # Verify DB state
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.status, p.current_zone, p.current_layer, p.zone_history
+
+    status, zone, layer, history = asyncio.run(check_db())
+    assert status == ParticipantStatus.PLAYING
+    assert zone == "start_node"
+    assert layer == 0
+    assert history is not None
+    assert len(history) == 1
+    assert history[0]["node_id"] == "start_node"
+    assert history[0]["igt_ms"] == 0
 
 
 # =============================================================================

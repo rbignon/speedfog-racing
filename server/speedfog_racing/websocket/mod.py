@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus
-from speedfog_racing.services.layer_service import get_layer_for_node
+from speedfog_racing.services.layer_service import get_layer_for_node, get_start_node
 from speedfog_racing.websocket.manager import manager, participant_to_info, sort_leaderboard
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
@@ -196,10 +196,19 @@ async def handle_status_update(
     if isinstance(msg.get("death_count"), int):
         participant.death_count = msg["death_count"]
 
-    # Set to playing if race is running
+    # Set to playing if race is running — place in start zone
     race = participant.race
     if race.status == RaceStatus.RUNNING and participant.status == ParticipantStatus.READY:
         participant.status = ParticipantStatus.PLAYING
+        graph_json = _get_graph_json(participant)
+        if graph_json:
+            start_node = get_start_node(graph_json)
+            if start_node:
+                participant.current_zone = start_node
+                participant.current_layer = 0
+                history = participant.zone_history or []
+                history.append({"node_id": start_node, "igt_ms": 0})
+                participant.zone_history = history
 
     await db.commit()
 

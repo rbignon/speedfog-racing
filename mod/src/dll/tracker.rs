@@ -262,8 +262,9 @@ impl RaceTracker {
             }
         }
 
-        // Send periodic status updates (every 1 second)
-        if self.last_status_update.elapsed() >= Duration::from_secs(1) {
+        // Send periodic status updates (every 1 second, only when IGT is ticking)
+        // During quit-outs IGT is 0 — skip to avoid erroneous data
+        if self.last_status_update.elapsed() >= Duration::from_secs(1) && igt_ms > 0 {
             self.ws_client.send_status_update(igt_ms, deaths);
             self.last_status_update = Instant::now();
         }
