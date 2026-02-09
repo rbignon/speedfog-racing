@@ -1,6 +1,6 @@
 # SpeedFog Racing — Roadmap
 
-**Last updated:** 2026-02-07
+**Last updated:** 2026-02-09
 
 ---
 
@@ -18,26 +18,48 @@ Metro-style DAG visualization (pure SVG, custom layout algorithm), homepage rede
 
 **Spec:** `docs/specs/phase2-ui-ux.md`
 
+### EMEVD Event-Based Zone Tracking
+
+Replaced map_id-based zone tracking with custom EMEVD event flags for precise fog gate traversal detection and automatic race finish on final boss death.
+
+**Spec:** `docs/specs/emevd-zone-tracking.md`
+
+Delivered:
+
+- SpeedFog generator: EMEVD event injection for fog gates + final boss, using category 1040292 (offsets 800-999) co-located with FogRando's runtime category
+- graph.json v4 format with `event_map` and `finish_event`
+- Mod: `EventFlagReader` with red-black tree traversal of VirtualMemoryFlag, `event_flag` message, reconnect re-scan
+- Server: `handle_event_flag` handler, finish detection, `auth_ok` with `event_ids`, server-driven tier computation
+- Start zone placement on PLAYING transition
+- Event flag debugging tools: file logging (`tracing-appender`), `FlagReaderStatus` diagnostics, debug overlay (F3)
+
+### Mod Overlay Redesign
+
+Compact 2-line header (race+IGT / tier+deaths+progress), color-coded leaderboard (orange=ready, white=playing, green=finished), self-identification via `participant_id` in `auth_ok`, configurable styling (font, colors, border, opacity).
+
+### PROTOCOL.md Rewrite
+
+Full rewrite of the protocol reference to match current implementation: `event_flag` replaces `zone_entered`, `event_ids` in `auth_ok`, spectator WebSocket auth flow, `spectator_count`, all REST endpoints documented.
+
+### Race Management Consolidation
+
+Deleted standalone `/race/[id]/manage` page. All organizer actions moved to race detail sidebar. New `POST /races/{id}/open` endpoint for DRAFT→OPEN transition. Status flow: DRAFT → Open Race → OPEN → Generate Packs + Start Race → RUNNING → FINISHED.
+
 ---
 
 ## v1.0 — First Real Usage
 
-Everything needed to run an actual race end-to-end with accurate tracking and a usable feature set.
+Everything needed to run an actual race end-to-end with a usable feature set. The core platform is code-complete — remaining items are deployment prep and polish.
 
-### EMEVD Event-Based Zone Tracking
+### Seed Pool Regeneration
 
 **Priority:** Critical (blocker)
-**Spec:** `docs/specs/emevd-zone-tracking.md`
 
-Replace map_id-based zone tracking with custom EMEVD event flags for precise fog gate traversal detection and automatic race finish on final boss death. Requires changes to the SpeedFog generator, the racing mod, and the server.
+Regenerate all seed pools with the updated SpeedFog generator (event flag base 1040292800). Existing pools lack `event_map` / `finish_event` in graph.json and have no EMEVD event injection.
 
-Key deliverables:
-
-- SpeedFog generator: EMEVD event injection for fog gates + final boss
-- graph.json v4 format with `event_map` and `finish_event`
-- Mod: event flag reading from game memory, new `event_flag` message
-- Server: `handle_event_flag` handler, finish detection, auth_ok with `event_ids`
-- Seed pool regeneration
+- Regenerate sprint, standard, marathon pools
+- Verify event flags are readable in-game (end-to-end test with a real seed)
+- Update hero-seed.json with v4 format (add dummy `event_map` for homepage DAG consistency)
 
 ### OBS Overlays
 
@@ -68,7 +90,7 @@ Accessible to admin users only. Simple table layout, no complex UI needed.
 
 The invite system backend exists (Phase 1 Step 12) but the UX flow is incomplete:
 
-- Show pending invites on the manage page (invited but not yet accepted)
+- Show pending invites in the race detail sidebar (invited but not yet accepted)
 - Visual distinction between confirmed participants and pending invites
 - Copy invite link button for each pending invite
 - Auto-add participant when invite is accepted (already works server-side)
@@ -77,26 +99,13 @@ The invite system backend exists (Phase 1 Step 12) but the UX flow is incomplete
 
 **Priority:** Low
 
-The `show_finished_names` config option was proposed in the design doc but never implemented and has no real use case (hiding finished player names doesn't add meaningful anti-spoiler value). Remove all references from:
+The `show_finished_names` config option was proposed in the design doc but never implemented and has no real use case. Remove all references from:
 
 - `docs/DESIGN.md`
 - `docs/specs/phase1.md`
 - `docs/specs/phase2-ui-ux.md`
 
 No code changes needed — it was never implemented.
-
-### Mod Debug Overlay
-
-**Priority:** Low
-
-Optional debug panel in the mod's ImGui overlay for troubleshooting:
-
-- WebSocket connection status and message counts
-- Last event flags triggered
-- Current game state readings (IGT, death count, map_id)
-- Server round-trip latency
-
-Toggle via a hotkey (e.g., F10). Useful during testing and for players reporting issues.
 
 ---
 
@@ -112,17 +121,6 @@ Coordinated countdown across all mod clients before `race_start`:
 - Mod displays 3-2-1-GO overlay synchronized to server time
 - Accounts for network latency (clients adjust based on round-trip time)
 - Optional: countdown visible on spectator WebSocket too
-
-### PROTOCOL.md Cleanup
-
-Update the protocol reference to reflect all v1.0 changes:
-
-- Replace `zone_entered` with `event_flag`
-- Remove `current_zone` from `status_update`
-- Document `event_ids` in `auth_ok`
-- Remove the "Phase 2 Extensions (Planned)" section for `zone_info` (superseded by EMEVD approach)
-- Add `spectator_count` message documentation
-- Document optional spectator WebSocket auth flow
 
 ---
 
