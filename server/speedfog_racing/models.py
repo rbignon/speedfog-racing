@@ -65,7 +65,7 @@ class User(Base):
         String(100), unique=True, nullable=False, default=generate_token
     )
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.USER)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     organized_races: Mapped[list["Race"]] = relationship(back_populates="organizer")
@@ -85,7 +85,7 @@ class Seed(Base):
     total_layers: Mapped[int] = mapped_column(Integer, nullable=False)
     folder_path: Mapped[str] = mapped_column(String(500), nullable=False)
     status: Mapped[SeedStatus] = mapped_column(Enum(SeedStatus), default=SeedStatus.AVAILABLE)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     races: Mapped[list["Race"]] = relationship(back_populates="seed")
@@ -106,7 +106,7 @@ class Race(Base):
     )
     status: Mapped[RaceStatus] = mapped_column(Enum(RaceStatus), default=RaceStatus.DRAFT)
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     organizer: Mapped["User"] = relationship(back_populates="organized_races")
@@ -141,7 +141,7 @@ class Participant(Base):
     current_layer: Mapped[int] = mapped_column(Integer, default=0)
     igt_ms: Mapped[int] = mapped_column(Integer, default=0)
     death_count: Mapped[int] = mapped_column(Integer, default=0)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[ParticipantStatus] = mapped_column(
         Enum(ParticipantStatus), default=ParticipantStatus.REGISTERED
     )
@@ -187,7 +187,7 @@ class Invite(Base):
     )
     twitch_username: Mapped[str] = mapped_column(String(100), nullable=False)
     accepted: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     race: Mapped["Race"] = relationship()
