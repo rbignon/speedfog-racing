@@ -25,6 +25,7 @@ final_tier = 20
 split_probability = 0.2
 merge_probability = 0.3
 max_branches = 2
+final_boss_candidates = ["all"]
 
 [starting_items]
 academy_key = true
@@ -34,6 +35,10 @@ great_runes = true
 golden_seeds = 5
 sacred_tears = 3
 starting_runes = 50000
+
+[care_package]
+enabled = true
+weapon_upgrade = 12
 
 [item_randomizer]
 enabled = true
