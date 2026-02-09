@@ -310,15 +310,19 @@ def main() -> int:
 
     succeeded = 0
     failed = 0
+    failed_dir = args.output / f"{args.pool}_failed"
 
     for i in range(args.count):
         seed_number = start_number + i
         print(f"[{i + 1}/{args.count}] Generating seed_{seed_number}...")
 
-        # Use a temporary directory for speedfog output
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+        # Use a temporary directory for speedfog output — managed manually
+        # so we can preserve it on failure for investigation.
+        temp_dir = tempfile.mkdtemp()
+        temp_path = Path(temp_dir)
+        ok = False
 
+        try:
             # Generate seed
             seed_dir = run_speedfog(
                 speedfog_path,
@@ -336,13 +340,29 @@ def main() -> int:
             if process_seed(seed_dir, dll_source, output_pool_dir, seed_number):
                 print(f"  Success: {output_pool_dir / f'seed_{seed_number}'}")
                 succeeded += 1
+                ok = True
             else:
                 print("  Failed: post-processing error")
                 failed += 1
+        finally:
+            if ok:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            elif temp_path.exists() and any(temp_path.iterdir()):
+                # Preserve failed seed for investigation
+                failed_dir.mkdir(parents=True, exist_ok=True)
+                fail_dest = failed_dir / f"seed_{seed_number}"
+                if fail_dest.exists():
+                    shutil.rmtree(fail_dest)
+                shutil.move(str(temp_path), str(fail_dest))
+                print(f"  Kept for investigation: {fail_dest}")
+            else:
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     # Summary
     print()
     print(f"Summary: {succeeded} succeeded, {failed} failed")
+    if failed > 0 and failed_dir.exists():
+        print(f"Failed seeds preserved in: {failed_dir}")
 
     if failed > 0:
         return 1
