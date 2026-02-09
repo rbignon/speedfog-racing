@@ -74,6 +74,14 @@ pub struct OverlaySettings {
     /// Border color as hex "#RRGGBB" (only used if show_border = true)
     #[serde(default = "default_border_color")]
     pub border_color: String,
+
+    /// Horizontal margin from the right edge of the screen in pixels.
+    #[serde(default = "default_position_offset_x")]
+    pub position_offset_x: f32,
+
+    /// Vertical margin from the top edge of the screen in pixels.
+    #[serde(default = "default_position_offset_y")]
+    pub position_offset_y: f32,
 }
 
 fn default_enabled() -> bool {
@@ -97,6 +105,12 @@ fn default_text_disabled_color() -> String {
 fn default_border_color() -> String {
     "#404040".to_string()
 }
+fn default_position_offset_x() -> f32 {
+    20.0
+}
+fn default_position_offset_y() -> f32 {
+    20.0
+}
 
 impl Default for OverlaySettings {
     fn default() -> Self {
@@ -110,6 +124,8 @@ impl Default for OverlaySettings {
             text_disabled_color: default_text_disabled_color(),
             show_border: false,
             border_color: default_border_color(),
+            position_offset_x: default_position_offset_x(),
+            position_offset_y: default_position_offset_y(),
         }
     }
 }

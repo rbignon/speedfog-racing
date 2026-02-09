@@ -79,18 +79,21 @@ impl ImguiRenderLoop for RaceTracker {
 
         let [dw, _dh] = ui.io().display_size;
         let scale = s.font_size / 16.0;
-        let window_width = 280.0 * scale;
+        let max_width = 320.0 * scale;
 
         let flags =
             WindowFlags::NO_TITLE_BAR | WindowFlags::ALWAYS_AUTO_RESIZE | WindowFlags::NO_SCROLLBAR;
 
         ui.window("SpeedFog Race")
-            .position([dw - window_width - 20.0, 20.0], Condition::FirstUseEver)
+            .position(
+                [dw - max_width - s.position_offset_x, s.position_offset_y],
+                Condition::FirstUseEver,
+            )
             .flags(flags)
             .build(|| {
-                self.render_player_status(ui);
+                self.render_player_status(ui, max_width);
                 ui.separator();
-                self.render_leaderboard(ui);
+                self.render_leaderboard(ui, max_width);
                 if self.show_debug {
                     ui.separator();
                     self.render_debug(ui);
@@ -103,9 +106,7 @@ impl RaceTracker {
     /// Compact 2-line player status:
     /// Line 1: `● RaceName [status]           HH:MM:SS`
     /// Line 2: `  Tier X                   †N    X/Y`
-    fn render_player_status(&self, ui: &hudhook::imgui::Ui) {
-        let right_edge = ui.window_content_region_max()[0];
-
+    fn render_player_status(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
         // --- Line 1: connection dot + race name + status (left), local IGT (right) ---
         let (dot_color, _) = match self.ws_status() {
             ConnectionStatus::Connected => ([0.0, 1.0, 0.0, 1.0], "connected"),
@@ -124,57 +125,61 @@ impl RaceTracker {
         let igt_width = ui.calc_text_size(&igt_str)[0];
 
         // Left side: dot + race name + [status]
-        ui.text_colored(dot_color, "\u{25CF}"); // ●
-        ui.same_line();
+        let dot_str = "\u{25CF} "; // "● "
+        let dot_width = ui.calc_text_size(dot_str)[0];
+        let gap = ui.calc_text_size(" ")[0];
+        let name_max = max_width - igt_width - gap - dot_width;
 
-        if let Some(race) = self.race_info() {
-            ui.text(&race.name);
-            ui.same_line();
-            ui.text_disabled(format!("[{}]", race.status));
+        ui.text_colored(dot_color, dot_str);
+        ui.same_line_with_spacing(0.0, 0.0);
+
+        let name_text = if let Some(race) = self.race_info() {
+            format!("{} [{}]", race.name, race.status)
         } else {
-            ui.text("Connecting...");
-        }
+            "Connecting...".to_string()
+        };
+        let truncated = truncate_to_width(ui, &name_text, name_max);
+        ui.text(&truncated);
 
-        // Right-align IGT on the same line
-        ui.same_line();
-        ui.set_cursor_pos([right_edge - igt_width, ui.cursor_pos()[1]]);
+        // Right-align IGT
+        ui.same_line_with_pos(max_width - igt_width);
         ui.text(&igt_str);
 
         // --- Line 2: tier (left), deaths + progress (right) ---
         let me = self.my_participant();
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
 
-        // Right side: "†N    X/Y"
+        // Right side: "†N  X/Y"
         let deaths = me.map(|p| p.death_count).unwrap_or(0);
         let layer = me.map(|p| p.current_layer).unwrap_or(0);
         let right_text = format!("\u{2020}{}  {}/{}", deaths, layer, total_layers);
         let right_width = ui.calc_text_size(&right_text)[0];
 
         // Left side: "  Tier X"
-        if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
-            ui.text(format!("  Tier {}", tier));
+        let left_text = if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
+            format!("  Tier {}", tier)
         } else {
-            ui.text("  --");
-        }
+            "  --".to_string()
+        };
+        ui.text(&left_text);
 
         // Right-align deaths + progress
-        ui.same_line();
-        ui.set_cursor_pos([right_edge - right_width, ui.cursor_pos()[1]]);
+        ui.same_line_with_pos(max_width - right_width);
         ui.text(&right_text);
     }
 
     /// Leaderboard with color-coded status and right-aligned values:
     /// - ready/playing: `X/Y` right-aligned
     /// - finished: `HH:MM:SS` right-aligned
-    fn render_leaderboard(&self, ui: &hudhook::imgui::Ui) {
+    fn render_leaderboard(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
         let participants = self.participants();
         if participants.is_empty() {
             ui.text_disabled("No participants");
             return;
         }
 
-        let right_edge = ui.window_content_region_max()[0];
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
+        let gap = ui.calc_text_size(" ")[0];
 
         for (i, p) in participants.iter().take(10).enumerate() {
             let name = p
@@ -197,13 +202,14 @@ impl RaceTracker {
             };
             let right_width = ui.calc_text_size(&right_text)[0];
 
-            // Left: rank + name
+            // Left: rank + name (truncated to avoid overlap)
             let left_text = format!("{:2}. {}", i + 1, name);
-            ui.text_colored(color, &left_text);
+            let left_max = max_width - right_width - gap;
+            let truncated = truncate_to_width(ui, &left_text, left_max);
+            ui.text_colored(color, &truncated);
 
             // Right-align value
-            ui.same_line();
-            ui.set_cursor_pos([right_edge - right_width, ui.cursor_pos()[1]]);
+            ui.same_line_with_pos(max_width - right_width);
             ui.text_colored(color, &right_text);
         }
 
@@ -304,4 +310,36 @@ fn format_time_u32(ms: u32) -> String {
     let mins = secs / 60;
     let hours = mins / 60;
     format!("{:02}:{:02}:{:02}", hours, mins % 60, secs % 60)
+}
+
+/// Truncate text to fit within `max_width` pixels, adding "…" if needed.
+fn truncate_to_width(ui: &hudhook::imgui::Ui, text: &str, max_width: f32) -> String {
+    let width = ui.calc_text_size(text)[0];
+    if width <= max_width {
+        return text.to_string();
+    }
+
+    let ellipsis = "\u{2026}"; // …
+    let ellipsis_width = ui.calc_text_size(ellipsis)[0];
+    let target_width = max_width - ellipsis_width;
+    if target_width <= 0.0 {
+        return ellipsis.to_string();
+    }
+
+    // Binary search for the longest prefix that fits
+    let chars: Vec<char> = text.chars().collect();
+    let mut low = 0usize;
+    let mut high = chars.len();
+    while low < high {
+        let mid = (low + high + 1) / 2;
+        let prefix: String = chars[..mid].iter().collect();
+        if ui.calc_text_size(&prefix)[0] <= target_width {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    let prefix: String = chars[..low].iter().collect();
+    format!("{}{}", prefix, ellipsis)
 }
