@@ -4,27 +4,57 @@ Reference document for API endpoints and WebSocket messages.
 
 ## REST API
 
+### System
+
+| Method | Endpoint  | Auth | Description                          |
+| ------ | --------- | ---- | ------------------------------------ |
+| GET    | `/health` | -    | Health check (`{ status, version }`) |
+
+### Site
+
+| Method | Endpoint           | Auth | Description                                         |
+| ------ | ------------------ | ---- | --------------------------------------------------- |
+| GET    | `/api/site-config` | -    | Public site configuration (`{ coming_soon: bool }`) |
+
 ### Authentication
 
-| Method | Endpoint             | Auth   | Description                     |
-| ------ | -------------------- | ------ | ------------------------------- |
-| GET    | `/api/auth/twitch`   | -      | Redirect to Twitch OAuth        |
-| GET    | `/api/auth/callback` | -      | OAuth callback, creates session |
-| GET    | `/api/auth/me`       | Bearer | Get current user info           |
+| Method | Endpoint             | Auth   | Description                                          |
+| ------ | -------------------- | ------ | ---------------------------------------------------- |
+| GET    | `/api/auth/twitch`   | -      | Redirect to Twitch OAuth (`?redirect_url`)           |
+| GET    | `/api/auth/callback` | -      | OAuth callback, redirects with `?token=`             |
+| GET    | `/api/auth/me`       | Bearer | Get current user info (includes `api_token`, `role`) |
+| POST   | `/api/auth/logout`   | Bearer | Regenerate API token (invalidates session)           |
 
 ### Races
 
-| Method | Endpoint                               | Auth   | Description                       |
-| ------ | -------------------------------------- | ------ | --------------------------------- |
-| GET    | `/api/races`                           | -      | List races (filterable by status) |
-| POST   | `/api/races`                           | Bearer | Create race                       |
-| GET    | `/api/races/{id}`                      | -      | Race details with participants    |
-| POST   | `/api/races/{id}/participants`         | Bearer | Add participant (organizer)       |
-| DELETE | `/api/races/{id}/participants/{pid}`   | Bearer | Remove participant (organizer)    |
-| POST   | `/api/races/{id}/generate-seed-packs`  | Bearer | Generate personalized seed packs  |
-| GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack            |
-| GET    | `/api/races/{id}/download/{mod_token}` | -      | Download participant seed pack    |
-| POST   | `/api/races/{id}/start`                | Bearer | Start race immediately            |
+| Method | Endpoint                               | Auth   | Description                                     |
+| ------ | -------------------------------------- | ------ | ----------------------------------------------- |
+| GET    | `/api/races`                           | -      | List races (`?status=draft,running,...`)        |
+| POST   | `/api/races`                           | Bearer | Create race (DRAFT)                             |
+| GET    | `/api/races/{id}`                      | -      | Race details with participants and casters      |
+| POST   | `/api/races/{id}/participants`         | Bearer | Add participant (organizer only)                |
+| DELETE | `/api/races/{id}/participants/{pid}`   | Bearer | Remove participant (organizer, DRAFT/OPEN only) |
+| POST   | `/api/races/{id}/casters`              | Bearer | Add caster (organizer only)                     |
+| DELETE | `/api/races/{id}/casters/{cid}`        | Bearer | Remove caster (organizer only)                  |
+| POST   | `/api/races/{id}/open`                 | Bearer | Transition DRAFT → OPEN (organizer)             |
+| POST   | `/api/races/{id}/start`                | Bearer | Start race: DRAFT/OPEN → RUNNING (organizer)    |
+| POST   | `/api/races/{id}/generate-seed-packs`  | Bearer | Generate personalized seed packs                |
+| GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack (ZIP)                    |
+| GET    | `/api/races/{id}/download/{mod_token}` | -      | Download participant seed pack (ZIP)            |
+
+### Pools
+
+| Method | Endpoint     | Auth | Description                                                                                              |
+| ------ | ------------ | ---- | -------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/pools` | -    | Pool stats with TOML metadata (`{ [name]: { available, consumed, estimated_duration?, description? } }`) |
+
+### Users
+
+| Method | Endpoint              | Auth   | Description                                             |
+| ------ | --------------------- | ------ | ------------------------------------------------------- |
+| GET    | `/api/users/search`   | Bearer | Search users by username or display name prefix (`?q=`) |
+| GET    | `/api/users/me`       | Bearer | Get user profile                                        |
+| GET    | `/api/users/me/races` | Bearer | Races where user is organizer or participant            |
 
 ### Invites
 
@@ -35,10 +65,10 @@ Reference document for API endpoints and WebSocket messages.
 
 ### Admin
 
-| Method | Endpoint                | Auth           | Description             |
-| ------ | ----------------------- | -------------- | ----------------------- |
-| GET    | `/api/admin/seeds`      | Bearer (admin) | Pool statistics         |
-| POST   | `/api/admin/seeds/scan` | Bearer (admin) | Rescan seed directories |
+| Method | Endpoint                 | Auth           | Description                         |
+| ------ | ------------------------ | -------------- | ----------------------------------- |
+| POST   | `/api/admin/seeds/scan`  | Bearer (admin) | Rescan seed pool (`{ pool_name? }`) |
+| GET    | `/api/admin/seeds/stats` | Bearer (admin) | Pool statistics                     |
 
 ---
 
@@ -61,7 +91,7 @@ First message after connection. Authenticates the mod.
 
 #### `ready`
 
-Player is in-game and ready to race.
+Player is in-game and ready to race. Transitions status from `registered` → `ready`.
 
 ```json
 {
@@ -71,7 +101,7 @@ Player is in-game and ready to race.
 
 #### `status_update`
 
-Periodic update (every ~1 second).
+Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` if race is running.
 
 ```json
 {
@@ -81,21 +111,28 @@ Periodic update (every ~1 second).
 }
 ```
 
-Note: `current_zone` removed. Zone tracking is event-based via `event_flag`.
-
 #### `event_flag`
 
-Sent when the mod detects an event flag transition (0 → 1). Replaces `zone_entered`.
+Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished.
 
 ```json
 {
   "type": "event_flag",
-  "flag_id": 9000003,
+  "flag_id": 1040292842,
   "igt_ms": 4532100
 }
 ```
 
-The `flag_id` is an opaque integer — the mod has no knowledge of what it represents. The server resolves it to a DAG node via the seed's `event_map`.
+#### `finished`
+
+Player finished the race. Server-side schema only — the mod does not send this directly. Instead, finishing is handled automatically when the server receives an `event_flag` matching the seed's `finish_event`.
+
+```json
+{
+  "type": "finished",
+  "igt_ms": 7654321
+}
+```
 
 ### Server → Client
 
@@ -113,21 +150,27 @@ Authentication successful. Contains initial race state.
   },
   "seed": {
     "total_layers": 12,
-    "event_ids": [9000001, 9000002, 9000003, 9000047]
+    "event_ids": [1040292801, 1040292802, 1040292847]
   },
   "participants": [
     {
-      "name": "Player1",
-      "layer": 0,
-      "igt_ms": null,
+      "id": "uuid",
+      "twitch_username": "player1",
+      "twitch_display_name": "Player1",
+      "status": "registered",
+      "current_zone": null,
+      "current_layer": 0,
+      "igt_ms": 0,
       "death_count": 0,
-      "status": "registered"
+      "color_index": 0,
+      "mod_connected": false,
+      "zone_history": null
     }
   ]
 }
 ```
 
-`event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod — no mapping to zones or nodes is provided.
+`event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod — no mapping to zones or nodes is provided. `graph_json` is always `null` for mods.
 
 #### `auth_error`
 
@@ -157,29 +200,13 @@ Broadcast when any player's state changes.
 ```json
 {
   "type": "leaderboard_update",
-  "participants": [
-    {
-      "name": "Player1",
-      "layer": 8,
-      "igt_ms": null,
-      "death_count": 3,
-      "status": "playing"
-    },
-    {
-      "name": "Player2",
-      "layer": 6,
-      "igt_ms": 654321,
-      "death_count": 5,
-      "status": "finished"
-    }
-  ]
+  "participants": [...]
 }
 ```
 
-Participants are pre-sorted:
+Participants are pre-sorted (see [Leaderboard Sorting](#leaderboard-sorting)).
 
-1. Finished players first (by ascending IGT - fastest first)
-2. In-progress players (by descending layer - furthest first)
+When the race finishes, `zone_history` is included on each participant (otherwise `null`).
 
 #### `race_status_change`
 
@@ -192,36 +219,32 @@ Race status changed.
 }
 ```
 
-#### `player_update`
-
-Single player update (optimization, can be used instead of full leaderboard).
-
-```json
-{
-  "type": "player_update",
-  "player": {
-    "name": "Player1",
-    "layer": 8,
-    "igt_ms": null,
-    "death_count": 3,
-    "status": "playing"
-  }
-}
-```
-
 ---
 
 ## WebSocket: Spectator Connection
 
 **Endpoint:** `WS /ws/race/{race_id}`
 
-No authentication required (public).
+No authentication required (public), but optional auth within a 2-second grace period enables role-based DAG access.
+
+### Client → Server
+
+#### `auth` (optional)
+
+Sent within 2 seconds of connecting. If not sent, connection proceeds as anonymous.
+
+```json
+{
+  "type": "auth",
+  "token": "user_api_token"
+}
+```
 
 ### Server → Client
 
 #### `race_state`
 
-Sent immediately on connection. Full race state.
+Sent immediately on connection (after optional auth). Full race state. Also re-sent on status transitions (DRAFT → OPEN, OPEN/DRAFT → RUNNING, race finish) with recomputed DAG access.
 
 ```json
 {
@@ -232,37 +255,52 @@ Sent immediately on connection. Full race state.
     "status": "running"
   },
   "seed": {
-    "graph_json": { ... },
-    "total_layers": 12
+    "total_layers": 12,
+    "graph_json": { "...": "..." },
+    "total_nodes": 45,
+    "total_paths": 3
   },
   "participants": [
     {
-      "name": "Player1",
-      "zone_id": "m60_51_36_00",
-      "layer": 8,
-      "igt_ms": null,
+      "id": "uuid",
+      "twitch_username": "player1",
+      "twitch_display_name": "Player1",
+      "current_zone": "m60_51_36_00",
+      "current_layer": 8,
+      "igt_ms": 123456,
       "death_count": 3,
-      "status": "playing"
+      "status": "playing",
+      "color_index": 0,
+      "mod_connected": true,
+      "zone_history": null
     }
   ]
 }
 ```
 
+`seed.graph_json` is `null` if the viewer lacks DAG access (see [DAG Access Rules](#dag-access-rules)). `total_nodes` and `total_paths` are always included.
+
+`zone_history` is included (as a list) when race status is `finished`, otherwise `null`.
+
 #### `player_update`
 
-Player state changed.
+Player state changed (on `status_update` from mod).
 
 ```json
 {
   "type": "player_update",
-  "player": {
-    "name": "Player1",
-    "zone_id": "m60_51_36_00",
-    "layer": 8,
-    "igt_ms": null,
-    "death_count": 3,
-    "status": "playing"
-  }
+  "player": { ... }
+}
+```
+
+#### `leaderboard_update`
+
+Full leaderboard broadcast (on zone progress, ready, or finish events).
+
+```json
+{
+  "type": "leaderboard_update",
+  "participants": [...]
 }
 ```
 
@@ -277,6 +315,17 @@ Race status changed.
 }
 ```
 
+#### `spectator_count`
+
+Broadcast to all spectators when spectator count changes (connect/disconnect).
+
+```json
+{
+  "type": "spectator_count",
+  "count": 5
+}
+```
+
 ---
 
 ## Data Types
@@ -288,6 +337,48 @@ Race status changed.
 ### Participant Status
 
 `registered` → `ready` → `playing` → `finished` | `abandoned`
+
+### ParticipantInfo
+
+Shared schema across all WebSocket messages:
+
+| Field                 | Type      | Description                                     |
+| --------------------- | --------- | ----------------------------------------------- |
+| `id`                  | `string`  | Participant UUID                                |
+| `twitch_username`     | `string`  | Twitch login name                               |
+| `twitch_display_name` | `string?` | Twitch display name                             |
+| `status`              | `string`  | Participant status (see above)                  |
+| `current_zone`        | `string?` | Current DAG node ID (e.g. `m60_51_36_00`)       |
+| `current_layer`       | `int`     | Current layer in the DAG (0 = start)            |
+| `igt_ms`              | `int`     | In-game time in milliseconds                    |
+| `death_count`         | `int`     | Total deaths                                    |
+| `color_index`         | `int`     | Player color assignment (0-indexed)             |
+| `mod_connected`       | `bool`    | Whether the mod client is currently connected   |
+| `zone_history`        | `list?`   | Zone visit history (only when race is finished) |
+
+`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456 }`
+
+### Leaderboard Sorting
+
+Participants in `leaderboard_update` are pre-sorted by priority:
+
+1. **Finished** — by `igt_ms` ascending (fastest first)
+2. **Playing** — by `current_layer` descending (furthest first), then `igt_ms` ascending
+3. **Ready**
+4. **Registered**
+5. **Abandoned**
+
+### DAG Access Rules
+
+The `graph_json` field in spectator `seed` is conditionally included based on user role:
+
+| Race Status  | Rule                                                         |
+| ------------ | ------------------------------------------------------------ |
+| `finished`   | Always visible (race is over)                                |
+| `running`    | Visible unless viewer is a participant (to prevent cheating) |
+| `draft/open` | Visible only to non-participating organizer or caster        |
+
+Anonymous (unauthenticated) spectators: visible during `running` and `finished`, hidden during `draft` and `open`.
 
 ### Zone Tracking
 
