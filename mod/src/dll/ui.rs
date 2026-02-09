@@ -20,13 +20,12 @@ impl ImguiRenderLoop for RaceTracker {
         if let Some(ref font_data) = self.font_data {
             let font_size = self.config.overlay.font_size;
 
-            // Glyph ranges: Basic Latin + Punctuation + Box/Geometric + Arrows
+            // Glyph ranges: Basic Latin + Punctuation + Box/Geometric + Arrows + Dagger
             let glyph_ranges = FontGlyphRanges::from_slice(&[
                 0x0020, 0x00FF, // Basic Latin + Latin Supplement
-                0x2000, 0x206F, // General Punctuation
+                0x2000, 0x206F, // General Punctuation (†)
                 0x2500, 0x25FF, // Box Drawing + Block Elements + Geometric Shapes (●)
                 0x2190, 0x21FF, // Arrows (→)
-                0x2700, 0x27BF, // Dingbats (✓)
                 0,
             ]);
 
@@ -89,8 +88,6 @@ impl ImguiRenderLoop for RaceTracker {
             .position([dw - window_width - 20.0, 20.0], Condition::FirstUseEver)
             .flags(flags)
             .build(|| {
-                self.render_header(ui);
-                ui.separator();
                 self.render_player_status(ui);
                 ui.separator();
                 self.render_leaderboard(ui);
@@ -103,19 +100,33 @@ impl ImguiRenderLoop for RaceTracker {
 }
 
 impl RaceTracker {
-    fn render_header(&self, ui: &hudhook::imgui::Ui) {
-        // Connection status dot
-        let (color, text) = match self.ws_status() {
-            ConnectionStatus::Connected => ([0.0, 1.0, 0.0, 1.0], "●"),
+    /// Compact 2-line player status:
+    /// Line 1: `● RaceName [status]           HH:MM:SS`
+    /// Line 2: `  Tier X                   †N    X/Y`
+    fn render_player_status(&self, ui: &hudhook::imgui::Ui) {
+        let right_edge = ui.window_content_region_max()[0];
+
+        // --- Line 1: connection dot + race name + status (left), local IGT (right) ---
+        let (dot_color, _) = match self.ws_status() {
+            ConnectionStatus::Connected => ([0.0, 1.0, 0.0, 1.0], "connected"),
             ConnectionStatus::Connecting | ConnectionStatus::Reconnecting => {
-                ([1.0, 0.65, 0.0, 1.0], "●")
+                ([1.0, 0.65, 0.0, 1.0], "connecting")
             }
-            _ => ([1.0, 0.0, 0.0, 1.0], "●"),
+            _ => ([1.0, 0.0, 0.0, 1.0], "disconnected"),
         };
-        ui.text_colored(color, text);
+
+        // Right side: local IGT
+        let igt_str = if let Some(igt_ms) = self.read_igt() {
+            format_time_u32(igt_ms)
+        } else {
+            "--:--:--".to_string()
+        };
+        let igt_width = ui.calc_text_size(&igt_str)[0];
+
+        // Left side: dot + race name + [status]
+        ui.text_colored(dot_color, "\u{25CF}"); // ●
         ui.same_line();
 
-        // Race name
         if let Some(race) = self.race_info() {
             ui.text(&race.name);
             ui.same_line();
@@ -123,41 +134,47 @@ impl RaceTracker {
         } else {
             ui.text("Connecting...");
         }
-    }
 
-    fn render_player_status(&self, ui: &hudhook::imgui::Ui) {
-        // Progress
-        let progress = self.triggered_count();
-        let total = self.total_flags();
-        ui.text(format!("Progress: {}/{}", progress, total));
+        // Right-align IGT on the same line
+        ui.same_line();
+        ui.set_cursor_pos_x(right_edge - igt_width);
+        ui.text(&igt_str);
 
-        // IGT
-        if let Some(igt_ms) = self.read_igt() {
-            let secs = igt_ms / 1000;
-            let mins = secs / 60;
-            let hours = mins / 60;
-            ui.text(format!(
-                "IGT: {:02}:{:02}:{:02}",
-                hours,
-                mins % 60,
-                secs % 60
-            ));
+        // --- Line 2: tier (left), deaths + progress (right) ---
+        let me = self.my_participant();
+        let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
+
+        // Right side: "†N    X/Y"
+        let deaths = me.map(|p| p.death_count).unwrap_or(0);
+        let layer = me.map(|p| p.current_layer).unwrap_or(0);
+        let right_text = format!("\u{2020}{}  {}/{}", deaths, layer, total_layers);
+        let right_width = ui.calc_text_size(&right_text)[0];
+
+        // Left side: "  Tier X"
+        if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
+            ui.text(format!("  Tier {}", tier));
+        } else {
+            ui.text("  --");
         }
 
-        // Deaths
-        if let Some(deaths) = self.read_deaths() {
-            ui.text(format!("Deaths: {}", deaths));
-        }
+        // Right-align deaths + progress
+        ui.same_line();
+        ui.set_cursor_pos_x(right_edge - right_width);
+        ui.text(&right_text);
     }
 
+    /// Leaderboard with color-coded status and right-aligned values:
+    /// - ready/playing: `X/Y` right-aligned
+    /// - finished: `HH:MM:SS` right-aligned
     fn render_leaderboard(&self, ui: &hudhook::imgui::Ui) {
-        ui.text("Leaderboard");
-
         let participants = self.participants();
         if participants.is_empty() {
             ui.text_disabled("No participants");
             return;
         }
+
+        let right_edge = ui.window_content_region_max()[0];
+        let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
 
         for (i, p) in participants.iter().take(10).enumerate() {
             let name = p
@@ -165,33 +182,29 @@ impl RaceTracker {
                 .as_deref()
                 .unwrap_or(&p.twitch_username);
 
-            let time_str = format_time(p.igt_ms);
-
-            let status_indicator = match p.status.as_str() {
-                "finished" => "✓",
-                "playing" => "►",
-                "ready" => "○",
-                _ => "·",
-            };
-
-            // Color based on status
+            // Color: orange=ready, white=playing, green=finished, dim=other
             let color = match p.status.as_str() {
                 "finished" => [0.5, 1.0, 0.5, 1.0],
                 "playing" => parse_hex_color(&self.config.overlay.text_color, 1.0),
+                "ready" => [1.0, 0.65, 0.0, 1.0],
                 _ => parse_hex_color(&self.config.overlay.text_disabled_color, 1.0),
             };
 
-            ui.text_colored(
-                color,
-                format!(
-                    "{:2}. {} {} L{} {}",
-                    i + 1,
-                    status_indicator,
-                    name,
-                    p.current_layer,
-                    time_str
-                ),
-            );
+            // Right-aligned value: progress for ready/playing, IGT for finished
+            let right_text = match p.status.as_str() {
+                "finished" => format_time(p.igt_ms),
+                _ => format!("{}/{}", p.current_layer, total_layers),
+            };
+            let right_width = ui.calc_text_size(&right_text)[0];
+
+            // Left: rank + name
+            let left_text = format!("{:2}. {}", i + 1, name);
+            ui.text_colored(color, &left_text);
+
+            // Right-align value
+            ui.same_line();
+            ui.set_cursor_pos_x(right_edge - right_width);
+            ui.text_colored(color, &right_text);
         }
 
         if participants.len() > 10 {
@@ -208,14 +221,14 @@ impl RaceTracker {
         ui.text_disabled("Zones:");
         let participants = self.participants();
         if participants.is_empty() {
-            ui.text("  –");
+            ui.text("  \u{2013}");
         } else {
             for p in participants {
                 let name = p
                     .twitch_display_name
                     .as_deref()
                     .unwrap_or(&p.twitch_username);
-                let zone = p.current_zone.as_deref().unwrap_or("–");
+                let zone = p.current_zone.as_deref().unwrap_or("\u{2013}");
                 ui.text(format!("  {}: {}", name, zone));
             }
         }
@@ -262,12 +275,12 @@ impl RaceTracker {
         // Last sent message
         ui.text_disabled("Sent:");
         ui.same_line();
-        ui.text(debug.last_sent.unwrap_or("–"));
+        ui.text(debug.last_sent.unwrap_or("\u{2013}"));
 
         // Last received message
         ui.text_disabled("Recv:");
         ui.same_line();
-        ui.text(debug.last_received.unwrap_or("–"));
+        ui.text(debug.last_received.unwrap_or("\u{2013}"));
     }
 }
 
@@ -284,4 +297,11 @@ fn format_time(ms: i32) -> String {
     } else {
         format!("{:02}:{:02}", mins, secs % 60)
     }
+}
+
+fn format_time_u32(ms: u32) -> String {
+    let secs = ms / 1000;
+    let mins = secs / 60;
+    let hours = mins / 60;
+    format!("{:02}:{:02}:{:02}", hours, mins % 60, secs % 60)
 }

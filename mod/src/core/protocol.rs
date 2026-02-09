@@ -35,6 +35,8 @@ pub struct ParticipantInfo {
     pub status: String,
     pub current_zone: Option<String>,
     pub current_layer: i32,
+    #[serde(default)]
+    pub current_layer_tier: Option<i32>,
     pub igt_ms: i32,
     pub death_count: i32,
 }
@@ -61,6 +63,7 @@ pub struct SeedInfo {
 pub enum ServerMessage {
     /// Authentication successful
     AuthOk {
+        participant_id: String,
         race: RaceInfo,
         seed: SeedInfo,
         participants: Vec<ParticipantInfo>,
@@ -126,13 +129,20 @@ mod tests {
     fn test_server_auth_ok_deserialize() {
         let json = r#"{
             "type": "auth_ok",
+            "participant_id": "abc-123",
             "race": {"id": "123", "name": "Test Race", "status": "open"},
             "seed": {"total_layers": 5},
             "participants": []
         }"#;
         let msg: ServerMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ServerMessage::AuthOk { race, seed, .. } => {
+            ServerMessage::AuthOk {
+                participant_id,
+                race,
+                seed,
+                ..
+            } => {
+                assert_eq!(participant_id, "abc-123");
                 assert_eq!(race.name, "Test Race");
                 assert_eq!(seed.total_layers, 5);
                 // event_ids defaults to empty vec when absent
@@ -146,6 +156,7 @@ mod tests {
     fn test_server_auth_ok_with_event_ids_deserialize() {
         let json = r#"{
             "type": "auth_ok",
+            "participant_id": "def-456",
             "race": {"id": "456", "name": "Flag Race", "status": "running"},
             "seed": {"total_layers": 3, "event_ids": [9000001, 9000042, 9000100]},
             "participants": []
@@ -186,6 +197,7 @@ mod tests {
                 "status": "playing",
                 "current_zone": "Limgrave",
                 "current_layer": 2,
+                "current_layer_tier": 3,
                 "igt_ms": 60000,
                 "death_count": 1
             }]
@@ -195,8 +207,26 @@ mod tests {
             ServerMessage::LeaderboardUpdate { participants } => {
                 assert_eq!(participants.len(), 1);
                 assert_eq!(participants[0].twitch_username, "player1");
+                assert_eq!(participants[0].current_layer_tier, Some(3));
             }
             _ => panic!("Expected LeaderboardUpdate"),
         }
+    }
+
+    #[test]
+    fn test_participant_info_tier_defaults_none() {
+        // Backward compat: old server sends no current_layer_tier field
+        let json = r#"{
+            "id": "1",
+            "twitch_username": "player1",
+            "twitch_display_name": null,
+            "status": "registered",
+            "current_zone": null,
+            "current_layer": 0,
+            "igt_ms": 0,
+            "death_count": 0
+        }"#;
+        let p: ParticipantInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(p.current_layer_tier, None);
     }
 }

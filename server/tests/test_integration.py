@@ -169,10 +169,10 @@ def seed_folder():
                     "version": "4.0",
                     "total_layers": 5,
                     "nodes": {
-                        "start_node": {"zones": ["start"], "layer": 0},
-                        "node_a": {"zones": ["zone_a"], "layer": 1},
-                        "node_b": {"zones": ["zone_b"], "layer": 2},
-                        "node_c": {"zones": ["zone_c"], "layer": 3},
+                        "start_node": {"zones": ["start"], "layer": 0, "tier": 1},
+                        "node_a": {"zones": ["zone_a"], "layer": 1, "tier": 1},
+                        "node_b": {"zones": ["zone_b"], "layer": 2, "tier": 2},
+                        "node_c": {"zones": ["zone_c"], "layer": 3, "tier": 3},
                     },
                     "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
                     "event_map": {
@@ -245,10 +245,10 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                     "version": "4.0",
                     "total_layers": 5,
                     "nodes": {
-                        "start_node": {"zones": ["start"], "layer": 0},
-                        "node_a": {"zones": ["zone_a"], "layer": 1},
-                        "node_b": {"zones": ["zone_b"], "layer": 2},
-                        "node_c": {"zones": ["zone_c"], "layer": 3},
+                        "start_node": {"zones": ["start"], "layer": 0, "tier": 1},
+                        "node_a": {"zones": ["zone_a"], "layer": 1, "tier": 1},
+                        "node_b": {"zones": ["zone_b"], "layer": 2, "tier": 2},
+                        "node_c": {"zones": ["zone_c"], "layer": 3, "tier": 3},
                     },
                     "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
                     "event_map": {
@@ -320,10 +320,10 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                         graph = dict(race.seed.graph_json or {})
                         graph["area_tiers"] = {"zone_a": 1, "zone_b": 2, "zone_c": 3}
                         graph["nodes"] = {
-                            "start_node": {"zones": ["start"], "layer": 0},
-                            "node_a": {"zones": ["zone_a"], "layer": 1},
-                            "node_b": {"zones": ["zone_b"], "layer": 2},
-                            "node_c": {"zones": ["zone_c"], "layer": 3},
+                            "start_node": {"zones": ["start"], "layer": 0, "tier": 1},
+                            "node_a": {"zones": ["zone_a"], "layer": 1, "tier": 1},
+                            "node_b": {"zones": ["zone_b"], "layer": 2, "tier": 2},
+                            "node_c": {"zones": ["zone_c"], "layer": 3, "tier": 3},
                         }
                         graph["event_map"] = {
                             "9000000": "node_a",

@@ -117,11 +117,46 @@ class TestSchemas:
             status="playing",
             current_zone="zone_a",
             current_layer=3,
+            current_layer_tier=2,
             igt_ms=60000,
             death_count=2,
         )
         assert info.twitch_username == "player1"
         assert info.current_layer == 3
+        assert info.current_layer_tier == 2
+
+    def test_participant_info_tier_defaults_none(self):
+        """Test ParticipantInfo current_layer_tier defaults to None."""
+        info = ParticipantInfo(
+            id="123",
+            twitch_username="player1",
+            twitch_display_name=None,
+            status="registered",
+            current_zone=None,
+            current_layer=0,
+            igt_ms=0,
+            death_count=0,
+        )
+        assert info.current_layer_tier is None
+
+    def test_participant_info_tier_computed_from_graph(self):
+        """Test participant_to_info computes current_layer_tier from graph_json."""
+        graph = {
+            "nodes": {
+                "node_a": {"layer": 1, "tier": 3, "zones": ["zone_a"]},
+            }
+        }
+        user = MockUser(twitch_username="p1")
+        participant = MockParticipant(user=user, current_zone="node_a", current_layer=1)
+        info = participant_to_info(participant, graph_json=graph)
+        assert info.current_layer_tier == 3
+
+    def test_participant_info_tier_none_without_graph(self):
+        """Test participant_to_info returns None tier when no graph_json."""
+        user = MockUser(twitch_username="p1")
+        participant = MockParticipant(user=user, current_zone="node_a", current_layer=1)
+        info = participant_to_info(participant)
+        assert info.current_layer_tier is None
 
     def test_race_info(self):
         """Test RaceInfo schema."""
@@ -136,12 +171,14 @@ class TestSchemas:
     def test_auth_ok_message(self):
         """Test AuthOkMessage serialization."""
         msg = AuthOkMessage(
+            participant_id="abc-123",
             race=RaceInfo(id="1", name="Race", status="draft"),
             seed=SeedInfo(total_layers=10),
             participants=[],
         )
         data = json.loads(msg.model_dump_json())
         assert data["type"] == "auth_ok"
+        assert data["participant_id"] == "abc-123"
         assert data["race"]["name"] == "Race"
 
     def test_auth_error_message(self):

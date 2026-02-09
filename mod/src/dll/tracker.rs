@@ -79,6 +79,9 @@ pub struct RaceTracker {
     last_sent_debug: Option<String>,
     last_received_debug: Option<String>,
 
+    // Identity (set from auth_ok)
+    my_participant_id: Option<String>,
+
     // Event flag tracking
     event_ids: Vec<u32>,
     pub(crate) triggered_flags: HashSet<u32>,
@@ -142,6 +145,7 @@ impl RaceTracker {
             show_debug: false,
             last_sent_debug: None,
             last_received_debug: None,
+            my_participant_id: None,
             event_ids: Vec::new(),
             triggered_flags: HashSet::new(),
             last_status_update: Instant::now(),
@@ -274,16 +278,18 @@ impl RaceTracker {
                 }
             }
             IncomingMessage::AuthOk {
+                participant_id,
                 race,
                 seed,
                 participants,
             } => {
-                info!(race = %race.name, participants = participants.len(), "[WS] Auth OK");
+                info!(race = %race.name, participant_id = %participant_id, participants = participants.len(), "[WS] Auth OK");
                 self.last_received_debug = Some(format!(
                     "auth_ok(race={}, {} players)",
                     race.name,
                     participants.len()
                 ));
+                self.my_participant_id = Some(participant_id);
                 self.event_ids = seed.event_ids.clone();
                 self.triggered_flags.clear();
                 self.race_state.race = Some(race);
@@ -357,12 +363,9 @@ impl RaceTracker {
         self.game_state.read_deaths()
     }
 
-    pub fn triggered_count(&self) -> usize {
-        self.triggered_flags.len()
-    }
-
-    pub fn total_flags(&self) -> usize {
-        self.event_ids.len()
+    pub fn my_participant(&self) -> Option<&ParticipantInfo> {
+        let id = self.my_participant_id.as_ref()?;
+        self.race_state.participants.iter().find(|p| &p.id == id)
     }
 
     pub fn debug_info(&self) -> DebugInfo<'_> {

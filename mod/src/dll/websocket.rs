@@ -43,6 +43,7 @@ pub enum OutgoingMessage {
 pub enum IncomingMessage {
     StatusChanged(ConnectionStatus),
     AuthOk {
+        participant_id: String,
         race: RaceInfo,
         seed: SeedInfo,
         participants: Vec<ParticipantInfo>,
@@ -292,11 +293,13 @@ fn connect_and_auth(
 
             match msg {
                 ServerMessage::AuthOk {
+                    participant_id,
                     race,
                     seed,
                     participants,
                 } => {
                     let _ = incoming_tx.send(IncomingMessage::AuthOk {
+                        participant_id,
                         race,
                         seed,
                         participants,

@@ -143,6 +143,7 @@ Authentication successful. Contains initial race state.
 ```json
 {
   "type": "auth_ok",
+  "participant_id": "uuid",
   "race": {
     "id": "uuid",
     "name": "Sunday Showdown",
@@ -169,6 +170,8 @@ Authentication successful. Contains initial race state.
   ]
 }
 ```
+
+`participant_id`: the authenticated participant's UUID, used by the mod to identify itself in leaderboard updates.
 
 `event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod — no mapping to zones or nodes is provided. `graph_json` is always `null` for mods.
 
@@ -350,6 +353,7 @@ Shared schema across all WebSocket messages:
 | `status`              | `string`  | Participant status (see above)                  |
 | `current_zone`        | `string?` | Current DAG node ID (e.g. `m60_51_36_00`)       |
 | `current_layer`       | `int`     | Current layer in the DAG (0 = start)            |
+| `current_layer_tier`  | `int?`    | Tier of the current node (computed from graph)  |
 | `igt_ms`              | `int`     | In-game time in milliseconds                    |
 | `death_count`         | `int`     | Total deaths                                    |
 | `color_index`         | `int`     | Player color assignment (0-indexed)             |
