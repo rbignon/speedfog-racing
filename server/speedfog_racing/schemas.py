@@ -96,6 +96,7 @@ class PoolConfig(BaseModel):
     legacy_dungeons: int | None = None
     min_layers: int | None = None
     max_layers: int | None = None
+    final_tier: int | None = None
     starting_items: list[str] | None = None
     care_package: bool | None = None
     weapon_upgrade: int | None = None

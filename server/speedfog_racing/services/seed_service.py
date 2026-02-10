@@ -215,6 +215,7 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "estimated_duration": display.get("estimated_duration"),
         "description": display.get("description") or None,
         "legacy_dungeons": requirements.get("legacy_dungeons"),
+        "final_tier": structure.get("final_tier"),
         "min_layers": structure.get("min_layers"),
         "max_layers": structure.get("max_layers"),
         "starting_items": starting_items or None,

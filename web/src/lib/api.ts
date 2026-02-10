@@ -62,6 +62,7 @@ export interface PoolConfig {
   legacy_dungeons: number | null;
   min_layers: number | null;
   max_layers: number | null;
+  final_tier: number | null;
   starting_items: string[] | null;
   care_package: boolean | null;
   weapon_upgrade: number | null;

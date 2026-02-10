@@ -38,6 +38,12 @@
 				<span class="value">{poolConfig.min_layers}–{poolConfig.max_layers}</span>
 			</div>
 		{/if}
+		{#if poolConfig.final_tier != null}
+			<div class="info-item">
+				<span class="label">Final Tier</span>
+				<span class="value">{poolConfig.final_tier}</span>
+			</div>
+		{/if}
 		{#if poolConfig.care_package && poolConfig.weapon_upgrade != null}
 			<div class="info-item">
 				<span class="label">Care Package</span>
