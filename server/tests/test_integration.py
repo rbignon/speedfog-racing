@@ -48,7 +48,7 @@ class ModTestClient:
     def auth(self) -> dict[str, Any]:
         """Send auth and return response."""
         self.ws.send_json({"type": "auth", "mod_token": self.mod_token})
-        return self.ws.receive_json()
+        return self.receive()
 
     def send_ready(self) -> None:
         """Send ready signal."""
@@ -78,9 +78,17 @@ class ModTestClient:
         """Send finish event."""
         self.ws.send_json({"type": "finished", "igt_ms": igt_ms})
 
-    def receive(self) -> dict[str, Any]:
-        """Receive next message."""
-        return self.ws.receive_json()
+    def receive(self, timeout: float = 5) -> dict[str, Any]:
+        """Receive next message. Raises TimeoutError after *timeout* seconds."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(self.ws.receive_json)
+        try:
+            return future.result(timeout=timeout)
+        except Exception:
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise TimeoutError(f"No WebSocket message received within {timeout}s") from None
 
     def receive_until_type(self, msg_type: str, max_messages: int = 10) -> dict[str, Any]:
         """Receive messages until getting one of the specified type."""
@@ -820,6 +828,134 @@ def test_event_flag_duplicate_ignored(integration_client, race_with_participants
     assert history is not None
     assert len(history) == 1  # Not duplicated
     assert history[0]["node_id"] == "node_a"
+
+
+def test_event_flag_lower_layer_ignored(integration_client, race_with_participants, integration_db):
+    """Event flags for zones in a layer strictly below current_layer are ignored."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # Transition to PLAYING via status_update (places in start_node, layer 0).
+        # No response to mod (player_update goes to spectators); the sequential
+        # WebSocket handler guarantees this is processed before the next message.
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+
+        # Progress to node_b (layer 2) — skipping node_a (layer 1) is fine
+        mod0.send_event_flag(9000001, igt_ms=20000)
+        lb = mod0.receive()
+        assert lb["type"] == "leaderboard_update"
+        p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
+        assert p0["current_layer"] == 2
+
+        # Now send flag for node_a (layer 1) — strictly below current_layer → ignored
+        mod0.send_event_flag(9000000, igt_ms=25000)
+        # No leaderboard_update expected; verify connection still works
+        mod0.send_ready()
+        msg = mod0.receive()
+        assert msg["type"] == "leaderboard_update"
+
+    # Verify DB: current_layer still 2, zone_history has only start_node + node_b
+    async def check_state():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.current_layer, p.current_zone, p.zone_history
+
+    current_layer, current_zone, history = asyncio.run(check_state())
+    assert current_layer == 2
+    assert current_zone == "node_b"
+    assert history is not None
+    # start_node (from status_update) + node_b (from event_flag)
+    node_ids = [e["node_id"] for e in history]
+    assert "node_a" not in node_ids
+    assert "node_b" in node_ids
+
+
+def test_event_flag_same_layer_accepted(integration_client, race_with_participants, integration_db):
+    """Event flags for zones at the same layer as current_layer are accepted."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Add a second node at layer 1 to the graph
+    async def add_sibling_node():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            # Deep copy to ensure SQLAlchemy detects the mutation
+            graph = json.loads(json.dumps(race.seed.graph_json))
+            graph["nodes"]["node_a2"] = {"zones": ["zone_a2"], "layer": 1, "tier": 1}
+            graph["event_map"]["9000010"] = "node_a2"
+            race.seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(add_sibling_node())
+
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # Transition to PLAYING (no response to mod — sequential processing)
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+
+        # Progress to node_a (layer 1)
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        lb = mod0.receive()
+        assert lb["type"] == "leaderboard_update"
+        p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
+        assert p0["current_layer"] == 1
+
+        # Send flag for node_a2 (also layer 1) — same layer, should be accepted
+        mod0.send_event_flag(9000010, igt_ms=15000)
+        lb = mod0.receive()
+        assert lb["type"] == "leaderboard_update"
+
+    # Verify DB: both nodes in history
+    async def check_state():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.current_layer, p.current_zone, p.zone_history
+
+    current_layer, current_zone, history = asyncio.run(check_state())
+    assert current_layer == 1
+    assert current_zone == "node_a2"
+    node_ids = [e["node_id"] for e in history]
+    assert "node_a" in node_ids
+    assert "node_a2" in node_ids
 
 
 # =============================================================================
