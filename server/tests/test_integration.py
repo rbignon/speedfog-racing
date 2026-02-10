@@ -80,15 +80,16 @@ class ModTestClient:
 
     def receive(self, timeout: float = 5) -> dict[str, Any]:
         """Receive next message. Raises TimeoutError after *timeout* seconds."""
-        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import Future, ThreadPoolExecutor
+        from concurrent.futures import TimeoutError as FuturesTimeout
 
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(self.ws.receive_json)
-        try:
-            return future.result(timeout=timeout)
-        except Exception:
-            executor.shutdown(wait=False, cancel_futures=True)
-            raise TimeoutError(f"No WebSocket message received within {timeout}s") from None
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future: Future[dict[str, Any]] = executor.submit(self.ws.receive_json)
+            try:
+                return future.result(timeout=timeout)
+            except FuturesTimeout:
+                future.cancel()
+                raise TimeoutError(f"No WebSocket message received within {timeout}s") from None
 
     def receive_until_type(self, msg_type: str, max_messages: int = 10) -> dict[str, Any]:
         """Receive messages until getting one of the specified type."""
