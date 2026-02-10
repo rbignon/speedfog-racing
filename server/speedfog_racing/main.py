@@ -5,6 +5,7 @@ import logging
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,11 +36,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning(f"Database initialization skipped: {e}")
 
-    # Scan seed pool
+    # Scan all seed pools
     try:
+        pool_base = Path(settings.seeds_pool_dir)
         async with get_db_context() as db:
-            added = await scan_pool(db, "standard")
-            logger.info(f"Seed pool scanned: {added} new seeds added")
+            for subdir in sorted(pool_base.iterdir()):
+                if subdir.is_dir() and (subdir / "config.toml").exists():
+                    added = await scan_pool(db, subdir.name)
+                    logger.info(f"Pool '{subdir.name}' scanned: {added} new seeds added")
     except Exception as e:
         logger.warning(f"Seed pool scan failed: {e}")
 
