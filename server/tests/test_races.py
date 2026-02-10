@@ -639,8 +639,11 @@ async def test_download_seed_pack_invalid_token(test_client, organizer, seed):
         )
         race_id = create_response.json()["id"]
 
-        # Try to download with invalid token
-        response = await client.get(f"/api/races/{race_id}/download/invalid_token")
+        # Try to download with invalid token (as organizer)
+        response = await client.get(
+            f"/api/races/{race_id}/download/invalid_token",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
         assert response.status_code == 404
 
 
@@ -662,8 +665,11 @@ async def test_download_seed_pack_not_generated(test_client, organizer, player, 
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
 
-        # We can't easily get the mod_token, so test with an invalid token
-        response = await client.get(f"/api/races/{race_id}/download/some_token")
+        # We can't easily get the mod_token, so test with an invalid token (as organizer)
+        response = await client.get(
+            f"/api/races/{race_id}/download/some_token",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
 
@@ -701,8 +707,11 @@ async def test_download_seed_pack_success(
                 )
                 download_url = gen_response.json()["downloads"][0]["url"]
 
-                # Download seed pack
-                response = await client.get(download_url)
+                # Download seed pack (as organizer)
+                response = await client.get(
+                    download_url,
+                    headers={"Authorization": f"Bearer {organizer.api_token}"},
+                )
                 assert response.status_code == 200
                 assert response.headers["content-type"] == "application/zip"
                 assert "speedfog_player1.zip" in response.headers["content-disposition"]

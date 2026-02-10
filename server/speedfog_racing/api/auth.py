@@ -24,8 +24,10 @@ from speedfog_racing.rate_limit import limiter
 
 router = APIRouter()
 
-# In-memory state storage for OAuth (in production, use Redis or similar)
-_oauth_states: dict[str, str] = {}
+# In-memory state storage for OAuth: state → (redirect_url, expiry_timestamp)
+_oauth_states: dict[str, tuple[str, float]] = {}
+
+_OAUTH_STATE_TTL = 600  # 10 minutes
 
 # Ephemeral auth codes: code → (api_token, expiry_timestamp)
 _auth_codes: dict[str, tuple[str, float]] = {}
@@ -33,12 +35,15 @@ _auth_codes: dict[str, tuple[str, float]] = {}
 _AUTH_CODE_TTL = 60  # seconds
 
 
-def _cleanup_expired_codes() -> None:
-    """Remove expired auth codes to prevent memory leaks."""
+def _cleanup_expired_states() -> None:
+    """Remove expired OAuth states and auth codes to prevent memory leaks."""
     now = time.monotonic()
-    expired = [code for code, (_, expiry) in _auth_codes.items() if expiry < now]
-    for code in expired:
-        del _auth_codes[code]
+    expired_states = [s for s, (_, expiry) in _oauth_states.items() if expiry < now]
+    for s in expired_states:
+        del _oauth_states[s]
+    expired_codes = [c for c, (_, expiry) in _auth_codes.items() if expiry < now]
+    for c in expired_codes:
+        del _auth_codes[c]
 
 
 class UserPublicResponse(BaseModel):
@@ -93,10 +98,12 @@ async def twitch_login(
 ) -> RedirectResponse:
     """Redirect to Twitch OAuth authorization page."""
     # Generate state for CSRF protection
+    _cleanup_expired_states()
     state = secrets.token_urlsafe(32)
-
-    # Store redirect URL in state (in production, encrypt or use session)
-    _oauth_states[state] = redirect_url or settings.oauth_redirect_url
+    _oauth_states[state] = (
+        redirect_url or settings.oauth_redirect_url,
+        time.monotonic() + _OAUTH_STATE_TTL,
+    )
 
     oauth_url = get_twitch_oauth_url(state)
     return RedirectResponse(url=oauth_url, status_code=status.HTTP_302_FOUND)
@@ -127,7 +134,12 @@ async def twitch_callback(
             detail="Invalid or expired OAuth state",
         )
 
-    redirect_url = _oauth_states.pop(state)
+    redirect_url, state_expiry = _oauth_states.pop(state)
+    if time.monotonic() > state_expiry:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired OAuth state",
+        )
 
     # Validate code
     if not code:
@@ -157,7 +169,6 @@ async def twitch_callback(
     await db.commit()
 
     # Generate ephemeral code instead of leaking the API token in the URL
-    _cleanup_expired_codes()
     ephemeral_code = secrets.token_urlsafe(32)
     _auth_codes[ephemeral_code] = (user.api_token, time.monotonic() + _AUTH_CODE_TTL)
 

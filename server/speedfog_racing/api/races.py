@@ -260,10 +260,7 @@ async def add_participant(
             if not has_existing:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
-                        "Non-participating organizer cannot join as participant"
-                        " — DAG already visible"
-                    ),
+                    detail="Non-participating organizer cannot join as participant",
                 )
 
         # Compute next color_index
@@ -697,8 +694,13 @@ async def download_seed_pack(
     race_id: UUID,
     mod_token: str,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> FileResponse:
-    """Download personalized seed pack for a participant."""
+    """Download personalized seed pack for a participant.
+
+    Requires authentication. Caller must be the participant, the race organizer,
+    or a caster for the race.
+    """
     result = await get_participant_seed_pack_path(race_id, mod_token, db)
 
     if result is None:
@@ -708,6 +710,23 @@ async def download_seed_pack(
         )
 
     seed_pack_path, participant = result
+
+    # Authorize: participant themselves, organizer, or caster
+    is_owner = participant.user_id == user.id
+    if not is_owner:
+        race = await _get_race_or_404(db, race_id)
+        is_organizer = race.organizer_id == user.id
+        is_caster = False
+        if not is_organizer:
+            caster_result = await db.execute(
+                select(Caster).where(Caster.race_id == race_id, Caster.user_id == user.id)
+            )
+            is_caster = caster_result.scalar_one_or_none() is not None
+        if not (is_organizer or is_caster):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to download this seed pack",
+            )
 
     return FileResponse(
         path=seed_pack_path,

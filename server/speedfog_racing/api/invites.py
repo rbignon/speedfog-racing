@@ -81,7 +81,7 @@ async def accept_invite(
     if user.twitch_username.lower() != invite.twitch_username.lower():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"This invite is for {invite.twitch_username}, not {user.twitch_username}",
+            detail="This invite is not for your account",
         )
 
     # Check if user is already a participant

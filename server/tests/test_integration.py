@@ -606,8 +606,11 @@ def test_seed_pack_contains_player_specific_config(integration_client, race_with
         mod_token = player_data["mod_token"]
         username = player_data["user"].twitch_username
 
-        # Download the seed pack using mod_token
-        download_response = integration_client.get(f"/api/races/{race_id}/download/{mod_token}")
+        # Download the seed pack using mod_token (authenticated as the player)
+        download_response = integration_client.get(
+            f"/api/races/{race_id}/download/{mod_token}",
+            headers={"Authorization": f"Bearer {player_data['user'].api_token}"},
+        )
         assert download_response.status_code == 200, f"Failed to download seed pack for {username}"
         assert download_response.headers["content-type"] == "application/zip"
 

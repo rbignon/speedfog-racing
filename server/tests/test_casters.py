@@ -364,7 +364,7 @@ async def test_organizer_irreversibility(test_client, organizer, race_id):
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         assert response.status_code == 403
-        assert "DAG already visible" in response.json()["detail"]
+        assert "cannot join as participant" in response.json()["detail"].lower()
 
 
 # =============================================================================

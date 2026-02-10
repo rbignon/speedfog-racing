@@ -174,7 +174,7 @@ async def test_accept_invite_wrong_user(test_client, race_with_invite, organizer
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         assert response.status_code == 403
-        assert "not organizer" in response.json()["detail"].lower()
+        assert "not for your account" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

@@ -71,7 +71,10 @@ async def get_twitch_user(access_token: str) -> TwitchUser | None:
             },
         )
         if resp.status_code == 200:
-            data = resp.json()["data"][0]
+            data_list = resp.json().get("data", [])
+            if not data_list:
+                return None
+            data = data_list[0]
             return TwitchUser(
                 id=data["id"],
                 login=data["login"],

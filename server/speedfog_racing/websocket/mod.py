@@ -1,5 +1,6 @@
 """WebSocket handler for mod connections."""
 
+import asyncio
 import json
 import logging
 import uuid
@@ -26,6 +27,8 @@ from speedfog_racing.websocket.spectator import broadcast_race_state_update
 
 logger = logging.getLogger(__name__)
 
+MOD_AUTH_TIMEOUT = 5.0  # seconds to wait for auth message
+
 
 def _get_graph_json(participant: Participant) -> dict[str, Any] | None:
     """Get graph_json from participant's race seed."""
@@ -40,8 +43,14 @@ async def handle_mod_websocket(websocket: WebSocket, race_id: uuid.UUID, db: Asy
     participant: Participant | None = None
 
     try:
-        # Wait for auth message
-        auth_data = await websocket.receive_text()
+        # Wait for auth message with timeout
+        try:
+            auth_data = await asyncio.wait_for(websocket.receive_text(), timeout=MOD_AUTH_TIMEOUT)
+        except TimeoutError:
+            logger.warning(f"Mod auth timeout: race={race_id}")
+            await websocket.close(code=4001, reason="Auth timeout")
+            return
+
         auth_msg = json.loads(auth_data)
 
         if auth_msg.get("type") != "auth" or "mod_token" not in auth_msg:
@@ -53,17 +62,22 @@ async def handle_mod_websocket(websocket: WebSocket, race_id: uuid.UUID, db: Asy
         # Validate mod token and get participant
         participant = await authenticate_mod(db, race_id, mod_token)
         if not participant:
+            logger.warning(f"Mod auth failed: race={race_id}, invalid token")
             await send_auth_error(websocket, "Invalid mod token or race")
             return
 
         # Check race status
         race = participant.race
         if race.status == RaceStatus.FINISHED:
+            logger.info(f"Mod rejected (race finished): race={race_id}, user={participant.user_id}")
             await send_auth_error(websocket, "Race has already finished")
             return
 
         # Check for duplicate connections
         if manager.is_mod_connected(race_id, participant.id):
+            logger.warning(
+                f"Mod duplicate connection: race={race_id}, participant={participant.id}"
+            )
             await send_auth_error(websocket, "Already connected from another client")
             return
 
