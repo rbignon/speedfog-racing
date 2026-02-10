@@ -192,6 +192,7 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "drawing_room_key": "Drawing Room Key",
         "lantern": "Lantern",
         "great_runes": "Great Runes",
+        "whetblades": "Whetblades",
         "omother": "O, Mother",
         "welldepthskey": "Well Depths Key",
         "gaolupperlevelkey": "Gaol Upper Level Key",

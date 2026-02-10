@@ -32,6 +32,7 @@ pureblood_medal = true   # Pureblood Knight's Medal - warps to Mohgwyn Palace
 drawing_room_key = true  # Drawing-Room Key - access Volcano Manor interior
 lantern = true           # Lantern - hands-free light source
 great_runes = true
+whetblades = true          # All 5 whetblades - unlocks all weapon affinities
 golden_seeds = 7         # Golden Seeds to upgrade flask uses (0-99)
 sacred_tears = 4         # Sacred Tears to upgrade flask potency (0-12)
 starting_runes = 100000  # Given as Lord's Rune items (50k each, use from inventory)
