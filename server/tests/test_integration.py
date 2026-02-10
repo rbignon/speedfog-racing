@@ -182,7 +182,7 @@ def seed_folder():
                         "9000001": "node_b",
                         "9000002": "node_c",
                     },
-                    "finish_event": 9000002,
+                    "finish_event": 9000003,
                 }
             )
         )
@@ -258,7 +258,7 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                         "9000001": "node_b",
                         "9000002": "node_c",
                     },
-                    "finish_event": 9000002,
+                    "finish_event": 9000003,
                 },
                 total_layers=5,
                 folder_path=str(seed_folder),
@@ -337,7 +337,7 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                             "9000001": "node_b",
                             "9000002": "node_c",
                         }
-                        graph["finish_event"] = 9000002
+                        graph["finish_event"] = 9000003
                         race.seed.graph_json = graph
                         await db.commit()
 
@@ -389,9 +389,9 @@ def test_complete_race_flow(integration_client, race_with_participants):
         assert auth_response["type"] == "auth_ok"
         assert auth_response["race"]["name"] == "Integration Test Race"
         assert "total_layers" in auth_response["seed"]
-        # Verify event_ids present and sorted
+        # Verify event_ids includes event_map flags + finish_event
         event_ids = auth_response["seed"].get("event_ids")
-        assert event_ids == [9000000, 9000001, 9000002]
+        assert event_ids == [9000000, 9000001, 9000002, 9000003]
 
     # Step 2: Connect all 3 mods, send ready, start race
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
@@ -440,11 +440,11 @@ def test_complete_race_flow(integration_client, race_with_participants):
         p1 = next(p for p in lb["participants"] if p["twitch_username"] == "player1")
         assert p1["current_layer"] == 2
 
-    # Player 2: triggers finish_event (9000002) -> node_c + race finish
+    # Player 2: triggers finish_event (9000003) -> race finish
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws2:
         mod2 = ModTestClient(ws2, players[2]["mod_token"])
         assert mod2.auth()["type"] == "auth_ok"
-        mod2.send_event_flag(9000002, igt_ms=50000)
+        mod2.send_event_flag(9000003, igt_ms=50000)
         lb = mod2.receive()
         assert lb["type"] == "leaderboard_update"
         p2 = next(p for p in lb["participants"] if p["twitch_username"] == "player2")
@@ -454,7 +454,7 @@ def test_complete_race_flow(integration_client, race_with_participants):
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
-        mod0.send_event_flag(9000002, igt_ms=70000)
+        mod0.send_event_flag(9000003, igt_ms=70000)
         lb = mod0.receive()
         assert lb["participants"][0]["twitch_username"] == "player2"
         assert lb["participants"][1]["twitch_username"] == "player0"
@@ -463,7 +463,7 @@ def test_complete_race_flow(integration_client, race_with_participants):
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1:
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
         assert mod1.auth()["type"] == "auth_ok"
-        mod1.send_event_flag(9000002, igt_ms=80000)
+        mod1.send_event_flag(9000003, igt_ms=80000)
 
         msg1 = mod1.receive()
         msg2 = mod1.receive()

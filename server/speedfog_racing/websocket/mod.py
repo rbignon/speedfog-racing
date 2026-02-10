@@ -134,12 +134,15 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
     race = participant.race
     seed = race.seed
 
-    # Extract event_ids from graph_json
+    # Extract event_ids from graph_json (event_map gates + finish_event)
     event_ids = None
     if seed and seed.graph_json:
         event_map = seed.graph_json.get("event_map", {})
         if event_map:
             event_ids = sorted(int(k) for k in event_map.keys())
+            finish = seed.graph_json.get("finish_event")
+            if isinstance(finish, int) and finish not in event_ids:
+                event_ids.append(finish)
 
     # Build participant list
     room = manager.get_room(race.id)
@@ -234,15 +237,20 @@ async def handle_event_flag(
     event_map = seed.graph_json.get("event_map", {})
     finish_event = seed.graph_json.get("finish_event")
 
+    # Update IGT
+    igt = msg.get("igt_ms", 0) if isinstance(msg.get("igt_ms"), int) else 0
+
+    # Check finish event first (not in event_map — it's a boss kill, not a fog gate)
+    if flag_id == finish_event:
+        participant.igt_ms = igt
+        await handle_finished(db, participant, {"igt_ms": igt})
+        return
+
     # Resolve flag_id to node_id
     node_id = event_map.get(str(flag_id))
     if node_id is None:
         logger.warning(f"Unknown event flag {flag_id} from participant {participant.id}")
         return
-
-    # Update IGT
-    igt = msg.get("igt_ms", 0) if isinstance(msg.get("igt_ms"), int) else 0
-    participant.igt_ms = igt
 
     # Check if node already discovered (ignore duplicates)
     old_history = participant.zone_history or []
@@ -250,15 +258,11 @@ async def handle_event_flag(
         return  # Already discovered
 
     # Update zone history and layer
+    participant.igt_ms = igt
     participant.current_layer = get_layer_for_node(node_id, seed.graph_json)
     participant.current_zone = node_id
     entry = {"node_id": node_id, "igt_ms": igt}
     participant.zone_history = [*old_history, entry]
-
-    # Check if this is the finish event
-    if flag_id == finish_event:
-        await handle_finished(db, participant, {"igt_ms": igt})
-        return
 
     await db.commit()
 
