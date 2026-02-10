@@ -4,8 +4,9 @@ import json
 import os
 from pathlib import Path
 
-# Set test database URL BEFORE importing app modules
+# Set test environment variables BEFORE importing app modules
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
+os.environ["SECRET_KEY"] = "test-secret-key"
 
 import pytest
 from fastapi.testclient import TestClient

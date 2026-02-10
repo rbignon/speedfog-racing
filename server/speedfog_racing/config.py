@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     twitch_redirect_uri: str = "http://localhost:8000/api/auth/callback"
 
     # App
-    secret_key: str = "dev-secret-key-change-in-production"
+    secret_key: str
     oauth_redirect_url: str = "http://localhost:5173/auth/callback"  # Where to redirect after OAuth
     websocket_url: str = "ws://localhost:8000"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8000"]
@@ -35,4 +35,4 @@ class Settings(BaseSettings):
     log_json: bool = False
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]  # populated from env vars / .env file

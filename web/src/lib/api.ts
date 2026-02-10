@@ -210,6 +210,20 @@ export async function fetchCurrentUser(): Promise<User | null> {
 }
 
 /**
+ * Exchange an ephemeral auth code for an API token.
+ * Called after the OAuth redirect with ?code=... in the URL.
+ */
+export async function exchangeAuthCode(code: string): Promise<string> {
+  const response = await fetch(`${API_BASE}/auth/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const data = await handleResponse<{ token: string }>(response);
+  return data.token;
+}
+
+/**
  * Get the Twitch OAuth login URL.
  * Redirects to /auth/callback after successful authentication.
  */

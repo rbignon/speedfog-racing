@@ -1,10 +1,11 @@
 """Authentication API routes."""
 
 import secrets
+import time
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,15 +20,41 @@ from speedfog_racing.auth import (
 from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.models import User
+from speedfog_racing.rate_limit import limiter
 
 router = APIRouter()
 
 # In-memory state storage for OAuth (in production, use Redis or similar)
 _oauth_states: dict[str, str] = {}
 
+# Ephemeral auth codes: code → (api_token, expiry_timestamp)
+_auth_codes: dict[str, tuple[str, float]] = {}
+
+_AUTH_CODE_TTL = 60  # seconds
+
+
+def _cleanup_expired_codes() -> None:
+    """Remove expired auth codes to prevent memory leaks."""
+    now = time.monotonic()
+    expired = [code for code, (_, expiry) in _auth_codes.items() if expiry < now]
+    for code in expired:
+        del _auth_codes[code]
+
+
+class UserPublicResponse(BaseModel):
+    """User info response (public — no api_token)."""
+
+    id: uuid.UUID
+    twitch_username: str
+    twitch_display_name: str | None
+    twitch_avatar_url: str | None
+    role: str
+
+    model_config = {"from_attributes": True}
+
 
 class UserResponse(BaseModel):
-    """User info response."""
+    """User info response (internal — includes api_token)."""
 
     id: uuid.UUID
     twitch_username: str
@@ -46,8 +73,22 @@ class AuthResponse(BaseModel):
     token: str
 
 
+class CodeExchangeRequest(BaseModel):
+    """Request body for auth code exchange."""
+
+    code: str
+
+
+class CodeExchangeResponse(BaseModel):
+    """Response from auth code exchange."""
+
+    token: str
+
+
 @router.get("/twitch")
+@limiter.limit("10/minute")
 async def twitch_login(
+    request: Request,
     redirect_url: Annotated[str | None, Query(description="URL to redirect after login")] = None,
 ) -> RedirectResponse:
     """Redirect to Twitch OAuth authorization page."""
@@ -62,7 +103,9 @@ async def twitch_login(
 
 
 @router.get("/callback")
+@limiter.limit("10/minute")
 async def twitch_callback(
+    request: Request,
     code: Annotated[str | None, Query()] = None,
     state: Annotated[str | None, Query()] = None,
     error: Annotated[str | None, Query()] = None,
@@ -113,16 +156,40 @@ async def twitch_callback(
     user = await get_or_create_user(db, twitch_user)
     await db.commit()
 
-    # Redirect to frontend with token
-    # The frontend will store this token for API calls
+    # Generate ephemeral code instead of leaking the API token in the URL
+    _cleanup_expired_codes()
+    ephemeral_code = secrets.token_urlsafe(32)
+    _auth_codes[ephemeral_code] = (user.api_token, time.monotonic() + _AUTH_CODE_TTL)
+
     separator = "&" if "?" in redirect_url else "?"
     return RedirectResponse(
-        url=f"{redirect_url}{separator}token={user.api_token}",
+        url=f"{redirect_url}{separator}code={ephemeral_code}",
         status_code=status.HTTP_302_FOUND,
     )
 
 
-@router.get("/me", response_model=UserResponse)
+@router.post("/exchange", response_model=CodeExchangeResponse)
+@limiter.limit("10/minute")
+async def exchange_auth_code(request: Request, body: CodeExchangeRequest) -> CodeExchangeResponse:
+    """Exchange an ephemeral auth code for an API token."""
+    entry = _auth_codes.pop(body.code, None)
+    if entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired auth code",
+        )
+
+    api_token, expiry = entry
+    if time.monotonic() > expiry:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired auth code",
+        )
+
+    return CodeExchangeResponse(token=api_token)
+
+
+@router.get("/me", response_model=UserPublicResponse)
 async def get_me(
     user: Annotated[User, Depends(get_current_user)],
 ) -> User:

@@ -7,13 +7,17 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from speedfog_racing import __version__
 from speedfog_racing.api import api_router
 from speedfog_racing.config import settings
 from speedfog_racing.database import async_session_maker, get_db_context, init_db
+from speedfog_racing.rate_limit import limiter
 from speedfog_racing.services import scan_pool
 from speedfog_racing.websocket import handle_mod_websocket, handle_spectator_websocket
 
@@ -60,13 +64,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Store limiter on app state for slowapi
+app.state.limiter = limiter
+
+
+def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Please try again later."},
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+app.add_middleware(SlowAPIMiddleware)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Mount API routes
