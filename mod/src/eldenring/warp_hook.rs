@@ -48,6 +48,8 @@ impl Drop for ReentrancyGuard {
 /// Wrapped in catch_unwind to prevent double-panic scenarios.
 /// If this panics, we just continue - the warp won't execute but the game won't crash.
 unsafe fn call_original_safe(arg1: u64, arg2: u64, grace_id_param: u32) {
+    // SAFETY: Calls the original game function via detour. Arguments are forwarded unchanged
+    // from the game's call. catch_unwind prevents panics from crossing FFI boundary.
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         if let Some(detour) = WARP_DETOUR.get() {
             detour.call(arg1, arg2, grace_id_param);
@@ -138,6 +140,8 @@ pub unsafe fn install(lua_warp_addr: usize) -> Result<(), String> {
         lua_warp_addr, func_warp_addr
     );
 
+    // SAFETY: func_warp_addr is the known address of the game's warp function with matching
+    // WarpFn signature. This is validated by the caller providing the correct base address.
     let target: WarpFn = std::mem::transmute(func_warp_addr);
 
     let detour = GenericDetour::<WarpFn>::new(target, warp_hook)

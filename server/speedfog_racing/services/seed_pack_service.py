@@ -1,6 +1,7 @@
 """Seed pack generation service for race participants."""
 
 import logging
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -14,6 +15,11 @@ from speedfog_racing.config import settings
 from speedfog_racing.models import Participant, Race
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_filename(name: str) -> str:
+    """Sanitize a string for safe use as a filename component."""
+    return re.sub(r"[^a-zA-Z0-9_]", "", name) or "unknown"
 
 
 def generate_player_config(
@@ -118,7 +124,7 @@ def generate_participant_seed_pack(
         config_path.write_text(config_content)
 
         # Create zip file
-        pack_name = f"{participant.user.twitch_username}"
+        pack_name = sanitize_filename(participant.user.twitch_username)
         seed_pack_path = output_dir / f"{pack_name}.zip"
 
         # Remove existing seed pack if present
@@ -213,7 +219,7 @@ async def get_participant_seed_pack_path(
     seed_pack_path = (
         Path(settings.seed_packs_output_dir)
         / str(race_id)
-        / f"{participant.user.twitch_username}.zip"
+        / f"{sanitize_filename(participant.user.twitch_username)}.zip"
     )
 
     if not seed_pack_path.exists():

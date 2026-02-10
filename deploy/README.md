@@ -114,6 +114,39 @@ The script:
 | `.env.example`               | Production environment variable template                   |
 | `deploy.sh`                  | One-command deploy script (run from dev machine)           |
 
+## Secrets Rotation
+
+### Rotating SECRET_KEY
+
+Rotating the secret key invalidates all existing user sessions (API tokens remain valid since they're stored in the database, not derived from the key).
+
+```bash
+# Generate a new key
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Update the .env file
+sudo editor /opt/speedfog-racing/server/.env  # Replace SECRET_KEY value
+
+# Restart the service
+sudo systemctl restart speedfog-racing
+```
+
+### Rotating user API tokens
+
+Individual user tokens can be rotated via the logout endpoint (`POST /api/auth/logout`), which regenerates the user's `api_token`. There is currently no bulk rotation mechanism — if the database is compromised, manually update tokens:
+
+```bash
+sudo -u postgres psql speedfog_racing -c "
+  UPDATE users SET api_token = encode(gen_random_bytes(32), 'base64');"
+sudo systemctl restart speedfog-racing
+```
+
+### Rotating Twitch OAuth credentials
+
+1. Regenerate the client secret in the [Twitch Developer Console](https://dev.twitch.tv/console/apps)
+2. Update `TWITCH_CLIENT_SECRET` in `/opt/speedfog-racing/server/.env`
+3. Restart: `sudo systemctl restart speedfog-racing`
+
 ## Useful Commands
 
 ```bash

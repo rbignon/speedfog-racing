@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -322,19 +322,35 @@ async def handle_finished(db: AsyncSession, participant: Participant, msg: dict[
     )
 
     if all_finished:
-        participant.race.status = RaceStatus.FINISHED
-        await db.commit()
-        logger.info(f"Race finished: {participant.race_id}")
-        await manager.broadcast_race_status(participant.race_id, "finished")
+        # Optimistic locking: atomically transition RUNNING → FINISHED
+        race_obj = participant.race
+        result = await db.execute(
+            update(Race)
+            .where(
+                Race.id == race_obj.id,
+                Race.status == RaceStatus.RUNNING,
+                Race.version == race_obj.version,
+            )
+            .values(status=RaceStatus.FINISHED, version=race_obj.version + 1)
+        )
+        if result.rowcount == 0:  # type: ignore[attr-defined]
+            logger.warning(f"Race {participant.race_id} already transitioned (concurrent update)")
+            await db.commit()
+        else:
+            race_obj.status = RaceStatus.FINISHED
+            race_obj.version += 1
+            await db.commit()
+            logger.info(f"Race finished: {participant.race_id}")
+            await manager.broadcast_race_status(participant.race_id, "finished")
 
-        # Reload race with casters for DAG access computation
-        race = participant.race
-        await db.refresh(race, ["casters"])
-        for c in race.casters:
-            await db.refresh(c, ["user"])
+            # Reload race with casters for DAG access computation
+            race = participant.race
+            await db.refresh(race, ["casters"])
+            for c in race.casters:
+                await db.refresh(c, ["user"])
 
-        # Push full graph + zone_history to all spectators
-        await broadcast_race_state_update(participant.race_id, race)
+            # Push full graph + zone_history to all spectators
+            await broadcast_race_state_update(participant.race_id, race)
 
     # Broadcast leaderboard (with zone_history when race is finished)
     for p in participant.race.participants:

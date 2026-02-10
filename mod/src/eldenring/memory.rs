@@ -20,6 +20,8 @@ pub trait MemoryReader {
             return None;
         }
         let mut value: u32 = 0;
+        // SAFETY: addr is checked non-zero above; ReadProcessMemory reads from the game's
+        // process memory into a stack-local variable of the correct size.
         unsafe {
             ReadProcessMemory(
                 self.proc(),
@@ -39,6 +41,8 @@ pub trait MemoryReader {
             return None;
         }
         let mut value: u64 = 0;
+        // SAFETY: addr is checked non-zero above; ReadProcessMemory reads from the game's
+        // process memory into a stack-local variable of the correct size.
         unsafe {
             ReadProcessMemory(
                 self.proc(),
@@ -58,6 +62,8 @@ pub trait MemoryReader {
             return None;
         }
         let mut value: u8 = 0;
+        // SAFETY: addr is checked non-zero above; ReadProcessMemory reads from the game's
+        // process memory into a stack-local variable of the correct size.
         unsafe {
             ReadProcessMemory(
                 self.proc(),

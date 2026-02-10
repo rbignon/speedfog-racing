@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -52,6 +52,7 @@ from speedfog_racing.services import (
     get_participant_seed_pack_path,
     get_pool_config,
 )
+from speedfog_racing.services.seed_pack_service import sanitize_filename
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 from speedfog_racing.websocket.manager import manager
 
@@ -117,6 +118,48 @@ def _require_organizer(race: Race, user: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the race organizer can perform this action",
         )
+
+
+async def _transition_status(
+    db: AsyncSession,
+    race: Race,
+    expected_statuses: list[RaceStatus],
+    new_status: RaceStatus,
+    **extra_fields: object,
+) -> None:
+    """Atomically transition race status with optimistic locking.
+
+    Uses UPDATE ... WHERE status IN (...) AND version = :v to prevent
+    concurrent status mutations. Raises 409 on conflict.
+
+    Note: updates the in-memory race object directly. Callers must
+    commit (or flush) before any ORM query that might refresh the race.
+    """
+    current_version = race.version
+    values: dict[str, object] = {
+        "status": new_status,
+        "version": current_version + 1,
+        **extra_fields,
+    }
+    result = await db.execute(
+        update(Race)
+        .where(
+            Race.id == race.id,
+            Race.status.in_(expected_statuses),
+            Race.version == current_version,
+        )
+        .values(**values)
+    )
+    if result.rowcount == 0:  # type: ignore[attr-defined]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Race was modified concurrently, please retry",
+        )
+    # Sync the in-memory object
+    race.status = new_status
+    race.version = current_version + 1
+    for k, v in extra_fields.items():
+        setattr(race, k, v)
 
 
 @router.post("", response_model=RaceResponse, status_code=status.HTTP_201_CREATED)
@@ -233,13 +276,18 @@ async def add_participant(
     target_user = await get_user_by_twitch_username(db, request.twitch_username)
 
     if target_user:
-        # Check if already a participant
-        for p in race.participants:
-            if p.user_id == target_user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="User is already a participant in this race",
-                )
+        # Check if already a participant (DB query to avoid TOCTOU)
+        existing_participant = await db.execute(
+            select(Participant).where(
+                Participant.race_id == race.id,
+                Participant.user_id == target_user.id,
+            )
+        )
+        if existing_participant.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User is already a participant in this race",
+            )
 
         # Check if user is a caster (mutual exclusion)
         caster_result = await db.execute(
@@ -279,7 +327,14 @@ async def add_participant(
             color_index=next_color,
         )
         db.add(participant)
-        await db.commit()
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User is already a participant in this race",
+            )
         await db.refresh(participant)
 
         return AddParticipantResponse(participant=participant_response(participant))
@@ -462,15 +517,19 @@ async def start_race(
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
     _require_organizer(race, user)
 
-    # Check race status
     if race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Race has already started or finished",
         )
 
-    race.status = RaceStatus.RUNNING
-    race.started_at = datetime.now(UTC)
+    await _transition_status(
+        db,
+        race,
+        [RaceStatus.DRAFT, RaceStatus.OPEN],
+        RaceStatus.RUNNING,
+        started_at=datetime.now(UTC),
+    )
 
     await db.commit()
     await db.refresh(race)
@@ -499,7 +558,7 @@ async def open_race(
             detail="Only draft races can be opened",
         )
 
-    race.status = RaceStatus.OPEN
+    await _transition_status(db, race, [RaceStatus.DRAFT], RaceStatus.OPEN)
     await db.commit()
     await db.refresh(race)
 
@@ -527,8 +586,13 @@ async def reset_race(
     # Close all WebSocket connections before mutating state
     await manager.close_room(race_id, code=1000, reason="Race reset")
 
-    race.status = RaceStatus.OPEN
-    race.started_at = None
+    await _transition_status(
+        db,
+        race,
+        [RaceStatus.RUNNING, RaceStatus.FINISHED],
+        RaceStatus.OPEN,
+        started_at=None,
+    )
 
     for p in race.participants:
         p.status = ParticipantStatus.REGISTERED
@@ -563,7 +627,7 @@ async def finish_race(
             detail="Can only force-finish a running race",
         )
 
-    race.status = RaceStatus.FINISHED
+    await _transition_status(db, race, [RaceStatus.RUNNING], RaceStatus.FINISHED)
 
     await db.commit()
 
@@ -684,7 +748,7 @@ async def download_my_seed_pack(
 
     return FileResponse(
         path=seed_pack_path,
-        filename=f"speedfog_{user.twitch_username}.zip",
+        filename=f"speedfog_{sanitize_filename(user.twitch_username)}.zip",
         media_type="application/zip",
     )
 
@@ -730,6 +794,6 @@ async def download_seed_pack(
 
     return FileResponse(
         path=seed_pack_path,
-        filename=f"speedfog_{participant.user.twitch_username}.zip",
+        filename=f"speedfog_{sanitize_filename(participant.user.twitch_username)}.zip",
         media_type="application/zip",
     )

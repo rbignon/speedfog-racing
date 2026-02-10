@@ -27,7 +27,13 @@ from speedfog_racing.websocket.schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Grace period for auth message (seconds)
+# Grace period for auth message (seconds).
+# Spectator connections are intentionally unauthenticated by default (public races).
+# Optional auth within this window enables role-based DAG visibility (e.g. casters
+# see the graph during RUNNING, participants do not). Anonymous spectators see the
+# DAG during RUNNING and FINISHED, but not during DRAFT/OPEN.
+# Accepted risk: unauthenticated connections can observe public race state. This is
+# by design — race data (leaderboard, zone progress) is intended to be public.
 AUTH_GRACE_PERIOD = 2.0
 
 

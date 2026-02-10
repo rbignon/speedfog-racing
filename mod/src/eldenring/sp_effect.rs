@@ -54,6 +54,8 @@ impl SpEffect {
         };
 
         Self {
+            // SAFETY: GetCurrentProcess() returns a pseudo-handle that does not need to be
+            // closed and is always valid for the current process.
             proc: unsafe { GetCurrentProcess() },
             world_chr_man: base_addresses.world_chr_man,
             player_ins_offset,

@@ -32,6 +32,8 @@ impl GameMan {
     /// Create a new GameMan reader
     pub fn new(base_addresses: &libeldenring::prelude::base_addresses::BaseAddresses) -> Self {
         Self {
+            // SAFETY: GetCurrentProcess() returns a pseudo-handle that does not need to be
+            // closed and is always valid for the current process.
             proc: unsafe { GetCurrentProcess() },
             game_man: base_addresses.game_man,
         }

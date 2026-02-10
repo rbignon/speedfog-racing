@@ -72,6 +72,24 @@ export type ServerMessage =
   | RaceStatusChangeMessage
   | SpectatorCountMessage;
 
+const VALID_SERVER_MESSAGE_TYPES = new Set([
+  "race_state",
+  "leaderboard_update",
+  "player_update",
+  "race_status_change",
+  "spectator_count",
+]);
+
+function isServerMessage(data: unknown): data is ServerMessage {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "type" in data &&
+    typeof (data as { type: unknown }).type === "string" &&
+    VALID_SERVER_MESSAGE_TYPES.has((data as { type: string }).type)
+  );
+}
+
 // =============================================================================
 // WebSocket Client
 // =============================================================================
@@ -120,7 +138,8 @@ export class RaceWebSocket {
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
-      console.log(`[WS] Connected to race ${this.raceId}`);
+      if (import.meta.env.DEV)
+        console.log(`[WS] Connected to race ${this.raceId}`);
       this.reconnectAttempt = 0;
 
       // Send auth message if logged in (optional auth per spec Section 9.1)
@@ -133,7 +152,8 @@ export class RaceWebSocket {
     };
 
     this.ws.onclose = () => {
-      console.log(`[WS] Disconnected from race ${this.raceId}`);
+      if (import.meta.env.DEV)
+        console.log(`[WS] Disconnected from race ${this.raceId}`);
       this.options.onDisconnect?.();
 
       if (!this.intentionallyClosed) {
@@ -148,8 +168,13 @@ export class RaceWebSocket {
 
     this.ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data) as ServerMessage;
-        this.handleMessage(msg);
+        const data: unknown = JSON.parse(event.data);
+        if (!isServerMessage(data)) {
+          if (import.meta.env.DEV)
+            console.warn("[WS] Invalid message:", event.data);
+          return;
+        }
+        this.handleMessage(data);
       } catch (e) {
         console.error("[WS] Failed to parse message:", e);
       }
@@ -198,10 +223,11 @@ export class RaceWebSocket {
         this.options.onSpectatorCount?.(msg);
         break;
       default:
-        console.warn(
-          "[WS] Unknown message type:",
-          (msg as { type: string }).type,
-        );
+        if (import.meta.env.DEV)
+          console.warn(
+            "[WS] Unknown message type:",
+            (msg as { type: string }).type,
+          );
     }
   }
 
@@ -210,9 +236,10 @@ export class RaceWebSocket {
       RECONNECT_DELAYS[
         Math.min(this.reconnectAttempt, RECONNECT_DELAYS.length - 1)
       ];
-    console.log(
-      `[WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt + 1})`,
-    );
+    if (import.meta.env.DEV)
+      console.log(
+        `[WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt + 1})`,
+      );
 
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectAttempt++;

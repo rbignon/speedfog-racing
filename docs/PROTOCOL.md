@@ -18,12 +18,13 @@ Reference document for API endpoints and WebSocket messages.
 
 ### Authentication
 
-| Method | Endpoint             | Auth   | Description                                          |
-| ------ | -------------------- | ------ | ---------------------------------------------------- |
-| GET    | `/api/auth/twitch`   | -      | Redirect to Twitch OAuth (`?redirect_url`)           |
-| GET    | `/api/auth/callback` | -      | OAuth callback, redirects with `?token=`             |
-| GET    | `/api/auth/me`       | Bearer | Get current user info (includes `api_token`, `role`) |
-| POST   | `/api/auth/logout`   | Bearer | Regenerate API token (invalidates session)           |
+| Method | Endpoint             | Auth   | Description                                         |
+| ------ | -------------------- | ------ | --------------------------------------------------- |
+| GET    | `/api/auth/twitch`   | -      | Redirect to Twitch OAuth (`?redirect_url`)          |
+| GET    | `/api/auth/callback` | -      | OAuth callback, redirects with `?code=` (ephemeral) |
+| POST   | `/api/auth/exchange` | -      | Exchange auth code for API token                    |
+| GET    | `/api/auth/me`       | Bearer | Get current user info (public, no `api_token`)      |
+| POST   | `/api/auth/logout`   | Bearer | Regenerate API token (invalidates session)          |
 
 ### Races
 
@@ -40,7 +41,7 @@ Reference document for API endpoints and WebSocket messages.
 | POST   | `/api/races/{id}/start`                | Bearer | Start race: DRAFT/OPEN → RUNNING (organizer)    |
 | POST   | `/api/races/{id}/generate-seed-packs`  | Bearer | Generate personalized seed packs                |
 | GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack (ZIP)                    |
-| GET    | `/api/races/{id}/download/{mod_token}` | -      | Download participant seed pack (ZIP)            |
+| GET    | `/api/races/{id}/download/{mod_token}` | Bearer | Download participant seed pack (ZIP)            |
 
 ### Pools
 
@@ -383,6 +384,14 @@ The `graph_json` field in spectator `seed` is conditionally included based on us
 | `draft/open` | Visible only to non-participating organizer or caster        |
 
 Anonymous (unauthenticated) spectators: visible during `running` and `finished`, hidden during `draft` and `open`.
+
+### Security Notes
+
+**Spectator WebSocket authentication (M9):** Spectator connections (`/ws/race/{race_id}`) are intentionally unauthenticated by default. Race leaderboard data is public by design. Optional auth within a 2-second grace period enables role-based DAG visibility — this allows casters to see the graph during a running race while participants cannot. Anonymous spectators see the DAG during `running` and `finished` states. This is an accepted design trade-off.
+
+**CSRF (M5):** Auth tokens are stored in `localStorage` and sent via `Authorization` header, not auto-attached cookies. This makes CSRF attacks infeasible since the token is never sent automatically. If token storage changes to cookies in the future, CSRF protection must be added.
+
+**localStorage vs cookies (M10):** Tokens in `localStorage` are vulnerable to XSS but not to CSRF. The codebase has no `{@html}` usage (preventing XSS vectors), and CSP headers restrict script sources. This trade-off is accepted for the current threat model.
 
 ### Zone Tracking
 

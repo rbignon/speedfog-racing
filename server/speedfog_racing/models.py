@@ -108,6 +108,7 @@ class Race(Base):
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
 
     # Relationships
     organizer: Mapped["User"] = relationship(back_populates="organized_races")
