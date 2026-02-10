@@ -5,6 +5,7 @@ import logging
 import random
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -162,6 +163,66 @@ async def get_pool_stats(db: AsyncSession) -> dict[str, dict[str, int]]:
         stats[pool_name][status.value] = count
 
     return stats
+
+
+def get_pool_config(pool_name: str) -> dict[str, Any] | None:
+    """Read curated settings from a pool's config.toml."""
+    config_file = Path(settings.seeds_pool_dir) / pool_name / "config.toml"
+    if not config_file.exists():
+        return None
+
+    try:
+        with open(config_file, "rb") as f:
+            data = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        logger.warning(f"Failed to read {config_file}", exc_info=True)
+        return None
+
+    display = data.get("display", {})
+    requirements = data.get("requirements", {})
+    structure = data.get("structure", {})
+    care_package = data.get("care_package", {})
+    item_randomizer = data.get("item_randomizer", {})
+    starting_items_raw = data.get("starting_items", {})
+
+    # Build human-readable starting items list
+    item_names = {
+        "academy_key": "Academy Key",
+        "pureblood_medal": "Pureblood Medal",
+        "drawing_room_key": "Drawing Room Key",
+        "lantern": "Lantern",
+        "great_runes": "Great Runes",
+        "omother": "O, Mother",
+        "welldepthskey": "Well Depths Key",
+        "gaolupperlevelkey": "Gaol Upper Level Key",
+        "gaollowerlevelkey": "Gaol Lower Level Key",
+        "holeladennecklace": "Hole-Laden Necklace",
+        "messmerskindling": "Messmer's Kindling",
+    }
+    starting_items: list[str] = []
+    for key, label in item_names.items():
+        if starting_items_raw.get(key):
+            starting_items.append(label)
+    if gs := starting_items_raw.get("golden_seeds"):
+        starting_items.append(f"{gs} Golden Seeds")
+    if st := starting_items_raw.get("sacred_tears"):
+        starting_items.append(f"{st} Sacred Tears")
+    if sr := starting_items_raw.get("starting_runes"):
+        starting_items.append(f"{sr // 1000}k Runes" if sr >= 1000 else f"{sr} Runes")
+
+    return {
+        "estimated_duration": display.get("estimated_duration"),
+        "description": display.get("description") or None,
+        "legacy_dungeons": requirements.get("legacy_dungeons"),
+        "min_layers": structure.get("min_layers"),
+        "max_layers": structure.get("max_layers"),
+        "starting_items": starting_items or None,
+        "care_package": care_package.get("enabled"),
+        "weapon_upgrade": care_package.get("weapon_upgrade"),
+        "items_randomized": item_randomizer.get("enabled"),
+        "auto_upgrade_weapons": item_randomizer.get("auto_upgrade_weapons"),
+        "remove_requirements": item_randomizer.get("remove_requirements"),
+    }
 
 
 def get_pool_metadata(seeds_pool_dir: str) -> dict[str, dict[str, str | None]]:

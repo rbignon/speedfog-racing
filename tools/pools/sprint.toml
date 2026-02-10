@@ -25,20 +25,41 @@ final_tier = 20
 split_probability = 0.2
 merge_probability = 0.3
 max_branches = 2
+major_boss_ratio = 0.0
 final_boss_candidates = ["all"]
 
 [starting_items]
 academy_key = true
 pureblood_medal = true
 drawing_room_key = true
+lantern = true
 great_runes = true
 golden_seeds = 5
 sacred_tears = 3
 starting_runes = 50000
 
+# DLC key items (prevent softlocks in DLC areas)
+omother = true
+welldepthskey = true
+gaolupperlevelkey = true
+gaollowerlevelkey = true
+holeladennecklace = true
+messmerskindling = true
+
 [care_package]
 enabled = true
 weapon_upgrade = 12
+weapons = 2
+shields = 1
+catalysts = 1
+talismans = 2
+sorceries = 3
+incantations = 3
+head_armor = 1
+body_armor = 1
+arm_armor = 1
+leg_armor = 1
+crystal_tears = 3
 
 [item_randomizer]
 enabled = true

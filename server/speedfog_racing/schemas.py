@@ -90,6 +90,20 @@ class RaceResponse(BaseModel):
     participant_previews: list[UserResponse] = []
 
 
+class PoolConfig(BaseModel):
+    estimated_duration: str | None = None
+    description: str | None = None
+    legacy_dungeons: int | None = None
+    min_layers: int | None = None
+    max_layers: int | None = None
+    starting_items: list[str] | None = None
+    care_package: bool | None = None
+    weapon_upgrade: int | None = None
+    items_randomized: bool | None = None
+    auto_upgrade_weapons: bool | None = None
+    remove_requirements: bool | None = None
+
+
 class RaceDetailResponse(BaseModel):
     """Detailed race information with participants."""
 
@@ -106,6 +120,7 @@ class RaceDetailResponse(BaseModel):
     seed_total_layers: int | None
     participants: list[ParticipantResponse]
     casters: list[CasterResponse] = []
+    pool_config: PoolConfig | None = None
 
 
 class RaceListResponse(BaseModel):

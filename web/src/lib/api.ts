@@ -56,10 +56,25 @@ export interface Caster {
   user: User;
 }
 
+export interface PoolConfig {
+  estimated_duration: string | null;
+  description: string | null;
+  legacy_dungeons: number | null;
+  min_layers: number | null;
+  max_layers: number | null;
+  starting_items: string[] | null;
+  care_package: boolean | null;
+  weapon_upgrade: number | null;
+  items_randomized: boolean | null;
+  auto_upgrade_weapons: boolean | null;
+  remove_requirements: boolean | null;
+}
+
 export interface RaceDetail extends Race {
   seed_total_layers: number | null;
   participants: Participant[];
   casters: Caster[];
+  pool_config: PoolConfig | null;
 }
 
 export interface PoolInfo {

@@ -41,6 +41,7 @@ from speedfog_racing.schemas import (
     DownloadInfo,
     GenerateSeedPacksResponse,
     InviteResponse,
+    PoolConfig,
     RaceDetailResponse,
     RaceListResponse,
     RaceResponse,
@@ -49,6 +50,7 @@ from speedfog_racing.services import (
     assign_seed_to_race,
     generate_race_seed_packs,
     get_participant_seed_pack_path,
+    get_pool_config,
 )
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 from speedfog_racing.websocket.manager import manager
@@ -63,6 +65,11 @@ def _race_detail_response(race: Race) -> RaceDetailResponse:
         if hasattr(race, "casters") and race.casters is not None
         else []
     )
+    pool_config = None
+    if race.seed:
+        raw = get_pool_config(race.seed.pool_name)
+        if raw is not None:
+            pool_config = PoolConfig(**raw)
     return RaceDetailResponse(
         id=race.id,
         name=race.name,
@@ -75,6 +82,7 @@ def _race_detail_response(race: Race) -> RaceDetailResponse:
         seed_total_layers=race.seed.total_layers if race.seed else None,
         participants=[participant_response(p) for p in race.participants],
         casters=casters,
+        pool_config=pool_config,
     )
 
 

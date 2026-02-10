@@ -30,14 +30,34 @@ final_boss_candidates = ["all"]  # All major bosses
 academy_key = true       # Academy Glintstone Key - opens Raya Lucaria
 pureblood_medal = true   # Pureblood Knight's Medal - warps to Mohgwyn Palace
 drawing_room_key = true  # Drawing-Room Key - access Volcano Manor interior
+lantern = true           # Lantern - hands-free light source
 great_runes = true
-golden_seeds = 7       # Golden Seeds to upgrade flask uses (0-99)
-sacred_tears = 4       # Sacred Tears to upgrade flask potency (0-12)
-starting_runes = 100000 # Given as Lord's Rune items (50k each, use from inventory)
+golden_seeds = 7         # Golden Seeds to upgrade flask uses (0-99)
+sacred_tears = 4         # Sacred Tears to upgrade flask potency (0-12)
+starting_runes = 100000  # Given as Lord's Rune items (50k each, use from inventory)
+
+# DLC key items (prevent softlocks in DLC areas)
+omother = true
+welldepthskey = true
+gaolupperlevelkey = true
+gaollowerlevelkey = true
+holeladennecklace = true
+messmerskindling = true
 
 [care_package]
 enabled = true
 weapon_upgrade = 8
+weapons = 2
+shields = 1
+catalysts = 1
+talismans = 2
+sorceries = 3
+incantations = 3
+head_armor = 1
+body_armor = 1
+arm_armor = 1
+leg_armor = 1
+crystal_tears = 3
 
 [item_randomizer]
 enabled = true
