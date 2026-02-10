@@ -19,11 +19,11 @@ mini_dungeons = 8
 
 [structure]
 max_parallel_paths = 3
-min_layers = 10
-max_layers = 14
+min_layers = 25
+max_layers = 20
 final_tier = 28
-split_probability = 0.3
-merge_probability = 0.3
+split_probability = 0.6
+merge_probability = 0.6
 max_branches = 3
 first_layer_type = "legacy_dungeon"
 major_boss_ratio = 0.3
@@ -36,9 +36,9 @@ drawing_room_key = true
 lantern = true
 great_runes = true
 whetblades = true
-golden_seeds = 5
-sacred_tears = 3
-starting_runes = 50000
+golden_seeds = 9
+sacred_tears = 5
+starting_runes = 200000
 
 # DLC key items (prevent softlocks in DLC areas)
 omother = true
