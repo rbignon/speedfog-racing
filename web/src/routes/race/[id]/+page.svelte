@@ -10,6 +10,7 @@
 	import CasterList from '$lib/components/CasterList.svelte';
 	import RaceControls from '$lib/components/RaceControls.svelte';
 	import Podium from '$lib/components/Podium.svelte';
+	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 	import RaceStats from '$lib/components/RaceStats.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import { MetroDag, MetroDagBlurred, MetroDagLive, MetroDagResults } from '$lib/dag';
@@ -292,67 +293,10 @@
 		</div>
 
 		{#if initialRace.pool_config}
-			{@const pc = initialRace.pool_config}
-			<div class="race-info">
-				<h3 class="pool-settings-title">{(initialRace.pool_name || 'standard').replace(/^\w/, (c) => c.toUpperCase())}</h3>
-				{#if pc.description}
-					<p class="pool-description">{pc.description}</p>
-				{/if}
-				<div class="info-grid">
-					{#if pc.estimated_duration}
-						<div class="info-item">
-							<span class="label">Est. Duration</span>
-							<span class="value">{pc.estimated_duration}</span>
-						</div>
-					{/if}
-					{#if pc.legacy_dungeons != null && pc.legacy_dungeons > 0}
-						<div class="info-item">
-							<span class="label">Legacy Dungeons</span>
-							<span class="value">{pc.legacy_dungeons}</span>
-						</div>
-					{/if}
-					{#if pc.min_layers != null && pc.max_layers != null}
-						<div class="info-item">
-							<span class="label">Layers</span>
-							<span class="value">{pc.min_layers}–{pc.max_layers}</span>
-						</div>
-					{/if}
-					{#if pc.care_package && pc.weapon_upgrade != null}
-						<div class="info-item">
-							<span class="label">Care Package</span>
-							<span class="value">+{pc.weapon_upgrade} weapon</span>
-						</div>
-					{/if}
-					{#if pc.items_randomized != null}
-						<div class="info-item">
-							<span class="label">Items Randomized</span>
-							<span class="value">{pc.items_randomized ? 'Yes' : 'No'}</span>
-						</div>
-					{/if}
-					{#if pc.auto_upgrade_weapons}
-						<div class="info-item">
-							<span class="label">Auto Upgrade</span>
-							<span class="value">Yes</span>
-						</div>
-					{/if}
-					{#if pc.remove_requirements}
-						<div class="info-item">
-							<span class="label">No Stat Reqs</span>
-							<span class="value">Yes</span>
-						</div>
-					{/if}
-				</div>
-				{#if pc.starting_items}
-					<div class="starting-items">
-						<span class="label">Starting Items</span>
-						<ul class="starting-items-list">
-							{#each pc.starting_items as item}
-								<li>{item}</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-			</div>
+			<PoolSettingsCard
+				poolName={initialRace.pool_name || 'standard'}
+				poolConfig={initialRace.pool_config}
+			/>
 		{/if}
 
 		{#if myParticipant?.has_seed_pack}
@@ -500,42 +444,6 @@
 		background: var(--color-surface);
 		border-radius: var(--radius-lg);
 		padding: 1.5rem;
-	}
-
-	.pool-settings-title {
-		color: var(--color-gold);
-		font-size: var(--font-size-lg);
-		font-weight: 600;
-		margin: 0 0 0.25rem 0;
-	}
-
-	.pool-description {
-		color: var(--color-text-secondary);
-		font-size: var(--font-size-sm);
-		margin: 0 0 1rem 0;
-	}
-
-	.starting-items {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		margin-top: 1rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--color-border);
-	}
-
-	.starting-items-list {
-		list-style: none;
-		margin: 0.25rem 0 0 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-	}
-
-	.starting-items-list li {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
 	}
 
 	.info-grid {

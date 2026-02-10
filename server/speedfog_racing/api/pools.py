@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
-from speedfog_racing.services import get_pool_metadata, get_pool_stats
+from speedfog_racing.schemas import PoolConfig
+from speedfog_racing.services import get_pool_config, get_pool_stats
 
 router = APIRouter()
 
@@ -16,8 +16,7 @@ class PoolStats(BaseModel):
 
     available: int
     consumed: int
-    estimated_duration: str | None = None
-    description: str | None = None
+    pool_config: PoolConfig | None = None
 
 
 @router.get("", response_model=dict[str, PoolStats])
@@ -29,19 +28,14 @@ async def list_pools(
     Public endpoint for race creation form.
     """
     stats = await get_pool_stats(db)
-    metadata = get_pool_metadata(settings.seeds_pool_dir)
 
     result: dict[str, PoolStats] = {}
-    # Merge DB stats with TOML metadata
-    all_pools = set(stats.keys()) | set(metadata.keys())
-    for name in all_pools:
-        counts = stats.get(name, {"available": 0, "consumed": 0})
-        meta = metadata.get(name, {})
+    for name, counts in stats.items():
+        raw_config = get_pool_config(name)
         result[name] = PoolStats(
             available=counts.get("available", 0),
             consumed=counts.get("consumed", 0),
-            estimated_duration=meta.get("estimated_duration"),
-            description=meta.get("description"),
+            pool_config=PoolConfig(**raw_config) if raw_config else None,
         )
 
     return result

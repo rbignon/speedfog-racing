@@ -3,6 +3,7 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { site } from '$lib/stores/site.svelte';
 	import { createRace, fetchPoolStats, type PoolStats, type PoolInfo } from '$lib/api';
+	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 
 	let name = $state('');
 	let poolName = $state('standard');
@@ -27,6 +28,7 @@
 	);
 
 	let hasAvailablePool = $derived(sortedPools.some(([, info]) => info.available > 0));
+	let selectedConfig = $derived(pools[poolName]?.pool_config ?? null);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -118,8 +120,8 @@
 						{#each sortedPools as [pool, info] (pool)}
 							<button type="button" class="pool-card disabled">
 								<span class="pool-name">{capitalize(pool)}</span>
-								{#if info.estimated_duration}
-									<span class="pool-duration">{info.estimated_duration}</span>
+								{#if info.pool_config?.estimated_duration}
+									<span class="pool-duration">{info.pool_config?.estimated_duration}</span>
 								{/if}
 								<span class="pool-seeds">0 seeds available</span>
 							</button>
@@ -140,11 +142,11 @@
 								onclick={() => { if (!disabled && !creating) poolName = pool; }}
 							>
 								<span class="pool-name">{capitalize(pool)}</span>
-								{#if info.estimated_duration}
-									<span class="pool-duration">{info.estimated_duration}</span>
+								{#if info.pool_config?.estimated_duration}
+									<span class="pool-duration">{info.pool_config?.estimated_duration}</span>
 								{/if}
-								{#if info.description}
-									<span class="pool-desc">{info.description}</span>
+								{#if info.pool_config?.description}
+									<span class="pool-desc">{info.pool_config?.description}</span>
 								{/if}
 								<span class="pool-seeds">
 									{info.available} seed{info.available !== 1 ? 's' : ''} available
@@ -152,6 +154,9 @@
 							</button>
 						{/each}
 					</div>
+					{#if selectedConfig}
+						<PoolSettingsCard poolName={poolName} poolConfig={selectedConfig} compact />
+					{/if}
 				{/if}
 			</div>
 

@@ -80,8 +80,7 @@ export interface RaceDetail extends Race {
 export interface PoolInfo {
   available: number;
   consumed: number;
-  estimated_duration: string | null;
-  description: string | null;
+  pool_config: PoolConfig | null;
 }
 
 export type PoolStats = Record<string, PoolInfo>;
