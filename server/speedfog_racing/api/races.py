@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,7 +21,17 @@ from speedfog_racing.auth import (
     get_user_by_twitch_username,
 )
 from speedfog_racing.database import get_db
-from speedfog_racing.models import Caster, Invite, Participant, Race, RaceStatus, User
+from speedfog_racing.models import (
+    Caster,
+    Invite,
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    Seed,
+    SeedStatus,
+    User,
+)
 from speedfog_racing.schemas import (
     AddCasterRequest,
     AddParticipantRequest,
@@ -41,6 +51,7 @@ from speedfog_racing.services import (
     get_participant_seed_pack_path,
 )
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
+from speedfog_racing.websocket.manager import manager
 
 router = APIRouter()
 
@@ -490,6 +501,100 @@ async def open_race(
     await broadcast_race_state_update(race_id, race)
 
     return race_response(race)
+
+
+@router.post("/{race_id}/reset", response_model=RaceResponse)
+async def reset_race(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RaceResponse:
+    """Reset a race back to OPEN status, clearing all participant progress."""
+    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+    _require_organizer(race, user)
+
+    if race.status not in (RaceStatus.RUNNING, RaceStatus.FINISHED):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only reset a running or finished race",
+        )
+
+    # Close all WebSocket connections before mutating state
+    await manager.close_room(race_id, code=1000, reason="Race reset")
+
+    race.status = RaceStatus.OPEN
+    race.started_at = None
+
+    for p in race.participants:
+        p.status = ParticipantStatus.REGISTERED
+        p.current_zone = None
+        p.current_layer = 0
+        p.igt_ms = 0
+        p.death_count = 0
+        p.finished_at = None
+        p.zone_history = None
+
+    await db.commit()
+
+    # Re-query with eager-loaded relationships (refresh only reloads columns)
+    race = await _get_race_or_404(db, race.id, load_participants=True)
+
+    return race_response(race)
+
+
+@router.post("/{race_id}/finish", response_model=RaceResponse)
+async def finish_race(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RaceResponse:
+    """Force finish a running race."""
+    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+    _require_organizer(race, user)
+
+    if race.status != RaceStatus.RUNNING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only force-finish a running race",
+        )
+
+    race.status = RaceStatus.FINISHED
+
+    await db.commit()
+
+    # Re-query with eager-loaded relationships (refresh only reloads columns)
+    race = await _get_race_or_404(db, race.id, load_participants=True)
+
+    await manager.broadcast_race_status(race_id, "finished")
+    await broadcast_race_state_update(race_id, race)
+
+    return race_response(race)
+
+
+@router.delete("/{race_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_race(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Delete a race and all associated data."""
+    race = await _get_race_or_404(db, race_id)
+    _require_organizer(race, user)
+
+    await manager.close_room(race_id, code=4001, reason="Race deleted")
+
+    # Delete invites (no cascade from Race)
+    await db.execute(delete(Invite).where(Invite.race_id == race_id))
+
+    # Release seed back to pool
+    if race.seed_id:
+        result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
+        seed = result.scalar_one_or_none()
+        if seed:
+            seed.status = SeedStatus.AVAILABLE
+
+    await db.delete(race)
+    await db.commit()
 
 
 # =============================================================================

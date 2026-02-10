@@ -326,6 +326,44 @@ export async function openRace(raceId: string): Promise<Race> {
   return handleResponse<Race>(response);
 }
 
+/**
+ * Reset a race back to OPEN status, clearing all participant progress.
+ */
+export async function resetRace(raceId: string): Promise<Race> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/reset`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<Race>(response);
+}
+
+/**
+ * Force finish a running race.
+ */
+export async function finishRace(raceId: string): Promise<Race> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/finish`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<Race>(response);
+}
+
+/**
+ * Delete a race and all associated data.
+ */
+export async function deleteRace(raceId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/races/${raceId}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail);
+  }
+}
+
 // =============================================================================
 // Invite API
 // =============================================================================

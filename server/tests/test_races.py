@@ -2,6 +2,7 @@
 
 import json
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,7 +11,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
-from speedfog_racing.models import Race, RaceStatus, Seed, SeedStatus, User, UserRole
+from speedfog_racing.models import (
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    Seed,
+    SeedStatus,
+    User,
+    UserRole,
+)
 
 
 @pytest.fixture
@@ -696,3 +706,424 @@ async def test_download_seed_pack_success(
                 assert response.status_code == 200
                 assert response.headers["content-type"] == "application/zip"
                 assert "speedfog_player1.zip" in response.headers["content-disposition"]
+
+
+# =============================================================================
+# Race Reset Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_reset_race_from_running(test_client, organizer, player, async_session):
+    """Resetting a RUNNING race sets status to open and clears participant progress."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=900,
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/900",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Running Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.PLAYING,
+            current_zone="limgrave_start",
+            current_layer=3,
+            igt_ms=120000,
+            death_count=5,
+            has_seed_pack=True,
+            zone_history=[{"zone": "limgrave_start", "igt_ms": 0}],
+        )
+        db.add(participant)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reset",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "open"
+        assert data["started_at"] is None
+
+        # Verify participant was reset by fetching race detail
+        detail_response = await client.get(f"/api/races/{race_id}")
+        detail = detail_response.json()
+        p = detail["participants"][0]
+        assert p["status"] == "registered"
+        assert p["current_layer"] == 0
+        assert p["igt_ms"] == 0
+        assert p["death_count"] == 0
+        # has_seed_pack should be preserved
+        assert p["has_seed_pack"] is True
+
+
+@pytest.mark.asyncio
+async def test_reset_race_from_finished(test_client, organizer, player, async_session):
+    """Resetting a FINISHED race sets status to open and clears participant progress."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=901,
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/901",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Finished Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.FINISHED,
+            current_zone="erdtree",
+            current_layer=10,
+            igt_ms=600000,
+            death_count=20,
+            finished_at=datetime.now(UTC),
+            has_seed_pack=True,
+        )
+        db.add(participant)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reset",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "open"
+        assert data["started_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_reset_race_from_draft_fails(test_client, organizer, seed):
+    """Resetting a DRAFT race returns 400."""
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Draft Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+
+        response = await client.post(
+            f"/api/races/{race_id}/reset",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "running or finished" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_reset_race_from_open_fails(test_client, organizer, async_session):
+    """Resetting an OPEN race returns 400."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=902,
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/902",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Open Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.OPEN,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reset",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "running or finished" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_reset_race_non_organizer(test_client, organizer, player, async_session):
+    """Non-organizer cannot reset a race."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=903,
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/903",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Running Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reset",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+# =============================================================================
+# Race Force Finish Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_finish_running_race(test_client, organizer, player, async_session):
+    """Force-finishing a RUNNING race sets status to finished and preserves progress."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=910,
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/910",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Running Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.PLAYING,
+            current_zone="liurnia_lake",
+            current_layer=5,
+            igt_ms=300000,
+            death_count=10,
+        )
+        db.add(participant)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/finish",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "finished"
+
+        # Verify participants keep their progress
+        detail_response = await client.get(f"/api/races/{race_id}")
+        detail = detail_response.json()
+        p = detail["participants"][0]
+        assert p["current_layer"] == 5
+        assert p["igt_ms"] == 300000
+        assert p["death_count"] == 10
+
+
+@pytest.mark.asyncio
+async def test_finish_open_race_fails(test_client, organizer, async_session):
+    """Force-finishing an OPEN race returns 400."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=911,
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/911",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Open Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.OPEN,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/finish",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "running" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_finish_race_non_organizer(test_client, organizer, player, async_session):
+    """Non-organizer cannot force-finish a race."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=912,
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/912",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Running Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/finish",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+# =============================================================================
+# Race Delete Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_delete_race(test_client, organizer, seed):
+    """Deleting a race returns 204, and subsequent GET returns 404."""
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Doomed Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+
+        response = await client.delete(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 204
+
+        # Verify the race is gone
+        get_response = await client.get(f"/api/races/{race_id}")
+        assert get_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_race_non_organizer(test_client, organizer, player, seed):
+    """Non-organizer cannot delete a race."""
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Protected Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+
+        response = await client.delete(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_race_releases_seed(test_client, organizer, async_session):
+    """Deleting a race releases the seed back to available status."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=920,
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/920",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Race With Seed",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.DRAFT,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+        seed_id = seed.id
+
+    async with test_client as client:
+        response = await client.delete(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 204
+
+    # Verify seed is released
+    async with async_session() as db:
+        from sqlalchemy import select
+
+        result = await db.execute(select(Seed).where(Seed.id == seed_id))
+        seed = result.scalar_one()
+        assert seed.status == SeedStatus.AVAILABLE

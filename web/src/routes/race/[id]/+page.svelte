@@ -155,12 +155,28 @@
 			</div>
 
 			<CasterList casters={initialRace.casters} />
+
+			{#if isOrganizer}
+				<RaceControls
+					race={initialRace}
+					{raceStatus}
+					onRaceUpdated={handleRaceUpdated}
+				/>
+			{/if}
 		{:else if raceStatus === 'running'}
 			<div class="sidebar-section">
 				<Leaderboard participants={raceStore.leaderboard} {totalLayers} {zoneNames} />
 			</div>
 
 			<CasterList casters={initialRace.casters} />
+
+			{#if isOrganizer}
+				<RaceControls
+					race={initialRace}
+					{raceStatus}
+					onRaceUpdated={handleRaceUpdated}
+				/>
+			{/if}
 		{:else}
 			<div class="sidebar-section">
 				<h2>Participants ({mergedParticipants.length})</h2>

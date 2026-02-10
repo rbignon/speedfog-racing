@@ -138,6 +138,26 @@ class ConnectionManager:
             if not room.mods and not room.spectators:
                 self.rooms.pop(race_id, None)
 
+    async def close_room(self, race_id: uuid.UUID, code: int = 1000, reason: str = "") -> None:
+        """Close all WebSocket connections in a room and remove it."""
+        room = self.rooms.pop(race_id, None)
+        if not room:
+            return
+
+        for mod_conn in room.mods.values():
+            try:
+                await mod_conn.websocket.close(code=code, reason=reason)
+            except Exception:
+                pass
+
+        for spec_conn in room.spectators:
+            try:
+                await spec_conn.websocket.close(code=code, reason=reason)
+            except Exception:
+                pass
+
+        logger.info(f"Closed room: race={race_id}")
+
     def is_mod_connected(self, race_id: uuid.UUID, participant_id: uuid.UUID) -> bool:
         """Check if a mod is connected."""
         room = self.get_room(race_id)
