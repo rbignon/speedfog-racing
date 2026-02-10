@@ -149,9 +149,6 @@
 		{#if raceStatus === 'finished'}
 			<div class="sidebar-section">
 				<Leaderboard participants={raceStore.leaderboard} {totalLayers} mode="finished" {zoneNames} />
-				<div class="share-section">
-					<ShareButtons />
-				</div>
 			</div>
 
 			<CasterList casters={initialRace.casters} />
@@ -247,6 +244,7 @@
 				</p>
 			</div>
 			<div class="header-right">
+				<ShareButtons />
 				<RaceStatus status={raceStatus} />
 				{#if raceStatus === 'running'}
 					<span class="elapsed-clock">{formatElapsed(elapsedSeconds)}</span>
@@ -363,12 +361,6 @@
 
 	.invite-search {
 		margin-top: 0.75rem;
-	}
-
-	.share-section {
-		margin-top: 1rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--color-border);
 	}
 
 	.sidebar-footer {

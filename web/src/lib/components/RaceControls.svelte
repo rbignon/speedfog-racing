@@ -227,8 +227,9 @@
 	}
 
 	.danger-zone {
-		margin-top: 1rem;
-		padding-top: 1rem;
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
+		padding-bottom: 0.75rem;
 		border-top: 1px solid var(--color-border);
 	}
 
