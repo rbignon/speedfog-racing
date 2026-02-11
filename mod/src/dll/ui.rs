@@ -149,8 +149,8 @@ impl RaceTracker {
         let me = self.my_participant();
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
 
-        // Right side: "†N  X/Y"
-        let deaths = me.map(|p| p.death_count).unwrap_or(0);
+        // Right side: "†N  X/Y" — use local game memory for instant updates
+        let deaths = self.read_deaths().unwrap_or(0);
         let layer = me.map(|p| p.current_layer).unwrap_or(0);
         let right_text = format!("\u{2020}{}  {}/{}", deaths, layer, total_layers);
         let right_width = ui.calc_text_size(&right_text)[0];
