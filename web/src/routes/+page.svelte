@@ -152,7 +152,13 @@
 
 		{#if !loadingRaces && liveRaces.length === 0 && upcomingRaces.length === 0}
 			<section class="public-races">
-				<p class="empty-muted">No public races at the moment.</p>
+				<div class="empty-hero">
+					<svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+						<circle cx="12" cy="12" r="10" />
+						<polyline points="12 6 12 12 16 14" />
+					</svg>
+					<p class="empty-title">No public races right now</p>
+				</div>
 			</section>
 		{/if}
 	</main>
@@ -206,7 +212,13 @@
 				{/if}
 
 				{#if liveRaces.length === 0 && upcomingRaces.length === 0}
-					<p class="empty-muted">No active races at the moment.</p>
+					<div class="empty-hero">
+						<svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<circle cx="12" cy="12" r="10" />
+							<polyline points="12 6 12 12 16 14" />
+						</svg>
+						<p class="empty-title">No active races right now</p>
+					</div>
 				{/if}
 			{/if}
 		</main>
@@ -387,6 +399,40 @@
 	.empty-muted {
 		color: var(--color-text-disabled);
 		font-style: italic;
+	}
+
+	.empty-hero {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 3rem 2rem;
+		margin: 1rem auto;
+		max-width: 400px;
+		text-align: center;
+		background: var(--color-surface);
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--color-border);
+	}
+
+	.empty-icon {
+		width: 3rem;
+		height: 3rem;
+		color: var(--color-text-disabled);
+		opacity: 0.6;
+	}
+
+	.empty-title {
+		margin: 0;
+		font-size: var(--font-size-lg);
+		font-weight: 600;
+		color: var(--color-text-secondary);
+	}
+
+	.empty-sub {
+		margin: 0;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-disabled);
 	}
 
 	@media (max-width: 640px) {
