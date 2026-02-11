@@ -66,11 +66,6 @@
 					target="_blank"
 					rel="noopener noreferrer">SpeedFog Racing</a
 				>
-				<a
-					href="https://www.nexusmods.com/eldenring/mods/3295"
-					target="_blank"
-					rel="noopener noreferrer">Fog Gate Randomizer</a
-				>
 			</nav>
 		</div>
 	</footer>
