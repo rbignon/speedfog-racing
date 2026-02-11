@@ -1,6 +1,6 @@
 # SpeedFog Racing — Roadmap
 
-**Last updated:** 2026-02-09
+**Last updated:** 2026-02-10
 
 ---
 
@@ -45,21 +45,21 @@ Full rewrite of the protocol reference to match current implementation: `event_f
 
 Deleted standalone `/race/[id]/manage` page. All organizer actions moved to race detail sidebar. New `POST /races/{id}/open` endpoint for DRAFT→OPEN transition. Status flow: DRAFT → Open Race → OPEN → Generate Packs + Start Race → RUNNING → FINISHED.
 
+### Seed Pool Regeneration
+
+Regenerated all seed pools with the updated SpeedFog generator (event flag base 1040292800, graph.json v4 with `event_map` / `finish_event`, EMEVD event injection).
+
+### Security Hardening
+
+Full security audit (28 findings) and hardening pass: HTTPS + security headers (nginx), required secret_key, ephemeral auth code exchange, rate limiting (slowapi), restricted CORS, optimistic locking, WS auth timeout, sanitized errors, filename sanitization, secrets rotation docs.
+
+**Audit:** `docs/security-audit-2026-02-10.md`
+
 ---
 
 ## v1.0 — First Real Usage
 
 Everything needed to run an actual race end-to-end with a usable feature set. The core platform is code-complete — remaining items are deployment prep and polish.
-
-### Seed Pool Regeneration
-
-**Priority:** Critical (blocker)
-
-Regenerate all seed pools with the updated SpeedFog generator (event flag base 1040292800). Existing pools lack `event_map` / `finish_event` in graph.json and have no EMEVD event injection.
-
-- Regenerate sprint, standard, marathon pools
-- Verify event flags are readable in-game (end-to-end test with a real seed)
-- Update hero-seed.json with v4 format (add dummy `event_map` for homepage DAG consistency)
 
 ### OBS Overlays
 
