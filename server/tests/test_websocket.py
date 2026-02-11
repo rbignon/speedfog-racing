@@ -21,6 +21,8 @@ from speedfog_racing.websocket.schemas import (
     EventFlagMessage,
     LeaderboardUpdateMessage,
     ParticipantInfo,
+    PingMessage,
+    PongMessage,
     RaceInfo,
     RaceStateMessage,
     RaceStatusChangeMessage,
@@ -248,6 +250,18 @@ class TestSchemas:
         info = SeedInfo(total_layers=10)
         data = json.loads(info.model_dump_json())
         assert data.get("event_ids") is None
+
+    def test_ping_message(self):
+        """Test PingMessage schema."""
+        msg = PingMessage()
+        data = json.loads(msg.model_dump_json())
+        assert data == {"type": "ping"}
+
+    def test_pong_message(self):
+        """Test PongMessage schema."""
+        msg = PongMessage()
+        data = json.loads(msg.model_dump_json())
+        assert data == {"type": "pong"}
 
 
 # --- Manager Tests ---

@@ -7,7 +7,7 @@ use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
@@ -145,22 +145,28 @@ impl RaceWebSocketClient {
 
     pub fn send_ready(&self) {
         if let Some(tx) = &self.tx {
-            let _ = tx.try_send(OutgoingMessage::Ready);
+            if let Err(e) = tx.try_send(OutgoingMessage::Ready) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
         }
     }
 
     pub fn send_status_update(&self, igt_ms: u32, death_count: u32) {
         if let Some(tx) = &self.tx {
-            let _ = tx.try_send(OutgoingMessage::StatusUpdate {
+            if let Err(e) = tx.try_send(OutgoingMessage::StatusUpdate {
                 igt_ms,
                 death_count,
-            });
+            }) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
         }
     }
 
     pub fn send_event_flag(&self, flag_id: u32, igt_ms: u32) {
         if let Some(tx) = &self.tx {
-            let _ = tx.try_send(OutgoingMessage::EventFlag { flag_id, igt_ms });
+            if let Err(e) = tx.try_send(OutgoingMessage::EventFlag { flag_id, igt_ms }) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
         }
     }
 
@@ -323,6 +329,9 @@ fn message_loop(
     incoming_tx: &Sender<IncomingMessage>,
     shutdown_flag: &Arc<AtomicBool>,
 ) -> Result<(), String> {
+    let mut last_ping_received = Instant::now();
+    let ping_timeout = Duration::from_secs(60);
+
     // Set non-blocking
     match socket.get_ref() {
         MaybeTlsStream::Plain(tcp) => {
@@ -337,6 +346,11 @@ fn message_loop(
     loop {
         if shutdown_flag.load(Ordering::SeqCst) {
             return Ok(());
+        }
+
+        // Check ping timeout
+        if last_ping_received.elapsed() > ping_timeout {
+            return Err("Server ping timeout (60s)".to_string());
         }
 
         // Handle outgoing
@@ -378,6 +392,14 @@ fn message_loop(
             Ok(Message::Text(text)) => {
                 if let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) {
                     match msg {
+                        ServerMessage::Ping => {
+                            last_ping_received = Instant::now();
+                            let pong = ClientMessage::Pong;
+                            let json = serde_json::to_string(&pong).map_err(|e| e.to_string())?;
+                            socket
+                                .send(Message::Text(json))
+                                .map_err(|e| e.to_string())?;
+                        }
                         ServerMessage::RaceStart => {
                             let _ = incoming_tx.send(IncomingMessage::RaceStart);
                         }

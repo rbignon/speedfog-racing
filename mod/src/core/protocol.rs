@@ -20,6 +20,8 @@ pub enum ClientMessage {
     StatusUpdate { igt_ms: u32, death_count: u32 },
     /// EMEVD event flag triggered (fog gate traversal or boss kill)
     EventFlag { flag_id: u32, igt_ms: u32 },
+    /// Heartbeat response
+    Pong,
 }
 
 // =============================================================================
@@ -78,6 +80,8 @@ pub enum ServerMessage {
     RaceStatusChange { status: String },
     /// Single player update
     PlayerUpdate { player: ParticipantInfo },
+    /// Heartbeat ping
+    Ping,
 }
 
 // =============================================================================
@@ -211,6 +215,20 @@ mod tests {
             }
             _ => panic!("Expected LeaderboardUpdate"),
         }
+    }
+
+    #[test]
+    fn test_server_ping_deserialize() {
+        let json = r#"{"type": "ping"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg, ServerMessage::Ping));
+    }
+
+    #[test]
+    fn test_client_pong_serialize() {
+        let msg = ClientMessage::Pong;
+        let json = serde_json::to_string(&msg).unwrap();
+        assert_eq!(json, r#"{"type":"pong"}"#);
     }
 
     #[test]

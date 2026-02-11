@@ -19,6 +19,7 @@ from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     AuthOkMessage,
     ParticipantInfo,
+    PingMessage,
     RaceInfo,
     RaceStartMessage,
     SeedInfo,
@@ -28,6 +29,7 @@ from speedfog_racing.websocket.spectator import broadcast_race_state_update
 logger = logging.getLogger(__name__)
 
 MOD_AUTH_TIMEOUT = 5.0  # seconds to wait for auth message
+HEARTBEAT_INTERVAL = 30.0  # seconds between pings
 
 
 def _get_graph_json(participant: Participant) -> dict[str, Any] | None:
@@ -87,27 +89,39 @@ async def handle_mod_websocket(websocket: WebSocket, race_id: uuid.UUID, db: Asy
         # Register connection
         await manager.connect_mod(race_id, participant.id, participant.user_id, websocket)
 
-        # Main message loop
-        while True:
-            data = await websocket.receive_text()
+        # Start heartbeat in background
+        heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+
+        try:
+            # Main message loop
+            while True:
+                data = await websocket.receive_text()
+                try:
+                    msg = json.loads(data)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Invalid JSON from mod (ignored): {e}")
+                    continue
+
+                msg_type = msg.get("type")
+
+                if msg_type == "pong":
+                    pass  # Heartbeat response, no action needed
+                elif msg_type == "ready":
+                    await handle_ready(db, participant)
+                elif msg_type == "status_update":
+                    await handle_status_update(db, participant, msg)
+                elif msg_type == "event_flag":
+                    await handle_event_flag(db, participant, msg)
+                elif msg_type == "finished":
+                    await handle_finished(db, participant, msg)
+                else:
+                    logger.warning(f"Unknown message type: {msg_type}")
+        finally:
+            heartbeat_task.cancel()
             try:
-                msg = json.loads(data)
-            except json.JSONDecodeError as e:
-                logger.warning(f"Invalid JSON from mod (ignored): {e}")
-                continue
-
-            msg_type = msg.get("type")
-
-            if msg_type == "ready":
-                await handle_ready(db, participant)
-            elif msg_type == "status_update":
-                await handle_status_update(db, participant, msg)
-            elif msg_type == "event_flag":
-                await handle_event_flag(db, participant, msg)
-            elif msg_type == "finished":
-                await handle_finished(db, participant, msg)
-            else:
-                logger.warning(f"Unknown message type: {msg_type}")
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
     except WebSocketDisconnect:
         logger.info(f"Mod disconnected: race={race_id}")
@@ -116,6 +130,17 @@ async def handle_mod_websocket(websocket: WebSocket, race_id: uuid.UUID, db: Asy
     finally:
         if participant:
             await manager.disconnect_mod(race_id, participant.id)
+
+
+async def _heartbeat_loop(websocket: WebSocket) -> None:
+    """Send periodic ping messages to the mod."""
+    ping_json = PingMessage().model_dump_json()
+    try:
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            await websocket.send_text(ping_json)
+    except Exception:
+        pass  # Connection closed — let message loop handle cleanup
 
 
 async def authenticate_mod(
@@ -341,16 +366,20 @@ async def handle_finished(db: AsyncSession, participant: Participant, msg: dict[
             race_obj.version += 1
             await db.commit()
             logger.info(f"Race finished: {participant.race_id}")
-            await manager.broadcast_race_status(participant.race_id, "finished")
 
-            # Reload race with casters for DAG access computation
+            # Load participant users + casters for race_state broadcast
+            for p in participant.race.participants:
+                await db.refresh(p, ["user"])
             race = participant.race
             await db.refresh(race, ["casters"])
             for c in race.casters:
                 await db.refresh(c, ["user"])
 
-            # Push full graph + zone_history to all spectators
+            # Push full graph + zone_history to spectators BEFORE status change.
+            # race_state includes status=finished + zone_history atomically,
+            # so the client gets everything in one message.
             await broadcast_race_state_update(participant.race_id, race)
+            await manager.broadcast_race_status(participant.race_id, "finished")
 
     # Broadcast leaderboard (with zone_history when race is finished)
     for p in participant.race.participants:

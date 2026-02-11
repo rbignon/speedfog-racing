@@ -43,6 +43,12 @@ class EventFlagMessage(BaseModel):
     igt_ms: int
 
 
+class PongMessage(BaseModel):
+    """Heartbeat response from mod."""
+
+    type: Literal["pong"] = "pong"
+
+
 # --- Server -> Client Messages ---
 
 
@@ -141,3 +147,9 @@ class SpectatorCountMessage(BaseModel):
 
     type: Literal["spectator_count"] = "spectator_count"
     count: int
+
+
+class PingMessage(BaseModel):
+    """Heartbeat ping from server."""
+
+    type: Literal["ping"] = "ping"

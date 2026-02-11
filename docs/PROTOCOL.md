@@ -135,6 +135,16 @@ Player finished the race. Server-side schema only — the mod does not send this
 }
 ```
 
+#### `pong`
+
+Heartbeat response. Sent by the mod in reply to a server `ping`.
+
+```json
+{
+  "type": "pong"
+}
+```
+
 ### Server → Client
 
 #### `auth_ok`
@@ -222,6 +232,25 @@ Race status changed.
   "status": "running"
 }
 ```
+
+#### `ping`
+
+Heartbeat ping. Sent by the server every 30 seconds. The mod must respond with `pong`.
+
+```json
+{
+  "type": "ping"
+}
+```
+
+### Heartbeat
+
+The server sends `{"type": "ping"}` to each connected mod every **30 seconds**. The mod responds with `{"type": "pong"}`. This is an asymmetric design: only the mod detects server absence.
+
+- **Server → Mod:** `ping` every 30s
+- **Mod → Server:** `pong` in response
+- **Mod timeout:** If no `ping` is received for **60 seconds**, the mod treats the connection as dead and triggers a reconnect
+- The server does not track pong responses — it relies on TCP-level `WebSocketDisconnect` for cleanup
 
 ---
 
