@@ -7,6 +7,7 @@ description = "Extended race through the Lands Between"
 
 [run]
 seed = 0  # Auto-reroll until valid DAG found
+run_complete_message = "RUN COMPLETE GGWP"
 
 [budget]
 total_weight = 50
@@ -21,10 +22,10 @@ mini_dungeons = 8
 max_parallel_paths = 3
 min_layers = 25
 max_layers = 20
-final_tier = 28
+final_tier = 23
 split_probability = 0.6
 merge_probability = 0.6
-max_branches = 3
+max_branches = 4
 first_layer_type = "legacy_dungeon"
 major_boss_ratio = 0.3
 final_boss_candidates = ["all"]

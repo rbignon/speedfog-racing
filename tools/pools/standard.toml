@@ -1,9 +1,13 @@
+# SpeedFog Racing - Standard Pool Configuration
+# ~1 hour races
+
 [display]
 estimated_duration = "~1h"
 description = "Balanced race with legacy dungeons and bosses"
 
 [run]
 seed = 0
+run_complete_message = "RUN COMPLETE GGWP"
 
 [budget]
 total_weight = 30
@@ -18,10 +22,10 @@ mini_dungeons = 5
 max_parallel_paths = 4
 min_layers = 10
 max_layers = 20
-final_tier = 18
+final_tier = 15
 split_probability = 0.5
 merge_probability = 0.5
-max_branches = 3
+max_branches = 4
 first_layer_type = "legacy_dungeon"
 major_boss_ratio = 0.2
 final_boss_candidates = ["all"]  # All major bosses
