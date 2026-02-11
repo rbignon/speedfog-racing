@@ -20,6 +20,7 @@ OUTPUT_DIR="$TOOLS_DIR/output"
 POOL=""
 COUNT=""
 GAME_DIR=""
+SEEDS_DIR="${SEEDS_DIR:-/data/SpeedFog/racing/seeds}"
 UPLOAD_ONLY=false
 NO_RESTART=false
 VERBOSE=""
@@ -34,6 +35,7 @@ Options:
   --pool POOL       Pool name (sprint, standard, marathon). Default: all pools.
   --count N         Number of seeds per pool (required unless --upload-only)
   --game-dir PATH   Path to Elden Ring Game directory (required unless --upload-only)
+  --seeds-dir PATH  Remote seed directory on VPS (default: $SEEDS_DIR or /data/SpeedFog/racing/seeds)
   --upload-only     Skip generation, upload existing tools/output/
   --output DIR      Local output directory (default: tools/output)
   --no-restart      Upload without restarting the service
@@ -42,6 +44,7 @@ Options:
 
 Environment:
   DEPLOY_HOST       SSH target (e.g. user@host). Required.
+  SEEDS_DIR         Remote seed directory on VPS (default: /data/SpeedFog/racing/seeds)
   SPEEDFOG_PATH     Path to speedfog repo (optional, auto-detected)
 
 Examples:
@@ -63,6 +66,7 @@ while [[ $# -gt 0 ]]; do
         --pool) POOL="$2"; shift 2 ;;
         --count) COUNT="$2"; shift 2 ;;
         --game-dir) GAME_DIR="$2"; shift 2 ;;
+        --seeds-dir) SEEDS_DIR="$2"; shift 2 ;;
         --upload-only) UPLOAD_ONLY=true; shift ;;
         --output) OUTPUT_DIR="$2"; shift 2 ;;
         --no-restart) NO_RESTART=true; shift ;;
@@ -146,11 +150,10 @@ echo "==> Uploading to $SERVER..."
 scp "$TARBALL" "$SERVER:/tmp/speedfog-seeds.tar.gz"
 rm "$TARBALL"
 
-echo "==> Extracting on server..."
-# shellcheck disable=SC2087
-ssh "$SERVER" bash <<'ENDSSH'
+echo "==> Extracting on server ($SEEDS_DIR)..."
+ssh "$SERVER" bash -s "$SEEDS_DIR" <<'ENDSSH'
     set -e
-    SEEDS_DIR="/data/SpeedFog/racing/seeds"
+    SEEDS_DIR="$1"
 
     # Ensure target directory exists
     sudo -u speedfog mkdir -p "$SEEDS_DIR"
