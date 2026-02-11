@@ -237,6 +237,7 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
                 include_history=include_history,
             )
         except Exception:
+            logger.exception("Error sending race state to spectator %d in race %s", i, race_id)
             disconnected.append(i)
 
     for i in reversed(disconnected):

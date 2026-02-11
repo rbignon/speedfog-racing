@@ -20,6 +20,7 @@ class RaceStore {
 
   private ws: RaceWebSocket | null = null;
   private currentRaceId: string | null = null;
+  private finishCheckTimer: ReturnType<typeof setTimeout> | null = null;
 
   leaderboard = $derived.by(() => {
     return [...this.participants].sort((a, b) => {
@@ -89,15 +90,42 @@ class RaceStore {
         this.seed = msg.seed;
         this.participants = msg.participants;
         this.loading = false;
+        // Cancel pending finish check — race_state already has the data
+        if (this.finishCheckTimer) {
+          clearTimeout(this.finishCheckTimer);
+          this.finishCheckTimer = null;
+        }
       },
 
       onLeaderboardUpdate: (msg) => {
-        this.participants = msg.participants;
+        // When race is finished, preserve zone_history from existing data
+        // in case this update doesn't include it (race condition defense).
+        if (this.race?.status === "finished") {
+          const historyMap = new Map(
+            this.participants
+              .filter((p) => p.zone_history)
+              .map((p) => [p.id, p.zone_history]),
+          );
+          this.participants = msg.participants.map((p) => ({
+            ...p,
+            zone_history: p.zone_history ?? historyMap.get(p.id) ?? null,
+          }));
+        } else {
+          this.participants = msg.participants;
+        }
       },
 
       onPlayerUpdate: (msg) => {
+        // Preserve zone_history when race is finished
+        let player = msg.player;
+        if (this.race?.status === "finished" && !player.zone_history) {
+          const existing = this.participants.find((p) => p.id === player.id);
+          if (existing?.zone_history) {
+            player = { ...player, zone_history: existing.zone_history };
+          }
+        }
         this.participants = this.participants.map((p) =>
-          p.id === msg.player.id ? msg.player : p,
+          p.id === player.id ? player : p,
         );
       },
 
@@ -108,6 +136,12 @@ class RaceStore {
             status: msg.status,
             started_at: msg.started_at ?? this.race.started_at,
           };
+        }
+        // Safety net: if status changed to "finished" but zone_history is
+        // missing (e.g. race_state broadcast failed), reconnect after a
+        // short delay to get the full state from the initial handshake.
+        if (msg.status === "finished") {
+          this.scheduleFinishCheck();
         }
       },
 
@@ -123,6 +157,10 @@ class RaceStore {
    * Disconnect from the current race's WebSocket.
    */
   disconnect() {
+    if (this.finishCheckTimer) {
+      clearTimeout(this.finishCheckTimer);
+      this.finishCheckTimer = null;
+    }
     if (this.ws) {
       this.ws.disconnect();
       this.ws = null;
@@ -141,6 +179,28 @@ class RaceStore {
    */
   getCurrentRaceId(): string | null {
     return this.currentRaceId;
+  }
+
+  /**
+   * After the race finishes, verify that zone_history arrived.
+   * If not, force a WS reconnect to get the full state.
+   */
+  private scheduleFinishCheck() {
+    if (this.finishCheckTimer) clearTimeout(this.finishCheckTimer);
+    this.finishCheckTimer = setTimeout(() => {
+      this.finishCheckTimer = null;
+      const needsHistory = this.participants.some(
+        (p) => p.status === "finished" && !p.zone_history,
+      );
+      if (needsHistory && this.ws && this.currentRaceId) {
+        if (import.meta.env.DEV)
+          console.log(
+            "[RaceStore] zone_history missing after finish, reconnecting",
+          );
+        this.ws.disconnect();
+        this.ws.connect();
+      }
+    }, 3000);
   }
 }
 

@@ -695,10 +695,12 @@ async def finish_race(
     await db.commit()
 
     # Re-query with eager-loaded relationships (refresh only reloads columns)
-    race = await _get_race_or_404(db, race.id, load_participants=True)
+    race = await _get_race_or_404(db, race.id, load_participants=True, load_casters=True)
 
-    await manager.broadcast_race_status(race_id, "finished")
+    # Push full race_state (status + zone_history) before status change
+    # so spectators get everything atomically in one message.
     await broadcast_race_state_update(race_id, race)
+    await manager.broadcast_race_status(race_id, "finished")
 
     return race_response(race)
 
