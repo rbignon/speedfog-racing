@@ -1,18 +1,17 @@
 """Invite management API routes."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.api.helpers import participant_response
 from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Invite, Participant, Race, RaceStatus, User
 from speedfog_racing.schemas import (
     AcceptInviteResponse,
     InviteInfoResponse,
-    ParticipantResponse,
-    UserResponse,
 )
 
 router = APIRouter()
@@ -99,11 +98,19 @@ async def accept_invite(
             detail="You are already a participant in this race",
         )
 
+    # Compute next color_index
+    max_result = await db.execute(
+        select(func.max(Participant.color_index)).where(Participant.race_id == invite.race_id)
+    )
+    max_color = max_result.scalar()
+    next_color = (max_color + 1) if max_color is not None else 0
+
     # Create participant
     participant = Participant(
         race_id=invite.race_id,
         user_id=user.id,
         user=user,
+        color_index=next_color,
     )
     db.add(participant)
 
@@ -114,18 +121,6 @@ async def accept_invite(
     await db.refresh(participant)
 
     return AcceptInviteResponse(
-        participant=ParticipantResponse(
-            id=participant.id,
-            user=UserResponse(
-                id=user.id,
-                twitch_username=user.twitch_username,
-                twitch_display_name=user.twitch_display_name,
-                twitch_avatar_url=user.twitch_avatar_url,
-            ),
-            status=participant.status,
-            current_layer=participant.current_layer,
-            igt_ms=participant.igt_ms,
-            death_count=participant.death_count,
-        ),
+        participant=participant_response(participant),
         race_id=invite.race_id,
     )

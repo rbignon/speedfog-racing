@@ -7,7 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
-from speedfog_racing.models import Invite, Race, RaceStatus, Seed, SeedStatus, User, UserRole
+from speedfog_racing.models import (
+    Invite,
+    Participant,
+    Race,
+    RaceStatus,
+    Seed,
+    SeedStatus,
+    User,
+    UserRole,
+)
 
 
 @pytest.fixture
@@ -196,6 +205,59 @@ async def test_cannot_accept_invite_twice(test_client, race_with_invite, invited
         )
         assert response.status_code == 400
         assert "already been accepted" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_accept_invite_color_index_sequential(
+    test_client, async_session, race_with_invite, invited_user
+):
+    """Invited participants get sequential color_index values."""
+    race = race_with_invite["race"]
+
+    # Add an organizer participant first (color_index=0)
+    async with async_session() as db:
+        organizer_participant = Participant(
+            race_id=race.id,
+            user_id=race.organizer_id,
+            color_index=0,
+        )
+        db.add(organizer_participant)
+        await db.commit()
+
+    # Create a second invite + user for later
+    async with async_session() as db:
+        user2 = User(
+            twitch_id="inv456",
+            twitch_username="player_two",
+            twitch_display_name="Player Two",
+            api_token="player_two_token",
+            role=UserRole.USER,
+        )
+        db.add(user2)
+        invite2 = Invite(
+            race_id=race.id,
+            twitch_username="player_two",
+            token="invite_token_2",
+        )
+        db.add(invite2)
+        await db.commit()
+
+    async with test_client as client:
+        # Accept first invite — should get color_index=1
+        response = await client.post(
+            "/api/invite/test_invite_token/accept",
+            headers={"Authorization": f"Bearer {invited_user.api_token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["participant"]["color_index"] == 1
+
+        # Accept second invite — should get color_index=2
+        response = await client.post(
+            "/api/invite/invite_token_2/accept",
+            headers={"Authorization": "Bearer player_two_token"},
+        )
+        assert response.status_code == 200
+        assert response.json()["participant"]["color_index"] == 2
 
 
 @pytest.mark.asyncio
