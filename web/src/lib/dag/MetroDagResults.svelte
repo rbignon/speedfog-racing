@@ -2,8 +2,11 @@
 	import type { WsParticipant } from '$lib/websocket';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
-	import { pathToWaypoints } from './animation';
-	import type { AnimationWaypoint } from './animation';
+	import {
+		expandNodePath,
+		buildPlayerWaypoints,
+		computeSlot
+	} from './parallel';
 	import {
 		NODE_RADIUS,
 		NODE_COLORS,
@@ -15,9 +18,11 @@
 		LABEL_COLOR,
 		LABEL_OFFSET_Y,
 		PLAYER_COLORS,
-		RACER_DOT_RADIUS
+		RACER_DOT_RADIUS,
+		PARALLEL_PATH_SPACING,
+		MAX_PARALLEL
 	} from './constants';
-	import type { PositionedNode, DagLayout } from './types';
+	import type { PositionedNode, RoutedEdge, DagLayout } from './types';
 
 	interface Props {
 		graphJson: Record<string, unknown>;
@@ -40,7 +45,27 @@
 		return map;
 	});
 
-	// Compute player path polylines from zone_history
+	// Build edge lookup: "fromId->toId" -> RoutedEdge
+	let edgeMap: Map<string, RoutedEdge> = $derived.by(() => {
+		const map = new Map<string, RoutedEdge>();
+		for (const edge of layout.edges) {
+			map.set(`${edge.fromId}->${edge.toId}`, edge);
+		}
+		return map;
+	});
+
+	// Build adjacency list for BFS gap-filling
+	let adjacency: Map<string, string[]> = $derived.by(() => {
+		const adj = new Map<string, string[]>();
+		for (const edge of layout.edges) {
+			const list = adj.get(edge.fromId);
+			if (list) list.push(edge.toId);
+			else adj.set(edge.fromId, [edge.toId]);
+		}
+		return adj;
+	});
+
+	// Compute player path polylines with parallel offset on shared edges
 	interface PlayerPath {
 		id: string;
 		color: string;
@@ -51,17 +76,16 @@
 	}
 
 	let playerPaths: PlayerPath[] = $derived.by(() => {
-		const paths: PlayerPath[] = [];
+		// Step 1: Deduplicate and expand node paths for each participant
+		const expandedMap = new Map<string, string[]>();
 
 		for (const p of participants) {
 			if (!p.zone_history || p.zone_history.length === 0) continue;
 
-			// Extract node_ids and deduplicate consecutive identical ones
-			const rawNodeIds = p.zone_history.map((e) => e.node_id);
+			const rawNodeIds = p.zone_history.map((e: { node_id: string }) => e.node_id);
 			const deduped: string[] = [];
 			for (const nid of rawNodeIds) {
 				if (deduped.length === 0 || deduped[deduped.length - 1] !== nid) {
-					// Only include nodes that exist in the graph
 					if (nodeMap.has(nid)) {
 						deduped.push(nid);
 					}
@@ -69,12 +93,65 @@
 			}
 
 			if (deduped.length === 0) continue;
+			expandedMap.set(p.id, expandNodePath(deduped, edgeMap, adjacency));
+		}
 
-			const waypoints: AnimationWaypoint[] = pathToWaypoints(deduped, layout);
-			if (waypoints.length === 0) continue;
+		// Step 2: Build edge usage map — which participants traverse each edge
+		// Uses a Set for dedup, then converts to ordered array for stable slot assignment
+		const edgeUsageSets = new Map<string, Set<string>>();
+		for (const [participantId, expanded] of expandedMap) {
+			for (let i = 0; i < expanded.length - 1; i++) {
+				const key = `${expanded[i]}->${expanded[i + 1]}`;
+				let s = edgeUsageSets.get(key);
+				if (!s) {
+					s = new Set<string>();
+					edgeUsageSets.set(key, s);
+				}
+				s.add(participantId);
+			}
+		}
+		const edgeUsage = new Map<string, string[]>();
+		for (const [key, s] of edgeUsageSets) {
+			edgeUsage.set(key, [...s]);
+		}
 
-			const pointStr = waypoints.map((w) => `${w.x},${w.y}`).join(' ');
-			const last = waypoints[waypoints.length - 1];
+		// Step 3: Build slot map — for each participant+edge, their centered slot
+		// 1 player: 0, 2 players: -0.5/+0.5, 3 players: -1/0/+1, etc.
+		const playerSlots = new Map<string, Map<string, number>>();
+		for (const [edgeKey, pids] of edgeUsage) {
+			const count = Math.min(pids.length, MAX_PARALLEL);
+			for (let idx = 0; idx < pids.length; idx++) {
+				const slot = idx < MAX_PARALLEL ? computeSlot(idx, count) : 0;
+				let pMap = playerSlots.get(pids[idx]);
+				if (!pMap) {
+					pMap = new Map<string, number>();
+					playerSlots.set(pids[idx], pMap);
+				}
+				pMap.set(edgeKey, slot);
+			}
+		}
+
+		// Step 4: Build offset waypoints for each player
+		const paths: PlayerPath[] = [];
+
+		for (const p of participants) {
+			const expanded = expandedMap.get(p.id);
+			if (!expanded) continue;
+
+			const pSlots = playerSlots.get(p.id);
+			const points = buildPlayerWaypoints(
+				expanded,
+				nodeMap,
+				edgeMap,
+				(key) => pSlots?.get(key) ?? 0,
+				(key) => edgeUsage.get(key)?.length ?? 1,
+				PARALLEL_PATH_SPACING
+			);
+
+			if (points.length === 0) continue;
+
+			const pointStr = points.map((w) => `${w.x},${w.y}`).join(' ');
+			const last = points[points.length - 1];
 
 			paths.push({
 				id: p.id,

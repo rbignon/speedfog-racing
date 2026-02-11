@@ -9,6 +9,7 @@ import type {
   RoutedEdge,
   EdgeSegment,
 } from "./types";
+import { expandNodePath } from "./parallel";
 
 // =============================================================================
 // Types
@@ -212,24 +213,7 @@ export function pathToWaypoints(
   }
 
   // Expand path: fill gaps between non-adjacent nodes with BFS
-  const expanded: string[] = [nodeIds[0]];
-  for (let i = 0; i < nodeIds.length - 1; i++) {
-    const from = nodeIds[i];
-    const to = nodeIds[i + 1];
-    if (edgeMap.has(`${from}->${to}`)) {
-      expanded.push(to);
-    } else {
-      const bridge = bfsShortestPath(from, to, adjacency);
-      if (bridge) {
-        for (let j = 1; j < bridge.length; j++) {
-          expanded.push(bridge[j]);
-        }
-      } else {
-        // Unreachable — keep target node (waypoints will have a straight-line gap)
-        expanded.push(to);
-      }
-    }
-  }
+  const expanded = expandNodePath(nodeIds, edgeMap, adjacency);
 
   const waypoints: AnimationWaypoint[] = [];
   let cumDist = 0;

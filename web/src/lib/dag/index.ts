@@ -56,4 +56,7 @@ export {
   RACER_DOT_RADIUS,
   RACE_LOOP_DURATION_MS,
   HERO_RACER_COLORS,
+  PARALLEL_PATH_SPACING,
+  MAX_PARALLEL,
 } from "./constants";
+export { expandNodePath, buildPlayerWaypoints, computeSlot } from "./parallel";

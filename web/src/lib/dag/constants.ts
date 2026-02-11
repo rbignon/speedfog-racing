@@ -108,3 +108,13 @@ export const RACE_LOOP_DURATION_MS = 8000;
 
 /** Colors assigned to hero racers */
 export const HERO_RACER_COLORS = PLAYER_COLORS.slice(0, 4);
+
+// =============================================================================
+// Parallel path spacing (results DAG)
+// =============================================================================
+
+/** Perpendicular spacing between parallel player lines on shared edges (px) */
+export const PARALLEL_PATH_SPACING = 5;
+
+/** Max parallel lines before extra players overlap at center */
+export const MAX_PARALLEL = 5;
