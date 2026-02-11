@@ -150,7 +150,7 @@
 			</section>
 		{/if}
 
-		{#if !loadingRaces && liveRaces.length === 0 && upcomingRaces.length === 0}
+		{#if !loadingRaces && liveRaces.length === 0 && upcomingRaces.length === 0 && myRaces.length === 0}
 			<section class="public-races">
 				<div class="empty-hero">
 					<svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
