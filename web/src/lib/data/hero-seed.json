@@ -1,8 +1,8 @@
 {
   "version": "3.0",
   "seed": 563312642,
-  "total_layers": 16,
-  "total_nodes": 29,
+  "total_layers": 14,
+  "total_nodes": 27,
   "total_paths": 9,
   "nodes": {
     "chapel_start_4f96": {
@@ -213,27 +213,11 @@
       "tier": 15,
       "weight": 2
     },
-    "snowfield_hiddenpath_8ef0": {
-      "type": "mini_dungeon",
-      "display_name": "Hidden Path to the Haligtree",
-      "zones": ["snowfield_hiddenpath"],
-      "layer": 13,
-      "tier": 18,
-      "weight": 8
-    },
-    "liurnia_blackknifecatacombs_4eac": {
-      "type": "mini_dungeon",
-      "display_name": "Black Knife Catacombs",
-      "zones": ["liurnia_blackknifecatacombs"],
-      "layer": 14,
-      "tier": 19,
-      "weight": 4
-    },
     "haligtree_loretta_19ab": {
       "type": "final_boss",
       "display_name": "Loretta, Knight of the Haligtree",
       "zones": ["haligtree_loretta"],
-      "layer": 15,
+      "layer": 13,
       "tier": 18,
       "weight": 4
     }
@@ -300,14 +284,6 @@
     },
     {
       "from": "siofra_nokron_gargoyles_fd23",
-      "to": "snowfield_hiddenpath_8ef0"
-    },
-    {
-      "from": "snowfield_hiddenpath_8ef0",
-      "to": "liurnia_blackknifecatacombs_4eac"
-    },
-    {
-      "from": "liurnia_blackknifecatacombs_4eac",
       "to": "haligtree_loretta_19ab"
     }
   ]

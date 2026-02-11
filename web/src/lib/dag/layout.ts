@@ -228,6 +228,12 @@ function routeEdge(
   const absDy = Math.abs(dy);
   const diagDx = absDy; // 45-degree: horizontal distance = vertical distance
 
+  // If the vertical distance exceeds the horizontal gap, the 45-degree
+  // diagonal can't fit. Use a single straight segment instead.
+  if (diagDx >= totalDx) {
+    return [{ x1, y1, x2, y2 }];
+  }
+
   // Prefer starting the diagonal at 35% of horizontal span
   let diagStartX = x1 + totalDx * 0.35;
 
@@ -238,14 +244,22 @@ function routeEdge(
 
   const diagEndX = diagStartX + diagDx;
 
-  return [
-    // Horizontal departure
-    { x1, y1, x2: diagStartX, y2: y1 },
-    // 45-degree diagonal (always covers the full vertical distance)
-    { x1: diagStartX, y1, x2: diagEndX, y2 },
-    // Horizontal arrival
-    { x1: diagEndX, y1: y2, x2, y2 },
-  ];
+  const segments: EdgeSegment[] = [];
+
+  // Horizontal departure (skip if negligible)
+  if (diagStartX - x1 > 0.5) {
+    segments.push({ x1, y1, x2: diagStartX, y2: y1 });
+  }
+
+  // 45-degree diagonal
+  segments.push({ x1: diagStartX, y1, x2: diagEndX, y2 });
+
+  // Horizontal arrival (skip if negligible)
+  if (x2 - diagEndX > 0.5) {
+    segments.push({ x1: diagEndX, y1: y2, x2, y2 });
+  }
+
+  return segments;
 }
 
 // =============================================================================

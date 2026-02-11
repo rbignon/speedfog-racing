@@ -198,7 +198,7 @@
 						y2={seg.y2}
 						stroke={EDGE_COLOR}
 						stroke-width={EDGE_STROKE_WIDTH}
-						stroke-linecap="round"
+						stroke-linecap="butt"
 						opacity={EDGE_OPACITY}
 						class="edge-segment"
 						class:no-animation={prefersReducedMotion}
