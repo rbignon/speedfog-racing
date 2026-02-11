@@ -238,7 +238,8 @@ async def handle_status_update(
     if isinstance(msg.get("death_count"), int):
         participant.death_count = msg["death_count"]
 
-    # Set to playing if race is running — place in start zone
+    # Refresh race status (may have changed since auth, e.g. OPEN → RUNNING)
+    await db.refresh(participant.race)
     race = participant.race
     if race.status == RaceStatus.RUNNING and participant.status == ParticipantStatus.READY:
         participant.status = ParticipantStatus.PLAYING
@@ -339,7 +340,8 @@ async def handle_finished(db: AsyncSession, participant: Participant, msg: dict[
     await db.commit()
     logger.info(f"Participant finished: {participant.id}, igt={participant.igt_ms}ms")
 
-    # Check if all players finished
+    # Refresh race columns (status/version may be stale) + participants
+    await db.refresh(participant.race)
     await db.refresh(participant.race, ["participants"])
     all_finished = all(
         p.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED)
