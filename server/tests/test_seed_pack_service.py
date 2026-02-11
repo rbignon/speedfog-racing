@@ -38,7 +38,7 @@ class MockSeed:
     """Mock seed for testing."""
 
     id: uuid.UUID = field(default_factory=uuid.uuid4)
-    seed_number: int = 123456
+    seed_number: str = "abc123"
     pool_name: str = "standard"
     folder_path: str = "/test/seed"
     total_layers: int = 10
@@ -72,7 +72,7 @@ class MockRace:
 def seed_folder():
     """Create a temporary seed folder with mock content."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        seed_dir = Path(tmpdir) / "seed_123456"
+        seed_dir = Path(tmpdir) / "seed_abc123"
         seed_dir.mkdir()
 
         # Create mock seed content matching real seed structure
@@ -176,14 +176,14 @@ def test_generate_participant_seed_pack_contents(
         names = zf.namelist()
 
         # Check for expected files
-        assert "speedfog_123456/lib/speedfog_race_mod.dll" in names
-        assert "speedfog_123456/ModEngine/config_eldenring.toml" in names
-        assert "speedfog_123456/graph.json" in names
-        assert "speedfog_123456/launch_speedfog.bat" in names
-        assert "speedfog_123456/lib/speedfog_race.toml" in names
+        assert "speedfog_abc123/lib/speedfog_race_mod.dll" in names
+        assert "speedfog_abc123/ModEngine/config_eldenring.toml" in names
+        assert "speedfog_abc123/graph.json" in names
+        assert "speedfog_abc123/launch_speedfog.bat" in names
+        assert "speedfog_abc123/lib/speedfog_race.toml" in names
 
         # Check config content
-        config_content = zf.read("speedfog_123456/lib/speedfog_race.toml").decode()
+        config_content = zf.read("speedfog_abc123/lib/speedfog_race.toml").decode()
         assert mock_participant.mod_token in config_content
 
 
@@ -268,7 +268,7 @@ async def db_user(async_db):
 async def db_seed(async_db, seed_folder):
     """Create a seed record pointing to the mock folder."""
     seed = Seed(
-        seed_number=123456,
+        seed_number="abc123",
         pool_name="standard",
         graph_json={"total_layers": 10, "nodes": []},
         total_layers=10,

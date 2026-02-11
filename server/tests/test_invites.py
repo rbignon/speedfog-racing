@@ -66,7 +66,7 @@ async def race_with_invite(async_session, organizer):
     async with async_session() as db:
         # Create seed
         seed = Seed(
-            seed_number=999,
+            seed_number="s999",
             pool_name="standard",
             graph_json={"total_layers": 10},
             total_layers=10,

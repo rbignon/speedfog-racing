@@ -43,10 +43,9 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
         if not seed_dir.name.startswith("seed_"):
             continue
 
-        # Extract seed number from directory name (e.g., seed_123456 -> 123456)
-        try:
-            seed_number = int(seed_dir.name.split("_")[1])
-        except (IndexError, ValueError):
+        # Extract seed slug from directory name (e.g., seed_a1b2c3d4 -> a1b2c3d4)
+        seed_number = seed_dir.name.removeprefix("seed_")
+        if not seed_number:
             logger.warning(f"Invalid seed directory name: {seed_dir.name}")
             continue
 

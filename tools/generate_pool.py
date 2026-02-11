@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 
@@ -225,7 +226,7 @@ def process_seed(
     seed_dir: Path,
     dll_source: Path,
     output_pool_dir: Path,
-    seed_number: int,
+    seed_slug: str,
 ) -> bool:
     """Post-process a generated seed: add DLL, modify config, move to output.
 
@@ -239,13 +240,9 @@ def process_seed(
     if not add_dll_to_config(seed_dir):
         return False
 
-    # Move to final location with seed_N naming
-    final_name = f"seed_{seed_number}"
+    # Move to final location with seed_<uuid> naming
+    final_name = f"seed_{seed_slug}"
     final_path = output_pool_dir / final_name
-
-    # Remove existing if present
-    if final_path.exists():
-        shutil.rmtree(final_path)
 
     try:
         shutil.move(str(seed_dir), str(final_path))
@@ -299,22 +296,13 @@ def main() -> int:
     print(f"  Output: {output_pool_dir}")
     print()
 
-    # Find the next seed number (continue from existing)
-    existing_seeds = []
-    for d in output_pool_dir.iterdir():
-        if d.is_dir() and d.name.startswith("seed_"):
-            parts = d.name.split("_", 1)
-            if len(parts) == 2 and parts[1].isdigit():
-                existing_seeds.append(int(parts[1]))
-    start_number = max(existing_seeds, default=0) + 1
-
     succeeded = 0
     failed = 0
     failed_dir = args.output / f"{args.pool}_failed"
 
     for i in range(args.count):
-        seed_number = start_number + i
-        print(f"[{i + 1}/{args.count}] Generating seed_{seed_number}...")
+        seed_slug = uuid.uuid4().hex[:12]
+        print(f"[{i + 1}/{args.count}] Generating seed_{seed_slug}...")
 
         # Use a temporary directory for speedfog output — managed manually
         # so we can preserve it on failure for investigation.
@@ -337,8 +325,8 @@ def main() -> int:
                 continue
 
             # Process and move to output
-            if process_seed(seed_dir, dll_source, output_pool_dir, seed_number):
-                print(f"  Success: {output_pool_dir / f'seed_{seed_number}'}")
+            if process_seed(seed_dir, dll_source, output_pool_dir, seed_slug):
+                print(f"  Success: {output_pool_dir / f'seed_{seed_slug}'}")
                 succeeded += 1
                 ok = True
             else:
@@ -350,7 +338,7 @@ def main() -> int:
             elif temp_path.exists() and any(temp_path.iterdir()):
                 # Preserve failed seed for investigation
                 failed_dir.mkdir(parents=True, exist_ok=True)
-                fail_dest = failed_dir / f"seed_{seed_number}"
+                fail_dest = failed_dir / f"seed_{seed_slug}"
                 if fail_dest.exists():
                     shutil.rmtree(fail_dest)
                 shutil.move(str(temp_path), str(fail_dest))

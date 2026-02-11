@@ -79,7 +79,7 @@ class Seed(Base):
     __tablename__ = "seeds"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    seed_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    seed_number: Mapped[str] = mapped_column(String(50), nullable=False)
     pool_name: Mapped[str] = mapped_column(String(50), nullable=False)  # "standard", "sprint"
     graph_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     total_layers: Mapped[int] = mapped_column(Integer, nullable=False)

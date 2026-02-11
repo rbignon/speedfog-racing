@@ -79,7 +79,7 @@ def seed_pool_dir():
         pool_dir = Path(tmpdir) / "standard"
         pool_dir.mkdir()
 
-        seed_dir = pool_dir / "seed_123456"
+        seed_dir = pool_dir / "seed_abc123"
         seed_dir.mkdir()
         (seed_dir / "graph.json").write_text(json.dumps({"total_layers": 10, "nodes": []}))
 
@@ -165,7 +165,7 @@ async def test_stats_works_for_admin(test_client, admin_user, async_session):
     # Add a seed directly to database
     async with async_session() as db:
         seed = Seed(
-            seed_number=999,
+            seed_number="s999",
             pool_name="standard",
             graph_json={"total_layers": 5},
             total_layers=5,

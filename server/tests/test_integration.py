@@ -167,7 +167,7 @@ def integration_db():
 def seed_folder():
     """Create a temporary seed folder with mock content."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        seed_dir = Path(tmpdir) / "seed_999999"
+        seed_dir = Path(tmpdir) / "seed_a1b2c3d4"
         seed_dir.mkdir()
 
         (seed_dir / "lib").mkdir()
@@ -250,7 +250,7 @@ def race_with_participants(integration_db, integration_client, seed_folder):
 
             # Create seed
             seed = Seed(
-                seed_number=999999,
+                seed_number="s999999",
                 pool_name="standard",
                 graph_json={
                     "version": "4.0",

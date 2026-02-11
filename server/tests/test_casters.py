@@ -75,7 +75,7 @@ async def race_id(async_session, organizer):
     """Create a race directly in the DB and return its ID."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=777777,
+            seed_number="s777777",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -305,7 +305,7 @@ async def seed_for_create(async_session):
     """Create an available seed for race creation tests."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=888888,
+            seed_number="s888888",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,

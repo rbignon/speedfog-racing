@@ -77,7 +77,7 @@ async def player(async_session):
 def seed_folder_context():
     """Create a temporary seed folder with mock content."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        seed_dir = Path(tmpdir) / "seed_123456"
+        seed_dir = Path(tmpdir) / "seed_abc123"
         seed_dir.mkdir()
 
         # Create mock seed content (must match real seed structure with lib/)
@@ -98,7 +98,7 @@ async def seed(async_session):
     """Create an available seed."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=123456,
+            seed_number="abc123",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -116,7 +116,7 @@ async def seed_with_folder(async_session, seed_folder_context):
     """Create an available seed with a real folder."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=123456,
+            seed_number="abc123",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -226,7 +226,7 @@ async def test_list_races_filter_by_status(test_client, organizer, async_session
     # Create seeds and races with different statuses
     async with async_session() as db:
         seed1 = Seed(
-            seed_number=1,
+            seed_number="s1",
             pool_name="standard",
             graph_json={},
             total_layers=10,
@@ -234,7 +234,7 @@ async def test_list_races_filter_by_status(test_client, organizer, async_session
             status=SeedStatus.CONSUMED,
         )
         seed2 = Seed(
-            seed_number=2,
+            seed_number="s2",
             pool_name="standard",
             graph_json={},
             total_layers=10,
@@ -727,7 +727,7 @@ async def test_reset_race_from_running(test_client, organizer, player, async_ses
     """Resetting a RUNNING race sets status to open and clears participant progress."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=900,
+            seed_number="s900",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -789,7 +789,7 @@ async def test_reset_race_from_finished(test_client, organizer, player, async_se
     """Resetting a FINISHED race sets status to open and clears participant progress."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=901,
+            seed_number="s901",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -859,7 +859,7 @@ async def test_reset_race_from_open_fails(test_client, organizer, async_session)
     """Resetting an OPEN race returns 400."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=902,
+            seed_number="s902",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -893,7 +893,7 @@ async def test_reset_race_non_organizer(test_client, organizer, player, async_se
     """Non-organizer cannot reset a race."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=903,
+            seed_number="s903",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -932,7 +932,7 @@ async def test_finish_running_race(test_client, organizer, player, async_session
     """Force-finishing a RUNNING race sets status to finished and preserves progress."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=910,
+            seed_number="s910",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -988,7 +988,7 @@ async def test_finish_open_race_fails(test_client, organizer, async_session):
     """Force-finishing an OPEN race returns 400."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=911,
+            seed_number="s911",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -1022,7 +1022,7 @@ async def test_finish_race_non_organizer(test_client, organizer, player, async_s
     """Non-organizer cannot force-finish a race."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=912,
+            seed_number="s912",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -1101,7 +1101,7 @@ async def test_delete_race_releases_seed(test_client, organizer, async_session):
     """Deleting a race releases the seed back to available status."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=920,
+            seed_number="s920",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,
@@ -1143,7 +1143,7 @@ async def test_delete_started_race_keeps_seed_consumed(test_client, organizer, a
     """Deleting a race that was started keeps the seed consumed."""
     async with async_session() as db:
         seed = Seed(
-            seed_number=921,
+            seed_number="s921",
             pool_name="standard",
             graph_json={"total_layers": 10, "nodes": []},
             total_layers=10,

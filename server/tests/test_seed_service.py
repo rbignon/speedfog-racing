@@ -49,13 +49,13 @@ def seed_pool_dir():
         pool_dir = Path(tmpdir) / "standard"
         pool_dir.mkdir()
 
-        # Create seed_123456
-        seed1_dir = pool_dir / "seed_123456"
+        # Create seed_abc123
+        seed1_dir = pool_dir / "seed_abc123"
         seed1_dir.mkdir()
         (seed1_dir / "graph.json").write_text(json.dumps({"total_layers": 10, "nodes": []}))
 
-        # Create seed_789012
-        seed2_dir = pool_dir / "seed_789012"
+        # Create seed_def456
+        seed2_dir = pool_dir / "seed_def456"
         seed2_dir.mkdir()
         (seed2_dir / "graph.json").write_text(json.dumps({"total_layers": 12, "nodes": []}))
 
@@ -112,7 +112,7 @@ async def test_scan_pool_creates_seeds(async_db, seed_pool_dir):
 
         assert len(seeds) == 2
         seed_numbers = {s.seed_number for s in seeds}
-        assert seed_numbers == {123456, 789012}
+        assert seed_numbers == {"abc123", "def456"}
 
         for seed in seeds:
             assert seed.pool_name == "standard"
