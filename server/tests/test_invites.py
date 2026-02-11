@@ -242,8 +242,10 @@ async def non_organizer(async_session):
 
 
 @pytest.mark.asyncio
-async def test_race_detail_includes_pending_invites(test_client, race_with_invite, organizer):
-    """GET race detail includes pending invites."""
+async def test_race_detail_includes_pending_invites_with_token_for_organizer(
+    test_client, race_with_invite, organizer
+):
+    """GET race detail includes pending invites with token for organizer."""
     race = race_with_invite["race"]
     async with test_client as client:
         response = await client.get(
@@ -258,8 +260,26 @@ async def test_race_detail_includes_pending_invites(test_client, race_with_invit
         assert inv["twitch_username"] == "invited_player"
         assert "id" in inv
         assert "created_at" in inv
-        # Token must NOT be exposed
-        assert "token" not in inv
+        # Organizer sees the token
+        assert inv["token"] == "test_invite_token"
+
+
+@pytest.mark.asyncio
+async def test_race_detail_hides_invite_token_for_non_organizer(
+    test_client, race_with_invite, non_organizer
+):
+    """GET race detail hides invite token for non-organizer."""
+    race = race_with_invite["race"]
+    async with test_client as client:
+        response = await client.get(
+            f"/api/races/{race.id}",
+            headers={"Authorization": f"Bearer {non_organizer.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["pending_invites"]) == 1
+        inv = data["pending_invites"][0]
+        assert inv["token"] is None
 
 
 @pytest.mark.asyncio

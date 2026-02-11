@@ -75,6 +75,7 @@ export interface PendingInvite {
   id: string;
   twitch_username: string;
   created_at: string;
+  token: string | null;
 }
 
 export interface RaceDetail extends Race {

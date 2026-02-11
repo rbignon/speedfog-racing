@@ -60,19 +60,21 @@ from speedfog_racing.websocket.manager import manager
 router = APIRouter()
 
 
-def _race_detail_response(race: Race) -> RaceDetailResponse:
+def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailResponse:
     """Convert Race model to RaceDetailResponse."""
     casters = (
         [caster_response(c) for c in race.casters]
         if hasattr(race, "casters") and race.casters is not None
         else []
     )
+    is_organizer = user is not None and race.organizer_id == user.id
     pending_invites = (
         [
             PendingInviteResponse(
                 id=inv.id,
                 twitch_username=inv.twitch_username,
                 created_at=inv.created_at,
+                token=inv.token if is_organizer else None,
             )
             for inv in race.invites
             if not inv.accepted
@@ -261,13 +263,13 @@ async def list_races(
 async def get_race(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _user: User | None = Depends(get_current_user_optional),
+    user: User | None = Depends(get_current_user_optional),
 ) -> RaceDetailResponse:
     """Get race details with participants and casters."""
     race = await _get_race_or_404(
         db, race_id, load_participants=True, load_casters=True, load_invites=True
     )
-    return _race_detail_response(race)
+    return _race_detail_response(race, user=user)
 
 
 @router.post("/{race_id}/participants", response_model=AddParticipantResponse)

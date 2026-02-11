@@ -8,6 +8,16 @@
 	}
 
 	let { invite, canRemove = false, onRemove }: Props = $props();
+
+	let copied = $state(false);
+
+	async function copyInviteLink() {
+		if (!invite.token) return;
+		const url = `${window.location.origin}/invite/${invite.token}`;
+		await navigator.clipboard.writeText(url);
+		copied = true;
+		setTimeout(() => (copied = false), 2000);
+	}
 </script>
 
 <div class="invite-card">
@@ -24,6 +34,36 @@
 		<span class="name">{invite.twitch_username}</span>
 		<span class="status-text">Invited</span>
 	</div>
+	{#if invite.token}
+		<button
+			class="copy-btn"
+			class:copied
+			onclick={copyInviteLink}
+			title={copied ? 'Copied!' : 'Copy invite link'}
+		>
+			{#if copied}
+				<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+					<path
+						d="M3 8.5l3 3 7-7"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						fill="none"
+					/>
+				</svg>
+			{:else}
+				<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+					<path
+						d="M5 2H3a1 1 0 00-1 1v10a1 1 0 001 1h7a1 1 0 001-1v-1M6 2a1 1 0 011-1h6a1 1 0 011 1v10a1 1 0 01-1 1H7a1 1 0 01-1-1V2z"
+						stroke="currentColor"
+						stroke-width="1.3"
+						fill="none"
+					/>
+				</svg>
+			{/if}
+		</button>
+	{/if}
 	{#if canRemove}
 		<button class="remove-btn" onclick={onRemove} title="Revoke invite">&times;</button>
 	{/if}
@@ -70,6 +110,28 @@
 		font-size: var(--font-size-sm);
 		color: var(--color-text-disabled);
 		font-style: italic;
+	}
+
+	.copy-btn {
+		background: none;
+		border: none;
+		color: var(--color-text-disabled);
+		cursor: pointer;
+		padding: 0.2rem;
+		line-height: 1;
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: color var(--transition);
+	}
+
+	.copy-btn:hover {
+		color: var(--color-purple);
+	}
+
+	.copy-btn.copied {
+		color: var(--color-success);
 	}
 
 	.remove-btn {

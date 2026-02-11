@@ -106,11 +106,12 @@ class PoolConfig(BaseModel):
 
 
 class PendingInviteResponse(BaseModel):
-    """Pending invite information (no token exposed)."""
+    """Pending invite information. Token only included for the organizer."""
 
     id: UUID
     twitch_username: str
     created_at: datetime
+    token: str | None = None
 
 
 class RaceDetailResponse(BaseModel):
