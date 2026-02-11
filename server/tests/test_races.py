@@ -1136,3 +1136,45 @@ async def test_delete_race_releases_seed(test_client, organizer, async_session):
         result = await db.execute(select(Seed).where(Seed.id == seed_id))
         seed = result.scalar_one()
         assert seed.status == SeedStatus.AVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_delete_started_race_keeps_seed_consumed(test_client, organizer, async_session):
+    """Deleting a race that was started keeps the seed consumed."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=921,
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/921",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Started Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+        seed_id = seed.id
+
+    async with test_client as client:
+        response = await client.delete(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 204
+
+    # Seed should stay consumed — players already saw it
+    async with async_session() as db:
+        from sqlalchemy import select
+
+        result = await db.execute(select(Seed).where(Seed.id == seed_id))
+        seed = result.scalar_one()
+        assert seed.status == SeedStatus.CONSUMED

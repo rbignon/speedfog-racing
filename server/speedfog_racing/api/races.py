@@ -738,8 +738,10 @@ async def delete_race(
     # Delete invites explicitly (belt-and-suspenders with ORM cascade)
     await db.execute(delete(Invite).where(Invite.race_id == race_id))
 
-    # Release seed back to pool
-    if race.seed_id:
+    # Release seed back to pool only if the race was never started.
+    # Started races (RUNNING/FINISHED) keep their seed consumed so it
+    # cannot be reused — players have already seen it.
+    if race.seed_id and race.status in (RaceStatus.DRAFT, RaceStatus.OPEN):
         result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
         seed = result.scalar_one_or_none()
         if seed:
