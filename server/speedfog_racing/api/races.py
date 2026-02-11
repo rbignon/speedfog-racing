@@ -41,6 +41,7 @@ from speedfog_racing.schemas import (
     DownloadInfo,
     GenerateSeedPacksResponse,
     InviteResponse,
+    PendingInviteResponse,
     PoolConfig,
     RaceDetailResponse,
     RaceListResponse,
@@ -66,6 +67,19 @@ def _race_detail_response(race: Race) -> RaceDetailResponse:
         if hasattr(race, "casters") and race.casters is not None
         else []
     )
+    pending_invites = (
+        [
+            PendingInviteResponse(
+                id=inv.id,
+                twitch_username=inv.twitch_username,
+                created_at=inv.created_at,
+            )
+            for inv in race.invites
+            if not inv.accepted
+        ]
+        if hasattr(race, "invites") and race.invites is not None
+        else []
+    )
     pool_config = None
     if race.seed:
         raw = get_pool_config(race.seed.pool_name)
@@ -83,6 +97,7 @@ def _race_detail_response(race: Race) -> RaceDetailResponse:
         seed_total_layers=race.seed.total_layers if race.seed else None,
         participants=[participant_response(p) for p in race.participants],
         casters=casters,
+        pending_invites=pending_invites,
         pool_config=pool_config,
     )
 
@@ -92,6 +107,7 @@ async def _get_race_or_404(
     race_id: UUID,
     load_participants: bool = False,
     load_casters: bool = False,
+    load_invites: bool = False,
 ) -> Race:
     """Get race by ID or raise 404."""
     query = select(Race).where(Race.id == race_id)
@@ -100,6 +116,8 @@ async def _get_race_or_404(
         options.append(selectinload(Race.participants).selectinload(Participant.user))
     if load_casters:
         options.append(selectinload(Race.casters).selectinload(Caster.user))
+    if load_invites:
+        options.append(selectinload(Race.invites))
     query = query.options(*options)
 
     result = await db.execute(query)
@@ -246,7 +264,9 @@ async def get_race(
     _user: User | None = Depends(get_current_user_optional),
 ) -> RaceDetailResponse:
     """Get race details with participants and casters."""
-    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+    race = await _get_race_or_404(
+        db, race_id, load_participants=True, load_casters=True, load_invites=True
+    )
     return _race_detail_response(race)
 
 
@@ -411,6 +431,47 @@ async def remove_participant(
         )
 
     await db.delete(participant)
+    await db.commit()
+
+
+@router.delete("/{race_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_invite(
+    race_id: UUID,
+    invite_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Revoke a pending invite from a race."""
+    race = await _get_race_or_404(db, race_id)
+    _require_organizer(race, user)
+
+    if race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot revoke invites for a race that has started",
+        )
+
+    result = await db.execute(
+        select(Invite).where(
+            Invite.id == invite_id,
+            Invite.race_id == race_id,
+        )
+    )
+    invite = result.scalar_one_or_none()
+
+    if not invite:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invite not found",
+        )
+
+    if invite.accepted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot revoke an accepted invite",
+        )
+
+    await db.delete(invite)
     await db.commit()
 
 
@@ -652,7 +713,7 @@ async def delete_race(
 
     await manager.close_room(race_id, code=4001, reason="Race deleted")
 
-    # Delete invites (no cascade from Race)
+    # Delete invites explicitly (belt-and-suspenders with ORM cascade)
     await db.execute(delete(Invite).where(Invite.race_id == race_id))
 
     # Release seed back to pool

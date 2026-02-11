@@ -105,6 +105,14 @@ class PoolConfig(BaseModel):
     remove_requirements: bool | None = None
 
 
+class PendingInviteResponse(BaseModel):
+    """Pending invite information (no token exposed)."""
+
+    id: UUID
+    twitch_username: str
+    created_at: datetime
+
+
 class RaceDetailResponse(BaseModel):
     """Detailed race information with participants."""
 
@@ -121,6 +129,7 @@ class RaceDetailResponse(BaseModel):
     seed_total_layers: int | None
     participants: list[ParticipantResponse]
     casters: list[CasterResponse] = []
+    pending_invites: list[PendingInviteResponse] = []
     pool_config: PoolConfig | None = None
 
 

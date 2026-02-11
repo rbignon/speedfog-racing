@@ -1,5 +1,7 @@
 """Test invite API endpoints."""
 
+import uuid
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -215,3 +217,164 @@ async def test_cannot_accept_invite_for_started_race(
         )
         assert response.status_code == 400
         assert "already started" in response.json()["detail"]
+
+
+# =============================================================================
+# Pending Invite Visibility Tests
+# =============================================================================
+
+
+@pytest.fixture
+async def non_organizer(async_session):
+    """Create a non-organizer user."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="other123",
+            twitch_username="other_user",
+            twitch_display_name="Other User",
+            api_token="other_token",
+            role=UserRole.USER,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+@pytest.mark.asyncio
+async def test_race_detail_includes_pending_invites(test_client, race_with_invite, organizer):
+    """GET race detail includes pending invites."""
+    race = race_with_invite["race"]
+    async with test_client as client:
+        response = await client.get(
+            f"/api/races/{race.id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "pending_invites" in data
+        assert len(data["pending_invites"]) == 1
+        inv = data["pending_invites"][0]
+        assert inv["twitch_username"] == "invited_player"
+        assert "id" in inv
+        assert "created_at" in inv
+        # Token must NOT be exposed
+        assert "token" not in inv
+
+
+@pytest.mark.asyncio
+async def test_race_detail_excludes_accepted_invites(
+    test_client, async_session, race_with_invite, organizer, invited_user
+):
+    """Accepted invites are not shown in pending_invites."""
+    race = race_with_invite["race"]
+    invite = race_with_invite["invite"]
+
+    # Mark invite as accepted
+    async with async_session() as db:
+        invite.accepted = True
+        db.add(invite)
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get(
+            f"/api/races/{race.id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["pending_invites"]) == 0
+
+
+# =============================================================================
+# Revoke Invite Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_revoke_invite_success(test_client, race_with_invite, organizer):
+    """Organizer can revoke a pending invite."""
+    race = race_with_invite["race"]
+    invite = race_with_invite["invite"]
+    async with test_client as client:
+        response = await client.delete(
+            f"/api/races/{race.id}/invites/{invite.id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 204
+
+        # Verify invite is gone from race detail
+        detail = await client.get(
+            f"/api/races/{race.id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert len(detail.json()["pending_invites"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_revoke_invite_non_organizer_forbidden(test_client, race_with_invite, non_organizer):
+    """Non-organizer cannot revoke invites."""
+    race = race_with_invite["race"]
+    invite = race_with_invite["invite"]
+    async with test_client as client:
+        response = await client.delete(
+            f"/api/races/{race.id}/invites/{invite.id}",
+            headers={"Authorization": f"Bearer {non_organizer.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_revoke_invite_started_race_rejected(
+    test_client, async_session, race_with_invite, organizer
+):
+    """Cannot revoke invites on a started race."""
+    race = race_with_invite["race"]
+    invite = race_with_invite["invite"]
+
+    async with async_session() as db:
+        race.status = RaceStatus.RUNNING
+        db.add(race)
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.delete(
+            f"/api/races/{race.id}/invites/{invite.id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_revoke_invite_not_found(test_client, race_with_invite, organizer):
+    """Revoking a nonexistent invite returns 404."""
+    race = race_with_invite["race"]
+    fake_id = uuid.uuid4()
+    async with test_client as client:
+        response = await client.delete(
+            f"/api/races/{race.id}/invites/{fake_id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_revoke_accepted_invite_rejected(
+    test_client, async_session, race_with_invite, organizer
+):
+    """Cannot revoke an invite that has already been accepted."""
+    race = race_with_invite["race"]
+    invite = race_with_invite["invite"]
+
+    async with async_session() as db:
+        invite.accepted = True
+        db.add(invite)
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.delete(
+            f"/api/races/{race.id}/invites/{invite.id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "accepted" in response.json()["detail"].lower()

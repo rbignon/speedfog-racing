@@ -119,6 +119,9 @@ class Race(Base):
     casters: Mapped[list["Caster"]] = relationship(
         back_populates="race", cascade="all, delete-orphan"
     )
+    invites: Mapped[list["Invite"]] = relationship(
+        back_populates="race", cascade="all, delete-orphan"
+    )
 
 
 class Participant(Base):
@@ -192,4 +195,4 @@ class Invite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    race: Mapped["Race"] = relationship()
+    race: Mapped["Race"] = relationship(back_populates="invites")

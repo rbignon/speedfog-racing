@@ -71,10 +71,17 @@ export interface PoolConfig {
   remove_requirements: boolean | null;
 }
 
+export interface PendingInvite {
+  id: string;
+  twitch_username: string;
+  created_at: string;
+}
+
 export interface RaceDetail extends Race {
   seed_total_layers: number | null;
   participants: Participant[];
   casters: Caster[];
+  pending_invites: PendingInvite[];
   pool_config: PoolConfig | null;
 }
 
@@ -429,6 +436,28 @@ export async function acceptInvite(
     headers: getAuthHeaders(),
   });
   return handleResponse<AcceptInviteResponse>(response);
+}
+
+/**
+ * Revoke a pending invite.
+ */
+export async function deleteInvite(
+  raceId: string,
+  inviteId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/races/${raceId}/invites/${inviteId}`,
+    {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    },
+  );
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail);
+  }
 }
 
 // =============================================================================

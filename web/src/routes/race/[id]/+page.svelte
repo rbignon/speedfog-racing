@@ -6,6 +6,7 @@
 
 	import SpectatorCount from '$lib/components/SpectatorCount.svelte';
 	import ParticipantCard from '$lib/components/ParticipantCard.svelte';
+	import InviteCard from '$lib/components/InviteCard.svelte';
 	import ParticipantSearch from '$lib/components/ParticipantSearch.svelte';
 	import CasterList from '$lib/components/CasterList.svelte';
 	import RaceControls from '$lib/components/RaceControls.svelte';
@@ -15,7 +16,13 @@
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import { MetroDag, MetroDagBlurred, MetroDagLive, MetroDagResults } from '$lib/dag';
 	import { parseDagGraph } from '$lib/dag/types';
-	import { downloadMySeedPack, removeParticipant, fetchRace, type RaceDetail } from '$lib/api';
+	import {
+		downloadMySeedPack,
+		removeParticipant,
+		deleteInvite,
+		fetchRace,
+		type RaceDetail
+	} from '$lib/api';
 
 	let downloading = $state(false);
 	let downloadError = $state<string | null>(null);
@@ -136,6 +143,16 @@
 		}
 	}
 
+	async function handleRevokeInvite(inviteId: string, username: string) {
+		if (!confirm(`Revoke invite for ${username}?`)) return;
+		try {
+			await deleteInvite(initialRace.id, inviteId);
+			initialRace = await fetchRace(initialRace.id);
+		} catch (e) {
+			console.error('Failed to revoke invite:', e);
+		}
+	}
+
 	function handleRaceUpdated(updated: RaceDetail) {
 		initialRace = updated;
 	}
@@ -195,6 +212,19 @@
 						/>
 					{/each}
 				</div>
+
+				{#if initialRace.pending_invites.length > 0}
+					<div class="invite-list">
+						{#each initialRace.pending_invites as invite (invite.id)}
+							<InviteCard
+								{invite}
+								canRemove={isOrganizer}
+								onRemove={() =>
+									handleRevokeInvite(invite.id, invite.twitch_username)}
+							/>
+						{/each}
+					</div>
+				{/if}
 
 				{#if isOrganizer}
 					{#if showInviteSearch}
@@ -348,6 +378,13 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		overflow-y: auto;
+	}
+
+	.invite-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
 	}
 
 	.invite-btn {
