@@ -410,9 +410,6 @@
 		margin: 1rem auto;
 		max-width: 400px;
 		text-align: center;
-		background: var(--color-surface);
-		border-radius: var(--radius-lg);
-		border: 1px solid var(--color-border);
 	}
 
 	.empty-icon {
