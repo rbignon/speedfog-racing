@@ -7,7 +7,7 @@ description = "Fast-paced race with minimal exploration"
 
 [run]
 seed = 0  # Auto-reroll until valid DAG found
-run_complete_message = "RUN COMPLETE GGWP"
+run_complete_message = "RUN COMPLETE GG"
 
 [budget]
 total_weight = 20
@@ -50,18 +50,18 @@ messmerskindling = true
 
 [care_package]
 enabled = true
-weapon_upgrade = 12
-weapons = 2
-shields = 1
-catalysts = 1
-talismans = 2
-sorceries = 3
-incantations = 3
-head_armor = 1
-body_armor = 1
-arm_armor = 1
-leg_armor = 1
-crystal_tears = 3
+weapon_upgrade = 15
+weapons = 5
+shields = 2
+catalysts = 2
+talismans = 4
+sorceries = 5
+incantations = 5
+head_armor = 2
+body_armor = 2
+arm_armor = 2
+leg_armor = 2
+crystal_tears = 5
 
 [item_randomizer]
 enabled = true

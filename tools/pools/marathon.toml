@@ -7,7 +7,7 @@ description = "Extended race through the Lands Between"
 
 [run]
 seed = 0  # Auto-reroll until valid DAG found
-run_complete_message = "RUN COMPLETE GGWP"
+run_complete_message = "RUN COMPLETE GG"
 
 [budget]
 total_weight = 50
@@ -19,10 +19,10 @@ bosses = 8
 mini_dungeons = 8
 
 [structure]
-max_parallel_paths = 3
-min_layers = 25
-max_layers = 20
-final_tier = 23
+max_parallel_paths = 4
+min_layers = 20
+max_layers = 25
+final_tier = 21
 split_probability = 0.6
 merge_probability = 0.6
 max_branches = 4
@@ -52,17 +52,17 @@ messmerskindling = true
 [care_package]
 enabled = true
 weapon_upgrade = 6
-weapons = 2
-shields = 1
-catalysts = 1
-talismans = 2
-sorceries = 3
-incantations = 3
-head_armor = 1
-body_armor = 1
-arm_armor = 1
-leg_armor = 1
-crystal_tears = 3
+weapons = 5
+shields = 2
+catalysts = 2
+talismans = 4
+sorceries = 5
+incantations = 5
+head_armor = 2
+body_armor = 2
+arm_armor = 2
+leg_armor = 2
+crystal_tears = 5
 
 [item_randomizer]
 enabled = true
