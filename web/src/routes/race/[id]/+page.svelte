@@ -60,6 +60,8 @@
 	let raceName = $derived(liveRace?.name ?? initialRace.name);
 	let raceStatus = $derived(liveRace?.status ?? initialRace.status);
 	let totalLayers = $derived(liveSeed?.total_layers ?? initialRace.seed_total_layers);
+	let totalNodes = $derived(liveSeed?.total_nodes ?? initialRace.seed_total_nodes);
+	let totalPaths = $derived(liveSeed?.total_paths ?? initialRace.seed_total_paths);
 
 	// Build node ID → display name map for leaderboard zone labels
 	let zoneNames: Map<string, string> | null = $derived.by(() => {
@@ -291,11 +293,11 @@
 			<RaceStats participants={raceStore.leaderboard} />
 		{:else if liveSeed?.graph_json}
 			<MetroDag graphJson={liveSeed.graph_json} />
-		{:else if liveSeed?.total_nodes && liveSeed?.total_paths && totalLayers}
+		{:else if totalNodes && totalPaths && totalLayers}
 			<MetroDagBlurred
 				{totalLayers}
-				totalNodes={liveSeed.total_nodes}
-				totalPaths={liveSeed.total_paths}
+				{totalNodes}
+				{totalPaths}
 			/>
 		{:else if totalLayers}
 			<div class="dag-placeholder">

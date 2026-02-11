@@ -80,6 +80,8 @@ export interface PendingInvite {
 
 export interface RaceDetail extends Race {
   seed_total_layers: number | null;
+  seed_total_nodes: number | null;
+  seed_total_paths: number | null;
   participants: Participant[];
   casters: Caster[];
   pending_invites: PendingInvite[];

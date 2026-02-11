@@ -128,6 +128,8 @@ class RaceDetailResponse(BaseModel):
     started_at: datetime | None = None
     participant_count: int
     seed_total_layers: int | None
+    seed_total_nodes: int | None = None
+    seed_total_paths: int | None = None
     participants: list[ParticipantResponse]
     casters: list[CasterResponse] = []
     pending_invites: list[PendingInviteResponse] = []

@@ -60,6 +60,22 @@ from speedfog_racing.websocket.manager import manager
 router = APIRouter()
 
 
+def _seed_total_nodes(seed: Seed) -> int:
+    """Compute total node count from graph_json."""
+    gj = seed.graph_json or {}
+    total = gj.get("total_nodes")
+    if total is not None:
+        return int(total)
+    nodes = gj.get("nodes", {})
+    return len(nodes) if isinstance(nodes, dict) else 0
+
+
+def _seed_total_paths(seed: Seed) -> int:
+    """Compute total path count from graph_json."""
+    gj = seed.graph_json or {}
+    return int(gj.get("total_paths", 0))
+
+
 def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailResponse:
     """Convert Race model to RaceDetailResponse."""
     casters = (
@@ -97,6 +113,8 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         started_at=race.started_at,
         participant_count=len(race.participants),
         seed_total_layers=race.seed.total_layers if race.seed else None,
+        seed_total_nodes=_seed_total_nodes(race.seed) if race.seed else None,
+        seed_total_paths=_seed_total_paths(race.seed) if race.seed else None,
         participants=[participant_response(p) for p in race.participants],
         casters=casters,
         pending_invites=pending_invites,
