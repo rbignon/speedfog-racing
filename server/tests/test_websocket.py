@@ -19,6 +19,7 @@ from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     AuthOkMessage,
     EventFlagMessage,
+    ExitInfo,
     LeaderboardUpdateMessage,
     ParticipantInfo,
     PingMessage,
@@ -27,6 +28,7 @@ from speedfog_racing.websocket.schemas import (
     RaceStateMessage,
     RaceStatusChangeMessage,
     SeedInfo,
+    ZoneUpdateMessage,
 )
 
 # --- Mock Models ---
@@ -262,6 +264,45 @@ class TestSchemas:
         msg = PongMessage()
         data = json.loads(msg.model_dump_json())
         assert data == {"type": "pong"}
+
+    def test_zone_update_message(self):
+        """Test ZoneUpdateMessage serialization."""
+        msg = ZoneUpdateMessage(
+            node_id="cave_e235",
+            display_name="Cave of Knowledge",
+            tier=5,
+            exits=[
+                ExitInfo(
+                    text="Soldier of Godrick front",
+                    to_name="Road's End Catacombs",
+                    discovered=False,
+                ),
+                ExitInfo(
+                    text="Graveyard first door",
+                    to_name="Ruin-Strewn Precipice",
+                    discovered=True,
+                ),
+            ],
+        )
+        data = json.loads(msg.model_dump_json())
+        assert data["type"] == "zone_update"
+        assert data["node_id"] == "cave_e235"
+        assert data["display_name"] == "Cave of Knowledge"
+        assert data["tier"] == 5
+        assert len(data["exits"]) == 2
+        assert data["exits"][0]["discovered"] is False
+        assert data["exits"][1]["discovered"] is True
+
+    def test_zone_update_message_no_tier(self):
+        """Test ZoneUpdateMessage with no tier."""
+        msg = ZoneUpdateMessage(
+            node_id="start",
+            display_name="Chapel of Anticipation",
+            exits=[],
+        )
+        data = json.loads(msg.model_dump_json())
+        assert data["tier"] is None
+        assert data["exits"] == []
 
 
 # --- Manager Tests ---

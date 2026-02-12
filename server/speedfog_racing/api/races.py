@@ -617,7 +617,11 @@ async def start_race(
 
     # Notify connected clients
     started_iso = race.started_at.isoformat() if race.started_at else None
-    await broadcast_race_start(race_id, started_at=started_iso)
+    await broadcast_race_start(
+        race_id,
+        started_at=started_iso,
+        graph_json=race.seed.graph_json if race.seed else None,
+    )
     await broadcast_race_state_update(race_id, race)
 
     return race_response(race)

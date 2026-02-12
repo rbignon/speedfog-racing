@@ -59,6 +59,14 @@ pub struct SeedInfo {
     pub event_ids: Vec<u32>,
 }
 
+/// Exit info in zone_update message
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExitInfo {
+    pub text: String,
+    pub to_name: String,
+    pub discovered: bool,
+}
+
 /// Messages received from server
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -80,6 +88,14 @@ pub enum ServerMessage {
     RaceStatusChange { status: String },
     /// Single player update
     PlayerUpdate { player: ParticipantInfo },
+    /// Zone update (unicast to originating mod)
+    ZoneUpdate {
+        node_id: String,
+        display_name: String,
+        tier: Option<i32>,
+        #[serde(default)]
+        exits: Vec<ExitInfo>,
+    },
     /// Heartbeat ping
     Ping,
 }
@@ -229,6 +245,58 @@ mod tests {
         let msg = ClientMessage::Pong;
         let json = serde_json::to_string(&msg).unwrap();
         assert_eq!(json, r#"{"type":"pong"}"#);
+    }
+
+    #[test]
+    fn test_server_zone_update_deserialize() {
+        let json = r#"{
+            "type": "zone_update",
+            "node_id": "graveyard_cave_e235",
+            "display_name": "Cave of Knowledge",
+            "tier": 5,
+            "exits": [
+                { "text": "Soldier of Godrick front", "to_name": "Road's End Catacombs", "discovered": false },
+                { "text": "Stranded Graveyard first door", "to_name": "Ruin-Strewn Precipice", "discovered": true }
+            ]
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ZoneUpdate {
+                node_id,
+                display_name,
+                tier,
+                exits,
+            } => {
+                assert_eq!(node_id, "graveyard_cave_e235");
+                assert_eq!(display_name, "Cave of Knowledge");
+                assert_eq!(tier, Some(5));
+                assert_eq!(exits.len(), 2);
+                assert_eq!(exits[0].text, "Soldier of Godrick front");
+                assert_eq!(exits[0].to_name, "Road's End Catacombs");
+                assert!(!exits[0].discovered);
+                assert!(exits[1].discovered);
+            }
+            _ => panic!("Expected ZoneUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_server_zone_update_no_tier() {
+        let json = r#"{
+            "type": "zone_update",
+            "node_id": "start_node",
+            "display_name": "Chapel of Anticipation",
+            "tier": null,
+            "exits": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ZoneUpdate { tier, exits, .. } => {
+                assert_eq!(tier, None);
+                assert!(exits.is_empty());
+            }
+            _ => panic!("Expected ZoneUpdate"),
+        }
     }
 
     #[test]

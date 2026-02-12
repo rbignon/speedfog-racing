@@ -13,7 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
-from speedfog_racing.services.layer_service import get_layer_for_node, get_start_node
+from speedfog_racing.services.layer_service import (
+    compute_zone_update,
+    get_layer_for_node,
+    get_start_node,
+)
 from speedfog_racing.websocket.manager import (
     SEND_TIMEOUT,
     manager,
@@ -41,6 +45,21 @@ def _get_graph_json(participant: Participant) -> dict[str, Any] | None:
     """Get graph_json from participant's race seed."""
     seed = participant.race.seed
     return seed.graph_json if seed else None
+
+
+async def send_zone_update(
+    websocket: WebSocket,
+    node_id: str,
+    graph_json: dict[str, Any],
+    zone_history: list[dict[str, Any]] | None,
+) -> None:
+    """Send a zone_update unicast to the originating mod."""
+    msg = compute_zone_update(node_id, graph_json, zone_history)
+    if msg:
+        try:
+            await asyncio.wait_for(websocket.send_text(json.dumps(msg)), timeout=SEND_TIMEOUT)
+        except Exception:
+            logger.warning("Failed to send zone_update")
 
 
 def _participant_load_options() -> list[Any]:
@@ -121,6 +140,15 @@ async def handle_mod_websocket(
             user_id = participant.user_id
 
             await send_auth_ok(websocket, participant)
+
+            # Send zone_update on reconnect (race already running)
+            seed = participant.race.seed
+            if participant.race.status == RaceStatus.RUNNING and seed and seed.graph_json:
+                zone = participant.current_zone or get_start_node(seed.graph_json)
+                if zone:
+                    await send_zone_update(
+                        websocket, zone, seed.graph_json, participant.zone_history
+                    )
         # Session closed — released back to pool
 
         # Register connection
@@ -148,7 +176,7 @@ async def handle_mod_websocket(
                 elif msg_type == "status_update":
                     await handle_status_update(session_maker, participant_id, msg)
                 elif msg_type == "event_flag":
-                    await handle_event_flag(session_maker, participant_id, msg)
+                    await handle_event_flag(websocket, session_maker, participant_id, msg)
                 elif msg_type == "finished":
                     await handle_finished(session_maker, participant_id, msg)
                 else:
@@ -308,6 +336,7 @@ async def handle_status_update(
 
 
 async def handle_event_flag(
+    websocket: WebSocket,
     session_maker: async_sessionmaker[AsyncSession],
     participant_id: uuid.UUID,
     msg: dict[str, Any],
@@ -319,6 +348,7 @@ async def handle_event_flag(
 
     is_finish = False
     igt = 0
+    node_id: str | None = None
     seed_graph: dict[str, Any] | None = None
 
     async with session_maker() as db:
@@ -383,6 +413,10 @@ async def handle_event_flag(
         participant.race.participants,
         graph_json=seed_graph,
     )
+
+    # Unicast zone_update to originating mod
+    if node_id and seed_graph:
+        await send_zone_update(websocket, node_id, seed_graph, participant.zone_history)
 
 
 async def handle_finished(
@@ -459,13 +493,27 @@ async def handle_finished(
     )
 
 
-async def broadcast_race_start(race_id: uuid.UUID, started_at: str | None = None) -> None:
+async def broadcast_race_start(
+    race_id: uuid.UUID,
+    started_at: str | None = None,
+    graph_json: dict[str, Any] | None = None,
+) -> None:
     """Broadcast race start to all connections (mods + spectators)."""
     room = manager.get_room(race_id)
     if room:
         # Send race_start to mods
         message = RaceStartMessage()
         await room.broadcast_to_mods(message.model_dump_json())
+
+        # Send zone_update for start node to each connected mod
+        if graph_json:
+            start_node = get_start_node(graph_json)
+            if start_node:
+                for conn in room.mods.values():
+                    await send_zone_update(
+                        conn.websocket, start_node, graph_json, zone_history=None
+                    )
+
         # Also notify spectators of status change
         await manager.broadcast_race_status(race_id, "running", started_at=started_at)
         logger.info(f"Race start broadcast: race={race_id}")

@@ -84,6 +84,7 @@ impl ImguiRenderLoop for RaceTracker {
             .flags(flags)
             .build(|| {
                 self.render_player_status(ui, max_width);
+                self.render_exits(ui, max_width);
                 ui.separator();
                 self.render_leaderboard(ui, max_width);
                 if self.show_debug {
@@ -137,9 +138,10 @@ impl RaceTracker {
         ui.same_line_with_pos(max_width - igt_width);
         ui.text(&igt_str);
 
-        // --- Line 2: tier (left), deaths + progress (right) ---
+        // --- Line 2: zone name + tier (left), deaths + progress (right) ---
         let me = self.my_participant();
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
+        let zone = self.current_zone_info();
 
         // Right side: "†N  X/Y" — use local game memory for instant updates
         let deaths = self.read_deaths().unwrap_or(0);
@@ -147,17 +149,57 @@ impl RaceTracker {
         let right_text = format!("\u{2020}{}  {}/{}", deaths, layer, total_layers);
         let right_width = ui.calc_text_size(&right_text)[0];
 
-        // Left side: "  Tier X"
-        let left_text = if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
+        // Left side: "  ZoneName (TX)" or "  Tier X" or "  --"
+        let left_text = if let Some(z) = zone {
+            if let Some(t) = z.tier {
+                format!("  {} (T{})", z.display_name, t)
+            } else {
+                format!("  {}", z.display_name)
+            }
+        } else if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
             format!("  Tier {}", tier)
         } else {
             "  --".to_string()
         };
-        ui.text(&left_text);
+        let left_max = max_width - right_width - ui.calc_text_size(" ")[0];
+        let left_truncated = truncate_to_width(ui, &left_text, left_max);
+        ui.text(&left_truncated);
 
         // Right-align deaths + progress
         ui.same_line_with_pos(max_width - right_width);
         ui.text(&right_text);
+    }
+
+    /// Render exit list from zone_update:
+    /// ```text
+    /// → Soldier of Godrick front
+    ///   ???
+    /// → Stranded Graveyard first door
+    ///   Ruin-Strewn Precipice          (green)
+    /// ```
+    fn render_exits(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
+        let zone = match self.current_zone_info() {
+            Some(z) if !z.exits.is_empty() => z,
+            _ => return,
+        };
+
+        let green = [0.5, 1.0, 0.5, 1.0];
+
+        for exit in &zone.exits {
+            // Arrow + fog gate text
+            let arrow_text = format!("\u{2192} {}", exit.text);
+            let truncated = truncate_to_width(ui, &arrow_text, max_width);
+            ui.text_disabled(&truncated);
+
+            // Destination: "???" if undiscovered, green name if discovered
+            if exit.discovered {
+                let dest = format!("  {}", exit.to_name);
+                let truncated = truncate_to_width(ui, &dest, max_width);
+                ui.text_colored(green, &truncated);
+            } else {
+                ui.text_disabled("  ???");
+            }
+        }
     }
 
     /// Leaderboard with color-coded status and right-aligned values:

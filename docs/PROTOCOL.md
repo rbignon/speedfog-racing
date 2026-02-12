@@ -233,6 +233,41 @@ Race status changed.
 }
 ```
 
+#### `zone_update`
+
+Unicast to the originating mod after an `event_flag` is processed, after `auth_ok` (reconnect during a running race), or after `race_start` (for the start node). Contains the entered zone's display name, tier, and exits with discovery status.
+
+```json
+{
+  "type": "zone_update",
+  "node_id": "graveyard_cave_e235",
+  "display_name": "Cave of Knowledge",
+  "tier": 5,
+  "exits": [
+    {
+      "text": "Soldier of Godrick front",
+      "to_name": "Road's End Catacombs",
+      "discovered": false
+    },
+    {
+      "text": "Stranded Graveyard first door",
+      "to_name": "Ruin-Strewn Precipice",
+      "discovered": true
+    }
+  ]
+}
+```
+
+| Field                | Type     | Description                                                |
+| -------------------- | -------- | ---------------------------------------------------------- |
+| `node_id`            | `string` | DAG node ID                                                |
+| `display_name`       | `string` | Human-readable zone name                                   |
+| `tier`               | `int?`   | Node tier (null for start node)                            |
+| `exits`              | `list`   | Fog gates leaving this zone                                |
+| `exits[].text`       | `string` | Fog gate label text                                        |
+| `exits[].to_name`    | `string` | Display name of the destination zone                       |
+| `exits[].discovered` | `bool`   | Whether the destination has been visited (in zone_history) |
+
 #### `ping`
 
 Heartbeat ping. Sent by the server every 30 seconds. The mod must respond with `pong`.

@@ -149,6 +149,24 @@ class SpectatorCountMessage(BaseModel):
     count: int
 
 
+class ExitInfo(BaseModel):
+    """Exit info for zone_update message."""
+
+    text: str
+    to_name: str
+    discovered: bool
+
+
+class ZoneUpdateMessage(BaseModel):
+    """Unicast zone update sent to originating mod."""
+
+    type: Literal["zone_update"] = "zone_update"
+    node_id: str
+    display_name: str
+    tier: int | None = None
+    exits: list[ExitInfo]
+
+
 class PingMessage(BaseModel):
     """Heartbeat ping from server."""
 

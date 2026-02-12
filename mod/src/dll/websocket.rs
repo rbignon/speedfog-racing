@@ -13,7 +13,9 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
 use super::config::ServerSettings;
-use crate::core::protocol::{ClientMessage, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage};
+use crate::core::protocol::{
+    ClientMessage, ExitInfo, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage,
+};
 
 // =============================================================================
 // TYPES
@@ -53,6 +55,12 @@ pub enum IncomingMessage {
     LeaderboardUpdate(Vec<ParticipantInfo>),
     RaceStatusChange(String),
     PlayerUpdate(ParticipantInfo),
+    ZoneUpdate {
+        node_id: String,
+        display_name: String,
+        tier: Option<i32>,
+        exits: Vec<ExitInfo>,
+    },
     /// Event flag drained from outgoing channel on reconnect — must be re-buffered
     RequeueEventFlag {
         flag_id: u32,
@@ -444,6 +452,19 @@ fn message_loop(
                         }
                         ServerMessage::PlayerUpdate { player } => {
                             let _ = incoming_tx.send(IncomingMessage::PlayerUpdate(player));
+                        }
+                        ServerMessage::ZoneUpdate {
+                            node_id,
+                            display_name,
+                            tier,
+                            exits,
+                        } => {
+                            let _ = incoming_tx.send(IncomingMessage::ZoneUpdate {
+                                node_id,
+                                display_name,
+                                tier,
+                                exits,
+                            });
                         }
                         _ => {}
                     }

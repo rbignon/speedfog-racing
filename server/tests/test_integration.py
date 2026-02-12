@@ -231,7 +231,7 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                 twitch_username="organizer",
                 twitch_display_name="The Organizer",
                 api_token="organizer_token_integration",
-                role=UserRole.USER,
+                role=UserRole.ORGANIZER,
             )
             db.add(organizer)
 
@@ -333,13 +333,38 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                         graph["nodes"] = {
                             "start_node": {
                                 "type": "start",
+                                "display_name": "Chapel of Anticipation",
                                 "zones": ["start"],
                                 "layer": 0,
                                 "tier": 1,
+                                "exits": [
+                                    {"text": "First door", "fog_id": 100, "to": "node_a"},
+                                    {"text": "Side exit", "fog_id": 101, "to": "node_b"},
+                                ],
                             },
-                            "node_a": {"zones": ["zone_a"], "layer": 1, "tier": 1},
-                            "node_b": {"zones": ["zone_b"], "layer": 2, "tier": 2},
-                            "node_c": {"zones": ["zone_c"], "layer": 3, "tier": 3},
+                            "node_a": {
+                                "display_name": "Stormveil Castle",
+                                "zones": ["zone_a"],
+                                "layer": 1,
+                                "tier": 1,
+                                "exits": [
+                                    {"text": "Gate to B", "fog_id": 102, "to": "node_b"},
+                                ],
+                            },
+                            "node_b": {
+                                "display_name": "Raya Lucaria",
+                                "zones": ["zone_b"],
+                                "layer": 2,
+                                "tier": 2,
+                                "exits": [],
+                            },
+                            "node_c": {
+                                "display_name": "Volcano Manor",
+                                "zones": ["zone_c"],
+                                "layer": 3,
+                                "tier": 3,
+                                "exits": [],
+                            },
                         }
                         graph["event_map"] = {
                             "9000000": "node_a",
@@ -434,8 +459,7 @@ def test_complete_race_flow(integration_client, race_with_participants):
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
         mod0.send_event_flag(9000000, igt_ms=10000)
-        lb = mod0.receive()
-        assert lb["type"] == "leaderboard_update"
+        lb = mod0.receive_until_type("leaderboard_update")
         p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
         assert p0["current_layer"] == 1
 
@@ -444,8 +468,7 @@ def test_complete_race_flow(integration_client, race_with_participants):
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
         assert mod1.auth()["type"] == "auth_ok"
         mod1.send_event_flag(9000001, igt_ms=15000)
-        lb = mod1.receive()
-        assert lb["type"] == "leaderboard_update"
+        lb = mod1.receive_until_type("leaderboard_update")
         p1 = next(p for p in lb["participants"] if p["twitch_username"] == "player1")
         assert p1["current_layer"] == 2
 
@@ -454,8 +477,7 @@ def test_complete_race_flow(integration_client, race_with_participants):
         mod2 = ModTestClient(ws2, players[2]["mod_token"])
         assert mod2.auth()["type"] == "auth_ok"
         mod2.send_event_flag(9000003, igt_ms=50000)
-        lb = mod2.receive()
-        assert lb["type"] == "leaderboard_update"
+        lb = mod2.receive_until_type("leaderboard_update")
         p2 = next(p for p in lb["participants"] if p["twitch_username"] == "player2")
         assert p2["status"] == "finished"
 
@@ -464,7 +486,7 @@ def test_complete_race_flow(integration_client, race_with_participants):
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
         mod0.send_event_flag(9000003, igt_ms=70000)
-        lb = mod0.receive()
+        lb = mod0.receive_until_type("leaderboard_update")
         assert lb["participants"][0]["twitch_username"] == "player2"
         assert lb["participants"][1]["twitch_username"] == "player0"
 
@@ -474,16 +496,11 @@ def test_complete_race_flow(integration_client, race_with_participants):
         assert mod1.auth()["type"] == "auth_ok"
         mod1.send_event_flag(9000003, igt_ms=80000)
 
-        msg1 = mod1.receive()
-        msg2 = mod1.receive()
+        st = mod1.receive_until_type("race_status_change")
+        lb = mod1.receive_until_type("leaderboard_update")
 
-        if msg1["type"] == "race_status_change":
-            status, lb = msg1, msg2
-        else:
-            lb, status = msg1, msg2
-
-        assert status["type"] == "race_status_change"
-        assert status["status"] == "finished"
+        assert st["type"] == "race_status_change"
+        assert st["status"] == "finished"
 
         assert lb["type"] == "leaderboard_update"
         assert lb["participants"][0]["twitch_username"] == "player2"
@@ -722,10 +739,10 @@ def test_zone_history_accumulates(integration_client, race_with_participants, in
         assert mod0.auth()["type"] == "auth_ok"
 
         mod0.send_event_flag(9000000, igt_ms=10000)
-        mod0.receive()  # leaderboard_update
+        mod0.receive_until_type("leaderboard_update")
 
         mod0.send_event_flag(9000001, igt_ms=20000)
-        mod0.receive()  # leaderboard_update
+        mod0.receive_until_type("leaderboard_update")
 
     # Check zone_history in DB
     async def check_history():
@@ -771,8 +788,7 @@ def test_event_flag_unknown_ignored(integration_client, race_with_participants, 
         # No leaderboard_update expected for unknown flag,
         # so send a ready to verify connection still works
         mod0.send_ready()
-        msg = mod0.receive()
-        assert msg["type"] == "leaderboard_update"
+        mod0.receive_until_type("leaderboard_update")
 
     # Check zone_history is still None
     async def check_history():
@@ -858,15 +874,13 @@ def test_event_flag_lower_layer_recorded_without_regressing(
 
         # Progress to node_b (layer 2) — skipping node_a (layer 1) is fine
         mod0.send_event_flag(9000001, igt_ms=20000)
-        lb = mod0.receive()
-        assert lb["type"] == "leaderboard_update"
+        lb = mod0.receive_until_type("leaderboard_update")
         p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
         assert p0["current_layer"] == 2
 
         # Now send flag for node_a (layer 1) — recorded but current_layer stays at 2
         mod0.send_event_flag(9000000, igt_ms=25000)
-        lb2 = mod0.receive()
-        assert lb2["type"] == "leaderboard_update"
+        lb2 = mod0.receive_until_type("leaderboard_update")
         p0 = next(p for p in lb2["participants"] if p["twitch_username"] == "player0")
         assert p0["current_layer"] == 2  # high watermark — not regressed
 
@@ -931,15 +945,13 @@ def test_event_flag_same_layer_accepted(integration_client, race_with_participan
 
         # Progress to node_a (layer 1)
         mod0.send_event_flag(9000000, igt_ms=10000)
-        lb = mod0.receive()
-        assert lb["type"] == "leaderboard_update"
+        lb = mod0.receive_until_type("leaderboard_update")
         p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
         assert p0["current_layer"] == 1
 
         # Send flag for node_a2 (also layer 1) — same layer, should be accepted
         mod0.send_event_flag(9000010, igt_ms=15000)
-        lb = mod0.receive()
-        assert lb["type"] == "leaderboard_update"
+        lb = mod0.receive_until_type("leaderboard_update")
 
     # Verify DB: both nodes in history
     async def check_state():
@@ -959,6 +971,48 @@ def test_event_flag_same_layer_accepted(integration_client, race_with_participan
     node_ids = [e["node_id"] for e in history]
     assert "node_a" in node_ids
     assert "node_a2" in node_ids
+
+
+def test_zone_update_content(integration_client, race_with_participants):
+    """Verify zone_update unicast contains correct node data and exit discovery."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # Reconnect to running race sends zone_update for start node — consume it
+        zu_start = mod0.receive_until_type("zone_update")
+        assert zu_start["node_id"] == "start_node"
+        assert zu_start["display_name"] == "Chapel of Anticipation"
+
+        # Trigger flag 9000000 -> node_a ("Stormveil Castle")
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        zu = mod0.receive_until_type("zone_update")
+
+        assert zu["node_id"] == "node_a"
+        assert zu["display_name"] == "Stormveil Castle"
+        assert zu["tier"] == 1
+        # node_a has one exit to node_b, which is not yet discovered
+        assert len(zu["exits"]) == 1
+        assert zu["exits"][0]["text"] == "Gate to B"
+        assert zu["exits"][0]["to_name"] == "Raya Lucaria"
+        assert zu["exits"][0]["discovered"] is False
+
+        # Now trigger flag 9000001 -> node_b
+        mod0.send_event_flag(9000001, igt_ms=20000)
+        zu2 = mod0.receive_until_type("zone_update")
+
+        assert zu2["node_id"] == "node_b"
+        assert zu2["display_name"] == "Raya Lucaria"
+        assert zu2["exits"] == []  # node_b has no exits
 
 
 # =============================================================================

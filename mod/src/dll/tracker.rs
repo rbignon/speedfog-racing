@@ -10,7 +10,7 @@ use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::color::parse_hex_color;
-use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
+use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
 
@@ -22,6 +22,15 @@ use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 // RACE STATE
 // =============================================================================
 
+/// Zone update data received from server
+#[derive(Debug, Clone)]
+pub struct ZoneUpdateData {
+    pub node_id: String,
+    pub display_name: String,
+    pub tier: Option<i32>,
+    pub exits: Vec<ExitInfo>,
+}
+
 /// Current race state from server
 #[derive(Debug, Clone, Default)]
 pub struct RaceState {
@@ -29,6 +38,7 @@ pub struct RaceState {
     pub seed: Option<SeedInfo>,
     pub participants: Vec<ParticipantInfo>,
     pub race_started: bool,
+    pub current_zone: Option<ZoneUpdateData>,
 }
 
 /// Result of reading a single flag for debug display
@@ -391,6 +401,21 @@ impl RaceTracker {
                     *p = player;
                 }
             }
+            IncomingMessage::ZoneUpdate {
+                node_id,
+                display_name,
+                tier,
+                exits,
+            } => {
+                self.last_received_debug = Some(format!("zone_update({})", display_name));
+                info!(node = %node_id, name = %display_name, "[WS] Zone update");
+                self.race_state.current_zone = Some(ZoneUpdateData {
+                    node_id,
+                    display_name,
+                    tier,
+                    exits,
+                });
+            }
             IncomingMessage::RequeueEventFlag { flag_id, igt_ms } => {
                 // Event flag was in the outgoing channel but never transmitted before
                 // disconnect. Re-buffer it so it gets sent after reconnection.
@@ -427,6 +452,10 @@ impl RaceTracker {
 
     pub fn read_deaths(&self) -> Option<u32> {
         self.game_state.read_deaths()
+    }
+
+    pub fn current_zone_info(&self) -> Option<&ZoneUpdateData> {
+        self.race_state.current_zone.as_ref()
     }
 
     pub fn my_participant(&self) -> Option<&ParticipantInfo> {
