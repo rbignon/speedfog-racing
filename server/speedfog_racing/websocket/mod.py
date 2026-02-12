@@ -351,31 +351,23 @@ async def handle_event_flag(
                 logger.warning(f"Unknown event flag {flag_id} from participant {participant_id}")
                 return
 
-            # Ignore zones from a layer strictly below current progress
+            # Resolve layer for this node
             node_layer = get_layer_for_node(node_id, seed_graph)
-            if node_layer < participant.current_layer:
-                logger.debug(
-                    "Ignoring event_flag %d (node=%s, layer=%d) "
-                    "below current_layer=%d for participant %s",
-                    flag_id,
-                    node_id,
-                    node_layer,
-                    participant.current_layer,
-                    participant_id,
-                )
-                return
 
             # Check if node already discovered (ignore duplicates)
             old_history = participant.zone_history or []
             if any(entry.get("node_id") == node_id for entry in old_history):
                 return  # Already discovered
 
-            # Update zone history and layer
+            # Record the node and update current position
             participant.igt_ms = igt
-            participant.current_layer = node_layer
             participant.current_zone = node_id
             entry = {"node_id": node_id, "igt_ms": igt}
             participant.zone_history = [*old_history, entry]
+
+            # current_layer is a high watermark (used for ranking) — never regress
+            if node_layer > participant.current_layer:
+                participant.current_layer = node_layer
 
             await db.commit()
 

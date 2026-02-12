@@ -834,8 +834,10 @@ def test_event_flag_duplicate_ignored(integration_client, race_with_participants
     assert history[0]["node_id"] == "node_a"
 
 
-def test_event_flag_lower_layer_ignored(integration_client, race_with_participants, integration_db):
-    """Event flags for zones in a layer strictly below current_layer are ignored."""
+def test_event_flag_lower_layer_recorded_without_regressing(
+    integration_client, race_with_participants, integration_db
+):
+    """Event flags for zones below current_layer are recorded but don't regress ranking."""
     import asyncio
 
     race_id = race_with_participants["race_id"]
@@ -852,8 +854,6 @@ def test_event_flag_lower_layer_ignored(integration_client, race_with_participan
         assert mod0.auth()["type"] == "auth_ok"
 
         # Transition to PLAYING via status_update (places in start_node, layer 0).
-        # No response to mod (player_update goes to spectators); the sequential
-        # WebSocket handler guarantees this is processed before the next message.
         mod0.send_status_update(igt_ms=1000, death_count=0)
 
         # Progress to node_b (layer 2) — skipping node_a (layer 1) is fine
@@ -863,14 +863,14 @@ def test_event_flag_lower_layer_ignored(integration_client, race_with_participan
         p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
         assert p0["current_layer"] == 2
 
-        # Now send flag for node_a (layer 1) — strictly below current_layer → ignored
+        # Now send flag for node_a (layer 1) — recorded but current_layer stays at 2
         mod0.send_event_flag(9000000, igt_ms=25000)
-        # No leaderboard_update expected; verify connection still works
-        mod0.send_ready()
-        msg = mod0.receive()
-        assert msg["type"] == "leaderboard_update"
+        lb2 = mod0.receive()
+        assert lb2["type"] == "leaderboard_update"
+        p0 = next(p for p in lb2["participants"] if p["twitch_username"] == "player0")
+        assert p0["current_layer"] == 2  # high watermark — not regressed
 
-    # Verify DB: current_layer still 2, zone_history has only start_node + node_b
+    # Verify DB state
     async def check_state():
         async with integration_db() as db:
             result = await db.execute(
@@ -883,12 +883,11 @@ def test_event_flag_lower_layer_ignored(integration_client, race_with_participan
             return p.current_layer, p.current_zone, p.zone_history
 
     current_layer, current_zone, history = asyncio.run(check_state())
-    assert current_layer == 2
-    assert current_zone == "node_b"
+    assert current_layer == 2  # high watermark preserved
+    assert current_zone == "node_a"  # position updated to where player actually is
     assert history is not None
-    # start_node (from status_update) + node_b (from event_flag)
     node_ids = [e["node_id"] for e in history]
-    assert "node_a" not in node_ids
+    assert "node_a" in node_ids  # recorded in history
     assert "node_b" in node_ids
 
 
