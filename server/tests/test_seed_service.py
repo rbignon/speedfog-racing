@@ -2,6 +2,7 @@
 
 import json
 import tempfile
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -42,24 +43,28 @@ async def async_db():
     await engine.dispose()
 
 
+def _create_seed_zip(pool_dir: Path, name: str, graph: dict) -> Path:
+    """Create a seed zip file with graph.json inside a top-level directory."""
+    zip_path = pool_dir / f"{name}.zip"
+    slug = name.removeprefix("seed_")
+    top_dir = f"speedfog_{slug}"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(f"{top_dir}/graph.json", json.dumps(graph))
+        zf.writestr(f"{top_dir}/lib/speedfog_race_mod.dll", "mock dll")
+    return zip_path
+
+
 @pytest.fixture
 def seed_pool_dir():
-    """Create a temporary seed pool directory structure."""
+    """Create a temporary seed pool directory with zip files."""
     with tempfile.TemporaryDirectory() as tmpdir:
         pool_dir = Path(tmpdir) / "standard"
         pool_dir.mkdir()
 
-        # Create seed_abc123
-        seed1_dir = pool_dir / "seed_abc123"
-        seed1_dir.mkdir()
-        (seed1_dir / "graph.json").write_text(json.dumps({"total_layers": 10, "nodes": []}))
+        _create_seed_zip(pool_dir, "seed_abc123", {"total_layers": 10, "nodes": []})
+        _create_seed_zip(pool_dir, "seed_def456", {"total_layers": 12, "nodes": []})
 
-        # Create seed_def456
-        seed2_dir = pool_dir / "seed_def456"
-        seed2_dir.mkdir()
-        (seed2_dir / "graph.json").write_text(json.dumps({"total_layers": 12, "nodes": []}))
-
-        # Create a non-seed directory (should be ignored)
+        # Create a non-seed file (should be ignored)
         (pool_dir / "config.toml").write_text("[pool]\nname = 'standard'")
 
         yield tmpdir
@@ -118,6 +123,7 @@ async def test_scan_pool_creates_seeds(async_db, seed_pool_dir):
             assert seed.pool_name == "standard"
             assert seed.status == SeedStatus.AVAILABLE
             assert seed.total_layers in (10, 12)
+            assert seed.folder_path.endswith(".zip")
 
 
 @pytest.mark.asyncio
@@ -138,6 +144,20 @@ async def test_scan_pool_skips_existing(async_db, seed_pool_dir):
         result = await async_db.execute(select(Seed))
         seeds = list(result.scalars().all())
         assert len(seeds) == 2
+
+
+@pytest.mark.asyncio
+async def test_scan_pool_reads_graph_from_zip(async_db, seed_pool_dir):
+    """Scanning reads graph.json from inside zip files."""
+    with patch("speedfog_racing.services.seed_service.settings") as mock_settings:
+        mock_settings.seeds_pool_dir = seed_pool_dir
+        await scan_pool(async_db, "standard")
+
+        result = await async_db.execute(select(Seed).where(Seed.seed_number == "abc123"))
+        seed = result.scalar_one()
+
+        assert seed.graph_json["total_layers"] == 10
+        assert seed.graph_json["nodes"] == []
 
 
 # =============================================================================

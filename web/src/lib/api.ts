@@ -52,7 +52,6 @@ export interface Participant {
   igt_ms: number;
   death_count: number;
   color_index: number;
-  has_seed_pack: boolean;
 }
 
 export interface Caster {
@@ -99,16 +98,6 @@ export interface PoolInfo {
 }
 
 export type PoolStats = Record<string, PoolInfo>;
-
-export interface DownloadInfo {
-  participant_id: string;
-  twitch_username: string;
-  url: string;
-}
-
-export interface GenerateSeedPacksResponse {
-  downloads: DownloadInfo[];
-}
 
 export interface AddParticipantResponse {
   participant: Participant | null;
@@ -329,22 +318,6 @@ export async function removeParticipant(
       .catch(() => ({ detail: "Unknown error" }));
     throw new Error(error.detail);
   }
-}
-
-/**
- * Generate seed packs for all participants in a race.
- */
-export async function generateSeedPacks(
-  raceId: string,
-): Promise<GenerateSeedPacksResponse> {
-  const response = await fetch(
-    `${API_BASE}/races/${raceId}/generate-seed-packs`,
-    {
-      method: "POST",
-      headers: getAuthHeaders(),
-    },
-  );
-  return handleResponse<GenerateSeedPacksResponse>(response);
 }
 
 /**

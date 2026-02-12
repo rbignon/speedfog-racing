@@ -1,5 +1,8 @@
 """Race management API routes."""
 
+import asyncio
+import logging
+import os
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -8,6 +11,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.background import BackgroundTask
 
 from speedfog_racing.api.helpers import (
     caster_response,
@@ -39,8 +43,6 @@ from speedfog_racing.schemas import (
     AddParticipantResponse,
     CasterResponse,
     CreateRaceRequest,
-    DownloadInfo,
-    GenerateSeedPacksResponse,
     InviteResponse,
     PendingInviteResponse,
     PoolConfig,
@@ -50,13 +52,14 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services import (
     assign_seed_to_race,
-    generate_race_seed_packs,
-    get_participant_seed_pack_path,
+    generate_seed_pack_on_demand,
     get_pool_config,
 )
 from speedfog_racing.services.seed_pack_service import sanitize_filename
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 from speedfog_racing.websocket.manager import manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -763,52 +766,8 @@ async def delete_race(
 
 
 # =============================================================================
-# Seed Pack Generation Endpoints
+# Seed Pack Download Endpoints
 # =============================================================================
-
-
-@router.post("/{race_id}/generate-seed-packs", response_model=GenerateSeedPacksResponse)
-async def generate_seed_packs(
-    race_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> GenerateSeedPacksResponse:
-    """Generate personalized seed packs for all participants."""
-    race = await _get_race_or_404(db, race_id, load_participants=True)
-    _require_organizer(race, user)
-
-    if not race.participants:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Race has no participants",
-        )
-
-    try:
-        seed_pack_paths = await generate_race_seed_packs(db, race)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-    except FileNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Seed folder not found: {e}",
-        ) from e
-
-    # Build download URLs
-    downloads = []
-    for participant in race.participants:
-        if participant.id in seed_pack_paths:
-            downloads.append(
-                DownloadInfo(
-                    participant_id=participant.id,
-                    twitch_username=participant.user.twitch_username,
-                    url=f"/api/races/{race_id}/download/{participant.mod_token}",
-                )
-            )
-
-    return GenerateSeedPacksResponse(downloads=downloads)
 
 
 @router.get("/{race_id}/my-seed-pack")
@@ -817,7 +776,13 @@ async def download_my_seed_pack(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> FileResponse:
-    """Download the authenticated user's personalized seed pack for a race."""
+    """Download the authenticated user's personalized seed pack for a race.
+
+    Generates the pack on-demand by copying the seed zip and injecting
+    per-participant config. The temp file is cleaned up after download.
+    """
+    race = await _get_race_or_404(db, race_id)
+
     # Find participant by race_id and user_id
     result = await db.execute(
         select(Participant)
@@ -832,20 +797,26 @@ async def download_my_seed_pack(
             detail="You are not a participant in this race",
         )
 
-    seed_pack_result = await get_participant_seed_pack_path(race_id, participant.mod_token, db)
-
-    if seed_pack_result is None:
+    if not race.seed:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Seed packs not generated yet",
+            detail="Race has no seed assigned",
         )
 
-    seed_pack_path, _ = seed_pack_result
+    try:
+        temp_path = await asyncio.to_thread(generate_seed_pack_on_demand, participant, race)
+    except FileNotFoundError:
+        logger.error("Seed zip missing for race %s", race_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Seed data unavailable",
+        )
 
     return FileResponse(
-        path=seed_pack_path,
+        path=temp_path,
         filename=f"speedfog_{sanitize_filename(user.twitch_username)}.zip",
         media_type="application/zip",
+        background=BackgroundTask(os.unlink, temp_path),
     )
 
 
@@ -858,23 +829,28 @@ async def download_seed_pack(
 ) -> FileResponse:
     """Download personalized seed pack for a participant.
 
-    Requires authentication. Caller must be the participant, the race organizer,
-    or a caster for the race.
+    Generates the pack on-demand. Requires authentication.
+    Caller must be the participant, the race organizer, or a caster.
     """
-    result = await get_participant_seed_pack_path(race_id, mod_token, db)
+    race = await _get_race_or_404(db, race_id)
 
-    if result is None:
+    # Find participant by mod_token
+    result = await db.execute(
+        select(Participant)
+        .where(Participant.race_id == race_id, Participant.mod_token == mod_token)
+        .options(selectinload(Participant.user))
+    )
+    participant = result.scalar_one_or_none()
+
+    if not participant:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Seed pack not found. Make sure the organizer has generated the seed packs.",
+            detail="Participant not found",
         )
-
-    seed_pack_path, participant = result
 
     # Authorize: participant themselves, organizer, or caster
     is_owner = participant.user_id == user.id
     if not is_owner:
-        race = await _get_race_or_404(db, race_id)
         is_organizer = race.organizer_id == user.id
         is_caster = False
         if not is_organizer:
@@ -888,8 +864,24 @@ async def download_seed_pack(
                 detail="Not authorized to download this seed pack",
             )
 
+    if not race.seed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Race has no seed assigned",
+        )
+
+    try:
+        temp_path = await asyncio.to_thread(generate_seed_pack_on_demand, participant, race)
+    except FileNotFoundError:
+        logger.error("Seed zip missing for race %s", race_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Seed data unavailable",
+        )
+
     return FileResponse(
-        path=seed_pack_path,
+        path=temp_path,
         filename=f"speedfog_{sanitize_filename(participant.user.twitch_username)}.zip",
         media_type="application/zip",
+        background=BackgroundTask(os.unlink, temp_path),
     )

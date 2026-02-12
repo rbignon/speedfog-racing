@@ -39,8 +39,7 @@ Reference document for API endpoints and WebSocket messages.
 | DELETE | `/api/races/{id}/casters/{cid}`        | Bearer | Remove caster (organizer only)                  |
 | POST   | `/api/races/{id}/open`                 | Bearer | Transition DRAFT → OPEN (organizer)             |
 | POST   | `/api/races/{id}/start`                | Bearer | Start race: DRAFT/OPEN → RUNNING (organizer)    |
-| POST   | `/api/races/{id}/generate-seed-packs`  | Bearer | Generate personalized seed packs                |
-| GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack (ZIP)                    |
+| GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack (generated on-demand)    |
 | GET    | `/api/races/{id}/download/{mod_token}` | Bearer | Download participant seed pack (ZIP)            |
 
 ### Pools

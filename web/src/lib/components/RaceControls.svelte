@@ -2,7 +2,6 @@
 	import { goto } from '$app/navigation';
 	import {
 		openRace,
-		generateSeedPacks,
 		startRace,
 		resetRace,
 		finishRace,
@@ -23,10 +22,6 @@
 	let error = $state<string | null>(null);
 	let showDeleteConfirm = $state(false);
 
-	let allHaveSeedPack = $derived(
-		race.participants.length > 0 && race.participants.every((p) => p.has_seed_pack)
-	);
-
 	async function handleOpen() {
 		loading = true;
 		error = null;
@@ -36,20 +31,6 @@
 			onRaceUpdated(updated);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to open race';
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function handleGeneratePacks() {
-		loading = true;
-		error = null;
-		try {
-			await generateSeedPacks(race.id);
-			const updated = await fetchRace(race.id);
-			onRaceUpdated(updated);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to generate seed packs';
 		} finally {
 			loading = false;
 		}
@@ -130,20 +111,8 @@
 		<button class="btn btn-primary btn-full" onclick={handleOpen} disabled={loading}>
 			{loading ? 'Opening...' : 'Open Race'}
 		</button>
-		<p class="hint">Open the race to finalize participants and generate seed packs.</p>
+		<p class="hint">Open the race to finalize participants.</p>
 	{:else if raceStatus === 'open'}
-		{#if allHaveSeedPack}
-			<button class="btn btn-secondary btn-full" disabled>Seed Packs Generated</button>
-		{:else}
-			<button
-				class="btn btn-secondary btn-full"
-				onclick={handleGeneratePacks}
-				disabled={loading || race.participants.length === 0}
-			>
-				{loading ? 'Generating...' : 'Generate Seed Packs'}
-			</button>
-		{/if}
-
 		<button class="btn btn-primary btn-full" onclick={handleStart} disabled={loading}>
 			{loading ? 'Starting...' : 'Start Race'}
 		</button>

@@ -29,7 +29,6 @@ def participant_response(participant: Participant) -> ParticipantResponse:
         igt_ms=participant.igt_ms,
         death_count=participant.death_count,
         color_index=participant.color_index,
-        has_seed_pack=participant.has_seed_pack,
     )
 
 

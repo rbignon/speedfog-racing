@@ -207,7 +207,7 @@
 							canRemove={isOrganizer && mp.user.id !== initialRace.organizer.id}
 							onRemove={() =>
 								handleRemoveParticipant(mp.id, mp.user.twitch_username)}
-							canDownload={mp.has_seed_pack}
+							canDownload={initialRace.seed_total_layers != null}
 							{downloading}
 							onDownload={handleDownload}
 							{downloadError}
@@ -331,10 +331,10 @@
 			/>
 		{/if}
 
-		{#if myParticipant?.has_seed_pack}
+		{#if myParticipant && initialRace.seed_total_layers != null}
 			<div class="download-section">
 				<button class="btn btn-secondary" onclick={handleDownload} disabled={downloading}>
-					{downloading ? 'Downloading...' : 'Download Race Package'}
+					{downloading ? 'Preparing...' : 'Download Race Package'}
 				</button>
 				{#if downloadError}
 					<span class="download-error">{downloadError}</span>

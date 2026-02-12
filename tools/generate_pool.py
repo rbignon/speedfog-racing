@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+import zipfile
 from pathlib import Path
 
 
@@ -222,13 +223,26 @@ def add_dll_to_config(seed_dir: Path) -> bool:
         return False
 
 
+def zip_seed_dir(seed_dir: Path, output_zip: Path, top_dir: str) -> None:
+    """Create a zip archive from a seed directory.
+
+    All files are placed under a top-level directory inside the zip
+    (e.g., speedfog_abc123/lib/...).
+    """
+    with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in sorted(seed_dir.rglob("*")):
+            if file_path.is_file():
+                arcname = f"{top_dir}/{file_path.relative_to(seed_dir)}"
+                zf.write(file_path, arcname)
+
+
 def process_seed(
     seed_dir: Path,
     dll_source: Path,
     output_pool_dir: Path,
     seed_slug: str,
 ) -> bool:
-    """Post-process a generated seed: add DLL, modify config, move to output.
+    """Post-process a generated seed: add DLL, modify config, zip to output.
 
     Returns True on success, False on failure.
     """
@@ -240,15 +254,16 @@ def process_seed(
     if not add_dll_to_config(seed_dir):
         return False
 
-    # Move to final location with seed_<uuid> naming
-    final_name = f"seed_{seed_slug}"
-    final_path = output_pool_dir / final_name
+    # Zip to final location with seed_<slug>.zip naming
+    final_zip = output_pool_dir / f"seed_{seed_slug}.zip"
+    top_dir = f"speedfog_{seed_slug}"
 
     try:
-        shutil.move(str(seed_dir), str(final_path))
+        zip_seed_dir(seed_dir, final_zip, top_dir)
         return True
     except OSError as e:
-        print(f"  Error moving seed to output: {e}")
+        print(f"  Error creating seed zip: {e}")
+        final_zip.unlink(missing_ok=True)
         return False
 
 
@@ -326,7 +341,7 @@ def main() -> int:
 
             # Process and move to output
             if process_seed(seed_dir, dll_source, output_pool_dir, seed_slug):
-                print(f"  Success: {output_pool_dir / f'seed_{seed_slug}'}")
+                print(f"  Success: {output_pool_dir / f'seed_{seed_slug}.zip'}")
                 succeeded += 1
                 ok = True
             else:

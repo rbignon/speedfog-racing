@@ -153,7 +153,6 @@ class Participant(Base):
         Enum(ParticipantStatus), default=ParticipantStatus.REGISTERED
     )
     color_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    has_seed_pack: Mapped[bool] = mapped_column(default=False, server_default="0")
     zone_history: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
     # Relationships

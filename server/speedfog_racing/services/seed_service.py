@@ -4,6 +4,7 @@ import json
 import logging
 import random
 import tomllib
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -16,10 +17,33 @@ from speedfog_racing.models import Race, Seed, SeedStatus
 logger = logging.getLogger(__name__)
 
 
+def _read_graph_from_zip(zip_path: Path) -> dict[str, Any] | None:
+    """Read graph.json from inside a seed zip file.
+
+    Handles both root-level graph.json and nested */graph.json.
+    """
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            names = zf.namelist()
+            # Try root-level first
+            if "graph.json" in names:
+                return json.loads(zf.read("graph.json"))
+            # Try nested (e.g., speedfog_abc123/graph.json)
+            for name in names:
+                parts = name.split("/")
+                if len(parts) == 2 and parts[1] == "graph.json":
+                    return json.loads(zf.read(name))
+        logger.warning(f"No graph.json found in {zip_path}")
+        return None
+    except (zipfile.BadZipFile, json.JSONDecodeError, KeyError) as e:
+        logger.warning(f"Failed to read graph.json from {zip_path}: {e}")
+        return None
+
+
 async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
     """Scan pool directory and sync with database.
 
-    Looks for seed_* directories containing graph.json files.
+    Looks for seed_*.zip files containing graph.json.
     Creates Seed records for new seeds, skips existing ones.
 
     Args:
@@ -37,16 +61,16 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
 
     added = 0
 
-    for seed_dir in sorted(pool_dir.iterdir()):
-        if not seed_dir.is_dir():
+    for entry in sorted(pool_dir.iterdir()):
+        if not entry.is_file():
             continue
-        if not seed_dir.name.startswith("seed_"):
+        if not entry.name.startswith("seed_") or not entry.name.endswith(".zip"):
             continue
 
-        # Extract seed slug from directory name (e.g., seed_a1b2c3d4 -> a1b2c3d4)
-        seed_number = seed_dir.name.removeprefix("seed_")
+        # Extract seed slug from filename (e.g., seed_a1b2c3d4.zip -> a1b2c3d4)
+        seed_number = entry.name.removeprefix("seed_").removesuffix(".zip")
         if not seed_number:
-            logger.warning(f"Invalid seed directory name: {seed_dir.name}")
+            logger.warning(f"Invalid seed zip name: {entry.name}")
             continue
 
         # Check if already in database
@@ -56,23 +80,15 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
         if result.scalar_one_or_none():
             continue
 
-        # Load graph.json
-        graph_file = seed_dir / "graph.json"
-        if not graph_file.exists():
-            logger.warning(f"Missing graph.json in {seed_dir}")
-            continue
-
-        try:
-            with open(graph_file) as f:
-                graph_json = json.load(f)
-        except json.JSONDecodeError as e:
-            logger.warning(f"Invalid JSON in {graph_file}: {e}")
+        # Read graph.json from inside the zip
+        graph_json = _read_graph_from_zip(entry)
+        if graph_json is None:
             continue
 
         # Extract total_layers from graph
         total_layers = graph_json.get("total_layers", 0)
         if total_layers == 0:
-            logger.warning(f"Missing total_layers in {graph_file}")
+            logger.warning(f"Missing total_layers in {entry}")
 
         # Create seed record
         seed = Seed(
@@ -80,7 +96,7 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
             pool_name=pool_name,
             graph_json=graph_json,
             total_layers=total_layers,
-            folder_path=str(seed_dir),
+            folder_path=str(entry),
             status=SeedStatus.AVAILABLE,
         )
         db.add(seed)

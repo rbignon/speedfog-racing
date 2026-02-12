@@ -9,7 +9,6 @@ import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -165,39 +164,33 @@ def integration_db():
 
 @pytest.fixture
 def seed_folder():
-    """Create a temporary seed folder with mock content."""
+    """Create a temporary seed zip with mock content."""
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 5,
+        "nodes": {
+            "start_node": {"type": "start", "zones": ["start"], "layer": 0, "tier": 1},
+            "node_a": {"zones": ["zone_a"], "layer": 1, "tier": 1},
+            "node_b": {"zones": ["zone_b"], "layer": 2, "tier": 2},
+            "node_c": {"zones": ["zone_c"], "layer": 3, "tier": 3},
+        },
+        "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
+        "event_map": {
+            "9000000": "node_a",
+            "9000001": "node_b",
+            "9000002": "node_c",
+        },
+        "finish_event": 9000003,
+    }
     with tempfile.TemporaryDirectory() as tmpdir:
-        seed_dir = Path(tmpdir) / "seed_a1b2c3d4"
-        seed_dir.mkdir()
-
-        (seed_dir / "lib").mkdir()
-        (seed_dir / "lib" / "speedfog_race_mod.dll").write_text("mock dll")
-        (seed_dir / "ModEngine").mkdir()
-        (seed_dir / "ModEngine" / "config.toml").write_text("[config]")
-        (seed_dir / "graph.json").write_text(
-            json.dumps(
-                {
-                    "version": "4.0",
-                    "total_layers": 5,
-                    "nodes": {
-                        "start_node": {"type": "start", "zones": ["start"], "layer": 0, "tier": 1},
-                        "node_a": {"zones": ["zone_a"], "layer": 1, "tier": 1},
-                        "node_b": {"zones": ["zone_b"], "layer": 2, "tier": 2},
-                        "node_c": {"zones": ["zone_c"], "layer": 3, "tier": 3},
-                    },
-                    "area_tiers": {"zone_a": 1, "zone_b": 2, "zone_c": 3},
-                    "event_map": {
-                        "9000000": "node_a",
-                        "9000001": "node_b",
-                        "9000002": "node_c",
-                    },
-                    "finish_event": 9000003,
-                }
-            )
-        )
-        (seed_dir / "launch_speedfog.bat").write_text("@echo off")
-
-        yield seed_dir
+        zip_path = Path(tmpdir) / "seed_a1b2c3d4.zip"
+        top = "speedfog_a1b2c3d4"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(f"{top}/lib/speedfog_race_mod.dll", "mock dll")
+            zf.writestr(f"{top}/ModEngine/config.toml", "[config]")
+            zf.writestr(f"{top}/graph.json", json.dumps(graph_json))
+            zf.writestr(f"{top}/launch_speedfog.bat", "@echo off")
+        yield zip_path
 
 
 @pytest.fixture
@@ -217,7 +210,7 @@ def integration_client(integration_db):
 
 @pytest.fixture
 def race_with_participants(integration_db, integration_client, seed_folder):
-    """Create a race with 3 participants and generate seed packs.
+    """Create a race with 3 participants.
 
     This is a sync fixture that sets up all the data needed for tests.
     """
@@ -284,125 +277,111 @@ def race_with_participants(integration_db, integration_client, seed_folder):
 
     organizer, players = asyncio.run(setup())
 
-    with tempfile.TemporaryDirectory() as output_dir:
-        with patch("speedfog_racing.services.seed_pack_service.settings") as mock_settings:
-            mock_settings.seed_packs_output_dir = output_dir
-            mock_settings.websocket_url = "ws://test:8000"
+    # Create race
+    response = integration_client.post(
+        "/api/races",
+        json={"name": "Integration Test Race", "pool_name": "standard"},
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 201, f"Failed to create race: {response.json()}"
+    race_id = response.json()["id"]
 
-            # Create race
-            response = integration_client.post(
-                "/api/races",
-                json={"name": "Integration Test Race", "pool_name": "standard"},
-                headers={"Authorization": f"Bearer {organizer.api_token}"},
+    # Add participants
+    for player in players:
+        response = integration_client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": player.twitch_username},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+
+    # Get mod tokens and ensure seed has area_tiers for layer tests
+    async def get_tokens():
+        async with integration_db() as db:
+            # Ensure the race's seed has area_tiers (real seeds from pool
+            # scan may not have them)
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
             )
-            assert response.status_code == 201, f"Failed to create race: {response.json()}"
-            race_id = response.json()["id"]
+            race = race_result.scalar_one()
+            if race.seed:
+                graph = dict(race.seed.graph_json or {})
+                graph["area_tiers"] = {"zone_a": 1, "zone_b": 2, "zone_c": 3}
+                graph["nodes"] = {
+                    "start_node": {
+                        "type": "start",
+                        "display_name": "Chapel of Anticipation",
+                        "zones": ["start"],
+                        "layer": 0,
+                        "tier": 1,
+                        "exits": [
+                            {"text": "First door", "fog_id": 100, "to": "node_a"},
+                            {"text": "Side exit", "fog_id": 101, "to": "node_b"},
+                        ],
+                    },
+                    "node_a": {
+                        "display_name": "Stormveil Castle",
+                        "zones": ["zone_a"],
+                        "layer": 1,
+                        "tier": 1,
+                        "exits": [
+                            {"text": "Gate to B", "fog_id": 102, "to": "node_b"},
+                        ],
+                    },
+                    "node_b": {
+                        "display_name": "Raya Lucaria",
+                        "zones": ["zone_b"],
+                        "layer": 2,
+                        "tier": 2,
+                        "exits": [],
+                    },
+                    "node_c": {
+                        "display_name": "Volcano Manor",
+                        "zones": ["zone_c"],
+                        "layer": 3,
+                        "tier": 3,
+                        "exits": [],
+                    },
+                }
+                graph["event_map"] = {
+                    "9000000": "node_a",
+                    "9000001": "node_b",
+                    "9000002": "node_c",
+                }
+                graph["finish_event"] = 9000003
+                race.seed.graph_json = graph
+                await db.commit()
 
-            # Add participants
-            for player in players:
-                response = integration_client.post(
-                    f"/api/races/{race_id}/participants",
-                    json={"twitch_username": player.twitch_username},
-                    headers={"Authorization": f"Bearer {organizer.api_token}"},
+            result = await db.execute(
+                select(Participant).where(Participant.race_id == uuid.UUID(race_id))
+            )
+            participants = result.scalars().all()
+
+            # Refresh to get user relationship
+            for p in participants:
+                await db.refresh(p, ["user"])
+
+            # Build (user, mod_token) mapping sorted by username
+            player_data = []
+            for p in sorted(participants, key=lambda x: x.user.twitch_username):
+                player_data.append(
+                    {
+                        "user": p.user,
+                        "mod_token": p.mod_token,
+                        "participant_id": str(p.id),
+                    }
                 )
-                assert response.status_code == 200
+            return player_data
 
-            # Generate seed packs
-            response = integration_client.post(
-                f"/api/races/{race_id}/generate-seed-packs",
-                headers={"Authorization": f"Bearer {organizer.api_token}"},
-            )
-            assert response.status_code == 200
+    player_data = asyncio.run(get_tokens())
 
-            # Get mod tokens and ensure seed has area_tiers for layer tests
-            async def get_tokens():
-                async with integration_db() as db:
-                    # Ensure the race's seed has area_tiers (real seeds from pool
-                    # scan may not have them)
-                    from sqlalchemy.orm import selectinload as _sinload
-
-                    race_result = await db.execute(
-                        select(Race)
-                        .where(Race.id == uuid.UUID(race_id))
-                        .options(_sinload(Race.seed))
-                    )
-                    race = race_result.scalar_one()
-                    if race.seed:
-                        graph = dict(race.seed.graph_json or {})
-                        graph["area_tiers"] = {"zone_a": 1, "zone_b": 2, "zone_c": 3}
-                        graph["nodes"] = {
-                            "start_node": {
-                                "type": "start",
-                                "display_name": "Chapel of Anticipation",
-                                "zones": ["start"],
-                                "layer": 0,
-                                "tier": 1,
-                                "exits": [
-                                    {"text": "First door", "fog_id": 100, "to": "node_a"},
-                                    {"text": "Side exit", "fog_id": 101, "to": "node_b"},
-                                ],
-                            },
-                            "node_a": {
-                                "display_name": "Stormveil Castle",
-                                "zones": ["zone_a"],
-                                "layer": 1,
-                                "tier": 1,
-                                "exits": [
-                                    {"text": "Gate to B", "fog_id": 102, "to": "node_b"},
-                                ],
-                            },
-                            "node_b": {
-                                "display_name": "Raya Lucaria",
-                                "zones": ["zone_b"],
-                                "layer": 2,
-                                "tier": 2,
-                                "exits": [],
-                            },
-                            "node_c": {
-                                "display_name": "Volcano Manor",
-                                "zones": ["zone_c"],
-                                "layer": 3,
-                                "tier": 3,
-                                "exits": [],
-                            },
-                        }
-                        graph["event_map"] = {
-                            "9000000": "node_a",
-                            "9000001": "node_b",
-                            "9000002": "node_c",
-                        }
-                        graph["finish_event"] = 9000003
-                        race.seed.graph_json = graph
-                        await db.commit()
-
-                    result = await db.execute(
-                        select(Participant).where(Participant.race_id == uuid.UUID(race_id))
-                    )
-                    participants = result.scalars().all()
-
-                    # Refresh to get user relationship
-                    for p in participants:
-                        await db.refresh(p, ["user"])
-
-                    # Build (user, mod_token) mapping sorted by username
-                    player_data = []
-                    for p in sorted(participants, key=lambda x: x.user.twitch_username):
-                        player_data.append(
-                            {
-                                "user": p.user,
-                                "mod_token": p.mod_token,
-                                "participant_id": str(p.id),
-                            }
-                        )
-                    return player_data
-
-            player_data = asyncio.run(get_tokens())
-
-            yield {
-                "race_id": race_id,
-                "organizer": organizer,
-                "players": player_data,
-            }
+    yield {
+        "race_id": race_id,
+        "organizer": organizer,
+        "players": player_data,
+    }
 
 
 # =============================================================================

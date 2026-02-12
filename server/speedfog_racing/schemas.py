@@ -62,7 +62,6 @@ class ParticipantResponse(BaseModel):
     igt_ms: int
     death_count: int
     color_index: int = 0
-    has_seed_pack: bool = False
 
 
 class CasterResponse(BaseModel):
@@ -174,17 +173,3 @@ class AcceptInviteResponse(BaseModel):
 
     participant: ParticipantResponse
     race_id: UUID
-
-
-class DownloadInfo(BaseModel):
-    """Download information for a participant's seed pack."""
-
-    participant_id: UUID
-    twitch_username: str
-    url: str
-
-
-class GenerateSeedPacksResponse(BaseModel):
-    """Response when generating seed packs for a race."""
-
-    downloads: list[DownloadInfo]

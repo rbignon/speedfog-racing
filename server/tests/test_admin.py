@@ -2,6 +2,7 @@
 
 import json
 import tempfile
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -75,14 +76,17 @@ async def regular_user(async_session):
 
 @pytest.fixture
 def seed_pool_dir():
-    """Create a temporary seed pool directory structure."""
+    """Create a temporary seed pool directory with zip files."""
     with tempfile.TemporaryDirectory() as tmpdir:
         pool_dir = Path(tmpdir) / "standard"
         pool_dir.mkdir()
 
-        seed_dir = pool_dir / "seed_abc123"
-        seed_dir.mkdir()
-        (seed_dir / "graph.json").write_text(json.dumps({"total_layers": 10, "nodes": []}))
+        zip_path = pool_dir / "seed_abc123.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(
+                "speedfog_abc123/graph.json",
+                json.dumps({"total_layers": 10, "nodes": []}),
+            )
 
         yield tmpdir
 
