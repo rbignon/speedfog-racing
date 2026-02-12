@@ -10,19 +10,19 @@ seed = 0
 run_complete_message = "RUN COMPLETE GG"
 
 [budget]
-total_weight = 30
+total_weight = 40
 tolerance = 5
 
 [requirements]
 legacy_dungeons = 1
-bosses = 5
+bosses = 10
 mini_dungeons = 5
 
 [structure]
 max_parallel_paths = 4
-min_layers = 15
-max_layers = 20
-final_tier = 15
+min_layers = 19
+max_layers = 24
+final_tier = 18
 split_probability = 0.5
 merge_probability = 0.5
 max_branches = 3
