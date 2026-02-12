@@ -1,10 +1,10 @@
 //! Race UI - ImGui overlay for SpeedFog Racing
 
+use std::borrow::Cow;
+
 use hudhook::imgui::{Condition, FontConfig, FontGlyphRanges, FontSource, StyleColor, WindowFlags};
 use hudhook::{ImguiRenderLoop, RenderContext};
 use tracing::info;
-
-use crate::core::color::parse_hex_color;
 
 use crate::eldenring::FlagReaderStatus;
 
@@ -58,27 +58,16 @@ impl ImguiRenderLoop for RaceTracker {
             return;
         }
 
-        let s = &self.config.overlay;
-
-        // Parse colors from config
-        let bg_color = parse_hex_color(&s.background_color, s.background_opacity);
-        let text_color = parse_hex_color(&s.text_color, 1.0);
-        let text_disabled_color = parse_hex_color(&s.text_disabled_color, 1.0);
-        let border_color = if s.show_border {
-            parse_hex_color(&s.border_color, 1.0)
-        } else {
-            [0.0, 0.0, 0.0, 0.0]
-        };
+        let c = &self.cached_colors;
 
         // Push style colors (auto-popped when tokens drop)
-        let _bg_token = ui.push_style_color(StyleColor::WindowBg, bg_color);
-        let _text_token = ui.push_style_color(StyleColor::Text, text_color);
-        let _text_disabled_token =
-            ui.push_style_color(StyleColor::TextDisabled, text_disabled_color);
-        let _border_token = ui.push_style_color(StyleColor::Border, border_color);
+        let _bg_token = ui.push_style_color(StyleColor::WindowBg, c.bg);
+        let _text_token = ui.push_style_color(StyleColor::Text, c.text);
+        let _text_disabled_token = ui.push_style_color(StyleColor::TextDisabled, c.text_disabled);
+        let _border_token = ui.push_style_color(StyleColor::Border, c.border);
 
         let [dw, _dh] = ui.io().display_size;
-        let scale = s.font_size / 16.0;
+        let scale = self.config.overlay.font_size / 16.0;
         let max_width = 320.0 * scale;
 
         let flags =
@@ -86,7 +75,10 @@ impl ImguiRenderLoop for RaceTracker {
 
         ui.window("SpeedFog Race")
             .position(
-                [dw - max_width - s.position_offset_x, s.position_offset_y],
+                [
+                    dw - max_width - self.config.overlay.position_offset_x,
+                    self.config.overlay.position_offset_y,
+                ],
                 Condition::FirstUseEver,
             )
             .flags(flags)
@@ -190,9 +182,9 @@ impl RaceTracker {
             // Color: orange=ready, white=playing, green=finished, dim=other
             let color = match p.status.as_str() {
                 "finished" => [0.5, 1.0, 0.5, 1.0],
-                "playing" => parse_hex_color(&self.config.overlay.text_color, 1.0),
+                "playing" => self.cached_colors.text,
                 "ready" => [1.0, 0.65, 0.0, 1.0],
-                _ => parse_hex_color(&self.config.overlay.text_disabled_color, 1.0),
+                _ => self.cached_colors.text_disabled,
             };
 
             // Right-aligned value: progress for ready/playing, IGT for finished
@@ -252,10 +244,7 @@ impl RaceTracker {
         // Vanilla flag sanity check (category 0 should always exist)
         let (sanity_color, sanity_label) = match &debug.vanilla_sanity {
             FlagReadResult::Set => ([0.5, 1.0, 0.5, 1.0], "true"),
-            FlagReadResult::NotSet => (
-                parse_hex_color(&self.config.overlay.text_color, 1.0),
-                "false",
-            ),
+            FlagReadResult::NotSet => (self.cached_colors.text, "false"),
             FlagReadResult::Unreadable => ([1.0, 0.3, 0.3, 1.0], "None"),
         };
         ui.text("  vanilla 6:");
@@ -266,10 +255,7 @@ impl RaceTracker {
             for (flag_id, result) in &debug.sample_reads {
                 let (color, label) = match result {
                     FlagReadResult::Set => ([0.5, 1.0, 0.5, 1.0], "true"),
-                    FlagReadResult::NotSet => (
-                        parse_hex_color(&self.config.overlay.text_color, 1.0),
-                        "false",
-                    ),
+                    FlagReadResult::NotSet => (self.cached_colors.text, "false"),
                     FlagReadResult::Unreadable => ([1.0, 0.3, 0.3, 1.0], "None"),
                 };
                 ui.text(format!("  {}:", flag_id));
@@ -312,34 +298,30 @@ fn format_time_u32(ms: u32) -> String {
     format!("{:02}:{:02}:{:02}", hours, mins % 60, secs % 60)
 }
 
-/// Truncate text to fit within `max_width` pixels, adding "…" if needed.
-fn truncate_to_width(ui: &hudhook::imgui::Ui, text: &str, max_width: f32) -> String {
-    let width = ui.calc_text_size(text)[0];
-    if width <= max_width {
-        return text.to_string();
+/// Truncate text to fit within `max_width` pixels, adding "\u{2026}" if needed.
+///
+/// Returns `Cow::Borrowed` when the text fits (zero allocations in the common case).
+/// When truncation is needed, does a linear forward scan and one allocation for the result.
+fn truncate_to_width<'a>(ui: &hudhook::imgui::Ui, text: &'a str, max_width: f32) -> Cow<'a, str> {
+    if ui.calc_text_size(text)[0] <= max_width {
+        return Cow::Borrowed(text);
     }
 
     let ellipsis = "\u{2026}"; // …
     let ellipsis_width = ui.calc_text_size(ellipsis)[0];
     let target_width = max_width - ellipsis_width;
     if target_width <= 0.0 {
-        return ellipsis.to_string();
+        return Cow::Borrowed(ellipsis);
     }
 
-    // Binary search for the longest prefix that fits
-    let chars: Vec<char> = text.chars().collect();
-    let mut low = 0usize;
-    let mut high = chars.len();
-    while low < high {
-        let mid = (low + high + 1) / 2;
-        let prefix: String = chars[..mid].iter().collect();
-        if ui.calc_text_size(&prefix)[0] <= target_width {
-            low = mid;
-        } else {
-            high = mid - 1;
+    // Linear forward scan: find the longest byte prefix that fits
+    let mut last_fit = 0;
+    for (byte_pos, _) in text.char_indices().skip(1) {
+        if ui.calc_text_size(&text[..byte_pos])[0] > target_width {
+            break;
         }
+        last_fit = byte_pos;
     }
 
-    let prefix: String = chars[..low].iter().collect();
-    format!("{}{}", prefix, ellipsis)
+    Cow::Owned(format!("{}{}", &text[..last_fit], ellipsis))
 }

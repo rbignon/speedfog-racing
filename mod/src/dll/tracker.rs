@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
+use crate::core::color::parse_hex_color;
 use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
@@ -51,6 +52,18 @@ pub struct DebugInfo<'a> {
 }
 
 // =============================================================================
+// CACHED COLORS
+// =============================================================================
+
+/// Pre-parsed overlay colors, computed once from config hex strings.
+pub(crate) struct CachedColors {
+    pub bg: [f32; 4],
+    pub text: [f32; 4],
+    pub text_disabled: [f32; 4],
+    pub border: [f32; 4],
+}
+
+// =============================================================================
 // RACE TRACKER
 // =============================================================================
 
@@ -66,6 +79,7 @@ pub struct RaceTracker {
 
     // Config
     pub(crate) config: RaceConfig,
+    pub(crate) cached_colors: CachedColors,
 
     // Font data loaded from file (for ImGui registration)
     pub(crate) font_data: Option<Vec<u8>>,
@@ -88,6 +102,9 @@ pub struct RaceTracker {
 
     // Status update throttle
     last_status_update: Instant,
+
+    // Event flag poll throttle (10Hz)
+    last_flag_poll: Instant,
 
     // Ready sent flag
     ready_sent: bool,
@@ -128,6 +145,19 @@ impl RaceTracker {
         let event_flag_reader =
             EventFlagReader::new(game_state.base_addresses().csfd4_virtual_memory_flag);
 
+        // Pre-parse overlay colors
+        let s = &config.overlay;
+        let cached_colors = CachedColors {
+            bg: parse_hex_color(&s.background_color, s.background_opacity),
+            text: parse_hex_color(&s.text_color, 1.0),
+            text_disabled: parse_hex_color(&s.text_disabled_color, 1.0),
+            border: if s.show_border {
+                parse_hex_color(&s.border_color, 1.0)
+            } else {
+                [0.0, 0.0, 0.0, 0.0]
+            },
+        };
+
         // Create WebSocket client
         let mut ws_client = RaceWebSocketClient::new(config.server.clone());
         ws_client.connect();
@@ -139,6 +169,7 @@ impl RaceTracker {
             event_flag_reader,
             ws_client,
             config,
+            cached_colors,
             font_data,
             race_state: RaceState::default(),
             show_ui: true,
@@ -149,6 +180,7 @@ impl RaceTracker {
             event_ids: Vec::new(),
             triggered_flags: HashSet::new(),
             last_status_update: Instant::now(),
+            last_flag_poll: Instant::now(),
             ready_sent: false,
             flags_diagnosed: false,
         })
@@ -250,14 +282,18 @@ impl RaceTracker {
             info!(result = ?fogrando_sample, "[RACE] FogRando flag 1040292100 read");
         }
 
-        // Event flag polling (every tick)
-        for &flag_id in &self.event_ids {
-            if !self.triggered_flags.contains(&flag_id) {
-                if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
-                    self.triggered_flags.insert(flag_id);
-                    self.ws_client.send_event_flag(flag_id, igt_ms);
-                    self.last_sent_debug = Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
-                    info!(flag_id, "[RACE] Event flag triggered");
+        // Event flag polling (throttled to 10Hz — flags change once every few minutes)
+        if self.last_flag_poll.elapsed() >= Duration::from_millis(100) {
+            self.last_flag_poll = Instant::now();
+            for &flag_id in &self.event_ids {
+                if !self.triggered_flags.contains(&flag_id) {
+                    if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                        self.triggered_flags.insert(flag_id);
+                        self.ws_client.send_event_flag(flag_id, igt_ms);
+                        self.last_sent_debug =
+                            Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
+                        info!(flag_id, "[RACE] Event flag triggered");
+                    }
                 }
             }
         }
