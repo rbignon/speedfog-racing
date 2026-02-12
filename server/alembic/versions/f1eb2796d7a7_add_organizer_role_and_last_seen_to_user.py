@@ -21,8 +21,10 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     # Add 'ORGANIZER' value to the userrole enum (PostgreSQL only).
-    # SQLAlchemy's Enum(UserRole) stores enum NAMES (uppercase), not values.
-    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'ORGANIZER' BEFORE 'ADMIN'")
+    # ALTER TYPE ... ADD VALUE cannot run inside a transaction block in PostgreSQL,
+    # so we must use autocommit_block() to execute it outside the migration transaction.
+    with op.get_context().autocommit_block():
+        op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'ORGANIZER' BEFORE 'ADMIN'")
 
     # Add last_seen column
     op.add_column("users", sa.Column("last_seen", sa.DateTime(timezone=True), nullable=True))
