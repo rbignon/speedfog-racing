@@ -53,6 +53,11 @@ pub enum IncomingMessage {
     LeaderboardUpdate(Vec<ParticipantInfo>),
     RaceStatusChange(String),
     PlayerUpdate(ParticipantInfo),
+    /// Event flag drained from outgoing channel on reconnect — must be re-buffered
+    RequeueEventFlag {
+        flag_id: u32,
+        igt_ms: u32,
+    },
     Error(String),
 }
 
@@ -237,6 +242,33 @@ fn websocket_thread(
         match connect_and_auth(&url, &settings.mod_token, &incoming_tx) {
             Ok(mut socket) => {
                 info!("[WS] Connected and authenticated");
+
+                // Drain stale outgoing messages before notifying Connected.
+                // During disconnection, status_update messages pile up in the channel;
+                // sending them before Ready would confuse the server.
+                let mut drained = 0u32;
+                while let Ok(msg) = outgoing_rx.try_recv() {
+                    match msg {
+                        OutgoingMessage::Shutdown => {
+                            let _ = incoming_tx.send(IncomingMessage::StatusChanged(
+                                ConnectionStatus::Disconnected,
+                            ));
+                            return;
+                        }
+                        OutgoingMessage::EventFlag { flag_id, igt_ms } => {
+                            // Re-queue event flags back to the tracker for re-buffering.
+                            // These were queued but never transmitted before disconnect.
+                            let _ = incoming_tx
+                                .send(IncomingMessage::RequeueEventFlag { flag_id, igt_ms });
+                        }
+                        _ => {}
+                    }
+                    drained += 1;
+                }
+                if drained > 0 {
+                    info!(count = drained, "[WS] Drained stale outgoing messages");
+                }
+
                 let _ =
                     incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Connected));
                 reconnect_delay = Duration::from_secs(1);

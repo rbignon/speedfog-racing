@@ -99,6 +99,8 @@ pub struct RaceTracker {
     // Event flag tracking
     event_ids: Vec<u32>,
     pub(crate) triggered_flags: HashSet<u32>,
+    /// Event flags detected while disconnected, pending re-send on reconnection
+    pending_event_flags: Vec<(u32, u32)>,
 
     // Status update throttle
     last_status_update: Instant,
@@ -179,6 +181,7 @@ impl RaceTracker {
             my_participant_id: None,
             event_ids: Vec::new(),
             triggered_flags: HashSet::new(),
+            pending_event_flags: Vec::new(),
             last_status_update: Instant::now(),
             last_flag_poll: Instant::now(),
             ready_sent: false,
@@ -207,7 +210,32 @@ impl RaceTracker {
             self.handle_ws_message(msg);
         }
 
-        // Skip game reading if not connected
+        // Event flag polling runs ALWAYS (even when disconnected).
+        // Flags are transient in game memory (~seconds), so we must detect them immediately
+        // and buffer them for re-send on reconnection.
+        if !self.event_ids.is_empty() && self.last_flag_poll.elapsed() >= Duration::from_millis(100)
+        {
+            self.last_flag_poll = Instant::now();
+            let igt_ms = self.game_state.read_igt().unwrap_or(0);
+            for &flag_id in &self.event_ids {
+                if !self.triggered_flags.contains(&flag_id) {
+                    if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                        self.triggered_flags.insert(flag_id);
+                        if self.ws_client.is_connected() {
+                            self.ws_client.send_event_flag(flag_id, igt_ms);
+                            self.last_sent_debug =
+                                Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
+                            info!(flag_id, "[RACE] Event flag triggered");
+                        } else {
+                            self.pending_event_flags.push((flag_id, igt_ms));
+                            info!(flag_id, "[RACE] Event flag buffered (disconnected)");
+                        }
+                    }
+                }
+            }
+        }
+
+        // Skip rest if not connected (status updates, ready, diagnostics)
         if !self.ws_client.is_connected() {
             return;
         }
@@ -216,20 +244,30 @@ impl RaceTracker {
         let igt_ms = self.game_state.read_igt().unwrap_or(0);
         let deaths = self.game_state.read_deaths().unwrap_or(0);
 
-        // Send ready once connected (if not already sent)
+        // Send ready on (re)connection
         if !self.ready_sent {
             self.ws_client.send_ready();
             self.last_sent_debug = Some("ready".to_string());
             self.ready_sent = true;
             info!("[RACE] Sent ready signal");
 
-            // Re-scan all flags for reconnect recovery
+            // Drain event flags buffered during disconnection
+            for (flag_id, flag_igt) in self.pending_event_flags.drain(..) {
+                self.ws_client.send_event_flag(flag_id, flag_igt);
+                self.last_sent_debug = Some(format!("event_flag({}, igt={})", flag_id, flag_igt));
+                info!(flag_id, "[RACE] Buffered event flag sent");
+            }
+
+            // Safety-net rescan: catch any flags still set in memory that polling missed
             for &flag_id in &self.event_ids {
-                if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
-                    self.triggered_flags.insert(flag_id);
-                    self.ws_client.send_event_flag(flag_id, igt_ms);
-                    self.last_sent_debug = Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
-                    info!(flag_id, "[RACE] Event flag re-sent after reconnect");
+                if !self.triggered_flags.contains(&flag_id) {
+                    if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                        self.triggered_flags.insert(flag_id);
+                        self.ws_client.send_event_flag(flag_id, igt_ms);
+                        self.last_sent_debug =
+                            Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
+                        info!(flag_id, "[RACE] Event flag re-sent after reconnect");
+                    }
                 }
             }
         }
@@ -282,22 +320,6 @@ impl RaceTracker {
             info!(result = ?fogrando_sample, "[RACE] FogRando flag 1040292100 read");
         }
 
-        // Event flag polling (throttled to 10Hz — flags change once every few minutes)
-        if self.last_flag_poll.elapsed() >= Duration::from_millis(100) {
-            self.last_flag_poll = Instant::now();
-            for &flag_id in &self.event_ids {
-                if !self.triggered_flags.contains(&flag_id) {
-                    if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
-                        self.triggered_flags.insert(flag_id);
-                        self.ws_client.send_event_flag(flag_id, igt_ms);
-                        self.last_sent_debug =
-                            Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
-                        info!(flag_id, "[RACE] Event flag triggered");
-                    }
-                }
-            }
-        }
-
         // Send periodic status updates (every 1 second, only when IGT is ticking)
         // During quit-outs IGT is 0 — skip to avoid erroneous data
         if self.last_status_update.elapsed() >= Duration::from_secs(1) && igt_ms > 0 {
@@ -328,7 +350,8 @@ impl RaceTracker {
                 ));
                 self.my_participant_id = Some(participant_id);
                 self.event_ids = seed.event_ids.clone();
-                self.triggered_flags.clear();
+                // Don't clear triggered_flags on reconnect: they track which flags
+                // have already been detected. Pending flags are in pending_event_flags.
                 self.race_state.race = Some(race);
                 self.race_state.seed = Some(seed);
                 self.race_state.participants = participants;
@@ -367,6 +390,12 @@ impl RaceTracker {
                 {
                     *p = player;
                 }
+            }
+            IncomingMessage::RequeueEventFlag { flag_id, igt_ms } => {
+                // Event flag was in the outgoing channel but never transmitted before
+                // disconnect. Re-buffer it so it gets sent after reconnection.
+                self.pending_event_flags.push((flag_id, igt_ms));
+                info!(flag_id, "[WS] Re-queued drained event flag");
             }
             IncomingMessage::Error(e) => {
                 self.last_received_debug = Some(format!("error({})", e));
