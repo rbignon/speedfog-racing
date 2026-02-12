@@ -103,15 +103,13 @@ async def health_check() -> dict[str, str]:
 @app.websocket("/ws/mod/{race_id}")
 async def websocket_mod(websocket: WebSocket, race_id: uuid.UUID) -> None:
     """WebSocket endpoint for mod connections."""
-    async with async_session_maker() as db:
-        await handle_mod_websocket(websocket, race_id, db)
+    await handle_mod_websocket(websocket, race_id, async_session_maker)
 
 
 @app.websocket("/ws/race/{race_id}")
 async def websocket_spectator(websocket: WebSocket, race_id: uuid.UUID) -> None:
     """WebSocket endpoint for spectator connections."""
-    async with async_session_maker() as db:
-        await handle_spectator_websocket(websocket, race_id, db)
+    await handle_spectator_websocket(websocket, race_id, async_session_maker)
 
 
 def main() -> None:

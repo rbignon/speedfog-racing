@@ -12,6 +12,7 @@ WorkingDirectory=/opt/speedfog-racing/server
 ExecStart=/opt/speedfog-racing/server/.venv/bin/uvicorn speedfog_racing.main:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=5
+LimitNOFILE=65536
 
 # Hardening
 NoNewPrivileges=yes

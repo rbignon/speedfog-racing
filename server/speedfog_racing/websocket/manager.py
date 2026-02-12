@@ -1,5 +1,6 @@
 """WebSocket connection manager for race rooms."""
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -18,6 +19,8 @@ from speedfog_racing.websocket.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+SEND_TIMEOUT = 5.0  # seconds before a send is considered failed
 
 
 @dataclass
@@ -48,33 +51,45 @@ class RaceRoom:
     spectators: list[SpectatorConnection] = field(default_factory=list)
 
     async def broadcast_to_mods(self, message: str) -> None:
-        """Send message to all connected mods."""
-        disconnected = []
-        for participant_id, conn in self.mods.items():
-            try:
-                await conn.websocket.send_text(message)
-            except Exception:
-                disconnected.append(participant_id)
+        """Send message to all connected mods concurrently with timeout."""
+        if not self.mods:
+            return
 
-        for participant_id in disconnected:
-            self.mods.pop(participant_id, None)
+        async def _send(participant_id: uuid.UUID, conn: ModConnection) -> uuid.UUID | None:
+            try:
+                await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
+            except Exception:
+                return participant_id
+            return None
+
+        results = await asyncio.gather(*(_send(pid, conn) for pid, conn in self.mods.items()))
+        for pid in results:
+            if pid is not None:
+                self.mods.pop(pid, None)
 
     async def broadcast_to_spectators(self, message: str) -> None:
-        """Send message to all connected spectators."""
-        disconnected = []
-        for i, conn in enumerate(self.spectators):
-            try:
-                await conn.websocket.send_text(message)
-            except Exception:
-                disconnected.append(i)
+        """Send message to all connected spectators concurrently with timeout."""
+        if not self.spectators:
+            return
 
-        for i in reversed(disconnected):
-            self.spectators.pop(i)
+        async def _send(conn: SpectatorConnection) -> bool:
+            try:
+                await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
+            except Exception:
+                return True
+            return False
+
+        results = await asyncio.gather(*(_send(c) for c in self.spectators))
+        for i in range(len(results) - 1, -1, -1):
+            if results[i]:
+                self.spectators.pop(i)
 
     async def broadcast_to_all(self, message: str) -> None:
-        """Send message to all connections (mods + spectators)."""
-        await self.broadcast_to_mods(message)
-        await self.broadcast_to_spectators(message)
+        """Send message to all connections (mods + spectators) concurrently."""
+        await asyncio.gather(
+            self.broadcast_to_mods(message),
+            self.broadcast_to_spectators(message),
+        )
 
 
 class ConnectionManager:

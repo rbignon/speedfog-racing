@@ -7,12 +7,13 @@ import uuid
 
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.models import Caster, Participant, Race, RaceStatus
 from speedfog_racing.websocket.manager import (
+    SEND_TIMEOUT,
     SpectatorConnection,
     manager,
     participant_to_info,
@@ -20,6 +21,7 @@ from speedfog_racing.websocket.manager import (
 )
 from speedfog_racing.websocket.schemas import (
     ParticipantInfo,
+    PingMessage,
     RaceInfo,
     RaceStateMessage,
     SeedInfo,
@@ -35,6 +37,7 @@ logger = logging.getLogger(__name__)
 # Accepted risk: unauthenticated connections can observe public race state. This is
 # by design — race data (leaderboard, zone progress) is intended to be public.
 AUTH_GRACE_PERIOD = 2.0
+HEARTBEAT_INTERVAL = 30.0  # seconds between pings
 
 
 def compute_dag_access(user_id: uuid.UUID | None, race: Race) -> bool:
@@ -108,7 +111,7 @@ def build_seed_info(race: Race, dag_access: bool) -> SeedInfo:
 
 
 async def handle_spectator_websocket(
-    websocket: WebSocket, race_id: uuid.UUID, db: AsyncSession
+    websocket: WebSocket, race_id: uuid.UUID, session_maker: async_sessionmaker[AsyncSession]
 ) -> None:
     """Handle a spectator WebSocket connection with optional auth."""
     await websocket.accept()
@@ -116,36 +119,45 @@ async def handle_spectator_websocket(
     conn = SpectatorConnection(websocket=websocket)
 
     try:
-        # Get race with all data
-        race = await get_race_with_details(db, race_id)
-        if not race:
-            await websocket.close(code=4004, reason="Race not found")
-            return
+        # Open a short-lived session for init only
+        async with session_maker() as db:
+            race = await get_race_with_details(db, race_id)
+            if not race:
+                await websocket.close(code=4004, reason="Race not found")
+                return
 
-        # Wait for optional auth message
-        user_id = await _try_auth(websocket, db)
-        conn.user_id = user_id
+            user_id = await _try_auth(websocket, db)
+            conn.user_id = user_id
+            conn.dag_access = compute_dag_access(user_id, race)
 
-        # Compute DAG access based on role
-        conn.dag_access = compute_dag_access(user_id, race)
-
-        # Send initial race state with appropriate visibility
-        await send_race_state(
-            websocket,
-            race,
-            dag_access=conn.dag_access,
-            include_history=(race.status == RaceStatus.FINISHED),
-        )
+            # Send initial race state (session still open for lazy access)
+            await send_race_state(
+                websocket,
+                race,
+                dag_access=conn.dag_access,
+                include_history=(race.status == RaceStatus.FINISHED),
+            )
+        # Session closed — released back to pool within ~2s of connect
 
         # Register connection
         await manager.connect_spectator(race_id, conn)
 
-        # Keep connection alive - spectators only receive broadcasts
-        while True:
+        # Start heartbeat in background
+        heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+
+        try:
+            # Keep connection alive — spectators only receive broadcasts
+            while True:
+                try:
+                    await websocket.receive_text()
+                except WebSocketDisconnect:
+                    break
+        finally:
+            heartbeat_task.cancel()
             try:
-                await websocket.receive_text()
-            except WebSocketDisconnect:
-                break
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
     except WebSocketDisconnect:
         logger.info(f"Spectator disconnected: race={race_id}")
@@ -153,6 +165,21 @@ async def handle_spectator_websocket(
         logger.error(f"Error in spectator websocket: {e}")
     finally:
         await manager.disconnect_spectator(race_id, conn)
+
+
+async def _heartbeat_loop(websocket: WebSocket) -> None:
+    """Send periodic ping messages to the spectator."""
+    ping_json = PingMessage().model_dump_json()
+    try:
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            await asyncio.wait_for(websocket.send_text(ping_json), timeout=SEND_TIMEOUT)
+    except Exception:
+        # Connection lost — close so the main loop's receive_text() raises WebSocketDisconnect
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 async def _try_auth(websocket: WebSocket, db: AsyncSession) -> uuid.UUID | None:
@@ -225,20 +252,26 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
 
     include_history = race.status == RaceStatus.FINISHED
 
-    disconnected: list[int] = []
-    for i, conn in enumerate(room.spectators):
+    # Pre-build per-access messages and send concurrently
+    async def _send_to(i: int, conn: SpectatorConnection) -> int | None:
         dag_access = compute_dag_access(conn.user_id, race)
         conn.dag_access = dag_access
         try:
-            await send_race_state(
-                conn.websocket,
-                race,
-                dag_access=dag_access,
-                include_history=include_history,
+            await asyncio.wait_for(
+                send_race_state(
+                    conn.websocket,
+                    race,
+                    dag_access=dag_access,
+                    include_history=include_history,
+                ),
+                timeout=SEND_TIMEOUT,
             )
         except Exception:
-            logger.exception("Error sending race state to spectator %d in race %s", i, race_id)
-            disconnected.append(i)
+            logger.warning("Error sending race state to spectator %d in race %s", i, race_id)
+            return i
+        return None
 
-    for i in reversed(disconnected):
-        room.spectators.pop(i)
+    results = await asyncio.gather(*(_send_to(i, conn) for i, conn in enumerate(room.spectators)))
+    # Remove failed connections in reverse order
+    for idx in sorted((r for r in results if r is not None), reverse=True):
+        room.spectators.pop(idx)
