@@ -28,7 +28,12 @@
 						{/if}
 						<span>{auth.user?.twitch_display_name || auth.user?.twitch_username}</span>
 					</span>
-					<a href="/race/new" class="btn btn-primary">Create Race</a>
+					{#if auth.isAdmin}
+						<a href="/admin" class="btn btn-secondary">Admin</a>
+					{/if}
+					{#if auth.canCreateRace}
+						<a href="/race/new" class="btn btn-primary">Create Race</a>
+					{/if}
 					<button onclick={() => { auth.logout(); goto('/'); }} class="btn btn-secondary">Logout</button>
 				{:else if !site.initialized}
 					<!-- Wait for site config -->

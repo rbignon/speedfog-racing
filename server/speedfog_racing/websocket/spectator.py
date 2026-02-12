@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
@@ -190,6 +191,8 @@ async def _try_auth(websocket: WebSocket, db: AsyncSession) -> uuid.UUID | None:
         if msg.get("type") == "auth" and isinstance(msg.get("token"), str):
             user = await get_user_by_token(db, msg["token"])
             if user:
+                user.last_seen = datetime.now(UTC)
+                await db.commit()
                 return user.id
     except TimeoutError:
         pass

@@ -34,7 +34,7 @@
 		if (auth.initialized && !authChecked) {
 			authChecked = true;
 
-			if (!auth.isLoggedIn || site.comingSoon) {
+			if (!auth.isLoggedIn || site.comingSoon || !auth.canCreateRace) {
 				goto('/');
 				return;
 			}

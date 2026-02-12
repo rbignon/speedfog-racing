@@ -2,6 +2,7 @@
 
 import json
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -186,3 +187,141 @@ async def test_stats_works_for_admin(test_client, admin_user, async_session):
         assert "pools" in data
         assert "standard" in data["pools"]
         assert data["pools"]["standard"]["available"] == 1
+
+
+# =============================================================================
+# User Management Tests
+# =============================================================================
+
+
+@pytest.fixture
+async def organizer_user(async_session):
+    """Create an organizer user."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="org456",
+            twitch_username="organizer_user",
+            api_token="organizer_test_token",
+            role=UserRole.ORGANIZER,
+            last_seen=datetime(2026, 1, 15, tzinfo=UTC),
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+@pytest.mark.asyncio
+async def test_list_users_requires_admin(test_client, regular_user):
+    """List users requires admin role."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/users",
+            headers={"Authorization": f"Bearer {regular_user.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_list_users_forbidden_for_organizer(test_client, organizer_user):
+    """Organizer role cannot access admin endpoints."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/users",
+            headers={"Authorization": f"Bearer {organizer_user.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_list_users_works_for_admin(test_client, admin_user, regular_user, organizer_user):
+    """Admin can list all users."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/users",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) >= 3
+        usernames = {u["twitch_username"] for u in data}
+        assert "admin_user" in usernames
+        assert "regular_user" in usernames
+        assert "organizer_user" in usernames
+
+
+@pytest.mark.asyncio
+async def test_update_user_role_to_organizer(test_client, admin_user, regular_user):
+    """Admin can promote user to organizer."""
+    async with test_client as client:
+        response = await client.patch(
+            f"/api/admin/users/{regular_user.id}",
+            json={"role": "organizer"},
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["role"] == "organizer"
+
+
+@pytest.mark.asyncio
+async def test_update_user_role_to_user(test_client, admin_user, organizer_user):
+    """Admin can demote organizer to user."""
+    async with test_client as client:
+        response = await client.patch(
+            f"/api/admin/users/{organizer_user.id}",
+            json={"role": "user"},
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_update_user_role_to_admin_rejected(test_client, admin_user, regular_user):
+    """Cannot set admin role via API."""
+    async with test_client as client:
+        response = await client.patch(
+            f"/api/admin/users/{regular_user.id}",
+            json={"role": "admin"},
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_update_user_requires_admin(test_client, regular_user, organizer_user):
+    """Regular users cannot update roles."""
+    async with test_client as client:
+        response = await client.patch(
+            f"/api/admin/users/{organizer_user.id}",
+            json={"role": "user"},
+            headers={"Authorization": f"Bearer {regular_user.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_admin_role_rejected(test_client, admin_user):
+    """Cannot change an admin's role."""
+    async with test_client as client:
+        response = await client.patch(
+            f"/api/admin/users/{admin_user.id}",
+            json={"role": "user"},
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "admin" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_update_nonexistent_user(test_client, admin_user):
+    """Updating a nonexistent user returns 404."""
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/users/00000000-0000-0000-0000-000000000000",
+            json={"role": "organizer"},
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 404

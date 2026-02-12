@@ -48,7 +48,7 @@ async def organizer(async_session):
             twitch_username="organizer",
             twitch_display_name="The Organizer",
             api_token="organizer_token",
-            role=UserRole.USER,
+            role=UserRole.ORGANIZER,
         )
         db.add(user)
         await db.commit()
@@ -173,6 +173,32 @@ async def test_create_race_success(test_client, organizer, seed):
         assert data["status"] == "draft"
         assert data["organizer"]["twitch_username"] == "organizer"
         assert data["pool_name"] == "standard"
+
+
+@pytest.mark.asyncio
+async def test_create_race_forbidden_for_user_role(test_client, player, seed):
+    """Users with USER role cannot create races."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Test Race", "pool_name": "standard"},
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 403
+        assert "permission" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_race_allowed_for_organizer(test_client, organizer, seed):
+    """Users with ORGANIZER role can create races."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Organizer Race", "pool_name": "standard"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["name"] == "Organizer Race"
 
 
 @pytest.mark.asyncio

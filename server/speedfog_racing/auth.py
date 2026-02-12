@@ -2,6 +2,7 @@
 
 import secrets
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import httpx
 from fastapi import Depends, HTTPException, status
@@ -94,6 +95,7 @@ async def get_or_create_user(db: AsyncSession, twitch_user: TwitchUser) -> User:
         user.twitch_username = twitch_user.login
         user.twitch_display_name = twitch_user.display_name
         user.twitch_avatar_url = twitch_user.profile_image_url
+        user.last_seen = datetime.now(UTC)
         return user
 
     # Create new user
@@ -103,6 +105,7 @@ async def get_or_create_user(db: AsyncSession, twitch_user: TwitchUser) -> User:
         twitch_display_name=twitch_user.display_name,
         twitch_avatar_url=twitch_user.profile_image_url,
         api_token=generate_token(),
+        last_seen=datetime.now(UTC),
     )
     db.add(user)
     return user

@@ -30,7 +30,7 @@ async def organizer(async_session):
             twitch_username="organizer",
             twitch_display_name="The Organizer",
             api_token="org_caster_token",
-            role=UserRole.USER,
+            role=UserRole.ORGANIZER,
         )
         db.add(user)
         await db.commit()

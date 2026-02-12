@@ -1,12 +1,16 @@
 """Admin API routes for seed and system management."""
 
-from fastapi import APIRouter, Depends
+import uuid
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.auth import require_admin
 from speedfog_racing.database import get_db
-from speedfog_racing.models import User
+from speedfog_racing.models import User, UserRole
 from speedfog_racing.services import get_pool_stats, scan_pool
 
 router = APIRouter()
@@ -65,3 +69,86 @@ async def get_seeds_stats(
     stats = await get_pool_stats(db)
     pools = {name: PoolStats(**counts) for name, counts in stats.items()}
     return StatsResponse(pools=pools)
+
+
+# =============================================================================
+# User Management
+# =============================================================================
+
+
+class AdminUserResponse(BaseModel):
+    """User info for admin management."""
+
+    id: uuid.UUID
+    twitch_username: str
+    twitch_display_name: str | None
+    twitch_avatar_url: str | None
+    role: str
+    created_at: datetime
+    last_seen: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class UpdateUserRoleRequest(BaseModel):
+    """Request body for updating a user's role."""
+
+    role: str
+
+
+_ALLOWED_ROLE_VALUES = {UserRole.USER.value, UserRole.ORGANIZER.value}
+
+
+@router.get("/users", response_model=list[AdminUserResponse])
+async def list_users(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> list[User]:
+    """List all users ordered by last_seen desc, then created_at desc.
+
+    Requires admin role.
+    """
+    result = await db.execute(
+        select(User).order_by(
+            User.last_seen.desc().nulls_last(),
+            User.created_at.desc(),
+        )
+    )
+    return list(result.scalars().all())
+
+
+@router.patch("/users/{user_id}", response_model=AdminUserResponse)
+async def update_user_role(
+    user_id: uuid.UUID,
+    request: UpdateUserRoleRequest,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> User:
+    """Update a user's role. Cannot set admin via this endpoint.
+
+    Requires admin role.
+    """
+    if request.role not in _ALLOWED_ROLE_VALUES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Role must be one of: {', '.join(sorted(_ALLOWED_ROLE_VALUES))}",
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    if user.role == UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change an admin's role",
+        )
+
+    user.role = UserRole(request.role)
+    await db.commit()
+    await db.refresh(user)
+    return user

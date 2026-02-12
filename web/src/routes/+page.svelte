@@ -112,8 +112,12 @@
 				<p class="loading">Loading your races...</p>
 			{:else if myRaces.length === 0}
 				<div class="empty-state">
-					<p>You're not in any races yet.</p>
-					<a href="/race/new" class="btn btn-primary">Create Race</a>
+					{#if auth.canCreateRace}
+						<p>You're not in any races yet.</p>
+						<a href="/race/new" class="btn btn-primary">Create Race</a>
+					{:else}
+						<p>You're not in any races yet. Ask an organizer to create a race, or contact an admin.</p>
+					{/if}
 				</div>
 			{:else}
 				<div class="my-races-grid">
@@ -396,11 +400,6 @@
 		margin: 0;
 	}
 
-	.empty-muted {
-		color: var(--color-text-disabled);
-		font-style: italic;
-	}
-
 	.empty-hero {
 		display: flex;
 		flex-direction: column;
@@ -426,12 +425,6 @@
 		color: var(--color-text-secondary);
 	}
 
-	.empty-sub {
-		margin: 0;
-		font-size: var(--font-size-sm);
-		color: var(--color-text-disabled);
-	}
-
 	@media (max-width: 640px) {
 		.dashboard,
 		.public-section {
@@ -442,5 +435,4 @@
 			grid-template-columns: 1fr;
 		}
 	}
-
 </style>

@@ -31,6 +31,7 @@ from speedfog_racing.models import (
     Seed,
     SeedStatus,
     User,
+    UserRole,
 )
 from speedfog_racing.schemas import (
     AddCasterRequest,
@@ -207,6 +208,12 @@ async def create_race(
     user: User = Depends(get_current_user),
 ) -> RaceResponse:
     """Create a new race with a seed from the specified pool."""
+    if user.role not in {UserRole.ORGANIZER, UserRole.ADMIN}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to create races",
+        )
+
     # Create race
     race = Race(
         name=request.name,

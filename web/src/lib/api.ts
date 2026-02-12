@@ -15,6 +15,10 @@ export interface User {
   twitch_avatar_url: string | null;
 }
 
+export interface AuthUser extends User {
+  role: string;
+}
+
 export type RaceStatus = "draft" | "open" | "running" | "finished";
 
 export interface Race {
@@ -199,7 +203,7 @@ export async function fetchRaces(status?: string): Promise<Race[]> {
  * Fetch current authenticated user.
  * Returns null if not authenticated or token is invalid.
  */
-export async function fetchCurrentUser(): Promise<User | null> {
+export async function fetchCurrentUser(): Promise<AuthUser | null> {
   const token = getStoredToken();
   if (!token) return null;
 
@@ -213,7 +217,7 @@ export async function fetchCurrentUser(): Promise<User | null> {
       return null;
     }
 
-    return await handleResponse<User>(response);
+    return await handleResponse<AuthUser>(response);
   } catch {
     return null;
   }
@@ -531,6 +535,48 @@ export async function fetchMyRaces(): Promise<Race[]> {
   });
   const data = await handleResponse<RaceListResponse>(response);
   return data.races;
+}
+
+// =============================================================================
+// Admin API
+// =============================================================================
+
+export interface AdminUser {
+  id: string;
+  twitch_username: string;
+  twitch_display_name: string | null;
+  twitch_avatar_url: string | null;
+  role: string;
+  created_at: string;
+  last_seen: string | null;
+}
+
+/**
+ * Fetch all users (admin only).
+ */
+export async function fetchAdminUsers(): Promise<AdminUser[]> {
+  const response = await fetch(`${API_BASE}/admin/users`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<AdminUser[]>(response);
+}
+
+/**
+ * Update a user's role (admin only).
+ */
+export async function updateAdminUserRole(
+  userId: string,
+  role: string,
+): Promise<AdminUser> {
+  const response = await fetch(`${API_BASE}/admin/users/${userId}`, {
+    method: "PATCH",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ role }),
+  });
+  return handleResponse<AdminUser>(response);
 }
 
 // =============================================================================

@@ -3,7 +3,7 @@
  */
 
 import {
-  type User,
+  type AuthUser,
   fetchCurrentUser,
   getStoredToken,
   setStoredToken,
@@ -11,12 +11,16 @@ import {
 } from "$lib/api";
 
 class AuthStore {
-  user = $state<User | null>(null);
+  user = $state<AuthUser | null>(null);
   token = $state<string | null>(null);
   loading = $state(true);
   initialized = $state(false);
 
   isLoggedIn = $derived(this.user !== null);
+  isAdmin = $derived(this.user?.role === "admin");
+  canCreateRace = $derived(
+    this.user?.role === "admin" || this.user?.role === "organizer",
+  );
 
   /**
    * Initialize auth state from stored token.

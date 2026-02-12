@@ -13,10 +13,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from speedfog_racing.database import Base
 
 
-class UserRole(enum.Enum):
+class UserRole(enum.StrEnum):
     """User roles for authorization."""
 
     USER = "user"
+    ORGANIZER = "organizer"
     ADMIN = "admin"
 
 
@@ -66,6 +67,7 @@ class User(Base):
     )
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.USER)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     organized_races: Mapped[list["Race"]] = relationship(back_populates="organizer")
