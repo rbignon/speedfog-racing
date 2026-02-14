@@ -133,9 +133,10 @@ async def handle_training_mod_websocket(
                     if zone_update:
                         await websocket.send_text(json.dumps(zone_update))
 
-        # Register connection
+        # Register connection and notify spectator
         await training_manager.connect_mod(session_id, user_id, websocket)
         authenticated = True
+        await _broadcast_participant_update(session)
 
         # Start heartbeat
         heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
@@ -170,6 +171,14 @@ async def handle_training_mod_websocket(
     finally:
         if authenticated:
             await training_manager.disconnect_mod(session_id)
+            # Notify spectator that mod disconnected (room.mod is now None)
+            try:
+                async with session_maker() as db:
+                    disc_session = await _load_session(db, session_id)
+                    if disc_session:
+                        await _broadcast_participant_update(disc_session)
+            except Exception:
+                pass
 
 
 async def _heartbeat_loop(websocket: WebSocket) -> None:
