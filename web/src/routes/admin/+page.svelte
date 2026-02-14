@@ -79,6 +79,8 @@
 					<tr>
 						<th>User</th>
 						<th>Role</th>
+						<th class="num-col">Trainings</th>
+						<th class="num-col">Races</th>
 						<th>Last Seen</th>
 						<th>Joined</th>
 					</tr>
@@ -105,6 +107,8 @@
 									</select>
 								{/if}
 							</td>
+							<td class="num-cell">{user.training_count}</td>
+							<td class="num-cell">{user.race_count}</td>
 							<td class="date-cell">{formatDate(user.last_seen)}</td>
 							<td class="date-cell">{formatDate(user.created_at)}</td>
 						</tr>
@@ -198,6 +202,15 @@
 
 	.username {
 		font-weight: 500;
+	}
+
+	.num-col {
+		text-align: center;
+	}
+
+	.num-cell {
+		text-align: center;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.date-cell {

@@ -523,6 +523,8 @@ export interface AdminUser {
   role: string;
   created_at: string;
   last_seen: string | null;
+  training_count: number;
+  race_count: number;
 }
 
 /**
