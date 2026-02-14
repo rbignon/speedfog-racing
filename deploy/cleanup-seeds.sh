@@ -14,6 +14,7 @@ SERVER="${DEPLOY_HOST:?Set DEPLOY_HOST (e.g. export DEPLOY_HOST=user@host)}"
 # Defaults
 POOL=""
 DRY_RUN=true
+SEEDS_DIR="${SEEDS_DIR:-/opt/speedfog-racing/seeds}"
 
 usage() {
     cat <<'EOF'
@@ -25,12 +26,14 @@ DB records are preserved for race history / audit trail.
 By default runs in dry-run mode (shows what would be deleted).
 
 Options:
-  --pool POOL    Only clean seeds from this pool (e.g. standard, sprint)
-  --execute      Actually delete files (default: dry-run)
-  -h, --help     Show this help
+  --pool POOL        Only clean seeds from this pool (e.g. standard, sprint)
+  --seeds-dir PATH   Remote seed directory on VPS (default: $SEEDS_DIR or /opt/speedfog-racing/seeds)
+  --execute          Actually delete files (default: dry-run)
+  -h, --help         Show this help
 
 Environment:
   DEPLOY_HOST    SSH target (e.g. user@host). Required.
+  SEEDS_DIR      Remote seed directory on VPS (default: /opt/speedfog-racing/seeds)
 
 Examples:
   # Preview what would be deleted
@@ -48,6 +51,7 @@ EOF
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --pool) POOL="$2"; shift 2 ;;
+        --seeds-dir) SEEDS_DIR="$2"; shift 2 ;;
         --execute) DRY_RUN=false; shift ;;
         -h|--help) usage ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -65,20 +69,28 @@ if [[ -n "$POOL" ]] && [[ ! "$POOL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     exit 1
 fi
 
-ssh "$SERVER" bash -s "$POOL" "$DRY_RUN" <<'ENDSSH'
+ssh "$SERVER" bash -s "${POOL:-__ALL__}" "$DRY_RUN" "$SEEDS_DIR" <<'ENDSSH'
     set -e
+    cd /tmp  # avoid "could not change directory" errors from sudo
     POOL="$1"
     DRY_RUN="$2"
+    SEEDS_DIR="$3"
+
+    # Decode sentinel (SSH drops empty string args)
+    [[ "$POOL" == "__ALL__" ]] && POOL=""
 
     # Build SQL query for consumed seed file paths
-    WHERE="status = 'consumed' AND folder_path IS NOT NULL"
+    WHERE="status = 'CONSUMED' AND folder_path IS NOT NULL"
     if [[ -n "$POOL" ]]; then
         WHERE="$WHERE AND pool_name = '$POOL'"
     fi
 
     # Query consumed seeds from database
-    PATHS=$(sudo -u speedfog psql -t -A speedfog_racing \
-        -c "SELECT folder_path FROM seeds WHERE $WHERE ORDER BY pool_name, seed_number;")
+    SQL="SELECT folder_path FROM seeds WHERE $WHERE ORDER BY pool_name, seed_number;"
+    PATHS=$(sudo -u speedfog psql -t -A speedfog_racing -c "$SQL" </dev/null) || {
+        echo "ERROR: psql query failed"
+        exit 1
+    }
 
     if [[ -z "$PATHS" ]]; then
         echo "No consumed seeds found."
@@ -94,9 +106,9 @@ ssh "$SERVER" bash -s "$POOL" "$DRY_RUN" <<'ENDSSH'
         [[ -z "$filepath" ]] && continue
         TOTAL=$((TOTAL + 1))
 
-        # Safety: only delete files under /data/SpeedFog
-        if [[ "$filepath" != /data/SpeedFog/* ]]; then
-            echo "  SKIPPING suspicious path: $filepath"
+        # Safety: only delete files under the configured seeds directory
+        if [[ "$filepath" != "$SEEDS_DIR"/* ]]; then
+            echo "  SKIPPING suspicious path: $filepath (not under $SEEDS_DIR)"
             continue
         fi
 
