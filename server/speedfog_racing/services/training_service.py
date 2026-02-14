@@ -4,7 +4,7 @@ import logging
 import random
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -66,6 +66,24 @@ async def get_training_seed(
     )
     all_seeds = list(result.scalars().all())
     return random.choice(all_seeds) if all_seeds else None
+
+
+async def get_played_seed_counts(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+) -> dict[str, int]:
+    """Count distinct seeds played by a user, grouped by pool.
+
+    Returns:
+        Dict mapping pool_name → number of distinct seeds played.
+    """
+    result = await db.execute(
+        select(Seed.pool_name, func.count(TrainingSession.seed_id.distinct()))
+        .join(Seed, TrainingSession.seed_id == Seed.id)
+        .where(TrainingSession.user_id == user_id)
+        .group_by(Seed.pool_name)
+    )
+    return {row[0]: row[1] for row in result.all()}
 
 
 async def create_training_session(

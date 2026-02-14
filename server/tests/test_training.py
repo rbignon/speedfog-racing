@@ -267,6 +267,45 @@ async def test_create_training_session_service(async_session, training_user, tra
         assert session.user_id == training_user.id
 
 
+@pytest.mark.asyncio
+async def test_get_played_seed_counts_empty(async_session, training_user):
+    """No sessions → empty counts."""
+    from speedfog_racing.services.training_service import get_played_seed_counts
+
+    async with async_session() as db:
+        counts = await get_played_seed_counts(db, training_user.id)
+        assert counts == {}
+
+
+@pytest.mark.asyncio
+async def test_get_played_seed_counts_one_pool(async_session, training_user, training_seed):
+    """One session → count 1 for that pool."""
+    from speedfog_racing.services.training_service import get_played_seed_counts
+
+    async with async_session() as db:
+        db.add(TrainingSession(user_id=training_user.id, seed_id=training_seed.id))
+        await db.commit()
+
+    async with async_session() as db:
+        counts = await get_played_seed_counts(db, training_user.id)
+        assert counts == {"training_standard": 1}
+
+
+@pytest.mark.asyncio
+async def test_get_played_seed_counts_distinct(async_session, training_user, training_seed):
+    """Two sessions on same seed → still count 1."""
+    from speedfog_racing.services.training_service import get_played_seed_counts
+
+    async with async_session() as db:
+        db.add(TrainingSession(user_id=training_user.id, seed_id=training_seed.id))
+        db.add(TrainingSession(user_id=training_user.id, seed_id=training_seed.id))
+        await db.commit()
+
+    async with async_session() as db:
+        counts = await get_played_seed_counts(db, training_user.id)
+        assert counts == {"training_standard": 1}
+
+
 # =============================================================================
 # Task 6: API endpoint tests
 # =============================================================================
