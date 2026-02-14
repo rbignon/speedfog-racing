@@ -5,6 +5,7 @@ import logging
 import os
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
@@ -39,7 +40,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _session_load_options():
+def _session_load_options() -> list[Any]:
     return [
         selectinload(TrainingSession.user),
         selectinload(TrainingSession.seed),
