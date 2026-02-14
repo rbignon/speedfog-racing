@@ -47,6 +47,14 @@ class SeedStatus(enum.Enum):
     CONSUMED = "consumed"
 
 
+class TrainingSessionStatus(enum.Enum):
+    """Training session lifecycle status."""
+
+    ACTIVE = "active"
+    FINISHED = "finished"
+    ABANDONED = "abandoned"
+
+
 def generate_token() -> str:
     """Generate a secure random token."""
     return secrets.token_urlsafe(32)
@@ -197,3 +205,32 @@ class Invite(Base):
 
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="invites")
+
+
+class TrainingSession(Base):
+    """A solo training session."""
+
+    __tablename__ = "training_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    seed_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("seeds.id"), nullable=False
+    )
+    mod_token: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, default=generate_token
+    )
+    status: Mapped[TrainingSessionStatus] = mapped_column(
+        Enum(TrainingSessionStatus), default=TrainingSessionStatus.ACTIVE
+    )
+    igt_ms: Mapped[int] = mapped_column(Integer, default=0)
+    death_count: Mapped[int] = mapped_column(Integer, default=0)
+    progress_nodes: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    user: Mapped["User"] = relationship()
+    seed: Mapped["Seed"] = relationship()
