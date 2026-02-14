@@ -156,7 +156,7 @@
 			<section class="dag-section">
 				{#if status !== 'finished'}
 					<button class="btn btn-secondary btn-sm" onclick={() => (showDag = !showDag)}>
-						{showDag ? 'Hide Map' : 'Show Map'}
+						{showDag ? 'Hide Spoiler' : 'Show Spoiler'}
 					</button>
 				{/if}
 				{#if showDag}
