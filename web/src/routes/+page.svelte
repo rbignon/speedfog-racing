@@ -116,7 +116,12 @@
 						<p>You're not in any races yet.</p>
 						<a href="/race/new" class="btn btn-primary">Create Race</a>
 					{:else}
-						<p>You're not in any races yet. Ask an organizer to create a race, or contact an admin.</p>
+						<svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+						</svg>
+						<p>No races yet — warm up in Training mode!</p>
+						<a href="/training" class="btn btn-primary">Start Training</a>
+						<p class="empty-state-hint">Races are created by organizers. You'll see them here when you join one.</p>
 					{/if}
 				</div>
 			{:else}
@@ -181,7 +186,7 @@
 				{:else if site.comingSoon}
 					<span class="btn btn-primary btn-lg btn-disabled">Coming soon</span>
 				{:else}
-					<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg" data-sveltekit-reload>Create a race</a>
+					<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg" data-sveltekit-reload>Get Started</a>
 				{/if}
 				<a href="/about" class="btn btn-secondary btn-lg">Learn more</a>
 			</div>
@@ -398,6 +403,18 @@
 
 	.empty-state p {
 		margin: 0;
+	}
+
+	.empty-state-icon {
+		width: 2.5rem;
+		height: 2.5rem;
+		color: var(--color-gold);
+		opacity: 0.7;
+	}
+
+	.empty-state-hint {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-disabled);
 	}
 
 	.empty-hero {
