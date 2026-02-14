@@ -27,13 +27,22 @@ import zipfile
 from pathlib import Path
 
 
-VALID_POOLS = ["sprint", "standard", "marathon"]
 SCRIPT_DIR = Path(__file__).parent.resolve()
+POOLS_DIR = SCRIPT_DIR / "pools"
 DLL_NAME = "speedfog_race_mod.dll"
+
+
+def discover_pools() -> list[str]:
+    """Discover available pool names from TOML files in the pools directory."""
+    if not POOLS_DIR.is_dir():
+        return []
+    return sorted(p.stem for p in POOLS_DIR.glob("*.toml"))
 
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
+    available_pools = discover_pools()
+
     parser = argparse.ArgumentParser(
         description="Generate seed pool for SpeedFog Racing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -46,8 +55,8 @@ Examples:
     parser.add_argument(
         "--pool",
         required=True,
-        choices=VALID_POOLS,
-        help="Pool name (sprint, standard, marathon)",
+        choices=available_pools,
+        help=f"Pool name ({', '.join(available_pools)})",
     )
     parser.add_argument(
         "--count",
