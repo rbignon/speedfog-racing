@@ -553,6 +553,102 @@ export async function updateAdminUserRole(
 }
 
 // =============================================================================
+// Training API
+// =============================================================================
+
+export interface TrainingSession {
+  id: string;
+  user: User;
+  status: "active" | "finished" | "abandoned";
+  pool_name: string;
+  igt_ms: number;
+  death_count: number;
+  created_at: string;
+  finished_at: string | null;
+  seed_total_layers: number | null;
+  seed_total_nodes: number | null;
+}
+
+export interface TrainingSessionDetail extends TrainingSession {
+  seed_total_paths: number | null;
+  progress_nodes: Array<{ node_id: string; igt_ms: number }> | null;
+  graph_json: Record<string, unknown> | null;
+  pool_config: PoolConfig | null;
+}
+
+export async function fetchTrainingPools(): Promise<PoolStats> {
+  const response = await fetch(`${API_BASE}/pools?type=training`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<PoolStats>(response);
+}
+
+export async function createTrainingSession(
+  poolName: string,
+): Promise<TrainingSessionDetail> {
+  const response = await fetch(`${API_BASE}/training`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pool_name: poolName }),
+  });
+  return handleResponse<TrainingSessionDetail>(response);
+}
+
+export async function fetchTrainingSessions(): Promise<TrainingSession[]> {
+  const response = await fetch(`${API_BASE}/training`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<TrainingSession[]>(response);
+}
+
+export async function fetchTrainingSession(
+  id: string,
+): Promise<TrainingSessionDetail> {
+  const response = await fetch(`${API_BASE}/training/${id}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<TrainingSessionDetail>(response);
+}
+
+export async function abandonTrainingSession(
+  id: string,
+): Promise<TrainingSessionDetail> {
+  const response = await fetch(`${API_BASE}/training/${id}/abandon`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<TrainingSessionDetail>(response);
+}
+
+export async function downloadTrainingPack(sessionId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/training/${sessionId}/pack`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const disposition = response.headers.get("content-disposition");
+  const match = disposition?.match(/filename="?([^"]+)"?/);
+  a.download = match?.[1] ?? `speedfog_training_${sessionId}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// =============================================================================
 // Download helpers
 // =============================================================================
 

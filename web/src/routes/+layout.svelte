@@ -28,6 +28,7 @@
 						{/if}
 						<span>{auth.user?.twitch_display_name || auth.user?.twitch_username}</span>
 					</span>
+					<a href="/training" class="btn btn-secondary">Training</a>
 					{#if auth.isAdmin}
 						<a href="/admin" class="btn btn-secondary">Admin</a>
 					{/if}
