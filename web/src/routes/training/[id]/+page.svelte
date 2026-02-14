@@ -1,0 +1,404 @@
+<script lang="ts">
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { auth } from '$lib/stores/auth.svelte';
+	import { trainingStore } from '$lib/stores/training.svelte';
+	import {
+		fetchTrainingSession,
+		abandonTrainingSession,
+		downloadTrainingPack,
+		type TrainingSessionDetail,
+	} from '$lib/api';
+	import { MetroDag, MetroDagLive, MetroDagResults } from '$lib/dag';
+
+	let sessionId = $derived(page.params.id!);
+	let session = $state<TrainingSessionDetail | null>(null);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
+	let showDag = $state(false);
+	let abandoning = $state(false);
+	let downloading = $state(false);
+	let confirmAbandon = $state(false);
+
+	// Live data from WS
+	let liveParticipant = $derived(trainingStore.participant);
+	let liveRace = $derived(trainingStore.race);
+
+	let status = $derived(liveRace?.status === 'finished' ? 'finished' : session?.status ?? 'active');
+	let igtMs = $derived(liveParticipant?.igt_ms ?? session?.igt_ms ?? 0);
+	let deathCount = $derived(liveParticipant?.death_count ?? session?.death_count ?? 0);
+	let currentLayer = $derived(liveParticipant?.current_layer ?? 0);
+	let totalLayers = $derived(session?.seed_total_layers ?? 0);
+
+	let graphJson = $derived(trainingStore.seed?.graph_json ?? session?.graph_json ?? null);
+
+	// Build a WsParticipant-compatible object for DAG components
+	let dagParticipants = $derived.by(() => {
+		if (!liveParticipant) return [];
+		return [liveParticipant];
+	});
+
+	function displayPoolName(poolName: string): string {
+		return poolName
+			.replace(/^training_/, '')
+			.replace(/^\w/, (c: string) => c.toUpperCase());
+	}
+
+	function formatIgt(ms: number): string {
+		if (ms <= 0) return '--:--:--';
+		const secs = Math.floor(ms / 1000);
+		const mins = Math.floor(secs / 60);
+		const hours = Math.floor(mins / 60);
+		return `${String(hours).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+	}
+
+	$effect(() => {
+		if (!auth.initialized) return;
+		if (!auth.isLoggedIn) {
+			goto('/');
+			return;
+		}
+
+		loadSession();
+		trainingStore.connect(sessionId);
+
+		return () => {
+			trainingStore.disconnect();
+		};
+	});
+
+	async function loadSession() {
+		try {
+			session = await fetchTrainingSession(sessionId);
+			// Auto-show DAG for finished sessions
+			if (session.status === 'finished') {
+				showDag = true;
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load session.';
+		} finally {
+			loading = false;
+		}
+	}
+
+	async function handleAbandon() {
+		if (!confirmAbandon) {
+			confirmAbandon = true;
+			return;
+		}
+		abandoning = true;
+		error = null;
+		try {
+			session = await abandonTrainingSession(sessionId);
+			confirmAbandon = false;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to abandon session.';
+		} finally {
+			abandoning = false;
+		}
+	}
+
+	async function handleDownload() {
+		downloading = true;
+		error = null;
+		try {
+			await downloadTrainingPack(sessionId);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Download failed.';
+		} finally {
+			downloading = false;
+		}
+	}
+</script>
+
+<svelte:head>
+	<title>
+		{session ? `Training — ${displayPoolName(session.pool_name)}` : 'Training'} - SpeedFog Racing
+	</title>
+</svelte:head>
+
+<main class="training-detail">
+	{#if loading}
+		<p class="loading">Loading session...</p>
+	{:else if error && !session}
+		<div class="error-state">
+			<p>{error}</p>
+			<a href="/training" class="btn btn-secondary">Back to Training</a>
+		</div>
+	{:else if session}
+		<!-- Header -->
+		<div class="header">
+			<div class="header-left">
+				<a href="/training" class="back-link">&larr; Training</a>
+				<h1>{displayPoolName(session.pool_name)}</h1>
+			</div>
+			<span class="badge badge-{status}">{status}</span>
+		</div>
+
+		{#if error}
+			<div class="error-banner">
+				{error}
+				<button onclick={() => (error = null)}>&times;</button>
+			</div>
+		{/if}
+
+		<!-- Stats bar -->
+		<div class="stats-bar">
+			<div class="stat">
+				<span class="stat-label">IGT</span>
+				<span class="stat-value mono">{formatIgt(igtMs)}</span>
+			</div>
+			<div class="stat">
+				<span class="stat-label">Deaths</span>
+				<span class="stat-value mono">{deathCount}</span>
+			</div>
+			<div class="stat">
+				<span class="stat-label">Progress</span>
+				<span class="stat-value mono">{currentLayer}/{totalLayers}</span>
+			</div>
+			{#if trainingStore.connected}
+				<div class="stat">
+					<span class="stat-label">Live</span>
+					<span class="stat-value connected-dot">&#x25CF;</span>
+				</div>
+			{/if}
+		</div>
+
+		<!-- DAG section -->
+		{#if graphJson}
+			<section class="dag-section">
+				{#if status !== 'finished'}
+					<button class="btn btn-secondary btn-sm" onclick={() => (showDag = !showDag)}>
+						{showDag ? 'Hide Map' : 'Show Map'}
+					</button>
+				{/if}
+				{#if showDag}
+					<div class="dag-wrapper">
+						{#if status === 'finished' && dagParticipants.length > 0}
+							<MetroDagResults {graphJson} participants={dagParticipants} />
+						{:else if status === 'active' && dagParticipants.length > 0}
+							<MetroDagLive {graphJson} participants={dagParticipants} />
+						{:else}
+							<MetroDag {graphJson} />
+						{/if}
+					</div>
+				{/if}
+			</section>
+		{/if}
+
+		<!-- Actions -->
+		<div class="actions">
+			<button
+				class="btn btn-secondary"
+				disabled={downloading}
+				onclick={handleDownload}
+			>
+				{downloading ? 'Downloading...' : 'Download Pack'}
+			</button>
+
+			{#if status === 'active'}
+				{#if confirmAbandon}
+					<div class="confirm-group">
+						<span class="confirm-text">Abandon this run?</span>
+						<button
+							class="btn btn-danger"
+							disabled={abandoning}
+							onclick={handleAbandon}
+						>
+							{abandoning ? 'Abandoning...' : 'Confirm'}
+						</button>
+						<button class="btn btn-secondary" onclick={() => (confirmAbandon = false)}>
+							Cancel
+						</button>
+					</div>
+				{:else}
+					<button class="btn btn-danger-outline" onclick={handleAbandon}>
+						Abandon
+					</button>
+				{/if}
+			{/if}
+		</div>
+	{/if}
+</main>
+
+<style>
+	.training-detail {
+		width: 100%;
+		max-width: 1000px;
+		margin: 0 auto;
+		padding: 2rem;
+		box-sizing: border-box;
+	}
+
+	.loading {
+		color: var(--color-text-disabled);
+		font-style: italic;
+	}
+
+	.error-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1rem;
+		padding: 3rem;
+		color: var(--color-text-secondary);
+	}
+
+	/* Header */
+	.header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1.5rem;
+	}
+
+	.header-left {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.back-link {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		text-decoration: none;
+	}
+
+	.back-link:hover {
+		color: var(--color-purple);
+	}
+
+	h1 {
+		color: var(--color-gold);
+		font-size: var(--font-size-2xl);
+		font-weight: 700;
+		margin: 0;
+	}
+
+	.error-banner {
+		background: var(--color-danger-dark);
+		color: white;
+		padding: 0.75rem 1rem;
+		border-radius: var(--radius-md);
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1.5rem;
+	}
+
+	.error-banner button {
+		background: none;
+		border: none;
+		color: white;
+		font-size: 1.25rem;
+		cursor: pointer;
+	}
+
+	/* Stats bar */
+	.stats-bar {
+		display: flex;
+		gap: 2rem;
+		padding: 1rem 1.5rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		margin-bottom: 1.5rem;
+	}
+
+	.stat {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+
+	.stat-label {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-weight: 500;
+	}
+
+	.stat-value {
+		font-size: var(--font-size-lg);
+		font-weight: 600;
+	}
+
+	.mono {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.connected-dot {
+		color: var(--color-success);
+	}
+
+	/* DAG section */
+	.dag-section {
+		margin-bottom: 1.5rem;
+	}
+
+	.dag-wrapper {
+		margin-top: 0.75rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		overflow: hidden;
+	}
+
+	/* Actions */
+	.actions {
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+
+	.confirm-group {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.confirm-text {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+	}
+
+	/* badge-active locally defined */
+	:global(.badge-active) {
+		background: rgba(200, 164, 78, 0.15);
+		color: var(--color-warning);
+	}
+
+	/* Danger outline button */
+	:global(.btn-danger-outline) {
+		background: transparent;
+		color: var(--color-danger);
+		border: 1px solid var(--color-danger);
+	}
+
+	:global(.btn-danger-outline:hover) {
+		background: rgba(220, 38, 38, 0.1);
+	}
+
+	:global(.btn-danger) {
+		background: var(--color-danger);
+		color: white;
+	}
+
+	:global(.btn-sm) {
+		font-size: var(--font-size-sm);
+		padding: 0.35rem 0.75rem;
+	}
+
+	@media (max-width: 640px) {
+		.training-detail {
+			padding: 1rem;
+		}
+
+		.stats-bar {
+			gap: 1rem;
+			flex-wrap: wrap;
+		}
+	}
+</style>
