@@ -1,6 +1,7 @@
 """Unit tests for layer service."""
 
 from speedfog_racing.services.layer_service import (
+    _format_zone_name,
     compute_zone_update,
     get_layer_for_node,
     get_start_node,
@@ -173,3 +174,106 @@ def test_compute_zone_update_no_tier():
     result = compute_zone_update("start_node", graph, zone_history=None)
     assert result is not None
     assert result["tier"] is None
+
+
+# =============================================================================
+# _format_zone_name
+# =============================================================================
+
+
+def test_format_zone_name():
+    assert _format_zone_name("roundtable") == "Roundtable"
+    assert _format_zone_name("volcano_drawingroom") == "Volcano Drawingroom"
+    assert _format_zone_name("caelid_gaeltunnel_rear") == "Caelid Gaeltunnel Rear"
+
+
+# =============================================================================
+# compute_zone_update — from zone annotation
+# =============================================================================
+
+GRAPH_MULTI_ZONE = {
+    "nodes": {
+        "volcano_ac44": {
+            "display_name": "Volcano Manor Entrance",
+            "tier": 7,
+            "layer": 4,
+            "zones": ["volcano", "volcano_drawingroom", "volcano_predoor"],
+            "exits": [
+                {
+                    "text": "Before Prison Town Church grace",
+                    "fog_id": "AEG099_232_9005",
+                    "from": "volcano_drawingroom",
+                    "to": "siofra_boss_c9b0",
+                },
+            ],
+        },
+        "chapel_start_4f96": {
+            "display_name": "Roundtable Hold",
+            "tier": 1,
+            "layer": 0,
+            "zones": ["chapel_start", "roundtable"],
+            "exits": [
+                {
+                    "text": "Grafted Scion front",
+                    "fog_id": "AEG099_001_9000",
+                    "from": "chapel_start",
+                    "to": "siofra_boss_c9b0",
+                },
+                {
+                    "text": "Roundtable Hold gate",
+                    "fog_id": "AEG099_231_9000",
+                    "from": "roundtable",
+                    "to": "siofra_boss_c9b0",
+                },
+            ],
+        },
+        "single_zone_node": {
+            "display_name": "Simple Cave",
+            "tier": 3,
+            "layer": 1,
+            "zones": ["simple_cave"],
+            "exits": [
+                {
+                    "text": "Boss front",
+                    "fog_id": "AEG099_001_9000",
+                    "from": "simple_cave",
+                    "to": "siofra_boss_c9b0",
+                },
+            ],
+        },
+        "siofra_boss_c9b0": {
+            "display_name": "Ancestor Spirit",
+            "tier": 8,
+            "layer": 5,
+            "zones": ["siofra_boss"],
+            "exits": [],
+        },
+    }
+}
+
+
+def test_compute_zone_update_from_subzone_annotated():
+    """Exit from a sub-zone gets annotated with zone name."""
+    result = compute_zone_update("volcano_ac44", GRAPH_MULTI_ZONE, zone_history=None)
+    assert result is not None
+    assert len(result["exits"]) == 1
+    assert result["exits"][0]["text"] == "Before Prison Town Church grace [Volcano Drawingroom]"
+
+
+def test_compute_zone_update_from_primary_zone_not_annotated():
+    """Exit from the primary zone (zones[0]) is NOT annotated."""
+    result = compute_zone_update("chapel_start_4f96", GRAPH_MULTI_ZONE, zone_history=None)
+    assert result is not None
+    assert len(result["exits"]) == 2
+    # First exit from "chapel_start" (= zones[0]) — no annotation
+    assert result["exits"][0]["text"] == "Grafted Scion front"
+    # Second exit from "roundtable" (≠ zones[0]) — annotated
+    assert result["exits"][1]["text"] == "Roundtable Hold gate [Roundtable]"
+
+
+def test_compute_zone_update_single_zone_not_annotated():
+    """Exit from a single-zone node is never annotated."""
+    result = compute_zone_update("single_zone_node", GRAPH_MULTI_ZONE, zone_history=None)
+    assert result is not None
+    assert len(result["exits"]) == 1
+    assert result["exits"][0]["text"] == "Boss front"
