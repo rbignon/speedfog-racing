@@ -116,6 +116,22 @@ async def create_session(
     user: User = Depends(get_current_user),
 ) -> TrainingSessionDetailResponse:
     """Create a new training session."""
+    # SAFETY: TOCTOU race window exists (SELECT then INSERT without partial
+    # unique index). Acceptable: training is single-user, rate-limited at
+    # 10/min, and the frontend hides the creation form when active sessions
+    # exist. A concurrent duplicate would be harmless (two active sessions).
+    active_result = await db.execute(
+        select(TrainingSession.id).where(
+            TrainingSession.user_id == user.id,
+            TrainingSession.status == TrainingSessionStatus.ACTIVE,
+        )
+    )
+    if active_result.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have an active training session",
+        )
+
     # Validate pool is a training pool
     raw_config = get_pool_config(body.pool_name)
     if not raw_config or raw_config.get("type", "race") != "training":

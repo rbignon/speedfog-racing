@@ -320,6 +320,56 @@ async def test_create_training_session_api(test_client, training_user, training_
 
 
 @pytest.mark.asyncio
+async def test_create_training_session_api_conflict(test_client, training_user, training_seed):
+    """POST /api/training returns 409 if user already has an active session."""
+    async with test_client as client:
+        headers = {"Authorization": f"Bearer {training_user.api_token}"}
+        resp1 = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers=headers,
+        )
+        assert resp1.status_code == 201
+
+        resp2 = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers=headers,
+        )
+        assert resp2.status_code == 409
+        assert "active training session" in resp2.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_training_session_api_after_abandon(test_client, training_user, training_seed):
+    """POST /api/training succeeds after abandoning the active session."""
+    async with test_client as client:
+        headers = {"Authorization": f"Bearer {training_user.api_token}"}
+        resp1 = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers=headers,
+        )
+        assert resp1.status_code == 201
+        session_id = resp1.json()["id"]
+
+        # Abandon it
+        resp_abandon = await client.post(
+            f"/api/training/{session_id}/abandon",
+            headers=headers,
+        )
+        assert resp_abandon.status_code == 200
+
+        # Now creating a new one should work
+        resp2 = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers=headers,
+        )
+        assert resp2.status_code == 201
+
+
+@pytest.mark.asyncio
 async def test_list_training_sessions_api(test_client, training_user, training_seed):
     """GET /api/training lists user's sessions."""
     async with test_client as client:

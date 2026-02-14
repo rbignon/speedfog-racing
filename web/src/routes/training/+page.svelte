@@ -10,6 +10,7 @@
 		type TrainingSession,
 	} from '$lib/api';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
+	import TrainingSessionCard from '$lib/components/TrainingSessionCard.svelte';
 	import { timeAgo } from '$lib/utils/time';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
@@ -37,6 +38,7 @@
 
 	let selectedConfig = $derived(selectedPool ? pools[selectedPool]?.pool_config ?? null : null);
 	let selectedInfo = $derived(selectedPool ? pools[selectedPool] ?? null : null);
+	let activeSessions = $derived(sessions.filter((s) => s.status === 'active'));
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -81,6 +83,12 @@
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to start training session.';
 			startingPool = null;
+			// Refresh sessions so UI reflects server state (e.g., 409 = active session exists)
+			try {
+				sessions = await fetchTrainingSessions();
+			} catch {
+				// ignore refresh failure
+			}
 		}
 	}
 
@@ -101,57 +109,67 @@
 		</div>
 	{/if}
 
-	<!-- Pool Selection -->
+	<!-- Active Sessions or Pool Selection -->
 	<section class="section">
-		<h2>Start a Run</h2>
-		{#if loadingPools}
-			<p class="loading">Loading pools...</p>
-		{:else if sortedPools.length === 0}
-			<p class="empty">No training pools available.</p>
-		{:else}
-			<div class="pool-cards">
-				{#each sortedPools as [pool, info] (pool)}
-					{@const disabled = info.available === 0}
-					<button
-						type="button"
-						class="pool-card"
-						class:selected={selectedPool === pool}
-						class:disabled
-						onclick={() => { if (!disabled && !startingPool) selectedPool = pool; }}
-					>
-						<span class="pool-name">{displayPoolName(pool)}</span>
-						{#if info.pool_config?.estimated_duration}
-							<span class="pool-duration">{info.pool_config.estimated_duration}</span>
-						{/if}
-						{#if info.pool_config?.description}
-							<span class="pool-desc">{info.pool_config.description}</span>
-						{/if}
-						<span class="pool-seeds">
-							{info.available} seed{info.available !== 1 ? 's' : ''} available
-						</span>
-					</button>
+		{#if loadingPools || loadingSessions}
+			<h2>Start a Run</h2>
+			<p class="loading">Loading...</p>
+		{:else if activeSessions.length > 0}
+			<h2>Active Run{activeSessions.length > 1 ? 's' : ''}</h2>
+			<div class="active-sessions">
+				{#each activeSessions as session (session.id)}
+					<TrainingSessionCard {session} />
 				{/each}
 			</div>
-			{#if selectedPool && selectedConfig}
-				<div class="pool-detail">
-					<PoolSettingsCard poolName={displayPoolName(selectedPool)} poolConfig={selectedConfig} compact />
-					<div class="pool-detail-footer">
-						<span class="seed-count">
-							{selectedInfo?.available ?? 0} seed{(selectedInfo?.available ?? 0) !== 1 ? 's' : ''} available
-						</span>
+		{:else}
+			<h2>Start a Run</h2>
+			{#if sortedPools.length === 0}
+				<p class="empty">No training pools available.</p>
+			{:else}
+				<div class="pool-cards">
+					{#each sortedPools as [pool, info] (pool)}
+						{@const disabled = info.available === 0}
 						<button
-							class="btn btn-primary"
-							disabled={(selectedInfo?.available ?? 0) === 0 || startingPool !== null}
-							onclick={() => startTraining(selectedPool!)}
+							type="button"
+							class="pool-card"
+							class:selected={selectedPool === pool}
+							class:disabled
+							onclick={() => { if (!disabled && !startingPool) selectedPool = pool; }}
 						>
-							{#if startingPool === selectedPool}
-								Starting...
-							{:else}
-								Start
+							<span class="pool-name">{displayPoolName(pool)}</span>
+							{#if info.pool_config?.estimated_duration}
+								<span class="pool-duration">{info.pool_config.estimated_duration}</span>
 							{/if}
+							{#if info.pool_config?.description}
+								<span class="pool-desc">{info.pool_config.description}</span>
+							{/if}
+							<span class="pool-seeds">
+								{info.available} seed{info.available !== 1 ? 's' : ''} available
+							</span>
 						</button>
-					</div>
+					{/each}
 				</div>
+				{#if selectedPool && selectedConfig}
+					<div class="pool-detail">
+						<PoolSettingsCard poolName={displayPoolName(selectedPool)} poolConfig={selectedConfig} compact />
+						<div class="pool-detail-footer">
+							<span class="seed-count">
+								{selectedInfo?.available ?? 0} seed{(selectedInfo?.available ?? 0) !== 1 ? 's' : ''} available
+							</span>
+							<button
+								class="btn btn-primary"
+								disabled={(selectedInfo?.available ?? 0) === 0 || startingPool !== null}
+								onclick={() => startTraining(selectedPool!)}
+							>
+								{#if startingPool === selectedPool}
+									Starting...
+								{:else}
+									Start
+								{/if}
+							</button>
+						</div>
+					</div>
+				{/if}
 			{/if}
 		{/if}
 	</section>
@@ -256,6 +274,14 @@
 
 	.empty {
 		color: var(--color-text-secondary);
+	}
+
+	/* Active session cards */
+	.active-sessions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		max-width: 480px;
 	}
 
 	/* Pool selector cards */
