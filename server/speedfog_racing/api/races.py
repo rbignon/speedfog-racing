@@ -806,10 +806,11 @@ async def download_my_seed_pack(
     try:
         temp_path = await asyncio.to_thread(generate_seed_pack_on_demand, participant, race)
     except FileNotFoundError:
-        logger.error("Seed zip missing for race %s", race_id)
+        logger.warning("Seed zip missing for race %s (cleaned up)", race_id)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Seed data unavailable",
+            status_code=status.HTTP_410_GONE,
+            detail="This seed pack is no longer available."
+            " Seed files are removed after a race ends.",
         )
 
     return FileResponse(
@@ -873,10 +874,11 @@ async def download_seed_pack(
     try:
         temp_path = await asyncio.to_thread(generate_seed_pack_on_demand, participant, race)
     except FileNotFoundError:
-        logger.error("Seed zip missing for race %s", race_id)
+        logger.warning("Seed zip missing for race %s (cleaned up)", race_id)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Seed data unavailable",
+            status_code=status.HTTP_410_GONE,
+            detail="This seed pack is no longer available."
+            " Seed files are removed after a race ends.",
         )
 
     return FileResponse(

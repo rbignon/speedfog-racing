@@ -213,7 +213,15 @@ async def download_pack(
             detail="Can only download pack for active sessions",
         )
 
-    temp_path = await asyncio.to_thread(generate_seed_pack_on_demand_training, session)
+    try:
+        temp_path = await asyncio.to_thread(generate_seed_pack_on_demand_training, session)
+    except FileNotFoundError:
+        logger.warning("Seed zip missing for training session %s", session_id)
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This seed pack is no longer available."
+            " Seed files are periodically removed after use.",
+        )
 
     return FileResponse(
         path=temp_path,
