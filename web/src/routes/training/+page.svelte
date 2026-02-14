@@ -15,6 +15,7 @@
 
 	let pools: PoolStats = $state({});
 	let sessions: TrainingSession[] = $state([]);
+	let selectedPool = $state<string | null>(null);
 	let loadingPools = $state(true);
 	let loadingSessions = $state(true);
 	let startingPool = $state<string | null>(null);
@@ -33,6 +34,9 @@
 					.map(([p, info]) => [p, info] as [string, PoolInfo]),
 			),
 	);
+
+	let selectedConfig = $derived(selectedPool ? pools[selectedPool]?.pool_config ?? null : null);
+	let selectedInfo = $derived(selectedPool ? pools[selectedPool] ?? null : null);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -55,6 +59,9 @@
 			]);
 			pools = poolData;
 			sessions = sessionData;
+			// Default to first pool with available seeds
+			const available = sortedPools.find(([, info]) => info.available > 0);
+			if (available) selectedPool = available[0];
 		} catch (e) {
 			console.error('Failed to load training data:', e);
 			error = 'Failed to load training data.';
@@ -102,33 +109,50 @@
 		{:else if sortedPools.length === 0}
 			<p class="empty">No training pools available.</p>
 		{:else}
-			<div class="pool-grid">
-				{#each sortedPools as [poolName, poolInfo]}
-					<div class="pool-card">
-						{#if poolInfo.pool_config}
-							<PoolSettingsCard poolName={displayPoolName(poolName)} poolConfig={poolInfo.pool_config} compact />
-						{:else}
-							<div class="pool-name">{displayPoolName(poolName)}</div>
+			<div class="pool-cards">
+				{#each sortedPools as [pool, info] (pool)}
+					{@const disabled = info.available === 0}
+					<button
+						type="button"
+						class="pool-card"
+						class:selected={selectedPool === pool}
+						class:disabled
+						onclick={() => { if (!disabled && !startingPool) selectedPool = pool; }}
+					>
+						<span class="pool-name">{displayPoolName(pool)}</span>
+						{#if info.pool_config?.estimated_duration}
+							<span class="pool-duration">{info.pool_config.estimated_duration}</span>
 						{/if}
-						<div class="pool-footer">
-							<span class="seed-count">
-								{poolInfo.available} seed{poolInfo.available !== 1 ? 's' : ''} available
-							</span>
-							<button
-								class="btn btn-primary"
-								disabled={poolInfo.available === 0 || startingPool !== null}
-								onclick={() => startTraining(poolName)}
-							>
-								{#if startingPool === poolName}
-									Starting...
-								{:else}
-									Start
-								{/if}
-							</button>
-						</div>
-					</div>
+						{#if info.pool_config?.description}
+							<span class="pool-desc">{info.pool_config.description}</span>
+						{/if}
+						<span class="pool-seeds">
+							{info.available} seed{info.available !== 1 ? 's' : ''} available
+						</span>
+					</button>
 				{/each}
 			</div>
+			{#if selectedPool && selectedConfig}
+				<div class="pool-detail">
+					<PoolSettingsCard poolName={displayPoolName(selectedPool)} poolConfig={selectedConfig} compact />
+					<div class="pool-detail-footer">
+						<span class="seed-count">
+							{selectedInfo?.available ?? 0} seed{(selectedInfo?.available ?? 0) !== 1 ? 's' : ''} available
+						</span>
+						<button
+							class="btn btn-primary"
+							disabled={(selectedInfo?.available ?? 0) === 0 || startingPool !== null}
+							onclick={() => startTraining(selectedPool!)}
+						>
+							{#if startingPool === selectedPool}
+								Starting...
+							{:else}
+								Start
+							{/if}
+						</button>
+					</div>
+				</div>
+			{/if}
 		{/if}
 	</section>
 
@@ -234,36 +258,79 @@
 		color: var(--color-text-secondary);
 	}
 
-	/* Pool cards */
-	.pool-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-		gap: 1rem;
+	/* Pool selector cards */
+	.pool-cards {
+		display: flex;
+		gap: 0.75rem;
+		flex-wrap: wrap;
 	}
 
 	.pool-card {
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-lg);
-		padding: 1.25rem;
+		flex: 1;
+		min-width: 140px;
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 0.25rem;
+		padding: 1rem;
+		border: 2px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-family: var(--font-family);
+		cursor: pointer;
+		text-align: left;
+		transition:
+			border-color 0.15s,
+			background-color 0.15s;
+	}
+
+	.pool-card:hover:not(.disabled) {
+		border-color: var(--color-text-secondary);
+	}
+
+	.pool-card.selected {
+		border-color: var(--color-gold);
+		background: var(--color-surface-elevated);
+	}
+
+	.pool-card.disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
 	}
 
 	.pool-name {
-		color: var(--color-gold);
-		font-size: var(--font-size-lg);
 		font-weight: 600;
+		font-size: var(--font-size-lg);
 	}
 
-	.pool-footer {
+	.pool-duration {
+		color: var(--color-gold);
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+	}
+
+	.pool-desc {
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+		line-height: 1.3;
+	}
+
+	.pool-seeds {
+		margin-top: 0.25rem;
+		color: var(--color-text-disabled);
+		font-size: var(--font-size-xs);
+	}
+
+	/* Pool detail panel */
+	.pool-detail {
+		margin-top: 1rem;
+	}
+
+	.pool-detail-footer {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-top: auto;
-		padding-top: 0.75rem;
-		border-top: 1px solid var(--color-border);
+		margin-top: 1rem;
 	}
 
 	.seed-count {
@@ -325,8 +392,8 @@
 			padding: 1rem;
 		}
 
-		.pool-grid {
-			grid-template-columns: 1fr;
+		.pool-cards {
+			flex-direction: column;
 		}
 	}
 </style>
