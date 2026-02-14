@@ -133,10 +133,10 @@ async def handle_training_mod_websocket(
                     if zone_update:
                         await websocket.send_text(json.dumps(zone_update))
 
-        # Register connection and notify spectator
+        # Register connection and notify spectator (mod already has auth_ok data)
         await training_manager.connect_mod(session_id, user_id, websocket)
         authenticated = True
-        await _broadcast_participant_update(session)
+        await _broadcast_participant_update(session, spectator_only=True)
 
         # Start heartbeat
         heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
@@ -171,12 +171,12 @@ async def handle_training_mod_websocket(
     finally:
         if authenticated:
             await training_manager.disconnect_mod(session_id)
-            # Notify spectator that mod disconnected (room.mod is now None)
+            # Notify spectator that mod disconnected (mod is already gone)
             try:
                 async with session_maker() as db:
                     disc_session = await _load_session(db, session_id)
                     if disc_session:
-                        await _broadcast_participant_update(disc_session)
+                        await _broadcast_participant_update(disc_session, spectator_only=True)
             except Exception:
                 pass
 
@@ -339,8 +339,10 @@ async def _handle_event_flag(
                 pass
 
 
-async def _broadcast_participant_update(session: TrainingSession) -> None:
-    """Send leaderboard_update (single participant) to spectator."""
+async def _broadcast_participant_update(
+    session: TrainingSession, *, spectator_only: bool = False
+) -> None:
+    """Send leaderboard_update (single participant) to room connections."""
     room = training_manager.get_room(session.id)
     if not room:
         return
@@ -384,14 +386,18 @@ async def _broadcast_participant_update(session: TrainingSession) -> None:
     )
 
     message = LeaderboardUpdateMessage(participants=[info])
-    await room.broadcast_to_spectator(message.model_dump_json())
+    payload = message.model_dump_json()
+    if spectator_only:
+        await room.broadcast_to_spectator(payload)
+    else:
+        await room.broadcast_to_all(payload)
 
 
 async def _broadcast_status_change(session_id: uuid.UUID, new_status: str) -> None:
-    """Notify spectator of status change."""
+    """Notify all connections of status change."""
     room = training_manager.get_room(session_id)
     if not room:
         return
 
     message = RaceStatusChangeMessage(status=new_status)
-    await room.broadcast_to_spectator(message.model_dump_json())
+    await room.broadcast_to_all(message.model_dump_json())

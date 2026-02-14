@@ -48,6 +48,27 @@ class TrainingRoom:
                 pass
             self.spectator = None
 
+    async def broadcast_to_mod(self, message: str) -> None:
+        """Send message to mod if connected."""
+        if self.mod is None:
+            return
+        try:
+            await asyncio.wait_for(self.mod.websocket.send_text(message), timeout=SEND_TIMEOUT)
+        except Exception:
+            logger.warning(f"Failed to send to mod for session {self.session_id}")
+            try:
+                await self.mod.websocket.close()
+            except Exception:
+                pass
+            self.mod = None
+
+    async def broadcast_to_all(self, message: str) -> None:
+        """Send message to both mod and spectator."""
+        await asyncio.gather(
+            self.broadcast_to_mod(message),
+            self.broadcast_to_spectator(message),
+        )
+
 
 class TrainingConnectionManager:
     """Manages training session WebSocket connections."""

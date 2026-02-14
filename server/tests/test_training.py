@@ -664,7 +664,15 @@ def test_training_mod_websocket_event_flag(
         # Send first event flag (should be a zone transition)
         ws.send_json({"type": "event_flag", "flag_id": event_ids[0], "igt_ms": 3000})
 
-        # Should receive zone_update
+        # Should receive leaderboard_update (broadcast to all including mod)
+        msg = ws.receive_json()
+        assert msg["type"] == "leaderboard_update"
+        assert len(msg["participants"]) == 1
+        p = msg["participants"][0]
+        assert p["igt_ms"] == 3000
+        assert p["current_layer"] >= 0
+
+        # Then zone_update
         msg = ws.receive_json()
         assert msg["type"] == "zone_update"
         assert "node_id" in msg
