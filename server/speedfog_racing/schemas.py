@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from speedfog_racing.models import ParticipantStatus, RaceStatus
+from speedfog_racing.models import ParticipantStatus, RaceStatus, TrainingSessionStatus
 
 # =============================================================================
 # Request Schemas
@@ -174,3 +174,52 @@ class AcceptInviteResponse(BaseModel):
 
     participant: ParticipantResponse
     race_id: UUID
+
+
+# =============================================================================
+# Training Schemas
+# =============================================================================
+
+
+class CreateTrainingRequest(BaseModel):
+    """Request to create a training session."""
+
+    pool_name: str = "training_standard"
+
+
+class TrainingSessionResponse(BaseModel):
+    """Training session in list responses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    user: UserResponse
+    status: TrainingSessionStatus
+    pool_name: str
+    igt_ms: int
+    death_count: int
+    created_at: datetime
+    finished_at: datetime | None = None
+    seed_total_layers: int | None = None
+    seed_total_nodes: int | None = None
+
+
+class TrainingSessionDetailResponse(BaseModel):
+    """Detailed training session with graph data."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    user: UserResponse
+    status: TrainingSessionStatus
+    pool_name: str
+    igt_ms: int
+    death_count: int
+    progress_nodes: list[dict[str, Any]] | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
+    seed_total_layers: int | None = None
+    seed_total_nodes: int | None = None
+    seed_total_paths: int | None = None
+    graph_json: dict[str, Any] | None = None
+    pool_config: PoolConfig | None = None
