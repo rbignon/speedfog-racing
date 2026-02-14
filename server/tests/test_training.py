@@ -21,6 +21,10 @@ from speedfog_racing.models import (
     generate_token,
 )
 from speedfog_racing.services.seed_service import get_pool_config
+from speedfog_racing.services.training_service import (
+    create_training_session,
+    get_training_seed,
+)
 
 # Use a unique test database file for training tests
 TRAINING_TEST_DB = os.path.join(tempfile.gettempdir(), "speedfog_training_test.db")
@@ -205,3 +209,58 @@ def test_pool_config_defaults_to_race(tmp_path, monkeypatch):
     config = get_pool_config("standard")
     assert config is not None
     assert config["type"] == "race"
+
+
+# =============================================================================
+# Task 4: Training service tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_training_seed_excludes_played(async_session, training_user, training_seed):
+    """get_training_seed skips seeds already played by the user."""
+    async with async_session() as db:
+        # First pick should work
+        seed = await get_training_seed(db, "training_standard", training_user.id)
+        assert seed is not None
+        assert seed.id == training_seed.id
+
+        # Create a session for this seed
+        session = TrainingSession(
+            user_id=training_user.id,
+            seed_id=training_seed.id,
+        )
+        db.add(session)
+        await db.commit()
+
+    async with async_session() as db:
+        # Second pick should return None (only seed is already played)
+        seed = await get_training_seed(db, "training_standard", training_user.id, allow_reset=False)
+        assert seed is None
+
+
+@pytest.mark.asyncio
+async def test_get_training_seed_resets_when_exhausted(async_session, training_user, training_seed):
+    """When all seeds are played, reset and pick from all."""
+    async with async_session() as db:
+        session = TrainingSession(
+            user_id=training_user.id,
+            seed_id=training_seed.id,
+        )
+        db.add(session)
+        await db.commit()
+
+    async with async_session() as db:
+        seed = await get_training_seed(db, "training_standard", training_user.id, allow_reset=True)
+        assert seed is not None
+        assert seed.id == training_seed.id
+
+
+@pytest.mark.asyncio
+async def test_create_training_session_service(async_session, training_user, training_seed):
+    """create_training_session creates a session and returns it with seed loaded."""
+    async with async_session() as db:
+        session = await create_training_session(db, training_user.id, "training_standard")
+        assert session.status == TrainingSessionStatus.ACTIVE
+        assert session.seed_id == training_seed.id
+        assert session.user_id == training_user.id
