@@ -24,6 +24,7 @@ from speedfog_racing.models import (
 from speedfog_racing.services.seed_service import get_pool_config
 from speedfog_racing.services.training_service import (
     create_training_session,
+    get_played_seed_counts,
     get_training_seed,
 )
 
@@ -270,8 +271,6 @@ async def test_create_training_session_service(async_session, training_user, tra
 @pytest.mark.asyncio
 async def test_get_played_seed_counts_empty(async_session, training_user):
     """No sessions → empty counts."""
-    from speedfog_racing.services.training_service import get_played_seed_counts
-
     async with async_session() as db:
         counts = await get_played_seed_counts(db, training_user.id)
         assert counts == {}
@@ -280,8 +279,6 @@ async def test_get_played_seed_counts_empty(async_session, training_user):
 @pytest.mark.asyncio
 async def test_get_played_seed_counts_one_pool(async_session, training_user, training_seed):
     """One session → count 1 for that pool."""
-    from speedfog_racing.services.training_service import get_played_seed_counts
-
     async with async_session() as db:
         db.add(TrainingSession(user_id=training_user.id, seed_id=training_seed.id))
         await db.commit()
@@ -294,8 +291,6 @@ async def test_get_played_seed_counts_one_pool(async_session, training_user, tra
 @pytest.mark.asyncio
 async def test_get_played_seed_counts_distinct(async_session, training_user, training_seed):
     """Two sessions on same seed → still count 1."""
-    from speedfog_racing.services.training_service import get_played_seed_counts
-
     async with async_session() as db:
         db.add(TrainingSession(user_id=training_user.id, seed_id=training_seed.id))
         db.add(TrainingSession(user_id=training_user.id, seed_id=training_seed.id))
@@ -304,6 +299,39 @@ async def test_get_played_seed_counts_distinct(async_session, training_user, tra
     async with async_session() as db:
         counts = await get_played_seed_counts(db, training_user.id)
         assert counts == {"training_standard": 1}
+
+
+@pytest.mark.asyncio
+async def test_get_played_seed_counts_multiple_pools(
+    async_session, training_user, sample_graph_json
+):
+    """Seeds across multiple pools are counted separately."""
+    async with async_session() as db:
+        seed_a = Seed(
+            seed_number="a_001",
+            pool_name="training_standard",
+            graph_json=sample_graph_json,
+            total_layers=10,
+            folder_path="/tmp/a.zip",
+            status=SeedStatus.AVAILABLE,
+        )
+        seed_b = Seed(
+            seed_number="b_001",
+            pool_name="training_sprint",
+            graph_json=sample_graph_json,
+            total_layers=5,
+            folder_path="/tmp/b.zip",
+            status=SeedStatus.AVAILABLE,
+        )
+        db.add_all([seed_a, seed_b])
+        await db.flush()
+        db.add(TrainingSession(user_id=training_user.id, seed_id=seed_a.id))
+        db.add(TrainingSession(user_id=training_user.id, seed_id=seed_b.id))
+        await db.commit()
+
+    async with async_session() as db:
+        counts = await get_played_seed_counts(db, training_user.id)
+        assert counts == {"training_standard": 1, "training_sprint": 1}
 
 
 # =============================================================================

@@ -83,7 +83,7 @@ async def get_played_seed_counts(
         .where(TrainingSession.user_id == user_id)
         .group_by(Seed.pool_name)
     )
-    return {row[0]: row[1] for row in result.all()}
+    return {pool_name: count for pool_name, count in result.all()}
 
 
 async def create_training_session(
