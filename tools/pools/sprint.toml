@@ -15,30 +15,32 @@ tolerance = 3
 
 [requirements]
 legacy_dungeons = 0
-bosses = 3
+bosses = 5
 mini_dungeons = 3
 
 [structure]
-max_parallel_paths = 2
-min_layers = 4
-max_layers = 6
+max_parallel_paths = 3
+min_layers = 9
+max_layers = 12
 final_tier = 14
-split_probability = 0.2
-merge_probability = 0.3
+split_probability = 0.35
+merge_probability = 0.35
 max_branches = 3
 major_boss_ratio = 0.0
 final_boss_candidates = ["all"]
 
 [starting_items]
 academy_key = true
-pureblood_medal = true
+pureblood_medal = false
 drawing_room_key = true
 lantern = true
 great_runes = true
 whetblades = true
+talisman_pouches = 3
 golden_seeds = 5
 sacred_tears = 3
 starting_runes = 50000
+larval_tears = 1
 
 # DLC key items (prevent softlocks in DLC areas)
 omother = true
@@ -68,3 +70,6 @@ enabled = true
 difficulty = 40
 remove_requirements = true
 auto_upgrade_weapons = true
+auto_upgrade_dropped = true
+reduce_upgrade_cost = true
+dlc = true

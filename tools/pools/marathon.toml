@@ -10,18 +10,18 @@ seed = 0  # Auto-reroll until valid DAG found
 run_complete_message = "RUN COMPLETE GG"
 
 [budget]
-total_weight = 50
-tolerance = 7
+total_weight = 65
+tolerance = 8
 
 [requirements]
-legacy_dungeons = 2
-bosses = 8
-mini_dungeons = 8
+legacy_dungeons = 3
+bosses = 15
+mini_dungeons = 10
 
 [structure]
 max_parallel_paths = 4
-min_layers = 20
-max_layers = 25
+min_layers = 30
+max_layers = 38
 final_tier = 21
 split_probability = 0.6
 merge_probability = 0.6
@@ -32,14 +32,16 @@ final_boss_candidates = ["all"]
 
 [starting_items]
 academy_key = true
-pureblood_medal = true
+pureblood_medal = false
 drawing_room_key = true
 lantern = true
 great_runes = true
 whetblades = true
+talisman_pouches = 3
 golden_seeds = 9
 sacred_tears = 5
 starting_runes = 200000
+larval_tears = 6
 
 # DLC key items (prevent softlocks in DLC areas)
 omother = true
@@ -69,3 +71,6 @@ enabled = true
 difficulty = 60
 remove_requirements = true
 auto_upgrade_weapons = true
+auto_upgrade_dropped = true
+reduce_upgrade_cost = true
+dlc = true
