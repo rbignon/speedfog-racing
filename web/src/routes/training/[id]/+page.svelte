@@ -143,7 +143,7 @@
 				<span class="stat-label">Progress</span>
 				<span class="stat-value mono">{currentLayer}/{totalLayers}</span>
 			</div>
-			{#if trainingStore.connected}
+			{#if liveParticipant?.mod_connected}
 				<div class="stat">
 					<span class="stat-label">Live</span>
 					<span class="stat-value connected-dot">&#x25CF;</span>
