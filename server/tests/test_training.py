@@ -499,6 +499,67 @@ async def test_abandon_training_session_api(test_client, training_user, training
 
 
 # =============================================================================
+# Task 2: Pool stats with played_by_user
+# =============================================================================
+
+
+@pytest.fixture
+def pool_test_client(async_session, monkeypatch):
+    """Test client with pool config patched for the pools API."""
+    from httpx import ASGITransport, AsyncClient
+
+    async def override_get_db():
+        async with async_session() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    monkeypatch.setattr(
+        "speedfog_racing.api.pools.get_pool_config",
+        lambda name: TRAINING_POOL_CONFIG if "training" in name else {"type": "race"},
+    )
+
+    transport = ASGITransport(app=app)
+    client = AsyncClient(transport=transport, base_url="http://test")
+
+    yield client
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_pools_played_by_user_authenticated(
+    pool_test_client, training_user, training_seed, async_session
+):
+    """GET /api/pools?type=training returns played_by_user when authenticated."""
+    # Create a training session for the user
+    async with async_session() as db:
+        db.add(TrainingSession(user_id=training_user.id, seed_id=training_seed.id))
+        await db.commit()
+
+    async with pool_test_client as client:
+        resp = await client.get(
+            "/api/pools?type=training",
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "training_standard" in data
+        assert data["training_standard"]["played_by_user"] == 1
+
+
+@pytest.mark.asyncio
+async def test_pools_played_by_user_unauthenticated(pool_test_client, training_seed):
+    """GET /api/pools?type=training returns played_by_user=null when not authenticated."""
+    async with pool_test_client as client:
+        resp = await client.get("/api/pools?type=training")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "training_standard" in data
+        assert data["training_standard"]["played_by_user"] is None
+
+
+# =============================================================================
 # Task 14: WebSocket integration tests
 # =============================================================================
 
