@@ -28,6 +28,7 @@ from speedfog_racing.websocket.schemas import (
     PingMessage,
     RaceInfo,
     RaceStartMessage,
+    RaceStatusChangeMessage,
     SeedInfo,
 )
 from speedfog_racing.websocket.training_manager import training_manager
@@ -352,11 +353,15 @@ async def _broadcast_participant_update(session: TrainingSession) -> None:
                 if layer > current_layer:
                     current_layer = layer
 
+    # Map training status to participant status for frontend compatibility:
+    # "active" → "playing" (MetroDagLive/Leaderboard expect "playing"/"finished")
+    status = "playing" if session.status == TrainingSessionStatus.ACTIVE else session.status.value
+
     info = ParticipantInfo(
         id=str(session.id),
         twitch_username=session.user.twitch_username,
         twitch_display_name=session.user.twitch_display_name,
-        status=session.status.value,
+        status=status,
         current_zone=current_zone,
         current_layer=current_layer,
         current_layer_tier=tier,
@@ -378,8 +383,6 @@ async def _broadcast_status_change(session_id: uuid.UUID, new_status: str) -> No
     room = training_manager.get_room(session_id)
     if not room:
         return
-
-    from speedfog_racing.websocket.schemas import RaceStatusChangeMessage
 
     message = RaceStatusChangeMessage(status=new_status)
     await room.broadcast_to_spectator(message.model_dump_json())

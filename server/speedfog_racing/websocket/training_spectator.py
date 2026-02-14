@@ -151,11 +151,17 @@ async def _send_initial_state(websocket: WebSocket, session: TrainingSession) ->
     include_history = session.status == TrainingSessionStatus.FINISHED
     room = training_manager.get_room(session.id)
 
+    # Map training status to participant status for frontend compatibility:
+    # "active" → "playing" (MetroDagLive/Leaderboard expect "playing"/"finished")
+    participant_status = (
+        "playing" if session.status == TrainingSessionStatus.ACTIVE else session.status.value
+    )
+
     participant = ParticipantInfo(
         id=str(session.id),
         twitch_username=session.user.twitch_username,
         twitch_display_name=session.user.twitch_display_name,
-        status=session.status.value,
+        status=participant_status,
         current_zone=current_zone,
         current_layer=current_layer,
         current_layer_tier=tier,
