@@ -1,0 +1,76 @@
+# SpeedFog Racing - Training Sprint Pool Configuration
+# ~30 minute solo runs
+
+[display]
+type = "training"
+estimated_duration = "~30min"
+description = "Quick solo run — minimal exploration"
+
+[run]
+seed = 0
+run_complete_message = "RUN COMPLETE GG"
+
+[budget]
+total_weight = 20
+tolerance = 3
+
+[requirements]
+legacy_dungeons = 0
+bosses = 3
+mini_dungeons = 3
+
+[structure]
+max_parallel_paths = 2
+min_layers = 4
+max_layers = 6
+final_tier = 14
+split_probability = 0.2
+merge_probability = 0.3
+max_branches = 3
+major_boss_ratio = 0.0
+final_boss_candidates = ["all"]
+
+[starting_items]
+academy_key = true
+pureblood_medal = false
+drawing_room_key = true
+lantern = true
+great_runes = true
+whetblades = true
+talisman_pouches = 3
+golden_seeds = 5
+sacred_tears = 3
+starting_runes = 50000
+larval_tears = 1
+
+# DLC key items (prevent softlocks in DLC areas)
+omother = true
+welldepthskey = true
+gaolupperlevelkey = true
+gaollowerlevelkey = true
+holeladennecklace = true
+messmerskindling = true
+
+[care_package]
+enabled = true
+weapon_upgrade = 15
+weapons = 5
+shields = 2
+catalysts = 2
+talismans = 4
+sorceries = 5
+incantations = 5
+head_armor = 2
+body_armor = 2
+arm_armor = 2
+leg_armor = 2
+crystal_tears = 5
+
+[item_randomizer]
+enabled = true
+difficulty = 40
+remove_requirements = true
+auto_upgrade_weapons = true
+auto_upgrade_dropped = true
+reduce_upgrade_cost = true
+dlc = true

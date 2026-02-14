@@ -395,6 +395,54 @@ Broadcast to all spectators when spectator count changes (connect/disconnect).
 
 ---
 
+## Training Mode
+
+Solo practice mode. Uses the same protocol messages as competitive races but with simplified single-player behavior.
+
+### REST API
+
+| Method | Endpoint                     | Auth   | Description                                              |
+| ------ | ---------------------------- | ------ | -------------------------------------------------------- |
+| POST   | `/api/training`              | Bearer | Create training session (`{ pool_name }`)                |
+| GET    | `/api/training`              | Bearer | List user's training sessions                            |
+| GET    | `/api/training/{id}`         | Bearer | Training session detail (with `graph_json`)              |
+| POST   | `/api/training/{id}/abandon` | Bearer | Abandon session (ACTIVE → ABANDONED)                     |
+| GET    | `/api/training/{id}/pack`    | Bearer | Download training seed pack (ZIP with `training = true`) |
+| GET    | `/api/pools?type=training`   | -      | List training pools only (filtered by `type` in TOML)    |
+
+### Training Session Status
+
+`active` → `finished` | `abandoned`
+
+### WebSocket: Training Mod
+
+**Endpoint:** `WS /ws/training/{session_id}`
+
+Same protocol as `/ws/mod/{race_id}` with differences:
+
+- **Auth**: Uses `mod_token` from the training session (not a race participant token)
+- **No `ready` phase**: Race starts immediately after `auth_ok`
+- **`race_start` sent immediately**: No waiting for other players
+- **Single player**: Only one mod connection per session
+- **Finish detection**: `finish_event` flag triggers session completion (ACTIVE → FINISHED)
+
+Client → Server messages: `auth`, `status_update`, `event_flag` (same format as mod WS).
+
+Server → Client messages: `auth_ok`, `race_start`, `zone_update` (same format as mod WS).
+
+### WebSocket: Training Spectator
+
+**Endpoint:** `WS /ws/training/{session_id}/spectate`
+
+Owner-only spectator for live web UI updates during training.
+
+- **Auth required**: Only the session owner can connect (sends `auth` with API token)
+- **`race_state`**: Sent on connect with full graph, seed info, and participant state
+- **`leaderboard_update`**: Single-participant update on status/zone changes
+- **`race_status_change`**: Sent when session finishes or is abandoned
+
+---
+
 ## Data Types
 
 ### Race Status

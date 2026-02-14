@@ -1,0 +1,77 @@
+# SpeedFog Racing - Training Standard Pool Configuration
+# ~1 hour solo runs
+
+[display]
+type = "training"
+estimated_duration = "~1h"
+description = "Balanced solo run with legacy dungeons and bosses"
+
+[run]
+seed = 0
+run_complete_message = "RUN COMPLETE GG"
+
+[budget]
+total_weight = 40
+tolerance = 5
+
+[requirements]
+legacy_dungeons = 1
+bosses = 10
+mini_dungeons = 5
+
+[structure]
+max_parallel_paths = 4
+min_layers = 19
+max_layers = 24
+final_tier = 18
+split_probability = 0.5
+merge_probability = 0.5
+max_branches = 3
+first_layer_type = "legacy_dungeon"
+major_boss_ratio = 0.2
+final_boss_candidates = ["all"]
+
+[starting_items]
+academy_key = true
+pureblood_medal = false
+drawing_room_key = true
+lantern = true
+great_runes = true
+whetblades = true
+talisman_pouches = 3
+golden_seeds = 7
+sacred_tears = 4
+starting_runes = 100000
+larval_tears = 3
+
+# DLC key items (prevent softlocks in DLC areas)
+omother = true
+welldepthskey = true
+gaolupperlevelkey = true
+gaollowerlevelkey = true
+holeladennecklace = true
+messmerskindling = true
+
+[care_package]
+enabled = true
+weapon_upgrade = 12
+weapons = 5
+shields = 2
+catalysts = 2
+talismans = 4
+sorceries = 5
+incantations = 5
+head_armor = 2
+body_armor = 2
+arm_armor = 2
+leg_armor = 2
+crystal_tears = 5
+
+[item_randomizer]
+enabled = true
+difficulty = 50
+remove_requirements = true
+auto_upgrade_weapons = true
+auto_upgrade_dropped = true
+reduce_upgrade_cost = true
+dlc = true
