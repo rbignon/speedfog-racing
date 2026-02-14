@@ -379,3 +379,124 @@ async def test_abandon_training_session_api(test_client, training_user, training
         assert resp.status_code == 200
         assert resp.json()["status"] == "abandoned"
         assert resp.json()["finished_at"] is not None
+
+
+# =============================================================================
+# Task 14: WebSocket integration tests
+# =============================================================================
+
+
+@pytest.fixture
+def training_ws_client(async_session):
+    """Sync test client for WebSocket testing."""
+    from starlette.testclient import TestClient
+
+    from speedfog_racing.websocket.training_manager import training_manager
+
+    training_manager.rooms.clear()
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client
+    training_manager.rooms.clear()
+
+
+@pytest.fixture
+def training_session_data(async_session, training_user, training_seed):
+    """Create a training session and return its data (sync-safe)."""
+
+    async def _setup():
+        async with async_session() as db:
+            session = await create_training_session(db, training_user.id, "training_standard")
+            await db.commit()
+            await db.refresh(session)
+            return {
+                "session_id": str(session.id),
+                "mod_token": session.mod_token,
+                "user_id": str(training_user.id),
+                "api_token": training_user.api_token,
+            }
+
+    return asyncio.run(_setup())
+
+
+def test_training_mod_websocket_auth(training_ws_client, training_session_data):
+    """Training mod WS: auth → auth_ok with seed info."""
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        auth_ok = ws.receive_json()
+        assert auth_ok["type"] == "auth_ok"
+        assert "seed" in auth_ok
+        assert auth_ok["seed"]["event_ids"] is not None
+
+        # Should immediately receive race_start
+        start = ws.receive_json()
+        assert start["type"] == "race_start"
+
+
+def test_training_mod_websocket_status_update(
+    training_ws_client, training_session_data, async_session
+):
+    """Training mod WS: status_update persists IGT and deaths."""
+    import time
+    import uuid as _uuid
+
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+
+        ws.send_json({"type": "status_update", "igt_ms": 5000, "death_count": 2})
+        # Give server time to process before closing the WS
+        time.sleep(0.3)
+
+    # Verify persisted in DB
+    async def _check():
+        async with async_session() as db:
+            result = await db.execute(
+                select(TrainingSession).where(TrainingSession.id == _uuid.UUID(sid))
+            )
+            s = result.scalar_one()
+            assert s.igt_ms == 5000
+            assert s.death_count == 2
+
+    asyncio.run(_check())
+
+
+def test_training_mod_websocket_event_flag(
+    training_ws_client, training_session_data, async_session
+):
+    """Training mod WS: event_flag updates progress and triggers zone_update."""
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        auth_ok = ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+
+        # Get a valid event flag from the seed's event_map
+        event_ids = auth_ok["seed"]["event_ids"]
+        assert len(event_ids) > 0
+
+        # Send first event flag (should be a zone transition)
+        ws.send_json({"type": "event_flag", "flag_id": event_ids[0], "igt_ms": 3000})
+
+        # Should receive zone_update
+        msg = ws.receive_json()
+        assert msg["type"] == "zone_update"
+        assert "node_id" in msg
+
+
+def test_training_mod_websocket_invalid_token(training_ws_client, training_session_data):
+    """Training mod WS: invalid token returns auth_error."""
+    sid = training_session_data["session_id"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": "invalid_token_xyz"})
+        response = ws.receive_json()
+        assert response["type"] == "auth_error"
