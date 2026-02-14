@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 from speedfog_racing.config import settings
-from speedfog_racing.models import Participant, Race
+from speedfog_racing.models import Participant, Race, TrainingSession
 
 logger = logging.getLogger(__name__)
 
@@ -132,5 +132,60 @@ def generate_seed_pack_on_demand(participant: Participant, race: Race) -> Path:
 
     except Exception:
         # Clean up on failure
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
+def generate_training_config(session: TrainingSession) -> str:
+    """Generate TOML config for training mod connection."""
+    ws_url = settings.websocket_url
+    return f"""[server]
+url = "{ws_url}"
+mod_token = "{session.mod_token}"
+race_id = "{session.id}"
+training = true
+
+[overlay]
+enabled = true
+font_path = ""
+font_size = 32.0
+background_color = "#141414"
+background_opacity = 0.3
+text_color = "#FFFFFF"
+text_disabled_color = "#808080"
+show_border = false
+border_color = "#404040"
+
+[keybindings]
+toggle_ui = "f9"
+"""
+
+
+def generate_seed_pack_on_demand_training(session: TrainingSession) -> Path:
+    """Generate seed pack for a training session.
+
+    Similar to generate_seed_pack_on_demand but:
+    - Points WS URL to /ws/training/{session_id}
+    - Adds training = true to config
+    """
+    seed_zip = Path(session.seed.folder_path)
+    if not seed_zip.exists():
+        raise FileNotFoundError(f"Seed zip not found: {seed_zip}")
+
+    temp_fd, temp_path_str = tempfile.mkstemp(suffix=".zip")
+    temp_path = Path(temp_path_str)
+    try:
+        os.close(temp_fd)
+        shutil.copy2(seed_zip, temp_path)
+
+        top_dir = _get_top_dir(temp_path)
+
+        config_content = generate_training_config(session)
+        config_path = f"{top_dir}/lib/speedfog_race.toml" if top_dir else "lib/speedfog_race.toml"
+        with zipfile.ZipFile(temp_path, "a") as zf:
+            zf.writestr(config_path, config_content)
+
+        return temp_path
+    except Exception:
         temp_path.unlink(missing_ok=True)
         raise

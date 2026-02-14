@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import speedfog_racing.database as db_module
 import speedfog_racing.main as main_module
-from speedfog_racing.database import Base
+from speedfog_racing.database import Base, get_db
+from speedfog_racing.main import app
 from speedfog_racing.models import (
     Seed,
     SeedStatus,
@@ -264,3 +265,117 @@ async def test_create_training_session_service(async_session, training_user, tra
         assert session.status == TrainingSessionStatus.ACTIVE
         assert session.seed_id == training_seed.id
         assert session.user_id == training_user.id
+
+
+# =============================================================================
+# Task 6: API endpoint tests
+# =============================================================================
+
+TRAINING_POOL_CONFIG = {
+    "type": "training",
+    "estimated_duration": "~1h",
+    "description": "Training pool",
+}
+
+
+@pytest.fixture
+def test_client(async_session, monkeypatch):
+    """Create test client with async database override and training pool config."""
+    from httpx import ASGITransport, AsyncClient
+
+    async def override_get_db():
+        async with async_session() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    # Monkeypatch get_pool_config so "training_standard" returns a training config
+    monkeypatch.setattr(
+        "speedfog_racing.api.training.get_pool_config",
+        lambda name: TRAINING_POOL_CONFIG if name == "training_standard" else None,
+    )
+
+    transport = ASGITransport(app=app)
+    client = AsyncClient(transport=transport, base_url="http://test")
+
+    yield client
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_create_training_session_api(test_client, training_user, training_seed):
+    """POST /api/training creates a session."""
+    async with test_client as client:
+        resp = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["status"] == "active"
+        assert data["pool_name"] == "training_standard"
+        assert data["seed_total_layers"] == 10
+
+
+@pytest.mark.asyncio
+async def test_list_training_sessions_api(test_client, training_user, training_seed):
+    """GET /api/training lists user's sessions."""
+    async with test_client as client:
+        # Create a session first
+        await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+
+        resp = await client.get(
+            "/api/training",
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_get_training_session_detail_api(test_client, training_user, training_seed):
+    """GET /api/training/{id} returns detail with graph_json."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        session_id = create_resp.json()["id"]
+
+        resp = await client.get(
+            f"/api/training/{session_id}",
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["graph_json"] is not None
+        assert data["seed_total_layers"] == 10
+
+
+@pytest.mark.asyncio
+async def test_abandon_training_session_api(test_client, training_user, training_seed):
+    """POST /api/training/{id}/abandon transitions to ABANDONED."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        session_id = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/training/{session_id}/abandon",
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "abandoned"
+        assert resp.json()["finished_at"] is not None
