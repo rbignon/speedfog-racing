@@ -1,0 +1,186 @@
+"""WebSocket handler for training session spectators (the player's web view)."""
+
+import asyncio
+import json
+import logging
+import uuid
+
+from fastapi import WebSocket
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
+from starlette.websockets import WebSocketDisconnect
+
+from speedfog_racing.auth import get_user_by_token
+from speedfog_racing.models import TrainingSession, TrainingSessionStatus
+from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
+from speedfog_racing.websocket.schemas import (
+    ParticipantInfo,
+    PingMessage,
+    RaceInfo,
+    RaceStateMessage,
+    SeedInfo,
+)
+from speedfog_racing.websocket.training_manager import training_manager
+
+AUTH_TIMEOUT = 5.0
+HEARTBEAT_INTERVAL = 30.0
+SEND_TIMEOUT = 5.0
+
+logger = logging.getLogger(__name__)
+
+
+async def handle_training_spectator_websocket(
+    websocket: WebSocket,
+    session_id: uuid.UUID,
+    session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Handle spectator WebSocket for a training session.
+
+    Only the session owner can spectate their own training.
+    """
+    await websocket.accept()
+
+    user_id = None
+
+    try:
+        # Auth required (not optional like race spectator)
+        try:
+            auth_data = await asyncio.wait_for(websocket.receive_text(), timeout=AUTH_TIMEOUT)
+        except TimeoutError:
+            await websocket.close(code=4001, reason="Auth timeout")
+            return
+
+        try:
+            auth_msg = json.loads(auth_data)
+        except json.JSONDecodeError:
+            await websocket.close(code=4003, reason="Invalid JSON")
+            return
+
+        if auth_msg.get("type") != "auth" or not isinstance(auth_msg.get("token"), str):
+            await websocket.close(code=4003, reason="Invalid auth")
+            return
+
+        async with session_maker() as db:
+            user = await get_user_by_token(db, auth_msg["token"])
+            if not user:
+                await websocket.close(code=4003, reason="Invalid token")
+                return
+
+            user_id = user.id
+
+            # Load session and verify ownership
+            result = await db.execute(
+                select(TrainingSession)
+                .options(
+                    selectinload(TrainingSession.user),
+                    selectinload(TrainingSession.seed),
+                )
+                .where(TrainingSession.id == session_id)
+            )
+            session = result.scalar_one_or_none()
+
+            if not session:
+                await websocket.close(code=4004, reason="Session not found")
+                return
+
+            if session.user_id != user_id:
+                await websocket.close(code=4003, reason="Not your session")
+                return
+
+            # Send initial state
+            await _send_initial_state(websocket, session)
+
+        # Register connection
+        await training_manager.connect_spectator(session_id, user_id, websocket)
+
+        # Start heartbeat
+        heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+
+        try:
+            # Spectators only listen
+            while True:
+                await websocket.receive_text()
+        finally:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
+
+    except WebSocketDisconnect:
+        logger.info(f"Training spectator disconnected: session={session_id}")
+    except Exception:
+        logger.exception(f"Training spectator error: session={session_id}")
+    finally:
+        if user_id:
+            await training_manager.disconnect_spectator(session_id)
+
+
+async def _heartbeat_loop(websocket: WebSocket) -> None:
+    ping_json = PingMessage().model_dump_json()
+    try:
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            await asyncio.wait_for(websocket.send_text(ping_json), timeout=SEND_TIMEOUT)
+    except Exception:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+async def _send_initial_state(websocket: WebSocket, session: TrainingSession) -> None:
+    """Send current training session state to spectator."""
+    seed = session.seed
+
+    current_zone = None
+    current_layer = 0
+    tier = None
+    if session.progress_nodes:
+        current_zone = session.progress_nodes[-1].get("node_id")
+        if current_zone and seed and seed.graph_json:
+            tier = get_tier_for_node(current_zone, seed.graph_json)
+        for entry in session.progress_nodes:
+            nid = entry.get("node_id")
+            if nid and seed and seed.graph_json:
+                layer = get_layer_for_node(nid, seed.graph_json)
+                if layer > current_layer:
+                    current_layer = layer
+
+    include_history = session.status == TrainingSessionStatus.FINISHED
+    room = training_manager.get_room(session.id)
+
+    participant = ParticipantInfo(
+        id=str(session.id),
+        twitch_username=session.user.twitch_username,
+        twitch_display_name=session.user.twitch_display_name,
+        status=session.status.value,
+        current_zone=current_zone,
+        current_layer=current_layer,
+        current_layer_tier=tier,
+        igt_ms=session.igt_ms,
+        death_count=session.death_count,
+        color_index=0,
+        mod_connected=room is not None and room.mod is not None,
+        zone_history=session.progress_nodes if include_history else None,
+    )
+
+    message = RaceStateMessage(
+        race=RaceInfo(
+            id=str(session.id),
+            name="Training",
+            status="running"
+            if session.status == TrainingSessionStatus.ACTIVE
+            else session.status.value,
+            started_at=session.created_at.isoformat() if session.created_at else None,
+        ),
+        seed=SeedInfo(
+            total_layers=seed.total_layers if seed else 0,
+            graph_json=seed.graph_json if seed else None,
+            total_nodes=seed.graph_json.get("total_nodes") if seed and seed.graph_json else None,
+            total_paths=seed.graph_json.get("total_paths") if seed and seed.graph_json else None,
+        ),
+        participants=[participant],
+    )
+    await websocket.send_text(message.model_dump_json())
