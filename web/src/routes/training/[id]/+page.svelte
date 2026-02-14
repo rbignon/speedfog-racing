@@ -10,6 +10,7 @@
 		type TrainingSessionDetail,
 	} from '$lib/api';
 	import { MetroDag, MetroDagLive, MetroDagResults } from '$lib/dag';
+	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
 	let sessionId = $derived(page.params.id!);
 	let session = $state<TrainingSessionDetail | null>(null);
@@ -37,20 +38,6 @@
 		if (!liveParticipant) return [];
 		return [liveParticipant];
 	});
-
-	function displayPoolName(poolName: string): string {
-		return poolName
-			.replace(/^training_/, '')
-			.replace(/^\w/, (c: string) => c.toUpperCase());
-	}
-
-	function formatIgt(ms: number): string {
-		if (ms <= 0) return '--:--:--';
-		const secs = Math.floor(ms / 1000);
-		const mins = Math.floor(secs / 60);
-		const hours = Math.floor(mins / 60);
-		return `${String(hours).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
-	}
 
 	$effect(() => {
 		if (!auth.initialized) return;
@@ -188,13 +175,15 @@
 
 		<!-- Actions -->
 		<div class="actions">
-			<button
-				class="btn btn-secondary"
-				disabled={downloading}
-				onclick={handleDownload}
-			>
-				{downloading ? 'Downloading...' : 'Download Pack'}
-			</button>
+			{#if status === 'active'}
+				<button
+					class="btn btn-secondary"
+					disabled={downloading}
+					onclick={handleDownload}
+				>
+					{downloading ? 'Downloading...' : 'Download Pack'}
+				</button>
+			{/if}
 
 			{#if status === 'active'}
 				{#if confirmAbandon}
@@ -362,12 +351,6 @@
 	.confirm-text {
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
-	}
-
-	/* badge-active locally defined */
-	:global(.badge-active) {
-		background: rgba(200, 164, 78, 0.15);
-		color: var(--color-warning);
 	}
 
 	/* Danger outline button */

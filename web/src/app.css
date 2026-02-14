@@ -203,3 +203,9 @@ a:hover {
   background: rgba(220, 38, 38, 0.2);
   color: var(--color-danger);
 }
+
+/* Training status badges */
+.badge-active {
+  background: rgba(200, 164, 78, 0.15);
+  color: var(--color-warning);
+}

@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,7 @@ from speedfog_racing.models import (
     TrainingSessionStatus,
     User,
 )
+from speedfog_racing.rate_limit import limiter
 from speedfog_racing.schemas import (
     CreateTrainingRequest,
     PoolConfig,
@@ -107,22 +108,24 @@ def _build_detail_response(session: TrainingSession) -> TrainingSessionDetailRes
 
 
 @router.post("", response_model=TrainingSessionDetailResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 async def create_session(
-    request: CreateTrainingRequest,
+    request: Request,
+    body: CreateTrainingRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> TrainingSessionDetailResponse:
     """Create a new training session."""
     # Validate pool is a training pool
-    raw_config = get_pool_config(request.pool_name)
+    raw_config = get_pool_config(body.pool_name)
     if not raw_config or raw_config.get("type", "race") != "training":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"'{request.pool_name}' is not a training pool",
+            detail=f"'{body.pool_name}' is not a training pool",
         )
 
     try:
-        session = await create_training_session(db, user.id, request.pool_name)
+        session = await create_training_session(db, user.id, body.pool_name)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

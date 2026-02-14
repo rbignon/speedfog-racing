@@ -11,6 +11,7 @@
 	} from '$lib/api';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 	import { timeAgo } from '$lib/utils/time';
+	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
 	let pools: PoolStats = $state({});
 	let sessions: TrainingSession[] = $state([]);
@@ -76,22 +77,6 @@
 		}
 	}
 
-	function displayPoolName(poolName: string): string {
-		return poolName
-			.replace(/^training_/, '')
-			.replace(/^\w/, (c) => c.toUpperCase());
-	}
-
-	function formatIgt(ms: number): string {
-		if (ms <= 0) return '--:--';
-		const secs = Math.floor(ms / 1000);
-		const mins = Math.floor(secs / 60);
-		const hours = Math.floor(mins / 60);
-		if (hours > 0) {
-			return `${hours}:${String(mins % 60).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
-		}
-		return `${String(mins).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
-	}
 </script>
 
 <svelte:head>
@@ -333,12 +318,6 @@
 
 	.date {
 		color: var(--color-text-disabled);
-	}
-
-	/* badge-active not in global CSS, define locally */
-	:global(.badge-active) {
-		background: rgba(200, 164, 78, 0.15);
-		color: var(--color-warning);
 	}
 
 	@media (max-width: 640px) {

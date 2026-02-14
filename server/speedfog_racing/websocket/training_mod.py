@@ -39,7 +39,7 @@ SEND_TIMEOUT = 5.0
 logger = logging.getLogger(__name__)
 
 
-def _load_options():
+def _load_options() -> list[Any]:
     return [
         selectinload(TrainingSession.user),
         selectinload(TrainingSession.seed),
@@ -254,7 +254,8 @@ async def _handle_status_update(
         session.death_count = msg.get("death_count", 0)
         await db.commit()
 
-    # Broadcast to spectator
+    # Broadcast to spectator (session is detached from DB but all relationships
+    # were eagerly loaded and expire_on_commit=False keeps attributes accessible)
     await _broadcast_participant_update(session)
 
 
@@ -314,7 +315,7 @@ async def _handle_event_flag(
         session.progress_nodes = [*old_history, {"node_id": node_id, "igt_ms": igt}]
         await db.commit()
 
-    # Broadcast to spectator
+    # Broadcast to spectator (session is detached; expire_on_commit=False keeps attrs)
     if session:
         await _broadcast_participant_update(session)
 
@@ -378,5 +379,7 @@ async def _broadcast_status_change(session_id: uuid.UUID, new_status: str) -> No
     if not room:
         return
 
-    message = json.dumps({"type": "race_status_change", "status": new_status})
-    await room.broadcast_to_spectator(message)
+    from speedfog_racing.websocket.schemas import RaceStatusChangeMessage
+
+    message = RaceStatusChangeMessage(status=new_status)
+    await room.broadcast_to_spectator(message.model_dump_json())

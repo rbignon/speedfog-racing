@@ -137,6 +137,14 @@ class TrainingStore {
     this.ws.onmessage = (event) => {
       try {
         const data: unknown = JSON.parse(event.data);
+        // Ignore server heartbeat pings silently
+        if (
+          typeof data === "object" &&
+          data !== null &&
+          "type" in data &&
+          (data as { type: string }).type === "ping"
+        )
+          return;
         if (!isTrainingMessage(data)) {
           if (import.meta.env.DEV)
             console.warn("[TrainingWS] Invalid message:", event.data);

@@ -60,6 +60,7 @@ export interface Caster {
 }
 
 export interface PoolConfig {
+  type: string | null;
   estimated_duration: string | null;
   description: string | null;
   legacy_dungeons: number | null;
