@@ -254,12 +254,14 @@ impl RaceTracker {
         let igt_ms = self.game_state.read_igt().unwrap_or(0);
         let deaths = self.game_state.read_deaths().unwrap_or(0);
 
-        // Send ready on (re)connection
+        // Send ready on (re)connection (skip in training mode — server auto-starts)
         if !self.ready_sent {
-            self.ws_client.send_ready();
-            self.last_sent_debug = Some("ready".to_string());
+            if !self.config.server.training {
+                self.ws_client.send_ready();
+                self.last_sent_debug = Some("ready".to_string());
+                info!("[RACE] Sent ready signal");
+            }
             self.ready_sent = true;
-            info!("[RACE] Sent ready signal");
 
             // Drain event flags buffered during disconnection
             for (flag_id, flag_igt) in self.pending_event_flags.drain(..) {

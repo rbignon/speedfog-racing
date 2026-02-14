@@ -242,7 +242,8 @@ fn websocket_thread(
         } else {
             base.to_string()
         };
-        let url = format!("{}/ws/mod/{}", ws_base, settings.race_id);
+        let endpoint = if settings.training { "training" } else { "mod" };
+        let url = format!("{}/ws/{}/{}", ws_base, endpoint, settings.race_id);
 
         info!(url = %url, "[WS] Connecting...");
         let _ = incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Connecting));

@@ -20,6 +20,9 @@ pub struct ServerSettings {
     pub mod_token: String,
     /// Race ID (UUID)
     pub race_id: String,
+    /// Training mode — hides leaderboard, uses /ws/training/ endpoint
+    #[serde(default)]
+    pub training: bool,
 }
 
 impl Default for ServerSettings {
@@ -28,6 +31,7 @@ impl Default for ServerSettings {
             url: String::new(),
             mod_token: String::new(),
             race_id: String::new(),
+            training: false,
         }
     }
 }

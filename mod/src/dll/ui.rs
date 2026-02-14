@@ -85,8 +85,10 @@ impl ImguiRenderLoop for RaceTracker {
             .build(|| {
                 self.render_player_status(ui, max_width);
                 self.render_exits(ui, max_width);
-                ui.separator();
-                self.render_leaderboard(ui, max_width);
+                if !self.config.server.training {
+                    ui.separator();
+                    self.render_leaderboard(ui, max_width);
+                }
                 if self.show_debug {
                     ui.separator();
                     self.render_debug(ui);
@@ -127,7 +129,12 @@ impl RaceTracker {
         ui.same_line_with_spacing(0.0, 0.0);
 
         let name_text = if let Some(race) = self.race_info() {
-            format!("{} [{}]", race.name, race.status)
+            let display_name = if self.config.server.training {
+                "Training"
+            } else {
+                race.name.as_str()
+            };
+            format!("{} [{}]", display_name, race.status)
         } else {
             "Connecting...".to_string()
         };
