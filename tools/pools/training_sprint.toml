@@ -16,16 +16,16 @@ tolerance = 3
 
 [requirements]
 legacy_dungeons = 0
-bosses = 3
+bosses = 5
 mini_dungeons = 3
 
 [structure]
-max_parallel_paths = 2
-min_layers = 4
-max_layers = 6
+max_parallel_paths = 3
+min_layers = 9
+max_layers = 12
 final_tier = 14
-split_probability = 0.2
-merge_probability = 0.3
+split_probability = 0.35
+merge_probability = 0.35
 max_branches = 3
 major_boss_ratio = 0.0
 final_boss_candidates = ["all"]
