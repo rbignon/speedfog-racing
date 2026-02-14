@@ -169,6 +169,18 @@ export class RaceWebSocket {
     this.ws.onmessage = (event) => {
       try {
         const data: unknown = JSON.parse(event.data);
+        // Respond to server heartbeat pings
+        if (
+          typeof data === "object" &&
+          data !== null &&
+          "type" in data &&
+          (data as { type: string }).type === "ping"
+        ) {
+          if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: "pong" }));
+          }
+          return;
+        }
         if (!isServerMessage(data)) {
           if (import.meta.env.DEV)
             console.warn("[WS] Invalid message:", event.data);
