@@ -19,7 +19,12 @@ from speedfog_racing.config import settings
 from speedfog_racing.database import async_session_maker, get_db_context, init_db
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.services import scan_pool
-from speedfog_racing.websocket import handle_mod_websocket, handle_spectator_websocket
+from speedfog_racing.websocket import (
+    handle_mod_websocket,
+    handle_spectator_websocket,
+    handle_training_mod_websocket,
+    handle_training_spectator_websocket,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -110,6 +115,18 @@ async def websocket_mod(websocket: WebSocket, race_id: uuid.UUID) -> None:
 async def websocket_spectator(websocket: WebSocket, race_id: uuid.UUID) -> None:
     """WebSocket endpoint for spectator connections."""
     await handle_spectator_websocket(websocket, race_id, async_session_maker)
+
+
+@app.websocket("/ws/training/{session_id}")
+async def websocket_training_mod(websocket: WebSocket, session_id: uuid.UUID) -> None:
+    """WebSocket endpoint for training mod connections."""
+    await handle_training_mod_websocket(websocket, session_id, async_session_maker)
+
+
+@app.websocket("/ws/training/{session_id}/spectate")
+async def websocket_training_spectator(websocket: WebSocket, session_id: uuid.UUID) -> None:
+    """WebSocket endpoint for training spectator connections."""
+    await handle_training_spectator_websocket(websocket, session_id, async_session_maker)
 
 
 def main() -> None:
