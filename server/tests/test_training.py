@@ -20,6 +20,7 @@ from speedfog_racing.models import (
     UserRole,
     generate_token,
 )
+from speedfog_racing.services.seed_service import get_pool_config
 
 # Use a unique test database file for training tests
 TRAINING_TEST_DB = os.path.join(tempfile.gettempdir(), "speedfog_training_test.db")
@@ -169,3 +170,38 @@ async def test_training_session_seed_stays_available(async_session, training_use
         result = await db.execute(select(Seed).where(Seed.id == training_seed.id))
         seed = result.scalar_one()
         assert seed.status == SeedStatus.AVAILABLE
+
+
+# =============================================================================
+# Task 3: Pool type filtering tests
+# =============================================================================
+
+
+def test_pool_config_includes_type(tmp_path, monkeypatch):
+    """get_pool_config reads the type field from config.toml."""
+    pool_dir = tmp_path / "training_standard"
+    pool_dir.mkdir()
+    (pool_dir / "config.toml").write_text(
+        '[display]\ntype = "training"\nestimated_duration = "~1h"\n'
+    )
+    monkeypatch.setattr(
+        "speedfog_racing.services.seed_service.settings",
+        type("S", (), {"seeds_pool_dir": str(tmp_path)})(),
+    )
+    config = get_pool_config("training_standard")
+    assert config is not None
+    assert config["type"] == "training"
+
+
+def test_pool_config_defaults_to_race(tmp_path, monkeypatch):
+    """Pools without type field default to 'race'."""
+    pool_dir = tmp_path / "standard"
+    pool_dir.mkdir()
+    (pool_dir / "config.toml").write_text('[display]\nestimated_duration = "~1h"\n')
+    monkeypatch.setattr(
+        "speedfog_racing.services.seed_service.settings",
+        type("S", (), {"seeds_pool_dir": str(tmp_path)})(),
+    )
+    config = get_pool_config("standard")
+    assert config is not None
+    assert config["type"] == "race"

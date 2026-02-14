@@ -90,6 +90,7 @@ class RaceResponse(BaseModel):
 
 
 class PoolConfig(BaseModel):
+    type: str = "race"
     estimated_duration: str | None = None
     description: str | None = None
     legacy_dungeons: int | None = None

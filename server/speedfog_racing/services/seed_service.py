@@ -227,6 +227,7 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         starting_items.append(f"{sr // 1000}k Runes" if sr >= 1000 else f"{sr} Runes")
 
     return {
+        "type": display.get("type", "race"),
         "estimated_duration": display.get("estimated_duration"),
         "description": display.get("description") or None,
         "legacy_dungeons": requirements.get("legacy_dungeons"),

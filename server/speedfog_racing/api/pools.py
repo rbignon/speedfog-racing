@@ -1,6 +1,6 @@
 """Seed pools API routes (public)."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,16 +22,24 @@ class PoolStats(BaseModel):
 @router.get("", response_model=dict[str, PoolStats])
 async def list_pools(
     db: AsyncSession = Depends(get_db),
+    pool_type: str | None = Query(None, alias="type"),
 ) -> dict[str, PoolStats]:
-    """Get availability statistics for all seed pools.
+    """Get availability statistics for seed pools.
 
-    Public endpoint for race creation form.
+    Optional filter: ?type=race or ?type=training
     """
     stats = await get_pool_stats(db)
 
     result: dict[str, PoolStats] = {}
     for name, counts in stats.items():
         raw_config = get_pool_config(name)
+        # Filter by type if requested
+        if pool_type and raw_config:
+            if raw_config.get("type", "race") != pool_type:
+                continue
+        elif pool_type and not raw_config:
+            if pool_type != "race":
+                continue
         result[name] = PoolStats(
             available=counts.get("available", 0),
             consumed=counts.get("consumed", 0),
