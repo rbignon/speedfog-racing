@@ -95,7 +95,7 @@ def sample_graph_json():
         "event_map": {"1040292800": "limgrave_start", "1040292801": "stormveil_01"},
         "finish_event": 1040292899,
         "nodes": {
-            "limgrave_start": {"layer": 0, "tier": 1, "name": "Limgrave Start"},
+            "limgrave_start": {"type": "start", "layer": 0, "tier": 1, "name": "Limgrave Start"},
             "stormveil_01": {"layer": 1, "tier": 2, "name": "Stormveil"},
         },
         "edges": [{"from": "limgrave_start", "to": "stormveil_01"}],
@@ -688,6 +688,7 @@ def test_training_mod_websocket_event_flag(
         ws.send_json({"type": "auth", "mod_token": token})
         auth_ok = ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update (start node)
 
         # Get a valid event flag from the seed's event_map
         event_ids = auth_ok["seed"]["event_ids"]
@@ -708,6 +709,41 @@ def test_training_mod_websocket_event_flag(
         msg = ws.receive_json()
         assert msg["type"] == "zone_update"
         assert "node_id" in msg
+
+
+def test_training_zone_history_includes_start_node(
+    training_ws_client, training_session_data, async_session
+):
+    """Training mod WS: zone_history includes start node after first status_update."""
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        auth_ok = ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update (start node)
+
+        # First status_update should record start node in progress_nodes
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        msg = ws.receive_json()
+        assert msg["type"] == "leaderboard_update"
+        p = msg["participants"][0]
+        assert p["zone_history"] is not None
+        assert len(p["zone_history"]) == 1
+        assert p["zone_history"][0]["node_id"] == "limgrave_start"
+        assert p["zone_history"][0]["igt_ms"] == 0
+
+        # Send event_flag for stormveil_01 (event_ids[0]=limgrave_start,
+        # event_ids[1]=stormveil_01, event_ids[-1]=finish_event)
+        event_ids = auth_ok["seed"]["event_ids"]
+        ws.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 5000})
+        msg = ws.receive_json()
+        assert msg["type"] == "leaderboard_update"
+        p = msg["participants"][0]
+        assert len(p["zone_history"]) == 2
+        assert p["zone_history"][0]["node_id"] == "limgrave_start"
+        assert p["zone_history"][1]["node_id"] == "stormveil_01"
 
 
 def test_training_mod_websocket_invalid_token(training_ws_client, training_session_data):

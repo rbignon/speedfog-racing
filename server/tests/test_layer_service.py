@@ -87,6 +87,29 @@ def test_get_start_node_empty_nodes():
     assert get_start_node({"nodes": {}}) is None
 
 
+def test_get_start_node_fallback_to_top_level_key():
+    """Falls back to top-level start_node when no node has type 'start'."""
+    graph = {
+        "start_node": "limgrave_start",
+        "nodes": {
+            "limgrave_start": {"layer": 0, "tier": 1},
+            "stormveil_01": {"layer": 1, "tier": 2},
+        },
+    }
+    assert get_start_node(graph) == "limgrave_start"
+
+
+def test_get_start_node_fallback_invalid_reference():
+    """Fallback start_node is ignored if it doesn't exist in nodes."""
+    graph = {
+        "start_node": "nonexistent_node",
+        "nodes": {
+            "stormveil_01": {"layer": 1, "tier": 2},
+        },
+    }
+    assert get_start_node(graph) is None
+
+
 # =============================================================================
 # compute_zone_update
 # =============================================================================

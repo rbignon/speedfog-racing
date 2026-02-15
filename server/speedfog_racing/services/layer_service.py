@@ -25,11 +25,16 @@ def get_start_node(graph_json: dict[str, Any]) -> str | None:
     """Find the start node (type == "start") in graph_json.
 
     Returns the node_id or None if not found.
+    Falls back to the top-level ``start_node`` key if no node has type "start".
     """
     nodes: dict[str, Any] = graph_json.get("nodes", {})
     for node_id, node_data in nodes.items():
         if isinstance(node_data, dict) and node_data.get("type") == "start":
             return node_id
+    # Fallback: top-level start_node key
+    fallback = graph_json.get("start_node")
+    if isinstance(fallback, str) and fallback in nodes:
+        return fallback
     return None
 
 

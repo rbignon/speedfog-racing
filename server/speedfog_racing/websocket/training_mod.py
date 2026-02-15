@@ -262,6 +262,15 @@ async def _handle_status_update(
 
         session.igt_ms = msg.get("igt_ms", 0)
         session.death_count = msg.get("death_count", 0)
+
+        # Record start node on first status_update (mirrors race mode READY→PLAYING)
+        if not session.progress_nodes:
+            seed = session.seed
+            if seed and seed.graph_json:
+                start_node = get_start_node(seed.graph_json)
+                if start_node:
+                    session.progress_nodes = [{"node_id": start_node, "igt_ms": 0}]
+
         await db.commit()
 
     # Broadcast to spectator (session is detached from DB but all relationships
