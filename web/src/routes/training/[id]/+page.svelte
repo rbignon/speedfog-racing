@@ -9,14 +9,14 @@
 		downloadTrainingPack,
 		type TrainingSessionDetail,
 	} from '$lib/api';
-	import { MetroDag, MetroDagLive, MetroDagResults } from '$lib/dag';
+	import { MetroDag, MetroDagLive, MetroDagProgressive, MetroDagResults } from '$lib/dag';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
 	let sessionId = $derived(page.params.id!);
 	let session = $state<TrainingSessionDetail | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let showDag = $state(false);
+	let showFullDag = $state(false);
 	let abandoning = $state(false);
 	let downloading = $state(false);
 	let confirmAbandon = $state(false);
@@ -57,10 +57,6 @@
 	async function loadSession() {
 		try {
 			session = await fetchTrainingSession(sessionId);
-			// Auto-show DAG for finished sessions
-			if (session.status === 'finished') {
-				showDag = true;
-			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load session.';
 		} finally {
@@ -154,21 +150,25 @@
 		<!-- DAG section -->
 		{#if graphJson}
 			<section class="dag-section">
-				{#if status !== 'finished'}
-					<button class="btn btn-secondary btn-sm" onclick={() => (showDag = !showDag)}>
-						{showDag ? 'Hide Spoiler' : 'Show Spoiler'}
+				{#if status === 'finished' && dagParticipants.length > 0}
+					<MetroDagResults {graphJson} participants={dagParticipants} />
+				{:else if status === 'active' && dagParticipants.length > 0}
+					<button class="btn btn-secondary btn-sm" onclick={() => (showFullDag = !showFullDag)}>
+						{showFullDag ? 'Hide Spoiler' : 'Show Spoiler'}
 					</button>
-				{/if}
-				{#if showDag}
 					<div class="dag-wrapper">
-						{#if status === 'finished' && dagParticipants.length > 0}
-							<MetroDagResults {graphJson} participants={dagParticipants} />
-						{:else if status === 'active' && dagParticipants.length > 0}
+						{#if showFullDag}
 							<MetroDagLive {graphJson} participants={dagParticipants} />
 						{:else}
-							<MetroDag {graphJson} />
+							<MetroDagProgressive
+								{graphJson}
+								participants={dagParticipants}
+								myParticipantId={liveParticipant?.id ?? ''}
+							/>
 						{/if}
 					</div>
+				{:else}
+					<MetroDag {graphJson} />
 				{/if}
 			</section>
 		{/if}
