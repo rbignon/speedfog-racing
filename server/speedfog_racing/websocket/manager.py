@@ -183,7 +183,6 @@ class ConnectionManager:
         race_id: uuid.UUID,
         participants: list[Participant],
         *,
-        include_history: bool = False,
         graph_json: dict[str, Any] | None = None,
     ) -> None:
         """Broadcast leaderboard update to all connections in a room."""
@@ -196,7 +195,6 @@ class ConnectionManager:
         participant_infos = [
             participant_to_info(
                 p,
-                include_history=include_history,
                 connected_ids=connected_ids,
                 graph_json=graph_json,
             )
@@ -249,7 +247,6 @@ class ConnectionManager:
 def participant_to_info(
     participant: Participant,
     *,
-    include_history: bool = False,
     connected_ids: set[uuid.UUID] | None = None,
     graph_json: dict[str, Any] | None = None,
 ) -> ParticipantInfo:
@@ -271,7 +268,7 @@ def participant_to_info(
         death_count=participant.death_count,
         color_index=participant.color_index,
         mod_connected=participant.id in connected_ids if connected_ids else False,
-        zone_history=participant.zone_history if include_history else None,
+        zone_history=participant.zone_history,
     )
 
 

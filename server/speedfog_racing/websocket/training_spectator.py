@@ -148,7 +148,6 @@ async def _send_initial_state(websocket: WebSocket, session: TrainingSession) ->
                 if layer > current_layer:
                     current_layer = layer
 
-    include_history = session.status == TrainingSessionStatus.FINISHED
     room = training_manager.get_room(session.id)
 
     # Map training status to participant status for frontend compatibility:
@@ -169,7 +168,7 @@ async def _send_initial_state(websocket: WebSocket, session: TrainingSession) ->
         death_count=session.death_count,
         color_index=0,
         mod_connected=room is not None and room.mod is not None,
-        zone_history=session.progress_nodes if include_history else None,
+        zone_history=session.progress_nodes,
     )
 
     message = RaceStateMessage(

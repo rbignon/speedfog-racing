@@ -502,3 +502,11 @@ class TestParticipantToInfo:
         info = participant_to_info(participant)
 
         assert info.twitch_display_name is None
+
+    def test_participant_info_always_includes_zone_history(self):
+        """Test participant_to_info always includes zone_history."""
+        user = MockUser(twitch_username="p1")
+        history = [{"node_id": "node_a", "igt_ms": 1000}]
+        participant = MockParticipant(user=user, zone_history=history)
+        info = participant_to_info(participant)
+        assert info.zone_history == history

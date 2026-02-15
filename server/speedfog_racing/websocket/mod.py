@@ -484,11 +484,9 @@ async def handle_finished(
         await broadcast_race_state_update(participant.race_id, participant.race)
         await manager.broadcast_race_status(participant.race_id, "finished")
 
-    # Broadcast leaderboard (with zone_history when race is finished)
     await manager.broadcast_leaderboard(
         participant.race_id,
         participant.race.participants,
-        include_history=all_finished,
         graph_json=_get_graph_json(participant),
     )
 

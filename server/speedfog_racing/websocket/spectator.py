@@ -136,7 +136,6 @@ async def handle_spectator_websocket(
                 websocket,
                 race,
                 dag_access=conn.dag_access,
-                include_history=(race.status == RaceStatus.FINISHED),
             )
         # Session closed — released back to pool within ~2s of connect
 
@@ -220,7 +219,6 @@ async def send_race_state(
     race: Race,
     *,
     dag_access: bool = False,
-    include_history: bool = False,
 ) -> None:
     """Send race state to spectator with appropriate DAG visibility."""
     room = manager.get_room(race.id)
@@ -228,9 +226,7 @@ async def send_race_state(
     graph = race.seed.graph_json if race.seed else None
     sorted_participants = sort_leaderboard(race.participants)
     participant_infos: list[ParticipantInfo] = [
-        participant_to_info(
-            p, include_history=include_history, connected_ids=connected_ids, graph_json=graph
-        )
+        participant_to_info(p, connected_ids=connected_ids, graph_json=graph)
         for p in sorted_participants
     ]
 
@@ -253,8 +249,6 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
     if not room:
         return
 
-    include_history = race.status == RaceStatus.FINISHED
-
     # Pre-build per-access messages and send concurrently
     async def _send_to(i: int, conn: SpectatorConnection) -> int | None:
         dag_access = compute_dag_access(conn.user_id, race)
@@ -265,7 +259,6 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
                     conn.websocket,
                     race,
                     dag_access=dag_access,
-                    include_history=include_history,
                 ),
                 timeout=SEND_TIMEOUT,
             )
