@@ -27,12 +27,14 @@ def _read_graph_from_zip(zip_path: Path) -> dict[str, Any] | None:
             names = zf.namelist()
             # Try root-level first
             if "graph.json" in names:
-                return json.loads(zf.read("graph.json"))
+                result: dict[str, Any] = json.loads(zf.read("graph.json"))
+                return result
             # Try nested (e.g., speedfog_abc123/graph.json)
             for name in names:
                 parts = name.split("/")
                 if len(parts) == 2 and parts[1] == "graph.json":
-                    return json.loads(zf.read(name))
+                    result = json.loads(zf.read(name))
+                    return result
         logger.warning(f"No graph.json found in {zip_path}")
         return None
     except (zipfile.BadZipFile, json.JSONDecodeError, KeyError) as e:
