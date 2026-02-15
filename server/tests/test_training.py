@@ -7,6 +7,7 @@ import tempfile
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 import speedfog_racing.database as db_module
 import speedfog_racing.main as main_module
@@ -45,6 +46,7 @@ def async_session():
     test_engine = create_async_engine(
         f"sqlite+aiosqlite:///{TRAINING_TEST_DB}",
         echo=False,
+        poolclass=NullPool,
     )
     test_session_maker = async_sessionmaker(
         test_engine,

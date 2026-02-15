@@ -22,6 +22,7 @@ dependencies = [
 dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.23",
+    "pytest-timeout>=2.2",
     "aiosqlite>=0.19",
     "ruff>=0.1",
     "mypy>=1.8",
@@ -44,6 +45,7 @@ select = ["E", "F", "I", "UP"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+timeout = 30
 
 [tool.mypy]
 python_version = "3.11"

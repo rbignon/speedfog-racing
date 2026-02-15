@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 from starlette.testclient import TestClient
 
 from speedfog_racing.database import Base
@@ -82,13 +83,16 @@ class ModTestClient:
         from concurrent.futures import Future, ThreadPoolExecutor
         from concurrent.futures import TimeoutError as FuturesTimeout
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future: Future[dict[str, Any]] = executor.submit(self.ws.receive_json)
-            try:
-                return future.result(timeout=timeout)
-            except FuturesTimeout:
-                future.cancel()
-                raise TimeoutError(f"No WebSocket message received within {timeout}s") from None
+        # Do NOT use ThreadPoolExecutor as a context manager here.
+        # Its __exit__ calls shutdown(wait=True), which blocks forever
+        # if the thread is stuck on ws.receive_json() after a timeout.
+        executor = ThreadPoolExecutor(max_workers=1)
+        future: Future[dict[str, Any]] = executor.submit(self.ws.receive_json)
+        executor.shutdown(wait=False)
+        try:
+            return future.result(timeout=timeout)
+        except FuturesTimeout:
+            raise TimeoutError(f"No WebSocket message received within {timeout}s") from None
 
     def receive_until_type(self, msg_type: str, max_messages: int = 10) -> dict[str, Any]:
         """Receive messages until getting one of the specified type."""
@@ -121,9 +125,12 @@ def integration_db():
         os.remove(INTEGRATION_TEST_DB)
 
     # Create new engine and session maker for tests
+    # NullPool: each session creates/closes its own connection — no pool
+    # cleanup issues when the TestClient's event loop shuts down.
     test_engine = create_async_engine(
         f"sqlite+aiosqlite:///{INTEGRATION_TEST_DB}",
         echo=False,
+        poolclass=NullPool,
     )
     test_session_maker = async_sessionmaker(
         test_engine,
