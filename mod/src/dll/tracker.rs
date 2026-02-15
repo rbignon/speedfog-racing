@@ -130,6 +130,9 @@ pub struct RaceTracker {
 
     // Item spawner thread handle (prevents double-spawn on reconnect)
     spawner_thread: Option<JoinHandle<()>>,
+
+    // Zone update received during loading screen, waiting for load to finish
+    pending_zone_update: Option<ZoneUpdateData>,
 }
 
 impl RaceTracker {
@@ -205,6 +208,7 @@ impl RaceTracker {
             status_message: None,
             flags_diagnosed: false,
             spawner_thread: None,
+            pending_zone_update: None,
         })
     }
 
@@ -235,6 +239,14 @@ impl RaceTracker {
         // Poll WebSocket
         while let Some(msg) = self.ws_client.poll() {
             self.handle_ws_message(msg);
+        }
+
+        // Reveal pending zone update once loading screen is finished.
+        // read_position() returns None during loading (invalid map_id or zero coords).
+        if self.pending_zone_update.is_some() && self.game_state.read_position().is_some() {
+            let zone = self.pending_zone_update.take().unwrap();
+            info!(name = %zone.display_name, "[RACE] Zone revealed after loading");
+            self.race_state.current_zone = Some(zone);
         }
 
         // Event flag polling runs ALWAYS (even when disconnected).
@@ -483,8 +495,8 @@ impl RaceTracker {
                 exits,
             } => {
                 self.last_received_debug = Some(format!("zone_update({})", display_name));
-                info!(node = %node_id, name = %display_name, "[WS] Zone update");
-                self.race_state.current_zone = Some(ZoneUpdateData {
+                info!(node = %node_id, name = %display_name, "[WS] Zone update (pending reveal)");
+                self.pending_zone_update = Some(ZoneUpdateData {
                     node_id,
                     display_name,
                     tier,
