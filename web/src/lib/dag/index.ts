@@ -60,3 +60,11 @@ export {
   MAX_PARALLEL,
 } from "./constants";
 export { expandNodePath, buildPlayerWaypoints, computeSlot } from "./parallel";
+export {
+  computeNodeVisibility,
+  filterVisibleNodes,
+  filterVisibleEdges,
+  edgeOpacity,
+  extractDiscoveredIds,
+} from "./visibility";
+export type { NodeVisibility } from "./visibility";
