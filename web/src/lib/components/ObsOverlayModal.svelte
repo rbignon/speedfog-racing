@@ -22,7 +22,11 @@
 	);
 
 	async function copyUrl(url: string, which: 'dag' | 'lb') {
-		await navigator.clipboard.writeText(url);
+		try {
+			await navigator.clipboard.writeText(url);
+		} catch {
+			return;
+		}
 		if (which === 'dag') {
 			dagCopied = true;
 			setTimeout(() => (dagCopied = false), 2000);

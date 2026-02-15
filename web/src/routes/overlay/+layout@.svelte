@@ -1,15 +1,7 @@
 <script lang="ts">
 	import '../../app.css';
-	import { onMount } from 'svelte';
-	import { auth } from '$lib/stores/auth.svelte';
-	import { site } from '$lib/stores/site.svelte';
 
 	let { children } = $props();
-
-	onMount(() => {
-		auth.init();
-		site.init();
-	});
 </script>
 
 <div class="overlay-root">
