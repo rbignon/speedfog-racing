@@ -18,7 +18,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TYPE seedstatus ADD VALUE IF NOT EXISTS 'DISCARDED'")
+    # ALTER TYPE ... ADD VALUE cannot run inside a transaction block
+    with op.get_context().autocommit_block():
+        op.execute("ALTER TYPE seedstatus ADD VALUE IF NOT EXISTS 'DISCARDED'")
 
 
 def downgrade() -> None:
