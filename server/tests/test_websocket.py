@@ -247,11 +247,11 @@ class TestSchemas:
         data = json.loads(info.model_dump_json())
         assert data["event_ids"] == [9000001, 9000002, 9000003]
 
-    def test_seed_info_event_ids_default_none(self):
-        """Test SeedInfo event_ids defaults to None."""
+    def test_seed_info_event_ids_default_empty(self):
+        """Test SeedInfo event_ids defaults to empty list."""
         info = SeedInfo(total_layers=10)
         data = json.loads(info.model_dump_json())
-        assert data.get("event_ids") is None
+        assert data["event_ids"] == []
 
     def test_ping_message(self):
         """Test PingMessage schema."""

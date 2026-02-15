@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # --- Client -> Server Messages (Mod) ---
 
@@ -92,8 +92,8 @@ class SeedInfo(BaseModel):
     graph_json: dict[str, object] | None = None  # Full graph for client-side progressive reveal
     total_nodes: int | None = None
     total_paths: int | None = None
-    event_ids: list[int] | None = None
-    spawn_items: list[SpawnItem] | None = None
+    event_ids: list[int] = Field(default_factory=list)
+    spawn_items: list[SpawnItem] = Field(default_factory=list)
 
 
 class AuthOkMessage(BaseModel):

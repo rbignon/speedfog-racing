@@ -207,7 +207,7 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
     """Send auth_ok with training session info."""
     seed = session.seed
 
-    event_ids = None
+    event_ids: list[int] = []
     if seed and seed.graph_json:
         event_map = seed.graph_json.get("event_map", {})
         if event_map:

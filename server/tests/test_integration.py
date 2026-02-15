@@ -1072,8 +1072,8 @@ def test_open_race_already_open(integration_client, race_with_participants):
 # =============================================================================
 
 
-def test_auth_ok_spawn_items_null_when_no_gems(integration_client, race_with_participants):
-    """auth_ok.seed.spawn_items is null when seed has no type-4 care_package items."""
+def test_auth_ok_spawn_items_empty_when_no_gems(integration_client, race_with_participants):
+    """auth_ok.seed.spawn_items is an empty list when seed has no type-4 care_package items."""
     race_id = race_with_participants["race_id"]
     players = race_with_participants["players"]
 
@@ -1081,8 +1081,8 @@ def test_auth_ok_spawn_items_null_when_no_gems(integration_client, race_with_par
         mod = ModTestClient(ws, players[0]["mod_token"])
         auth = mod.auth()
         assert auth["type"] == "auth_ok"
-        # Default test seed has no care_package → spawn_items should be null
-        assert auth["seed"]["spawn_items"] is None
+        # Default test seed has no care_package → spawn_items should be empty list
+        assert auth["seed"]["spawn_items"] == []
 
 
 def test_auth_ok_spawn_items_includes_gem_items(

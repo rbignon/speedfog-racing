@@ -248,7 +248,7 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
     seed = race.seed
 
     # Extract event_ids from graph_json (event_map gates + finish_event)
-    event_ids = None
+    event_ids: list[int] = []
     if seed and seed.graph_json:
         event_map = seed.graph_json.get("event_map", {})
         if event_map:
@@ -258,16 +258,14 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
                 event_ids.append(finish)
 
     # Extract gem items from care_package for runtime spawning by the mod
-    spawn_items = None
+    spawn_items: list[SpawnItem] = []
     if seed and seed.graph_json:
         care_pkg = seed.graph_json.get("care_package", [])
-        gems = [
+        spawn_items = [
             SpawnItem(id=item["id"], qty=1)
             for item in care_pkg
             if item.get("type") == 4 and item.get("id", 0) != 0
         ]
-        if gems:
-            spawn_items = gems
 
     # Build participant list
     room = manager.get_room(race.id)
