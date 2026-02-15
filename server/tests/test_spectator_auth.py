@@ -40,7 +40,7 @@ def _make_seed(graph_json: dict, total_layers: int) -> Seed:
 
 
 class TestBuildSeedInfo:
-    """Test SeedInfo construction — always includes graph_json."""
+    """Test SeedInfo construction with role-based graph visibility."""
 
     def test_no_seed(self):
         """No seed returns minimal SeedInfo."""
@@ -50,8 +50,8 @@ class TestBuildSeedInfo:
         assert info.total_layers == 0
         assert info.graph_json is None
 
-    def test_includes_graph(self, sample_graph_json: dict):
-        """graph_json is always included with correct v3 stats."""
+    def test_running_includes_graph(self, sample_graph_json: dict):
+        """RUNNING race always includes graph_json."""
         graph = sample_graph_json
         seed = _make_seed(graph, total_layers=graph["total_layers"])
         race = _make_race(RaceStatus.RUNNING, uuid.uuid4(), seed=seed)
@@ -60,3 +60,57 @@ class TestBuildSeedInfo:
         assert info.total_layers == graph["total_layers"]
         assert info.total_nodes == graph["total_nodes"]
         assert info.total_paths == graph["total_paths"]
+
+    def test_finished_includes_graph(self, sample_graph_json: dict):
+        """FINISHED race always includes graph_json."""
+        seed = _make_seed(sample_graph_json, total_layers=3)
+        race = _make_race(RaceStatus.FINISHED, uuid.uuid4(), seed=seed)
+        info = build_seed_info(race)
+        assert info.graph_json is not None
+
+    def test_draft_hides_graph_for_anonymous(self, sample_graph_json: dict):
+        """DRAFT race hides graph_json from anonymous spectators."""
+        seed = _make_seed(sample_graph_json, total_layers=3)
+        race = _make_race(RaceStatus.DRAFT, uuid.uuid4(), seed=seed)
+        info = build_seed_info(race)
+        assert info.graph_json is None
+        # Stats are still visible
+        assert info.total_nodes is not None
+
+    def test_draft_hides_graph_for_random_user(self, sample_graph_json: dict):
+        """DRAFT race hides graph_json from non-organizer users."""
+        seed = _make_seed(sample_graph_json, total_layers=3)
+        race = _make_race(RaceStatus.DRAFT, uuid.uuid4(), seed=seed)
+        random_user = uuid.uuid4()
+        info = build_seed_info(race, user_id=random_user)
+        assert info.graph_json is None
+
+    def test_draft_shows_graph_for_non_participating_organizer(self, sample_graph_json: dict):
+        """DRAFT race shows graph_json to non-participating organizer."""
+        seed = _make_seed(sample_graph_json, total_layers=3)
+        organizer_id = uuid.uuid4()
+        race = _make_race(RaceStatus.DRAFT, organizer_id, seed=seed)
+        info = build_seed_info(race, user_id=organizer_id)
+        assert info.graph_json is not None
+
+    def test_draft_hides_graph_for_participating_organizer(self, sample_graph_json: dict):
+        """DRAFT race hides graph_json from organizer who is also a participant."""
+        seed = _make_seed(sample_graph_json, total_layers=3)
+        organizer_id = uuid.uuid4()
+        race = _make_race(RaceStatus.DRAFT, organizer_id, seed=seed)
+        # Add organizer as participant
+        participant = MagicMock()
+        participant.user_id = organizer_id
+        race.participants = [participant]
+        info = build_seed_info(race, user_id=organizer_id)
+        assert info.graph_json is None
+
+    def test_open_same_rules_as_draft(self, sample_graph_json: dict):
+        """OPEN race follows same graph visibility rules as DRAFT."""
+        seed = _make_seed(sample_graph_json, total_layers=3)
+        organizer_id = uuid.uuid4()
+        race = _make_race(RaceStatus.OPEN, organizer_id, seed=seed)
+        # Anonymous: hidden
+        assert build_seed_info(race).graph_json is None
+        # Non-participating organizer: visible
+        assert build_seed_info(race, user_id=organizer_id).graph_json is not None

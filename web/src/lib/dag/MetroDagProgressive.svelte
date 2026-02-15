@@ -37,14 +37,11 @@
 
 	let { graphJson, participants, myParticipantId }: Props = $props();
 
-	// Full layout (stable positions regardless of visibility)
-	let layout: DagLayout = $derived.by(() => {
-		const graph = parseDagGraph(graphJson);
-		return computeLayout(graph);
-	});
-
-	// Parse graph for edges (needed for adjacency computation)
+	// Parse once, reuse for layout and visibility
 	let graph = $derived(parseDagGraph(graphJson));
+
+	// Full layout (stable positions regardless of visibility)
+	let layout: DagLayout = $derived(computeLayout(graph));
 
 	// Extract discovered node IDs from my participant's zone_history
 	let discoveredIds: Set<string> = $derived.by(() => {

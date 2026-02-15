@@ -6,6 +6,7 @@
  */
 
 import type { DagNode, DagEdge, PositionedNode, RoutedEdge } from "./types";
+import { ADJACENT_EDGE_OPACITY } from "./constants";
 
 export type NodeVisibility = "discovered" | "adjacent" | "hidden";
 
@@ -109,7 +110,7 @@ export function edgeOpacity(
   const fromVis = visibility.get(edge.fromId);
   const toVis = visibility.get(edge.toId);
   if (fromVis === "discovered" && toVis === "discovered") return normalOpacity;
-  return 0.15;
+  return ADJACENT_EDGE_OPACITY;
 }
 
 /**

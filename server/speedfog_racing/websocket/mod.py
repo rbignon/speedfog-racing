@@ -478,9 +478,8 @@ async def handle_finished(
     # Session closed — all broadcasts use detached objects
 
     if race_transitioned:
-        # Push full graph + zone_history to spectators BEFORE status change.
-        # race_state includes status=finished + zone_history atomically,
-        # so the client gets everything in one message.
+        # Push race_state to spectators BEFORE status change so the client
+        # receives status=finished + zone_history atomically in one message.
         await broadcast_race_state_update(participant.race_id, participant.race)
         await manager.broadcast_race_status(participant.race_id, "finished")
 

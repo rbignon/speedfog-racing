@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.auth import get_user_by_token
-from speedfog_racing.models import Caster, Participant, Race
+from speedfog_racing.models import Caster, Participant, Race, RaceStatus
 from speedfog_racing.websocket.manager import (
     SEND_TIMEOUT,
     SpectatorConnection,
@@ -39,8 +39,12 @@ AUTH_GRACE_PERIOD = 2.0
 HEARTBEAT_INTERVAL = 30.0  # seconds between pings
 
 
-def build_seed_info(race: Race) -> SeedInfo:
-    """Build SeedInfo — always includes graph_json for client-side filtering."""
+def build_seed_info(race: Race, user_id: uuid.UUID | None = None) -> SeedInfo:
+    """Build SeedInfo with conditional graph_json access.
+
+    RUNNING/FINISHED: graph_json always included (progressive reveal / results).
+    DRAFT/OPEN: graph_json only for non-participating organizer.
+    """
     seed = race.seed
     if not seed:
         return SeedInfo(total_layers=0)
@@ -54,9 +58,18 @@ def build_seed_info(race: Race) -> SeedInfo:
 
     total_paths = graph_json.get("total_paths", 0)
 
+    # DRAFT/OPEN: only non-participating organizer sees the graph
+    include_graph = True
+    if race.status in (RaceStatus.DRAFT, RaceStatus.OPEN):
+        include_graph = False
+        if user_id and race.organizer_id == user_id:
+            is_participant = any(p.user_id == user_id for p in race.participants)
+            if not is_participant:
+                include_graph = True
+
     return SeedInfo(
         total_layers=seed.total_layers,
-        graph_json=seed.graph_json,
+        graph_json=seed.graph_json if include_graph else None,
         total_nodes=total_nodes,
         total_paths=total_paths,
     )
@@ -82,7 +95,7 @@ async def handle_spectator_websocket(
             conn.user_id = user_id
 
             # Send initial race state (session still open for lazy access)
-            await send_race_state(websocket, race)
+            await send_race_state(websocket, race, user_id=conn.user_id)
         # Session closed — released back to pool within ~2s of connect
 
         # Register connection
@@ -163,8 +176,10 @@ async def get_race_with_details(db: AsyncSession, race_id: uuid.UUID) -> Race | 
 async def send_race_state(
     websocket: WebSocket,
     race: Race,
+    *,
+    user_id: uuid.UUID | None = None,
 ) -> None:
-    """Send race state to spectator."""
+    """Send race state to spectator with graph visibility based on role."""
     room = manager.get_room(race.id)
     connected_ids = set(room.mods.keys()) if room else set()
     graph = race.seed.graph_json if race.seed else None
@@ -181,23 +196,22 @@ async def send_race_state(
             status=race.status.value,
             started_at=race.started_at.isoformat() if race.started_at else None,
         ),
-        seed=build_seed_info(race),
+        seed=build_seed_info(race, user_id=user_id),
         participants=participant_infos,
     )
     await websocket.send_text(message.model_dump_json())
 
 
 async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
-    """Recompute and send race_state to each spectator based on their access."""
+    """Send race_state to each spectator with per-connection graph visibility."""
     room = manager.get_room(race_id)
     if not room:
         return
 
-    # Send race_state to each spectator concurrently
     async def _send_to(i: int, conn: SpectatorConnection) -> int | None:
         try:
             await asyncio.wait_for(
-                send_race_state(conn.websocket, race),
+                send_race_state(conn.websocket, race, user_id=conn.user_id),
                 timeout=SEND_TIMEOUT,
             )
         except Exception:
