@@ -380,9 +380,7 @@ async def _broadcast_participant_update(
         death_count=session.death_count,
         color_index=0,
         mod_connected=room.mod is not None,
-        zone_history=session.progress_nodes
-        if session.status == TrainingSessionStatus.FINISHED
-        else None,
+        zone_history=session.progress_nodes,
     )
 
     message = LeaderboardUpdateMessage(participants=[info])
