@@ -156,6 +156,17 @@ async def handle_mod_websocket(
         # Register connection
         await manager.connect_mod(race_id, participant_id, user_id, websocket)
 
+        # Broadcast updated connection status to all clients
+        try:
+            async with session_maker() as db:
+                p = await _load_participant(db, participant_id)
+                if p:
+                    await manager.broadcast_leaderboard(
+                        race_id, p.race.participants, graph_json=_get_graph_json(p)
+                    )
+        except Exception:
+            logger.warning(f"Failed to broadcast connect: race={race_id}")
+
         # Start heartbeat in background
         heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
 
@@ -197,6 +208,16 @@ async def handle_mod_websocket(
     finally:
         if participant_id:
             await manager.disconnect_mod(race_id, participant_id)
+            # Broadcast updated connection status to remaining clients
+            try:
+                async with session_maker() as db:
+                    p = await _load_participant(db, participant_id)
+                    if p:
+                        await manager.broadcast_leaderboard(
+                            race_id, p.race.participants, graph_json=_get_graph_json(p)
+                        )
+            except Exception:
+                logger.warning(f"Failed to broadcast disconnect: race={race_id}")
 
 
 async def _heartbeat_loop(websocket: WebSocket) -> None:

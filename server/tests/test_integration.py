@@ -45,10 +45,19 @@ class ModTestClient:
         self.ws = websocket
         self.mod_token = mod_token
 
-    def auth(self) -> dict[str, Any]:
-        """Send auth and return response."""
+    def auth(self, *, drain: bool = True) -> dict[str, Any]:
+        """Send auth and return response.
+
+        When *drain* is True (default), also consumes the connect broadcast
+        (leaderboard_update) and any zone_update sent on reconnect. Set
+        drain=False when a test needs to inspect those messages.
+        """
         self.ws.send_json({"type": "auth", "mod_token": self.mod_token})
-        return self.receive()
+        response = self.receive()
+        if response.get("type") == "auth_ok" and drain:
+            # Server sends zone_update (if running) + leaderboard_update (connect broadcast)
+            self.receive_until_type("leaderboard_update")
+        return response
 
     def send_ready(self) -> None:
         """Send ready signal."""
@@ -566,6 +575,25 @@ def test_duplicate_connection_rejected(integration_client, race_with_participant
             assert "Already connected" in response["message"]
 
 
+def test_connect_broadcasts_leaderboard(integration_client, race_with_participants):
+    """On connect, the server broadcasts a leaderboard_update with mod_connected=True."""
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        # Use drain=False so we can inspect the connect broadcast
+        assert mod.auth(drain=False)["type"] == "auth_ok"
+
+        lb = mod.receive_until_type("leaderboard_update")
+        me = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
+        assert me["mod_connected"] is True
+
+        # Other players not connected
+        others = [p for p in lb["participants"] if p["twitch_username"] != "player0"]
+        assert all(p["mod_connected"] is False for p in others)
+
+
 def test_unknown_message_type_ignored(integration_client, race_with_participants):
     """Test that unknown message types are ignored."""
     race_id = race_with_participants["race_id"]
@@ -811,12 +839,12 @@ def test_event_flag_duplicate_ignored(integration_client, race_with_participants
 
         # Send same flag twice
         mod0.send_event_flag(9000000, igt_ms=10000)
-        mod0.receive()  # leaderboard_update
+        mod0.receive_until_type("leaderboard_update")  # leaderboard_update (skip zone_update)
 
         mod0.send_event_flag(9000000, igt_ms=11000)
         # No leaderboard_update for duplicate -- verify with a ready
         mod0.send_ready()
-        msg = mod0.receive()
+        msg = mod0.receive_until_type("leaderboard_update")
         assert msg["type"] == "leaderboard_update"
 
     async def check_history():
@@ -972,7 +1000,7 @@ def test_zone_update_content(integration_client, race_with_participants):
 
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth()["type"] == "auth_ok"
+        assert mod0.auth(drain=False)["type"] == "auth_ok"
 
         # Reconnect to running race sends zone_update for start node — consume it
         zu_start = mod0.receive_until_type("zone_update")
