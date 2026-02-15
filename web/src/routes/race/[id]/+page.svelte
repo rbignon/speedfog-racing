@@ -328,6 +328,12 @@
 			<Podium participants={raceStore.leaderboard} />
 			<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
 			<RaceStats participants={raceStore.leaderboard} />
+		{:else if liveSeed?.graph_json && myWsParticipantId}
+			<MetroDagProgressive
+				graphJson={liveSeed.graph_json}
+				participants={raceStore.participants}
+				myParticipantId={myWsParticipantId}
+			/>
 		{:else if liveSeed?.graph_json}
 			<MetroDag graphJson={liveSeed.graph_json} />
 		{:else if totalNodes && totalPaths && totalLayers}

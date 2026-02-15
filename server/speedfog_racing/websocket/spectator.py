@@ -43,7 +43,7 @@ def build_seed_info(race: Race, user_id: uuid.UUID | None = None) -> SeedInfo:
     """Build SeedInfo with conditional graph_json access.
 
     RUNNING/FINISHED: graph_json always included (progressive reveal / results).
-    DRAFT/OPEN: graph_json only for non-participating organizer.
+    DRAFT/OPEN: graph_json for participants and organizer; hidden from anonymous/unrelated users.
     """
     seed = race.seed
     if not seed:
@@ -58,13 +58,14 @@ def build_seed_info(race: Race, user_id: uuid.UUID | None = None) -> SeedInfo:
 
     total_paths = graph_json.get("total_paths", 0)
 
-    # DRAFT/OPEN: only non-participating organizer sees the graph
+    # DRAFT/OPEN: participants and organizer see graph; anonymous spectators don't
     include_graph = True
     if race.status in (RaceStatus.DRAFT, RaceStatus.OPEN):
         include_graph = False
-        if user_id and race.organizer_id == user_id:
+        if user_id:
             is_participant = any(p.user_id == user_id for p in race.participants)
-            if not is_participant:
+            is_organizer = race.organizer_id == user_id
+            if is_participant or is_organizer:
                 include_graph = True
 
     return SeedInfo(
