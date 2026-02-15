@@ -335,6 +335,11 @@ async def handle_status_update(
             return
 
         if participant.race.status != RaceStatus.RUNNING:
+            logger.warning(
+                "Rejected status_update: race=%s status=%s",
+                participant.race_id,
+                participant.race.status.value,
+            )
             await _send_error(websocket, "Race not running")
             return
 
@@ -386,6 +391,11 @@ async def handle_event_flag(
             return
 
         if participant.race.status != RaceStatus.RUNNING:
+            logger.warning(
+                "Rejected event_flag: race=%s status=%s",
+                participant.race_id,
+                participant.race.status.value,
+            )
             await _send_error(websocket, "Race not running")
             return
 
@@ -468,6 +478,11 @@ async def handle_finished(
             return
 
         if participant.race.status != RaceStatus.RUNNING:
+            logger.warning(
+                "Rejected finished: race=%s status=%s",
+                participant.race_id,
+                participant.race.status.value,
+            )
             await _send_error(websocket, "Race not running")
             return
 

@@ -112,17 +112,20 @@
 	});
 
 	let showGo = $state(false);
+	let previousRaceStatus: string | null = $state(null);
 
 	$effect(() => {
-		if (raceStatus !== 'running') {
+		const wasNotRunning = previousRaceStatus !== null && previousRaceStatus !== 'running';
+		previousRaceStatus = raceStatus;
+		if (raceStatus === 'running' && wasNotRunning) {
+			showGo = true;
+			const timer = setTimeout(() => {
+				showGo = false;
+			}, 3000);
+			return () => clearTimeout(timer);
+		} else {
 			showGo = false;
-			return;
 		}
-		showGo = true;
-		const timer = setTimeout(() => {
-			showGo = false;
-		}, 3000);
-		return () => clearTimeout(timer);
 	});
 
 	function formatElapsed(totalSeconds: number): string {

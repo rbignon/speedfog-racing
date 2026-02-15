@@ -38,7 +38,6 @@ pub struct RaceState {
     pub race: Option<RaceInfo>,
     pub seed: Option<SeedInfo>,
     pub participants: Vec<ParticipantInfo>,
-    pub race_started: bool,
     pub race_started_at: Option<Instant>,
     pub current_zone: Option<ZoneUpdateData>,
 }
@@ -425,8 +424,12 @@ impl RaceTracker {
             IncomingMessage::RaceStart => {
                 self.last_received_debug = Some("race_start".to_string());
                 info!("[WS] Race started!");
-                self.race_state.race_started = true;
                 self.race_state.race_started_at = Some(Instant::now());
+                // Immediately reflect running status so is_race_running() gates open
+                // without waiting for the race_status_change message that follows.
+                if let Some(ref mut race) = self.race_state.race {
+                    race.status = "running".to_string();
+                }
             }
             IncomingMessage::LeaderboardUpdate(participants) => {
                 self.last_received_debug = Some(format!(
