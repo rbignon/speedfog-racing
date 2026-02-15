@@ -101,7 +101,7 @@ Player is in-game and ready to race. Transitions status from `registered` → `r
 
 #### `status_update`
 
-Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` if race is running.
+Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` if race is running. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)).
 
 ```json
 {
@@ -113,7 +113,7 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 
 #### `event_flag`
 
-Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished.
+Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)).
 
 ```json
 {
@@ -199,6 +199,17 @@ Authentication failed.
 {
   "type": "auth_error",
   "message": "Invalid mod token"
+}
+```
+
+#### `error`
+
+Generic error during the message loop (not auth phase). Sent when a gameplay message (`status_update`, `event_flag`, `finished`) is rejected — for example, because the race is not running.
+
+```json
+{
+  "type": "error",
+  "message": "Race not running"
 }
 ```
 
@@ -509,6 +520,16 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 **CSRF (M5):** Auth tokens are stored in `localStorage` and sent via `Authorization` header, not auto-attached cookies. This makes CSRF attacks infeasible since the token is never sent automatically. If token storage changes to cookies in the future, CSRF protection must be added.
 
 **localStorage vs cookies (M10):** Tokens in `localStorage` are vulnerable to XSS but not to CSRF. The codebase has no `{@html}` usage (preventing XSS vectors), and CSP headers restrict script sources. This trade-off is accepted for the current threat model.
+
+### Race State Gating
+
+Gameplay messages (`status_update`, `event_flag`, `finished`) are only accepted when the race status is `running`. This is enforced at three layers:
+
+1. **Server:** Each handler checks `race.status == RUNNING` before processing. If the race is not running, the server responds with an `error` message and discards the payload.
+2. **Mod (outgoing):** The mod gates `status_update` and `event_flag` sends behind `is_race_running()`. Event flags detected before the race starts are buffered and sent once the race transitions to running.
+3. **Mod (overlay):** A colored banner shows the race state — orange "WAITING FOR START" (draft/open), green "GO!" for 3 seconds (running), and green "RACE FINISHED" (finished).
+
+The `ready` and `pong` messages are not gated — they are valid in any state.
 
 ### Zone Tracking
 
