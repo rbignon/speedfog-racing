@@ -176,13 +176,13 @@ class TestBuildSeedInfo:
         assert info.total_nodes == graph["total_nodes"]
         assert info.total_paths == graph["total_paths"]
 
-    def test_without_access_no_graph(self, sample_graph_json: dict):
-        """Without DAG access, graph_json is None but meta-stats present."""
+    def test_without_access_still_includes_graph(self, sample_graph_json: dict):
+        """graph_json is always included regardless of dag_access (client-side filtering)."""
         graph = sample_graph_json
         seed = _make_seed(graph, total_layers=graph["total_layers"])
         race = _make_race(RaceStatus.RUNNING, uuid.uuid4(), seed=seed)
         info = build_seed_info(race, dag_access=False)
-        assert info.graph_json is None
+        assert info.graph_json is not None
         assert info.total_layers == graph["total_layers"]
         assert info.total_nodes == graph["total_nodes"]
         assert info.total_paths == graph["total_paths"]

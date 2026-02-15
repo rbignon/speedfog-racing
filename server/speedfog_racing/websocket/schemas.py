@@ -82,7 +82,7 @@ class SeedInfo(BaseModel):
     """Seed info for WebSocket."""
 
     total_layers: int
-    graph_json: dict[str, object] | None = None  # Only for spectators
+    graph_json: dict[str, object] | None = None  # Full graph for client-side progressive reveal
     total_nodes: int | None = None
     total_paths: int | None = None
     event_ids: list[int] | None = None

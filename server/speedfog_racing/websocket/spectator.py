@@ -80,14 +80,13 @@ def compute_dag_access(user_id: uuid.UUID | None, race: Race) -> bool:
 
 
 def build_seed_info(race: Race, dag_access: bool) -> SeedInfo:
-    """Build SeedInfo with or without graph data based on DAG access."""
+    """Build SeedInfo — always includes graph_json for client-side filtering."""
     seed = race.seed
     if not seed:
         return SeedInfo(total_layers=0)
 
     graph_json = seed.graph_json or {}
 
-    # Prefer top-level fields from v3 graph.json, fall back to counting
     total_nodes = graph_json.get("total_nodes")
     if total_nodes is None:
         nodes = graph_json.get("nodes", {})
@@ -95,20 +94,12 @@ def build_seed_info(race: Race, dag_access: bool) -> SeedInfo:
 
     total_paths = graph_json.get("total_paths", 0)
 
-    if dag_access:
-        return SeedInfo(
-            total_layers=seed.total_layers,
-            graph_json=seed.graph_json,
-            total_nodes=total_nodes,
-            total_paths=total_paths,
-        )
-    else:
-        return SeedInfo(
-            total_layers=seed.total_layers,
-            graph_json=None,
-            total_nodes=total_nodes,
-            total_paths=total_paths,
-        )
+    return SeedInfo(
+        total_layers=seed.total_layers,
+        graph_json=seed.graph_json,
+        total_nodes=total_nodes,
+        total_paths=total_paths,
+    )
 
 
 async def handle_spectator_websocket(
