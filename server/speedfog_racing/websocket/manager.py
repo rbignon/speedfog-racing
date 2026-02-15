@@ -38,7 +38,6 @@ class SpectatorConnection:
 
     websocket: WebSocket
     user_id: uuid.UUID | None = None
-    dag_access: bool = False
 
 
 @dataclass

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.auth import get_user_by_token
-from speedfog_racing.models import Caster, Participant, Race, RaceStatus
+from speedfog_racing.models import Caster, Participant, Race
 from speedfog_racing.websocket.manager import (
     SEND_TIMEOUT,
     SpectatorConnection,
@@ -32,54 +32,14 @@ logger = logging.getLogger(__name__)
 
 # Grace period for auth message (seconds).
 # Spectator connections are intentionally unauthenticated by default (public races).
-# Optional auth within this window enables role-based DAG visibility (e.g. casters
-# see the graph during RUNNING, participants do not). Anonymous spectators see the
-# DAG during RUNNING and FINISHED, but not during DRAFT/OPEN.
+# Optional auth within this window identifies the user for future role-based features.
 # Accepted risk: unauthenticated connections can observe public race state. This is
 # by design — race data (leaderboard, zone progress) is intended to be public.
 AUTH_GRACE_PERIOD = 2.0
 HEARTBEAT_INTERVAL = 30.0  # seconds between pings
 
 
-def compute_dag_access(user_id: uuid.UUID | None, race: Race) -> bool:
-    """Determine if a user should see the full DAG.
-
-    Rules:
-    - FINISHED: always True (race is over, nothing to hide)
-    - RUNNING: True UNLESS user is a participant
-    - DRAFT/OPEN: True only for non-participating organizer or caster
-    """
-    if race.status == RaceStatus.FINISHED:
-        return True
-
-    if race.status == RaceStatus.RUNNING:
-        if user_id is None:
-            return True
-        # Participants can't see the DAG while running
-        for p in race.participants:
-            if p.user_id == user_id:
-                return False
-        return True
-
-    # DRAFT or OPEN
-    if user_id is None:
-        return False
-
-    # Non-participating organizer gets access
-    if race.organizer_id == user_id:
-        is_participant = any(p.user_id == user_id for p in race.participants)
-        if not is_participant:
-            return True
-
-    # Casters get access
-    for c in race.casters:
-        if c.user_id == user_id:
-            return True
-
-    return False
-
-
-def build_seed_info(race: Race, dag_access: bool) -> SeedInfo:
+def build_seed_info(race: Race) -> SeedInfo:
     """Build SeedInfo — always includes graph_json for client-side filtering."""
     seed = race.seed
     if not seed:
@@ -120,14 +80,9 @@ async def handle_spectator_websocket(
 
             user_id = await _try_auth(websocket, db)
             conn.user_id = user_id
-            conn.dag_access = compute_dag_access(user_id, race)
 
             # Send initial race state (session still open for lazy access)
-            await send_race_state(
-                websocket,
-                race,
-                dag_access=conn.dag_access,
-            )
+            await send_race_state(websocket, race)
         # Session closed — released back to pool within ~2s of connect
 
         # Register connection
@@ -208,10 +163,8 @@ async def get_race_with_details(db: AsyncSession, race_id: uuid.UUID) -> Race | 
 async def send_race_state(
     websocket: WebSocket,
     race: Race,
-    *,
-    dag_access: bool = False,
 ) -> None:
-    """Send race state to spectator with appropriate DAG visibility."""
+    """Send race state to spectator."""
     room = manager.get_room(race.id)
     connected_ids = set(room.mods.keys()) if room else set()
     graph = race.seed.graph_json if race.seed else None
@@ -228,7 +181,7 @@ async def send_race_state(
             status=race.status.value,
             started_at=race.started_at.isoformat() if race.started_at else None,
         ),
-        seed=build_seed_info(race, dag_access),
+        seed=build_seed_info(race),
         participants=participant_infos,
     )
     await websocket.send_text(message.model_dump_json())
@@ -240,17 +193,11 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
     if not room:
         return
 
-    # Pre-build per-access messages and send concurrently
+    # Send race_state to each spectator concurrently
     async def _send_to(i: int, conn: SpectatorConnection) -> int | None:
-        dag_access = compute_dag_access(conn.user_id, race)
-        conn.dag_access = dag_access
         try:
             await asyncio.wait_for(
-                send_race_state(
-                    conn.websocket,
-                    race,
-                    dag_access=dag_access,
-                ),
+                send_race_state(conn.websocket, race),
                 timeout=SEND_TIMEOUT,
             )
         except Exception:
