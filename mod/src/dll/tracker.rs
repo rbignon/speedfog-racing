@@ -39,6 +39,7 @@ pub struct RaceState {
     pub seed: Option<SeedInfo>,
     pub participants: Vec<ParticipantInfo>,
     pub race_started: bool,
+    pub race_started_at: Option<Instant>,
     pub current_zone: Option<ZoneUpdateData>,
 }
 
@@ -408,6 +409,7 @@ impl RaceTracker {
                 self.last_received_debug = Some("race_start".to_string());
                 info!("[WS] Race started!");
                 self.race_state.race_started = true;
+                self.race_state.race_started_at = Some(Instant::now());
             }
             IncomingMessage::LeaderboardUpdate(participants) => {
                 self.last_received_debug = Some(format!(

@@ -467,6 +467,9 @@ fn message_loop(
                                 exits,
                             });
                         }
+                        ServerMessage::Error { message } => {
+                            let _ = incoming_tx.send(IncomingMessage::Error(message));
+                        }
                         _ => {}
                     }
                 }

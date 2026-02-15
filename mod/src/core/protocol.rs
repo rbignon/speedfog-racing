@@ -112,6 +112,8 @@ pub enum ServerMessage {
     },
     /// Heartbeat ping
     Ping,
+    /// Generic error from server (e.g., race not running)
+    Error { message: String },
 }
 
 // =============================================================================
@@ -349,6 +351,18 @@ mod tests {
                 assert_eq!(seed.spawn_items[0].qty, 2);
             }
             _ => panic!("Expected AuthOk"),
+        }
+    }
+
+    #[test]
+    fn test_server_error_deserialize() {
+        let json = r#"{"type": "error", "message": "Race not running"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::Error { message } => {
+                assert_eq!(message, "Race not running");
+            }
+            _ => panic!("Expected Error"),
         }
     }
 
