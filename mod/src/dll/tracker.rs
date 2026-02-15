@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
@@ -123,6 +124,9 @@ pub struct RaceTracker {
 
     // One-time diagnostic log flag
     flags_diagnosed: bool,
+
+    // Item spawner thread handle (prevents double-spawn on reconnect)
+    spawner_thread: Option<JoinHandle<()>>,
 }
 
 impl RaceTracker {
@@ -196,6 +200,7 @@ impl RaceTracker {
             last_flag_poll: Instant::now(),
             ready_sent: false,
             flags_diagnosed: false,
+            spawner_thread: None,
         })
     }
 
@@ -366,6 +371,33 @@ impl RaceTracker {
                 // have already been detected. Pending flags are in pending_event_flags.
                 self.race_state.race = Some(race);
                 self.race_state.seed = Some(seed);
+                // Spawn runtime items (gems/AoW) if present in seed
+                if let Some(ref seed_info) = self.race_state.seed {
+                    if !seed_info.spawn_items.is_empty() {
+                        // Guard against double-spawn on reconnect
+                        let already_running = self
+                            .spawner_thread
+                            .as_ref()
+                            .is_some_and(|h| !h.is_finished());
+                        if already_running {
+                            info!(
+                                count = seed_info.spawn_items.len(),
+                                "[RACE] Spawner thread already running, skipping"
+                            );
+                        } else {
+                            let items = seed_info.spawn_items.clone();
+                            let ids: Vec<u32> = items.iter().map(|i| i.id).collect();
+                            info!(count = items.len(), item_ids = ?ids, "[RACE] Spawning runtime items");
+                            let flag_reader = self.event_flag_reader.clone();
+                            self.spawner_thread = Some(std::thread::spawn(move || {
+                                crate::eldenring::item_spawner::spawn_items_blocking(
+                                    items,
+                                    &flag_reader,
+                                );
+                            }));
+                        }
+                    }
+                }
                 self.race_state.participants = participants;
             }
             IncomingMessage::AuthError(msg) => {

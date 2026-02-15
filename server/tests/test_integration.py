@@ -1065,3 +1065,64 @@ def test_open_race_already_open(integration_client, race_with_participants):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 400
+
+
+# =============================================================================
+# Scenario 7: Spawn Items in auth_ok
+# =============================================================================
+
+
+def test_auth_ok_spawn_items_null_when_no_gems(integration_client, race_with_participants):
+    """auth_ok.seed.spawn_items is null when seed has no type-4 care_package items."""
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        auth = mod.auth()
+        assert auth["type"] == "auth_ok"
+        # Default test seed has no care_package → spawn_items should be null
+        assert auth["seed"]["spawn_items"] is None
+
+
+def test_auth_ok_spawn_items_includes_gem_items(
+    integration_client, race_with_participants, integration_db
+):
+    """auth_ok.seed.spawn_items contains type-4 care_package items as SpawnItem objects."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    # Inject care_package with type-4 (gem) and non-type-4 items into the seed
+    async def inject_care_package():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            graph = json.loads(json.dumps(race.seed.graph_json))
+            graph["care_package"] = [
+                {"id": 10100, "type": 4, "name": "Gem A"},
+                {"id": 20200, "type": 2, "name": "Weapon B"},
+                {"id": 10300, "type": 4, "name": "Gem C"},
+            ]
+            race.seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(inject_care_package())
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        auth = mod.auth()
+        assert auth["type"] == "auth_ok"
+        spawn_items = auth["seed"]["spawn_items"]
+        assert spawn_items is not None
+        assert len(spawn_items) == 2
+        # Only type-4 items should be present, in order
+        assert spawn_items[0]["id"] == 10100
+        assert spawn_items[0]["qty"] == 1
+        assert spawn_items[1]["id"] == 10300
+        assert spawn_items[1]["qty"] == 1

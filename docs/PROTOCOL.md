@@ -161,7 +161,11 @@ Authentication successful. Contains initial race state.
   },
   "seed": {
     "total_layers": 12,
-    "event_ids": [1040292801, 1040292802, 1040292847]
+    "event_ids": [1040292801, 1040292802, 1040292847],
+    "spawn_items": [
+      { "id": 10500, "qty": 1 },
+      { "id": 16300, "qty": 1 }
+    ]
   },
   "participants": [
     {
@@ -184,6 +188,8 @@ Authentication successful. Contains initial race state.
 `participant_id`: the authenticated participant's UUID, used by the mod to identify itself in leaderboard updates.
 
 `event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod — no mapping to zones or nodes is provided. `graph_json` is always `null` for mods.
+
+`spawn_items`: list of items to spawn at runtime via `func_item_inject`. Used for item types not supported by EMEVD's `DirectlyGivePlayerItem` (e.g., Gem/Ash of War, type 4). Each entry has `id` (EquipParamGem row ID) and `qty` (default 1). The mod spawns these once after game load, using event flag `1040292900` to prevent re-giving on reconnect or game restart. `null` if no runtime-spawned items exist.
 
 #### `auth_error`
 
@@ -507,3 +513,7 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 ### Zone Tracking
 
 Zone tracking uses EMEVD event flags. The mod monitors a list of event flag IDs (received via `auth_ok`) and reports transitions via `event_flag` messages. The server resolves flag IDs to DAG nodes using the seed's `event_map`. See `docs/specs/emevd-zone-tracking.md` for the full specification.
+
+### Runtime Item Spawning
+
+Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `DirectlyGivePlayerItem`. Instead, the server extracts them from `graph_json.care_package` and sends them in `auth_ok.seed.spawn_items`. The mod spawns them at runtime using `func_item_inject` after the game is fully loaded (MapItemMan initialized). Event flag `1040292900` prevents re-giving items on reconnect or game restart.

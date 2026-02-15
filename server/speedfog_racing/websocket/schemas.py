@@ -49,6 +49,13 @@ class PongMessage(BaseModel):
     type: Literal["pong"] = "pong"
 
 
+class SpawnItem(BaseModel):
+    """Item to be spawned at runtime by the mod (e.g., Gem/Ash of War)."""
+
+    id: int
+    qty: int = 1
+
+
 # --- Server -> Client Messages ---
 
 
@@ -86,6 +93,7 @@ class SeedInfo(BaseModel):
     total_nodes: int | None = None
     total_paths: int | None = None
     event_ids: list[int] | None = None
+    spawn_items: list[SpawnItem] | None = None
 
 
 class AuthOkMessage(BaseModel):

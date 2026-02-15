@@ -8,6 +8,7 @@
 mod event_flags;
 mod game_man;
 mod game_state;
+pub mod item_spawner;
 mod memory;
 mod sp_effect;
 pub mod warp_hook;

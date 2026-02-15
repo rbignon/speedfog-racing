@@ -43,6 +43,7 @@ impl fmt::Display for FlagReaderStatus {
 /// The manager stores flags in a red-black tree of category pages. Each page
 /// covers `divisor` flags (typically 1000). Flags are stored as individual
 /// bits within the category page.
+#[derive(Clone)]
 pub struct EventFlagReader {
     /// Pointer to the VirtualMemoryFlag manager
     base_ptr: PointerChain<usize>,
@@ -77,6 +78,58 @@ impl EventFlagReader {
             manager_addr: manager,
             divisor,
         }
+    }
+
+    /// Set or clear an event flag in game memory.
+    ///
+    /// Uses the same tree traversal as `is_flag_set()` to locate the byte,
+    /// then writes the bit. The game's save system serializes the tree,
+    /// so the change persists in the save file.
+    pub fn set_flag(&self, flag_id: u32, value: bool) -> bool {
+        let manager = match self.base_ptr.read() {
+            Some(m) if m != 0 => m,
+            _ => return false,
+        };
+
+        let divisor: u32 = match PointerChain::<u32>::new(&[manager + 0x1c]).read() {
+            Some(d) if d != 0 => d,
+            _ => return false,
+        };
+
+        let category = flag_id / divisor;
+        let remainder = flag_id % divisor;
+
+        let data_ptr = match self.find_category_page(manager, category) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        let byte_offset = (remainder >> 3) as usize;
+        let bit_index = 7 - (remainder & 7);
+        let mask = 1u8 << bit_index;
+
+        let addr = data_ptr + byte_offset;
+        let current: u8 = match PointerChain::<u8>::new(&[addr]).read() {
+            Some(v) => v,
+            None => return false,
+        };
+
+        let new_val = if value {
+            current | mask
+        } else {
+            current & !mask
+        };
+
+        if new_val != current {
+            // SAFETY: Single-byte write is atomic on x86. Flag 1040292900 (category 1040292,
+            // offset 900) is exclusively ours — FogRando uses offsets 100-299, so no
+            // concurrent modification of this byte is possible.
+            unsafe {
+                std::ptr::write(addr as *mut u8, new_val);
+            }
+        }
+
+        true
     }
 
     /// Check if a specific event flag is set in game memory.

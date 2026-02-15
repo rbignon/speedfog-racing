@@ -51,12 +51,26 @@ pub struct RaceInfo {
     pub status: String,
 }
 
+/// Item to be spawned at runtime by the mod (e.g., Gem/Ash of War).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpawnItem {
+    pub id: u32,
+    #[serde(default = "default_qty")]
+    pub qty: u32,
+}
+
+fn default_qty() -> u32 {
+    1
+}
+
 /// Seed info from server
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SeedInfo {
     pub total_layers: i32,
     #[serde(default)]
     pub event_ids: Vec<u32>,
+    #[serde(default)]
+    pub spawn_items: Vec<SpawnItem>,
 }
 
 /// Exit info in zone_update message
@@ -296,6 +310,45 @@ mod tests {
                 assert!(exits.is_empty());
             }
             _ => panic!("Expected ZoneUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_seed_info_with_spawn_items() {
+        let json = r#"{"total_layers": 5, "event_ids": [100], "spawn_items": [{"id": 10500, "qty": 1}, {"id": 16300}]}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(seed.spawn_items.len(), 2);
+        assert_eq!(seed.spawn_items[0].id, 10500);
+        assert_eq!(seed.spawn_items[0].qty, 1);
+        assert_eq!(seed.spawn_items[1].id, 16300);
+        assert_eq!(seed.spawn_items[1].qty, 1); // default
+    }
+
+    #[test]
+    fn test_seed_info_without_spawn_items() {
+        // Backward compat: old server sends no spawn_items field
+        let json = r#"{"total_layers": 5}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert!(seed.spawn_items.is_empty());
+    }
+
+    #[test]
+    fn test_auth_ok_with_spawn_items() {
+        let json = r#"{
+            "type": "auth_ok",
+            "participant_id": "abc-123",
+            "race": {"id": "123", "name": "Test Race", "status": "open"},
+            "seed": {"total_layers": 5, "spawn_items": [{"id": 42, "qty": 2}]},
+            "participants": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::AuthOk { seed, .. } => {
+                assert_eq!(seed.spawn_items.len(), 1);
+                assert_eq!(seed.spawn_items[0].id, 42);
+                assert_eq!(seed.spawn_items[0].qty, 2);
+            }
+            _ => panic!("Expected AuthOk"),
         }
     }
 
