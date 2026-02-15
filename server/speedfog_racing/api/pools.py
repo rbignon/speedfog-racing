@@ -19,6 +19,7 @@ class PoolStats(BaseModel):
 
     available: int
     consumed: int
+    discarded: int = 0
     played_by_user: int | None = None
     pool_config: PoolConfig | None = None
 
@@ -55,6 +56,7 @@ async def list_pools(
         result[name] = PoolStats(
             available=counts.get("available", 0),
             consumed=counts.get("consumed", 0),
+            discarded=counts.get("discarded", 0),
             played_by_user=played_counts.get(name) if user and is_training else None,
             pool_config=PoolConfig(**raw_config) if raw_config else None,
         )

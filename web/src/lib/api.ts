@@ -95,6 +95,7 @@ export interface RaceDetail extends Race {
 export interface PoolInfo {
   available: number;
   consumed: number;
+  discarded: number;
   played_by_user: number | null;
   pool_config: PoolConfig | null;
 }
@@ -554,6 +555,57 @@ export async function updateAdminUserRole(
     body: JSON.stringify({ role }),
   });
   return handleResponse<AdminUser>(response);
+}
+
+export interface AdminPoolStats {
+  pools: Record<
+    string,
+    { available: number; consumed: number; discarded: number }
+  >;
+}
+
+/**
+ * Fetch seed pool statistics (admin only).
+ */
+export async function fetchAdminSeedStats(): Promise<AdminPoolStats> {
+  const response = await fetch(`${API_BASE}/admin/seeds/stats`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<AdminPoolStats>(response);
+}
+
+/**
+ * Discard all available seeds in a pool (admin only).
+ */
+export async function adminDiscardPool(
+  poolName: string,
+): Promise<{ discarded: number; pool_name: string }> {
+  const response = await fetch(`${API_BASE}/admin/seeds/discard`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pool_name: poolName }),
+  });
+  return handleResponse<{ discarded: number; pool_name: string }>(response);
+}
+
+/**
+ * Scan a seed pool directory (admin only).
+ */
+export async function adminScanPool(
+  poolName: string,
+): Promise<{ added: number; pool_name: string }> {
+  const response = await fetch(`${API_BASE}/admin/seeds/scan`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pool_name: poolName }),
+  });
+  return handleResponse<{ added: number; pool_name: string }>(response);
 }
 
 // =============================================================================

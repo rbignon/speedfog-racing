@@ -80,7 +80,10 @@ async def get_played_seed_counts(
     result = await db.execute(
         select(Seed.pool_name, func.count(TrainingSession.seed_id.distinct()))
         .join(Seed, TrainingSession.seed_id == Seed.id)
-        .where(TrainingSession.user_id == user_id)
+        .where(
+            TrainingSession.user_id == user_id,
+            Seed.status == SeedStatus.AVAILABLE,
+        )
         .group_by(Seed.pool_name)
     )
     return {pool_name: count for pool_name, count in result.all()}

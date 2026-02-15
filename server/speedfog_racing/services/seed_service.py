@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.config import settings
@@ -176,10 +176,31 @@ async def get_pool_stats(db: AsyncSession) -> dict[str, dict[str, int]]:
 
     for pool_name, status, count in result:
         if pool_name not in stats:
-            stats[pool_name] = {"available": 0, "consumed": 0}
+            stats[pool_name] = {"available": 0, "consumed": 0, "discarded": 0}
         stats[pool_name][status.value] = count
 
     return stats
+
+
+async def discard_pool(db: AsyncSession, pool_name: str) -> int:
+    """Mark all AVAILABLE seeds in a pool as DISCARDED.
+
+    Args:
+        db: Database session
+        pool_name: Name of the pool to discard
+
+    Returns:
+        Number of seeds discarded
+    """
+    result = await db.execute(
+        update(Seed)
+        .where(Seed.pool_name == pool_name, Seed.status == SeedStatus.AVAILABLE)
+        .values(status=SeedStatus.DISCARDED)
+    )
+    await db.commit()
+    count: int = result.rowcount  # type: ignore[attr-defined]
+    logger.info(f"Discarded {count} seeds from pool '{pool_name}'")
+    return count
 
 
 def get_pool_config(pool_name: str) -> dict[str, Any] | None:

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from speedfog_racing.auth import require_admin
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Participant, TrainingSession, User, UserRole
-from speedfog_racing.services import get_pool_stats, scan_pool
+from speedfog_racing.services import discard_pool, get_pool_stats, scan_pool
 
 router = APIRouter()
 
@@ -29,11 +29,25 @@ class ScanResponse(BaseModel):
     pool_name: str
 
 
+class DiscardRequest(BaseModel):
+    """Request body for discarding pool seeds."""
+
+    pool_name: str
+
+
+class DiscardResponse(BaseModel):
+    """Response for pool discard."""
+
+    discarded: int
+    pool_name: str
+
+
 class PoolStats(BaseModel):
     """Statistics for a single pool."""
 
     available: int
     consumed: int
+    discarded: int = 0
 
 
 class StatsResponse(BaseModel):
@@ -69,6 +83,20 @@ async def get_seeds_stats(
     stats = await get_pool_stats(db)
     pools = {name: PoolStats(**counts) for name, counts in stats.items()}
     return StatsResponse(pools=pools)
+
+
+@router.post("/seeds/discard", response_model=DiscardResponse)
+async def discard_seeds(
+    request: DiscardRequest,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> DiscardResponse:
+    """Mark all AVAILABLE seeds in a pool as DISCARDED.
+
+    Requires admin role.
+    """
+    count = await discard_pool(db, request.pool_name)
+    return DiscardResponse(discarded=count, pool_name=request.pool_name)
 
 
 # =============================================================================

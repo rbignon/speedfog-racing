@@ -154,6 +154,78 @@ async def test_scan_works_for_admin(test_client, admin_user, seed_pool_dir):
 
 
 @pytest.mark.asyncio
+async def test_discard_pool_endpoint(test_client, admin_user, async_session):
+    """Discard endpoint marks available seeds as discarded."""
+    # Add seeds directly to database
+    async with async_session() as db:
+        db.add(
+            Seed(
+                seed_number="d001",
+                pool_name="training_standard",
+                graph_json={"total_layers": 5},
+                total_layers=5,
+                folder_path="/test/seed_d001.zip",
+                status=SeedStatus.AVAILABLE,
+            )
+        )
+        db.add(
+            Seed(
+                seed_number="d002",
+                pool_name="training_standard",
+                graph_json={"total_layers": 5},
+                total_layers=5,
+                folder_path="/test/seed_d002.zip",
+                status=SeedStatus.AVAILABLE,
+            )
+        )
+        db.add(
+            Seed(
+                seed_number="d003",
+                pool_name="training_standard",
+                graph_json={"total_layers": 5},
+                total_layers=5,
+                folder_path="/test/seed_d003.zip",
+                status=SeedStatus.CONSUMED,
+            )
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.post(
+            "/api/admin/seeds/discard",
+            json={"pool_name": "training_standard"},
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["discarded"] == 2
+        assert data["pool_name"] == "training_standard"
+
+        # Verify stats show updated counts
+        stats_response = await client.get(
+            "/api/admin/seeds/stats",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert stats_response.status_code == 200
+        pools = stats_response.json()["pools"]
+        assert pools["training_standard"]["available"] == 0
+        assert pools["training_standard"]["discarded"] == 2
+        assert pools["training_standard"]["consumed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_discard_pool_requires_admin(test_client, regular_user):
+    """Discard endpoint requires admin role."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/admin/seeds/discard",
+            json={"pool_name": "standard"},
+            headers={"Authorization": f"Bearer {regular_user.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_stats_requires_admin(test_client, regular_user):
     """Stats endpoint requires admin role."""
     async with test_client as client:

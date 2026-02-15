@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# SpeedFog Racing - Consumed seed cleanup script
-# Deletes .zip files on the VPS for seeds marked CONSUMED in the database.
+# SpeedFog Racing - Consumed/discarded seed cleanup script
+# Deletes .zip files on the VPS for seeds marked CONSUMED or DISCARDED in the database.
 # DB records are kept for audit trail / race history.
 #
 # Usage:
@@ -20,7 +20,7 @@ usage() {
     cat <<'EOF'
 Usage: deploy/cleanup-seeds.sh [OPTIONS]
 
-Delete .zip files on the VPS for seeds marked CONSUMED in the database.
+Delete .zip files on the VPS for seeds marked CONSUMED or DISCARDED in the database.
 DB records are preserved for race history / audit trail.
 
 By default runs in dry-run mode (shows what would be deleted).
@@ -79,13 +79,13 @@ ssh "$SERVER" bash -s "${POOL:-__ALL__}" "$DRY_RUN" "$SEEDS_DIR" <<'ENDSSH'
     # Decode sentinel (SSH drops empty string args)
     [[ "$POOL" == "__ALL__" ]] && POOL=""
 
-    # Build SQL query for consumed seed file paths
-    WHERE="status = 'CONSUMED' AND folder_path IS NOT NULL"
+    # Build SQL query for consumed/discarded seed file paths
+    WHERE="status IN ('CONSUMED', 'DISCARDED') AND folder_path IS NOT NULL"
     if [[ -n "$POOL" ]]; then
         WHERE="$WHERE AND pool_name = '$POOL'"
     fi
 
-    # Query consumed seeds from database
+    # Query consumed/discarded seeds from database
     SQL="SELECT folder_path FROM seeds WHERE $WHERE ORDER BY pool_name, seed_number;"
     PATHS=$(sudo -u speedfog psql -t -A speedfog_racing -c "$SQL" </dev/null) || {
         echo "ERROR: psql query failed"
@@ -93,7 +93,7 @@ ssh "$SERVER" bash -s "${POOL:-__ALL__}" "$DRY_RUN" "$SEEDS_DIR" <<'ENDSSH'
     }
 
     if [[ -z "$PATHS" ]]; then
-        echo "No consumed seeds found."
+        echo "No consumed/discarded seeds found."
         exit 0
     fi
 
@@ -136,7 +136,7 @@ ssh "$SERVER" bash -s "${POOL:-__ALL__}" "$DRY_RUN" "$SEEDS_DIR" <<'ENDSSH'
 
     echo ""
     if [[ "$DRY_RUN" == true ]]; then
-        echo "Summary: $TOTAL consumed seeds, $((TOTAL - MISSING)) files on disk ($HUMAN_TOTAL), $MISSING already removed"
+        echo "Summary: $TOTAL consumed/discarded seeds, $((TOTAL - MISSING)) files on disk ($HUMAN_TOTAL), $MISSING already removed"
     else
         echo "Summary: deleted $DELETED files ($HUMAN_TOTAL freed), $MISSING were already removed"
     fi

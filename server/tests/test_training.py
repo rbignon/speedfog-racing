@@ -304,6 +304,36 @@ async def test_get_played_seed_counts_distinct(async_session, training_user, tra
 
 
 @pytest.mark.asyncio
+async def test_get_played_seed_counts_excludes_discarded(
+    async_session, training_user, training_seed
+):
+    """Discarded seeds are excluded from the played count."""
+    # Play the seed
+    async with async_session() as db:
+        db.add(TrainingSession(user_id=training_user.id, seed_id=training_seed.id))
+        await db.commit()
+
+    # Verify it's counted
+    async with async_session() as db:
+        counts = await get_played_seed_counts(db, training_user.id)
+        assert counts == {"training_standard": 1}
+
+    # Discard the seed
+    async with async_session() as db:
+        from sqlalchemy import update
+
+        await db.execute(
+            update(Seed).where(Seed.id == training_seed.id).values(status=SeedStatus.DISCARDED)
+        )
+        await db.commit()
+
+    # Verify it's no longer counted
+    async with async_session() as db:
+        counts = await get_played_seed_counts(db, training_user.id)
+        assert counts == {}
+
+
+@pytest.mark.asyncio
 async def test_get_played_seed_counts_multiple_pools(
     async_session, training_user, sample_graph_json
 ):

@@ -14,6 +14,7 @@ from speedfog_racing.database import Base
 from speedfog_racing.models import Race, Seed, SeedStatus, User, UserRole
 from speedfog_racing.services.seed_service import (
     assign_seed_to_race,
+    discard_pool,
     get_available_seed,
     get_pool_stats,
     scan_pool,
@@ -261,3 +262,56 @@ async def test_get_pool_stats_with_seeds(async_db, seed_pool_dir):
         assert "standard" in stats
         assert stats["standard"]["available"] == 1
         assert stats["standard"]["consumed"] == 1
+        assert stats["standard"]["discarded"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_pool_stats_with_discarded(async_db):
+    """get_pool_stats includes discarded count."""
+    seed = Seed(
+        seed_number="disc001",
+        pool_name="standard",
+        graph_json={"total_layers": 5},
+        total_layers=5,
+        folder_path="/test/seed_disc001.zip",
+        status=SeedStatus.DISCARDED,
+    )
+    async_db.add(seed)
+    await async_db.flush()
+
+    stats = await get_pool_stats(async_db)
+    assert "standard" in stats
+    assert stats["standard"]["discarded"] == 1
+    assert stats["standard"]["available"] == 0
+    assert stats["standard"]["consumed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_discard_pool(async_db, seed_pool_dir):
+    """discard_pool marks all AVAILABLE seeds as DISCARDED."""
+    with patch("speedfog_racing.services.seed_service.settings") as mock_settings:
+        mock_settings.seeds_pool_dir = seed_pool_dir
+        await scan_pool(async_db, "standard")
+
+        # Mark one seed as consumed first
+        result = await async_db.execute(select(Seed).limit(1))
+        seed = result.scalar_one()
+        seed.status = SeedStatus.CONSUMED
+        await async_db.flush()
+        await async_db.commit()
+
+        # Discard the pool — should only affect the remaining AVAILABLE seed
+        count = await discard_pool(async_db, "standard")
+        assert count == 1
+
+        stats = await get_pool_stats(async_db)
+        assert stats["standard"]["available"] == 0
+        assert stats["standard"]["consumed"] == 1
+        assert stats["standard"]["discarded"] == 1
+
+
+@pytest.mark.asyncio
+async def test_discard_pool_empty(async_db):
+    """discard_pool returns 0 when no available seeds."""
+    count = await discard_pool(async_db, "nonexistent")
+    assert count == 0

@@ -45,6 +45,7 @@ class SeedStatus(enum.Enum):
 
     AVAILABLE = "available"
     CONSUMED = "consumed"
+    DISCARDED = "discarded"
 
 
 class TrainingSessionStatus(enum.Enum):
