@@ -118,3 +118,12 @@ export const PARALLEL_PATH_SPACING = 5;
 
 /** Max parallel lines before extra players overlap at center */
 export const MAX_PARALLEL = 5;
+
+// =============================================================================
+// Progressive reveal (adjacent/undiscovered nodes)
+// =============================================================================
+
+export const ADJACENT_NODE_COLOR = "#444";
+export const ADJACENT_OPACITY = 0.25;
+export const ADJACENT_EDGE_OPACITY = 0.15;
+export const REVEAL_TRANSITION_MS = 300;
