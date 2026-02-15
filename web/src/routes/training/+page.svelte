@@ -143,8 +143,15 @@
 							{#if info.pool_config?.description}
 								<span class="pool-desc">{info.pool_config.description}</span>
 							{/if}
-							<span class="pool-seeds">
-								{info.available} seed{info.available !== 1 ? 's' : ''} available
+							<span class="pool-seeds" class:pool-exhausted={info.played_by_user != null && info.played_by_user >= info.available}>
+								{#if info.played_by_user != null && info.played_by_user > 0}
+									{info.played_by_user}/{info.available} seed{info.available !== 1 ? 's' : ''} played
+									{#if info.played_by_user >= info.available}
+										— seeds will repeat
+									{/if}
+								{:else}
+									{info.available} seed{info.available !== 1 ? 's' : ''} available
+								{/if}
 							</span>
 						</button>
 					{/each}
@@ -153,8 +160,15 @@
 					<div class="pool-detail">
 						<PoolSettingsCard poolName={displayPoolName(selectedPool)} poolConfig={selectedConfig} compact />
 						<div class="pool-detail-footer">
-							<span class="seed-count">
-								{selectedInfo?.available ?? 0} seed{(selectedInfo?.available ?? 0) !== 1 ? 's' : ''} available
+							<span class="seed-count" class:pool-exhausted={selectedInfo?.played_by_user != null && selectedInfo.played_by_user >= (selectedInfo?.available ?? 0)}>
+								{#if selectedInfo?.played_by_user != null && selectedInfo.played_by_user > 0}
+									{selectedInfo.played_by_user}/{selectedInfo.available} seed{selectedInfo.available !== 1 ? 's' : ''} played
+									{#if selectedInfo.played_by_user >= selectedInfo.available}
+										— seeds will repeat
+									{/if}
+								{:else}
+									{selectedInfo?.available ?? 0} seed{(selectedInfo?.available ?? 0) !== 1 ? 's' : ''} available
+								{/if}
 							</span>
 							<button
 								class="btn btn-primary"
@@ -345,6 +359,10 @@
 		margin-top: 0.25rem;
 		color: var(--color-text-disabled);
 		font-size: var(--font-size-xs);
+	}
+
+	.pool-exhausted {
+		color: var(--color-gold);
 	}
 
 	/* Pool detail panel */

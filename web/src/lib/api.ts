@@ -95,6 +95,7 @@ export interface RaceDetail extends Race {
 export interface PoolInfo {
   available: number;
   consumed: number;
+  played_by_user: number | null;
   pool_config: PoolConfig | null;
 }
 
