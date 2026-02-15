@@ -112,7 +112,7 @@
 	});
 
 	let showGo = $state(false);
-	let previousRaceStatus: string | null = $state(null);
+	let previousRaceStatus: string | null = null;
 
 	$effect(() => {
 		const wasNotRunning = previousRaceStatus !== null && previousRaceStatus !== 'running';
