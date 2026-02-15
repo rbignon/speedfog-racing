@@ -8,9 +8,10 @@
 		totalLayers: number;
 		totalNodes: number;
 		totalPaths: number;
+		transparent?: boolean;
 	}
 
-	let { totalLayers, totalNodes, totalPaths }: Props = $props();
+	let { totalLayers, totalNodes, totalPaths, transparent = false }: Props = $props();
 
 	const FAKE_NODE_RADIUS = 6;
 	const FAKE_COLOR = '#D4A844';
@@ -22,7 +23,7 @@
 	});
 </script>
 
-<div class="blurred-dag-container">
+<div class="blurred-dag-container" class:transparent>
 	{#if layout.nodes.length > 0}
 		<svg
 			viewBox="0 0 {layout.width} {layout.height}"
@@ -65,6 +66,11 @@
 		filter: blur(8px);
 		pointer-events: none;
 		opacity: 0.6;
+	}
+
+	.blurred-dag-container.transparent {
+		background: transparent;
+		border-radius: 0;
 	}
 
 	.blurred-dag-svg {

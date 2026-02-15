@@ -22,7 +22,7 @@
 	{#if liveSeed?.graph_json && (raceStatus === 'running' || raceStatus === 'finished')}
 		<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
 	{:else if totalNodes && totalPaths && totalLayers}
-		<MetroDagBlurred {totalLayers} {totalNodes} {totalPaths} />
+		<MetroDagBlurred {totalLayers} {totalNodes} {totalPaths} transparent />
 	{/if}
 </div>
 
