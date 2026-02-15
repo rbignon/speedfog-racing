@@ -4,9 +4,12 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { site } from '$lib/stores/site.svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { getTwitchLoginUrl } from '$lib/api';
 
 	let { children } = $props();
+
+	let isOverlay = $derived(page.url.pathname.startsWith('/overlay/'));
 
 	onMount(() => {
 		auth.init();
@@ -14,68 +17,72 @@
 	});
 </script>
 
-<div class="app">
-	<header>
-		<div class="header-content">
-			<a href="/" class="logo">SpeedFog Racing</a>
-			<nav>
-				{#if auth.loading}
-					<span class="loading">Loading...</span>
-				{:else if auth.isLoggedIn}
-					<span class="user-info">
-						{#if auth.user?.twitch_avatar_url}
-							<img src={auth.user.twitch_avatar_url} alt="" class="avatar" />
+{#if isOverlay}
+	{@render children()}
+{:else}
+	<div class="app">
+		<header>
+			<div class="header-content">
+				<a href="/" class="logo">SpeedFog Racing</a>
+				<nav>
+					{#if auth.loading}
+						<span class="loading">Loading...</span>
+					{:else if auth.isLoggedIn}
+						<span class="user-info">
+							{#if auth.user?.twitch_avatar_url}
+								<img src={auth.user.twitch_avatar_url} alt="" class="avatar" />
+							{/if}
+							<span>{auth.user?.twitch_display_name || auth.user?.twitch_username}</span>
+						</span>
+						<a href="/training" class="btn btn-secondary">Training</a>
+						{#if auth.isAdmin}
+							<a href="/admin" class="btn btn-secondary">Admin</a>
 						{/if}
-						<span>{auth.user?.twitch_display_name || auth.user?.twitch_username}</span>
-					</span>
-					<a href="/training" class="btn btn-secondary">Training</a>
-					{#if auth.isAdmin}
-						<a href="/admin" class="btn btn-secondary">Admin</a>
+						{#if auth.canCreateRace}
+							<a href="/race/new" class="btn btn-primary">Create Race</a>
+						{/if}
+						<button onclick={() => { auth.logout(); goto('/'); }} class="btn btn-secondary">Logout</button>
+					{:else if !site.initialized}
+						<!-- Wait for site config -->
+					{:else if site.comingSoon}
+						<span class="btn btn-twitch btn-disabled">Login with Twitch</span>
+					{:else}
+						<a href={getTwitchLoginUrl()} class="btn btn-twitch" data-sveltekit-reload>Login with Twitch</a>
 					{/if}
-					{#if auth.canCreateRace}
-						<a href="/race/new" class="btn btn-primary">Create Race</a>
-					{/if}
-					<button onclick={() => { auth.logout(); goto('/'); }} class="btn btn-secondary">Logout</button>
-				{:else if !site.initialized}
-					<!-- Wait for site config -->
-				{:else if site.comingSoon}
-					<span class="btn btn-twitch btn-disabled">Login with Twitch</span>
-				{:else}
-					<a href={getTwitchLoginUrl()} class="btn btn-twitch" data-sveltekit-reload>Login with Twitch</a>
-				{/if}
-			</nav>
-		</div>
-	</header>
+				</nav>
+			</div>
+		</header>
 
-	<div class="content">
-		{@render children()}
+		<div class="content">
+			{@render children()}
+		</div>
+
+		<footer>
+			<div class="footer-content">
+				<p class="footer-credit">
+					Based on the <a
+						href="https://www.nexusmods.com/eldenring/mods/3295"
+						target="_blank"
+						rel="noopener noreferrer">Fog Gate Randomizer</a
+					> by thefifthmatt
+				</p>
+				<nav class="footer-links" aria-label="Footer navigation">
+					<a href="/about">About</a>
+					<a
+						href="https://github.com/rbignon/speedfog"
+						target="_blank"
+						rel="noopener noreferrer">SpeedFog</a
+					>
+					<a
+						href="https://github.com/rbignon/speedfog-racing"
+						target="_blank"
+						rel="noopener noreferrer">SpeedFog Racing</a
+					>
+				</nav>
+			</div>
+		</footer>
 	</div>
-
-	<footer>
-		<div class="footer-content">
-			<p class="footer-credit">
-				Based on the <a
-					href="https://www.nexusmods.com/eldenring/mods/3295"
-					target="_blank"
-					rel="noopener noreferrer">Fog Gate Randomizer</a
-				> by thefifthmatt
-			</p>
-			<nav class="footer-links" aria-label="Footer navigation">
-				<a href="/about">About</a>
-				<a
-					href="https://github.com/rbignon/speedfog"
-					target="_blank"
-					rel="noopener noreferrer">SpeedFog</a
-				>
-				<a
-					href="https://github.com/rbignon/speedfog-racing"
-					target="_blank"
-					rel="noopener noreferrer">SpeedFog Racing</a
-				>
-			</nav>
-		</div>
-	</footer>
-</div>
+{/if}
 
 <style>
 	.app {

@@ -1,6 +1,4 @@
 <script lang="ts">
-	import '../../app.css';
-
 	let { children } = $props();
 </script>
 
@@ -9,11 +7,8 @@
 </div>
 
 <style>
-	:global(html),
 	:global(body) {
 		background: transparent !important;
-		margin: 0;
-		padding: 0;
 		overflow: hidden;
 	}
 
