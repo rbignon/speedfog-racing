@@ -14,6 +14,7 @@
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 	import RaceStats from '$lib/components/RaceStats.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
+	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import { MetroDag, MetroDagBlurred, MetroDagLive, MetroDagProgressive, MetroDagResults } from '$lib/dag';
 	import { parseDagGraph } from '$lib/dag/types';
 	import {
@@ -136,6 +137,12 @@
 	}
 
 	let isOrganizer = $derived(auth.user?.id === initialRace.organizer.id);
+	let isCaster = $derived(
+		auth.user
+			? initialRace.casters.some((c) => c.user.id === auth.user?.id)
+			: false
+	);
+	let showObsModal = $state(false);
 
 	let myParticipant = $derived(
 		auth.user
@@ -287,6 +294,12 @@
 			{/if}
 		{/if}
 
+		{#if isOrganizer || isCaster}
+			<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}>
+				OBS Overlays
+			</button>
+		{/if}
+
 		<div class="sidebar-footer">
 			<SpectatorCount count={spectatorCount} />
 		</div>
@@ -385,6 +398,10 @@
 			</div>
 		{/if}
 	</main>
+
+	{#if showObsModal}
+		<ObsOverlayModal raceId={initialRace.id} onClose={() => (showObsModal = false)} />
+	{/if}
 </div>
 
 <style>
@@ -562,6 +579,25 @@
 	.download-error {
 		color: var(--color-danger);
 		font-size: 0.9rem;
+	}
+
+	.obs-overlay-btn {
+		width: 100%;
+		padding: 0.5rem;
+		margin-top: 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--color-text-secondary);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		cursor: pointer;
+		transition: all var(--transition);
+	}
+
+	.obs-overlay-btn:hover {
+		border-color: var(--color-purple);
+		color: var(--color-purple);
 	}
 
 	@media (max-width: 768px) {
