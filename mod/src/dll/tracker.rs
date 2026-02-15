@@ -122,6 +122,9 @@ pub struct RaceTracker {
     // Ready sent flag
     ready_sent: bool,
 
+    // Temporary status message (yellow banner, auto-expires after 3s)
+    status_message: Option<(String, Instant)>,
+
     // One-time diagnostic log flag
     flags_diagnosed: bool,
 
@@ -199,6 +202,7 @@ impl RaceTracker {
             last_status_update: Instant::now(),
             last_flag_poll: Instant::now(),
             ready_sent: false,
+            status_message: None,
             flags_diagnosed: false,
             spawner_thread: None,
         })
@@ -366,8 +370,23 @@ impl RaceTracker {
         match msg {
             IncomingMessage::StatusChanged(status) => {
                 info!(status = ?status, "[WS] Status changed");
-                if status == ConnectionStatus::Connected {
-                    self.ready_sent = false; // Reset for reconnection
+                match status {
+                    ConnectionStatus::Connected => {
+                        self.ready_sent = false; // Reset for reconnection
+                        self.set_status("Server connected".to_string());
+                    }
+                    ConnectionStatus::Reconnecting => {
+                        self.set_status("Reconnecting to server...".to_string());
+                    }
+                    ConnectionStatus::Error => {
+                        self.set_status("Server error".to_string());
+                    }
+                    ConnectionStatus::Disconnected => {
+                        self.set_status("Disconnected".to_string());
+                    }
+                    ConnectionStatus::Connecting => {
+                        // Silent — the dot indicator handles initial connection
+                    }
                 }
             }
             IncomingMessage::AuthOk {
@@ -517,6 +536,22 @@ impl RaceTracker {
     pub fn my_participant(&self) -> Option<&ParticipantInfo> {
         let id = self.my_participant_id.as_ref()?;
         self.race_state.participants.iter().find(|p| &p.id == id)
+    }
+
+    /// Set a status message that will be displayed temporarily (3 seconds).
+    pub fn set_status(&mut self, message: String) {
+        self.status_message = Some((message, Instant::now()));
+    }
+
+    /// Get current status message if still valid (within 3 seconds).
+    pub fn get_status(&self) -> Option<&str> {
+        self.status_message.as_ref().and_then(|(msg, time)| {
+            if time.elapsed() < Duration::from_secs(3) {
+                Some(msg.as_str())
+            } else {
+                None
+            }
+        })
     }
 
     pub fn debug_info(&self) -> DebugInfo<'_> {

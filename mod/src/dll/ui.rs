@@ -91,6 +91,7 @@ impl ImguiRenderLoop for RaceTracker {
                     ui.separator();
                     self.render_leaderboard(ui, max_width);
                 }
+                self.render_status_message(ui);
                 if self.show_debug {
                     ui.separator();
                     self.render_debug(ui);
@@ -287,6 +288,14 @@ impl RaceTracker {
 
         if participants.len() > 10 {
             ui.text_disabled(format!("  + {} more", participants.len() - 10));
+        }
+    }
+
+    /// Temporary status message (yellow text with separator, disappears after 3s).
+    fn render_status_message(&self, ui: &hudhook::imgui::Ui) {
+        if let Some(status) = self.get_status() {
+            ui.separator();
+            ui.text_colored([1.0, 1.0, 0.0, 1.0], status);
         }
     }
 
