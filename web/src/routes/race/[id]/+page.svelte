@@ -111,6 +111,20 @@
 		return () => clearInterval(interval);
 	});
 
+	let showGo = $state(false);
+
+	$effect(() => {
+		if (raceStatus !== 'running') {
+			showGo = false;
+			return;
+		}
+		showGo = true;
+		const timer = setTimeout(() => {
+			showGo = false;
+		}, 3000);
+		return () => clearTimeout(timer);
+	});
+
 	function formatElapsed(totalSeconds: number): string {
 		const h = Math.floor(totalSeconds / 3600);
 		const m = Math.floor((totalSeconds % 3600) / 60);
@@ -292,6 +306,10 @@
 				{/if}
 			</div>
 		</header>
+
+		{#if showGo}
+			<div class="go-banner">GO!</div>
+		{/if}
 
 		{#if liveSeed?.graph_json && raceStatus === 'running'}
 			{#if myWsParticipantId}
@@ -564,6 +582,30 @@
 
 		.info-grid {
 			grid-template-columns: 1fr 1fr;
+		}
+	}
+
+	.go-banner {
+		text-align: center;
+		font-size: 3rem;
+		font-weight: 800;
+		color: var(--color-success, #10b981);
+		padding: 1rem 0;
+		animation: go-fade 3s ease-out forwards;
+	}
+
+	@keyframes go-fade {
+		0% {
+			opacity: 1;
+			transform: scale(1.2);
+		}
+		70% {
+			opacity: 1;
+			transform: scale(1);
+		}
+		100% {
+			opacity: 0;
+			transform: scale(1);
 		}
 	}
 </style>
