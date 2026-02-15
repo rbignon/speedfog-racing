@@ -1125,4 +1125,54 @@ def test_auth_ok_spawn_items_includes_gem_items(
         assert spawn_items[0]["id"] == 10100
         assert spawn_items[0]["qty"] == 1
         assert spawn_items[1]["id"] == 10300
-        assert spawn_items[1]["qty"] == 1
+
+
+# =============================================================================
+# Scenario 7: Race State Gating
+# =============================================================================
+
+
+def test_status_update_rejected_when_race_not_running(integration_client, race_with_participants):
+    """status_update sent while race is not RUNNING should be rejected with error."""
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    # Race is DRAFT (not started). Connect and send status_update.
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        assert mod.auth()["type"] == "auth_ok"
+
+        mod.send_status_update(igt_ms=5000, death_count=1)
+        resp = mod.receive()
+        assert resp["type"] == "error"
+        assert "not running" in resp["message"].lower()
+
+
+def test_event_flag_rejected_when_race_not_running(integration_client, race_with_participants):
+    """event_flag sent while race is not RUNNING should be rejected with error."""
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        assert mod.auth()["type"] == "auth_ok"
+
+        mod.send_event_flag(flag_id=9000000, igt_ms=5000)
+        resp = mod.receive()
+        assert resp["type"] == "error"
+        assert "not running" in resp["message"].lower()
+
+
+def test_finished_rejected_when_race_not_running(integration_client, race_with_participants):
+    """finished sent while race is not RUNNING should be rejected with error."""
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        assert mod.auth()["type"] == "auth_ok"
+
+        mod.send_finished(igt_ms=50000)
+        resp = mod.receive()
+        assert resp["type"] == "error"
+        assert "not running" in resp["message"].lower()

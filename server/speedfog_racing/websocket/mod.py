@@ -27,6 +27,7 @@ from speedfog_racing.websocket.manager import (
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     AuthOkMessage,
+    ErrorMessage,
     ParticipantInfo,
     PingMessage,
     RaceInfo,
@@ -175,11 +176,11 @@ async def handle_mod_websocket(
                 elif msg_type == "ready":
                     await handle_ready(session_maker, participant_id)
                 elif msg_type == "status_update":
-                    await handle_status_update(session_maker, participant_id, msg)
+                    await handle_status_update(websocket, session_maker, participant_id, msg)
                 elif msg_type == "event_flag":
                     await handle_event_flag(websocket, session_maker, participant_id, msg)
                 elif msg_type == "finished":
-                    await handle_finished(session_maker, participant_id, msg)
+                    await handle_finished(websocket, session_maker, participant_id, msg)
                 else:
                     logger.warning(f"Unknown message type: {msg_type}")
         finally:
@@ -230,6 +231,15 @@ async def send_auth_error(websocket: WebSocket, message: str) -> None:
     error = AuthErrorMessage(message=message)
     await websocket.send_text(error.model_dump_json())
     await websocket.close()
+
+
+async def _send_error(websocket: WebSocket, message: str) -> None:
+    """Send a generic error message to the mod."""
+    error = ErrorMessage(message=message)
+    try:
+        await asyncio.wait_for(websocket.send_text(error.model_dump_json()), timeout=SEND_TIMEOUT)
+    except Exception:
+        pass
 
 
 async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
@@ -313,6 +323,7 @@ async def handle_ready(
 
 
 async def handle_status_update(
+    websocket: WebSocket,
     session_maker: async_sessionmaker[AsyncSession],
     participant_id: uuid.UUID,
     msg: dict[str, Any],
@@ -321,6 +332,10 @@ async def handle_status_update(
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
         if not participant:
+            return
+
+        if participant.race.status != RaceStatus.RUNNING:
+            await _send_error(websocket, "Race not running")
             return
 
         if isinstance(msg.get("igt_ms"), int):
@@ -368,6 +383,10 @@ async def handle_event_flag(
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
         if not participant:
+            return
+
+        if participant.race.status != RaceStatus.RUNNING:
+            await _send_error(websocket, "Race not running")
             return
 
         seed = participant.race.seed
@@ -418,7 +437,7 @@ async def handle_event_flag(
     # Session closed — safe to open new sessions or broadcast
 
     if is_finish:
-        await handle_finished(session_maker, participant_id, {"igt_ms": igt})
+        await handle_finished(websocket, session_maker, participant_id, {"igt_ms": igt})
         return
 
     # Broadcast updated leaderboard (detached objects)
@@ -434,6 +453,7 @@ async def handle_event_flag(
 
 
 async def handle_finished(
+    websocket: WebSocket,
     session_maker: async_sessionmaker[AsyncSession],
     participant_id: uuid.UUID,
     msg: dict[str, Any],
@@ -445,6 +465,10 @@ async def handle_finished(
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
         if not participant:
+            return
+
+        if participant.race.status != RaceStatus.RUNNING:
+            await _send_error(websocket, "Race not running")
             return
 
         participant.status = ParticipantStatus.FINISHED

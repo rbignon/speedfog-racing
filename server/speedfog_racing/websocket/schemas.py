@@ -113,6 +113,13 @@ class AuthErrorMessage(BaseModel):
     message: str
 
 
+class ErrorMessage(BaseModel):
+    """Generic error sent during the message loop (not auth phase)."""
+
+    type: Literal["error"] = "error"
+    message: str
+
+
 class RaceStartMessage(BaseModel):
     """Race start broadcast."""
 
