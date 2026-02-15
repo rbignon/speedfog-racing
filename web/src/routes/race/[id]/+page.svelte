@@ -15,7 +15,7 @@
 	import RaceStats from '$lib/components/RaceStats.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
-	import { MetroDag, MetroDagBlurred, MetroDagLive, MetroDagProgressive, MetroDagResults } from '$lib/dag';
+	import { MetroDag, MetroDagBlurred, MetroDagProgressive, MetroDagResults } from '$lib/dag';
 	import { parseDagGraph } from '$lib/dag/types';
 	import {
 		downloadMySeedPack,
@@ -335,7 +335,7 @@
 					myParticipantId={myWsParticipantId}
 				/>
 			{:else}
-				<MetroDagLive graphJson={liveSeed.graph_json} participants={raceStore.participants} />
+				<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
 			{/if}
 		{:else if liveSeed?.graph_json && raceStatus === 'finished'}
 			<Podium participants={raceStore.leaderboard} />
