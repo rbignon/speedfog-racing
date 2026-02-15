@@ -1,6 +1,7 @@
 //! Race UI - ImGui overlay for SpeedFog Racing
 
 use std::borrow::Cow;
+use std::time::Duration;
 
 use hudhook::imgui::{Condition, FontConfig, FontGlyphRanges, FontSource, StyleColor, WindowFlags};
 use hudhook::{ImguiRenderLoop, RenderContext};
@@ -83,6 +84,7 @@ impl ImguiRenderLoop for RaceTracker {
             )
             .flags(flags)
             .build(|| {
+                self.render_state_banner(ui);
                 self.render_player_status(ui, max_width);
                 self.render_exits(ui, max_width);
                 if !self.config.server.training {
@@ -98,6 +100,35 @@ impl ImguiRenderLoop for RaceTracker {
 }
 
 impl RaceTracker {
+    /// Render state banner above player status.
+    /// - OPEN/DRAFT: orange "WAITING FOR START"
+    /// - RUNNING (first 3s): green "GO!"
+    /// - FINISHED: green "RACE FINISHED"
+    /// - RUNNING (after 3s): nothing
+    fn render_state_banner(&self, ui: &hudhook::imgui::Ui) {
+        let orange = [1.0, 0.75, 0.0, 1.0];
+        let green = [0.5, 1.0, 0.5, 1.0];
+
+        if let Some(race) = self.race_info() {
+            match race.status.as_str() {
+                "draft" | "open" => {
+                    ui.text_colored(orange, "WAITING FOR START");
+                }
+                "running" => {
+                    if let Some(started_at) = self.race_state.race_started_at {
+                        if started_at.elapsed() < Duration::from_secs(3) {
+                            ui.text_colored(green, "GO!");
+                        }
+                    }
+                }
+                "finished" => {
+                    ui.text_colored(green, "RACE FINISHED");
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// Compact 2-line player status:
     /// Line 1: `● RaceName [status]           HH:MM:SS`
     /// Line 2: `  Tier X                   †N    X/Y`
@@ -134,7 +165,7 @@ impl RaceTracker {
             } else {
                 race.name.as_str()
             };
-            format!("{} [{}]", display_name, race.status)
+            display_name.to_string()
         } else {
             "Connecting...".to_string()
         };
