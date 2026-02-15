@@ -205,6 +205,14 @@ impl RaceTracker {
         })
     }
 
+    fn is_race_running(&self) -> bool {
+        self.race_state
+            .race
+            .as_ref()
+            .map(|r| r.status == "running")
+            .unwrap_or(false)
+    }
+
     pub fn update(&mut self) {
         // Process hotkeys at start of frame
         begin_hotkey_frame();
@@ -237,14 +245,17 @@ impl RaceTracker {
                 if !self.triggered_flags.contains(&flag_id) {
                     if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
                         self.triggered_flags.insert(flag_id);
-                        if self.ws_client.is_connected() {
+                        if self.ws_client.is_connected() && self.is_race_running() {
                             self.ws_client.send_event_flag(flag_id, igt_ms);
                             self.last_sent_debug =
                                 Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
                             info!(flag_id, "[RACE] Event flag triggered");
                         } else {
                             self.pending_event_flags.push((flag_id, igt_ms));
-                            info!(flag_id, "[RACE] Event flag buffered (disconnected)");
+                            info!(
+                                flag_id,
+                                "[RACE] Event flag buffered (disconnected/not running)"
+                            );
                         }
                     }
                 }
@@ -269,22 +280,25 @@ impl RaceTracker {
             }
             self.ready_sent = true;
 
-            // Drain event flags buffered during disconnection
-            for (flag_id, flag_igt) in self.pending_event_flags.drain(..) {
-                self.ws_client.send_event_flag(flag_id, flag_igt);
-                self.last_sent_debug = Some(format!("event_flag({}, igt={})", flag_id, flag_igt));
-                info!(flag_id, "[RACE] Buffered event flag sent");
-            }
+            if self.is_race_running() {
+                // Drain event flags buffered during disconnection
+                for (flag_id, flag_igt) in self.pending_event_flags.drain(..) {
+                    self.ws_client.send_event_flag(flag_id, flag_igt);
+                    self.last_sent_debug =
+                        Some(format!("event_flag({}, igt={})", flag_id, flag_igt));
+                    info!(flag_id, "[RACE] Buffered event flag sent");
+                }
 
-            // Safety-net rescan: catch any flags still set in memory that polling missed
-            for &flag_id in &self.event_ids {
-                if !self.triggered_flags.contains(&flag_id) {
-                    if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
-                        self.triggered_flags.insert(flag_id);
-                        self.ws_client.send_event_flag(flag_id, igt_ms);
-                        self.last_sent_debug =
-                            Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
-                        info!(flag_id, "[RACE] Event flag re-sent after reconnect");
+                // Safety-net rescan: catch any flags still set in memory that polling missed
+                for &flag_id in &self.event_ids {
+                    if !self.triggered_flags.contains(&flag_id) {
+                        if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                            self.triggered_flags.insert(flag_id);
+                            self.ws_client.send_event_flag(flag_id, igt_ms);
+                            self.last_sent_debug =
+                                Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
+                            info!(flag_id, "[RACE] Event flag re-sent after reconnect");
+                        }
                     }
                 }
             }
@@ -338,9 +352,12 @@ impl RaceTracker {
             info!(result = ?fogrando_sample, "[RACE] FogRando flag 1040292100 read");
         }
 
-        // Send periodic status updates (every 1 second, only when IGT is ticking)
+        // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0 — skip to avoid erroneous data
-        if self.last_status_update.elapsed() >= Duration::from_secs(1) && igt_ms > 0 {
+        if self.last_status_update.elapsed() >= Duration::from_secs(1)
+            && igt_ms > 0
+            && self.is_race_running()
+        {
             self.ws_client.send_status_update(igt_ms, deaths);
             self.last_status_update = Instant::now();
         }
