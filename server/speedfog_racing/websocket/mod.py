@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
+from speedfog_racing.services.grace_service import load_graces_mapping, resolve_grace_to_node
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
     get_layer_for_node,
@@ -41,6 +42,15 @@ logger = logging.getLogger(__name__)
 
 MOD_AUTH_TIMEOUT = 5.0  # seconds to wait for auth message
 HEARTBEAT_INTERVAL = 30.0  # seconds between pings
+
+_graces_mapping: dict[str, dict[str, Any]] | None = None
+
+
+def _get_graces_mapping() -> dict[str, dict[str, Any]]:
+    global _graces_mapping
+    if _graces_mapping is None:
+        _graces_mapping = load_graces_mapping()
+    return _graces_mapping
 
 
 def _get_graph_json(participant: Participant) -> dict[str, Any] | None:
@@ -192,6 +202,8 @@ async def handle_mod_websocket(
                     await handle_event_flag(websocket, session_maker, participant_id, msg)
                 elif msg_type == "finished":
                     await handle_finished(websocket, session_maker, participant_id, msg)
+                elif msg_type == "zone_query":
+                    await handle_zone_query(websocket, session_maker, participant_id, msg)
                 else:
                     logger.warning(f"Unknown message type: {msg_type}")
         finally:
@@ -481,6 +493,49 @@ async def handle_event_flag(
     # Unicast zone_update to originating mod
     if node_id and seed_graph:
         await send_zone_update(websocket, node_id, seed_graph, participant.zone_history)
+
+
+async def handle_zone_query(
+    websocket: WebSocket,
+    session_maker: async_sessionmaker[AsyncSession],
+    participant_id: uuid.UUID,
+    msg: dict[str, Any],
+) -> None:
+    """Handle zone_query from mod (fast travel overlay update)."""
+    grace_entity_id = msg.get("grace_entity_id")
+    if not isinstance(grace_entity_id, int) or grace_entity_id == 0:
+        return
+
+    async with session_maker() as db:
+        participant = await _load_participant(db, participant_id)
+        if not participant:
+            return
+
+        if participant.race.status != RaceStatus.RUNNING:
+            return
+
+        seed = participant.race.seed
+        if not seed or not seed.graph_json:
+            return
+
+        graph_json = seed.graph_json
+        node_id = resolve_grace_to_node(grace_entity_id, graph_json, _get_graces_mapping())
+        if node_id is None:
+            logger.debug(
+                "zone_query: grace %d not in graph for race %s",
+                grace_entity_id,
+                participant.race_id,
+            )
+            return
+
+        participant.current_zone = node_id
+        await db.commit()
+
+    # Unicast zone_update to originating mod
+    await send_zone_update(websocket, node_id, graph_json, participant.zone_history)
+
+    # Broadcast player update to spectators (so DAG view updates)
+    await manager.broadcast_player_update(participant.race_id, participant, graph_json=graph_json)
 
 
 async def handle_finished(
