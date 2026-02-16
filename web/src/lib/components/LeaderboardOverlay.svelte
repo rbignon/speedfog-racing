@@ -10,8 +10,6 @@
 
 	let { participants, totalLayers = null, mode = 'running' }: Props = $props();
 
-	const MEDALS = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
-
 	function playerColor(p: WsParticipant): string {
 		return PLAYER_COLORS[p.color_index % PLAYER_COLORS.length];
 	}
@@ -35,17 +33,9 @@
 <ol class="overlay-leaderboard">
 	{#each participants as participant, index (participant.id)}
 		{@const color = playerColor(participant)}
-		{@const medal =
-			mode === 'finished' && participant.status === 'finished' && index < 3
-				? MEDALS[index]
-				: null}
 		<li class="row">
 			<span class="rank">{index + 1}</span>
-			{#if medal}
-				<span class="medal">{medal}</span>
-			{:else}
-				<span class="dot" style="background: {color};"></span>
-			{/if}
+			<span class="dot" style="background: {color};"></span>
 			<span class="name">{displayName(participant)}</span>
 			<span class="stats">
 				{#if participant.status === 'playing'}
@@ -95,7 +85,7 @@
 		text-align: right;
 		flex-shrink: 0;
 		opacity: 0.7;
-		font-size: 0.85em;
+		margin-right: 0.5em;
 	}
 
 	.dot {
@@ -104,16 +94,6 @@
 		border-radius: 50%;
 		flex-shrink: 0;
 		box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
-	}
-
-	.medal {
-		width: 12px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 1.1rem;
-		flex-shrink: 0;
-		filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.8));
 	}
 
 	.name {
