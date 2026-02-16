@@ -87,6 +87,15 @@ class ModTestClient:
         """Send finish event."""
         self.ws.send_json({"type": "finished", "igt_ms": igt_ms})
 
+    def send_zone_query(self, grace_entity_id: int) -> None:
+        """Send zone query (fast travel)."""
+        self.ws.send_json(
+            {
+                "type": "zone_query",
+                "grace_entity_id": grace_entity_id,
+            }
+        )
+
     def receive(self, timeout: float = 5) -> dict[str, Any]:
         """Receive next message. Raises TimeoutError after *timeout* seconds."""
         from concurrent.futures import Future, ThreadPoolExecutor
@@ -1207,3 +1216,163 @@ def test_finished_rejected_when_race_not_running(integration_client, race_with_p
         resp = mod.receive()
         assert resp["type"] == "error"
         assert "not running" in resp["message"].lower()
+
+
+# =============================================================================
+# Scenario: Zone Query (Fast Travel)
+# =============================================================================
+
+
+def test_zone_query_updates_overlay(integration_db, integration_client, seed_folder):
+    """Fast travel zone_query resolves grace → graph node and sends zone_update."""
+    import asyncio
+
+    # Set up a race with a graph that includes stormveil_godrick zone
+    # (grace entity 10002950 → zone_id "stormveil_godrick" in graces.json)
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 3,
+        "nodes": {
+            "chapel_start_4f96": {
+                "type": "start",
+                "display_name": "Chapel of Anticipation",
+                "zones": ["chapel_start"],
+                "layer": 0,
+                "exits": [],
+            },
+            "stormveil_godrick_48fd": {
+                "display_name": "Godrick the Grafted",
+                "zones": ["stormveil_godrick"],
+                "layer": 1,
+                "tier": 5,
+                "exits": [
+                    {"text": "Before boss", "fog_id": 200, "to": "chapel_start_4f96"},
+                ],
+            },
+        },
+        "event_map": {
+            "1040292800": "stormveil_godrick_48fd",
+        },
+        "finish_event": 1040292801,
+    }
+
+    async def setup():
+        async with integration_db() as db:
+            organizer = User(
+                twitch_id="zq_organizer",
+                twitch_username="zq_organizer",
+                twitch_display_name="ZQ Organizer",
+                api_token="zq_organizer_token",
+                role=UserRole.ORGANIZER,
+            )
+            player = User(
+                twitch_id="zq_player",
+                twitch_username="zq_player",
+                twitch_display_name="ZQ Player",
+                api_token="zq_player_token",
+                role=UserRole.USER,
+            )
+            seed = Seed(
+                seed_number="szq_001",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=3,
+                folder_path=str(seed_folder),
+                status=SeedStatus.AVAILABLE,
+            )
+            db.add_all([organizer, player, seed])
+            await db.commit()
+            await db.refresh(organizer)
+            await db.refresh(player)
+            return organizer, player
+
+    organizer, player = asyncio.run(setup())
+    org_headers = {"Authorization": f"Bearer {organizer.api_token}"}
+
+    # Create race
+    resp = integration_client.post(
+        "/api/races",
+        json={"name": "Zone Query Test", "pool_name": "standard"},
+        headers=org_headers,
+    )
+    assert resp.status_code == 201
+    race_id = resp.json()["id"]
+
+    # Override seed graph to use our custom graph with stormveil_godrick
+    async def set_graph():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            if race.seed:
+                race.seed.graph_json = graph_json
+                race.seed.total_layers = 3
+                await db.commit()
+
+    asyncio.run(set_graph())
+
+    # Add participant
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants",
+        json={"twitch_username": player.twitch_username},
+        headers=org_headers,
+    )
+    assert resp.status_code == 200
+
+    # Get mod token
+    async def get_token():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(Participant.race_id == uuid.UUID(race_id))
+            )
+            p = result.scalar_one()
+            return p.mod_token, str(p.id)
+
+    mod_token, participant_id = asyncio.run(get_token())
+
+    # Ready + start race
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, mod_token)
+        assert mod.auth()["type"] == "auth_ok"
+        mod.send_ready()
+        mod.receive_until_type("leaderboard_update")
+
+    resp = integration_client.post(f"/api/races/{race_id}/start", headers=org_headers)
+    assert resp.status_code == 200
+
+    # Connect, become PLAYING, discover stormveil_godrick, then zone_query
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, mod_token)
+        assert mod.auth()["type"] == "auth_ok"
+
+        # Discover stormveil_godrick via event_flag (also transitions READY→PLAYING
+        # internally via status_update, but we skip that as existing tests do)
+        mod.send_event_flag(1040292800, 5000)
+        # Server sends leaderboard_update (broadcast) + zone_update (unicast)
+        lb = mod.receive_until_type("leaderboard_update")
+        assert lb["type"] == "leaderboard_update"
+        zone_update = mod.receive_until_type("zone_update")
+        assert zone_update["node_id"] == "stormveil_godrick_48fd"
+
+        # Now simulate fast travel back to Godrick grace
+        # Grace entity ID 10002950 → zone_id "stormveil_godrick" → node "stormveil_godrick_48fd"
+        mod.send_zone_query(10002950)
+        zone_update2 = mod.receive_until_type("zone_update")
+        assert zone_update2["node_id"] == "stormveil_godrick_48fd"
+        assert zone_update2["display_name"] == "Godrick the Grafted"
+        assert zone_update2["tier"] == 5
+
+    # Verify current_zone updated in DB
+    async def verify_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(Participant.race_id == uuid.UUID(race_id))
+            )
+            p = result.scalar_one()
+            return p.current_zone
+
+    current_zone = asyncio.run(verify_db())
+    assert current_zone == "stormveil_godrick_48fd"
