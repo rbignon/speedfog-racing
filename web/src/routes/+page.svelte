@@ -178,7 +178,7 @@
 			<MetroDagAnimated graphJson={heroSeed} />
 		</div>
 		<div class="hero-cta">
-			<h1>SpeedFog Racing</h1>
+			<h1>SpeedFog Racing<span class="beta-badge">Beta</span></h1>
 			<p class="hero-tagline">Competitive Elden Ring racing through randomized fog gates</p>
 			<div class="hero-buttons">
 				{#if !site.initialized}
@@ -279,6 +279,19 @@
 		font-weight: 700;
 		color: var(--color-gold);
 		margin: 0 0 0.5rem;
+	}
+
+	.beta-badge {
+		font-size: 0.3em;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		background: var(--color-gold);
+		color: var(--color-bg);
+		padding: 0.1em 0.4em;
+		border-radius: 4px;
+		margin-left: 0.4em;
+		vertical-align: super;
 	}
 
 	.hero-tagline {

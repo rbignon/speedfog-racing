@@ -23,7 +23,7 @@
 	<div class="app">
 		<header>
 			<div class="header-content">
-				<a href="/" class="logo">SpeedFog Racing</a>
+				<a href="/" class="logo">SpeedFog Racing<span class="beta-badge">Beta</span></a>
 				<nav>
 					{#if auth.loading}
 						<span class="loading">Loading...</span>
@@ -114,6 +114,19 @@
 
 	.logo:hover {
 		color: var(--color-gold-hover);
+	}
+
+	.beta-badge {
+		font-size: 0.4em;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		background: var(--color-gold);
+		color: var(--color-bg);
+		padding: 0.1em 0.4em;
+		border-radius: 4px;
+		margin-left: 0.4em;
+		vertical-align: super;
 	}
 
 	nav {
