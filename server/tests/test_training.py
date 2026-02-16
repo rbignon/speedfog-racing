@@ -808,6 +808,19 @@ def test_training_spectator_anonymous_invalid_session(training_ws_client, traini
             pass
 
 
+def test_training_spectator_invalid_token_falls_back_anonymous(
+    training_ws_client, training_session_data
+):
+    """Training spectator WS: invalid token falls back to anonymous access."""
+    sid = training_session_data["session_id"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}/spectate") as ws:
+        ws.send_json({"type": "auth", "token": "totally-bogus-token"})
+        msg = ws.receive_json()
+        assert msg["type"] == "race_state"
+        assert msg["seed"] is not None
+
+
 # =============================================================================
 # Public read access tests
 # =============================================================================
