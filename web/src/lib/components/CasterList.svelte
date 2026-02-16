@@ -39,7 +39,10 @@
 
 {#if casters.length > 0 || editable}
 	<div class="caster-section">
-		<h3>Casters{#if casters.length > 0} ({casters.length}){/if}</h3>
+		<h3>
+			Casters{#if casters.length > 0}
+				({casters.length}){/if}
+		</h3>
 
 		{#if error}
 			<p class="error">{error}</p>
@@ -54,9 +57,9 @@
 						{:else}
 							<div class="avatar-placeholder"></div>
 						{/if}
-						<span class="name">
+						<a href="/user/{caster.user.twitch_username}" class="name name-link">
 							{caster.user.twitch_display_name || caster.user.twitch_username}
-						</span>
+						</a>
 						<a
 							href="https://twitch.tv/{caster.user.twitch_username}"
 							target="_blank"
@@ -80,11 +83,7 @@
 							</svg>
 						</a>
 						{#if editable}
-							<button
-								class="remove-btn"
-								onclick={() => handleRemove(caster)}
-								title="Remove caster"
-							>
+							<button class="remove-btn" onclick={() => handleRemove(caster)} title="Remove caster">
 								&times;
 							</button>
 						{/if}
@@ -162,6 +161,16 @@
 		text-overflow: ellipsis;
 		flex: 1;
 		min-width: 0;
+	}
+
+	.name-link {
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.name-link:hover {
+		color: var(--color-purple);
+		text-decoration: underline;
 	}
 
 	.twitch-link {

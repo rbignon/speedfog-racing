@@ -8,7 +8,7 @@
 		adminDiscardPool,
 		adminScanPool,
 		type AdminUser,
-		type AdminPoolStats,
+		type AdminPoolStats
 	} from '$lib/api';
 
 	type Tab = 'users' | 'seeds';
@@ -160,9 +160,9 @@
 									{#if user.twitch_avatar_url}
 										<img src={user.twitch_avatar_url} alt="" class="avatar" />
 									{/if}
-									<span class="username"
-										>{user.twitch_display_name || user.twitch_username}</span
-									>
+									<a href="/user/{user.twitch_username}" class="username-link">
+										{user.twitch_display_name || user.twitch_username}
+									</a>
 								</td>
 								<td>
 									{#if user.role === 'admin'}
@@ -221,13 +221,10 @@
 									</button>
 									<button
 										class="action-btn discard"
-										disabled={actionLoading[`discard_${poolName}`] ||
-											stats.available === 0}
+										disabled={actionLoading[`discard_${poolName}`] || stats.available === 0}
 										onclick={() => handleDiscard(poolName)}
 									>
-										{actionLoading[`discard_${poolName}`]
-											? 'Discarding...'
-											: 'Discard'}
+										{actionLoading[`discard_${poolName}`] ? 'Discarding...' : 'Discard'}
 									</button>
 								</td>
 							</tr>
@@ -353,8 +350,15 @@
 		border: 2px solid var(--color-border);
 	}
 
-	.username {
+	.username-link {
 		font-weight: 500;
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.username-link:hover {
+		color: var(--color-purple);
+		text-decoration: underline;
 	}
 
 	.num-col {

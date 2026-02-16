@@ -39,9 +39,9 @@
 	{/if}
 	<div class="info">
 		<span class="name">
-			<span class="name-text">
+			<a href="/user/{participant.user.twitch_username}" class="name-text name-link">
 				{participant.user.twitch_display_name || participant.user.twitch_username}
-			</span>
+			</a>
 			{#if isCurrentUser}
 				<span class="you-badge">You</span>
 			{/if}
@@ -64,11 +64,27 @@
 		>
 			{#if downloading}
 				<svg class="spinner" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-					<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" />
+					<circle
+						cx="8"
+						cy="8"
+						r="6"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-dasharray="28"
+						stroke-dashoffset="8"
+					/>
 				</svg>
 			{:else}
 				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-					<path d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+					<path
+						d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						fill="none"
+					/>
 				</svg>
 			{/if}
 		</button>
@@ -140,6 +156,16 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		min-width: 0;
+	}
+
+	.name-link {
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.name-link:hover {
+		color: var(--color-purple);
+		text-decoration: underline;
 	}
 
 	.you-badge {

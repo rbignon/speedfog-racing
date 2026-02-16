@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Race, RaceStatus } from '$lib/api';
+	import { goto } from '$app/navigation';
 	import { timeAgo } from '$lib/utils/time';
 	import LiveIndicator from './LiveIndicator.svelte';
 
@@ -7,7 +8,7 @@
 		race,
 		role,
 		hideOrganizer = false,
-		variant = 'default',
+		variant = 'default'
 	}: {
 		race: Race;
 		role?: string;
@@ -16,11 +17,9 @@
 	} = $props();
 
 	let isRunning = $derived(race.status === 'running');
-	let displayName = $derived(
-		race.organizer.twitch_display_name || race.organizer.twitch_username,
-	);
+	let displayName = $derived(race.organizer.twitch_display_name || race.organizer.twitch_username);
 	let overflowCount = $derived(
-		Math.max(0, race.participant_count - race.participant_previews.length),
+		Math.max(0, race.participant_count - race.participant_previews.length)
 	);
 
 	function statusBorderClass(status: RaceStatus): string {
@@ -38,10 +37,7 @@
 		}
 	}
 
-	function actionLabel(
-		status: RaceStatus,
-		userRole?: string,
-	): string | null {
+	function actionLabel(status: RaceStatus, userRole?: string): string | null {
 		if (status === 'running') return 'Watch →';
 		if (status === 'finished') return 'Results →';
 		if (userRole === 'Organizing' && status === 'draft') return 'Set up →';
@@ -117,7 +113,16 @@
 				{#if race.organizer.twitch_avatar_url}
 					<img src={race.organizer.twitch_avatar_url} alt="" class="organizer-avatar" />
 				{/if}
-				{displayName}
+				<button
+					class="organizer-link"
+					onclick={(e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						goto(`/user/${race.organizer.twitch_username}`);
+					}}
+				>
+					{displayName}
+				</button>
 			</span>
 		{/if}
 	</div>
@@ -280,5 +285,19 @@
 		width: 18px;
 		height: 18px;
 		border-radius: 50%;
+	}
+
+	.organizer-link {
+		background: none;
+		border: none;
+		padding: 0;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.organizer-link:hover {
+		color: var(--color-purple);
+		text-decoration: underline;
 	}
 </style>

@@ -6,7 +6,7 @@
 		fetchTrainingSession,
 		abandonTrainingSession,
 		downloadTrainingPack,
-		type TrainingSessionDetail,
+		type TrainingSessionDetail
 	} from '$lib/api';
 	import { MetroDag, MetroDagLive, MetroDagProgressive, MetroDagResults } from '$lib/dag';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
@@ -25,7 +25,9 @@
 	let liveParticipant = $derived(trainingStore.participant);
 	let liveRace = $derived(trainingStore.race);
 
-	let status = $derived(liveRace?.status === 'finished' ? 'finished' : session?.status ?? 'active');
+	let status = $derived(
+		liveRace?.status === 'finished' ? 'finished' : (session?.status ?? 'active')
+	);
 	let igtMs = $derived(liveParticipant?.igt_ms ?? session?.igt_ms ?? 0);
 	let deathCount = $derived(liveParticipant?.death_count ?? session?.death_count ?? 0);
 	let currentLayer = $derived(liveParticipant?.current_layer ?? 0);
@@ -112,6 +114,17 @@
 			<div class="header-left">
 				<a href="/training" class="back-link">&larr; Training</a>
 				<h1>{displayPoolName(session.pool_name)}</h1>
+				{#if session.user}
+					<span class="player-name">
+						by
+						<a href="/user/{session.user.twitch_username}" class="player-link">
+							{#if session.user.twitch_avatar_url}
+								<img src={session.user.twitch_avatar_url} alt="" class="player-avatar" />
+							{/if}
+							{session.user.twitch_display_name || session.user.twitch_username}
+						</a>
+					</span>
+				{/if}
 			</div>
 			<div class="header-right">
 				<ShareButtons />
@@ -178,11 +191,7 @@
 		{#if isOwner}
 			<div class="actions">
 				{#if status === 'active'}
-					<button
-						class="btn btn-secondary"
-						disabled={downloading}
-						onclick={handleDownload}
-					>
+					<button class="btn btn-secondary" disabled={downloading} onclick={handleDownload}>
 						{downloading ? 'Downloading...' : 'Download Pack'}
 					</button>
 				{/if}
@@ -191,11 +200,7 @@
 					{#if confirmAbandon}
 						<div class="confirm-group">
 							<span class="confirm-text">Abandon this run?</span>
-							<button
-								class="btn btn-danger"
-								disabled={abandoning}
-								onclick={handleAbandon}
-							>
+							<button class="btn btn-danger" disabled={abandoning} onclick={handleAbandon}>
 								{abandoning ? 'Abandoning...' : 'Confirm'}
 							</button>
 							<button class="btn btn-secondary" onclick={() => (confirmAbandon = false)}>
@@ -203,9 +208,7 @@
 							</button>
 						</div>
 					{:else}
-						<button class="btn btn-danger-outline" onclick={handleAbandon}>
-							Abandon
-						</button>
+						<button class="btn btn-danger-outline" onclick={handleAbandon}> Abandon </button>
 					{/if}
 				{/if}
 			</div>
@@ -271,6 +274,34 @@
 		font-size: var(--font-size-2xl);
 		font-weight: 700;
 		margin: 0;
+	}
+
+	.player-name {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.player-link {
+		color: inherit;
+		text-decoration: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.player-link:hover {
+		color: var(--color-purple);
+		text-decoration: underline;
+	}
+
+	.player-avatar {
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+		object-fit: cover;
 	}
 
 	.error-banner {
