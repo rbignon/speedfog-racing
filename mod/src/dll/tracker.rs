@@ -139,6 +139,9 @@ pub struct RaceTracker {
     // server's zone_update arrives before the game starts loading.
     saw_loading: bool,
 
+    // Whether position was readable last frame (for detecting loading screen exit)
+    was_position_readable: bool,
+
     // Seed mismatch: config seed_id doesn't match server seed_id (stale seed pack)
     pub(crate) seed_mismatch: bool,
 }
@@ -174,6 +177,14 @@ impl RaceTracker {
         // Init event flag reader
         let event_flag_reader =
             EventFlagReader::new(game_state.base_addresses().csfd4_virtual_memory_flag);
+
+        // Install warp hook for grace entity ID capture (fast travel zone tracking)
+        unsafe {
+            let lua_warp = game_state.base_addresses().lua_warp;
+            if let Err(e) = crate::eldenring::warp_hook::install(lua_warp) {
+                error!(error = %e, "Failed to install warp hook (fast travel zone tracking disabled)");
+            }
+        }
 
         // Pre-parse overlay colors
         let s = &config.overlay;
@@ -218,6 +229,7 @@ impl RaceTracker {
             spawner_thread: None,
             pending_zone_update: None,
             saw_loading: true, // Start true so first zone_update (from auth) reveals immediately
+            was_position_readable: true,
             seed_mismatch: false,
         })
     }
@@ -251,12 +263,15 @@ impl RaceTracker {
             self.handle_ws_message(msg);
         }
 
+        // Read position once per frame for loading screen detection
+        let position_readable = self.game_state.read_position().is_some();
+
         // Reveal pending zone update once loading screen is finished.
         // Transition gate: after an event flag, we must first observe a loading screen
         // (read_position() returns None) before revealing the zone. This prevents premature
         // reveal when the server's zone_update arrives before the game starts loading.
         if self.pending_zone_update.is_some() {
-            if self.game_state.read_position().is_some() {
+            if position_readable {
                 if self.saw_loading {
                     let zone = self.pending_zone_update.take().unwrap();
                     info!(name = %zone.display_name, "[RACE] Zone revealed after loading");
@@ -270,6 +285,26 @@ impl RaceTracker {
                 }
             }
         }
+
+        // Zone query on fast travel: when exiting a loading screen with a captured grace entity ID,
+        // ask the server to resolve the destination zone for overlay update.
+        if position_readable && !self.was_position_readable {
+            // Just exited a loading screen — check for captured grace entity ID
+            let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
+            if grace_id > 0 && self.ws_client.is_connected() && self.is_race_running() {
+                self.ws_client.send_zone_query(grace_id);
+                self.last_sent_debug = Some(format!("zone_query(grace={})", grace_id));
+                info!(
+                    grace_entity_id = grace_id,
+                    "[RACE] Zone query sent (fast travel)"
+                );
+                crate::eldenring::warp_hook::clear_captured_grace_entity_id();
+            } else if grace_id > 0 {
+                // Not connected or race not running — clear stale grace ID
+                crate::eldenring::warp_hook::clear_captured_grace_entity_id();
+            }
+        }
+        self.was_position_readable = position_readable;
 
         // Event flag polling runs ALWAYS (even when disconnected).
         // Flags are transient in game memory (~seconds), so we must detect them immediately
