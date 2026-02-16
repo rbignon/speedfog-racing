@@ -28,6 +28,7 @@ export interface Race {
   status: RaceStatus;
   pool_name: string | null;
   created_at: string;
+  scheduled_at: string | null;
   started_at: string | null;
   participant_count: number;
   participant_previews: User[];
@@ -268,6 +269,7 @@ export async function createRace(
   poolName: string = "standard",
   organizerParticipates: boolean = false,
   config: Record<string, unknown> = {},
+  scheduledAt: string | null = null,
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races`, {
     method: "POST",
@@ -280,7 +282,26 @@ export async function createRace(
       pool_name: poolName,
       organizer_participates: organizerParticipates,
       config,
+      scheduled_at: scheduledAt,
     }),
+  });
+  return handleResponse<Race>(response);
+}
+
+/**
+ * Update race properties (PATCH). Organizer only, DRAFT/OPEN only.
+ */
+export async function updateRace(
+  raceId: string,
+  data: { scheduled_at?: string | null },
+): Promise<Race> {
+  const response = await fetch(`${API_BASE}/races/${raceId}`, {
+    method: "PATCH",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
   });
   return handleResponse<Race>(response);
 }

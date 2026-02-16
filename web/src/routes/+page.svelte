@@ -24,7 +24,16 @@
 		races.filter((r) => r.status === 'running' && !myRaceIds.has(r.id)),
 	);
 	let upcomingRaces = $derived(
-		races.filter((r) => r.status === 'open' && !myRaceIds.has(r.id)),
+		races
+			.filter((r) => r.status === 'open' && !myRaceIds.has(r.id))
+			.sort((a, b) => {
+				// Scheduled races first (by scheduled_at ASC), then unscheduled
+				if (a.scheduled_at && b.scheduled_at)
+					return new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime();
+				if (a.scheduled_at) return -1;
+				if (b.scheduled_at) return 1;
+				return 0;
+			}),
 	);
 
 	// User's active race spotlight

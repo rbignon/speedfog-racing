@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.background import BackgroundTask
@@ -49,6 +49,7 @@ from speedfog_racing.schemas import (
     RaceDetailResponse,
     RaceListResponse,
     RaceResponse,
+    UpdateRaceRequest,
 )
 from speedfog_racing.services import (
     assign_seed_to_race,
@@ -115,6 +116,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         status=race.status,
         pool_name=race.seed.pool_name if race.seed else None,
         created_at=race.created_at,
+        scheduled_at=race.scheduled_at,
         started_at=race.started_at,
         participant_count=len(race.participants),
         seed_number=race.seed.seed_number if race.seed else None,
@@ -219,6 +221,17 @@ async def create_race(
             detail="You do not have permission to create races",
         )
 
+    # Validate scheduled_at is not in the past
+    if request.scheduled_at is not None:
+        scheduled = request.scheduled_at
+        if scheduled.tzinfo is None:
+            scheduled = scheduled.replace(tzinfo=UTC)
+        if scheduled < datetime.now(UTC):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Scheduled time cannot be in the past",
+            )
+
     # Create race
     race = Race(
         name=request.name,
@@ -226,6 +239,7 @@ async def create_race(
         organizer=user,
         config=request.config,
         status=RaceStatus.DRAFT,
+        scheduled_at=request.scheduled_at,
     )
     db.add(race)
     await db.flush()
@@ -282,7 +296,24 @@ async def list_races(
             ) from e
         query = query.where(Race.status.in_(status_enums))
 
-    query = query.order_by(Race.created_at.desc())
+    # Sort: upcoming (draft/open) by scheduled_at ASC (nulls last), then created_at ASC
+    # Running/finished by created_at DESC
+    query = query.order_by(
+        # Running races first, then open, then draft, then finished
+        case(
+            (Race.status == RaceStatus.RUNNING, 0),
+            (Race.status == RaceStatus.OPEN, 1),
+            (Race.status == RaceStatus.DRAFT, 2),
+            else_=3,
+        ),
+        # Within open/draft: scheduled_at ASC (nulls last)
+        case(
+            (Race.scheduled_at.is_(None), 1),
+            else_=0,
+        ),
+        Race.scheduled_at.asc(),
+        Race.created_at.desc(),
+    )
     result = await db.execute(query)
     races = list(result.scalars().all())
 
@@ -300,6 +331,41 @@ async def get_race(
         db, race_id, load_participants=True, load_casters=True, load_invites=True
     )
     return _race_detail_response(race, user=user)
+
+
+@router.patch("/{race_id}", response_model=RaceResponse)
+async def update_race(
+    race_id: UUID,
+    request: UpdateRaceRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RaceResponse:
+    """Update race properties. Only organizer, DRAFT/OPEN only."""
+    race = await _get_race_or_404(db, race_id, load_participants=True)
+    _require_organizer(race, user)
+
+    if race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only update draft or open races",
+        )
+
+    # Validate scheduled_at is not in the past (allow None to clear)
+    if request.scheduled_at is not None:
+        scheduled = request.scheduled_at
+        if scheduled.tzinfo is None:
+            scheduled = scheduled.replace(tzinfo=UTC)
+        if scheduled < datetime.now(UTC):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Scheduled time cannot be in the past",
+            )
+
+    race.scheduled_at = request.scheduled_at
+    await db.commit()
+
+    race = await _get_race_or_404(db, race_id, load_participants=True)
+    return race_response(race)
 
 
 @router.post("/{race_id}/participants", response_model=AddParticipantResponse)

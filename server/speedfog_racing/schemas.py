@@ -20,6 +20,13 @@ class CreateRaceRequest(BaseModel):
     pool_name: str = "standard"
     config: dict[str, Any] = {}
     organizer_participates: bool = False
+    scheduled_at: datetime | None = None
+
+
+class UpdateRaceRequest(BaseModel):
+    """Request to update race properties (DRAFT/OPEN only)."""
+
+    scheduled_at: datetime | None = None
 
 
 class AddParticipantRequest(BaseModel):
@@ -161,6 +168,7 @@ class RaceResponse(BaseModel):
     status: RaceStatus
     pool_name: str | None
     created_at: datetime
+    scheduled_at: datetime | None = None
     started_at: datetime | None = None
     participant_count: int
     participant_previews: list[UserResponse] = []
@@ -203,6 +211,7 @@ class RaceDetailResponse(BaseModel):
     status: RaceStatus
     pool_name: str | None
     created_at: datetime
+    scheduled_at: datetime | None = None
     started_at: datetime | None = None
     participant_count: int
     seed_number: str | None = None

@@ -6,6 +6,7 @@
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 
 	let name = $state('');
+	let scheduledAt = $state('');
 	let poolName = $state('standard');
 	let organizerParticipates = $state(true);
 	let pools: PoolStats = $state({});
@@ -68,7 +69,8 @@
 		error = null;
 
 		try {
-			const race = await createRace(name.trim(), poolName, organizerParticipates);
+			const isoScheduled = scheduledAt ? new Date(scheduledAt).toISOString() : null;
+			const race = await createRace(name.trim(), poolName, organizerParticipates, {}, isoScheduled);
 			goto(`/race/${race.id}`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to create race.';
@@ -106,6 +108,20 @@
 					disabled={creating}
 					required
 				/>
+			</div>
+
+			<div class="form-group">
+				<label for="scheduled">Scheduled Time <span class="optional">(optional)</span></label>
+				<input
+					type="datetime-local"
+					id="scheduled"
+					bind:value={scheduledAt}
+					min={(() => { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 16); })()}
+					disabled={creating}
+				/>
+				<p class="hint">
+					Leave empty if you don't have a fixed start time yet.
+				</p>
 			</div>
 
 			<div class="form-group">
@@ -246,9 +262,32 @@
 		border-color: var(--color-purple);
 	}
 
-	input[type='text']:disabled {
+	input[type='text']:disabled,
+	input[type='datetime-local']:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	input[type='datetime-local'] {
+		padding: 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-family: var(--font-family);
+		font-size: 1rem;
+	}
+
+	input[type='datetime-local']:focus {
+		outline: none;
+		border-color: var(--color-purple);
+	}
+
+	.optional {
+		font-weight: 400;
+		text-transform: none;
+		letter-spacing: normal;
+		color: var(--color-text-disabled);
 	}
 
 	.pool-cards {

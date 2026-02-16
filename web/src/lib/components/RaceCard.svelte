@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Race, RaceStatus } from '$lib/api';
 	import { goto } from '$app/navigation';
-	import { timeAgo } from '$lib/utils/time';
+	import { timeAgo, formatScheduledTime } from '$lib/utils/time';
 	import LiveIndicator from './LiveIndicator.svelte';
 
 	let {
@@ -46,7 +46,12 @@
 	}
 
 	let action = $derived(actionLabel(race.status, role));
-	let relativeTime = $derived(timeAgo(race.created_at));
+	let showScheduled = $derived(
+		race.scheduled_at && (race.status === 'draft' || race.status === 'open')
+	);
+	let relativeTime = $derived(
+		showScheduled ? formatScheduledTime(race.scheduled_at!) : timeAgo(race.created_at)
+	);
 </script>
 
 <a

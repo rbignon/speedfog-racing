@@ -22,13 +22,19 @@
 		removeParticipant,
 		deleteInvite,
 		fetchRace,
+		updateRace,
 		type RaceDetail
 	} from '$lib/api';
+	import { formatScheduledTime } from '$lib/utils/time';
 
 	let downloading = $state(false);
 	let downloadError = $state<string | null>(null);
 	let showInviteSearch = $state(false);
 	let now = $state(Date.now());
+	let editingSchedule = $state(false);
+	let scheduleInput = $state('');
+	let scheduleError = $state<string | null>(null);
+	let scheduleSaving = $state(false);
 
 	async function handleDownload() {
 		downloading = true;
@@ -184,6 +190,35 @@
 			initialRace = await fetchRace(initialRace.id);
 		} catch (e) {
 			console.error('Failed to revoke invite:', e);
+		}
+	}
+
+	function startEditSchedule() {
+		if (initialRace.scheduled_at) {
+			// Convert ISO to datetime-local format
+			const d = new Date(initialRace.scheduled_at);
+			scheduleInput = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+				.toISOString()
+				.slice(0, 16);
+		} else {
+			scheduleInput = '';
+		}
+		scheduleError = null;
+		editingSchedule = true;
+	}
+
+	async function saveSchedule() {
+		scheduleSaving = true;
+		scheduleError = null;
+		try {
+			const scheduled = scheduleInput ? new Date(scheduleInput).toISOString() : null;
+			await updateRace(initialRace.id, { scheduled_at: scheduled });
+			initialRace = await fetchRace(initialRace.id);
+			editingSchedule = false;
+		} catch (e) {
+			scheduleError = e instanceof Error ? e.message : 'Failed to update';
+		} finally {
+			scheduleSaving = false;
 		}
 	}
 
@@ -374,6 +409,41 @@
 					<span class="label">Created</span>
 					<span class="value">{formatDate(initialRace.created_at)}</span>
 				</div>
+				{#if initialRace.scheduled_at || (isOrganizer && (raceStatus === 'draft' || raceStatus === 'open'))}
+					<div class="info-item">
+						<span class="label">Scheduled</span>
+						{#if editingSchedule}
+							<div class="schedule-edit">
+								<input
+									type="datetime-local"
+									bind:value={scheduleInput}
+									min={(() => { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 16); })()}
+									disabled={scheduleSaving}
+								/>
+								<div class="schedule-edit-actions">
+									<button class="btn-inline" onclick={saveSchedule} disabled={scheduleSaving}>
+										{scheduleSaving ? '...' : 'Save'}
+									</button>
+									<button class="btn-inline btn-inline-secondary" onclick={() => (editingSchedule = false)} disabled={scheduleSaving}>
+										Cancel
+									</button>
+								</div>
+								{#if scheduleError}
+									<span class="schedule-error">{scheduleError}</span>
+								{/if}
+							</div>
+						{:else if initialRace.scheduled_at}
+							<span class="value">
+								{formatDate(initialRace.scheduled_at)}
+								{#if isOrganizer && (raceStatus === 'draft' || raceStatus === 'open')}
+									<button class="btn-edit" onclick={startEditSchedule}>Edit</button>
+								{/if}
+							</span>
+						{:else if isOrganizer}
+							<button class="btn-edit" onclick={startEditSchedule}>Set time</button>
+						{/if}
+					</div>
+				{/if}
 				{#if initialRace.started_at}
 					<div class="info-item">
 						<span class="label">Started</span>
@@ -581,6 +651,76 @@
 		border-radius: var(--radius-sm);
 		padding: 0.2rem 0.5rem;
 		color: var(--color-text-secondary);
+	}
+
+	.schedule-edit {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.schedule-edit input {
+		padding: 0.35rem 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+	}
+
+	.schedule-edit input:focus {
+		outline: none;
+		border-color: var(--color-purple);
+	}
+
+	.schedule-edit-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.btn-inline {
+		background: none;
+		border: none;
+		padding: 0;
+		color: var(--color-purple);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		cursor: pointer;
+		font-weight: 500;
+	}
+
+	.btn-inline:hover {
+		text-decoration: underline;
+	}
+
+	.btn-inline:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.btn-inline-secondary {
+		color: var(--color-text-disabled);
+	}
+
+	.btn-edit {
+		background: none;
+		border: none;
+		padding: 0;
+		margin-left: 0.5rem;
+		color: var(--color-purple);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		cursor: pointer;
+	}
+
+	.btn-edit:hover {
+		text-decoration: underline;
+	}
+
+	.schedule-error {
+		color: var(--color-danger);
+		font-size: var(--font-size-xs);
 	}
 
 	.download-section {
