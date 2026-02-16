@@ -23,7 +23,13 @@ from speedfog_racing.models import (
     User,
 )
 from speedfog_racing.schemas import (
+    ActivityItem,
+    ActivityTimelineResponse,
+    RaceCasterActivity,
     RaceListResponse,
+    RaceOrganizerActivity,
+    RaceParticipantActivity,
+    TrainingActivity,
     UserProfileDetailResponse,
     UserResponse,
     UserStatsResponse,
@@ -94,6 +100,122 @@ async def get_my_races(
     races = list(result.scalars().all())
 
     return RaceListResponse(races=[race_response(r) for r in races])
+
+
+@router.get("/{username}/activity", response_model=ActivityTimelineResponse)
+async def get_user_activity(
+    username: str,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> ActivityTimelineResponse:
+    """Get a user's activity timeline with pagination."""
+    # Look up user by twitch_username
+    result = await db.execute(select(User).where(User.twitch_username == username))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_id = user.id
+    items: list[ActivityItem] = []
+
+    # 1. Race participations
+    part_q = await db.execute(
+        select(Participant)
+        .where(Participant.user_id == user_id)
+        .options(
+            selectinload(Participant.race).selectinload(Race.participants),
+        )
+        .join(Race, Participant.race_id == Race.id)
+    )
+    participations = part_q.scalars().all()
+
+    for p in participations:
+        race = p.race
+        # Compute placement: rank finished participants by IGT
+        finished_participants = sorted(
+            [pp for pp in race.participants if pp.status == ParticipantStatus.FINISHED],
+            key=lambda pp: pp.igt_ms,
+        )
+        placement = None
+        for idx, fp in enumerate(finished_participants):
+            if fp.id == p.id:
+                placement = idx + 1
+                break
+
+        items.append(
+            RaceParticipantActivity(
+                date=race.created_at,
+                race_id=race.id,
+                race_name=race.name,
+                status=race.status.value,
+                placement=placement,
+                total_participants=len(race.participants),
+                igt_ms=p.igt_ms,
+                death_count=p.death_count,
+            )
+        )
+
+    # 2. Organized races
+    org_q = await db.execute(
+        select(Race).where(Race.organizer_id == user_id).options(selectinload(Race.participants))
+    )
+    organized_races = org_q.scalars().all()
+
+    for race in organized_races:
+        items.append(
+            RaceOrganizerActivity(
+                date=race.created_at,
+                race_id=race.id,
+                race_name=race.name,
+                status=race.status.value,
+                participant_count=len(race.participants),
+            )
+        )
+
+    # 3. Caster roles
+    caster_q = await db.execute(
+        select(Caster).where(Caster.user_id == user_id).options(selectinload(Caster.race))
+    )
+    caster_roles = caster_q.scalars().all()
+
+    for c in caster_roles:
+        items.append(
+            RaceCasterActivity(
+                date=c.race.created_at,
+                race_id=c.race.id,
+                race_name=c.race.name,
+            )
+        )
+
+    # 4. Training sessions
+    training_q = await db.execute(
+        select(TrainingSession)
+        .where(TrainingSession.user_id == user_id)
+        .options(selectinload(TrainingSession.seed))
+    )
+    trainings = training_q.scalars().all()
+
+    for t in trainings:
+        items.append(
+            TrainingActivity(
+                date=t.created_at,
+                session_id=t.id,
+                pool_name=t.seed.pool_name,
+                status=t.status.value,
+                igt_ms=t.igt_ms,
+                death_count=t.death_count,
+            )
+        )
+
+    # Sort by date descending
+    items.sort(key=lambda item: item.date, reverse=True)
+
+    total = len(items)
+    paginated = items[offset : offset + limit]
+    has_more = (offset + limit) < total
+
+    return ActivityTimelineResponse(items=paginated, total=total, has_more=has_more)
 
 
 @router.get("/{username}", response_model=UserProfileDetailResponse)

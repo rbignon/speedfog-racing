@@ -75,6 +75,58 @@ class UserProfileDetailResponse(BaseModel):
     stats: UserStatsResponse
 
 
+class ActivityItemBase(BaseModel):
+    """Base for activity timeline items."""
+
+    type: str
+    date: datetime
+
+
+class RaceParticipantActivity(ActivityItemBase):
+    type: str = "race_participant"
+    race_id: UUID
+    race_name: str
+    status: str
+    placement: int | None = None
+    total_participants: int
+    igt_ms: int
+    death_count: int
+
+
+class RaceOrganizerActivity(ActivityItemBase):
+    type: str = "race_organizer"
+    race_id: UUID
+    race_name: str
+    status: str
+    participant_count: int
+
+
+class RaceCasterActivity(ActivityItemBase):
+    type: str = "race_caster"
+    race_id: UUID
+    race_name: str
+
+
+class TrainingActivity(ActivityItemBase):
+    type: str = "training"
+    session_id: UUID
+    pool_name: str
+    status: str
+    igt_ms: int
+    death_count: int
+
+
+ActivityItem = (
+    RaceParticipantActivity | RaceOrganizerActivity | RaceCasterActivity | TrainingActivity
+)
+
+
+class ActivityTimelineResponse(BaseModel):
+    items: list[ActivityItem]
+    total: int
+    has_more: bool
+
+
 class ParticipantResponse(BaseModel):
     """Participant information in responses."""
 
@@ -125,6 +177,7 @@ class PoolConfig(BaseModel):
     starting_items: list[str] | None = None
     care_package: bool | None = None
     weapon_upgrade: int | None = None
+    care_package_items: list[str] | None = None
     items_randomized: bool | None = None
     auto_upgrade_weapons: bool | None = None
     remove_requirements: bool | None = None

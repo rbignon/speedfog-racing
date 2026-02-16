@@ -263,6 +263,61 @@ async def user_with_activity(async_session):
 
 
 @pytest.mark.asyncio
+async def test_activity_timeline(test_client, user_with_activity):
+    async with test_client as client:
+        response = await client.get("/api/users/active_player/activity")
+        assert response.status_code == 200
+        data = response.json()
+        assert "items" in data
+        assert "total" in data
+        assert "has_more" in data
+        # 2 race_participant + 1 race_organizer + 1 race_caster + 1 training = 5
+        assert data["total"] == 5
+        types = [i["type"] for i in data["items"]]
+        assert "race_participant" in types
+        assert "race_organizer" in types
+        assert "race_caster" in types
+        assert "training" in types
+
+
+@pytest.mark.asyncio
+async def test_activity_pagination(test_client, user_with_activity):
+    async with test_client as client:
+        response = await client.get("/api/users/active_player/activity?limit=2&offset=0")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 2
+        assert data["total"] == 5
+        assert data["has_more"] is True
+
+        response2 = await client.get("/api/users/active_player/activity?limit=2&offset=4")
+        data2 = response2.json()
+        assert len(data2["items"]) == 1
+        assert data2["has_more"] is False
+
+
+@pytest.mark.asyncio
+async def test_activity_not_found(test_client):
+    async with test_client as client:
+        response = await client.get("/api/users/nonexistent/activity")
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_activity_participant_has_placement(test_client, user_with_activity):
+    async with test_client as client:
+        response = await client.get("/api/users/active_player/activity")
+        data = response.json()
+        participant_items = [i for i in data["items"] if i["type"] == "race_participant"]
+        for item in participant_items:
+            assert "placement" in item
+            assert "total_participants" in item
+            assert "igt_ms" in item
+            assert "death_count" in item
+            assert "race_name" in item
+
+
+@pytest.mark.asyncio
 async def test_profile_stats_counts(test_client, user_with_activity):
     """Profile stats reflect real race/training/caster/organizer activity."""
     async with test_client as client:
