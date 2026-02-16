@@ -107,13 +107,8 @@
 	function formatDate(iso: string | null): string {
 		if (!iso) return 'Never';
 		const d = new Date(iso);
-		return d.toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit',
-		});
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 	}
 </script>
 
