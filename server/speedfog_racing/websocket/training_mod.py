@@ -170,7 +170,7 @@ async def handle_training_mod_websocket(
         logger.exception(f"Training mod handler error: session={session_id}")
     finally:
         if authenticated:
-            await training_manager.disconnect_mod(session_id)
+            await training_manager.disconnect_mod(session_id, websocket)
             # Notify spectator that mod disconnected (mod is already gone)
             try:
                 async with session_maker() as db:

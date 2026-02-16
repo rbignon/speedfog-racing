@@ -34,33 +34,37 @@ class TrainingRoom:
 
     async def broadcast_to_spectator(self, message: str) -> None:
         """Send message to spectator if connected."""
-        if self.spectator is None:
+        conn = self.spectator
+        if conn is None:
             return
         try:
-            await asyncio.wait_for(
-                self.spectator.websocket.send_text(message), timeout=SEND_TIMEOUT
-            )
+            await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
         except Exception:
             logger.warning(f"Failed to send to spectator for session {self.session_id}")
             try:
-                await self.spectator.websocket.close()
+                await conn.websocket.close()
             except Exception:
                 pass
-            self.spectator = None
+            # Only clear if still the current connection (may have been replaced)
+            if self.spectator is conn:
+                self.spectator = None
 
     async def broadcast_to_mod(self, message: str) -> None:
         """Send message to mod if connected."""
-        if self.mod is None:
+        conn = self.mod
+        if conn is None:
             return
         try:
-            await asyncio.wait_for(self.mod.websocket.send_text(message), timeout=SEND_TIMEOUT)
+            await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
         except Exception:
             logger.warning(f"Failed to send to mod for session {self.session_id}")
             try:
-                await self.mod.websocket.close()
+                await conn.websocket.close()
             except Exception:
                 pass
-            self.mod = None
+            # Only clear if still the current connection (may have been replaced)
+            if self.mod is conn:
+                self.mod = None
 
     async def broadcast_to_all(self, message: str) -> None:
         """Send message to both mod and spectator."""
@@ -94,13 +98,18 @@ class TrainingConnectionManager:
         room.mod = TrainingModConnection(websocket=websocket, user_id=user_id)
         logger.info(f"Mod connected to training session {session_id}")
 
-    async def disconnect_mod(self, session_id: uuid.UUID) -> None:
+    async def disconnect_mod(self, session_id: uuid.UUID, websocket: WebSocket) -> None:
         room = self.rooms.get(session_id)
         if room:
-            room.mod = None
-            if room.spectator is None:
+            # Only remove if the disconnecting websocket is the current one
+            # (a new mod may have already replaced it via connect_mod)
+            if room.mod is not None and room.mod.websocket is websocket:
+                room.mod = None
+                logger.info(f"Mod disconnected from training session {session_id}")
+            else:
+                logger.debug(f"Stale mod disconnect ignored for training session {session_id}")
+            if room.mod is None and room.spectator is None:
                 del self.rooms[session_id]
-        logger.info(f"Mod disconnected from training session {session_id}")
 
     async def connect_spectator(
         self,
@@ -118,13 +127,20 @@ class TrainingConnectionManager:
         room.spectator = TrainingSpectatorConnection(websocket=websocket, user_id=user_id)
         logger.info(f"Spectator connected to training session {session_id}")
 
-    async def disconnect_spectator(self, session_id: uuid.UUID) -> None:
+    async def disconnect_spectator(self, session_id: uuid.UUID, websocket: WebSocket) -> None:
         room = self.rooms.get(session_id)
         if room:
-            room.spectator = None
-            if room.mod is None:
+            # Only remove if the disconnecting websocket is the current one
+            # (a new spectator may have already replaced it via connect_spectator)
+            if room.spectator is not None and room.spectator.websocket is websocket:
+                room.spectator = None
+                logger.info(f"Spectator disconnected from training session {session_id}")
+            else:
+                logger.debug(
+                    f"Stale spectator disconnect ignored for training session {session_id}"
+                )
+            if room.mod is None and room.spectator is None:
                 del self.rooms[session_id]
-        logger.info(f"Spectator disconnected from training session {session_id}")
 
     def is_mod_connected(self, session_id: uuid.UUID) -> bool:
         room = self.rooms.get(session_id)

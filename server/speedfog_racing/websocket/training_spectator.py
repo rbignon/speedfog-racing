@@ -113,7 +113,7 @@ async def handle_training_spectator_websocket(
         logger.exception(f"Training spectator error: session={session_id}")
     finally:
         if spectator_id:
-            await training_manager.disconnect_spectator(session_id)
+            await training_manager.disconnect_spectator(session_id, websocket)
 
 
 async def _heartbeat_loop(websocket: WebSocket) -> None:
