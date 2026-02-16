@@ -25,6 +25,7 @@ from speedfog_racing.auth import (
     get_user_by_twitch_username,
 )
 from speedfog_racing.database import get_db
+from speedfog_racing.discord import notify_race_started
 from speedfog_racing.models import (
     Caster,
     Invite,
@@ -701,6 +702,19 @@ async def start_race(
         graph_json=race.seed.graph_json if race.seed else None,
     )
     await broadcast_race_state_update(race_id, race)
+
+    # Fire-and-forget Discord notification
+    task = asyncio.create_task(
+        notify_race_started(
+            race_name=race.name,
+            race_id=str(race.id),
+            pool_name=race.seed.pool_name if race.seed else None,
+            participant_count=len(race.participants),
+            organizer_name=race.organizer.twitch_display_name or race.organizer.twitch_username,
+            organizer_avatar_url=race.organizer.twitch_avatar_url,
+        )
+    )
+    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     return race_response(race)
 

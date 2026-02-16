@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     seeds_pool_dir: str = "/data/seeds"
     speedfog_path: str = ""  # Path to speedfog repo for seed generation
 
+    # Discord integration (optional)
+    discord_webhook_url: str | None = None
+    base_url: str = "https://speedfog.malenia.win"
+
     # Site
     coming_soon: bool = False
 
