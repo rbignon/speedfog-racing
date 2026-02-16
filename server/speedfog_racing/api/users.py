@@ -1,18 +1,33 @@
 """User API routes."""
 
+from itertools import groupby
+from operator import itemgetter
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.api.helpers import race_response, user_response
 from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
-from speedfog_racing.models import Participant, Race, User
-from speedfog_racing.schemas import RaceListResponse, UserResponse
+from speedfog_racing.models import (
+    Caster,
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    TrainingSession,
+    User,
+)
+from speedfog_racing.schemas import (
+    RaceListResponse,
+    UserProfileDetailResponse,
+    UserResponse,
+    UserStatsResponse,
+)
 
 router = APIRouter()
 
@@ -38,8 +53,8 @@ async def search_users(
     return [user_response(u) for u in users]
 
 
-class UserProfileResponse(BaseModel):
-    """User profile response."""
+class MyProfileResponse(BaseModel):
+    """Current user's profile response (used by /me)."""
 
     id: str
     twitch_username: str
@@ -50,7 +65,7 @@ class UserProfileResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.get("/me", response_model=UserProfileResponse)
+@router.get("/me", response_model=MyProfileResponse)
 async def get_my_profile(
     user: Annotated[User, Depends(get_current_user)],
 ) -> User:
@@ -79,3 +94,108 @@ async def get_my_races(
     races = list(result.scalars().all())
 
     return RaceListResponse(races=[race_response(r) for r in races])
+
+
+@router.get("/{username}", response_model=UserProfileDetailResponse)
+async def get_user_profile(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+) -> UserProfileDetailResponse:
+    """Get a public user profile with aggregated stats."""
+    # Look up user by twitch_username
+    result = await db.execute(select(User).where(User.twitch_username == username))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_id = user.id
+
+    # Race count: participations in non-draft races
+    race_count_q = await db.execute(
+        select(func.count())
+        .select_from(Participant)
+        .join(Race, Participant.race_id == Race.id)
+        .where(Participant.user_id == user_id, Race.status != RaceStatus.DRAFT)
+    )
+    race_count = race_count_q.scalar_one()
+
+    # Training count
+    training_count_q = await db.execute(
+        select(func.count()).select_from(TrainingSession).where(TrainingSession.user_id == user_id)
+    )
+    training_count = training_count_q.scalar_one()
+
+    # Organized count
+    organized_count_q = await db.execute(
+        select(func.count()).select_from(Race).where(Race.organizer_id == user_id)
+    )
+    organized_count = organized_count_q.scalar_one()
+
+    # Casted count
+    casted_count_q = await db.execute(
+        select(func.count()).select_from(Caster).where(Caster.user_id == user_id)
+    )
+    casted_count = casted_count_q.scalar_one()
+
+    # Podium and first place: rank finished participants per race by IGT
+    # Fetch all finished participants for the user's races in a single query,
+    # then compute ranks in Python to avoid N+1 queries.
+    podium_count = 0
+    first_place_count = 0
+
+    # Get all participations where user finished
+    user_finished_q = await db.execute(
+        select(Participant.race_id, Participant.igt_ms, Participant.id).where(
+            Participant.user_id == user_id,
+            Participant.status == ParticipantStatus.FINISHED,
+        )
+    )
+    user_finished = user_finished_q.all()
+
+    if user_finished:
+        race_ids = [r[0] for r in user_finished]
+        user_pid_by_race = {r[0]: r[2] for r in user_finished}  # race_id -> participant_id
+
+        # Single query: all finished participants in those races, sorted for ranking
+        all_finished_q = await db.execute(
+            select(Participant.race_id, Participant.id, Participant.igt_ms)
+            .where(
+                Participant.race_id.in_(race_ids),
+                Participant.status == ParticipantStatus.FINISHED,
+            )
+            .order_by(Participant.race_id, Participant.igt_ms)
+        )
+        all_finished = all_finished_q.all()
+
+        # Group by race, compute ranks
+        for race_id, group in groupby(all_finished, key=itemgetter(0)):
+            if race_id not in user_pid_by_race:
+                continue
+            user_pid = user_pid_by_race[race_id]
+            for rank_idx, (_, pid, _) in enumerate(list(group)):
+                if pid == user_pid:
+                    rank = rank_idx + 1
+                    if rank <= 3:
+                        podium_count += 1
+                    if rank == 1:
+                        first_place_count += 1
+                    break
+
+    stats = UserStatsResponse(
+        race_count=race_count,
+        training_count=training_count,
+        podium_count=podium_count,
+        first_place_count=first_place_count,
+        organized_count=organized_count,
+        casted_count=casted_count,
+    )
+
+    return UserProfileDetailResponse(
+        id=user.id,
+        twitch_username=user.twitch_username,
+        twitch_display_name=user.twitch_display_name,
+        twitch_avatar_url=user.twitch_avatar_url,
+        role=user.role.value if hasattr(user.role, "value") else str(user.role),
+        created_at=user.created_at,
+        stats=stats,
+    )

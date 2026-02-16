@@ -50,6 +50,31 @@ class UserResponse(BaseModel):
     twitch_avatar_url: str | None
 
 
+class UserStatsResponse(BaseModel):
+    """Aggregated user statistics."""
+
+    race_count: int
+    training_count: int
+    podium_count: int
+    first_place_count: int
+    organized_count: int
+    casted_count: int
+
+
+class UserProfileDetailResponse(BaseModel):
+    """Public user profile with stats."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    twitch_username: str
+    twitch_display_name: str | None
+    twitch_avatar_url: str | None
+    role: str
+    created_at: datetime
+    stats: UserStatsResponse
+
+
 class ParticipantResponse(BaseModel):
     """Participant information in responses."""
 

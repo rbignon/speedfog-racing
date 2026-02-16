@@ -201,6 +201,86 @@ def test_pool_config_includes_type(tmp_path, monkeypatch):
     assert config["type"] == "training"
 
 
+def test_pool_config_starting_items_and_care_package(tmp_path, monkeypatch):
+    """get_pool_config builds starting_items with new fields and care_package_items."""
+    pool_dir = tmp_path / "test_pool"
+    pool_dir.mkdir()
+    (pool_dir / "config.toml").write_text(
+        '[display]\nestimated_duration = "~1h"\n'
+        "[starting_items]\n"
+        "academy_key = true\n"
+        "lantern = true\n"
+        "talisman_pouches = 3\n"
+        "golden_seeds = 7\n"
+        "sacred_tears = 4\n"
+        "starting_runes = 100000\n"
+        "larval_tears = 3\n"
+        "[care_package]\n"
+        "enabled = true\n"
+        "weapon_upgrade = 12\n"
+        "weapons = 5\n"
+        "shields = 2\n"
+        "catalysts = 2\n"
+        "talismans = 4\n"
+        "sorceries = 5\n"
+        "incantations = 5\n"
+        "head_armor = 2\n"
+        "body_armor = 2\n"
+        "arm_armor = 2\n"
+        "leg_armor = 2\n"
+        "crystal_tears = 5\n"
+        "ashes_of_war = 3\n"
+    )
+    monkeypatch.setattr(
+        "speedfog_racing.services.seed_service.settings",
+        type("S", (), {"seeds_pool_dir": str(tmp_path)})(),
+    )
+    config = get_pool_config("test_pool")
+    assert config is not None
+
+    si = config["starting_items"]
+    assert "Academy Key" in si
+    assert "Lantern" in si
+    assert "3 Talisman Pouches" in si
+    assert "7 Golden Seeds" in si
+    assert "4 Sacred Tears" in si
+    assert "100k Runes" in si
+    assert "3 Larval Tears" in si
+
+    cp = config["care_package_items"]
+    assert "5 Weapons" in cp
+    assert "2 Shields" in cp
+    assert "2 Catalysts" in cp
+    assert "4 Talismans" in cp
+    assert "5 Sorceries" in cp
+    assert "5 Incantations" in cp
+    assert "5 Crystal Tears" in cp
+    assert "3 Ashes of War" in cp
+    assert "8 Armor pieces" in cp
+    assert config["weapon_upgrade"] == 12
+
+
+def test_pool_config_singular_items(tmp_path, monkeypatch):
+    """Singular forms for talisman pouch and larval tear when count is 1."""
+    pool_dir = tmp_path / "test_pool"
+    pool_dir.mkdir()
+    (pool_dir / "config.toml").write_text(
+        '[display]\nestimated_duration = "~30min"\n'
+        "[starting_items]\n"
+        "talisman_pouches = 1\n"
+        "larval_tears = 1\n"
+    )
+    monkeypatch.setattr(
+        "speedfog_racing.services.seed_service.settings",
+        type("S", (), {"seeds_pool_dir": str(tmp_path)})(),
+    )
+    config = get_pool_config("test_pool")
+    assert config is not None
+    si = config["starting_items"]
+    assert "1 Talisman Pouch" in si
+    assert "1 Larval Tear" in si
+
+
 def test_pool_config_defaults_to_race(tmp_path, monkeypatch):
     """Pools without type field default to 'race'."""
     pool_dir = tmp_path / "standard"

@@ -47,7 +47,7 @@
 		{#if poolConfig.care_package && poolConfig.weapon_upgrade != null}
 			<div class="info-item">
 				<span class="label">Care Package</span>
-				<span class="value">+{poolConfig.weapon_upgrade} weapon</span>
+				<span class="value">+{poolConfig.weapon_upgrade} upgrade</span>
 			</div>
 		{/if}
 		{#if poolConfig.items_randomized != null}
@@ -70,13 +70,27 @@
 		{/if}
 	</div>
 	{#if poolConfig.starting_items}
-		<div class="starting-items">
+		<div class="item-section">
 			<span class="label">Starting Items</span>
 			{#if compact}
-				<span class="starting-items-text">{poolConfig.starting_items.join(', ')}</span>
+				<span class="item-section-text">{poolConfig.starting_items.join(', ')}</span>
 			{:else}
-				<ul class="starting-items-list">
+				<ul class="item-section-list">
 					{#each poolConfig.starting_items as item}
+						<li>{item}</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{/if}
+	{#if poolConfig.care_package_items}
+		<div class="item-section">
+			<span class="label">Care Package Contents</span>
+			{#if compact}
+				<span class="item-section-text">{poolConfig.care_package_items.join(', ')}</span>
+			{:else}
+				<ul class="item-section-list">
+					{#each poolConfig.care_package_items as item}
 						<li>{item}</li>
 					{/each}
 				</ul>
@@ -142,7 +156,7 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	.starting-items {
+	.item-section {
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
@@ -151,12 +165,12 @@
 		border-top: 1px solid var(--color-border);
 	}
 
-	.starting-items-text {
+	.item-section-text {
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
 	}
 
-	.starting-items-list {
+	.item-section-list {
 		list-style: none;
 		margin: 0.25rem 0 0 0;
 		padding: 0;
@@ -165,7 +179,7 @@
 		gap: 0.15rem;
 	}
 
-	.starting-items-list li {
+	.item-section-list li {
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
 	}

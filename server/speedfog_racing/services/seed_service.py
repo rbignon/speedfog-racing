@@ -242,12 +242,38 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
     for key, label in item_names.items():
         if starting_items_raw.get(key):
             starting_items.append(label)
+    if tp := starting_items_raw.get("talisman_pouches"):
+        starting_items.append(f"{tp} Talisman Pouches" if tp > 1 else "1 Talisman Pouch")
     if gs := starting_items_raw.get("golden_seeds"):
         starting_items.append(f"{gs} Golden Seeds")
     if st := starting_items_raw.get("sacred_tears"):
         starting_items.append(f"{st} Sacred Tears")
     if sr := starting_items_raw.get("starting_runes"):
         starting_items.append(f"{sr // 1000}k Runes" if sr >= 1000 else f"{sr} Runes")
+    if lt := starting_items_raw.get("larval_tears"):
+        starting_items.append(f"{lt} Larval Tears" if lt > 1 else "1 Larval Tear")
+
+    # Build care package items list
+    care_package_items: list[str] = []
+    if care_package.get("enabled"):
+        cp_fields = [
+            ("weapons", "Weapons"),
+            ("shields", "Shields"),
+            ("catalysts", "Catalysts"),
+            ("talismans", "Talismans"),
+            ("sorceries", "Sorceries"),
+            ("incantations", "Incantations"),
+            ("crystal_tears", "Crystal Tears"),
+            ("ashes_of_war", "Ashes of War"),
+        ]
+        for key, label in cp_fields:
+            if count := care_package.get(key):
+                care_package_items.append(f"{count} {label}")
+        armor_count = sum(
+            care_package.get(k, 0) for k in ("head_armor", "body_armor", "arm_armor", "leg_armor")
+        )
+        if armor_count:
+            care_package_items.append(f"{armor_count} Armor pieces")
 
     return {
         "type": display.get("type", "race"),
@@ -260,6 +286,7 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "starting_items": starting_items or None,
         "care_package": care_package.get("enabled"),
         "weapon_upgrade": care_package.get("weapon_upgrade"),
+        "care_package_items": care_package_items or None,
         "items_randomized": item_randomizer.get("enabled"),
         "auto_upgrade_weapons": item_randomizer.get("auto_upgrade_weapons"),
         "remove_requirements": item_randomizer.get("remove_requirements"),
