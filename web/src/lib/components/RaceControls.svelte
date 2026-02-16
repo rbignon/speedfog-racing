@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import {
 		openRace,
+		rerollSeed,
 		startRace,
 		resetRace,
 		finishRace,
@@ -31,6 +32,21 @@
 			onRaceUpdated(updated);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to open race';
+		} finally {
+			loading = false;
+		}
+	}
+
+	async function handleReroll() {
+		if (!confirm('Re-roll the seed? Participants will need to re-download their seed pack.'))
+			return;
+		loading = true;
+		error = null;
+		try {
+			const updated = await rerollSeed(race.id);
+			onRaceUpdated(updated);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to re-roll seed';
 		} finally {
 			loading = false;
 		}
@@ -112,10 +128,20 @@
 			{loading ? 'Opening...' : 'Open Race'}
 		</button>
 		<p class="hint">Open the race to finalize participants.</p>
+
+		<button class="btn btn-secondary btn-full" onclick={handleReroll} disabled={loading}>
+			{loading ? 'Re-rolling...' : 'Re-roll Seed'}
+		</button>
+		<p class="hint">Assign a different random seed from the pool.</p>
 	{:else if raceStatus === 'open'}
 		<button class="btn btn-primary btn-full" onclick={handleStart} disabled={loading}>
 			{loading ? 'Starting...' : 'Start Race'}
 		</button>
+
+		<button class="btn btn-secondary btn-full" onclick={handleReroll} disabled={loading}>
+			{loading ? 'Re-rolling...' : 'Re-roll Seed'}
+		</button>
+		<p class="hint">Assign a different seed. Participants must re-download their pack.</p>
 	{:else if raceStatus === 'running'}
 		<button class="btn btn-primary btn-full" onclick={handleForceFinish} disabled={loading}>
 			{loading ? 'Finishing...' : 'Force Finish'}

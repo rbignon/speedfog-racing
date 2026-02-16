@@ -347,6 +347,17 @@ export async function openRace(raceId: string): Promise<Race> {
 }
 
 /**
+ * Re-roll the seed for a DRAFT or OPEN race.
+ */
+export async function rerollSeed(raceId: string): Promise<RaceDetail> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/reroll-seed`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<RaceDetail>(response);
+}
+
+/**
  * Reset a race back to OPEN status, clearing all participant progress.
  */
 export async function resetRace(raceId: string): Promise<Race> {
