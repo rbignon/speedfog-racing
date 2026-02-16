@@ -55,7 +55,12 @@ class MockRace:
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     name: str = "Test Race"
     seed: MockSeed | None = field(default_factory=MockSeed)
+    seed_id: uuid.UUID | None = None
     participants: list = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.seed_id is None and self.seed is not None:
+            self.seed_id = self.seed.id
 
 
 # =============================================================================

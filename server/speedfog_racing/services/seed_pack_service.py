@@ -40,6 +40,7 @@ def generate_player_config(
 url = "{ws_url}"
 mod_token = "{participant.mod_token}"
 race_id = "{race.id}"
+seed_id = "{race.seed_id}"
 
 [overlay]
 enabled = true
