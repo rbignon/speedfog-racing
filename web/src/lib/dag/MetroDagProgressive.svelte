@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
+	import ZoomableSvg from './ZoomableSvg.svelte';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
 	import {
@@ -142,181 +143,158 @@
 	let transitionStyle = `transition: opacity ${REVEAL_TRANSITION_MS}ms ease`;
 </script>
 
-<div class="metro-dag-container">
-	{#if layout.nodes.length > 0}
-		<svg
-			viewBox="0 0 {layout.width} {layout.height}"
-			width="100%"
-			preserveAspectRatio="xMidYMid meet"
-			class="metro-dag-svg"
-		>
-			<defs>
-				<filter id="player-glow-prog" x="-50%" y="-50%" width="200%" height="200%">
-					<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-					<feMerge>
-						<feMergeNode in="blur" />
-						<feMergeNode in="SourceGraphic" />
-					</feMerge>
-				</filter>
-			</defs>
+{#if layout.nodes.length > 0}
+	<ZoomableSvg width={layout.width} height={layout.height}>
+		<defs>
+			<filter id="player-glow-prog" x="-50%" y="-50%" width="200%" height="200%">
+				<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+				<feMerge>
+					<feMergeNode in="blur" />
+					<feMergeNode in="SourceGraphic" />
+				</feMerge>
+			</filter>
+		</defs>
 
-			<!-- Edges -->
-			{#each visibleEdges as edge (edge.fromId + '-' + edge.toId)}
-				<g style={transitionStyle} opacity={edgeOpacity(edge, visibility, EDGE_OPACITY)}>
-					{#each edge.segments as seg}
-						<line
-							x1={seg.x1}
-							y1={seg.y1}
-							x2={seg.x2}
-							y2={seg.y2}
-							stroke={EDGE_COLOR}
-							stroke-width={EDGE_STROKE_WIDTH}
-							stroke-linecap="round"
-						/>
-					{/each}
-				</g>
-			{/each}
+		<!-- Edges -->
+		{#each visibleEdges as edge (edge.fromId + '-' + edge.toId)}
+			<g style={transitionStyle} opacity={edgeOpacity(edge, visibility, EDGE_OPACITY)}>
+				{#each edge.segments as seg}
+					<line
+						x1={seg.x1}
+						y1={seg.y1}
+						x2={seg.x2}
+						y2={seg.y2}
+						stroke={EDGE_COLOR}
+						stroke-width={EDGE_STROKE_WIDTH}
+						stroke-linecap="round"
+					/>
+				{/each}
+			</g>
+		{/each}
 
-			<!-- Nodes -->
-			{#each visibleNodes as node (node.id)}
-				<g
-					class="dag-node"
-					data-type={node.type}
-					style={transitionStyle}
-					opacity={nodeOpacity(node)}
-				>
-					<title>{isDiscovered(node) ? node.displayName : '???'}</title>
+		<!-- Nodes -->
+		{#each visibleNodes as node (node.id)}
+			<g
+				class="dag-node"
+				data-type={node.type}
+				style={transitionStyle}
+				opacity={nodeOpacity(node)}
+			>
+				<title>{isDiscovered(node) ? node.displayName : '???'}</title>
 
-					<g class="dag-node-shape">
-						{#if node.type === 'start'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-							{#if isDiscovered(node)}
-								<polygon
-									points="{node.x - 3},{node.y - 5} {node.x - 3},{node.y + 5} {node.x + 5},{node.y}"
-									fill={BG_COLOR}
-								/>
-							{/if}
-						{:else if node.type === 'final_boss'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-							{#if isDiscovered(node)}
-								<rect x={node.x - 4} y={node.y - 4} width="8" height="8" fill={BG_COLOR} />
-							{/if}
-						{:else if node.type === 'mini_dungeon'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-						{:else if node.type === 'boss_arena'}
-							{#if isDiscovered(node)}
-								<circle
-									cx={node.x}
-									cy={node.y}
-									r={nodeRadius(node)}
-									fill={BG_COLOR}
-									stroke={nodeColor(node)}
-									stroke-width="3"
-								/>
-							{:else}
-								<circle
-									cx={node.x}
-									cy={node.y}
-									r={nodeRadius(node)}
-									fill={nodeColor(node)}
-								/>
-							{/if}
-						{:else if node.type === 'major_boss'}
-							{#if isDiscovered(node)}
-								<rect
-									x={node.x - nodeRadius(node) * 0.7}
-									y={node.y - nodeRadius(node) * 0.7}
-									width={nodeRadius(node) * 1.4}
-									height={nodeRadius(node) * 1.4}
-									fill={nodeColor(node)}
-									transform="rotate(45 {node.x} {node.y})"
-								/>
-							{:else}
-								<circle
-									cx={node.x}
-									cy={node.y}
-									r={nodeRadius(node)}
-									fill={nodeColor(node)}
-								/>
-							{/if}
-						{:else if node.type === 'legacy_dungeon'}
-							{#if isDiscovered(node)}
-								<circle
-									cx={node.x}
-									cy={node.y}
-									r={nodeRadius(node)}
-									fill="none"
-									stroke={nodeColor(node)}
-									stroke-width="3"
-								/>
-								<circle
-									cx={node.x}
-									cy={node.y}
-									r={nodeRadius(node) * 0.5}
-									fill={nodeColor(node)}
-								/>
-							{:else}
-								<circle
-									cx={node.x}
-									cy={node.y}
-									r={nodeRadius(node)}
-									fill={nodeColor(node)}
-								/>
-							{/if}
+				<g class="dag-node-shape">
+					{#if node.type === 'start'}
+						<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+						{#if isDiscovered(node)}
+							<polygon
+								points="{node.x - 3},{node.y - 5} {node.x - 3},{node.y + 5} {node.x + 5},{node.y}"
+								fill={BG_COLOR}
+							/>
 						{/if}
-					</g>
-
-					<!-- Label (only for discovered nodes) -->
-					{#if isDiscovered(node)}
-						<text
-							x={labelX(node)}
-							y={labelY(node)}
-							text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
-							font-size={LABEL_FONT_SIZE}
-							fill={LABEL_COLOR}
-							class="dag-label"
-							transform="rotate(-30, {labelX(node)}, {labelY(node)})"
-						>
-							{truncateLabel(node.displayName)}
-						</text>
+					{:else if node.type === 'final_boss'}
+						<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+						{#if isDiscovered(node)}
+							<rect x={node.x - 4} y={node.y - 4} width="8" height="8" fill={BG_COLOR} />
+						{/if}
+					{:else if node.type === 'mini_dungeon'}
+						<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+					{:else if node.type === 'boss_arena'}
+						{#if isDiscovered(node)}
+							<circle
+								cx={node.x}
+								cy={node.y}
+								r={nodeRadius(node)}
+								fill={BG_COLOR}
+								stroke={nodeColor(node)}
+								stroke-width="3"
+							/>
+						{:else}
+							<circle
+								cx={node.x}
+								cy={node.y}
+								r={nodeRadius(node)}
+								fill={nodeColor(node)}
+							/>
+						{/if}
+					{:else if node.type === 'major_boss'}
+						{#if isDiscovered(node)}
+							<rect
+								x={node.x - nodeRadius(node) * 0.7}
+								y={node.y - nodeRadius(node) * 0.7}
+								width={nodeRadius(node) * 1.4}
+								height={nodeRadius(node) * 1.4}
+								fill={nodeColor(node)}
+								transform="rotate(45 {node.x} {node.y})"
+							/>
+						{:else}
+							<circle
+								cx={node.x}
+								cy={node.y}
+								r={nodeRadius(node)}
+								fill={nodeColor(node)}
+							/>
+						{/if}
+					{:else if node.type === 'legacy_dungeon'}
+						{#if isDiscovered(node)}
+							<circle
+								cx={node.x}
+								cy={node.y}
+								r={nodeRadius(node)}
+								fill="none"
+								stroke={nodeColor(node)}
+								stroke-width="3"
+							/>
+							<circle
+								cx={node.x}
+								cy={node.y}
+								r={nodeRadius(node) * 0.5}
+								fill={nodeColor(node)}
+							/>
+						{:else}
+							<circle
+								cx={node.x}
+								cy={node.y}
+								r={nodeRadius(node)}
+								fill={nodeColor(node)}
+							/>
+						{/if}
 					{/if}
 				</g>
-			{/each}
 
-			<!-- Player dot -->
-			{#if playerDot}
-				<circle
-					cx={playerDot.x}
-					cy={playerDot.y}
-					r={RACER_DOT_RADIUS}
-					fill={playerDot.color}
-					filter="url(#player-glow-prog)"
-					class="player-dot"
-				>
-					<title>{playerDot.displayName}</title>
-				</circle>
-			{/if}
-		</svg>
-	{/if}
-</div>
+				<!-- Label (only for discovered nodes) -->
+				{#if isDiscovered(node)}
+					<text
+						x={labelX(node)}
+						y={labelY(node)}
+						text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
+						font-size={LABEL_FONT_SIZE}
+						fill={LABEL_COLOR}
+						class="dag-label"
+						transform="rotate(-30, {labelX(node)}, {labelY(node)})"
+					>
+						{truncateLabel(node.displayName)}
+					</text>
+				{/if}
+			</g>
+		{/each}
+
+		<!-- Player dot -->
+		{#if playerDot}
+			<circle
+				cx={playerDot.x}
+				cy={playerDot.y}
+				r={RACER_DOT_RADIUS}
+				fill={playerDot.color}
+				filter="url(#player-glow-prog)"
+				class="player-dot"
+			>
+				<title>{playerDot.displayName}</title>
+			</circle>
+		{/if}
+	</ZoomableSvg>
+{/if}
 
 <style>
-	.metro-dag-container {
-		width: 100%;
-		overflow-x: auto;
-		background: var(--color-surface, #1a1a2e);
-		border-radius: var(--radius-lg, 8px);
-		min-height: 200px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.metro-dag-svg {
-		display: block;
-		min-width: 600px;
-	}
-
 	.dag-label {
 		pointer-events: none;
 		user-select: none;
