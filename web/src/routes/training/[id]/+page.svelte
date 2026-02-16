@@ -334,6 +334,10 @@
 		overflow: hidden;
 	}
 
+	:global(.dag-section svg) {
+		min-height: 500px;
+	}
+
 	/* Actions */
 	.actions {
 		display: flex;
