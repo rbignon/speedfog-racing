@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
+	import ZoomableSvg from './ZoomableSvg.svelte';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
 	import {
@@ -212,14 +213,8 @@
 	}
 </script>
 
-<div class="metro-dag-container" class:transparent>
-	{#if layout.nodes.length > 0}
-		<svg
-			viewBox="0 0 {layout.width} {layout.height}"
-			width="100%"
-			preserveAspectRatio="xMidYMid meet"
-			class="metro-dag-svg"
-		>
+{#if layout.nodes.length > 0}
+	<ZoomableSvg width={layout.width} height={layout.height} {transparent}>
 			<defs>
 				<filter id="results-player-glow" x="-50%" y="-50%" width="200%" height="200%">
 					<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
@@ -317,6 +312,7 @@
 						font-size={LABEL_FONT_SIZE}
 						fill={LABEL_COLOR}
 						class="dag-label"
+						class:transparent-label={transparent}
 						transform="rotate(-30, {labelX(node)}, {labelY(node)})"
 					>
 						{truncateLabel(node.displayName)}
@@ -337,36 +333,10 @@
 					<title>{path.displayName}</title>
 				</circle>
 			{/each}
-		</svg>
-	{/if}
-</div>
+	</ZoomableSvg>
+{/if}
 
 <style>
-	.metro-dag-container {
-		width: 100%;
-		overflow-x: auto;
-		background: var(--color-surface, #1a1a2e);
-		border-radius: var(--radius-lg, 8px);
-		min-height: 200px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.metro-dag-container.transparent {
-		background: transparent;
-		border-radius: 0;
-	}
-
-	.metro-dag-container.transparent .dag-label {
-		stroke: transparent;
-	}
-
-	.metro-dag-svg {
-		display: block;
-		min-width: 600px;
-	}
-
 	.dag-label {
 		pointer-events: none;
 		user-select: none;
@@ -378,6 +348,10 @@
 		stroke: var(--color-surface, #1a1a2e);
 		stroke-width: 4px;
 		stroke-linejoin: round;
+	}
+
+	.transparent-label {
+		stroke: transparent;
 	}
 
 	.dag-node {
