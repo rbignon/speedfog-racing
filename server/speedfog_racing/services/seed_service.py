@@ -170,6 +170,8 @@ async def reroll_seed_for_race(db: AsyncSession, race: Race) -> Seed:
 
     Picks a new available seed from the same pool, excluding the current seed.
 
+    Note: ``race.seed`` must be eager-loaded (selectinload) before calling.
+
     Raises:
         ValueError: If no other seeds are available in the pool
     """

@@ -689,7 +689,22 @@ async def reroll_seed(
             detail=str(e),
         ) from e
 
-    race.version += 1
+    # Optimistic locking: atomic version bump
+    current_version = race.version
+    result = await db.execute(
+        update(Race)
+        .where(
+            Race.id == race.id,
+            Race.version == current_version,
+        )
+        .values(version=current_version + 1, seed_id=race.seed_id)
+    )
+    if result.rowcount == 0:  # type: ignore[attr-defined]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Race was modified concurrently, please retry",
+        )
+    race.version = current_version + 1
     await db.commit()
 
     # Re-fetch with all relationships

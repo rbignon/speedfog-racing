@@ -120,6 +120,7 @@ def test_generate_player_config_format(mock_participant, mock_race):
     assert "[server]" in config
     assert f'mod_token = "{mock_participant.mod_token}"' in config
     assert f'race_id = "{mock_race.id}"' in config
+    assert f'seed_id = "{mock_race.seed_id}"' in config
     assert "[overlay]" in config
     assert "enabled = true" in config
     assert "[keybindings]" in config
