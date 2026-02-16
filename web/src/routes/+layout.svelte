@@ -28,12 +28,12 @@
 					{#if auth.loading}
 						<span class="loading">Loading...</span>
 					{:else if auth.isLoggedIn}
-						<span class="user-info">
+						<a href="/user/{auth.user?.twitch_username}" class="user-info">
 							{#if auth.user?.twitch_avatar_url}
 								<img src={auth.user.twitch_avatar_url} alt="" class="avatar" />
 							{/if}
 							<span>{auth.user?.twitch_display_name || auth.user?.twitch_username}</span>
-						</span>
+						</a>
 						<a href="/training" class="btn btn-secondary">Training</a>
 						{#if auth.isAdmin}
 							<a href="/admin" class="btn btn-secondary">Admin</a>
@@ -145,6 +145,12 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.user-info:hover {
+		color: var(--color-purple);
 	}
 
 	.avatar {
