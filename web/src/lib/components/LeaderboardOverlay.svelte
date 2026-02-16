@@ -40,6 +40,7 @@
 				? MEDALS[index]
 				: null}
 		<li class="row">
+			<span class="rank">{index + 1}</span>
 			{#if medal}
 				<span class="medal">{medal}</span>
 			{:else}
@@ -49,7 +50,6 @@
 			<span class="stats">
 				{#if participant.status === 'playing'}
 					<span class="layer">{participant.current_layer}{totalLayers ? `/${totalLayers}` : ''}</span>
-					<span class="igt">{formatIgt(participant.igt_ms)}</span>
 					{#if participant.death_count > 0}
 						<span class="deaths">{participant.death_count}</span>
 					{/if}
@@ -88,6 +88,14 @@
 		text-shadow:
 			0 2px 4px rgba(0, 0, 0, 0.9),
 			0 0 8px rgba(0, 0, 0, 0.7);
+	}
+
+	.rank {
+		width: 1.5ch;
+		text-align: right;
+		flex-shrink: 0;
+		opacity: 0.7;
+		font-size: 0.85em;
 	}
 
 	.dot {
