@@ -433,6 +433,7 @@ async def handle_event_flag(
         # Check finish event first (not in event_map — it's a boss kill, not a fog gate)
         if flag_id == finish_event:
             participant.igt_ms = igt
+            participant.current_layer = seed.total_layers
             await db.commit()
             is_finish = True
             # Exit session block before calling handle_finished to avoid
@@ -510,6 +511,11 @@ async def handle_finished(
         if isinstance(msg.get("igt_ms"), int):
             participant.igt_ms = msg["igt_ms"]
         participant.finished_at = datetime.now(UTC)
+
+        # Bump current_layer to total_layers so progress displays N/N
+        seed = participant.race.seed
+        if seed:
+            participant.current_layer = seed.total_layers
 
         await db.commit()
         logger.info(f"Participant finished: {participant.id}, igt={participant.igt_ms}ms")

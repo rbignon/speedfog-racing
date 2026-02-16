@@ -147,6 +147,10 @@ async def _send_initial_state(websocket: WebSocket, session: TrainingSession) ->
                 if layer > current_layer:
                     current_layer = layer
 
+    # Finished sessions show total_layers so progress reads N/N
+    if session.status == TrainingSessionStatus.FINISHED and seed:
+        current_layer = seed.total_layers
+
     room = training_manager.get_room(session.id)
 
     # Map training status to participant status for frontend compatibility:

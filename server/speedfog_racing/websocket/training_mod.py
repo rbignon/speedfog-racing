@@ -374,6 +374,10 @@ async def _broadcast_participant_update(
                 if layer > current_layer:
                     current_layer = layer
 
+    # Finished sessions show total_layers so progress reads N/N
+    if session.status == TrainingSessionStatus.FINISHED and seed:
+        current_layer = seed.total_layers
+
     # Map training status to participant status for frontend compatibility:
     # "active" → "playing" (MetroDagLive/Leaderboard expect "playing"/"finished")
     status = "playing" if session.status == TrainingSessionStatus.ACTIVE else session.status.value

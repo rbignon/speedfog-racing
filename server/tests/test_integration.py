@@ -475,6 +475,7 @@ def test_complete_race_flow(integration_client, race_with_participants):
         lb = mod2.receive_until_type("leaderboard_update")
         p2 = next(p for p in lb["participants"] if p["twitch_username"] == "player2")
         assert p2["status"] == "finished"
+        assert p2["current_layer"] == 5  # bumped to total_layers on finish
 
     # Player 0 finishes
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
@@ -505,6 +506,8 @@ def test_complete_race_flow(integration_client, race_with_participants):
         assert lb["participants"][2]["twitch_username"] == "player1"
         assert lb["participants"][2]["igt_ms"] == 80000
         assert all(p["status"] == "finished" for p in lb["participants"])
+        # All finished players should have current_layer == total_layers (5)
+        assert all(p["current_layer"] == 5 for p in lb["participants"])
 
 
 # =============================================================================
