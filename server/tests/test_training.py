@@ -382,6 +382,8 @@ def test_client(async_session, monkeypatch):
     """Create test client with async database override and training pool config."""
     from httpx import ASGITransport, AsyncClient
 
+    from speedfog_racing.rate_limit import limiter
+
     async def override_get_db():
         async with async_session() as session:
             yield session
@@ -394,12 +396,16 @@ def test_client(async_session, monkeypatch):
         lambda name: TRAINING_POOL_CONFIG if name == "training_standard" else None,
     )
 
+    # Disable rate limiting in tests to avoid 429 across test functions
+    limiter.enabled = False
+
     transport = ASGITransport(app=app)
     client = AsyncClient(transport=transport, base_url="http://test")
 
     yield client
 
     app.dependency_overrides.clear()
+    limiter.enabled = True
 
 
 @pytest.mark.asyncio
@@ -754,3 +760,69 @@ def test_training_mod_websocket_invalid_token(training_ws_client, training_sessi
         ws.send_json({"type": "auth", "mod_token": "invalid_token_xyz"})
         response = ws.receive_json()
         assert response["type"] == "auth_error"
+
+
+# =============================================================================
+# Public read access tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_training_session_anonymous(test_client, training_user, training_seed):
+    """GET /api/training/{id} works without auth (public read-only)."""
+    async with test_client as client:
+        # Create session as authenticated user
+        create_resp = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        session_id = create_resp.json()["id"]
+
+        # Fetch without auth — should succeed
+        resp = await client.get(f"/api/training/{session_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["graph_json"] is not None
+        assert data["user"]["twitch_username"] == "trainer"
+
+
+@pytest.mark.asyncio
+async def test_get_training_session_anonymous_not_found(test_client, training_user):
+    """GET /api/training/{id} returns 404 for non-existent session (even anon)."""
+    import uuid
+
+    async with test_client as client:
+        resp = await client.get(f"/api/training/{uuid.uuid4()}")
+        assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_abandon_training_session_requires_auth(test_client, training_user, training_seed):
+    """POST /api/training/{id}/abandon still requires auth."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        session_id = create_resp.json()["id"]
+
+        # Abandon without auth — should fail
+        resp = await client.post(f"/api/training/{session_id}/abandon")
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_download_pack_requires_auth(test_client, training_user, training_seed):
+    """GET /api/training/{id}/pack still requires auth."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        session_id = create_resp.json()["id"]
+
+        resp = await client.get(f"/api/training/{session_id}/pack")
+        assert resp.status_code == 401

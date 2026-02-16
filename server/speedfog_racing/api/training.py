@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from starlette.background import BackgroundTask
 
 from speedfog_racing.api.helpers import user_response
-from speedfog_racing.auth import get_current_user
+from speedfog_racing.auth import get_current_user, get_current_user_optional
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
     TrainingSession,
@@ -65,6 +65,21 @@ async def _get_session_or_404(
     if session.user_id != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not your training session"
+        )
+    return session
+
+
+async def _get_session_or_404_public(db: AsyncSession, session_id: uuid.UUID) -> TrainingSession:
+    """Load training session without ownership check (public read-only)."""
+    result = await db.execute(
+        select(TrainingSession)
+        .options(*_session_load_options())
+        .where(TrainingSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Training session not found"
         )
     return session
 
@@ -169,10 +184,10 @@ async def list_sessions(
 async def get_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    _user: User | None = Depends(get_current_user_optional),
 ) -> TrainingSessionDetailResponse:
-    """Get training session detail."""
-    session = await _get_session_or_404(db, session_id, user.id)
+    """Get training session detail (public read-only)."""
+    session = await _get_session_or_404_public(db, session_id)
     return _build_detail_response(session)
 
 
