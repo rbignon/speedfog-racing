@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { trainingStore } from '$lib/stores/training.svelte';
 	import {
@@ -10,6 +9,7 @@
 		type TrainingSessionDetail,
 	} from '$lib/api';
 	import { MetroDag, MetroDagLive, MetroDagProgressive, MetroDagResults } from '$lib/dag';
+	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
 	let sessionId = $derived(page.params.id!);
@@ -31,6 +31,8 @@
 	let currentLayer = $derived(liveParticipant?.current_layer ?? 0);
 	let totalLayers = $derived(session?.seed_total_layers ?? 0);
 
+	let isOwner = $derived(auth.isLoggedIn && session?.user?.id === auth.user?.id);
+
 	let graphJson = $derived(trainingStore.seed?.graph_json ?? session?.graph_json ?? null);
 
 	// Build a WsParticipant-compatible object for DAG components
@@ -41,10 +43,6 @@
 
 	$effect(() => {
 		if (!auth.initialized) return;
-		if (!auth.isLoggedIn) {
-			goto('/');
-			return;
-		}
 
 		loadSession();
 		trainingStore.connect(sessionId);
@@ -115,7 +113,10 @@
 				<a href="/training" class="back-link">&larr; Training</a>
 				<h1>{displayPoolName(session.pool_name)}</h1>
 			</div>
-			<span class="badge badge-{status}">{status}</span>
+			<div class="header-right">
+				<ShareButtons />
+				<span class="badge badge-{status}">{status}</span>
+			</div>
 		</div>
 
 		{#if error}
@@ -173,40 +174,42 @@
 			</section>
 		{/if}
 
-		<!-- Actions -->
-		<div class="actions">
-			{#if status === 'active'}
-				<button
-					class="btn btn-secondary"
-					disabled={downloading}
-					onclick={handleDownload}
-				>
-					{downloading ? 'Downloading...' : 'Download Pack'}
-				</button>
-			{/if}
-
-			{#if status === 'active'}
-				{#if confirmAbandon}
-					<div class="confirm-group">
-						<span class="confirm-text">Abandon this run?</span>
-						<button
-							class="btn btn-danger"
-							disabled={abandoning}
-							onclick={handleAbandon}
-						>
-							{abandoning ? 'Abandoning...' : 'Confirm'}
-						</button>
-						<button class="btn btn-secondary" onclick={() => (confirmAbandon = false)}>
-							Cancel
-						</button>
-					</div>
-				{:else}
-					<button class="btn btn-danger-outline" onclick={handleAbandon}>
-						Abandon
+		<!-- Actions (owner only) -->
+		{#if isOwner}
+			<div class="actions">
+				{#if status === 'active'}
+					<button
+						class="btn btn-secondary"
+						disabled={downloading}
+						onclick={handleDownload}
+					>
+						{downloading ? 'Downloading...' : 'Download Pack'}
 					</button>
 				{/if}
-			{/if}
-		</div>
+
+				{#if status === 'active'}
+					{#if confirmAbandon}
+						<div class="confirm-group">
+							<span class="confirm-text">Abandon this run?</span>
+							<button
+								class="btn btn-danger"
+								disabled={abandoning}
+								onclick={handleAbandon}
+							>
+								{abandoning ? 'Abandoning...' : 'Confirm'}
+							</button>
+							<button class="btn btn-secondary" onclick={() => (confirmAbandon = false)}>
+								Cancel
+							</button>
+						</div>
+					{:else}
+						<button class="btn btn-danger-outline" onclick={handleAbandon}>
+							Abandon
+						</button>
+					{/if}
+				{/if}
+			</div>
+		{/if}
 	{/if}
 </main>
 
@@ -245,6 +248,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
+	}
+
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
 	}
 
 	.back-link {

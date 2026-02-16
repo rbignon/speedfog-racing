@@ -113,10 +113,14 @@ class TrainingStore {
       this.reconnectAttempt = 0;
       this.connected = true;
 
-      // Send auth
-      const token = getStoredToken();
-      if (token && this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ type: "auth", token }));
+      // Send auth (token optional — anonymous spectators send without token)
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        const token = getStoredToken();
+        if (token) {
+          this.ws.send(JSON.stringify({ type: "auth", token }));
+        } else {
+          this.ws.send(JSON.stringify({ type: "auth" }));
+        }
       }
     };
 
