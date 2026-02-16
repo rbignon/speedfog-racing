@@ -763,6 +763,52 @@ def test_training_mod_websocket_invalid_token(training_ws_client, training_sessi
 
 
 # =============================================================================
+# Task 2: Anonymous training spectator WebSocket tests
+# =============================================================================
+
+
+def test_training_spectator_anonymous(training_ws_client, training_session_data):
+    """Training spectator WS: anonymous connection receives initial state."""
+    sid = training_session_data["session_id"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}/spectate") as ws:
+        # Send auth without token (anonymous)
+        ws.send_json({"type": "auth"})
+        msg = ws.receive_json()
+        assert msg["type"] == "race_state"
+        assert msg["seed"] is not None
+        assert len(msg["participants"]) == 1
+
+
+def test_training_spectator_owner(training_ws_client, training_session_data):
+    """Training spectator WS: owner with valid token receives initial state."""
+    sid = training_session_data["session_id"]
+    token = training_session_data["api_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}/spectate") as ws:
+        ws.send_json({"type": "auth", "token": token})
+        msg = ws.receive_json()
+        assert msg["type"] == "race_state"
+        assert msg["seed"] is not None
+
+
+def test_training_spectator_anonymous_invalid_session(training_ws_client, training_session_data):
+    """Training spectator WS: anonymous connection to non-existent session closes."""
+    import uuid as _uuid
+
+    fake_sid = str(_uuid.uuid4())
+
+    with training_ws_client.websocket_connect(f"/ws/training/{fake_sid}/spectate") as ws:
+        ws.send_json({"type": "auth"})
+        # Should close with error code
+        try:
+            ws.receive_json()
+            assert False, "Should have disconnected"
+        except Exception:
+            pass
+
+
+# =============================================================================
 # Public read access tests
 # =============================================================================
 

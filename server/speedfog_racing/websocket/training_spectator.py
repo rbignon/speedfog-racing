@@ -37,14 +37,14 @@ async def handle_training_spectator_websocket(
 ) -> None:
     """Handle spectator WebSocket for a training session.
 
-    Only the session owner can spectate their own training.
+    Accepts both authenticated and anonymous spectators.
     """
     await websocket.accept()
 
-    user_id = None
+    spectator_id = None
 
     try:
-        # Auth required (not optional like race spectator)
+        # Wait for auth message (token is optional for anonymous access)
         try:
             auth_data = await asyncio.wait_for(websocket.receive_text(), timeout=AUTH_TIMEOUT)
         except TimeoutError:
@@ -57,19 +57,21 @@ async def handle_training_spectator_websocket(
             await websocket.close(code=4003, reason="Invalid JSON")
             return
 
-        if auth_msg.get("type") != "auth" or not isinstance(auth_msg.get("token"), str):
+        if auth_msg.get("type") != "auth":
             await websocket.close(code=4003, reason="Invalid auth")
             return
 
+        # Token is optional — anonymous spectators don't send one
+        token = auth_msg.get("token")
+        user_id = None
+
         async with session_maker() as db:
-            user = await get_user_by_token(db, auth_msg["token"])
-            if not user:
-                await websocket.close(code=4003, reason="Invalid token")
-                return
+            if isinstance(token, str) and token:
+                user = await get_user_by_token(db, token)
+                if user:
+                    user_id = user.id
 
-            user_id = user.id
-
-            # Load session and verify ownership
+            # Load session (no ownership check — public read-only)
             result = await db.execute(
                 select(TrainingSession)
                 .options(
@@ -84,15 +86,12 @@ async def handle_training_spectator_websocket(
                 await websocket.close(code=4004, reason="Session not found")
                 return
 
-            if session.user_id != user_id:
-                await websocket.close(code=4003, reason="Not your session")
-                return
-
             # Send initial state
             await _send_initial_state(websocket, session)
 
-        # Register connection
-        await training_manager.connect_spectator(session_id, user_id, websocket)
+        # Register connection — use user_id if authenticated, else random UUID
+        spectator_id = user_id or uuid.uuid4()
+        await training_manager.connect_spectator(session_id, spectator_id, websocket)
 
         # Start heartbeat
         heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
@@ -113,7 +112,7 @@ async def handle_training_spectator_websocket(
     except Exception:
         logger.exception(f"Training spectator error: session={session_id}")
     finally:
-        if user_id:
+        if spectator_id:
             await training_manager.disconnect_spectator(session_id)
 
 
