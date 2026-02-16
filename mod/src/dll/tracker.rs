@@ -138,6 +138,9 @@ pub struct RaceTracker {
     // after an event flag was detected. Prevents premature zone reveal when the
     // server's zone_update arrives before the game starts loading.
     saw_loading: bool,
+
+    // Seed mismatch: config seed_id doesn't match server seed_id (stale seed pack)
+    pub(crate) seed_mismatch: bool,
 }
 
 impl RaceTracker {
@@ -215,6 +218,7 @@ impl RaceTracker {
             spawner_thread: None,
             pending_zone_update: None,
             saw_loading: true, // Start true so first zone_update (from auth) reveals immediately
+            seed_mismatch: false,
         })
     }
 
@@ -442,6 +446,24 @@ impl RaceTracker {
                 // current zone — reveal it immediately without requiring a loading cycle.
                 self.saw_loading = true;
                 self.race_state.race = Some(race);
+
+                // Detect seed mismatch (stale seed pack after re-roll)
+                let config_seed_id = &self.config.server.seed_id;
+                if !config_seed_id.is_empty() {
+                    if let Some(ref server_seed_id) = seed.seed_id {
+                        if config_seed_id != server_seed_id {
+                            warn!(
+                                config = %config_seed_id,
+                                server = %server_seed_id,
+                                "Seed mismatch — seed pack is outdated"
+                            );
+                            self.seed_mismatch = true;
+                        } else {
+                            self.seed_mismatch = false;
+                        }
+                    }
+                }
+
                 self.race_state.seed = Some(seed);
                 // Spawn runtime items (gems/AoW) if present in seed
                 if let Some(ref seed_info) = self.race_state.seed {

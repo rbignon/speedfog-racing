@@ -23,6 +23,9 @@ pub struct ServerSettings {
     /// Training mode — hides leaderboard, uses /ws/training/ endpoint
     #[serde(default)]
     pub training: bool,
+    /// Seed ID from seed pack — used to detect stale packs after seed re-roll
+    #[serde(default)]
+    pub seed_id: String,
 }
 
 impl Default for ServerSettings {
@@ -32,6 +35,7 @@ impl Default for ServerSettings {
             mod_token: String::new(),
             race_id: String::new(),
             training: false,
+            seed_id: String::new(),
         }
     }
 }

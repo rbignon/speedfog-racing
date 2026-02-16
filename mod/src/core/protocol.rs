@@ -71,6 +71,9 @@ pub struct SeedInfo {
     pub event_ids: Vec<u32>,
     #[serde(default)]
     pub spawn_items: Vec<SpawnItem>,
+    /// Seed ID — compared against config to detect stale seed packs after re-roll
+    #[serde(default)]
+    pub seed_id: Option<String>,
 }
 
 /// Exit info in zone_update message
@@ -363,6 +366,39 @@ mod tests {
                 assert_eq!(message, "Race not running");
             }
             _ => panic!("Expected Error"),
+        }
+    }
+
+    #[test]
+    fn test_seed_info_with_seed_id() {
+        let json = r#"{"total_layers": 5, "seed_id": "abc-123"}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(seed.seed_id, Some("abc-123".to_string()));
+    }
+
+    #[test]
+    fn test_seed_info_without_seed_id() {
+        // Backward compat: old server sends no seed_id field
+        let json = r#"{"total_layers": 5}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(seed.seed_id, None);
+    }
+
+    #[test]
+    fn test_auth_ok_with_seed_id() {
+        let json = r#"{
+            "type": "auth_ok",
+            "participant_id": "abc-123",
+            "race": {"id": "123", "name": "Test Race", "status": "open"},
+            "seed": {"total_layers": 5, "seed_id": "seed-xyz"},
+            "participants": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::AuthOk { seed, .. } => {
+                assert_eq!(seed.seed_id, Some("seed-xyz".to_string()));
+            }
+            _ => panic!("Expected AuthOk"),
         }
     }
 

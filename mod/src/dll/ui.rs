@@ -85,6 +85,7 @@ impl ImguiRenderLoop for RaceTracker {
             .flags(flags)
             .build(|| {
                 self.render_state_banner(ui);
+                self.render_seed_mismatch_warning(ui);
                 self.render_player_status(ui, max_width);
                 self.render_exits(ui, max_width);
                 if !self.config.server.training {
@@ -127,6 +128,16 @@ impl RaceTracker {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Red warning when the config's seed_id doesn't match the server's seed_id.
+    /// This means the player has an outdated seed pack after a re-roll.
+    fn render_seed_mismatch_warning(&self, ui: &hudhook::imgui::Ui) {
+        if self.seed_mismatch {
+            let red = [1.0, 0.2, 0.2, 1.0];
+            ui.text_colored(red, "SEED OUTDATED");
+            ui.text_colored(red, "Re-download your seed pack");
         }
     }
 
