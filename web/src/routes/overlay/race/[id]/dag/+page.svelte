@@ -20,7 +20,7 @@
 
 <div class="dag-overlay">
 	{#if liveSeed?.graph_json && (raceStatus === 'running' || raceStatus === 'finished')}
-		<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
+		<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} transparent />
 	{:else if totalNodes && totalPaths && totalLayers}
 		<MetroDagBlurred {totalLayers} {totalNodes} {totalPaths} transparent />
 	{/if}

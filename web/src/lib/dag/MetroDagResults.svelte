@@ -27,9 +27,10 @@
 	interface Props {
 		graphJson: Record<string, unknown>;
 		participants: WsParticipant[];
+		transparent?: boolean;
 	}
 
-	let { graphJson, participants }: Props = $props();
+	let { graphJson, participants, transparent = false }: Props = $props();
 
 	let layout: DagLayout = $derived.by(() => {
 		const graph = parseDagGraph(graphJson);
@@ -211,7 +212,7 @@
 	}
 </script>
 
-<div class="metro-dag-container">
+<div class="metro-dag-container" class:transparent>
 	{#if layout.nodes.length > 0}
 		<svg
 			viewBox="0 0 {layout.width} {layout.height}"
@@ -350,6 +351,15 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+	}
+
+	.metro-dag-container.transparent {
+		background: transparent;
+		border-radius: 0;
+	}
+
+	.metro-dag-container.transparent .dag-label {
+		stroke: transparent;
 	}
 
 	.metro-dag-svg {
