@@ -475,7 +475,9 @@ fn message_loop(
                 }
             }
             Ok(Message::Close(_)) => return Err("Server closed".to_string()),
-            Err(tungstenite::Error::Io(ref e)) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(tungstenite::Error::Io(ref e))
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::Interrupted => {}
             Err(e) => return Err(format!("Read error: {}", e)),
             _ => {}
         }

@@ -133,6 +133,11 @@ pub struct RaceTracker {
 
     // Zone update received during loading screen, waiting for load to finish
     pending_zone_update: Option<ZoneUpdateData>,
+
+    // Transition gate: true once we've observed a loading screen (invalid position)
+    // after an event flag was detected. Prevents premature zone reveal when the
+    // server's zone_update arrives before the game starts loading.
+    saw_loading: bool,
 }
 
 impl RaceTracker {
@@ -209,6 +214,7 @@ impl RaceTracker {
             flags_diagnosed: false,
             spawner_thread: None,
             pending_zone_update: None,
+            saw_loading: true, // Start true so first zone_update (from auth) reveals immediately
         })
     }
 
@@ -242,11 +248,23 @@ impl RaceTracker {
         }
 
         // Reveal pending zone update once loading screen is finished.
-        // read_position() returns None during loading (invalid map_id or zero coords).
-        if self.pending_zone_update.is_some() && self.game_state.read_position().is_some() {
-            let zone = self.pending_zone_update.take().unwrap();
-            info!(name = %zone.display_name, "[RACE] Zone revealed after loading");
-            self.race_state.current_zone = Some(zone);
+        // Transition gate: after an event flag, we must first observe a loading screen
+        // (read_position() returns None) before revealing the zone. This prevents premature
+        // reveal when the server's zone_update arrives before the game starts loading.
+        if self.pending_zone_update.is_some() {
+            if self.game_state.read_position().is_some() {
+                if self.saw_loading {
+                    let zone = self.pending_zone_update.take().unwrap();
+                    info!(name = %zone.display_name, "[RACE] Zone revealed after loading");
+                    self.race_state.current_zone = Some(zone);
+                }
+            } else {
+                // Loading screen observed — gate is now open for reveal
+                if !self.saw_loading {
+                    info!("[RACE] Loading screen detected, zone reveal unlocked");
+                    self.saw_loading = true;
+                }
+            }
         }
 
         // Event flag polling runs ALWAYS (even when disconnected).
@@ -260,6 +278,9 @@ impl RaceTracker {
                 if !self.triggered_flags.contains(&flag_id) {
                     if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
                         self.triggered_flags.insert(flag_id);
+                        // Reset transition gate: require a loading screen before
+                        // revealing the next zone_update
+                        self.saw_loading = false;
                         if self.ws_client.is_connected() && self.is_race_running() {
                             self.ws_client.send_event_flag(flag_id, igt_ms);
                             self.last_sent_debug =
@@ -417,6 +438,9 @@ impl RaceTracker {
                 self.event_ids = seed.event_ids.clone();
                 // Don't clear triggered_flags on reconnect: they track which flags
                 // have already been detected. Pending flags are in pending_event_flags.
+                // Reset transition gate: after (re)auth, the server sends the player's
+                // current zone — reveal it immediately without requiring a loading cycle.
+                self.saw_loading = true;
                 self.race_state.race = Some(race);
                 self.race_state.seed = Some(seed);
                 // Spawn runtime items (gems/AoW) if present in seed
@@ -496,6 +520,8 @@ impl RaceTracker {
             } => {
                 self.last_received_debug = Some(format!("zone_update({})", display_name));
                 info!(node = %node_id, name = %display_name, "[WS] Zone update (pending reveal)");
+                // Last-writer-wins: if two flags fire in rapid succession, only the
+                // final destination zone is shown (intermediate corridor zones are skipped).
                 self.pending_zone_update = Some(ZoneUpdateData {
                     node_id,
                     display_name,
