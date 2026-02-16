@@ -88,6 +88,7 @@ class RaceInfo(BaseModel):
 class SeedInfo(BaseModel):
     """Seed info for WebSocket."""
 
+    seed_id: str | None = None
     total_layers: int
     graph_json: dict[str, object] | None = None  # Full graph for client-side progressive reveal
     total_nodes: int | None = None

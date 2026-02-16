@@ -240,6 +240,7 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
             started_at=session.created_at.isoformat() if session.created_at else None,
         ),
         seed=SeedInfo(
+            seed_id=str(seed.id) if seed else None,
             total_layers=seed.total_layers if seed else 0,
             graph_json=None,
             event_ids=event_ids,

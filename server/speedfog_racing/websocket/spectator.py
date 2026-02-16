@@ -69,6 +69,7 @@ def build_seed_info(race: Race, user_id: uuid.UUID | None = None) -> SeedInfo:
                 include_graph = True
 
     return SeedInfo(
+        seed_id=str(seed.id),
         total_layers=seed.total_layers,
         graph_json=seed.graph_json if include_graph else None,
         total_nodes=total_nodes,

@@ -307,6 +307,7 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
             started_at=race.started_at.isoformat() if race.started_at else None,
         ),
         seed=SeedInfo(
+            seed_id=str(seed.id) if seed else None,
             total_layers=seed.total_layers if seed else 0,
             graph_json=None,  # Mods don't need the graph
             event_ids=event_ids,
