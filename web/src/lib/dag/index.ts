@@ -4,6 +4,7 @@ export { default as MetroDagBlurred } from "./MetroDagBlurred.svelte";
 export { default as MetroDagLive } from "./MetroDagLive.svelte";
 export { default as MetroDagProgressive } from "./MetroDagProgressive.svelte";
 export { default as MetroDagResults } from "./MetroDagResults.svelte";
+export { default as ZoomableSvg } from "./ZoomableSvg.svelte";
 export { computeLayout } from "./layout";
 export { parseDagGraph } from "./types";
 export { generateFakeDag } from "./fakeDag";
