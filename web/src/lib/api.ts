@@ -514,6 +514,34 @@ export async function fetchMyRaces(): Promise<Race[]> {
   return data.races;
 }
 
+/**
+ * Fetch a user's public profile by Twitch username.
+ */
+export async function fetchUserProfile(username: string): Promise<UserProfile> {
+  const response = await fetch(
+    `${API_BASE}/users/${encodeURIComponent(username)}`,
+  );
+  if (!response.ok)
+    throw new Error(`Failed to fetch profile: ${response.status}`);
+  return response.json();
+}
+
+/**
+ * Fetch a user's activity timeline.
+ */
+export async function fetchUserActivity(
+  username: string,
+  offset = 0,
+  limit = 20,
+): Promise<ActivityTimeline> {
+  const response = await fetch(
+    `${API_BASE}/users/${encodeURIComponent(username)}/activity?offset=${offset}&limit=${limit}`,
+  );
+  if (!response.ok)
+    throw new Error(`Failed to fetch activity: ${response.status}`);
+  return response.json();
+}
+
 // =============================================================================
 // Admin API
 // =============================================================================
@@ -528,6 +556,83 @@ export interface AdminUser {
   last_seen: string | null;
   training_count: number;
   race_count: number;
+}
+
+// User profile
+export interface UserStats {
+  race_count: number;
+  training_count: number;
+  podium_count: number;
+  first_place_count: number;
+  organized_count: number;
+  casted_count: number;
+}
+
+export interface UserProfile {
+  id: string;
+  twitch_username: string;
+  twitch_display_name: string | null;
+  twitch_avatar_url: string | null;
+  role: string;
+  created_at: string;
+  stats: UserStats;
+}
+
+export type ActivityType =
+  | "race_participant"
+  | "race_organizer"
+  | "race_caster"
+  | "training";
+
+export interface ActivityItemBase {
+  type: ActivityType;
+  date: string;
+}
+
+export interface RaceParticipantActivity extends ActivityItemBase {
+  type: "race_participant";
+  race_id: string;
+  race_name: string;
+  status: string;
+  placement: number | null;
+  total_participants: number;
+  igt_ms: number;
+  death_count: number;
+}
+
+export interface RaceOrganizerActivity extends ActivityItemBase {
+  type: "race_organizer";
+  race_id: string;
+  race_name: string;
+  status: string;
+  participant_count: number;
+}
+
+export interface RaceCasterActivity extends ActivityItemBase {
+  type: "race_caster";
+  race_id: string;
+  race_name: string;
+}
+
+export interface TrainingActivityItem extends ActivityItemBase {
+  type: "training";
+  session_id: string;
+  pool_name: string;
+  status: string;
+  igt_ms: number;
+  death_count: number;
+}
+
+export type ActivityItem =
+  | RaceParticipantActivity
+  | RaceOrganizerActivity
+  | RaceCasterActivity
+  | TrainingActivityItem;
+
+export interface ActivityTimeline {
+  items: ActivityItem[];
+  total: number;
+  has_more: boolean;
 }
 
 /**
