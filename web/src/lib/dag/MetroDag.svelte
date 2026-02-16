@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ZoomableSvg from './ZoomableSvg.svelte';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
 	import {
@@ -69,14 +70,8 @@
 	}
 </script>
 
-<div class="metro-dag-container">
-	{#if layout.nodes.length > 0}
-		<svg
-			viewBox="0 0 {layout.width} {layout.height}"
-			width="100%"
-			preserveAspectRatio="xMidYMid meet"
-			class="metro-dag-svg"
-		>
+{#if layout.nodes.length > 0}
+	<ZoomableSvg width={layout.width} height={layout.height}>
 			<!-- Edges (rendered first, behind nodes) -->
 			{#each layout.edges as edge}
 				{#each edge.segments as seg}
@@ -161,26 +156,10 @@
 					</text>
 				</g>
 			{/each}
-		</svg>
-	{/if}
-</div>
+	</ZoomableSvg>
+{/if}
 
 <style>
-	.metro-dag-container {
-		width: 100%;
-		overflow-x: auto;
-		background: var(--color-surface, #1a1a2e);
-		border-radius: var(--radius-lg, 8px);
-		min-height: 200px;
-		display: flex;
-		align-items: center;
-	}
-
-	.metro-dag-svg {
-		display: block;
-		min-width: 600px;
-	}
-
 	.dag-label {
 		pointer-events: none;
 		user-select: none;
