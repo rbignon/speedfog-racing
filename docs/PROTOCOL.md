@@ -123,6 +123,25 @@ Sent when the mod detects an event flag transition (0 → 1). The server resolve
 }
 ```
 
+#### `zone_query`
+
+Sent when the player exits a loading screen after fast-traveling to a grace. The server resolves the grace entity ID to a graph node and responds with a `zone_update`.
+
+```json
+{
+  "type": "zone_query",
+  "grace_entity_id": 10002950
+}
+```
+
+| Field             | Type  | Description                                                  |
+| ----------------- | ----- | ------------------------------------------------------------ |
+| `grace_entity_id` | `int` | Grace entity ID captured by the warp hook during fast travel |
+
+**Response:** The server sends a `zone_update` (unicast) if the grace maps to a node in the current seed's graph. No response if the grace is unknown or not in the graph.
+
+**Note:** This message does NOT modify `zone_history` (progression). It only updates `current_zone` (overlay pointer) and triggers a spectator `player_update`.
+
 #### `finished`
 
 Player finished the race. Server-side schema only — the mod does not send this directly. Instead, finishing is handled automatically when the server receives an `event_flag` matching the seed's `finish_event`.
@@ -251,7 +270,7 @@ Race status changed.
 
 #### `zone_update`
 
-Unicast to the originating mod after an `event_flag` is processed, after `auth_ok` (reconnect during a running race), or after `race_start` (for the start node). Contains the entered zone's display name, tier, and exits with discovery status.
+Unicast to the originating mod after an `event_flag` is processed, after `zone_query` (fast travel), after `auth_ok` (reconnect during a running race), or after `race_start` (for the start node). Contains the entered zone's display name, tier, and exits with discovery status.
 
 ```json
 {
@@ -523,7 +542,7 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 
 ### Race State Gating
 
-Gameplay messages (`status_update`, `event_flag`, `finished`) are only accepted when the race status is `running`. This is enforced at three layers:
+Gameplay messages (`status_update`, `event_flag`, `zone_query`, `finished`) are only accepted when the race status is `running`. This is enforced at three layers:
 
 1. **Server:** Each handler checks `race.status == RUNNING` before processing. If the race is not running, the server responds with an `error` message and discards the payload.
 2. **Mod (outgoing):** The mod gates `status_update` and `event_flag` sends behind `is_race_running()`. Event flags detected before the race starts are buffered and sent once the race transitions to running.
