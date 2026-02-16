@@ -47,7 +47,7 @@
 		{#if poolConfig.care_package && poolConfig.weapon_upgrade != null}
 			<div class="info-item">
 				<span class="label">Care Package</span>
-				<span class="value">+{poolConfig.weapon_upgrade} upgrade</span>
+				<span class="value">{poolConfig.weapon_upgrade === 0 ? 'Yes' : `+${poolConfig.weapon_upgrade} upgrade`}</span>
 			</div>
 		{/if}
 		{#if poolConfig.items_randomized != null}
