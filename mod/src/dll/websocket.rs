@@ -37,6 +37,7 @@ pub enum OutgoingMessage {
     Ready,
     StatusUpdate { igt_ms: u32, death_count: u32 },
     EventFlag { flag_id: u32, igt_ms: u32 },
+    ZoneQuery { grace_entity_id: u32 },
     Shutdown,
 }
 
@@ -179,6 +180,14 @@ impl RaceWebSocketClient {
         if let Some(tx) = &self.tx {
             if let Err(e) = tx.try_send(OutgoingMessage::EventFlag { flag_id, igt_ms }) {
                 warn!("[WS] Failed to queue message: {}", e);
+            }
+        }
+    }
+
+    pub fn send_zone_query(&self, grace_entity_id: u32) {
+        if let Some(tx) = &self.tx {
+            if let Err(e) = tx.try_send(OutgoingMessage::ZoneQuery { grace_entity_id }) {
+                warn!("[WS] Failed to queue zone_query: {}", e);
             }
         }
     }
@@ -418,6 +427,13 @@ fn message_loop(
             }
             Ok(OutgoingMessage::EventFlag { flag_id, igt_ms }) => {
                 let msg = ClientMessage::EventFlag { flag_id, igt_ms };
+                let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+                socket
+                    .send(Message::Text(json))
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(OutgoingMessage::ZoneQuery { grace_entity_id }) => {
+                let msg = ClientMessage::ZoneQuery { grace_entity_id };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
                     .send(Message::Text(json))

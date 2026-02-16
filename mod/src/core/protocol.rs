@@ -20,6 +20,8 @@ pub enum ClientMessage {
     StatusUpdate { igt_ms: u32, death_count: u32 },
     /// EMEVD event flag triggered (fog gate traversal or boss kill)
     EventFlag { flag_id: u32, igt_ms: u32 },
+    /// Zone query after fast travel (grace entity ID → server resolves to graph node)
+    ZoneQuery { grace_entity_id: u32 },
     /// Heartbeat response
     Pong,
 }
@@ -400,6 +402,16 @@ mod tests {
             }
             _ => panic!("Expected AuthOk"),
         }
+    }
+
+    #[test]
+    fn test_client_zone_query_serialize() {
+        let msg = ClientMessage::ZoneQuery {
+            grace_entity_id: 10002950,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""type":"zone_query""#));
+        assert!(json.contains(r#""grace_entity_id":10002950"#));
     }
 
     #[test]
