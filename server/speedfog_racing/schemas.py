@@ -205,6 +205,7 @@ class RaceDetailResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None = None
     participant_count: int
+    seed_number: str | None = None
     seed_total_layers: int | None
     seed_total_nodes: int | None = None
     seed_total_paths: int | None = None
@@ -296,6 +297,7 @@ class TrainingSessionDetailResponse(BaseModel):
     progress_nodes: list[dict[str, Any]] | None = None
     created_at: datetime
     finished_at: datetime | None = None
+    seed_number: str | None = None
     seed_total_layers: int | None = None
     seed_total_nodes: int | None = None
     seed_total_paths: int | None = None

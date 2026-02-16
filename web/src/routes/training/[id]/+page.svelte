@@ -128,6 +128,9 @@
 			</div>
 			<div class="header-right">
 				<ShareButtons />
+				{#if session.seed_number}
+					<span class="seed-badge">Seed {session.seed_number}</span>
+				{/if}
 				<span class="badge badge-{status}">{status}</span>
 			</div>
 		</div>
@@ -355,6 +358,16 @@
 
 	.mono {
 		font-variant-numeric: tabular-nums;
+	}
+
+	.seed-badge {
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-size: var(--font-size-xs);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		padding: 0.2rem 0.5rem;
+		color: var(--color-text-secondary);
 	}
 
 	.connected-dot {

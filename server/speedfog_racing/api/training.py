@@ -114,6 +114,7 @@ def _build_detail_response(session: TrainingSession) -> TrainingSessionDetailRes
         progress_nodes=session.progress_nodes,
         created_at=session.created_at,
         finished_at=session.finished_at,
+        seed_number=seed.seed_number,
         seed_total_layers=seed.total_layers,
         seed_total_nodes=seed.graph_json.get("total_nodes") if seed.graph_json else None,
         seed_total_paths=seed.graph_json.get("total_paths") if seed.graph_json else None,

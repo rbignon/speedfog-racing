@@ -316,6 +316,9 @@
 			</div>
 			<div class="header-right">
 				<ShareButtons />
+				{#if initialRace.seed_number}
+					<span class="seed-badge">Seed {initialRace.seed_number}</span>
+				{/if}
 				<RaceStatus status={raceStatus} />
 				{#if raceStatus === 'running'}
 					<span class="elapsed-clock">{formatElapsed(elapsedSeconds)}</span>
@@ -568,6 +571,16 @@
 	.value {
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.seed-badge {
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-size: var(--font-size-xs);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		padding: 0.2rem 0.5rem;
+		color: var(--color-text-secondary);
 	}
 
 	.download-section {

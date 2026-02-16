@@ -84,6 +84,7 @@ export interface PendingInvite {
 }
 
 export interface RaceDetail extends Race {
+  seed_number: string | null;
   seed_total_layers: number | null;
   seed_total_nodes: number | null;
   seed_total_paths: number | null;
@@ -743,6 +744,7 @@ export interface TrainingSession {
 }
 
 export interface TrainingSessionDetail extends TrainingSession {
+  seed_number: string | null;
   seed_total_paths: number | null;
   progress_nodes: Array<{ node_id: string; igt_ms: number }> | null;
   graph_json: Record<string, unknown> | null;
