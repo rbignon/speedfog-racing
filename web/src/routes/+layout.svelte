@@ -68,6 +68,12 @@
 				</p>
 				<nav class="footer-links" aria-label="Footer navigation">
 					<a href="/about">About</a>
+					<a href="/help">Help</a>
+					<a
+						href="https://discord.gg/Qmw67J3mR9"
+						target="_blank"
+						rel="noopener noreferrer">Discord</a
+					>
 					<a
 						href="https://github.com/rbignon/speedfog"
 						target="_blank"
