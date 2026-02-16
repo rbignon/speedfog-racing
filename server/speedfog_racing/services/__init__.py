@@ -11,6 +11,7 @@ from speedfog_racing.services.seed_service import (
     get_pool_config,
     get_pool_metadata,
     get_pool_stats,
+    reroll_seed_for_race,
     scan_pool,
 )
 from speedfog_racing.services.training_service import (
@@ -28,6 +29,7 @@ __all__ = [
     "get_pool_config",
     "get_pool_metadata",
     "get_pool_stats",
+    "reroll_seed_for_race",
     "scan_pool",
     "create_training_session",
     "get_played_seed_counts",

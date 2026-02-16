@@ -54,6 +54,7 @@ from speedfog_racing.services import (
     assign_seed_to_race,
     generate_seed_pack_on_demand,
     get_pool_config,
+    reroll_seed_for_race,
 )
 from speedfog_racing.services.seed_pack_service import sanitize_filename
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
@@ -660,6 +661,42 @@ async def open_race(
     await broadcast_race_state_update(race_id, race)
 
     return race_response(race)
+
+
+@router.post("/{race_id}/reroll-seed", response_model=RaceDetailResponse)
+async def reroll_seed(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RaceDetailResponse:
+    """Re-roll the seed for a DRAFT or OPEN race."""
+    race = await _get_race_or_404(
+        db, race_id, load_participants=True, load_casters=True, load_invites=True
+    )
+    _require_organizer(race, user)
+
+    if race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only re-roll seed for draft or open races",
+        )
+
+    try:
+        await reroll_seed_for_race(db, race)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+    race.version += 1
+    await db.commit()
+
+    # Re-fetch with all relationships
+    race = await _get_race_or_404(
+        db, race_id, load_participants=True, load_casters=True, load_invites=True
+    )
+    return _race_detail_response(race, user=user)
 
 
 @router.post("/{race_id}/reset", response_model=RaceResponse)

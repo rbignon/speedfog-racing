@@ -1060,3 +1060,204 @@ async def test_delete_started_race_keeps_seed_consumed(test_client, organizer, a
         result = await db.execute(select(Seed).where(Seed.id == seed_id))
         seed = result.scalar_one()
         assert seed.status == SeedStatus.CONSUMED
+
+
+# =============================================================================
+# Seed Re-roll Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_reroll_seed_draft(test_client, organizer, async_session):
+    """Re-rolling seed on a DRAFT race assigns a new seed and releases the old one."""
+    async with async_session() as db:
+        seed_a = Seed(
+            seed_number="reroll_a",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/reroll_a",
+            status=SeedStatus.CONSUMED,
+        )
+        seed_b = Seed(
+            seed_number="reroll_b",
+            pool_name="standard",
+            graph_json={"total_layers": 7, "nodes": {}},
+            total_layers=7,
+            folder_path="/test/reroll_b",
+            status=SeedStatus.AVAILABLE,
+        )
+        db.add_all([seed_a, seed_b])
+        await db.flush()
+
+        race = Race(
+            name="Reroll Test Race",
+            organizer_id=organizer.id,
+            seed_id=seed_a.id,
+            status=RaceStatus.DRAFT,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+        seed_a_id = seed_a.id
+        seed_b_id = seed_b.id
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reroll-seed",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["seed_total_layers"] == 7
+
+    # Verify old seed released, new seed consumed
+    async with async_session() as db:
+        from sqlalchemy import select
+
+        result_a = await db.execute(select(Seed).where(Seed.id == seed_a_id))
+        assert result_a.scalar_one().status == SeedStatus.AVAILABLE
+
+        result_b = await db.execute(select(Seed).where(Seed.id == seed_b_id))
+        assert result_b.scalar_one().status == SeedStatus.CONSUMED
+
+
+@pytest.mark.asyncio
+async def test_reroll_seed_open(test_client, organizer, async_session):
+    """Re-rolling seed works on OPEN races too."""
+    async with async_session() as db:
+        seed_a = Seed(
+            seed_number="reroll_oa",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/reroll_oa",
+            status=SeedStatus.CONSUMED,
+        )
+        seed_b = Seed(
+            seed_number="reroll_ob",
+            pool_name="standard",
+            graph_json={"total_layers": 8, "nodes": {}},
+            total_layers=8,
+            folder_path="/test/reroll_ob",
+            status=SeedStatus.AVAILABLE,
+        )
+        db.add_all([seed_a, seed_b])
+        await db.flush()
+
+        race = Race(
+            name="Reroll Open Race",
+            organizer_id=organizer.id,
+            seed_id=seed_a.id,
+            status=RaceStatus.OPEN,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reroll-seed",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_reroll_seed_running_fails(test_client, organizer, async_session):
+    """Cannot re-roll seed on a RUNNING race."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="reroll_run",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/reroll_run",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Running Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reroll-seed",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_reroll_seed_non_organizer_fails(test_client, organizer, player, async_session):
+    """Non-organizer cannot re-roll seed."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="reroll_noauth",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/reroll_noauth",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Auth Test Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.DRAFT,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reroll-seed",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_reroll_seed_no_available_seeds(test_client, organizer, async_session):
+    """Re-roll fails gracefully when pool is exhausted."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="reroll_only",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/reroll_only",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="No Seeds Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.DRAFT,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reroll-seed",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "No available seeds" in response.json()["detail"]

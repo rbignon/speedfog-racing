@@ -4,6 +4,7 @@ import json
 import logging
 import random
 import tomllib
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -110,19 +111,23 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
     return added
 
 
-async def get_available_seed(db: AsyncSession, pool_name: str = "standard") -> Seed | None:
+async def get_available_seed(
+    db: AsyncSession, pool_name: str = "standard", exclude_id: uuid.UUID | None = None
+) -> Seed | None:
     """Get a random available seed from the pool.
 
     Args:
         db: Database session
         pool_name: Name of the pool
+        exclude_id: Optional seed ID to exclude (e.g. current seed during re-roll)
 
     Returns:
         A random available Seed, or None if pool is exhausted
     """
-    result = await db.execute(
-        select(Seed).where(Seed.pool_name == pool_name, Seed.status == SeedStatus.AVAILABLE)
-    )
+    query = select(Seed).where(Seed.pool_name == pool_name, Seed.status == SeedStatus.AVAILABLE)
+    if exclude_id is not None:
+        query = query.where(Seed.id != exclude_id)
+    result = await db.execute(query)
     available_seeds = list(result.scalars().all())
 
     if not available_seeds:
@@ -158,6 +163,38 @@ async def assign_seed_to_race(db: AsyncSession, race: Race, pool_name: str = "st
 
     logger.info(f"Assigned seed {seed.seed_number} to race {race.id}")
     return seed
+
+
+async def reroll_seed_for_race(db: AsyncSession, race: Race) -> Seed:
+    """Re-roll the seed for a race, releasing the old one.
+
+    Picks a new available seed from the same pool, excluding the current seed.
+
+    Raises:
+        ValueError: If no other seeds are available in the pool
+    """
+    old_seed = race.seed
+    if old_seed is None:
+        raise ValueError("Race has no seed assigned")
+
+    pool_name = old_seed.pool_name
+
+    new_seed = await get_available_seed(db, pool_name, exclude_id=old_seed.id)
+    if new_seed is None:
+        raise ValueError(f"No available seeds in pool '{pool_name}'")
+
+    # Release old seed
+    old_seed.status = SeedStatus.AVAILABLE
+
+    # Assign new seed
+    new_seed.status = SeedStatus.CONSUMED
+    race.seed_id = new_seed.id
+    race.seed = new_seed
+
+    logger.info(
+        f"Re-rolled seed for race {race.id}: {old_seed.seed_number} -> {new_seed.seed_number}"
+    )
+    return new_seed
 
 
 async def get_pool_stats(db: AsyncSession) -> dict[str, dict[str, int]]:
