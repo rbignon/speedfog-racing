@@ -17,6 +17,7 @@
 		RACER_DOT_RADIUS
 	} from './constants';
 	import type { PositionedNode, DagLayout } from './types';
+	import ZoomableSvg from './ZoomableSvg.svelte';
 
 	interface Props {
 		graphJson: Record<string, unknown>;
@@ -147,137 +148,114 @@
 	}
 </script>
 
-<div class="metro-dag-container">
-	{#if layout.nodes.length > 0}
-		<svg
-			viewBox="0 0 {layout.width} {layout.height}"
-			width="100%"
-			preserveAspectRatio="xMidYMid meet"
-			class="metro-dag-svg"
-		>
-			<defs>
-				<filter id="player-glow" x="-50%" y="-50%" width="200%" height="200%">
-					<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-					<feMerge>
-						<feMergeNode in="blur" />
-						<feMergeNode in="SourceGraphic" />
-					</feMerge>
-				</filter>
-			</defs>
+{#if layout.nodes.length > 0}
+	<ZoomableSvg width={layout.width} height={layout.height}>
+		<defs>
+			<filter id="player-glow" x="-50%" y="-50%" width="200%" height="200%">
+				<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+				<feMerge>
+					<feMergeNode in="blur" />
+					<feMergeNode in="SourceGraphic" />
+				</feMerge>
+			</filter>
+		</defs>
 
-			<!-- Edges (rendered first, behind nodes) -->
-			{#each layout.edges as edge}
-				{#each edge.segments as seg}
-					<line
-						x1={seg.x1}
-						y1={seg.y1}
-						x2={seg.x2}
-						y2={seg.y2}
-						stroke={EDGE_COLOR}
-						stroke-width={EDGE_STROKE_WIDTH}
-						stroke-linecap="round"
-						opacity={EDGE_OPACITY}
-					/>
-				{/each}
+		<!-- Edges (rendered first, behind nodes) -->
+		{#each layout.edges as edge}
+			{#each edge.segments as seg}
+				<line
+					x1={seg.x1}
+					y1={seg.y1}
+					x2={seg.x2}
+					y2={seg.y2}
+					stroke={EDGE_COLOR}
+					stroke-width={EDGE_STROKE_WIDTH}
+					stroke-linecap="round"
+					opacity={EDGE_OPACITY}
+				/>
 			{/each}
+		{/each}
 
-			<!-- Nodes -->
-			{#each layout.nodes as node}
-				<g class="dag-node" data-type={node.type}>
-					<title>{node.displayName}</title>
+		<!-- Nodes -->
+		{#each layout.nodes as node}
+			<g class="dag-node" data-type={node.type}>
+				<title>{node.displayName}</title>
 
-					<g class="dag-node-shape">
-						{#if node.type === 'start'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-							<polygon
-								points="{node.x - 3},{node.y - 5} {node.x - 3},{node.y + 5} {node.x + 5},{node.y}"
-								fill={BG_COLOR}
-							/>
-						{:else if node.type === 'final_boss'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-							<rect x={node.x - 4} y={node.y - 4} width="8" height="8" fill={BG_COLOR} />
-						{:else if node.type === 'mini_dungeon'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-						{:else if node.type === 'boss_arena'}
-							<circle
-								cx={node.x}
-								cy={node.y}
-								r={nodeRadius(node)}
-								fill={BG_COLOR}
-								stroke={nodeColor(node)}
-								stroke-width="3"
-							/>
-						{:else if node.type === 'major_boss'}
-							<rect
-								x={node.x - nodeRadius(node) * 0.7}
-								y={node.y - nodeRadius(node) * 0.7}
-								width={nodeRadius(node) * 1.4}
-								height={nodeRadius(node) * 1.4}
-								fill={nodeColor(node)}
-								transform="rotate(45 {node.x} {node.y})"
-							/>
-						{:else if node.type === 'legacy_dungeon'}
-							<circle
-								cx={node.x}
-								cy={node.y}
-								r={nodeRadius(node)}
-								fill="none"
-								stroke={nodeColor(node)}
-								stroke-width="3"
-							/>
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node) * 0.5} fill={nodeColor(node)} />
-						{/if}
-					</g>
-
-					<!-- Label -->
-					<text
-						x={labelX(node)}
-						y={labelY(node)}
-						text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
-						font-size={LABEL_FONT_SIZE}
-						fill={LABEL_COLOR}
-						class="dag-label"
-						transform="rotate(-30, {labelX(node)}, {labelY(node)})"
-					>
-						{truncateLabel(node.displayName)}
-					</text>
+				<g class="dag-node-shape">
+					{#if node.type === 'start'}
+						<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+						<polygon
+							points="{node.x - 3},{node.y - 5} {node.x - 3},{node.y + 5} {node.x + 5},{node.y}"
+							fill={BG_COLOR}
+						/>
+					{:else if node.type === 'final_boss'}
+						<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+						<rect x={node.x - 4} y={node.y - 4} width="8" height="8" fill={BG_COLOR} />
+					{:else if node.type === 'mini_dungeon'}
+						<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+					{:else if node.type === 'boss_arena'}
+						<circle
+							cx={node.x}
+							cy={node.y}
+							r={nodeRadius(node)}
+							fill={BG_COLOR}
+							stroke={nodeColor(node)}
+							stroke-width="3"
+						/>
+					{:else if node.type === 'major_boss'}
+						<rect
+							x={node.x - nodeRadius(node) * 0.7}
+							y={node.y - nodeRadius(node) * 0.7}
+							width={nodeRadius(node) * 1.4}
+							height={nodeRadius(node) * 1.4}
+							fill={nodeColor(node)}
+							transform="rotate(45 {node.x} {node.y})"
+						/>
+					{:else if node.type === 'legacy_dungeon'}
+						<circle
+							cx={node.x}
+							cy={node.y}
+							r={nodeRadius(node)}
+							fill="none"
+							stroke={nodeColor(node)}
+							stroke-width="3"
+						/>
+						<circle cx={node.x} cy={node.y} r={nodeRadius(node) * 0.5} fill={nodeColor(node)} />
+					{/if}
 				</g>
-			{/each}
 
-			<!-- Player dots (rendered on top of everything) -->
-			{#each playerDots as dot (dot.id)}
-				<circle
-					cx={dot.x}
-					cy={dot.y}
-					r={RACER_DOT_RADIUS}
-					fill={dot.color}
-					filter="url(#player-glow)"
-					class="player-dot"
+				<!-- Label -->
+				<text
+					x={labelX(node)}
+					y={labelY(node)}
+					text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
+					font-size={LABEL_FONT_SIZE}
+					fill={LABEL_COLOR}
+					class="dag-label"
+					transform="rotate(-30, {labelX(node)}, {labelY(node)})"
 				>
-					<title>{dot.displayName}</title>
-				</circle>
-			{/each}
-		</svg>
-	{/if}
-</div>
+					{truncateLabel(node.displayName)}
+				</text>
+			</g>
+		{/each}
+
+		<!-- Player dots (rendered on top of everything) -->
+		{#each playerDots as dot (dot.id)}
+			<circle
+				cx={dot.x}
+				cy={dot.y}
+				r={RACER_DOT_RADIUS}
+				fill={dot.color}
+				filter="url(#player-glow)"
+				class="player-dot"
+			>
+				<title>{dot.displayName}</title>
+			</circle>
+		{/each}
+	</ZoomableSvg>
+{/if}
 
 <style>
-	.metro-dag-container {
-		width: 100%;
-		overflow-x: auto;
-		background: var(--color-surface, #1a1a2e);
-		border-radius: var(--radius-lg, 8px);
-		min-height: 200px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.metro-dag-svg {
-		display: block;
-		min-width: 600px;
-	}
-
 	.dag-label {
 		pointer-events: none;
 		user-select: none;
