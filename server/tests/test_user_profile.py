@@ -10,7 +10,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
-from speedfog_racing.models import User, UserRole
+from speedfog_racing.models import (
+    Caster,
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    Seed,
+    SeedStatus,
+    TrainingSession,
+    TrainingSessionStatus,
+    User,
+    UserRole,
+)
 
 
 @pytest.fixture
@@ -120,3 +132,148 @@ async def test_get_profile_does_not_shadow_search(test_client, sample_user):
         # /search requires auth, so without auth we should get 401 (or 422 for missing q)
         response = await client.get("/api/users/search?q=test")
         assert response.status_code == 401
+
+
+@pytest.fixture
+async def user_with_activity(async_session):
+    """Create a user with races, training, caster, and organizer activity."""
+    async with async_session() as db:
+        # -- Users --
+        active_player = User(
+            twitch_id="active_player_1",
+            twitch_username="active_player",
+            twitch_display_name="ActivePlayer",
+            api_token="active_player_token",
+            role=UserRole.USER,
+        )
+        organizer_user = User(
+            twitch_id="organizer_1",
+            twitch_username="organizer_user",
+            twitch_display_name="OrganizerUser",
+            api_token="organizer_token",
+            role=UserRole.ORGANIZER,
+        )
+        other_player = User(
+            twitch_id="other_player_1",
+            twitch_username="other_player",
+            twitch_display_name="OtherPlayer",
+            api_token="other_player_token",
+            role=UserRole.USER,
+        )
+        db.add_all([active_player, organizer_user, other_player])
+        await db.flush()
+
+        # -- Seed --
+        seed = Seed(
+            seed_number="test_seed_001",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/seed/path",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        # -- Race 1: active_player finishes 1st, other finishes 2nd --
+        race1 = Race(
+            name="Race 1",
+            organizer_id=organizer_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        db.add(race1)
+        await db.flush()
+
+        p1_r1 = Participant(
+            race_id=race1.id,
+            user_id=active_player.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=100000,
+        )
+        p2_r1 = Participant(
+            race_id=race1.id,
+            user_id=other_player.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=200000,
+        )
+        db.add_all([p1_r1, p2_r1])
+
+        # -- Race 2: active_player finishes 2nd, other finishes 1st --
+        race2 = Race(
+            name="Race 2",
+            organizer_id=organizer_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        db.add(race2)
+        await db.flush()
+
+        p1_r2 = Participant(
+            race_id=race2.id,
+            user_id=active_player.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=300000,
+        )
+        p2_r2 = Participant(
+            race_id=race2.id,
+            user_id=other_player.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=150000,
+        )
+        db.add_all([p1_r2, p2_r2])
+
+        # -- Race 3: active_player is organizer (not a participant) --
+        race3 = Race(
+            name="Race 3",
+            organizer_id=active_player.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        db.add(race3)
+        await db.flush()
+
+        # -- Race 4: active_player is caster (not a participant) --
+        race4 = Race(
+            name="Race 4",
+            organizer_id=organizer_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        db.add(race4)
+        await db.flush()
+
+        caster = Caster(
+            race_id=race4.id,
+            user_id=active_player.id,
+        )
+        db.add(caster)
+
+        # -- Training session --
+        training = TrainingSession(
+            user_id=active_player.id,
+            seed_id=seed.id,
+            status=TrainingSessionStatus.FINISHED,
+        )
+        db.add(training)
+
+        await db.commit()
+        await db.refresh(active_player)
+        return active_player
+
+
+@pytest.mark.asyncio
+async def test_profile_stats_counts(test_client, user_with_activity):
+    """Profile stats reflect real race/training/caster/organizer activity."""
+    async with test_client as client:
+        response = await client.get(f"/api/users/{user_with_activity.twitch_username}")
+        assert response.status_code == 200
+        data = response.json()
+        stats = data["stats"]
+
+        assert stats["race_count"] == 2  # participated in 2 races
+        assert stats["training_count"] == 1  # 1 training session
+        assert stats["organized_count"] == 1  # organized 1 race
+        assert stats["casted_count"] == 1  # casted 1 race
+        assert stats["podium_count"] == 2  # 1st + 2nd place both count
+        assert stats["first_place_count"] == 1  # only race 1
