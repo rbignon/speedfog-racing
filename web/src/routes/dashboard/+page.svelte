@@ -417,13 +417,14 @@
 	}
 
 	.active-cards {
-		display: flex;
-		flex-direction: column;
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
 		gap: 0.75rem;
 	}
 
 	.active-card {
-		display: block;
+		display: flex;
+		flex-direction: column;
 		padding: 1rem 1.25rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
@@ -494,6 +495,7 @@
 		background: var(--color-border);
 		border-radius: 2px;
 		overflow: hidden;
+		margin-top: auto;
 	}
 
 	.progress-fill {
@@ -600,6 +602,10 @@
 		}
 
 		.stats-context {
+			grid-template-columns: 1fr;
+		}
+
+		.active-cards {
 			grid-template-columns: 1fr;
 		}
 
