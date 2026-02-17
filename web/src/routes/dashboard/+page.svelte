@@ -20,41 +20,41 @@
 	let trainingSessions: TrainingSession[] = $state([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let fetched = $state(false);
 
 	let activeRaces = $derived(myRaces.filter((r) => r.status === 'running' || r.status === 'open'));
 	let activeTraining = $derived(trainingSessions.filter((s) => s.status === 'active'));
 
-	// Auth guard
+	// Auth guard + fetch data once auth is ready
 	$effect(() => {
-		if (auth.initialized && !auth.isLoggedIn) {
+		if (!auth.initialized) return;
+		if (!auth.isLoggedIn) {
 			goto('/');
+			return;
 		}
-	});
+		if (fetched || !auth.user) return;
+		fetched = true;
 
-	// Fetch data once auth is ready
-	$effect(() => {
-		if (auth.initialized && auth.isLoggedIn && auth.user) {
-			const username = auth.user.twitch_username;
-			loading = true;
-			error = null;
-			Promise.all([
-				fetchUserProfile(username),
-				fetchUserActivity(username, 0, 5),
-				fetchMyRaces(),
-				fetchTrainingSessions(),
-			])
-				.then(([p, a, r, t]) => {
-					profile = p;
-					activity = a.items;
-					myRaces = r;
-					trainingSessions = t;
-				})
-				.catch((e) => {
-					console.error('Dashboard fetch error:', e);
-					error = 'Failed to load dashboard data.';
-				})
-				.finally(() => (loading = false));
-		}
+		const username = auth.user.twitch_username;
+		loading = true;
+		error = null;
+		Promise.all([
+			fetchUserProfile(username),
+			fetchUserActivity(username, 0, 5),
+			fetchMyRaces(),
+			fetchTrainingSessions(),
+		])
+			.then(([p, a, r, t]) => {
+				profile = p;
+				activity = a.items;
+				myRaces = r;
+				trainingSessions = t;
+			})
+			.catch((e) => {
+				console.error('Dashboard fetch error:', e);
+				error = 'Failed to load dashboard data.';
+			})
+			.finally(() => (loading = false));
 	});
 
 	function activityLink(item: ActivityItem): string {
