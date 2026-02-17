@@ -85,6 +85,17 @@ async def _get_session_or_404_public(db: AsyncSession, session_id: uuid.UUID) ->
 
 
 def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
+    current_layer = 0
+    if session.progress_nodes and session.seed.graph_json:
+        nodes = session.seed.graph_json.get("nodes", {})
+        for entry in session.progress_nodes:
+            node_data = nodes.get(entry.get("node_id"), {})
+            tier = node_data.get("tier")
+            if isinstance(tier, int | float) and int(tier) > current_layer:
+                current_layer = int(tier)
+        if session.status == TrainingSessionStatus.FINISHED:
+            current_layer = session.seed.total_layers
+
     return TrainingSessionResponse(
         id=session.id,
         user=user_response(session.user),
@@ -98,6 +109,7 @@ def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
         seed_total_nodes=(
             session.seed.graph_json.get("total_nodes") if session.seed.graph_json else None
         ),
+        current_layer=current_layer,
     )
 
 

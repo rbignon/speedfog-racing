@@ -32,6 +32,10 @@ export interface Race {
   started_at: string | null;
   participant_count: number;
   participant_previews: User[];
+  seed_total_layers?: number | null;
+  my_current_layer?: number | null;
+  my_igt_ms?: number | null;
+  my_death_count?: number | null;
 }
 
 export interface RaceListResponse {
@@ -787,6 +791,7 @@ export interface TrainingSession {
   finished_at: string | null;
   seed_total_layers: number | null;
   seed_total_nodes: number | null;
+  current_layer: number;
 }
 
 export interface TrainingSessionDetail extends TrainingSession {

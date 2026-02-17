@@ -101,7 +101,19 @@ async def get_my_races(
     result = await db.execute(query)
     races = list(result.scalars().all())
 
-    return RaceListResponse(races=[race_response(r) for r in races])
+    race_responses = []
+    for r in races:
+        resp = race_response(r)
+        my_participant = next((p for p in r.participants if p.user_id == user.id), None)
+        if my_participant:
+            resp.my_current_layer = my_participant.current_layer
+            resp.my_igt_ms = my_participant.igt_ms
+            resp.my_death_count = my_participant.death_count
+        if r.seed:
+            resp.seed_total_layers = r.seed.total_layers
+        race_responses.append(resp)
+
+    return RaceListResponse(races=race_responses)
 
 
 @router.get(

@@ -185,6 +185,10 @@ class RaceResponse(BaseModel):
     started_at: datetime | None = None
     participant_count: int
     participant_previews: list[UserResponse] = []
+    seed_total_layers: int | None = None
+    my_current_layer: int | None = None
+    my_igt_ms: int | None = None
+    my_death_count: int | None = None
 
 
 class PoolConfig(BaseModel):
@@ -303,6 +307,7 @@ class TrainingSessionResponse(BaseModel):
     finished_at: datetime | None = None
     seed_total_layers: int | None = None
     seed_total_nodes: int | None = None
+    current_layer: int = 0
 
 
 class TrainingSessionDetailResponse(BaseModel):
