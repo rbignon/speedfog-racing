@@ -139,6 +139,10 @@ pub struct RaceTracker {
     // server's zone_update arrives before the game starts loading.
     saw_loading: bool,
 
+    // Timestamp when position became readable after a loading screen.
+    // Used to delay zone reveal so the player has finished fading in / spawning.
+    loading_exit_time: Option<Instant>,
+
     // Whether position was readable last frame (for detecting loading screen exit)
     was_position_readable: bool,
 
@@ -229,6 +233,7 @@ impl RaceTracker {
             spawner_thread: None,
             pending_zone_update: None,
             saw_loading: true, // Start true so first zone_update (from auth) reveals immediately
+            loading_exit_time: Some(Instant::now()), // Past instant → immediate reveal on auth
             was_position_readable: true,
             seed_mismatch: false,
         })
@@ -266,19 +271,26 @@ impl RaceTracker {
         // Read position once per frame for loading screen detection
         let position_readable = self.game_state.read_position().is_some();
 
-        // Reveal pending zone update once loading screen AND spawn animation are finished.
+        // Reveal pending zone update after loading screen + delay.
         // Transition gate: after an event flag, we must first observe a loading screen
         // (read_position() returns None) before revealing the zone. This prevents premature
         // reveal when the server's zone_update arrives before the game starts loading.
-        // We also wait for the spawn animation (63000) to complete so the overlay doesn't
-        // update while the player is still fading in.
-        const SPAWN_ANIM: u32 = 63000;
+        // After the loading screen ends we wait ZONE_REVEAL_DELAY so the player has finished
+        // fading in / spawning before the overlay updates.
+        const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(2);
         if self.pending_zone_update.is_some() {
             if position_readable {
-                if self.saw_loading && self.game_state.read_animation() != Some(SPAWN_ANIM) {
-                    let zone = self.pending_zone_update.take().unwrap();
-                    info!(name = %zone.display_name, "[RACE] Zone revealed after loading");
-                    self.race_state.current_zone = Some(zone);
+                if self.saw_loading {
+                    // Record exit time on first readable frame after loading
+                    if self.loading_exit_time.is_none() {
+                        self.loading_exit_time = Some(Instant::now());
+                    }
+                    // Reveal once delay has elapsed
+                    if self.loading_exit_time.unwrap().elapsed() >= ZONE_REVEAL_DELAY {
+                        let zone = self.pending_zone_update.take().unwrap();
+                        info!(name = %zone.display_name, "[RACE] Zone revealed after loading");
+                        self.race_state.current_zone = Some(zone);
+                    }
                 }
             } else {
                 // Loading screen observed — gate is now open for reveal
@@ -286,6 +298,8 @@ impl RaceTracker {
                     info!("[RACE] Loading screen detected, zone reveal unlocked");
                     self.saw_loading = true;
                 }
+                // Reset exit time during loading (player might re-enter loading)
+                self.loading_exit_time = None;
             }
         }
 
@@ -320,9 +334,10 @@ impl RaceTracker {
                 if !self.triggered_flags.contains(&flag_id) {
                     if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
                         self.triggered_flags.insert(flag_id);
-                        // Reset transition gate: require a loading screen before
-                        // revealing the next zone_update
+                        // Reset transition gate: require a loading screen + delay
+                        // before revealing the next zone_update
                         self.saw_loading = false;
+                        self.loading_exit_time = None;
                         if self.ws_client.is_connected() && self.is_race_running() {
                             self.ws_client.send_event_flag(flag_id, igt_ms);
                             self.last_sent_debug =
@@ -483,6 +498,7 @@ impl RaceTracker {
                 // Reset transition gate: after (re)auth, the server sends the player's
                 // current zone — reveal it immediately without requiring a loading cycle.
                 self.saw_loading = true;
+                self.loading_exit_time = Some(Instant::now());
                 self.race_state.race = Some(race);
 
                 // Detect seed mismatch (stale seed pack after re-roll)
