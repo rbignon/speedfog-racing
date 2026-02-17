@@ -1,5 +1,11 @@
 {
   "mapping": {
+    "10012952": {
+      "grace_name": "Chapel of Anticipation",
+      "zone": "Chapel of Anticipation",
+      "map_id": "m10_00_00_00",
+      "zone_id": "chapel_start"
+    },
     "10002950": {
       "grace_name": "Godrick the Grafted",
       "zone": "Godrick the Grafted",
