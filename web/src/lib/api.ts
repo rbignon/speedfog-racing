@@ -620,6 +620,7 @@ export type ActivityType =
 export interface ActivityItemBase {
   type: ActivityType;
   date: string;
+  user?: User;
 }
 
 export interface RaceParticipantActivity extends ActivityItemBase {
@@ -746,6 +747,20 @@ export async function adminScanPool(
     body: JSON.stringify({ pool_name: poolName }),
   });
   return handleResponse<{ added: number; pool_name: string }>(response);
+}
+
+/**
+ * Fetch global activity feed (admin only).
+ */
+export async function fetchAdminActivity(
+  offset = 0,
+  limit = 20,
+): Promise<ActivityTimeline> {
+  const response = await fetch(
+    `${API_BASE}/admin/activity?offset=${offset}&limit=${limit}`,
+    { headers: getAuthHeaders() },
+  );
+  return handleResponse<ActivityTimeline>(response);
 }
 
 // =============================================================================

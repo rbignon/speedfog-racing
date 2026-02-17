@@ -102,7 +102,11 @@ async def get_my_races(
     return RaceListResponse(races=[race_response(r) for r in races])
 
 
-@router.get("/{username}/activity", response_model=ActivityTimelineResponse)
+@router.get(
+    "/{username}/activity",
+    response_model=ActivityTimelineResponse,
+    response_model_exclude_none=True,
+)
 async def get_user_activity(
     username: str,
     offset: int = Query(default=0, ge=0),

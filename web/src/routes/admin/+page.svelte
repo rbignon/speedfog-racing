@@ -7,11 +7,16 @@
 		fetchAdminSeedStats,
 		adminDiscardPool,
 		adminScanPool,
+		fetchAdminActivity,
 		type AdminUser,
-		type AdminPoolStats
+		type AdminPoolStats,
+		type ActivityTimeline,
+		type ActivityItem
 	} from '$lib/api';
+	import { statusLabel } from '$lib/format';
+	import { displayPoolName } from '$lib/utils/training';
 
-	type Tab = 'users' | 'seeds';
+	type Tab = 'users' | 'seeds' | 'activity';
 	let activeTab: Tab = $state('users');
 
 	let users: AdminUser[] = $state([]);
@@ -22,6 +27,10 @@
 	let seedStats: AdminPoolStats | null = $state(null);
 	let seedsLoading = $state(false);
 	let actionLoading = $state<Record<string, boolean>>({});
+
+	let activity: ActivityTimeline | null = $state(null);
+	let activityLoading = $state(false);
+	let activityLoadingMore = $state(false);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -55,11 +64,73 @@
 		}
 	}
 
+	async function loadActivity() {
+		activityLoading = true;
+		try {
+			activity = await fetchAdminActivity();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load activity.';
+		} finally {
+			activityLoading = false;
+		}
+	}
+
+	async function loadMoreActivity() {
+		if (!activity || !activity.has_more) return;
+		activityLoadingMore = true;
+		try {
+			const more = await fetchAdminActivity(activity.items.length);
+			activity = {
+				items: [...activity.items, ...more.items],
+				total: more.total,
+				has_more: more.has_more,
+			};
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load more activity.';
+		} finally {
+			activityLoadingMore = false;
+		}
+	}
+
 	function switchTab(tab: Tab) {
 		activeTab = tab;
 		if (tab === 'seeds' && !seedStats) {
 			loadSeedStats();
 		}
+		if (tab === 'activity' && !activity) {
+			loadActivity();
+		}
+	}
+
+	function formatFullDate(dateStr: string): string {
+		return new Date(dateStr).toLocaleDateString('en-US', {
+			month: 'short',
+			day: 'numeric',
+			year: 'numeric',
+		});
+	}
+
+	function formatIgt(ms: number): string {
+		const totalSec = Math.floor(ms / 1000);
+		const h = Math.floor(totalSec / 3600);
+		const m = Math.floor((totalSec % 3600) / 60);
+		const s = totalSec % 60;
+		if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+		return `${m}:${String(s).padStart(2, '0')}`;
+	}
+
+	function placementLabel(p: number): string {
+		if (p === 1) return '1st';
+		if (p === 2) return '2nd';
+		if (p === 3) return '3rd';
+		return `${p}th`;
+	}
+
+	function placementClass(p: number | null): string {
+		if (p === 1) return 'gold';
+		if (p === 2) return 'silver';
+		if (p === 3) return 'bronze';
+		return '';
 	}
 
 	async function changeRole(user: AdminUser, newRole: string) {
@@ -125,6 +196,9 @@
 		</button>
 		<button class="tab" class:active={activeTab === 'seeds'} onclick={() => switchTab('seeds')}>
 			Seeds
+		</button>
+		<button class="tab" class:active={activeTab === 'activity'} onclick={() => switchTab('activity')}>
+			Activity
 		</button>
 	</div>
 
@@ -232,6 +306,95 @@
 					</tbody>
 				</table>
 			</div>
+		{/if}
+	{:else if activeTab === 'activity'}
+		{#if activityLoading}
+			<p class="loading">Loading activity...</p>
+		{:else if !activity || activity.items.length === 0}
+			<p class="empty">No activity yet.</p>
+		{:else}
+			<div class="timeline">
+				{#each activity.items as item (item.type + '-' + ('race_id' in item ? item.race_id : 'session_id' in item ? item.session_id : '') + '-' + item.date + '-' + (item.user?.id ?? ''))}
+					<div class="activity-card">
+						{#if item.user}
+							<a href="/user/{item.user.twitch_username}" class="activity-user">
+								{#if item.user.twitch_avatar_url}
+									<img src={item.user.twitch_avatar_url} alt="" class="activity-avatar" />
+								{/if}
+								<span class="activity-username">{item.user.twitch_display_name || item.user.twitch_username}</span>
+							</a>
+						{/if}
+						<span class="activity-date">{formatFullDate(item.date)}</span>
+						{#if item.type === 'race_participant'}
+							<div class="activity-body">
+								<div class="badge-row">
+									<span class="activity-badge participant">Race</span>
+									<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+								</div>
+								<a href="/race/{item.race_id}" class="activity-title">
+									{item.race_name}
+								</a>
+								<div class="activity-details">
+									{#if item.placement}
+										<span class="placement {placementClass(item.placement)}">
+											{placementLabel(item.placement)} / {item.total_participants}
+										</span>
+									{/if}
+									<span class="mono">{formatIgt(item.igt_ms)}</span>
+									<span>{item.death_count} deaths</span>
+								</div>
+							</div>
+						{:else if item.type === 'race_organizer'}
+							<div class="activity-body">
+								<div class="badge-row">
+									<span class="activity-badge organizer">Organized</span>
+									<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+								</div>
+								<a href="/race/{item.race_id}" class="activity-title">
+									{item.race_name}
+								</a>
+								<div class="activity-details">
+									<span>{item.participant_count} players</span>
+								</div>
+							</div>
+						{:else if item.type === 'race_caster'}
+							<div class="activity-body">
+								<div class="badge-row">
+									<span class="activity-badge caster">Casted</span>
+									<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+								</div>
+								<a href="/race/{item.race_id}" class="activity-title">
+									{item.race_name}
+								</a>
+							</div>
+						{:else if item.type === 'training'}
+							<div class="activity-body">
+								<div class="badge-row">
+									<span class="activity-badge training">Training</span>
+									<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+								</div>
+								<a href="/training/{item.session_id}" class="activity-title">
+									{displayPoolName(item.pool_name)}
+								</a>
+								<div class="activity-details">
+									<span class="mono">{formatIgt(item.igt_ms)}</span>
+									<span>{item.death_count} deaths</span>
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+
+			{#if activity.has_more}
+				<button
+					class="btn btn-secondary load-more"
+					disabled={activityLoadingMore}
+					onclick={loadMoreActivity}
+				>
+					{activityLoadingMore ? 'Loading...' : 'Load more'}
+				</button>
+			{/if}
 		{/if}
 	{/if}
 </main>
@@ -450,6 +613,170 @@
 		border-color: var(--color-purple);
 	}
 
+	/* Activity feed styles */
+	.timeline {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.activity-card {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+	}
+
+	.activity-user {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		text-decoration: none;
+		color: inherit;
+		flex-shrink: 0;
+		min-width: 8rem;
+	}
+
+	.activity-user:hover .activity-username {
+		color: var(--color-purple);
+		text-decoration: underline;
+	}
+
+	.activity-avatar {
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		border: 1px solid var(--color-border);
+	}
+
+	.activity-username {
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 7rem;
+	}
+
+	.activity-date {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+		white-space: nowrap;
+		min-width: 5.5rem;
+		padding-top: 0.15rem;
+	}
+
+	.activity-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.badge-row {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.activity-badge {
+		font-size: 0.65rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 0.1rem 0.4rem;
+		border-radius: var(--radius-sm);
+		width: fit-content;
+	}
+
+	.activity-badge.participant {
+		background: rgba(59, 130, 246, 0.15);
+		color: var(--color-blue, #3b82f6);
+	}
+
+	.activity-badge.organizer {
+		background: rgba(168, 85, 247, 0.15);
+		color: var(--color-purple);
+	}
+
+	.activity-badge.caster {
+		background: rgba(236, 72, 153, 0.15);
+		color: #ec4899;
+	}
+
+	.activity-badge.training {
+		background: rgba(34, 197, 94, 0.15);
+		color: var(--color-success);
+	}
+
+	.activity-title {
+		color: var(--color-text-primary);
+		text-decoration: none;
+		font-weight: 600;
+	}
+
+	.activity-title:hover {
+		color: var(--color-purple);
+		text-decoration: underline;
+	}
+
+	.activity-details {
+		display: flex;
+		gap: 0.75rem;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+	}
+
+	.placement {
+		font-weight: 600;
+	}
+
+	.placement.gold {
+		color: var(--color-gold);
+	}
+
+	.placement.silver {
+		color: #c0c0c0;
+	}
+
+	.placement.bronze {
+		color: #cd7f32;
+	}
+
+	.mono {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.load-more {
+		margin-top: 1rem;
+		width: 100%;
+	}
+
+	.btn-secondary {
+		padding: 0.5rem 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		cursor: pointer;
+		transition: background 0.15s, border-color 0.15s;
+	}
+
+	.btn-secondary:hover:not(:disabled) {
+		border-color: var(--color-text-secondary);
+	}
+
+	.btn-secondary:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
 	@media (max-width: 640px) {
 		main {
 			padding: 1rem;
@@ -462,6 +789,19 @@
 		th,
 		td {
 			padding: 0.5rem;
+		}
+
+		.activity-card {
+			flex-direction: column;
+			gap: 0.25rem;
+		}
+
+		.activity-user {
+			min-width: auto;
+		}
+
+		.activity-date {
+			min-width: auto;
 		}
 	}
 </style>

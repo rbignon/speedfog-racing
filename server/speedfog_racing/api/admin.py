@@ -3,14 +3,32 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from speedfog_racing.api.helpers import user_response
 from speedfog_racing.auth import require_admin
 from speedfog_racing.database import get_db
-from speedfog_racing.models import Participant, TrainingSession, User, UserRole
+from speedfog_racing.models import (
+    Caster,
+    Participant,
+    ParticipantStatus,
+    Race,
+    TrainingSession,
+    User,
+    UserRole,
+)
+from speedfog_racing.schemas import (
+    ActivityItem,
+    ActivityTimelineResponse,
+    RaceCasterActivity,
+    RaceOrganizerActivity,
+    RaceParticipantActivity,
+    TrainingActivity,
+)
 from speedfog_racing.services import discard_pool, get_pool_stats, scan_pool
 
 router = APIRouter()
@@ -227,3 +245,126 @@ async def update_user_role(
         training_count=row.training_count,
         race_count=row.race_count,
     )
+
+
+# =============================================================================
+# Global Activity Feed
+# =============================================================================
+
+
+@router.get(
+    "/activity",
+    response_model=ActivityTimelineResponse,
+    response_model_exclude_none=True,
+)
+async def get_global_activity(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> ActivityTimelineResponse:
+    """Get a global activity feed across all users.
+
+    Requires admin role.
+    """
+    # TODO: optimize with SQL-level pagination when dataset grows
+    items: list[ActivityItem] = []
+
+    # 1. Race participations (all users)
+    part_q = await db.execute(
+        select(Participant).options(
+            selectinload(Participant.user),
+            selectinload(Participant.race).selectinload(Race.participants),
+        )
+    )
+    for p in part_q.scalars().all():
+        race = p.race
+        finished_participants = sorted(
+            [pp for pp in race.participants if pp.status == ParticipantStatus.FINISHED],
+            key=lambda pp: pp.igt_ms,
+        )
+        placement = None
+        for idx, fp in enumerate(finished_participants):
+            if fp.id == p.id:
+                placement = idx + 1
+                break
+
+        items.append(
+            RaceParticipantActivity(
+                date=race.created_at,
+                user=user_response(p.user),
+                race_id=race.id,
+                race_name=race.name,
+                status=race.status.value,
+                placement=placement,
+                total_participants=len(race.participants),
+                igt_ms=p.igt_ms,
+                death_count=p.death_count,
+            )
+        )
+
+    # 2. Organized races (all users)
+    org_q = await db.execute(
+        select(Race).options(
+            selectinload(Race.organizer),
+            selectinload(Race.participants),
+        )
+    )
+    for race in org_q.scalars().all():
+        items.append(
+            RaceOrganizerActivity(
+                date=race.created_at,
+                user=user_response(race.organizer),
+                race_id=race.id,
+                race_name=race.name,
+                status=race.status.value,
+                participant_count=len(race.participants),
+            )
+        )
+
+    # 3. Caster roles (all users)
+    caster_q = await db.execute(
+        select(Caster).options(
+            selectinload(Caster.user),
+            selectinload(Caster.race),
+        )
+    )
+    for c in caster_q.scalars().all():
+        items.append(
+            RaceCasterActivity(
+                date=c.race.created_at,
+                user=user_response(c.user),
+                race_id=c.race.id,
+                race_name=c.race.name,
+                status=c.race.status.value,
+            )
+        )
+
+    # 4. Training sessions (all users)
+    training_q = await db.execute(
+        select(TrainingSession).options(
+            selectinload(TrainingSession.user),
+            selectinload(TrainingSession.seed),
+        )
+    )
+    for t in training_q.scalars().all():
+        items.append(
+            TrainingActivity(
+                date=t.created_at,
+                user=user_response(t.user),
+                session_id=t.id,
+                pool_name=t.seed.pool_name,
+                status=t.status.value,
+                igt_ms=t.igt_ms,
+                death_count=t.death_count,
+            )
+        )
+
+    # Sort by date descending
+    items.sort(key=lambda item: item.date, reverse=True)
+
+    total = len(items)
+    paginated = items[offset : offset + limit]
+    has_more = (offset + limit) < total
+
+    return ActivityTimelineResponse(items=paginated, total=total, has_more=has_more)

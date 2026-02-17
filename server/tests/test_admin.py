@@ -12,7 +12,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
-from speedfog_racing.models import Seed, SeedStatus, User, UserRole
+from speedfog_racing.models import (
+    Caster,
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    Seed,
+    SeedStatus,
+    TrainingSession,
+    TrainingSessionStatus,
+    User,
+    UserRole,
+)
 
 
 @pytest.fixture
@@ -401,3 +413,141 @@ async def test_update_nonexistent_user(test_client, admin_user):
             headers={"Authorization": f"Bearer {admin_user.api_token}"},
         )
         assert response.status_code == 404
+
+
+# =============================================================================
+# Global Activity Feed Tests
+# =============================================================================
+
+
+@pytest.fixture
+async def activity_data(async_session, admin_user, regular_user):
+    """Create activity data: a race with participant, organizer, caster, and a training session."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="activity_seed_001",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/seed/path",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Test Activity Race",
+            organizer_id=admin_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=regular_user.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=120000,
+            death_count=5,
+        )
+        db.add(participant)
+
+        caster = Caster(
+            race_id=race.id,
+            user_id=regular_user.id,
+        )
+        db.add(caster)
+
+        training = TrainingSession(
+            user_id=regular_user.id,
+            seed_id=seed.id,
+            status=TrainingSessionStatus.FINISHED,
+            igt_ms=90000,
+            death_count=3,
+        )
+        db.add(training)
+
+        await db.commit()
+        return {"race": race, "participant": participant, "caster": caster, "training": training}
+
+
+@pytest.mark.asyncio
+async def test_activity_requires_admin(test_client, regular_user):
+    """Activity endpoint requires admin role."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/activity",
+            headers={"Authorization": f"Bearer {regular_user.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_activity_requires_auth(test_client):
+    """Activity endpoint requires authentication."""
+    async with test_client as client:
+        response = await client.get("/api/admin/activity")
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_activity_works_for_admin(test_client, admin_user, activity_data):
+    """Admin can access the global activity feed."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/activity",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "items" in data
+        assert "total" in data
+        assert "has_more" in data
+        # 1 race_participant + 1 race_organizer + 1 race_caster + 1 training = 4
+        assert data["total"] == 4
+        types = {i["type"] for i in data["items"]}
+        assert "race_participant" in types
+        assert "race_organizer" in types
+        assert "race_caster" in types
+        assert "training" in types
+
+
+@pytest.mark.asyncio
+async def test_activity_items_include_user(test_client, admin_user, activity_data):
+    """Activity items include user info."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/activity",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        for item in data["items"]:
+            assert "user" in item
+            user = item["user"]
+            assert "id" in user
+            assert "twitch_username" in user
+
+
+@pytest.mark.asyncio
+async def test_activity_pagination(test_client, admin_user, activity_data):
+    """Activity endpoint supports offset and limit."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/activity?limit=2&offset=0",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 2
+        assert data["total"] == 4
+        assert data["has_more"] is True
+
+        response2 = await client.get(
+            "/api/admin/activity?limit=2&offset=2",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        data2 = response2.json()
+        assert len(data2["items"]) == 2
+        assert data2["has_more"] is False

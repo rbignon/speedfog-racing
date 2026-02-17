@@ -87,6 +87,7 @@ class ActivityItemBase(BaseModel):
 
     type: str
     date: datetime
+    user: UserResponse | None = None
 
 
 class RaceParticipantActivity(ActivityItemBase):
