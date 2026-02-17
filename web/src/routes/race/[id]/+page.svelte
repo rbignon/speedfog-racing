@@ -598,7 +598,6 @@
 	}
 
 	.dag-placeholder {
-		min-height: 200px;
 		background: var(--color-surface);
 		border: 2px dashed var(--color-border);
 		border-radius: var(--radius-lg);
@@ -753,6 +752,14 @@
 	.obs-overlay-btn:hover {
 		border-color: var(--color-purple);
 		color: var(--color-purple);
+	}
+
+	:global(.race-page .zoomable-container) {
+		min-height: 500px;
+	}
+
+	:global(.race-page .zoomable-container svg) {
+		min-height: 500px;
 	}
 
 	@media (max-width: 768px) {

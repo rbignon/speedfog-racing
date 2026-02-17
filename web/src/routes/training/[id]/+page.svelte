@@ -387,7 +387,7 @@
 		overflow: hidden;
 	}
 
-	:global(.dag-section svg) {
+	:global(.training-detail .dag-section svg) {
 		min-height: 500px;
 	}
 
