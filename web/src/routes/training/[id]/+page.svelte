@@ -8,7 +8,7 @@
 		downloadTrainingPack,
 		type TrainingSessionDetail
 	} from '$lib/api';
-	import { MetroDag, MetroDagLive, MetroDagProgressive, MetroDagResults } from '$lib/dag';
+	import { MetroDag, MetroDagProgressive, MetroDagResults } from '$lib/dag';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
@@ -175,7 +175,7 @@
 					</button>
 					<div class="dag-wrapper">
 						{#if showFullDag}
-							<MetroDagLive {graphJson} participants={dagParticipants} />
+							<MetroDagResults {graphJson} participants={dagParticipants} />
 						{:else}
 							<MetroDagProgressive
 								{graphJson}
