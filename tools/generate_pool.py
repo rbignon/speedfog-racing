@@ -245,6 +245,39 @@ def zip_seed_dir(seed_dir: Path, output_zip: Path, top_dir: str) -> None:
                 zf.write(file_path, arcname)
 
 
+def ensure_helper_config(seed_dir: Path) -> None:
+    """Ensure RandomizerHelper_config.ini exists in lib/ with racing defaults.
+
+    RandomizerHelper.dll is always present in lib/ (copied by speedfog's
+    PackagingWriter) but its config may be missing if item randomizer was
+    disabled or failed. Without the config, the DLL uses defaults that
+    include unwanted features like auto-equip.
+    """
+    config_path = seed_dir / "lib" / "RandomizerHelper_config.ini"
+    if config_path.exists():
+        return
+
+    config_path.write_text(
+        "[settings]\n"
+        "autoEquip = false\n"
+        "equipShop = false\n"
+        "equipWeapons = false\n"
+        "bowLeft = false\n"
+        "castLeft = false\n"
+        "equipArmor = false\n"
+        "equipAccessory = false\n"
+        "equipSpells = false\n"
+        "equipCrystalTears = false\n"
+        "autoUpgrade = true\n"
+        "autoUpgradeWeapons = true\n"
+        "regionLockWeapons = false\n"
+        "autoUpgradeSpiritAshes = true\n"
+        "autoUpgradeDropped = true\n",
+        encoding="utf-8",
+    )
+    print("  Added default RandomizerHelper_config.ini to lib/")
+
+
 def process_seed(
     seed_dir: Path,
     dll_source: Path,
@@ -262,6 +295,10 @@ def process_seed(
     # Modify config_speedfog.toml
     if not add_dll_to_config(seed_dir):
         return False
+
+    # Ensure RandomizerHelper has safe defaults even if item rando was
+    # disabled or failed (the DLL is always present in lib/)
+    ensure_helper_config(seed_dir)
 
     # Zip to final location with seed_<slug>.zip naming
     final_zip = output_pool_dir / f"seed_{seed_slug}.zip"
