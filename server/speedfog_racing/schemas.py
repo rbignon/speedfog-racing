@@ -112,6 +112,7 @@ class RaceCasterActivity(ActivityItemBase):
     type: str = "race_caster"
     race_id: UUID
     race_name: str
+    status: str
 
 
 class TrainingActivity(ActivityItemBase):

@@ -318,6 +318,18 @@ async def test_activity_participant_has_placement(test_client, user_with_activit
 
 
 @pytest.mark.asyncio
+async def test_activity_caster_has_status(test_client, user_with_activity):
+    async with test_client as client:
+        response = await client.get("/api/users/active_player/activity")
+        data = response.json()
+        caster_items = [i for i in data["items"] if i["type"] == "race_caster"]
+        assert len(caster_items) >= 1
+        for item in caster_items:
+            assert "race_name" in item
+            assert "status" in item
+
+
+@pytest.mark.asyncio
 async def test_profile_stats_counts(test_client, user_with_activity):
     """Profile stats reflect real race/training/caster/organizer activity."""
     async with test_client as client:

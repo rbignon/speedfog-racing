@@ -645,6 +645,7 @@ export interface RaceCasterActivity extends ActivityItemBase {
   type: "race_caster";
   race_id: string;
   race_name: string;
+  status: string;
 }
 
 export interface TrainingActivityItem extends ActivityItemBase {

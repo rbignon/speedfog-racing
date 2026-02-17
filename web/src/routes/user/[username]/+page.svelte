@@ -6,6 +6,7 @@
 		type UserProfile,
 		type ActivityTimeline,
 	} from '$lib/api';
+	import { statusLabel } from '$lib/format';
 
 	let username = $derived(page.params.username!);
 	let profile = $state<UserProfile | null>(null);
@@ -89,6 +90,7 @@
 		if (p === 3) return 'bronze';
 		return '';
 	}
+
 </script>
 
 <svelte:head>
@@ -164,7 +166,10 @@
 								<span class="activity-date">{formatFullDate(item.date)}</span>
 								{#if item.type === 'race_participant'}
 									<div class="activity-body">
-										<span class="activity-badge participant">Race</span>
+										<div class="badge-row">
+											<span class="activity-badge participant">Race</span>
+											<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+										</div>
 										<a href="/race/{item.race_id}" class="activity-title">
 											{item.race_name}
 										</a>
@@ -173,8 +178,6 @@
 												<span class="placement {placementClass(item.placement)}">
 													{placementLabel(item.placement)} / {item.total_participants}
 												</span>
-											{:else}
-												<span class="status">{item.status}</span>
 											{/if}
 											<span class="mono">{formatIgt(item.igt_ms)}</span>
 											<span>{item.death_count} deaths</span>
@@ -182,30 +185,37 @@
 									</div>
 								{:else if item.type === 'race_organizer'}
 									<div class="activity-body">
-										<span class="activity-badge organizer">Organized</span>
+										<div class="badge-row">
+											<span class="activity-badge organizer">Organized</span>
+											<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+										</div>
 										<a href="/race/{item.race_id}" class="activity-title">
 											{item.race_name}
 										</a>
 										<div class="activity-details">
 											<span>{item.participant_count} players</span>
-											<span class="status">{item.status}</span>
 										</div>
 									</div>
 								{:else if item.type === 'race_caster'}
 									<div class="activity-body">
-										<span class="activity-badge caster">Casted</span>
+										<div class="badge-row">
+											<span class="activity-badge caster">Casted</span>
+											<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+										</div>
 										<a href="/race/{item.race_id}" class="activity-title">
 											{item.race_name}
 										</a>
 									</div>
 								{:else if item.type === 'training'}
 									<div class="activity-body">
-										<span class="activity-badge training">Training</span>
+										<div class="badge-row">
+											<span class="activity-badge training">Training</span>
+											<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+										</div>
 										<a href="/training/{item.session_id}" class="activity-title">
 											{item.pool_name}
 										</a>
 										<div class="activity-details">
-											<span class="status">{item.status}</span>
 											<span class="mono">{formatIgt(item.igt_ms)}</span>
 											<span>{item.death_count} deaths</span>
 										</div>
@@ -424,6 +434,12 @@
 		color: var(--color-success);
 	}
 
+	.badge-row {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
 	.activity-title {
 		color: var(--color-text-primary);
 		text-decoration: none;
@@ -460,10 +476,6 @@
 
 	.mono {
 		font-variant-numeric: tabular-nums;
-	}
-
-	.status {
-		text-transform: capitalize;
 	}
 
 	.load-more {

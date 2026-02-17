@@ -185,6 +185,7 @@ async def get_user_activity(
                 date=c.race.created_at,
                 race_id=c.race.id,
                 race_name=c.race.name,
+                status=c.race.status.value,
             )
         )
 

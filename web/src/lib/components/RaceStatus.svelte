@@ -1,28 +1,15 @@
 <script lang="ts">
+	import { statusLabel } from '$lib/format';
+
 	interface Props {
 		status: string;
 	}
 
 	let { status }: Props = $props();
-
-	function getStatusLabel(s: string): string {
-		switch (s) {
-			case 'draft':
-				return 'Draft';
-			case 'open':
-				return 'Open';
-			case 'running':
-				return 'Live';
-			case 'finished':
-				return 'Finished';
-			default:
-				return s;
-		}
-	}
 </script>
 
 <div class="race-status">
-	<span class="badge badge-{status}">{getStatusLabel(status)}</span>
+	<span class="badge badge-{status}">{statusLabel(status)}</span>
 </div>
 
 <style>
