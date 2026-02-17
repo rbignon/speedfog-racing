@@ -73,6 +73,7 @@
 							</button>
 							{#if userMenuOpen}
 								<div class="user-dropdown">
+									<a href="/dashboard" class="dropdown-item" onclick={closeUserMenu}>Dashboard</a>
 									<a href="/user/{auth.user?.twitch_username}" class="dropdown-item" onclick={closeUserMenu}>Profile</a>
 									<hr class="dropdown-divider" />
 									<button class="dropdown-item" onclick={() => { closeUserMenu(); auth.logout(); goto('/'); }}>Logout</button>
