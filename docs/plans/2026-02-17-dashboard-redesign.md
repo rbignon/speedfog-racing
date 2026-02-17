@@ -18,11 +18,13 @@ Replace the personalized homepage with a dedicated `/dashboard` page for logged-
 Grid layout — 3 columns desktop, 2 columns mobile.
 
 **Row 1 — Totals (3 cards):**
+
 - Races (count)
 - Trainings (count)
 - Podiums (count)
 
 **Row 2 — Contextual (2 wider cards):**
+
 - **Best recent placement**: medal icon (gold/silver/bronze) + placement + race name + relative timestamp. Empty state: "No podium yet".
 - **Podium rate**: percentage + fraction (e.g., "40% (4/10)"). Empty state: "—" if 0 races.
 
@@ -31,6 +33,7 @@ Grid layout — 3 columns desktop, 2 columns mobile.
 Full-width stacked cards. Each card is entirely clickable (link to `/race/{id}` or `/training/{id}`).
 
 **Card contents:**
+
 - Line 1: status badge (colored) + name + player count (races only)
 - Line 2: IGT + deaths
 - Line 3: progress bar (current_layer / total_layers) with "Layer X/Y" label
@@ -38,6 +41,7 @@ Full-width stacked cards. Each card is entirely clickable (link to `/race/{id}` 
 **Styling:** gold border for races, standard border for training.
 
 **Empty state:** "No active sessions" + CTA buttons:
+
 - Organizer/admin: "Create Race" + "Start Training"
 - Regular user: "Start Training"
 
@@ -46,6 +50,7 @@ Full-width stacked cards. Each card is entirely clickable (link to `/race/{id}` 
 List of 5 most recent activities.
 
 **Each row:**
+
 - Icon/badge by type (colored placement for races, training icon, mic icon for casts)
 - Event name (clickable link to race/training page)
 - Relative timestamp (right-aligned)
@@ -55,15 +60,18 @@ List of 5 most recent activities.
 
 ## API Changes
 
-### `GET /users/{username}` — add fields:
+### `GET /users/{username}` — add fields
+
 - `podium_rate: float | null` — podium_count / race_count, null if 0 races
 - `best_recent_placement: object | null` — `{ placement, race_name, race_id, finished_at }`, best placement among last 10 finished races, null if no finished races
 
-### `GET /users/me/races` — add fields (active races only):
+### `GET /users/me/races` — add fields (active races only)
+
 - `current_layer: int` — current tier/layer in the seed graph
 - `total_layers: int` — total tiers in the seed graph
 
-### `GET /training` — add fields (active training only):
+### `GET /training` — add fields (active training only)
+
 - `current_layer: int` — current tier/layer in the seed graph
 - `total_layers: int` — total tiers in the seed graph
 
