@@ -316,25 +316,39 @@
 			<div class="timeline">
 				{#each activity.items as item (item.type + '-' + ('race_id' in item ? item.race_id : 'session_id' in item ? item.session_id : '') + '-' + item.date + '-' + (item.user?.id ?? ''))}
 					<div class="activity-card">
-						{#if item.user}
-							<a href="/user/{item.user.twitch_username}" class="activity-user">
-								{#if item.user.twitch_avatar_url}
-									<img src={item.user.twitch_avatar_url} alt="" class="activity-avatar" />
-								{/if}
-								<span class="activity-username">{item.user.twitch_display_name || item.user.twitch_username}</span>
-							</a>
-						{/if}
-						<span class="activity-date">{formatFullDate(item.date)}</span>
-						{#if item.type === 'race_participant'}
-							<div class="activity-body">
-								<div class="badge-row">
-									<span class="activity-badge participant">Race</span>
-									<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
-								</div>
-								<a href="/race/{item.race_id}" class="activity-title">
-									{item.race_name}
+						<div class="col-who">
+							{#if item.user}
+								<a href="/user/{item.user.twitch_username}" class="activity-user">
+									{#if item.user.twitch_avatar_url}
+										<img src={item.user.twitch_avatar_url} alt="" class="activity-avatar" />
+									{/if}
+									<span class="activity-username">{item.user.twitch_display_name || item.user.twitch_username}</span>
 								</a>
-								<div class="activity-details">
+							{/if}
+							<span class="activity-date">{formatFullDate(item.date)}</span>
+						</div>
+						<div class="col-what">
+							{#if item.type === 'race_participant' || item.type === 'race_organizer' || item.type === 'race_caster'}
+								<a href="/race/{item.race_id}" class="activity-title">{item.race_name}</a>
+							{:else if item.type === 'training'}
+								<a href="/training/{item.session_id}" class="activity-title">{displayPoolName(item.pool_name)}</a>
+							{/if}
+						</div>
+						<div class="col-context">
+							<div class="badge-row">
+								{#if item.type === 'race_participant'}
+									<span class="activity-badge participant">Race</span>
+								{:else if item.type === 'race_organizer'}
+									<span class="activity-badge organizer">Organized</span>
+								{:else if item.type === 'race_caster'}
+									<span class="activity-badge caster">Casted</span>
+								{:else if item.type === 'training'}
+									<span class="activity-badge training">Training</span>
+								{/if}
+								<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+							</div>
+							<div class="activity-details">
+								{#if item.type === 'race_participant'}
 									{#if item.placement}
 										<span class="placement {placementClass(item.placement)}">
 											{placementLabel(item.placement)} / {item.total_participants}
@@ -342,46 +356,14 @@
 									{/if}
 									<span class="mono">{formatIgt(item.igt_ms)}</span>
 									<span>{item.death_count} deaths</span>
-								</div>
-							</div>
-						{:else if item.type === 'race_organizer'}
-							<div class="activity-body">
-								<div class="badge-row">
-									<span class="activity-badge organizer">Organized</span>
-									<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
-								</div>
-								<a href="/race/{item.race_id}" class="activity-title">
-									{item.race_name}
-								</a>
-								<div class="activity-details">
+								{:else if item.type === 'race_organizer'}
 									<span>{item.participant_count} players</span>
-								</div>
-							</div>
-						{:else if item.type === 'race_caster'}
-							<div class="activity-body">
-								<div class="badge-row">
-									<span class="activity-badge caster">Casted</span>
-									<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
-								</div>
-								<a href="/race/{item.race_id}" class="activity-title">
-									{item.race_name}
-								</a>
-							</div>
-						{:else if item.type === 'training'}
-							<div class="activity-body">
-								<div class="badge-row">
-									<span class="activity-badge training">Training</span>
-									<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
-								</div>
-								<a href="/training/{item.session_id}" class="activity-title">
-									{displayPoolName(item.pool_name)}
-								</a>
-								<div class="activity-details">
+								{:else if item.type === 'training'}
 									<span class="mono">{formatIgt(item.igt_ms)}</span>
 									<span>{item.death_count} deaths</span>
-								</div>
+								{/if}
 							</div>
-						{/if}
+						</div>
 					</div>
 				{/each}
 			</div>
@@ -617,17 +599,25 @@
 	.timeline {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.35rem;
 	}
 
 	.activity-card {
-		display: flex;
-		align-items: flex-start;
+		display: grid;
+		grid-template-columns: 10rem 1fr auto;
 		gap: 0.75rem;
-		padding: 0.75rem 1rem;
+		align-items: center;
+		padding: 0.6rem 1rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-md);
+	}
+
+	.col-who {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		min-width: 0;
 	}
 
 	.activity-user {
@@ -636,8 +626,7 @@
 		gap: 0.5rem;
 		text-decoration: none;
 		color: inherit;
-		flex-shrink: 0;
-		min-width: 8rem;
+		min-width: 0;
 	}
 
 	.activity-user:hover .activity-username {
@@ -646,10 +635,11 @@
 	}
 
 	.activity-avatar {
-		width: 24px;
-		height: 24px;
+		width: 20px;
+		height: 20px;
 		border-radius: 50%;
 		border: 1px solid var(--color-border);
+		flex-shrink: 0;
 	}
 
 	.activity-username {
@@ -658,23 +648,40 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		max-width: 7rem;
 	}
 
 	.activity-date {
 		font-size: var(--font-size-xs);
 		color: var(--color-text-secondary);
 		white-space: nowrap;
-		min-width: 5.5rem;
-		padding-top: 0.15rem;
+		padding-left: 1.75rem;
 	}
 
-	.activity-body {
+	.col-what {
+		min-width: 0;
+	}
+
+	.activity-title {
+		color: var(--color-text-primary);
+		text-decoration: none;
+		font-weight: 600;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		display: block;
+	}
+
+	.activity-title:hover {
+		color: var(--color-purple);
+		text-decoration: underline;
+	}
+
+	.col-context {
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
-		flex: 1;
-		min-width: 0;
+		align-items: flex-end;
+		gap: 0.15rem;
+		flex-shrink: 0;
 	}
 
 	.badge-row {
@@ -690,7 +697,7 @@
 		letter-spacing: 0.05em;
 		padding: 0.1rem 0.4rem;
 		border-radius: var(--radius-sm);
-		width: fit-content;
+		white-space: nowrap;
 	}
 
 	.activity-badge.participant {
@@ -713,22 +720,12 @@
 		color: var(--color-success);
 	}
 
-	.activity-title {
-		color: var(--color-text-primary);
-		text-decoration: none;
-		font-weight: 600;
-	}
-
-	.activity-title:hover {
-		color: var(--color-purple);
-		text-decoration: underline;
-	}
-
 	.activity-details {
 		display: flex;
-		gap: 0.75rem;
-		font-size: var(--font-size-sm);
+		gap: 0.5rem;
+		font-size: var(--font-size-xs);
 		color: var(--color-text-secondary);
+		white-space: nowrap;
 	}
 
 	.placement {
@@ -765,7 +762,9 @@
 		font-family: var(--font-family);
 		font-size: var(--font-size-sm);
 		cursor: pointer;
-		transition: background 0.15s, border-color 0.15s;
+		transition:
+			background 0.15s,
+			border-color 0.15s;
 	}
 
 	.btn-secondary:hover:not(:disabled) {
@@ -792,16 +791,17 @@
 		}
 
 		.activity-card {
+			display: flex;
 			flex-direction: column;
 			gap: 0.25rem;
 		}
 
-		.activity-user {
-			min-width: auto;
+		.activity-date {
+			padding-left: 0;
 		}
 
-		.activity-date {
-			min-width: auto;
+		.col-context {
+			align-items: flex-start;
 		}
 	}
 </style>
