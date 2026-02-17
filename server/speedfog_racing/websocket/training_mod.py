@@ -31,6 +31,7 @@ from speedfog_racing.websocket.schemas import (
     RaceStartMessage,
     RaceStatusChangeMessage,
     SeedInfo,
+    extract_spawn_items,
 )
 from speedfog_racing.websocket.training_manager import training_manager
 
@@ -228,6 +229,9 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
             if isinstance(finish, int) and finish not in event_ids:
                 event_ids.append(finish)
 
+    # Extract gem items from care_package for runtime spawning by the mod
+    spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
+
     participant_info = ParticipantInfo(
         id=str(session.id),
         twitch_username=session.user.twitch_username,
@@ -256,6 +260,7 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
             total_layers=seed.total_layers if seed else 0,
             graph_json=None,
             event_ids=event_ids,
+            spawn_items=spawn_items,
         ),
         participants=[participant_info],
     )

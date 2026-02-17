@@ -34,7 +34,7 @@ from speedfog_racing.websocket.schemas import (
     RaceInfo,
     RaceStartMessage,
     SeedInfo,
-    SpawnItem,
+    extract_spawn_items,
 )
 from speedfog_racing.websocket.spectator import broadcast_race_state_update
 
@@ -291,14 +291,7 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
                 event_ids.append(finish)
 
     # Extract gem items from care_package for runtime spawning by the mod
-    spawn_items: list[SpawnItem] = []
-    if seed and seed.graph_json:
-        care_pkg = seed.graph_json.get("care_package", [])
-        spawn_items = [
-            SpawnItem(id=item["id"], qty=1)
-            for item in care_pkg
-            if item.get("type") == 4 and item.get("id", 0) != 0
-        ]
+    spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
 
     # Build participant list
     room = manager.get_room(race.id)

@@ -1,6 +1,6 @@
 """WebSocket message schemas."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -54,6 +54,16 @@ class SpawnItem(BaseModel):
 
     id: int
     qty: int = 1
+
+
+def extract_spawn_items(graph_json: dict[str, Any]) -> list[SpawnItem]:
+    """Extract type-4 (Gem/Ash of War) items from care_package for mod runtime spawning."""
+    care_pkg = graph_json.get("care_package", [])
+    return [
+        SpawnItem(id=item["id"], qty=1)
+        for item in care_pkg
+        if item.get("type") == 4 and item.get("id", 0) != 0
+    ]
 
 
 # --- Server -> Client Messages ---
