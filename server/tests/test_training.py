@@ -832,6 +832,94 @@ def test_training_zone_history_includes_start_node(
         assert p["zone_history"][1]["node_id"] == "stormveil_01"
 
 
+def test_training_zone_query_fast_travel(training_ws_client, async_session):
+    """Training mod WS: zone_query resolves grace → node and sends zone_update."""
+
+    # Need a graph with `zones` arrays so resolve_grace_to_node can match
+    # grace entity 10002950 → zone_id "stormveil_godrick" (from graces.json)
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 3,
+        "total_nodes": 2,
+        "total_paths": 1,
+        "start_node": "chapel_start",
+        "final_boss": "godrick_boss",
+        "event_map": {"1040292800": "godrick_node"},
+        "finish_event": 1040292899,
+        "nodes": {
+            "chapel_start": {
+                "type": "start",
+                "layer": 0,
+                "tier": 1,
+                "name": "Chapel Start",
+                "display_name": "Chapel of Anticipation",
+                "zones": ["chapel_start"],
+            },
+            "godrick_node": {
+                "layer": 1,
+                "tier": 5,
+                "name": "Godrick",
+                "display_name": "Godrick the Grafted",
+                "zones": ["stormveil_godrick"],
+            },
+        },
+        "edges": [{"from": "chapel_start", "to": "godrick_node"}],
+    }
+
+    async def _setup():
+        async with async_session() as db:
+            user = User(
+                twitch_id="zq_train_user",
+                twitch_username="zq_trainer",
+                api_token=generate_token(),
+                role=UserRole.USER,
+            )
+            seed = Seed(
+                seed_number="zq_train_001",
+                pool_name="training_standard",
+                graph_json=graph_json,
+                total_layers=3,
+                folder_path="/tmp/zq_seed.zip",
+                status=SeedStatus.AVAILABLE,
+            )
+            db.add_all([user, seed])
+            await db.commit()
+            await db.refresh(user)
+            await db.refresh(seed)
+
+            ts = TrainingSession(user_id=user.id, seed_id=seed.id)
+            db.add(ts)
+            await db.commit()
+            await db.refresh(ts)
+            return str(ts.id), ts.mod_token
+
+    sid, token = asyncio.run(_setup())
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        auth_ok = ws.receive_json()
+        assert auth_ok["type"] == "auth_ok"
+        ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update (start node)
+
+        # Discover godrick_node via event_flag first (so it's in progress)
+        ws.send_json({"type": "event_flag", "flag_id": 1040292800, "igt_ms": 5000})
+        lb = ws.receive_json()
+        assert lb["type"] == "leaderboard_update"
+        zu = ws.receive_json()
+        assert zu["type"] == "zone_update"
+        assert zu["node_id"] == "godrick_node"
+
+        # Now simulate fast travel to Godrick grace (entity 10002950)
+        # This should resolve via graces.json → zone_id "stormveil_godrick" → "godrick_node"
+        ws.send_json({"type": "zone_query", "grace_entity_id": 10002950})
+        zu2 = ws.receive_json()
+        assert zu2["type"] == "zone_update"
+        assert zu2["node_id"] == "godrick_node"
+        assert zu2["display_name"] == "Godrick the Grafted"
+        assert zu2["tier"] == 5
+
+
 def test_training_mod_websocket_invalid_token(training_ws_client, training_session_data):
     """Training mod WS: invalid token returns auth_error."""
     sid = training_session_data["session_id"]

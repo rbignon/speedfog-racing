@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from starlette.websockets import WebSocketDisconnect
 
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
+from speedfog_racing.services.grace_service import load_graces_mapping, resolve_grace_to_node
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
     get_layer_for_node,
@@ -38,6 +39,15 @@ HEARTBEAT_INTERVAL = 30.0
 SEND_TIMEOUT = 5.0
 
 logger = logging.getLogger(__name__)
+
+_graces_mapping: dict[str, dict[str, Any]] | None = None
+
+
+def _get_graces_mapping() -> dict[str, dict[str, Any]]:
+    global _graces_mapping
+    if _graces_mapping is None:
+        _graces_mapping = load_graces_mapping()
+    return _graces_mapping
 
 
 def _load_options() -> list[Any]:
@@ -157,6 +167,8 @@ async def handle_training_mod_websocket(
                     await _handle_status_update(session_maker, session_id, msg)
                 elif msg_type == "event_flag":
                     await _handle_event_flag(websocket, session_maker, session_id, msg)
+                elif msg_type == "zone_query":
+                    await _handle_zone_query(websocket, session_maker, session_id, msg)
         finally:
             heartbeat_task.cancel()
             try:
@@ -347,6 +359,49 @@ async def _handle_event_flag(
                 await websocket.send_text(json.dumps(zone_update))
             except Exception:
                 pass
+
+
+async def _handle_zone_query(
+    websocket: WebSocket,
+    session_maker: async_sessionmaker[AsyncSession],
+    session_id: uuid.UUID,
+    msg: dict[str, Any],
+) -> None:
+    """Handle zone_query from mod (fast travel overlay update)."""
+    grace_entity_id = msg.get("grace_entity_id")
+    if not isinstance(grace_entity_id, int) or grace_entity_id == 0:
+        return
+
+    async with session_maker() as db:
+        session = await _load_session(db, session_id)
+        if not session or session.status != TrainingSessionStatus.ACTIVE:
+            return
+
+        seed = session.seed
+        if not seed or not seed.graph_json:
+            return
+
+        graph_json = seed.graph_json
+        node_id = resolve_grace_to_node(grace_entity_id, graph_json, _get_graces_mapping())
+        if node_id is None:
+            logger.debug(
+                "zone_query: grace %d not in graph for training session %s",
+                grace_entity_id,
+                session_id,
+            )
+            return
+
+        progress = session.progress_nodes or []
+
+    # Unicast zone_update to mod (no DB write needed — just overlay update)
+    zone_update = compute_zone_update(node_id, graph_json, progress)
+    if zone_update:
+        try:
+            await asyncio.wait_for(
+                websocket.send_text(json.dumps(zone_update)), timeout=SEND_TIMEOUT
+            )
+        except Exception:
+            logger.warning("Failed to send zone_update for training zone_query")
 
 
 async def _broadcast_participant_update(
