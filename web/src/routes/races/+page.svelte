@@ -1,11 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { fetchRaces, type Race } from '$lib/api';
+	import { fetchRaces, fetchRacesPaginated, type Race } from '$lib/api';
 	import RaceCard from '$lib/components/RaceCard.svelte';
 	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
 
+	const FINISHED_PAGE_SIZE = 10;
+
 	let races: Race[] = $state([]);
+	let finishedRaces: Race[] = $state([]);
 	let loadingRaces = $state(true);
+	let loadingFinished = $state(true);
+	let loadingMore = $state(false);
+	let hasMoreFinished = $state(false);
 
 	let liveRaces = $derived(races.filter((r) => r.status === 'running'));
 	let upcomingRaces = $derived(
@@ -25,7 +31,32 @@
 			.then((r) => (races = r))
 			.catch((e) => console.error('Failed to fetch races:', e))
 			.finally(() => (loadingRaces = false));
+
+		fetchRacesPaginated('finished', 0, FINISHED_PAGE_SIZE)
+			.then((data) => {
+				finishedRaces = data.races;
+				hasMoreFinished = data.has_more ?? false;
+			})
+			.catch((e) => console.error('Failed to fetch finished races:', e))
+			.finally(() => (loadingFinished = false));
 	});
+
+	async function loadMoreFinished() {
+		loadingMore = true;
+		try {
+			const data = await fetchRacesPaginated(
+				'finished',
+				finishedRaces.length,
+				FINISHED_PAGE_SIZE,
+			);
+			finishedRaces = [...finishedRaces, ...data.races];
+			hasMoreFinished = data.has_more ?? false;
+		} catch (e) {
+			console.error('Failed to load more finished races:', e);
+		} finally {
+			loadingMore = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -61,24 +92,33 @@
 		{/if}
 
 		{#if liveRaces.length === 0 && upcomingRaces.length === 0}
-			<div class="empty-state">
-				<svg
-					class="empty-icon"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.5"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				>
-					<circle cx="12" cy="12" r="10" />
-					<polyline points="12 6 12 12 16 14" />
-				</svg>
-				<p class="empty-title">No active races right now</p>
-				<p class="empty-hint">Races will appear here when organizers create them.</p>
+			<div class="empty-active">
+				<p class="empty-text">No active races right now</p>
 			</div>
 		{/if}
 	{/if}
+
+	<section class="race-section">
+		<h2>Recent Results</h2>
+		{#if loadingFinished}
+			<p class="loading">Loading results...</p>
+		{:else if finishedRaces.length === 0}
+			<p class="empty-text">No finished races yet.</p>
+		{:else}
+			<div class="race-grid">
+				{#each finishedRaces as race}
+					<RaceCard {race} />
+				{/each}
+			</div>
+			{#if hasMoreFinished}
+				<div class="load-more">
+					<button class="btn btn-secondary" onclick={loadMoreFinished} disabled={loadingMore}>
+						{loadingMore ? 'Loading...' : 'Load more'}
+					</button>
+				</div>
+			{/if}
+		{/if}
+	</section>
 </main>
 
 <style>
@@ -122,35 +162,20 @@
 		font-style: italic;
 	}
 
-	.empty-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.75rem;
-		padding: 3rem 2rem;
-		margin: 1rem auto;
-		max-width: 400px;
+	.empty-active {
+		padding: 1.5rem 0;
 		text-align: center;
 	}
 
-	.empty-icon {
-		width: 3rem;
-		height: 3rem;
-		color: var(--color-text-disabled);
-		opacity: 0.6;
-	}
-
-	.empty-title {
+	.empty-text {
 		margin: 0;
-		font-size: var(--font-size-lg);
-		font-weight: 600;
 		color: var(--color-text-secondary);
 	}
 
-	.empty-hint {
-		margin: 0;
-		font-size: var(--font-size-sm);
-		color: var(--color-text-disabled);
+	.load-more {
+		display: flex;
+		justify-content: center;
+		margin-top: 1.5rem;
 	}
 
 	@media (max-width: 640px) {

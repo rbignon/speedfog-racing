@@ -41,6 +41,8 @@ export interface Race {
 
 export interface RaceListResponse {
   races: Race[];
+  total?: number | null;
+  has_more?: boolean | null;
 }
 
 export type ParticipantStatus =
@@ -197,6 +199,25 @@ export async function fetchRaces(status?: string): Promise<Race[]> {
 
   const data = await handleResponse<RaceListResponse>(response);
   return data.races;
+}
+
+/**
+ * Fetch list of races with pagination support.
+ */
+export async function fetchRacesPaginated(
+  status: string,
+  offset: number,
+  limit: number,
+): Promise<RaceListResponse> {
+  const params = new URLSearchParams({
+    status,
+    offset: String(offset),
+    limit: String(limit),
+  });
+  const response = await fetch(`${API_BASE}/races?${params}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<RaceListResponse>(response);
 }
 
 /**

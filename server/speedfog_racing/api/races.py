@@ -278,10 +278,12 @@ async def create_race(
 @router.get("", response_model=RaceListResponse)
 async def list_races(
     status_filter: str | None = Query(None, alias="status"),
+    offset: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _user: User | None = Depends(get_current_user_optional),
 ) -> RaceListResponse:
-    """List races, optionally filtered by status."""
+    """List races, optionally filtered by status with pagination."""
     query = select(Race).options(
         selectinload(Race.organizer),
         selectinload(Race.seed),
@@ -320,9 +322,23 @@ async def list_races(
         Race.scheduled_at.asc(),
         Race.created_at.desc(),
     )
+
+    # Pagination
+    if limit is not None:
+        # Count total before applying offset/limit
+        count_query = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_query)).scalar_one()
+        query = query.offset(offset).limit(limit)
+        result = await db.execute(query)
+        races = list(result.scalars().all())
+        return RaceListResponse(
+            races=[race_response(r) for r in races],
+            total=total,
+            has_more=(offset + limit) < total,
+        )
+
     result = await db.execute(query)
     races = list(result.scalars().all())
-
     return RaceListResponse(races=[race_response(r) for r in races])
 
 

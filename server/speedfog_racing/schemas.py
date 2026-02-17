@@ -253,6 +253,8 @@ class RaceListResponse(BaseModel):
     """Response for race listing."""
 
     races: list[RaceResponse]
+    total: int | None = None
+    has_more: bool | None = None
 
 
 class InviteInfoResponse(BaseModel):
