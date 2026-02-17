@@ -7,6 +7,7 @@
 		type ActivityTimeline,
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
+	import { displayPoolName } from '$lib/utils/training';
 
 	let username = $derived(page.params.username!);
 	let profile = $state<UserProfile | null>(null);
@@ -213,7 +214,7 @@
 											<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
 										</div>
 										<a href="/training/{item.session_id}" class="activity-title">
-											{item.pool_name}
+											{displayPoolName(item.pool_name)}
 										</a>
 										<div class="activity-details">
 											<span class="mono">{formatIgt(item.igt_ms)}</span>
