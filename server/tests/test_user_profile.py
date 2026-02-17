@@ -344,3 +344,46 @@ async def test_profile_stats_counts(test_client, user_with_activity):
         assert stats["casted_count"] == 1  # casted 1 race
         assert stats["podium_count"] == 2  # 1st + 2nd place both count
         assert stats["first_place_count"] == 1  # only race 1
+
+
+@pytest.mark.asyncio
+async def test_profile_stats_include_podium_rate(test_client, user_with_activity):
+    """Profile stats include podium_rate computed from race results."""
+    async with test_client as client:
+        response = await client.get(f"/api/users/{user_with_activity.twitch_username}")
+        assert response.status_code == 200
+        stats = response.json()["stats"]
+        # 2 podiums (1st + 2nd) out of 2 races = 1.0
+        assert stats["podium_rate"] == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_profile_stats_podium_rate_zero_races(test_client, sample_user):
+    """podium_rate is null when user has no finished races."""
+    async with test_client as client:
+        response = await client.get(f"/api/users/{sample_user.twitch_username}")
+        stats = response.json()["stats"]
+        assert stats["podium_rate"] is None
+
+
+@pytest.mark.asyncio
+async def test_profile_stats_include_best_recent_placement(test_client, user_with_activity):
+    """Profile stats include best_recent_placement from recent finished races."""
+    async with test_client as client:
+        response = await client.get(f"/api/users/{user_with_activity.twitch_username}")
+        stats = response.json()["stats"]
+        brp = stats["best_recent_placement"]
+        assert brp is not None
+        assert brp["placement"] == 1
+        assert brp["race_name"] == "Race 1"
+        assert "race_id" in brp
+        assert "finished_at" in brp
+
+
+@pytest.mark.asyncio
+async def test_profile_stats_best_recent_placement_none(test_client, sample_user):
+    """best_recent_placement is null when user has no finished races."""
+    async with test_client as client:
+        response = await client.get(f"/api/users/{sample_user.twitch_username}")
+        stats = response.json()["stats"]
+        assert stats["best_recent_placement"] is None

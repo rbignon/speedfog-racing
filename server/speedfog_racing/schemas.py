@@ -57,6 +57,15 @@ class UserResponse(BaseModel):
     twitch_avatar_url: str | None
 
 
+class BestRecentPlacement(BaseModel):
+    """Best placement among recent finished races."""
+
+    placement: int
+    race_name: str
+    race_id: UUID
+    finished_at: datetime | None
+
+
 class UserStatsResponse(BaseModel):
     """Aggregated user statistics."""
 
@@ -66,6 +75,8 @@ class UserStatsResponse(BaseModel):
     first_place_count: int
     organized_count: int
     casted_count: int
+    podium_rate: float | None = None
+    best_recent_placement: BestRecentPlacement | None = None
 
 
 class UserProfileDetailResponse(BaseModel):

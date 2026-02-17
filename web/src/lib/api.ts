@@ -592,6 +592,13 @@ export interface AdminUser {
 }
 
 // User profile
+export interface BestRecentPlacement {
+  placement: number;
+  race_name: string;
+  race_id: string;
+  finished_at: string | null;
+}
+
 export interface UserStats {
   race_count: number;
   training_count: number;
@@ -599,6 +606,8 @@ export interface UserStats {
   first_place_count: number;
   organized_count: number;
   casted_count: number;
+  podium_rate: number | null;
+  best_recent_placement: BestRecentPlacement | null;
 }
 
 export interface UserProfile {
