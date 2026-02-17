@@ -54,7 +54,7 @@ messmerskindling = true
 
 [care_package]
 enabled = true
-weapon_upgrade = 6
+weapon_upgrade = 0
 weapons = 5
 shields = 2
 catalysts = 2

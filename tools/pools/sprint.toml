@@ -10,7 +10,7 @@ seed = 0  # Auto-reroll until valid DAG found
 run_complete_message = "RUN COMPLETE GG"
 
 [budget]
-total_weight = 20
+total_weight = 30
 tolerance = 3
 
 [requirements]
@@ -20,12 +20,12 @@ mini_dungeons = 3
 
 [structure]
 max_parallel_paths = 3
-min_layers = 9
-max_layers = 12
-final_tier = 14
-split_probability = 0.35
-merge_probability = 0.35
-max_branches = 3
+min_layers = 10
+max_layers = 15
+final_tier = 12
+split_probability = 0.2
+merge_probability = 0.2
+max_branches = 4
 major_boss_ratio = 0.1
 final_boss_candidates = ["all"]
 
@@ -38,8 +38,8 @@ great_runes = true
 whetblades = true
 talisman_pouches = 3
 golden_seeds = 5
-sacred_tears = 3
-starting_runes = 50000
+sacred_tears = 4
+starting_runes = 100000
 larval_tears = 1
 
 # DLC key items (prevent softlocks in DLC areas)
@@ -52,7 +52,7 @@ messmerskindling = true
 
 [care_package]
 enabled = true
-weapon_upgrade = 15
+weapon_upgrade = 0
 weapons = 5
 shields = 2
 catalysts = 2
