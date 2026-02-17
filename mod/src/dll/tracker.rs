@@ -19,6 +19,10 @@ use super::config::RaceConfig;
 use super::hotkey::begin_hotkey_frame;
 use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 
+/// Delay after a loading screen before revealing the zone name on the overlay.
+/// Covers fade-in / spawn animation so the overlay doesn't update while the screen is still black.
+const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(2);
+
 // =============================================================================
 // RACE STATE
 // =============================================================================
@@ -233,7 +237,7 @@ impl RaceTracker {
             spawner_thread: None,
             pending_zone_update: None,
             saw_loading: true, // Start true so first zone_update (from auth) reveals immediately
-            loading_exit_time: Some(Instant::now()), // Past instant → immediate reveal on auth
+            loading_exit_time: Some(Instant::now() - ZONE_REVEAL_DELAY), // Already elapsed → immediate reveal
             was_position_readable: true,
             seed_mismatch: false,
         })
@@ -277,7 +281,6 @@ impl RaceTracker {
         // reveal when the server's zone_update arrives before the game starts loading.
         // After the loading screen ends we wait ZONE_REVEAL_DELAY so the player has finished
         // fading in / spawning before the overlay updates.
-        const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(2);
         if self.pending_zone_update.is_some() {
             if position_readable {
                 if self.saw_loading {
@@ -498,7 +501,7 @@ impl RaceTracker {
                 // Reset transition gate: after (re)auth, the server sends the player's
                 // current zone — reveal it immediately without requiring a loading cycle.
                 self.saw_loading = true;
-                self.loading_exit_time = Some(Instant::now());
+                self.loading_exit_time = Some(Instant::now() - ZONE_REVEAL_DELAY);
                 self.race_state.race = Some(race);
 
                 // Detect seed mismatch (stale seed pack after re-roll)
