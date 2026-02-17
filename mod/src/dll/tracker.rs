@@ -266,13 +266,16 @@ impl RaceTracker {
         // Read position once per frame for loading screen detection
         let position_readable = self.game_state.read_position().is_some();
 
-        // Reveal pending zone update once loading screen is finished.
+        // Reveal pending zone update once loading screen AND spawn animation are finished.
         // Transition gate: after an event flag, we must first observe a loading screen
         // (read_position() returns None) before revealing the zone. This prevents premature
         // reveal when the server's zone_update arrives before the game starts loading.
+        // We also wait for the spawn animation (63000) to complete so the overlay doesn't
+        // update while the player is still fading in.
+        const SPAWN_ANIM: u32 = 63000;
         if self.pending_zone_update.is_some() {
             if position_readable {
-                if self.saw_loading {
+                if self.saw_loading && self.game_state.read_animation() != Some(SPAWN_ANIM) {
                     let zone = self.pending_zone_update.take().unwrap();
                     info!(name = %zone.display_name, "[RACE] Zone revealed after loading");
                     self.race_state.current_zone = Some(zone);
