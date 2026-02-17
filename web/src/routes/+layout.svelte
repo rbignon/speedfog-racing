@@ -49,12 +49,13 @@
 	<div class="app" class:app-fixed={isRaceDetailPage}>
 		<header>
 			<div class="header-content">
-				<a href="/" class="logo">SpeedFog Racing<span class="beta-badge">Beta</span></a>
+				<a href={auth.isLoggedIn ? '/dashboard' : '/'} class="logo">SpeedFog Racing<span class="beta-badge">Beta</span></a>
 				<nav>
 					<a href="/help" class="help-icon" aria-label="Help">?</a>
 					{#if auth.loading}
 						<span class="loading">Loading...</span>
 					{:else if auth.isLoggedIn}
+						<a href="/" class="btn btn-secondary">Races</a>
 						<a href="/training" class="btn btn-secondary">Training</a>
 						{#if auth.isAdmin}
 							<a href="/admin" class="btn btn-secondary">Admin</a>
