@@ -492,6 +492,7 @@
 		flex-shrink: 0;
 		display: flex;
 		flex-direction: column;
+		min-height: 0;
 	}
 
 	.sidebar-section {
@@ -560,6 +561,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.5rem;
+		overflow-y: auto;
 	}
 
 	.race-header {
@@ -756,6 +758,7 @@
 	@media (max-width: 768px) {
 		.race-page {
 			flex-direction: column;
+			flex: initial;
 		}
 
 		.sidebar {
@@ -767,6 +770,7 @@
 
 		.main-content {
 			padding: 1rem;
+			overflow-y: visible;
 		}
 
 		.race-header {

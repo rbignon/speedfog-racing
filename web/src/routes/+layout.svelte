@@ -10,6 +10,30 @@
 	let { children } = $props();
 
 	let isOverlay = $derived(page.url.pathname.startsWith('/overlay/'));
+	let isRaceDetailPage = $derived(page.route.id === '/race/[id]');
+
+	let userMenuOpen = $state(false);
+	let userMenuEl: HTMLDivElement | undefined = $state();
+
+	function toggleUserMenu() {
+		userMenuOpen = !userMenuOpen;
+	}
+
+	function closeUserMenu() {
+		userMenuOpen = false;
+	}
+
+	function handleWindowClick(e: MouseEvent) {
+		if (userMenuOpen && userMenuEl && !userMenuEl.contains(e.target as Node)) {
+			closeUserMenu();
+		}
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && userMenuOpen) {
+			closeUserMenu();
+		}
+	}
 
 	onMount(() => {
 		auth.init();
@@ -17,23 +41,20 @@
 	});
 </script>
 
+<svelte:window onclick={handleWindowClick} onkeydown={handleKeydown} />
+
 {#if isOverlay}
 	{@render children()}
 {:else}
-	<div class="app">
+	<div class="app" class:app-fixed={isRaceDetailPage}>
 		<header>
 			<div class="header-content">
 				<a href="/" class="logo">SpeedFog Racing<span class="beta-badge">Beta</span></a>
 				<nav>
+					<a href="/help" class="help-icon" aria-label="Help">?</a>
 					{#if auth.loading}
 						<span class="loading">Loading...</span>
 					{:else if auth.isLoggedIn}
-						<a href="/user/{auth.user?.twitch_username}" class="user-info">
-							{#if auth.user?.twitch_avatar_url}
-								<img src={auth.user.twitch_avatar_url} alt="" class="avatar" />
-							{/if}
-							<span>{auth.user?.twitch_display_name || auth.user?.twitch_username}</span>
-						</a>
 						<a href="/training" class="btn btn-secondary">Training</a>
 						{#if auth.isAdmin}
 							<a href="/admin" class="btn btn-secondary">Admin</a>
@@ -41,7 +62,22 @@
 						{#if auth.canCreateRace}
 							<a href="/race/new" class="btn btn-primary">Create Race</a>
 						{/if}
-						<button onclick={() => { auth.logout(); goto('/'); }} class="btn btn-secondary">Logout</button>
+						<div class="user-menu" bind:this={userMenuEl}>
+							<button class="user-menu-trigger" onclick={toggleUserMenu}>
+								{#if auth.user?.twitch_avatar_url}
+									<img src={auth.user.twitch_avatar_url} alt="" class="avatar" />
+								{/if}
+								<span class="user-menu-name">{auth.user?.twitch_display_name || auth.user?.twitch_username}</span>
+								<span class="chevron">&#9662;</span>
+							</button>
+							{#if userMenuOpen}
+								<div class="user-dropdown">
+									<a href="/user/{auth.user?.twitch_username}" class="dropdown-item" onclick={closeUserMenu}>Profile</a>
+									<hr class="dropdown-divider" />
+									<button class="dropdown-item" onclick={() => { closeUserMenu(); auth.logout(); goto('/'); }}>Logout</button>
+								</div>
+							{/if}
+						</div>
 					{:else if !site.initialized}
 						<!-- Wait for site config -->
 					{:else if site.comingSoon}
@@ -57,36 +93,38 @@
 			{@render children()}
 		</div>
 
-		<footer>
-			<div class="footer-content">
-				<p class="footer-credit">
-					Based on the <a
-						href="https://www.nexusmods.com/eldenring/mods/3295"
-						target="_blank"
-						rel="noopener noreferrer">Fog Gate Randomizer</a
-					> by thefifthmatt
-				</p>
-				<nav class="footer-links" aria-label="Footer navigation">
-					<a href="/about">About</a>
-					<a href="/help">Help</a>
-					<a
-						href="https://discord.gg/Qmw67J3mR9"
-						target="_blank"
-						rel="noopener noreferrer">Discord</a
-					>
-					<a
-						href="https://github.com/rbignon/speedfog"
-						target="_blank"
-						rel="noopener noreferrer">SpeedFog</a
-					>
-					<a
-						href="https://github.com/rbignon/speedfog-racing"
-						target="_blank"
-						rel="noopener noreferrer">SpeedFog Racing</a
-					>
-				</nav>
-			</div>
-		</footer>
+		{#if !isRaceDetailPage}
+			<footer>
+				<div class="footer-content">
+					<p class="footer-credit">
+						Based on the <a
+							href="https://www.nexusmods.com/eldenring/mods/3295"
+							target="_blank"
+							rel="noopener noreferrer">Fog Gate Randomizer</a
+						> by thefifthmatt
+					</p>
+					<nav class="footer-links" aria-label="Footer navigation">
+						<a href="/about">About</a>
+						<a href="/help">Help</a>
+						<a
+							href="https://discord.gg/Qmw67J3mR9"
+							target="_blank"
+							rel="noopener noreferrer">Discord</a
+						>
+						<a
+							href="https://github.com/rbignon/speedfog"
+							target="_blank"
+							rel="noopener noreferrer">SpeedFog</a
+						>
+						<a
+							href="https://github.com/rbignon/speedfog-racing"
+							target="_blank"
+							rel="noopener noreferrer">SpeedFog Racing</a
+						>
+					</nav>
+				</div>
+			</footer>
+		{/if}
 	</div>
 {/if}
 
@@ -96,6 +134,15 @@
 		display: flex;
 		flex-direction: column;
 		overflow-x: hidden;
+	}
+
+	.app-fixed {
+		height: 100vh;
+		overflow: hidden;
+	}
+
+	.app-fixed .content {
+		overflow-y: hidden;
 	}
 
 	header {
@@ -141,16 +188,51 @@
 		gap: 1rem;
 	}
 
-	.user-info {
+	.help-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		border: 1px solid var(--color-border);
+		color: var(--color-text-secondary);
+		text-decoration: none;
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+		flex-shrink: 0;
+		transition: all var(--transition);
+	}
+
+	.help-icon:hover {
+		border-color: var(--color-purple);
+		color: var(--color-purple);
+	}
+
+	.user-menu {
+		position: relative;
+	}
+
+	.user-menu-trigger {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
+		background: none;
+		border: none;
 		color: inherit;
-		text-decoration: none;
+		cursor: pointer;
+		padding: 0;
+		font-family: var(--font-family);
+		font-size: var(--font-size-base);
 	}
 
-	.user-info:hover {
+	.user-menu-trigger:hover {
 		color: var(--color-purple);
+	}
+
+	.chevron {
+		font-size: 0.7em;
+		color: var(--color-text-secondary);
 	}
 
 	.avatar {
@@ -158,6 +240,44 @@
 		height: 32px;
 		border-radius: 50%;
 		border: 2px solid var(--color-border);
+	}
+
+	.user-dropdown {
+		position: absolute;
+		top: 100%;
+		right: 0;
+		margin-top: 0.5rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		min-width: 160px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+		z-index: 100;
+	}
+
+	.dropdown-item {
+		display: block;
+		width: 100%;
+		padding: 0.6rem 1rem;
+		background: none;
+		border: none;
+		color: var(--color-text);
+		text-decoration: none;
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		text-align: left;
+		cursor: pointer;
+		transition: background var(--transition);
+	}
+
+	.dropdown-item:hover {
+		background: var(--color-bg);
+	}
+
+	.dropdown-divider {
+		margin: 0;
+		border: none;
+		border-top: 1px solid var(--color-border);
 	}
 
 	.loading {
@@ -171,6 +291,7 @@
 		flex-direction: column;
 		min-height: 0;
 		min-width: 0;
+		overflow-y: auto;
 	}
 
 	footer {
@@ -219,6 +340,17 @@
 		color: var(--color-purple);
 	}
 
+	@media (max-width: 768px) {
+		.app-fixed {
+			height: auto;
+			overflow: visible;
+		}
+
+		.app-fixed .content {
+			overflow-y: auto;
+		}
+	}
+
 	@media (max-width: 640px) {
 		.header-content {
 			padding: 0.75rem 1rem;
@@ -240,7 +372,11 @@
 			padding: 0.4rem 0.75rem;
 		}
 
-		.user-info span {
+		.user-menu-name {
+			display: none;
+		}
+
+		.chevron {
 			display: none;
 		}
 
