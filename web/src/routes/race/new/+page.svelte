@@ -9,6 +9,7 @@
 	let scheduledAt = $state('');
 	let poolName = $state('standard');
 	let organizerParticipates = $state(true);
+	let isPublic = $state(true);
 	let pools: PoolStats = $state({});
 	let loading = $state(true);
 	let creating = $state(false);
@@ -70,7 +71,7 @@
 
 		try {
 			const isoScheduled = scheduledAt ? new Date(scheduledAt).toISOString() : null;
-			const race = await createRace(name.trim(), poolName, organizerParticipates, {}, isoScheduled);
+			const race = await createRace(name.trim(), poolName, organizerParticipates, {}, isoScheduled, isPublic);
 			goto(`/race/${race.id}`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to create race.';
@@ -203,6 +204,36 @@
 				<p class="hint">
 					If you choose "organize only", you will see the DAG and cannot join as a player
 					later.
+				</p>
+			</div>
+
+			<div class="form-group">
+				<label>Visibility</label>
+				<div class="radio-group">
+					<label class="radio-label">
+						<input
+							type="radio"
+							name="visibility"
+							checked={isPublic}
+							onchange={() => (isPublic = true)}
+							disabled={creating}
+						/>
+						Public
+					</label>
+					<label class="radio-label">
+						<input
+							type="radio"
+							name="visibility"
+							checked={!isPublic}
+							onchange={() => (isPublic = false)}
+							disabled={creating}
+						/>
+						Private
+					</label>
+				</div>
+				<p class="hint">
+					Private races won't appear on the homepage. Players can still join via direct link
+					or invite.
 				</p>
 			</div>
 

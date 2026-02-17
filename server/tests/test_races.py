@@ -1261,3 +1261,151 @@ async def test_reroll_seed_no_available_seeds(test_client, organizer, async_sess
         )
         assert response.status_code == 400
         assert "No available seeds" in response.json()["detail"]
+
+
+# =============================================================================
+# Private races
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_create_private_race(test_client, organizer, seed):
+    """Creating a race with is_public=false succeeds."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Secret Race", "is_public": False},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "Secret Race"
+        assert data["is_public"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_race_default_public(test_client, organizer, seed):
+    """Races are public by default."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Public Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["is_public"] is True
+
+
+@pytest.mark.asyncio
+async def test_private_race_hidden_from_listing(test_client, organizer, async_session):
+    """Private races do not appear in the public listing."""
+    async with async_session() as db:
+        public_seed = Seed(
+            seed_number="pub1",
+            pool_name="standard",
+            graph_json={},
+            total_layers=10,
+            folder_path="/test/pub",
+            status=SeedStatus.CONSUMED,
+        )
+        private_seed = Seed(
+            seed_number="priv1",
+            pool_name="standard",
+            graph_json={},
+            total_layers=10,
+            folder_path="/test/priv",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add_all([public_seed, private_seed])
+        await db.flush()
+
+        public_race = Race(
+            name="Public Race",
+            organizer_id=organizer.id,
+            seed_id=public_seed.id,
+            status=RaceStatus.OPEN,
+            is_public=True,
+        )
+        private_race = Race(
+            name="Private Race",
+            organizer_id=organizer.id,
+            seed_id=private_seed.id,
+            status=RaceStatus.OPEN,
+            is_public=False,
+        )
+        db.add_all([public_race, private_race])
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/races")
+        assert response.status_code == 200
+        races = response.json()["races"]
+        names = [r["name"] for r in races]
+        assert "Public Race" in names
+        assert "Private Race" not in names
+
+
+@pytest.mark.asyncio
+async def test_private_race_accessible_by_direct_link(test_client, organizer, async_session):
+    """Private races are still accessible via their direct URL."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="direct1",
+            pool_name="standard",
+            graph_json={},
+            total_layers=10,
+            folder_path="/test/direct",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Hidden Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.OPEN,
+            is_public=False,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.get(f"/api/races/{race_id}")
+        assert response.status_code == 200
+        assert response.json()["name"] == "Hidden Race"
+        assert response.json()["is_public"] is False
+
+
+@pytest.mark.asyncio
+async def test_update_race_toggle_visibility(test_client, organizer, seed):
+    """Organizer can toggle is_public via PATCH."""
+    async with test_client as client:
+        # Create a public race
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Toggle Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert create_resp.status_code == 201
+        race_id = create_resp.json()["id"]
+        assert create_resp.json()["is_public"] is True
+
+        # Make it private
+        patch_resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"is_public": False},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["is_public"] is False
+
+        # Make it public again
+        patch_resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"is_public": True},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["is_public"] is True

@@ -116,6 +116,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         organizer=user_response(race.organizer),
         status=race.status,
         pool_name=race.seed.pool_name if race.seed else None,
+        is_public=race.is_public,
         created_at=race.created_at,
         scheduled_at=race.scheduled_at,
         started_at=race.started_at,
@@ -241,6 +242,7 @@ async def create_race(
         config=request.config,
         status=RaceStatus.DRAFT,
         scheduled_at=request.scheduled_at,
+        is_public=request.is_public,
     )
     db.add(race)
     await db.flush()
@@ -285,6 +287,9 @@ async def list_races(
         selectinload(Race.seed),
         selectinload(Race.participants).selectinload(Participant.user),
     )
+
+    # Only show public races in the listing
+    query = query.where(Race.is_public.is_(True))
 
     if status_filter:
         statuses = [s.strip() for s in status_filter.split(",")]
@@ -363,6 +368,8 @@ async def update_race(
             )
 
     race.scheduled_at = request.scheduled_at
+    if request.is_public is not None:
+        race.is_public = request.is_public
     await db.commit()
 
     race = await _get_race_or_404(db, race_id, load_participants=True)

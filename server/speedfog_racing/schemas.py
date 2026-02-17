@@ -21,12 +21,18 @@ class CreateRaceRequest(BaseModel):
     config: dict[str, Any] = {}
     organizer_participates: bool = False
     scheduled_at: datetime | None = None
+    is_public: bool = True
 
 
 class UpdateRaceRequest(BaseModel):
-    """Request to update race properties (DRAFT/OPEN only)."""
+    """Request to update race properties (DRAFT/OPEN only).
+
+    All fields use a sentinel pattern: None means "don't change".
+    For scheduled_at, use explicit null in JSON to clear the value.
+    """
 
     scheduled_at: datetime | None = None
+    is_public: bool | None = None
 
 
 class AddParticipantRequest(BaseModel):
@@ -180,6 +186,7 @@ class RaceResponse(BaseModel):
     organizer: UserResponse
     status: RaceStatus
     pool_name: str | None
+    is_public: bool
     created_at: datetime
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
@@ -227,6 +234,7 @@ class RaceDetailResponse(BaseModel):
     organizer: UserResponse
     status: RaceStatus
     pool_name: str | None
+    is_public: bool
     created_at: datetime
     scheduled_at: datetime | None = None
     started_at: datetime | None = None

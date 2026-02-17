@@ -27,6 +27,7 @@ export interface Race {
   organizer: User;
   status: RaceStatus;
   pool_name: string | null;
+  is_public: boolean;
   created_at: string;
   scheduled_at: string | null;
   started_at: string | null;
@@ -274,6 +275,7 @@ export async function createRace(
   organizerParticipates: boolean = false,
   config: Record<string, unknown> = {},
   scheduledAt: string | null = null,
+  isPublic: boolean = true,
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races`, {
     method: "POST",
@@ -287,6 +289,7 @@ export async function createRace(
       organizer_participates: organizerParticipates,
       config,
       scheduled_at: scheduledAt,
+      is_public: isPublic,
     }),
   });
   return handleResponse<Race>(response);
@@ -297,7 +300,7 @@ export async function createRace(
  */
 export async function updateRace(
   raceId: string,
-  data: { scheduled_at?: string | null },
+  data: { scheduled_at?: string | null; is_public?: boolean },
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races/${raceId}`, {
     method: "PATCH",
