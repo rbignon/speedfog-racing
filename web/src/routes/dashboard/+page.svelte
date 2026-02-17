@@ -173,7 +173,7 @@
 					<p>No active sessions</p>
 					<div class="empty-actions">
 						<a href="/training" class="btn btn-secondary">Start Training</a>
-						<a href="/" class="btn btn-secondary">Browse Races</a>
+						<a href="/races" class="btn btn-secondary">Browse Races</a>
 					</div>
 				</div>
 			{:else}

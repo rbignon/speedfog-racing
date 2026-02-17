@@ -55,7 +55,7 @@
 					{#if auth.loading}
 						<span class="loading">Loading...</span>
 					{:else if auth.isLoggedIn}
-						<a href="/" class="btn btn-secondary">Races</a>
+						<a href="/races" class="btn btn-secondary">Races</a>
 						<a href="/training" class="btn btn-secondary">Training</a>
 						{#if auth.isAdmin}
 							<a href="/admin" class="btn btn-secondary">Admin</a>
