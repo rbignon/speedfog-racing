@@ -24,10 +24,8 @@
 
 	function statusBorderClass(status: RaceStatus): string {
 		switch (status) {
-			case 'draft':
-				return 'border-draft';
-			case 'open':
-				return 'border-open';
+			case 'setup':
+				return 'border-setup';
 			case 'running':
 				return 'border-running';
 			case 'finished':
@@ -40,15 +38,12 @@
 	function actionLabel(status: RaceStatus, userRole?: string): string | null {
 		if (status === 'running') return 'Watch →';
 		if (status === 'finished') return 'Results →';
-		if (userRole === 'Organizing' && status === 'draft') return 'Set up →';
-		if (userRole === 'Organizing' && status === 'open') return 'Manage →';
+		if (userRole === 'Organizing' && status === 'setup') return 'Set up →';
 		return null;
 	}
 
 	let action = $derived(actionLabel(race.status, role));
-	let showScheduled = $derived(
-		race.scheduled_at && (race.status === 'draft' || race.status === 'open')
-	);
+	let showScheduled = $derived(race.scheduled_at && race.status === 'setup');
 	let relativeTime = $derived(
 		showScheduled ? formatScheduledTime(race.scheduled_at!) : timeAgo(race.created_at)
 	);
@@ -175,11 +170,7 @@
 	}
 
 	/* Status left-border accents */
-	.border-draft {
-		border-left: 3px solid var(--color-text-disabled);
-	}
-
-	.border-open {
+	.border-setup {
 		border-left: 3px solid var(--color-success);
 	}
 
