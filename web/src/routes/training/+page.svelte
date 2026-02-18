@@ -23,7 +23,7 @@
 	let error = $state<string | null>(null);
 	let authChecked = $state(false);
 
-	const poolOrder = ['training_sprint', 'training_standard', 'training_marathon'];
+	const poolOrder = ['training_sprint', 'training_standard', 'training_hardcore'];
 
 	let sortedPools = $derived(
 		poolOrder

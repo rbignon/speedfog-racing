@@ -139,8 +139,8 @@
 			<div class="feature-card">
 				<strong>Multiple Formats</strong>
 				<p>
-					Sprint, Standard, or Marathon — pick a seed pool that fits your
-					schedule. From quick 30-minute runs to extended sessions.
+					Sprint, Standard, or Hardcore — pick a seed pool that fits your
+					playstyle. From quick 30-minute runs to punishing gauntlets.
 				</p>
 			</div>
 		</div>

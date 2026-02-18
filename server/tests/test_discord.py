@@ -67,7 +67,7 @@ async def test_sends_race_notification(race_kwargs):
 @pytest.mark.asyncio
 async def test_sends_training_notification(race_kwargs):
     """Should POST a Discord embed with training styling."""
-    race_kwargs["pool_name"] = "training_marathon"
+    race_kwargs["pool_name"] = "training_hardcore"
     mock_response = AsyncMock()
     mock_response.status_code = 204
 
@@ -89,7 +89,7 @@ async def test_sends_training_notification(race_kwargs):
         assert embed["title"] == "Training: Sunday Sprint #3"
         assert embed["color"] == 0x3B82F6  # blue
         fields = {f["name"]: f["value"] for f in embed["fields"]}
-        assert fields["Pool"] == "Marathon"
+        assert fields["Pool"] == "Hardcore"
 
 
 @pytest.mark.asyncio

@@ -32,7 +32,7 @@ Usage: deploy/deploy-seeds.sh [OPTIONS]
 Generate seed pools and upload them to the VPS.
 
 Options:
-  --pool POOL       Pool name (sprint, standard, marathon). Default: all pools.
+  --pool POOL       Pool name (sprint, standard, hardcore). Default: all pools.
   --count N         Number of seeds per pool (required unless --upload-only)
   --game-dir PATH   Path to Elden Ring Game directory (required unless --upload-only)
   --seeds-dir PATH  Remote seed directory on VPS (default: $SEEDS_DIR or /data/SpeedFog/racing/seeds)

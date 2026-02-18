@@ -16,7 +16,7 @@
 	let error = $state<string | null>(null);
 	let authChecked = $state(false);
 
-	const poolOrder = ['sprint', 'standard', 'marathon'];
+	const poolOrder = ['sprint', 'standard', 'hardcore'];
 
 	let sortedPools = $derived(
 		poolOrder
