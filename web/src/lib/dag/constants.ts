@@ -77,14 +77,30 @@ export const LABEL_OFFSET_Y = 18;
 // =============================================================================
 
 export const PLAYER_COLORS = [
-  "#38BDF8", // sky blue
-  "#FB7185", // rose
-  "#2DD4BF", // teal
-  "#A78BFA", // purple
-  "#FB923C", // orange
-  "#A3E635", // lime
-  "#E879F9", // fuchsia
-  "#F87171", // red
+  // Tier 1: anchor hues — maximum mutual contrast
+  "#38BDF8", // 0  sky blue
+  "#FB7185", // 1  rose
+  "#4ADE80", // 2  green
+  "#FB923C", // 3  orange
+  "#A78BFA", // 4  violet
+  "#FACC15", // 5  yellow
+  // Tier 2: secondary hues — fill the gaps
+  "#2DD4BF", // 6  teal
+  "#E879F9", // 7  fuchsia
+  "#F87171", // 8  red
+  "#A3E635", // 9  lime
+  // Tier 3: tertiary hues — intermediate positions
+  "#818CF8", // 10 indigo
+  "#34D399", // 11 emerald
+  "#FBBF24", // 12 amber
+  "#F472B6", // 13 pink
+  "#22D3EE", // 14 cyan
+  // Tier 4: lighter variants of anchors
+  "#7DD3FC", // 15 light blue
+  "#FCA5A5", // 16 light red
+  "#86EFAC", // 17 light green
+  "#FDBA74", // 18 light orange
+  "#C4B5FD", // 19 lavender
 ];
 
 // =============================================================================
