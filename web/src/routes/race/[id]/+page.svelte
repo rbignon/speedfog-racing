@@ -251,6 +251,20 @@
 	function clearSelection() {
 		selectedParticipantIds = new Set();
 	}
+
+	let togglingVisibility = $state(false);
+
+	async function handleToggleVisibility() {
+		togglingVisibility = true;
+		try {
+			await updateRace(initialRace.id, { is_public: !initialRace.is_public });
+			initialRace = await fetchRace(initialRace.id);
+		} catch (e) {
+			console.error('Failed to toggle visibility:', e);
+		} finally {
+			togglingVisibility = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -368,6 +382,30 @@
 			{/if}
 		{/if}
 
+		{#if isOrganizer}
+			<div class="visibility-toggle">
+				<button
+					class="btn-toggle-visibility"
+					onclick={handleToggleVisibility}
+					disabled={togglingVisibility}
+				>
+					{#if initialRace.is_public}
+						<svg class="visibility-icon" viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+							<path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
+							<path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/>
+						</svg>
+						Public
+					{:else}
+						<svg class="visibility-icon" viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+							<path fill-rule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z" clip-rule="evenodd"/>
+							<path d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.741L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.065 7 9.542 7 .847 0 1.669-.105 2.454-.303z"/>
+						</svg>
+						Private
+					{/if}
+				</button>
+			</div>
+		{/if}
+
 		{#if isOrganizer || isCaster}
 			<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}>
 				OBS Overlays
@@ -390,6 +428,9 @@
 			</div>
 			<div class="header-right">
 				<ShareButtons />
+				{#if !initialRace.is_public}
+					<span class="visibility-badge">Private</span>
+				{/if}
 				{#if initialRace.seed_number}
 					<span class="seed-badge">Seed {initialRace.seed_number}</span>
 				{/if}
@@ -848,5 +889,53 @@
 			opacity: 0;
 			transform: scale(1);
 		}
+	}
+
+	.visibility-badge {
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 0.15em 0.5em;
+		border-radius: var(--radius);
+		background: rgba(107, 114, 128, 0.2);
+		color: var(--color-text-disabled);
+	}
+
+	.visibility-toggle {
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.btn-toggle-visibility {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		padding: 0.35rem 0.75rem;
+		color: var(--color-text-secondary);
+		font-family: var(--font-family);
+		font-size: var(--font-size-xs);
+		cursor: pointer;
+		transition:
+			border-color var(--transition),
+			color var(--transition);
+	}
+
+	.btn-toggle-visibility:hover {
+		border-color: var(--color-text-secondary);
+		color: var(--color-text);
+	}
+
+	.btn-toggle-visibility:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.visibility-icon {
+		width: 14px;
+		height: 14px;
 	}
 </style>
