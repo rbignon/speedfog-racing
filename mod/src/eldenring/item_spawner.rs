@@ -62,16 +62,23 @@ pub fn spawn_items_blocking(items: Vec<SpawnItem>, flag_reader: &EventFlagReader
     }
 
     // Wait for MapItemMan to be initialized (player loaded into game world).
+    // No timeout — the player may stay on the title screen or character creation
+    // for an arbitrarily long time before loading in (e.g. race lobby).
+    // The thread is lightweight (sleeps 500ms) and bounded by the game process.
     let pp = base.map_item_man as *const *const c_void;
     let wait_start = std::time::Instant::now();
+    let mut last_log = std::time::Instant::now();
     loop {
         let p = unsafe { pp.read() };
         if !p.is_null() {
             break;
         }
-        if wait_start.elapsed() > Duration::from_secs(120) {
-            error!("MapItemMan not available after 120s, aborting spawn");
-            return;
+        if last_log.elapsed() > Duration::from_secs(60) {
+            info!(
+                elapsed_s = wait_start.elapsed().as_secs(),
+                "Still waiting for MapItemMan (player not in game yet)"
+            );
+            last_log = std::time::Instant::now();
         }
         std::thread::sleep(Duration::from_millis(500));
     }
