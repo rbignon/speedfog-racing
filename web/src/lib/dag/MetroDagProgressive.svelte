@@ -186,7 +186,7 @@
 </script>
 
 {#if layout.nodes.length > 0}
-	<ZoomableSvg width={layout.width} height={layout.height} onnodeclick={onNodeClick}>
+	<ZoomableSvg width={layout.width} height={layout.height} onnodeclick={onNodeClick} onpanstart={closePopup}>
 		<defs>
 			<filter id="player-glow-prog" x="-50%" y="-50%" width="200%" height="200%">
 				<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />

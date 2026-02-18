@@ -7,6 +7,7 @@
 		transparent?: boolean;
 		children: import('svelte').Snippet;
 		onnodeclick?: (nodeId: string, event: PointerEvent) => void;
+		onpanstart?: () => void;
 	}
 
 	let {
@@ -16,7 +17,8 @@
 		maxZoom = 3,
 		transparent = false,
 		children,
-		onnodeclick
+		onnodeclick,
+		onpanstart
 	}: Props = $props();
 
 	let svgEl: SVGSVGElement | undefined = $state();
@@ -80,6 +82,7 @@
 	let pointers = new Map<number, PointerEvent>();
 	let pointerDownTarget: EventTarget | null = null;
 	let pointerDownPos = { x: 0, y: 0 };
+	let hasPannedThisGesture = false;
 	let dragStart = { clientX: 0, clientY: 0, panX: 0, panY: 0 };
 	let pinchStartDist = 0;
 	let pinchStartZoom = 1;
@@ -96,6 +99,7 @@
 
 		if (pointers.size === 1) {
 			isDragging = true;
+			hasPannedThisGesture = false;
 			dragStart = { clientX: e.clientX, clientY: e.clientY, panX, panY };
 		} else if (pointers.size === 2) {
 			isDragging = false;
@@ -109,6 +113,10 @@
 		pointers.set(e.pointerId, e);
 
 		if (pointers.size === 1 && isDragging && svgEl) {
+			if (onpanstart && !hasPannedThisGesture) {
+				onpanstart();
+				hasPannedThisGesture = true;
+			}
 			const ctm = svgEl.getScreenCTM();
 			if (!ctm) return;
 			const dx = (e.clientX - dragStart.clientX) / ctm.a;

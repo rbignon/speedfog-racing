@@ -70,3 +70,16 @@ export {
   extractDiscoveredIds,
 } from "./visibility";
 export type { NodeVisibility } from "./visibility";
+export { default as NodePopup } from "./NodePopup.svelte";
+export {
+  computeConnections,
+  computePlayersAtNode,
+  computeVisitors,
+  formatIgt,
+} from "./popupData";
+export type {
+  NodePopupData,
+  PopupConnection,
+  PopupPlayer,
+  PopupVisitor,
+} from "./popupData";
