@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import {
-		openRace,
 		rerollSeed,
 		startRace,
 		resetRace,
@@ -22,20 +21,6 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let showDeleteConfirm = $state(false);
-
-	async function handleOpen() {
-		loading = true;
-		error = null;
-		try {
-			await openRace(race.id);
-			const updated = await fetchRace(race.id);
-			onRaceUpdated(updated);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to open race';
-		} finally {
-			loading = false;
-		}
-	}
 
 	async function handleReroll() {
 		if (!confirm('Re-roll the seed? Participants will need to re-download their seed pack.'))
@@ -123,17 +108,7 @@
 		<p class="error">{error}</p>
 	{/if}
 
-	{#if raceStatus === 'draft'}
-		<button class="btn btn-primary btn-full" onclick={handleOpen} disabled={loading}>
-			{loading ? 'Opening...' : 'Open Race'}
-		</button>
-		<p class="hint">Open the race to finalize participants.</p>
-
-		<button class="btn btn-secondary btn-full" onclick={handleReroll} disabled={loading}>
-			{loading ? 'Re-rolling...' : 'Re-roll Seed'}
-		</button>
-		<p class="hint">Assign a different random seed from the pool.</p>
-	{:else if raceStatus === 'open'}
+	{#if raceStatus === 'setup'}
 		<button class="btn btn-primary btn-full" onclick={handleStart} disabled={loading}>
 			{loading ? 'Starting...' : 'Start Race'}
 		</button>
@@ -151,12 +126,12 @@
 		<button class="btn btn-secondary btn-full" onclick={handleReset} disabled={loading}>
 			{loading ? 'Resetting...' : 'Reset Race'}
 		</button>
-		<p class="hint">Clear all progress and return to OPEN status.</p>
+		<p class="hint">Clear all progress and return to setup.</p>
 	{:else if raceStatus === 'finished'}
 		<button class="btn btn-secondary btn-full" onclick={handleReset} disabled={loading}>
 			{loading ? 'Resetting...' : 'Reset Race'}
 		</button>
-		<p class="hint">Clear all progress and return to OPEN status for a re-run.</p>
+		<p class="hint">Clear all progress and return to setup for a re-run.</p>
 	{/if}
 
 	<div class="danger-zone">
