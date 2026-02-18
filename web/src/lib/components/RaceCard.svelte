@@ -103,6 +103,24 @@
 		</div>
 	{/if}
 
+	{#if isRunning && race.casters.length > 0}
+		<div class="caster-row">
+			<svg class="twitch-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+				<path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/>
+			</svg>
+			{#each race.casters as caster, i}
+				{#if i > 0}<span class="caster-sep">&middot;</span>{/if}
+				<a
+					href="https://twitch.tv/{caster.user.twitch_username}"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="caster-name"
+					onclick={(e: MouseEvent) => e.stopPropagation()}
+				>{caster.user.twitch_display_name || caster.user.twitch_username}</a>
+			{/each}
+		</div>
+	{/if}
+
 	<div class="race-meta">
 		<span>
 			{race.participant_count} player{race.participant_count !== 1 ? 's' : ''}
@@ -263,6 +281,38 @@
 	.relative-time {
 		font-size: var(--font-size-xs);
 		color: var(--color-text-disabled);
+	}
+
+	/* Caster row */
+	.caster-row {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: var(--font-size-xs);
+		color: var(--color-twitch, #9146ff);
+		margin-bottom: 0.5rem;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.twitch-icon {
+		flex-shrink: 0;
+		width: 12px;
+		height: 12px;
+	}
+
+	.caster-sep {
+		color: var(--color-text-disabled);
+	}
+
+	.caster-name {
+		color: var(--color-twitch, #9146ff);
+		text-decoration: none;
+	}
+
+	.caster-name:hover {
+		text-decoration: underline;
 	}
 
 	/* Meta row */

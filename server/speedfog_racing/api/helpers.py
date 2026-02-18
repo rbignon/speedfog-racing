@@ -54,4 +54,5 @@ def race_response(race: Race) -> RaceResponse:
         started_at=race.started_at,
         participant_count=len(race.participants),
         participant_previews=[user_response(p.user) for p in race.participants[:5]],
+        casters=[caster_response(c) for c in race.casters] if "casters" in race.__dict__ else [],
     )

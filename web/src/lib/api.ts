@@ -33,6 +33,7 @@ export interface Race {
   started_at: string | null;
   participant_count: number;
   participant_previews: User[];
+  casters: Caster[];
   seed_total_layers?: number | null;
   my_current_layer?: number | null;
   my_igt_ms?: number | null;
@@ -97,7 +98,6 @@ export interface RaceDetail extends Race {
   seed_total_nodes: number | null;
   seed_total_paths: number | null;
   participants: Participant[];
-  casters: Caster[];
   pending_invites: PendingInvite[];
   pool_config: PoolConfig | null;
 }

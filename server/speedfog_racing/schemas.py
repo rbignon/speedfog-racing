@@ -193,6 +193,7 @@ class RaceResponse(BaseModel):
     participant_count: int
     participant_previews: list[UserResponse] = []
     seed_total_layers: int | None = None
+    casters: list[CasterResponse] = []
     my_current_layer: int | None = None
     my_igt_ms: int | None = None
     my_death_count: int | None = None

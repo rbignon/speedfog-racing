@@ -9,6 +9,7 @@
 	import InviteCard from '$lib/components/InviteCard.svelte';
 	import ParticipantSearch from '$lib/components/ParticipantSearch.svelte';
 	import CasterList from '$lib/components/CasterList.svelte';
+	import WatchLive from '$lib/components/WatchLive.svelte';
 	import RaceControls from '$lib/components/RaceControls.svelte';
 	import Podium from '$lib/components/Podium.svelte';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
@@ -281,6 +282,8 @@
 				/>
 			{/if}
 		{:else if raceStatus === 'running'}
+			<WatchLive casters={initialRace.casters} />
+
 			<div class="sidebar-section">
 				<Leaderboard
 					participants={raceStore.leaderboard}
@@ -291,8 +294,6 @@
 					onClearSelection={clearSelection}
 				/>
 			</div>
-
-			<CasterList casters={initialRace.casters} />
 
 			{#if isOrganizer}
 				<RaceControls

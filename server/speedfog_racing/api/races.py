@@ -288,6 +288,7 @@ async def list_races(
         selectinload(Race.organizer),
         selectinload(Race.seed),
         selectinload(Race.participants).selectinload(Participant.user),
+        selectinload(Race.casters).selectinload(Caster.user),
     )
 
     # Only show public races in the listing

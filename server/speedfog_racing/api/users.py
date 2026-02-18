@@ -95,6 +95,7 @@ async def get_my_races(
             selectinload(Race.organizer),
             selectinload(Race.seed),
             selectinload(Race.participants).selectinload(Participant.user),
+            selectinload(Race.casters).selectinload(Caster.user),
         )
         .order_by(Race.created_at.desc())
     )
