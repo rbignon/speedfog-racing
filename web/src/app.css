@@ -163,12 +163,7 @@ a:hover {
 }
 
 /* Race status badges */
-.badge-draft {
-  background: rgba(107, 114, 128, 0.2);
-  color: var(--color-text-disabled);
-}
-
-.badge-open {
+.badge-setup {
   background: rgba(16, 185, 129, 0.15);
   color: var(--color-success);
 }
