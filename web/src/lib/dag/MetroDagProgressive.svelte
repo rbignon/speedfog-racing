@@ -1,6 +1,9 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
 	import ZoomableSvg from './ZoomableSvg.svelte';
+	import NodePopup from './NodePopup.svelte';
+	import { computeConnections } from './popupData';
+	import type { NodePopupData } from './popupData';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
 	import {
@@ -27,7 +30,7 @@
 		ADJACENT_OPACITY,
 		REVEAL_TRANSITION_MS
 	} from './constants';
-	import type { PositionedNode, DagLayout } from './types';
+	import type { DagNode, PositionedNode, DagLayout } from './types';
 	import type { NodeVisibility } from './visibility';
 
 	interface Props {
@@ -104,6 +107,45 @@
 		return above;
 	});
 
+	// Popup state
+	let dagNodeMap: Map<string, DagNode> = $derived.by(() => {
+		const map = new Map<string, DagNode>();
+		for (const node of graph.nodes) {
+			map.set(node.id, node);
+		}
+		return map;
+	});
+
+	let popupData: NodePopupData | null = $state(null);
+	let popupX = $state(0);
+	let popupY = $state(0);
+
+	function onNodeClick(nodeId: string, event: PointerEvent) {
+		// Only allow popup on discovered nodes
+		if (visibility.get(nodeId) !== 'discovered') return;
+
+		const node = dagNodeMap.get(nodeId);
+		if (!node) return;
+
+		const { entrances, exits } = computeConnections(nodeId, graph.edges, dagNodeMap, discoveredIds);
+
+		popupData = {
+			nodeId,
+			displayName: node.displayName,
+			type: node.type,
+			tier: node.tier,
+			entrances,
+			exits,
+			// No playersHere or visitors — anti-spoiler
+		};
+		popupX = event.clientX;
+		popupY = event.clientY;
+	}
+
+	function closePopup() {
+		popupData = null;
+	}
+
 	function truncateLabel(name: string): string {
 		const short = name.includes(' - ') ? name.split(' - ').pop()! : name;
 		if (short.length <= LABEL_MAX_CHARS) return short;
@@ -144,7 +186,7 @@
 </script>
 
 {#if layout.nodes.length > 0}
-	<ZoomableSvg width={layout.width} height={layout.height}>
+	<ZoomableSvg width={layout.width} height={layout.height} onnodeclick={onNodeClick}>
 		<defs>
 			<filter id="player-glow-prog" x="-50%" y="-50%" width="200%" height="200%">
 				<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
@@ -293,6 +335,9 @@
 			</circle>
 		{/if}
 	</ZoomableSvg>
+	{#if popupData}
+		<NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
+	{/if}
 {/if}
 
 <style>

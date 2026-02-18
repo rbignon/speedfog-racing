@@ -25,6 +25,9 @@
 		MAX_PARALLEL
 	} from './constants';
 	import type { PositionedNode, RoutedEdge, DagLayout } from './types';
+	import NodePopup from './NodePopup.svelte';
+	import { computeConnections, computePlayersAtNode, computeVisitors } from './popupData';
+	import type { NodePopupData } from './popupData';
 
 	interface Props {
 		graphJson: Record<string, unknown>;
@@ -37,8 +40,9 @@
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
 
+	let graph = $derived(parseDagGraph(graphJson));
+
 	let layout: DagLayout = $derived.by(() => {
-		const graph = parseDagGraph(graphJson);
 		return computeLayout(graph);
 	});
 
@@ -195,6 +199,41 @@
 		return above;
 	});
 
+	// Popup state
+	let popupData: NodePopupData | null = $state(null);
+	let popupX = $state(0);
+	let popupY = $state(0);
+
+	function onNodeClick(nodeId: string, event: PointerEvent) {
+		const node = nodeMap.get(nodeId);
+		if (!node) return;
+
+		const { entrances, exits } = computeConnections(
+			nodeId,
+			graph.edges,
+			nodeMap as Map<string, import('./types').DagNode>
+		);
+		const playersHere = computePlayersAtNode(nodeId, participants);
+		const visitors = computeVisitors(nodeId, participants);
+
+		popupData = {
+			nodeId,
+			displayName: node.displayName,
+			type: node.type,
+			tier: node.tier,
+			entrances,
+			exits,
+			playersHere,
+			visitors
+		};
+		popupX = event.clientX;
+		popupY = event.clientY;
+	}
+
+	function closePopup() {
+		popupData = null;
+	}
+
 	function truncateLabel(name: string): string {
 		const short = name.includes(' - ') ? name.split(' - ').pop()! : name;
 		if (short.length <= LABEL_MAX_CHARS) return short;
@@ -224,7 +263,7 @@
 </script>
 
 {#if layout.nodes.length > 0}
-	<ZoomableSvg width={layout.width} height={layout.height} {transparent}>
+	<ZoomableSvg width={layout.width} height={layout.height} {transparent} onnodeclick={onNodeClick}>
 			<defs>
 				<filter id="results-player-glow" x="-50%" y="-50%" width="200%" height="200%">
 					<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
@@ -346,6 +385,9 @@
 				</circle>
 			{/each}
 	</ZoomableSvg>
+	{#if popupData}
+		<NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
+	{/if}
 {/if}
 
 <style>
