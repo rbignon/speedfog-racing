@@ -448,7 +448,7 @@
 					<span class="label">Created</span>
 					<span class="value">{formatDate(initialRace.created_at)}</span>
 				</div>
-				{#if initialRace.scheduled_at || (isOrganizer && (raceStatus === 'draft' || raceStatus === 'open'))}
+				{#if initialRace.scheduled_at || (isOrganizer && raceStatus === 'setup')}
 					<div class="info-item">
 						<span class="label">Scheduled</span>
 						{#if editingSchedule}
@@ -474,7 +474,7 @@
 						{:else if initialRace.scheduled_at}
 							<span class="value">
 								{formatDate(initialRace.scheduled_at)}
-								{#if isOrganizer && (raceStatus === 'draft' || raceStatus === 'open')}
+								{#if isOrganizer && raceStatus === 'setup'}
 									<button class="btn-edit" onclick={startEditSchedule}>Edit</button>
 								{/if}
 							</span>
