@@ -4,6 +4,7 @@ import logging
 
 import httpx
 
+from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.config import settings
 
 logger = logging.getLogger(__name__)
@@ -30,11 +31,7 @@ async def notify_race_started(
     label = "Training" if is_training else "Race"
     color = 0x3B82F6 if is_training else 0xF97316  # blue for training, orange for race
 
-    # Clean up pool display name: "training_sprint" -> "Sprint", "standard" -> "Standard"
-    display_pool = pool_name or "unknown"
-    if display_pool.startswith("training_"):
-        display_pool = display_pool.removeprefix("training_")
-    display_pool = display_pool.replace("_", " ").title()
+    display_pool = format_pool_display_name(pool_name)
 
     embed: dict[str, object] = {
         "title": f"{label}: {race_name}",

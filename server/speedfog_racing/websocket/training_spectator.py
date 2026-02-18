@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 from starlette.websockets import WebSocketDisconnect
 
+from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
@@ -177,7 +178,7 @@ async def _send_initial_state(websocket: WebSocket, session: TrainingSession) ->
     message = RaceStateMessage(
         race=RaceInfo(
             id=str(session.id),
-            name="Training",
+            name=f"Training {format_pool_display_name(seed.pool_name)}" if seed else "Training",
             status="running"
             if session.status == TrainingSessionStatus.ACTIVE
             else session.status.value,

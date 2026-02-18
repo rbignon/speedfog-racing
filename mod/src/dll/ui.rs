@@ -191,12 +191,7 @@ impl RaceTracker {
         ui.same_line_with_spacing(0.0, 0.0);
 
         let name_text = if let Some(race) = self.race_info() {
-            let display_name = if self.config.server.training {
-                "Training"
-            } else {
-                race.name.as_str()
-            };
-            display_name.to_string()
+            race.name.to_string()
         } else {
             "Connecting...".to_string()
         };

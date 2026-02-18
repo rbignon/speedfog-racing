@@ -9,6 +9,14 @@ from speedfog_racing.schemas import (
 )
 
 
+def format_pool_display_name(pool_name: str | None) -> str:
+    """Format a pool name for display: 'training_standard' → 'Standard'."""
+    name = pool_name or "unknown"
+    if name.startswith("training_"):
+        name = name.removeprefix("training_")
+    return name.replace("_", " ").title()
+
+
 def user_response(user: User) -> UserResponse:
     """Convert User model to UserResponse."""
     return UserResponse(

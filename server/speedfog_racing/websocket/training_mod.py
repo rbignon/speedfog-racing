@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 from starlette.websockets import WebSocketDisconnect
 
+from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.grace_service import load_graces_mapping, resolve_grace_to_node
 from speedfog_racing.services.layer_service import (
@@ -251,7 +252,7 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
         participant_id=str(session.id),
         race=RaceInfo(
             id=str(session.id),
-            name="Training",
+            name=f"Training {format_pool_display_name(seed.pool_name)}" if seed else "Training",
             status="running",
             started_at=session.created_at.isoformat() if session.created_at else None,
         ),
