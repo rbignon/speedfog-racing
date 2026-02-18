@@ -47,11 +47,18 @@
 	// Full layout (stable positions regardless of visibility)
 	let layout: DagLayout = $derived(computeLayout(graph));
 
-	// Extract discovered node IDs from my participant's zone_history
+	// Extract discovered node IDs from my participant's zone_history.
+	// Always include the start node (same logic as computeNodeVisibility)
+	// so that popup connections/exit texts are consistent with visibility.
 	let discoveredIds: Set<string> = $derived.by(() => {
 		const me = participants.find((p) => p.id === myParticipantId);
-		if (!me) return new Set<string>();
-		return extractDiscoveredIds(me.zone_history, me.current_zone);
+		const ids = me
+			? extractDiscoveredIds(me.zone_history, me.current_zone)
+			: new Set<string>();
+		for (const node of graph.nodes) {
+			if (node.type === 'start') ids.add(node.id);
+		}
+		return ids;
 	});
 
 	// Compute visibility for all nodes

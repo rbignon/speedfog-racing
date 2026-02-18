@@ -340,7 +340,7 @@ describe("computeConnections with exitTexts", () => {
     expect(caelid?.text).toBeUndefined();
   });
 
-  it("hides text for undiscovered connections (anti-spoiler)", () => {
+  it("hides entrance text but shows exit text for undiscovered connections", () => {
     const discovered = new Set(["start", "stormveil", "liurnia"]);
     const conns = computeConnections(
       "stormveil",
@@ -349,13 +349,32 @@ describe("computeConnections with exitTexts", () => {
       discovered,
       exitTexts,
     );
-    // liurnia is discovered → text visible
+    // liurnia is discovered → name + text visible
     const liurnia = conns.exits.find((e) => e.nodeId === "liurnia");
     expect(liurnia?.displayName).toBe("liurnia");
     expect(liurnia?.text).toBe("through the gate");
-    // raya is NOT discovered → both displayName and text hidden
+    // raya is NOT discovered → displayName hidden, but exit text still shown
+    // (exit text describes the fog gate location in the current node, not the destination)
     const raya = conns.exits.find((e) => e.nodeId === "raya");
     expect(raya?.displayName).toBeNull();
-    expect(raya?.text).toBeUndefined();
+    expect(raya?.text).toBe("via the side path");
+    // Entrance from start → stormveil: start is discovered → text shown
+    expect(conns.entrances[0].text).toBe("before the arena");
+  });
+
+  it("hides entrance text when source node is undiscovered", () => {
+    // Only stormveil and caelid discovered — start is NOT (except via visibility)
+    const discovered = new Set(["stormveil", "caelid"]);
+    const conns = computeConnections(
+      "stormveil",
+      EDGES,
+      nodeMap,
+      discovered,
+      exitTexts,
+    );
+    // Entrance from start: start is NOT in discoveredIds → text hidden
+    const startEntrance = conns.entrances.find((e) => e.nodeId === "start");
+    expect(startEntrance?.displayName).toBeNull();
+    expect(startEntrance?.text).toBeUndefined();
   });
 });

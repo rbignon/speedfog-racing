@@ -114,12 +114,12 @@ export function computeConnections(
       const toNode = nodeMap.get(edge.to);
       if (!toNode) continue;
       const isUndiscovered = discoveredIds && !discoveredIds.has(edge.to);
-      // Exit text: our own exit pointing to the destination.
-      // Hidden for undiscovered connections (anti-spoiler).
+      // Exit text: describes WHERE the fog gate is in the current node.
+      // Always shown — it's about the player's own zone, not the destination.
       // Assumes at most one exit per (from, to) pair in graph.json.
-      const text = isUndiscovered
-        ? undefined
-        : exitTexts?.get(nodeId)?.find((e) => e.toNodeId === edge.to)?.text;
+      const text = exitTexts
+        ?.get(nodeId)
+        ?.find((e) => e.toNodeId === edge.to)?.text;
       exits.push({
         nodeId: edge.to,
         displayName: isUndiscovered ? null : toNode.displayName,
