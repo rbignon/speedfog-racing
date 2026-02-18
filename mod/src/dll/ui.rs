@@ -3,9 +3,13 @@
 use std::borrow::Cow;
 use std::time::Duration;
 
-use hudhook::imgui::{Condition, FontConfig, FontGlyphRanges, FontSource, StyleColor, WindowFlags};
+use hudhook::imgui::{
+    Condition, FontConfig, FontGlyphRanges, FontSource, Image, StyleColor, WindowFlags,
+};
 use hudhook::{ImguiRenderLoop, RenderContext};
-use tracing::info;
+use tracing::{error, info};
+
+use super::death_icon::DeathIcon;
 
 use crate::eldenring::FlagReaderStatus;
 
@@ -16,7 +20,7 @@ impl ImguiRenderLoop for RaceTracker {
     fn initialize<'a>(
         &'a mut self,
         ctx: &mut hudhook::imgui::Context,
-        _render_context: &'a mut dyn RenderContext,
+        render_context: &'a mut dyn RenderContext,
     ) {
         if let Some(ref font_data) = self.font_data {
             let font_size = self.config.overlay.font_size;
@@ -42,6 +46,17 @@ impl ImguiRenderLoop for RaceTracker {
             info!(size = font_size, "Custom font registered with imgui");
         } else {
             info!("Using default imgui font");
+        }
+
+        // Load death icon texture
+        match DeathIcon::load(render_context) {
+            Ok(icon) => {
+                info!("Loaded death icon texture");
+                self.death_icon = Some(icon);
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to load death icon");
+            }
         }
     }
 

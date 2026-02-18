@@ -16,6 +16,7 @@ use crate::core::traits::GameStateReader;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
 
 use super::config::RaceConfig;
+use super::death_icon::DeathIcon;
 use super::hotkey::begin_hotkey_frame;
 use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 
@@ -99,6 +100,9 @@ pub struct RaceTracker {
 
     // Font data loaded from file (for ImGui registration)
     pub(crate) font_data: Option<Vec<u8>>,
+
+    // Death icon texture (loaded during ImGui initialization)
+    pub(crate) death_icon: Option<DeathIcon>,
 
     // Race state
     pub(crate) race_state: RaceState,
@@ -221,6 +225,7 @@ impl RaceTracker {
             config,
             cached_colors,
             font_data,
+            death_icon: None,
             race_state: RaceState::default(),
             show_ui: true,
             show_debug: false,
