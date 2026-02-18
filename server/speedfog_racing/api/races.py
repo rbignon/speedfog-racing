@@ -240,7 +240,7 @@ async def create_race(
         organizer_id=user.id,
         organizer=user,
         config=request.config,
-        status=RaceStatus.DRAFT,
+        status=RaceStatus.SETUP,
         scheduled_at=request.scheduled_at,
         is_public=request.is_public,
     )
@@ -305,15 +305,12 @@ async def list_races(
             ) from e
         query = query.where(Race.status.in_(status_enums))
 
-    # Sort: upcoming (draft/open) by scheduled_at ASC (nulls last), then created_at ASC
-    # Running/finished by created_at DESC
+    # Sort: running first, then setup, then finished
     query = query.order_by(
-        # Running races first, then open, then draft, then finished
         case(
             (Race.status == RaceStatus.RUNNING, 0),
-            (Race.status == RaceStatus.OPEN, 1),
-            (Race.status == RaceStatus.DRAFT, 2),
-            else_=3,
+            (Race.status == RaceStatus.SETUP, 1),
+            else_=2,
         ),
         # Within open/draft: scheduled_at ASC (nulls last)
         case(
@@ -363,18 +360,21 @@ async def update_race(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RaceResponse:
-    """Update race properties. Only organizer, DRAFT/OPEN only."""
+    """Update race properties. Organizer only."""
     race = await _get_race_or_404(db, race_id, load_participants=True)
     _require_organizer(race, user)
 
-    if race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only update draft or open races",
-        )
+    # is_public can be changed at any status
+    if request.is_public is not None:
+        race.is_public = request.is_public
 
-    # Validate scheduled_at is not in the past (allow None to clear)
+    # scheduled_at only editable in SETUP
     if request.scheduled_at is not None:
+        if race.status != RaceStatus.SETUP:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only update schedule for setup races",
+            )
         scheduled = request.scheduled_at
         if scheduled.tzinfo is None:
             scheduled = scheduled.replace(tzinfo=UTC)
@@ -383,10 +383,7 @@ async def update_race(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Scheduled time cannot be in the past",
             )
-
-    race.scheduled_at = request.scheduled_at
-    if request.is_public is not None:
-        race.is_public = request.is_public
+        race.scheduled_at = request.scheduled_at
     await db.commit()
 
     race = await _get_race_or_404(db, race_id, load_participants=True)
@@ -409,7 +406,7 @@ async def add_participant(
     _require_organizer(race, user)
 
     # Check race status
-    if race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
+    if race.status not in (RaceStatus.SETUP,):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot add participants to a race that has started",
@@ -532,7 +529,7 @@ async def remove_participant(
     _require_organizer(race, user)
 
     # Check race status
-    if race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
+    if race.status not in (RaceStatus.SETUP,):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot remove participants from a race that has started",
@@ -568,7 +565,7 @@ async def revoke_invite(
     race = await _get_race_or_404(db, race_id)
     _require_organizer(race, user)
 
-    if race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
+    if race.status not in (RaceStatus.SETUP,):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot revoke invites for a race that has started",
@@ -701,7 +698,7 @@ async def start_race(
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
     _require_organizer(race, user)
 
-    if race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
+    if race.status != RaceStatus.SETUP:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Race has already started or finished",
@@ -710,7 +707,7 @@ async def start_race(
     await _transition_status(
         db,
         race,
-        [RaceStatus.DRAFT, RaceStatus.OPEN],
+        [RaceStatus.SETUP],
         RaceStatus.RUNNING,
         started_at=datetime.now(UTC),
     )
@@ -743,47 +740,22 @@ async def start_race(
     return race_response(race)
 
 
-@router.post("/{race_id}/open", response_model=RaceResponse)
-async def open_race(
-    race_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> RaceResponse:
-    """Transition race from DRAFT to OPEN."""
-    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
-    _require_organizer(race, user)
-
-    if race.status != RaceStatus.DRAFT:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only draft races can be opened",
-        )
-
-    await _transition_status(db, race, [RaceStatus.DRAFT], RaceStatus.OPEN)
-    await db.commit()
-    await db.refresh(race)
-
-    await broadcast_race_state_update(race_id, race)
-
-    return race_response(race)
-
-
 @router.post("/{race_id}/reroll-seed", response_model=RaceDetailResponse)
 async def reroll_seed(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RaceDetailResponse:
-    """Re-roll the seed for a DRAFT or OPEN race."""
+    """Re-roll the seed for a SETUP race."""
     race = await _get_race_or_404(
         db, race_id, load_participants=True, load_casters=True, load_invites=True
     )
     _require_organizer(race, user)
 
-    if race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
+    if race.status not in (RaceStatus.SETUP,):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only re-roll seed for draft or open races",
+            detail="Can only re-roll seed for setup races",
         )
 
     try:
@@ -825,7 +797,7 @@ async def reset_race(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RaceResponse:
-    """Reset a race back to OPEN status, clearing all participant progress."""
+    """Reset a race back to SETUP status, clearing all participant progress."""
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
     _require_organizer(race, user)
 
@@ -842,7 +814,7 @@ async def reset_race(
         db,
         race,
         [RaceStatus.RUNNING, RaceStatus.FINISHED],
-        RaceStatus.OPEN,
+        RaceStatus.SETUP,
         started_at=None,
     )
 
@@ -912,7 +884,7 @@ async def delete_race(
     # Release seed back to pool only if the race was never started.
     # Started races (RUNNING/FINISHED) keep their seed consumed so it
     # cannot be reused — players have already seen it.
-    if race.seed_id and race.status in (RaceStatus.DRAFT, RaceStatus.OPEN):
+    if race.seed_id and race.status in (RaceStatus.SETUP,):
         result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
         seed = result.scalar_one_or_none()
         if seed:

@@ -24,8 +24,7 @@ class UserRole(enum.StrEnum):
 class RaceStatus(enum.Enum):
     """Race lifecycle status."""
 
-    DRAFT = "draft"  # Race created, not yet open
-    OPEN = "open"  # Accepting participants
+    SETUP = "setup"  # Race created, accepting participants, not yet started
     RUNNING = "running"  # Race in progress
     FINISHED = "finished"  # Race completed
 
@@ -115,7 +114,7 @@ class Race(Base):
     seed_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("seeds.id"), nullable=True
     )
-    status: Mapped[RaceStatus] = mapped_column(Enum(RaceStatus), default=RaceStatus.DRAFT)
+    status: Mapped[RaceStatus] = mapped_column(Enum(RaceStatus), default=RaceStatus.SETUP)
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

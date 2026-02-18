@@ -70,7 +70,7 @@ async def accept_invite(
         )
 
     # Check race status
-    if invite.race.status not in (RaceStatus.DRAFT, RaceStatus.OPEN):
+    if invite.race.status not in (RaceStatus.SETUP,):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot join a race that has already started or finished",

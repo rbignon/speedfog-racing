@@ -252,12 +252,15 @@ async def get_user_profile(
 
     user_id = user.id
 
-    # Race count: participations in non-draft races
+    # Race count: participations in started races
     race_count_q = await db.execute(
         select(func.count())
         .select_from(Participant)
         .join(Race, Participant.race_id == Race.id)
-        .where(Participant.user_id == user_id, Race.status != RaceStatus.DRAFT)
+        .where(
+            Participant.user_id == user_id,
+            Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]),
+        )
     )
     race_count = race_count_q.scalar_one()
 
