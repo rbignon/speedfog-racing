@@ -163,24 +163,24 @@ impl RaceTracker {
         }
     }
 
-    /// Compact 2-line player status:
-    /// Line 1: `● RaceName               HH:MM:SS` (IGT in red)
-    /// Line 2: `  tier X, previously Y   [☠]N  X/Y` (yellow + green)
+    /// 3-line player status:
+    /// Line 1: `● RaceName               HH:MM:SS` (IGT in blue)
+    /// Line 2: `  ZoneName                    X/Y` (progress in green)
+    /// Line 3: `  tier X, previously Y   [☠]N`     (tier yellow, deaths green)
     fn render_player_status(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
-        let red = [1.0, 0.0, 0.0, 1.0];
+        let blue = [0.4, 0.6, 1.0, 1.0];
         let yellow = [1.0, 1.0, 0.0, 1.0];
         let green = [0.0, 1.0, 0.0, 1.0];
 
-        // --- Line 1: connection dot + race name (left), local IGT in red (right) ---
+        // --- Line 1: connection dot + race name (left), local IGT in blue (right) ---
         let (dot_color, _) = match self.ws_status() {
             ConnectionStatus::Connected => (green, "connected"),
             ConnectionStatus::Connecting | ConnectionStatus::Reconnecting => {
                 ([1.0, 0.65, 0.0, 1.0], "connecting")
             }
-            _ => (red, "disconnected"),
+            _ => ([1.0, 0.0, 0.0, 1.0], "disconnected"),
         };
 
-        // Right side: local IGT (red)
         let igt_str = if let Some(igt_ms) = self.read_igt() {
             format_time_u32(igt_ms)
         } else {
@@ -188,7 +188,6 @@ impl RaceTracker {
         };
         let igt_width = ui.calc_text_size(&igt_str)[0];
 
-        // Left side: dot + race name
         let dot_str = "\u{25CF} "; // "● "
         let dot_width = ui.calc_text_size(dot_str)[0];
         let gap = ui.calc_text_size(" ")[0];
@@ -205,35 +204,44 @@ impl RaceTracker {
         let truncated = truncate_to_width(ui, &name_text, name_max);
         ui.text(&truncated);
 
-        // Right-align IGT (red)
         ui.same_line_with_pos(max_width - igt_width);
-        ui.text_colored(red, &igt_str);
+        ui.text_colored(blue, &igt_str);
 
-        // --- Line 2: tier info (left, yellow), deaths + progress (right, green) ---
+        // --- Line 2: zone name (left, white), progress X/Y (right, green) ---
         let me = self.my_participant();
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let zone = self.current_zone_info();
 
-        // Right side: death icon + count + "  X/Y" progress
-        let deaths = self.read_deaths().unwrap_or(0);
         let layer = me.map(|p| p.current_layer).unwrap_or(0);
-        let death_str = format!("{}", deaths);
         let display_layer = (layer + 1).min(total_layers);
-        let progress_str = format!("  {}/{}", display_layer, total_layers);
+        let progress_str = format!("{}/{}", display_layer, total_layers);
+        let progress_width = ui.calc_text_size(&progress_str)[0];
+
+        let zone_text = if let Some(z) = zone {
+            format!("  {}", z.display_name)
+        } else {
+            "  --".to_string()
+        };
+        let zone_max = max_width - progress_width - gap;
+        let zone_truncated = truncate_to_width(ui, &zone_text, zone_max);
+        ui.text(&zone_truncated);
+
+        ui.same_line_with_pos(max_width - progress_width);
+        ui.text_colored(green, &progress_str);
+
+        // --- Line 3: tier info (left, yellow), death icon + count (right, green) ---
+        let deaths = self.read_deaths().unwrap_or(0);
+        let death_str = format!("{}", deaths);
         let font_height = ui.text_line_height();
         let icon_size = font_height;
         let icon_gap = 2.0;
         let right_total = if self.death_icon.is_some() {
-            icon_size
-                + icon_gap
-                + ui.calc_text_size(&death_str)[0]
-                + ui.calc_text_size(&progress_str)[0]
+            icon_size + icon_gap + ui.calc_text_size(&death_str)[0]
         } else {
-            ui.calc_text_size(&format!("{}{}", death_str, progress_str))[0]
+            ui.calc_text_size(&death_str)[0]
         };
 
-        // Left side: tier info (yellow) or zone name (white) or "--"
-        let left_text = if let Some(z) = zone {
+        let tier_text = if let Some(z) = zone {
             if let Some(t) = z.tier {
                 if let Some(ot) = z.original_tier.filter(|&ot| ot != t) {
                     format!("  tier {}, previously {}", t, ot)
@@ -241,7 +249,7 @@ impl RaceTracker {
                     format!("  tier {}", t)
                 }
             } else {
-                format!("  {}", z.display_name)
+                "  --".to_string()
             }
         } else if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
             format!("  tier {}", tier)
@@ -250,25 +258,22 @@ impl RaceTracker {
         };
         let has_tier = zone.is_some_and(|z| z.tier.is_some())
             || me.is_some_and(|p| p.current_layer_tier.is_some());
-        let left_color = if has_tier {
+        let tier_color = if has_tier {
             yellow
         } else {
             self.cached_colors.text
         };
 
-        let left_max = max_width - right_total - gap;
-        let left_truncated = truncate_to_width(ui, &left_text, left_max);
-        ui.text_colored(left_color, &left_truncated);
+        let tier_max = max_width - right_total - gap;
+        let tier_truncated = truncate_to_width(ui, &tier_text, tier_max);
+        ui.text_colored(tier_color, &tier_truncated);
 
-        // Right-align: death icon + count + progress (green)
         ui.same_line_with_pos(max_width - right_total);
         if let Some(ref icon) = self.death_icon {
             Image::new(icon.texture_id(), [icon_size, icon_size]).build(ui);
             ui.same_line_with_spacing(0.0, icon_gap);
         }
         ui.text_colored(green, &death_str);
-        ui.same_line_with_spacing(0.0, 0.0);
-        ui.text_colored(green, &progress_str);
     }
 
     /// Render exit list from zone_update:
