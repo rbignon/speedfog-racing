@@ -22,7 +22,7 @@
 	let error = $state<string | null>(null);
 	let fetched = $state(false);
 
-	let activeRaces = $derived(myRaces.filter((r) => r.status === 'running' || r.status === 'open'));
+	let activeRaces = $derived(myRaces.filter((r) => r.status !== 'finished'));
 	let activeTraining = $derived(trainingSessions.filter((s) => s.status === 'active'));
 
 	let activeRaceIds = $derived(new Set(activeRaces.map((r) => r.id)));
@@ -205,7 +205,11 @@
 						<a href="/race/{race.id}" class="active-card active-card-race">
 							<div class="active-card-header">
 								<span class="active-badge badge-race"
-									>{race.status === 'running' ? 'Racing' : 'Open'}</span
+									>{race.status === 'running'
+										? 'Racing'
+										: race.status === 'draft'
+											? 'Draft'
+											: 'Open'}</span
 								>
 								<span class="active-name">{race.name}</span>
 							</div>
