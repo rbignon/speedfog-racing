@@ -233,7 +233,7 @@
 									>
 								{/if}
 							</div>
-							{#if race.my_current_layer != null && race.seed_total_layers}
+							{#if (race.status === 'running' || race.status === 'finished') && race.my_current_layer != null && race.seed_total_layers}
 								<div class="progress-bar">
 									<div
 										class="progress-fill"
