@@ -103,6 +103,14 @@
 	function podiumRateDisplay(rate: number): string {
 		return `${Math.round(rate * 100)}%`;
 	}
+
+	function activeRaceRole(race: Race): string {
+		const isOrganizer = race.organizer.id === auth.user?.id;
+		const isParticipant = race.my_igt_ms != null || race.my_death_count != null;
+		if (isParticipant) return 'Participating';
+		if (isOrganizer) return 'Organizing';
+		return '';
+	}
 </script>
 
 <svelte:head>
@@ -207,6 +215,9 @@
 										? 's'
 										: ''}</span
 								>
+								{#if activeRaceRole(race)}
+									<span class="active-meta active-role">{activeRaceRole(race)}</span>
+								{/if}
 								{#if race.my_igt_ms != null}
 									<span class="active-meta">{formatIgt(race.my_igt_ms)}</span>
 								{/if}
@@ -503,6 +514,11 @@
 	.active-meta {
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
+	}
+
+	.active-role {
+		color: var(--color-gold);
+		font-weight: 500;
 	}
 
 	.progress-bar {
