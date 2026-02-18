@@ -35,6 +35,7 @@
 	let scheduleInput = $state('');
 	let scheduleError = $state<string | null>(null);
 	let scheduleSaving = $state(false);
+	let selectedParticipantIds = $state<Set<string>>(new Set());
 
 	async function handleDownload() {
 		downloading = true;
@@ -124,6 +125,7 @@
 	$effect(() => {
 		const wasNotRunning = previousRaceStatus !== null && previousRaceStatus !== 'running';
 		previousRaceStatus = raceStatus;
+		clearSelection();
 		if (raceStatus === 'running' && wasNotRunning) {
 			showGo = true;
 			const timer = setTimeout(() => {
@@ -229,6 +231,25 @@
 	function handleRaceUpdated(updated: RaceDetail) {
 		initialRace = updated;
 	}
+
+	function handleLeaderboardToggle(id: string, ctrlKey: boolean) {
+		if (ctrlKey) {
+			const next = new Set(selectedParticipantIds);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			selectedParticipantIds = next;
+		} else {
+			if (selectedParticipantIds.size === 1 && selectedParticipantIds.has(id)) {
+				selectedParticipantIds = new Set();
+			} else {
+				selectedParticipantIds = new Set([id]);
+			}
+		}
+	}
+
+	function clearSelection() {
+		selectedParticipantIds = new Set();
+	}
 </script>
 
 <svelte:head>
@@ -239,7 +260,15 @@
 	<aside class="sidebar">
 		{#if raceStatus === 'finished'}
 			<div class="sidebar-section">
-				<Leaderboard participants={raceStore.leaderboard} {totalLayers} mode="finished" {zoneNames} />
+				<Leaderboard
+					participants={raceStore.leaderboard}
+					{totalLayers}
+					mode="finished"
+					{zoneNames}
+					selectedIds={selectedParticipantIds}
+					onToggle={handleLeaderboardToggle}
+					onClearSelection={clearSelection}
+				/>
 			</div>
 
 			<CasterList casters={initialRace.casters} />
@@ -253,7 +282,14 @@
 			{/if}
 		{:else if raceStatus === 'running'}
 			<div class="sidebar-section">
-				<Leaderboard participants={raceStore.leaderboard} {totalLayers} {zoneNames} />
+				<Leaderboard
+					participants={raceStore.leaderboard}
+					{totalLayers}
+					{zoneNames}
+					selectedIds={selectedParticipantIds}
+					onToggle={handleLeaderboardToggle}
+					onClearSelection={clearSelection}
+				/>
 			</div>
 
 			<CasterList casters={initialRace.casters} />
@@ -377,11 +413,11 @@
 					myParticipantId={myWsParticipantId}
 				/>
 			{:else}
-				<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
+				<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} highlightIds={selectedParticipantIds} />
 			{/if}
 		{:else if liveSeed?.graph_json && raceStatus === 'finished'}
 			<Podium participants={raceStore.leaderboard} />
-			<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
+			<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} highlightIds={selectedParticipantIds} />
 			<RaceStats participants={raceStore.leaderboard} />
 		{:else if liveSeed?.graph_json && myWsParticipantId}
 			<MetroDagProgressive
