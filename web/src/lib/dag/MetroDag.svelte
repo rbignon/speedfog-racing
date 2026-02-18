@@ -14,12 +14,16 @@
 		LABEL_COLOR,
 		LABEL_OFFSET_Y
 	} from './constants';
-	import type { PositionedNode, DagLayout } from './types';
+	import type { DagNode, PositionedNode, DagLayout } from './types';
+	import NodePopup from './NodePopup.svelte';
+	import { computeConnections } from './popupData';
+	import type { NodePopupData } from './popupData';
 
 	let { graphJson }: { graphJson: Record<string, unknown> } = $props();
 
+	let graph = $derived(parseDagGraph(graphJson));
+
 	let layout: DagLayout = $derived.by(() => {
-		const graph = parseDagGraph(graphJson);
 		return computeLayout(graph);
 	});
 
@@ -41,6 +45,41 @@
 		}
 		return above;
 	});
+
+	// Popup state
+	let popupData: NodePopupData | null = $state(null);
+	let popupX = $state(0);
+	let popupY = $state(0);
+
+	let nodeMap: Map<string, DagNode> = $derived.by(() => {
+		const map = new Map<string, DagNode>();
+		for (const node of layout.nodes) {
+			map.set(node.id, node);
+		}
+		return map;
+	});
+
+	function onNodeClick(nodeId: string, event: PointerEvent) {
+		const node = nodeMap.get(nodeId);
+		if (!node) return;
+
+		const { entrances, exits } = computeConnections(nodeId, graph.edges, nodeMap);
+
+		popupData = {
+			nodeId,
+			displayName: node.displayName,
+			type: node.type,
+			tier: node.tier,
+			entrances,
+			exits,
+		};
+		popupX = event.clientX;
+		popupY = event.clientY;
+	}
+
+	function closePopup() {
+		popupData = null;
+	}
 
 	function truncateLabel(name: string): string {
 		const short = name.includes(' - ') ? name.split(' - ').pop()! : name;
@@ -71,7 +110,7 @@
 </script>
 
 {#if layout.nodes.length > 0}
-	<ZoomableSvg width={layout.width} height={layout.height}>
+	<ZoomableSvg width={layout.width} height={layout.height} onnodeclick={onNodeClick} onpanstart={closePopup}>
 			<!-- Edges (rendered first, behind nodes) -->
 			{#each layout.edges as edge}
 				{#each edge.segments as seg}
@@ -157,6 +196,9 @@
 				</g>
 			{/each}
 	</ZoomableSvg>
+	{#if popupData}
+		<NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
+	{/if}
 {/if}
 
 <style>
