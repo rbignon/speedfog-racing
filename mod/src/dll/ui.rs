@@ -331,7 +331,10 @@ impl RaceTracker {
             // Right-aligned value: progress for ready/playing, IGT for finished
             let right_text = match p.status.as_str() {
                 "finished" => format_time(p.igt_ms),
-                _ => format!("{}/{}", p.current_layer, total_layers),
+                _ => {
+                    let display = (p.current_layer + 1).min(total_layers);
+                    format!("{}/{}", display, total_layers)
+                }
             };
             let right_width = ui.calc_text_size(&right_text)[0];
 
