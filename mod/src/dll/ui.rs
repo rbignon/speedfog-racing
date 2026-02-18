@@ -48,14 +48,21 @@ impl ImguiRenderLoop for RaceTracker {
             info!("Using default imgui font");
         }
 
-        // Load death icon texture
-        match DeathIcon::load(render_context) {
-            Ok(icon) => {
+        // Load death icon texture.
+        // Wrapped in catch_unwind because render_context.load_texture() can panic
+        // when the DX12 command queue isn't fully initialized yet.
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            DeathIcon::load(render_context)
+        })) {
+            Ok(Ok(icon)) => {
                 info!("Loaded death icon texture");
                 self.death_icon = Some(icon);
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 error!(error = %e, "Failed to load death icon");
+            }
+            Err(_) => {
+                error!("Death icon texture load panicked (DX12 not ready?)");
             }
         }
     }
