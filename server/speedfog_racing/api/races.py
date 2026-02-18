@@ -368,21 +368,22 @@ async def update_race(
     if request.is_public is not None:
         race.is_public = request.is_public
 
-    # scheduled_at only editable in SETUP
-    if request.scheduled_at is not None:
+    # scheduled_at only editable in SETUP (includes clearing via null)
+    if "scheduled_at" in request.model_fields_set:
         if race.status != RaceStatus.SETUP:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Can only update schedule for setup races",
             )
-        scheduled = request.scheduled_at
-        if scheduled.tzinfo is None:
-            scheduled = scheduled.replace(tzinfo=UTC)
-        if scheduled < datetime.now(UTC):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Scheduled time cannot be in the past",
-            )
+        if request.scheduled_at is not None:
+            scheduled = request.scheduled_at
+            if scheduled.tzinfo is None:
+                scheduled = scheduled.replace(tzinfo=UTC)
+            if scheduled < datetime.now(UTC):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Scheduled time cannot be in the past",
+                )
         race.scheduled_at = request.scheduled_at
     await db.commit()
 

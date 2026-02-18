@@ -166,7 +166,7 @@ async def test_create_race_success(test_client, organizer, seed):
         assert response.status_code == 201
         data = response.json()
         assert data["name"] == "Test Race"
-        assert data["status"] == "draft"
+        assert data["status"] == "setup"
         assert data["organizer"]["twitch_username"] == "organizer"
         assert data["pool_name"] == "standard"
 
@@ -267,10 +267,10 @@ async def test_list_races_filter_by_status(test_client, organizer, async_session
         await db.flush()
 
         race1 = Race(
-            name="Draft Race",
+            name="Setup Race",
             organizer_id=organizer.id,
             seed_id=seed1.id,
-            status=RaceStatus.DRAFT,
+            status=RaceStatus.SETUP,
         )
         race2 = Race(
             name="Running Race",
@@ -282,12 +282,12 @@ async def test_list_races_filter_by_status(test_client, organizer, async_session
         await db.commit()
 
     async with test_client as client:
-        # Filter by draft
-        response = await client.get("/api/races?status=draft")
+        # Filter by setup
+        response = await client.get("/api/races?status=setup")
         assert response.status_code == 200
         races = response.json()["races"]
         assert len(races) == 1
-        assert races[0]["name"] == "Draft Race"
+        assert races[0]["name"] == "Setup Race"
 
         # Filter by running
         response = await client.get("/api/races?status=running")
@@ -610,7 +610,7 @@ async def test_download_my_seed_pack_success(
 
 @pytest.mark.asyncio
 async def test_reset_race_from_running(test_client, organizer, player, async_session):
-    """Resetting a RUNNING race sets status to open and clears participant progress."""
+    """Resetting a RUNNING race sets status to setup and clears participant progress."""
     async with async_session() as db:
         seed = Seed(
             seed_number="s900",
@@ -654,7 +654,7 @@ async def test_reset_race_from_running(test_client, organizer, player, async_ses
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "open"
+        assert data["status"] == "setup"
         assert data["started_at"] is None
 
         # Verify participant was reset by fetching race detail
@@ -669,7 +669,7 @@ async def test_reset_race_from_running(test_client, organizer, player, async_ses
 
 @pytest.mark.asyncio
 async def test_reset_race_from_finished(test_client, organizer, player, async_session):
-    """Resetting a FINISHED race sets status to open and clears participant progress."""
+    """Resetting a FINISHED race sets status to setup and clears participant progress."""
     async with async_session() as db:
         seed = Seed(
             seed_number="s901",
@@ -713,55 +713,21 @@ async def test_reset_race_from_finished(test_client, organizer, player, async_se
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "open"
+        assert data["status"] == "setup"
         assert data["started_at"] is None
 
 
 @pytest.mark.asyncio
-async def test_reset_race_from_draft_fails(test_client, organizer, seed):
-    """Resetting a DRAFT race returns 400."""
+async def test_reset_race_from_setup_fails(test_client, organizer, seed):
+    """Resetting a SETUP race returns 400."""
     async with test_client as client:
         create_response = await client.post(
             "/api/races",
-            json={"name": "Draft Race"},
+            json={"name": "Setup Race"},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         race_id = create_response.json()["id"]
 
-        response = await client.post(
-            f"/api/races/{race_id}/reset",
-            headers={"Authorization": f"Bearer {organizer.api_token}"},
-        )
-        assert response.status_code == 400
-        assert "running or finished" in response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_reset_race_from_open_fails(test_client, organizer, async_session):
-    """Resetting an OPEN race returns 400."""
-    async with async_session() as db:
-        seed = Seed(
-            seed_number="s902",
-            pool_name="standard",
-            graph_json={"total_layers": 10, "nodes": []},
-            total_layers=10,
-            folder_path="/test/902",
-            status=SeedStatus.CONSUMED,
-        )
-        db.add(seed)
-        await db.flush()
-
-        race = Race(
-            name="Open Race",
-            organizer_id=organizer.id,
-            seed_id=seed.id,
-            status=RaceStatus.OPEN,
-        )
-        db.add(race)
-        await db.commit()
-        race_id = str(race.id)
-
-    async with test_client as client:
         response = await client.post(
             f"/api/races/{race_id}/reset",
             headers={"Authorization": f"Bearer {organizer.api_token}"},
@@ -866,8 +832,8 @@ async def test_finish_running_race(test_client, organizer, player, async_session
 
 
 @pytest.mark.asyncio
-async def test_finish_open_race_fails(test_client, organizer, async_session):
-    """Force-finishing an OPEN race returns 400."""
+async def test_finish_setup_race_fails(test_client, organizer, async_session):
+    """Force-finishing a SETUP race returns 400."""
     async with async_session() as db:
         seed = Seed(
             seed_number="s911",
@@ -881,10 +847,10 @@ async def test_finish_open_race_fails(test_client, organizer, async_session):
         await db.flush()
 
         race = Race(
-            name="Open Race",
+            name="Setup Race",
             organizer_id=organizer.id,
             seed_id=seed.id,
-            status=RaceStatus.OPEN,
+            status=RaceStatus.SETUP,
         )
         db.add(race)
         await db.commit()
@@ -997,7 +963,7 @@ async def test_delete_race_releases_seed(test_client, organizer, async_session):
             name="Race With Seed",
             organizer_id=organizer.id,
             seed_id=seed.id,
-            status=RaceStatus.DRAFT,
+            status=RaceStatus.SETUP,
         )
         db.add(race)
         await db.commit()
@@ -1068,8 +1034,8 @@ async def test_delete_started_race_keeps_seed_consumed(test_client, organizer, a
 
 
 @pytest.mark.asyncio
-async def test_reroll_seed_draft(test_client, organizer, async_session):
-    """Re-rolling seed on a DRAFT race assigns a new seed and releases the old one."""
+async def test_reroll_seed_setup(test_client, organizer, async_session):
+    """Re-rolling seed on a SETUP race assigns a new seed and releases the old one."""
     async with async_session() as db:
         seed_a = Seed(
             seed_number="reroll_a",
@@ -1094,7 +1060,7 @@ async def test_reroll_seed_draft(test_client, organizer, async_session):
             name="Reroll Test Race",
             organizer_id=organizer.id,
             seed_id=seed_a.id,
-            status=RaceStatus.DRAFT,
+            status=RaceStatus.SETUP,
         )
         db.add(race)
         await db.commit()
@@ -1120,47 +1086,6 @@ async def test_reroll_seed_draft(test_client, organizer, async_session):
 
         result_b = await db.execute(select(Seed).where(Seed.id == seed_b_id))
         assert result_b.scalar_one().status == SeedStatus.CONSUMED
-
-
-@pytest.mark.asyncio
-async def test_reroll_seed_open(test_client, organizer, async_session):
-    """Re-rolling seed works on OPEN races too."""
-    async with async_session() as db:
-        seed_a = Seed(
-            seed_number="reroll_oa",
-            pool_name="standard",
-            graph_json={"total_layers": 5, "nodes": {}},
-            total_layers=5,
-            folder_path="/test/reroll_oa",
-            status=SeedStatus.CONSUMED,
-        )
-        seed_b = Seed(
-            seed_number="reroll_ob",
-            pool_name="standard",
-            graph_json={"total_layers": 8, "nodes": {}},
-            total_layers=8,
-            folder_path="/test/reroll_ob",
-            status=SeedStatus.AVAILABLE,
-        )
-        db.add_all([seed_a, seed_b])
-        await db.flush()
-
-        race = Race(
-            name="Reroll Open Race",
-            organizer_id=organizer.id,
-            seed_id=seed_a.id,
-            status=RaceStatus.OPEN,
-        )
-        db.add(race)
-        await db.commit()
-        race_id = str(race.id)
-
-    async with test_client as client:
-        response = await client.post(
-            f"/api/races/{race_id}/reroll-seed",
-            headers={"Authorization": f"Bearer {organizer.api_token}"},
-        )
-        assert response.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -1215,7 +1140,7 @@ async def test_reroll_seed_non_organizer_fails(test_client, organizer, player, a
             name="Auth Test Race",
             organizer_id=organizer.id,
             seed_id=seed.id,
-            status=RaceStatus.DRAFT,
+            status=RaceStatus.SETUP,
         )
         db.add(race)
         await db.commit()
@@ -1248,7 +1173,7 @@ async def test_reroll_seed_no_available_seeds(test_client, organizer, async_sess
             name="No Seeds Race",
             organizer_id=organizer.id,
             seed_id=seed.id,
-            status=RaceStatus.DRAFT,
+            status=RaceStatus.SETUP,
         )
         db.add(race)
         await db.commit()
@@ -1323,14 +1248,14 @@ async def test_private_race_hidden_from_listing(test_client, organizer, async_se
             name="Public Race",
             organizer_id=organizer.id,
             seed_id=public_seed.id,
-            status=RaceStatus.OPEN,
+            status=RaceStatus.SETUP,
             is_public=True,
         )
         private_race = Race(
             name="Private Race",
             organizer_id=organizer.id,
             seed_id=private_seed.id,
-            status=RaceStatus.OPEN,
+            status=RaceStatus.SETUP,
             is_public=False,
         )
         db.add_all([public_race, private_race])
@@ -1364,7 +1289,7 @@ async def test_private_race_accessible_by_direct_link(test_client, organizer, as
             name="Hidden Race",
             organizer_id=organizer.id,
             seed_id=seed.id,
-            status=RaceStatus.OPEN,
+            status=RaceStatus.SETUP,
             is_public=False,
         )
         db.add(race)

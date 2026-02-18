@@ -90,7 +90,7 @@ async def race_with_invite(async_session, organizer):
             name="Invite Test Race",
             organizer_id=organizer.id,
             seed_id=seed.id,
-            status=RaceStatus.DRAFT,
+            status=RaceStatus.SETUP,
         )
         db.add(race)
         await db.flush()
@@ -138,7 +138,7 @@ async def test_get_invite_info(test_client, race_with_invite):
         assert data["race_name"] == "Invite Test Race"
         assert data["organizer_name"] == "The Organizer"
         assert data["twitch_username"] == "invited_player"
-        assert data["race_status"] == "draft"
+        assert data["race_status"] == "setup"
 
 
 @pytest.mark.asyncio

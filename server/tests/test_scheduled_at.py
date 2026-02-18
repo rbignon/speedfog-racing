@@ -180,7 +180,7 @@ async def test_create_race_past_scheduled_at_rejected(test_client, organizer, se
 
 @pytest.mark.asyncio
 async def test_patch_scheduled_at(test_client, organizer, seed):
-    """Organizer can update scheduled_at on a draft race."""
+    """Organizer can update scheduled_at on a setup race."""
     async with test_client as client:
         # Create race
         create_resp = await client.post(
@@ -290,7 +290,7 @@ async def test_patch_running_race_rejected(test_client, organizer, seed):
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         assert patch_resp.status_code == 400
-        assert "draft or open" in patch_resp.json()["detail"].lower()
+        assert "setup" in patch_resp.json()["detail"].lower()
 
 
 # =============================================================================

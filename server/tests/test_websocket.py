@@ -95,7 +95,7 @@ class MockRace:
         self,
         id: uuid.UUID | None = None,
         name: str = "Test Race",
-        status: RaceStatus = RaceStatus.DRAFT,
+        status: RaceStatus = RaceStatus.SETUP,
         seed: MockSeed | None = None,
         participants: list | None = None,
     ):
@@ -176,7 +176,7 @@ class TestSchemas:
         """Test AuthOkMessage serialization."""
         msg = AuthOkMessage(
             participant_id="abc-123",
-            race=RaceInfo(id="1", name="Race", status="draft"),
+            race=RaceInfo(id="1", name="Race", status="setup"),
             seed=SeedInfo(total_layers=10),
             participants=[],
         )

@@ -89,7 +89,7 @@ async def race_id(async_session, organizer):
             name="Caster Test Race",
             organizer_id=organizer.id,
             seed_id=seed.id,
-            status=RaceStatus.DRAFT,
+            status=RaceStatus.SETUP,
         )
         db.add(race)
         await db.commit()
