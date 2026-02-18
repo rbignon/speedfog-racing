@@ -25,10 +25,10 @@ class CreateRaceRequest(BaseModel):
 
 
 class UpdateRaceRequest(BaseModel):
-    """Request to update race properties (DRAFT/OPEN only).
+    """Request to update race properties. Organizer only.
 
-    All fields use a sentinel pattern: None means "don't change".
-    For scheduled_at, use explicit null in JSON to clear the value.
+    scheduled_at: only editable in SETUP status.
+    is_public: editable at any status.
     """
 
     scheduled_at: datetime | None = None
