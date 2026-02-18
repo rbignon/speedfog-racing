@@ -317,7 +317,7 @@ export async function createRace(
 }
 
 /**
- * Update race properties (PATCH). Organizer only, DRAFT/OPEN only.
+ * Update race properties (PATCH). Organizer only.
  */
 export async function updateRace(
   raceId: string,
@@ -397,7 +397,7 @@ export async function rerollSeed(raceId: string): Promise<RaceDetail> {
 }
 
 /**
- * Reset a race back to OPEN status, clearing all participant progress.
+ * Reset a race back to SETUP status, clearing all participant progress.
  */
 export async function resetRace(raceId: string): Promise<Race> {
   const response = await fetch(`${API_BASE}/races/${raceId}/reset`, {

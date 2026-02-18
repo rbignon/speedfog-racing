@@ -312,7 +312,7 @@ async def list_races(
             (Race.status == RaceStatus.SETUP, 1),
             else_=2,
         ),
-        # Within open/draft: scheduled_at ASC (nulls last)
+        # Within setup: scheduled_at ASC (nulls last)
         case(
             (Race.scheduled_at.is_(None), 1),
             else_=0,
