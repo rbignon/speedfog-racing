@@ -216,7 +216,8 @@ impl RaceTracker {
         let deaths = self.read_deaths().unwrap_or(0);
         let layer = me.map(|p| p.current_layer).unwrap_or(0);
         let death_str = format!("{}", deaths);
-        let progress_str = format!("  {}/{}", layer, total_layers);
+        let display_layer = (layer + 1).min(total_layers);
+        let progress_str = format!("  {}/{}", display_layer, total_layers);
         let font_height = ui.text_line_height();
         let icon_size = font_height;
         let icon_gap = 2.0;

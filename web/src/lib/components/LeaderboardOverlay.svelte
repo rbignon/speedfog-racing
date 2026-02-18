@@ -39,7 +39,7 @@
 			<span class="name">{displayName(participant)}</span>
 			<span class="stats">
 				{#if participant.status === 'playing'}
-					<span class="layer">{participant.current_layer}{totalLayers ? `/${totalLayers}` : ''}</span>
+					<span class="layer">{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers ? `/${totalLayers}` : ''}</span>
 					{#if participant.death_count > 0}
 						<span class="deaths">{participant.death_count}</span>
 					{/if}

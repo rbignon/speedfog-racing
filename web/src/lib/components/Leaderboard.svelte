@@ -107,7 +107,7 @@
 									{/if}
 									{participant.twitch_display_name || participant.twitch_username}
 								</span>
-								<span class="layer-fraction">{participant.current_layer}{totalLayers ? `/${totalLayers}` : ''}</span>
+								<span class="layer-fraction">{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers ? `/${totalLayers}` : ''}</span>
 							</div>
 							{#if zone}
 								<span class="zone" title={zoneNames?.get(participant.current_zone ?? '') ?? ''}>{zone}</span>
@@ -133,7 +133,7 @@
 									{/if}
 								{:else if mode === 'finished' && participant.status === 'abandoned'}
 									<span class="dnf"
-										>DNF (L{participant.current_layer}{totalLayers ? `/${totalLayers}` : ''})</span
+										>DNF (L{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers ? `/${totalLayers}` : ''})</span
 									>
 									{#if participant.death_count > 0}
 										<span class="death-count">{participant.death_count}</span>

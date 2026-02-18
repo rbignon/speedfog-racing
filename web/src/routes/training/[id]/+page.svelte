@@ -154,7 +154,7 @@
 			</div>
 			<div class="stat">
 				<span class="stat-label">Progress</span>
-				<span class="stat-value mono">{currentLayer}/{totalLayers}</span>
+				<span class="stat-value mono">{Math.min(currentLayer + 1, totalLayers || Infinity)}/{totalLayers}</span>
 			</div>
 			{#if liveParticipant?.mod_connected}
 				<div class="stat">
