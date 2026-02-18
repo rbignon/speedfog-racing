@@ -92,7 +92,8 @@
 					mode === 'finished' && participant.status === 'finished' && index < 3
 						? MEDALS[index]
 						: null}
-				<li
+				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+			<li
 				class="participant {getStatusClass(participant.status)}"
 				class:selected={hasSelection && selectedIds!.has(participant.id)}
 				onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
