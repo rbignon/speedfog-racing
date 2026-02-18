@@ -269,7 +269,7 @@
 
 			<!-- Nodes -->
 			{#each layout.nodes as node}
-				<g class="dag-node" data-type={node.type}>
+				<g class="dag-node" data-type={node.type} data-node-id={node.id}>
 					<title>{node.displayName}</title>
 
 					<g class="dag-node-shape">

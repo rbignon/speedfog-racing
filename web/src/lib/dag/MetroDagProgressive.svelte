@@ -177,6 +177,7 @@
 			<g
 				class="dag-node"
 				data-type={node.type}
+				data-node-id={node.id}
 				style={transitionStyle}
 				opacity={nodeOpacity(node)}
 			>

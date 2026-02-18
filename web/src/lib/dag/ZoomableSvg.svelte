@@ -6,6 +6,7 @@
 		maxZoom?: number;
 		transparent?: boolean;
 		children: import('svelte').Snippet;
+		onnodeclick?: (nodeId: string, event: PointerEvent) => void;
 	}
 
 	let {
@@ -14,7 +15,8 @@
 		minZoom = 0.5,
 		maxZoom = 3,
 		transparent = false,
-		children
+		children,
+		onnodeclick
 	}: Props = $props();
 
 	let svgEl: SVGSVGElement | undefined = $state();
@@ -76,11 +78,15 @@
 	// --- Pointer pan + pinch ---
 
 	let pointers = new Map<number, PointerEvent>();
+	let pointerDownTarget: EventTarget | null = null;
+	let pointerDownPos = { x: 0, y: 0 };
 	let dragStart = { clientX: 0, clientY: 0, panX: 0, panY: 0 };
 	let pinchStartDist = 0;
 	let pinchStartZoom = 1;
 
 	function onPointerDown(e: PointerEvent) {
+		pointerDownTarget = e.target;
+		pointerDownPos = { x: e.clientX, y: e.clientY };
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
 		pointers.set(e.pointerId, e);
 
@@ -142,6 +148,21 @@
 		pointers.delete(e.pointerId);
 		if (pointers.size < 2) pinchStartDist = 0;
 		if (pointers.size === 0) isDragging = false;
+
+		const dx = e.clientX - pointerDownPos.x;
+		const dy = e.clientY - pointerDownPos.y;
+		if (Math.abs(dx) < 5 && Math.abs(dy) < 5 && onnodeclick && pointerDownTarget) {
+			let el = pointerDownTarget as Element | null;
+			while (el && el !== svgEl) {
+				const nodeId = el.getAttribute?.('data-node-id');
+				if (nodeId) {
+					onnodeclick(nodeId, e);
+					break;
+				}
+				el = el.parentElement;
+			}
+		}
+		pointerDownTarget = null;
 	}
 
 	// --- Reset ---
