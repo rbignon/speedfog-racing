@@ -207,9 +207,7 @@
 								<span class="active-badge badge-race"
 									>{race.status === 'running'
 										? 'Racing'
-										: race.status === 'draft'
-											? 'Draft'
-											: 'Open'}</span
+										: 'Upcoming'}</span
 								>
 								<span class="active-name">{race.name}</span>
 							</div>
