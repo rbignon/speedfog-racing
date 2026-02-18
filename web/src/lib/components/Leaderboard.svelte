@@ -7,9 +7,22 @@
 		totalLayers?: number | null;
 		mode?: 'running' | 'finished';
 		zoneNames?: Map<string, string> | null;
+		selectedIds?: Set<string>;
+		onToggle?: (id: string, ctrlKey: boolean) => void;
+		onClearSelection?: () => void;
 	}
 
-	let { participants, totalLayers = null, mode = 'running', zoneNames = null }: Props = $props();
+	let {
+		participants,
+		totalLayers = null,
+		mode = 'running',
+		zoneNames = null,
+		selectedIds,
+		onToggle,
+		onClearSelection
+	}: Props = $props();
+
+	let hasSelection = $derived(selectedIds != null && selectedIds.size > 0);
 
 	function zoneName(zone: string | null): string | null {
 		if (!zone || !zoneNames) return null;
@@ -53,8 +66,21 @@
 	}
 </script>
 
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key === 'Escape' && hasSelection && onClearSelection) {
+			onClearSelection();
+		}
+	}}
+/>
+
 <div class="leaderboard">
-	<h2>{mode === 'finished' ? 'Results' : 'Leaderboard'}</h2>
+	<div class="leaderboard-header">
+		<h2>{mode === 'finished' ? 'Results' : 'Leaderboard'}</h2>
+		{#if hasSelection && onClearSelection}
+			<button class="show-all-btn" onclick={onClearSelection}>Show all</button>
+		{/if}
+	</div>
 
 	{#if participants.length === 0}
 		<p class="empty">No participants yet</p>
@@ -66,8 +92,14 @@
 					mode === 'finished' && participant.status === 'finished' && index < 3
 						? MEDALS[index]
 						: null}
-				<li class="participant {getStatusClass(participant.status)}">
-					{#if medal}
+				<li
+				class="participant {getStatusClass(participant.status)}"
+				class:selected={hasSelection && selectedIds!.has(participant.id)}
+				onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
+				role={onToggle ? 'button' : undefined}
+				tabindex={onToggle ? 0 : undefined}
+			>
+				{#if medal}
 						<span class="medal">{medal}</span>
 					{:else}
 						<span class="rank" style={color ? `background: ${color}; color: #1a1a2e;` : ''}
@@ -142,11 +174,33 @@
 		flex-direction: column;
 	}
 
-	h2 {
+	.leaderboard-header {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		margin-bottom: 1rem;
+	}
+
+	.leaderboard-header h2 {
 		color: var(--color-gold);
-		margin: 0 0 1rem 0;
+		margin: 0;
 		font-size: var(--font-size-lg);
 		font-weight: 600;
+	}
+
+	.show-all-btn {
+		background: none;
+		border: none;
+		padding: 0;
+		color: var(--color-text-secondary);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		cursor: pointer;
+		transition: color var(--transition);
+	}
+
+	.show-all-btn:hover {
+		color: var(--color-text);
 	}
 
 	.list {
@@ -169,9 +223,14 @@
 		border-radius: var(--radius-sm);
 		border: 1px solid var(--color-border);
 		transition: border-color var(--transition);
+		cursor: pointer;
 	}
 
 	.participant:hover {
+		background: var(--color-surface-elevated);
+	}
+
+	.participant.selected {
 		background: var(--color-surface-elevated);
 	}
 
