@@ -233,19 +233,40 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
     # Extract gem items from care_package for runtime spawning by the mod
     spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
 
+    # Compute current_layer and current_layer_tier from progress
+    current_layer = 0
+    current_layer_tier: int | None = None
+    current_zone: str | None = None
+    if session.progress_nodes and seed and seed.graph_json:
+        for entry in session.progress_nodes:
+            nid = entry.get("node_id")
+            if nid:
+                layer = get_layer_for_node(nid, seed.graph_json)
+                if layer > current_layer:
+                    current_layer = layer
+        current_zone = session.progress_nodes[-1].get("node_id")
+        if current_zone:
+            current_layer_tier = get_tier_for_node(current_zone, seed.graph_json)
+
+    # Finished sessions show total_layers so progress reads N/N
+    if session.status == TrainingSessionStatus.FINISHED and seed:
+        current_layer = seed.total_layers
+
+    status = "playing" if session.status == TrainingSessionStatus.ACTIVE else session.status.value
+
     participant_info = ParticipantInfo(
         id=str(session.id),
         twitch_username=session.user.twitch_username,
         twitch_display_name=session.user.twitch_display_name,
-        status="playing",
-        current_zone=None,
-        current_layer=0,
-        current_layer_tier=None,
+        status=status,
+        current_zone=current_zone,
+        current_layer=current_layer,
+        current_layer_tier=current_layer_tier,
         igt_ms=session.igt_ms,
         death_count=session.death_count,
         color_index=0,
         mod_connected=True,
-        zone_history=None,
+        zone_history=session.progress_nodes,
     )
 
     message = AuthOkMessage(

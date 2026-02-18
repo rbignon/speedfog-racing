@@ -992,6 +992,88 @@ def test_training_zone_query_fast_travel(training_ws_client, async_session):
         assert zu2["tier"] == 5
 
 
+def test_training_auth_ok_reconnect_has_tier(training_ws_client, async_session):
+    """Training auth_ok includes correct current_layer and current_layer_tier on reconnect."""
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 3,
+        "total_nodes": 2,
+        "total_paths": 1,
+        "event_map": {"1040292800": "stormveil_01"},
+        "finish_event": 1040292899,
+        "nodes": {
+            "limgrave_start": {
+                "type": "start",
+                "layer": 0,
+                "tier": 1,
+                "original_tier": 5,
+                "display_name": "Limgrave",
+                "zones": ["limgrave"],
+            },
+            "stormveil_01": {
+                "layer": 1,
+                "tier": 2,
+                "original_tier": 8,
+                "display_name": "Stormveil Castle",
+                "zones": ["stormveil"],
+            },
+        },
+        "edges": [{"from": "limgrave_start", "to": "stormveil_01"}],
+    }
+
+    async def _setup():
+        async with async_session() as db:
+            user = User(
+                twitch_id="reconnect_user",
+                twitch_username="reconnector",
+                api_token=generate_token(),
+                role=UserRole.USER,
+            )
+            seed = Seed(
+                seed_number="reconnect_001",
+                pool_name="training_standard",
+                graph_json=graph_json,
+                total_layers=3,
+                folder_path="/tmp/reconnect_seed.zip",
+                status=SeedStatus.AVAILABLE,
+            )
+            db.add_all([user, seed])
+            await db.commit()
+            await db.refresh(user)
+            await db.refresh(seed)
+
+            ts = TrainingSession(user_id=user.id, seed_id=seed.id)
+            db.add(ts)
+            await db.commit()
+            await db.refresh(ts)
+            return str(ts.id), ts.mod_token
+
+    sid, token = asyncio.run(_setup())
+
+    # First connection: advance to stormveil_01
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        auth_ok = ws.receive_json()
+        assert auth_ok["type"] == "auth_ok"
+        ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update
+
+        # Trigger event flag to advance
+        ws.send_json({"type": "event_flag", "flag_id": 1040292800, "igt_ms": 5000})
+        ws.receive_json()  # leaderboard_update
+        ws.receive_json()  # zone_update
+
+    # Second connection (reconnect): auth_ok should have correct tier
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        auth_ok = ws.receive_json()
+        assert auth_ok["type"] == "auth_ok"
+
+        p = auth_ok["participants"][0]
+        assert p["current_layer"] == 1, f"Expected layer 1, got {p['current_layer']}"
+        assert p["current_layer_tier"] == 2, f"Expected tier 2, got {p['current_layer_tier']}"
+
+
 def test_training_mod_websocket_invalid_token(training_ws_client, training_session_data):
     """Training mod WS: invalid token returns auth_error."""
     sid = training_session_data["session_id"]
