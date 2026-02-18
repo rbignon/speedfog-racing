@@ -81,7 +81,12 @@
 	}
 
 	function activityBadge(item: ActivityItem): string {
-		if (item.type === 'race_participant') return 'Raced';
+		if (item.type === 'race_participant') {
+			if (item.status === 'finished' && item.placement) return placementMedal(item.placement);
+			if (item.status === 'finished') return 'Raced';
+			if (item.status === 'running') return 'Racing';
+			return 'Joined';
+		}
 		if (item.type === 'race_organizer') return 'Organized';
 		if (item.type === 'race_caster') return 'Casted';
 		if (item.type === 'training') return 'Training';
