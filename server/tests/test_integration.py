@@ -376,7 +376,9 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                     "9000002": "node_c",
                 }
                 graph["finish_event"] = 9000003
+                graph["total_layers"] = 5
                 race.seed.graph_json = graph
+                race.seed.total_layers = 5
                 await db.commit()
 
             result = await db.execute(
@@ -1112,16 +1114,35 @@ def test_open_race_already_open(integration_client, race_with_participants):
 # =============================================================================
 
 
-def test_auth_ok_spawn_items_empty_when_no_gems(integration_client, race_with_participants):
+def test_auth_ok_spawn_items_empty_when_no_gems(
+    integration_client, race_with_participants, integration_db
+):
     """auth_ok.seed.spawn_items is an empty list when seed has no type-4 care_package items."""
+    import asyncio
+
     race_id = race_with_participants["race_id"]
     players = race_with_participants["players"]
+
+    # Strip care_package from the seed so there are no type-4 items
+    async def strip_care_package():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            graph = json.loads(json.dumps(race.seed.graph_json))
+            graph.pop("care_package", None)
+            race.seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(strip_care_package())
 
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
         mod = ModTestClient(ws, players[0]["mod_token"])
         auth = mod.auth()
         assert auth["type"] == "auth_ok"
-        # Default test seed has no care_package → spawn_items should be empty list
         assert auth["seed"]["spawn_items"] == []
 
 
