@@ -28,7 +28,7 @@ impl ImguiRenderLoop for RaceTracker {
             // Glyph ranges: Basic Latin + Punctuation + Box/Geometric + Arrows + Dagger
             let glyph_ranges = FontGlyphRanges::from_slice(&[
                 0x0020, 0x00FF, // Basic Latin + Latin Supplement
-                0x2000, 0x206F, // General Punctuation (†)
+                0x2000, 0x206F, // General Punctuation (…, –)
                 0x2500, 0x25FF, // Box Drawing + Block Elements + Geometric Shapes (●)
                 0x2190, 0x21FF, // Arrows (→)
                 0,
@@ -124,7 +124,7 @@ impl RaceTracker {
     /// - RUNNING (after 3s): nothing
     fn render_state_banner(&self, ui: &hudhook::imgui::Ui) {
         let orange = [1.0, 0.75, 0.0, 1.0];
-        let green = [0.5, 1.0, 0.5, 1.0];
+        let green = [0.0, 1.0, 0.0, 1.0];
 
         if let Some(race) = self.race_info() {
             match race.status.as_str() {
@@ -157,19 +157,23 @@ impl RaceTracker {
     }
 
     /// Compact 2-line player status:
-    /// Line 1: `● RaceName [status]           HH:MM:SS`
-    /// Line 2: `  Tier X                   †N    X/Y`
+    /// Line 1: `● RaceName               HH:MM:SS` (IGT in red)
+    /// Line 2: `  tier X, previously Y   [☠]N  X/Y` (yellow + green)
     fn render_player_status(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
-        // --- Line 1: connection dot + race name + status (left), local IGT (right) ---
+        let red = [1.0, 0.0, 0.0, 1.0];
+        let yellow = [1.0, 1.0, 0.0, 1.0];
+        let green = [0.0, 1.0, 0.0, 1.0];
+
+        // --- Line 1: connection dot + race name (left), local IGT in red (right) ---
         let (dot_color, _) = match self.ws_status() {
-            ConnectionStatus::Connected => ([0.0, 1.0, 0.0, 1.0], "connected"),
+            ConnectionStatus::Connected => (green, "connected"),
             ConnectionStatus::Connecting | ConnectionStatus::Reconnecting => {
                 ([1.0, 0.65, 0.0, 1.0], "connecting")
             }
-            _ => ([1.0, 0.0, 0.0, 1.0], "disconnected"),
+            _ => (red, "disconnected"),
         };
 
-        // Right side: local IGT
+        // Right side: local IGT (red)
         let igt_str = if let Some(igt_ms) = self.read_igt() {
             format_time_u32(igt_ms)
         } else {
@@ -177,7 +181,7 @@ impl RaceTracker {
         };
         let igt_width = ui.calc_text_size(&igt_str)[0];
 
-        // Left side: dot + race name + [status]
+        // Left side: dot + race name
         let dot_str = "\u{25CF} "; // "● "
         let dot_width = ui.calc_text_size(dot_str)[0];
         let gap = ui.calc_text_size(" ")[0];
@@ -199,40 +203,69 @@ impl RaceTracker {
         let truncated = truncate_to_width(ui, &name_text, name_max);
         ui.text(&truncated);
 
-        // Right-align IGT
+        // Right-align IGT (red)
         ui.same_line_with_pos(max_width - igt_width);
-        ui.text(&igt_str);
+        ui.text_colored(red, &igt_str);
 
-        // --- Line 2: zone name + tier (left), deaths + progress (right) ---
+        // --- Line 2: tier info (left, yellow), deaths + progress (right, green) ---
         let me = self.my_participant();
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let zone = self.current_zone_info();
 
-        // Right side: "†N  X/Y" — use local game memory for instant updates
+        // Right side: death icon + count + "  X/Y" progress
         let deaths = self.read_deaths().unwrap_or(0);
         let layer = me.map(|p| p.current_layer).unwrap_or(0);
-        let right_text = format!("\u{2020}{}  {}/{}", deaths, layer, total_layers);
-        let right_width = ui.calc_text_size(&right_text)[0];
+        let death_str = format!("{}", deaths);
+        let progress_str = format!("  {}/{}", layer, total_layers);
+        let font_height = ui.text_line_height();
+        let icon_size = font_height;
+        let icon_gap = 2.0;
+        let right_total = if self.death_icon.is_some() {
+            icon_size
+                + icon_gap
+                + ui.calc_text_size(&death_str)[0]
+                + ui.calc_text_size(&progress_str)[0]
+        } else {
+            ui.calc_text_size(&format!("{}{}", death_str, progress_str))[0]
+        };
 
-        // Left side: "  ZoneName (TX)" or "  Tier X" or "  --"
+        // Left side: tier info (yellow) or zone name (white) or "--"
         let left_text = if let Some(z) = zone {
             if let Some(t) = z.tier {
-                format!("  {} (T{})", z.display_name, t)
+                if let Some(ot) = z.original_tier.filter(|&ot| ot != t) {
+                    format!("  tier {}, previously {}", t, ot)
+                } else {
+                    format!("  tier {}", t)
+                }
             } else {
                 format!("  {}", z.display_name)
             }
         } else if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
-            format!("  Tier {}", tier)
+            format!("  tier {}", tier)
         } else {
             "  --".to_string()
         };
-        let left_max = max_width - right_width - ui.calc_text_size(" ")[0];
-        let left_truncated = truncate_to_width(ui, &left_text, left_max);
-        ui.text(&left_truncated);
+        let has_tier = zone.is_some_and(|z| z.tier.is_some())
+            || me.is_some_and(|p| p.current_layer_tier.is_some());
+        let left_color = if has_tier {
+            yellow
+        } else {
+            self.cached_colors.text
+        };
 
-        // Right-align deaths + progress
-        ui.same_line_with_pos(max_width - right_width);
-        ui.text(&right_text);
+        let left_max = max_width - right_total - gap;
+        let left_truncated = truncate_to_width(ui, &left_text, left_max);
+        ui.text_colored(left_color, &left_truncated);
+
+        // Right-align: death icon + count + progress (green)
+        ui.same_line_with_pos(max_width - right_total);
+        if let Some(ref icon) = self.death_icon {
+            Image::new(icon.texture_id(), [icon_size, icon_size]).build(ui);
+            ui.same_line_with_spacing(0.0, icon_gap);
+        }
+        ui.text_colored(green, &death_str);
+        ui.same_line_with_spacing(0.0, 0.0);
+        ui.text_colored(green, &progress_str);
     }
 
     /// Render exit list from zone_update:
@@ -248,7 +281,7 @@ impl RaceTracker {
             _ => return,
         };
 
-        let green = [0.5, 1.0, 0.5, 1.0];
+        let green = [0.0, 1.0, 0.0, 1.0];
 
         for exit in &zone.exits {
             // Arrow + fog gate text
@@ -288,7 +321,7 @@ impl RaceTracker {
 
             // Color: orange=ready, white=playing, green=finished, dim=other
             let color = match p.status.as_str() {
-                "finished" => [0.5, 1.0, 0.5, 1.0],
+                "finished" => [0.0, 1.0, 0.0, 1.0],
                 "playing" => self.cached_colors.text,
                 "ready" => [1.0, 0.65, 0.0, 1.0],
                 _ => self.cached_colors.text_disabled,
@@ -350,7 +383,7 @@ impl RaceTracker {
         ui.text_disabled("Flag reader:");
         ui.same_line();
         let status_color = if matches!(debug.flag_reader_status, FlagReaderStatus::Ok { .. }) {
-            [0.5, 1.0, 0.5, 1.0] // green
+            [0.0, 1.0, 0.0, 1.0] // green
         } else {
             [1.0, 0.3, 0.3, 1.0] // red
         };
@@ -358,7 +391,7 @@ impl RaceTracker {
 
         // Vanilla flag sanity check (category 0 should always exist)
         let (sanity_color, sanity_label) = match &debug.vanilla_sanity {
-            FlagReadResult::Set => ([0.5, 1.0, 0.5, 1.0], "true"),
+            FlagReadResult::Set => ([0.0, 1.0, 0.0, 1.0], "true"),
             FlagReadResult::NotSet => (self.cached_colors.text, "false"),
             FlagReadResult::Unreadable => ([1.0, 0.3, 0.3, 1.0], "None"),
         };
@@ -369,7 +402,7 @@ impl RaceTracker {
         if !debug.sample_reads.is_empty() {
             for (flag_id, result) in &debug.sample_reads {
                 let (color, label) = match result {
-                    FlagReadResult::Set => ([0.5, 1.0, 0.5, 1.0], "true"),
+                    FlagReadResult::Set => ([0.0, 1.0, 0.0, 1.0], "true"),
                     FlagReadResult::NotSet => (self.cached_colors.text, "false"),
                     FlagReadResult::Unreadable => ([1.0, 0.3, 0.3, 1.0], "None"),
                 };
