@@ -156,13 +156,17 @@
 			: undefined
 	);
 
-	let myWsParticipantId = $derived.by(() => {
+	let myWsParticipant = $derived.by(() => {
 		if (!myParticipant) return null;
-		const wsP = raceStore.participants.find(
-			(p) => p.twitch_username === myParticipant.user.twitch_username,
+		return (
+			raceStore.participants.find(
+				(p) => p.twitch_username === myParticipant.user.twitch_username,
+			) ?? null
 		);
-		return wsP?.id ?? null;
 	});
+
+	let myWsParticipantId = $derived(myWsParticipant?.id ?? null);
+	let myParticipantFinished = $derived(myWsParticipant?.status === 'finished');
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleString();
@@ -366,7 +370,7 @@
 		{/if}
 
 		{#if liveSeed?.graph_json && raceStatus === 'running'}
-			{#if myWsParticipantId}
+			{#if myWsParticipantId && !myParticipantFinished}
 				<MetroDagProgressive
 					graphJson={liveSeed.graph_json}
 					participants={raceStore.participants}
