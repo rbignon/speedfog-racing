@@ -251,6 +251,15 @@ impl RaceTracker {
             .unwrap_or(false)
     }
 
+    /// Check if the local player has finished the race.
+    /// Once finished, the mod should stop sending status_update and event_flag
+    /// to preserve the frozen IGT at finish time.
+    fn am_i_finished(&self) -> bool {
+        self.my_participant()
+            .map(|p| p.status == "finished")
+            .unwrap_or(false)
+    }
+
     pub fn update(&mut self) {
         // Process hotkeys at start of frame
         begin_hotkey_frame();
@@ -311,7 +320,11 @@ impl RaceTracker {
         if position_readable && !self.was_position_readable {
             // Just exited a loading screen — check for captured grace entity ID
             let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
-            if grace_id > 0 && self.ws_client.is_connected() && self.is_race_running() {
+            if grace_id > 0
+                && self.ws_client.is_connected()
+                && self.is_race_running()
+                && !self.am_i_finished()
+            {
                 self.ws_client.send_zone_query(grace_id);
                 self.last_sent_debug = Some(format!("zone_query(grace={})", grace_id));
                 info!(
@@ -341,12 +354,15 @@ impl RaceTracker {
                         // before revealing the next zone_update
                         self.saw_loading = false;
                         self.loading_exit_time = None;
-                        if self.ws_client.is_connected() && self.is_race_running() {
+                        if self.ws_client.is_connected()
+                            && self.is_race_running()
+                            && !self.am_i_finished()
+                        {
                             self.ws_client.send_event_flag(flag_id, igt_ms);
                             self.last_sent_debug =
                                 Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
                             info!(flag_id, "[RACE] Event flag triggered");
-                        } else {
+                        } else if !self.am_i_finished() {
                             self.pending_event_flags.push((flag_id, igt_ms));
                             info!(
                                 flag_id,
@@ -376,7 +392,7 @@ impl RaceTracker {
             }
             self.ready_sent = true;
 
-            if self.is_race_running() {
+            if self.is_race_running() && !self.am_i_finished() {
                 // Drain event flags buffered during disconnection
                 for (flag_id, flag_igt) in self.pending_event_flags.drain(..) {
                     self.ws_client.send_event_flag(flag_id, flag_igt);
@@ -450,9 +466,11 @@ impl RaceTracker {
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0 — skip to avoid erroneous data
+        // Stop once finished — IGT is frozen at finish time
         if self.last_status_update.elapsed() >= Duration::from_secs(1)
             && igt_ms > 0
             && self.is_race_running()
+            && !self.am_i_finished()
         {
             self.ws_client.send_status_update(igt_ms, deaths);
             self.last_status_update = Instant::now();

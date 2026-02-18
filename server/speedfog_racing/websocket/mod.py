@@ -368,6 +368,9 @@ async def handle_status_update(
             await _send_error(websocket, "Race not running")
             return
 
+        if participant.status == ParticipantStatus.FINISHED:
+            return  # Silently drop — IGT is frozen at finish time
+
         if isinstance(msg.get("igt_ms"), int):
             participant.igt_ms = msg["igt_ms"]
         if isinstance(msg.get("death_count"), int):
@@ -423,6 +426,9 @@ async def handle_event_flag(
             )
             await _send_error(websocket, "Race not running")
             return
+
+        if participant.status == ParticipantStatus.FINISHED:
+            return  # Silently drop — player already finished
 
         seed = participant.race.seed
         if not seed or not seed.graph_json:
@@ -507,6 +513,9 @@ async def handle_zone_query(
         if participant.race.status != RaceStatus.RUNNING:
             return
 
+        if participant.status == ParticipantStatus.FINISHED:
+            return  # Silently drop — player already finished
+
         seed = participant.race.seed
         if not seed or not seed.graph_json:
             return
@@ -554,6 +563,9 @@ async def handle_finished(
             )
             await _send_error(websocket, "Race not running")
             return
+
+        if participant.status == ParticipantStatus.FINISHED:
+            return  # Already finished — idempotency guard
 
         participant.status = ParticipantStatus.FINISHED
         if isinstance(msg.get("igt_ms"), int):

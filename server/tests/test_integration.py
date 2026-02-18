@@ -1397,3 +1397,109 @@ def test_zone_query_updates_overlay(integration_db, integration_client, seed_fol
 
     current_zone = asyncio.run(verify_db())
     assert current_zone == "stormveil_godrick_48fd"
+
+
+# =============================================================================
+# Scenario: Finished Participant Messages Rejected
+# =============================================================================
+
+
+def test_finished_participant_status_update_ignored(
+    integration_client, race_with_participants, integration_db
+):
+    """status_update from a finished participant is silently dropped (IGT frozen)."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Start the race
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    # Player 0 finishes with igt=50000
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_event_flag(9000003, igt_ms=50000)
+        lb = mod0.receive_until_type("leaderboard_update")
+        p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
+        assert p0["status"] == "finished"
+        assert p0["igt_ms"] == 50000
+
+    # Player 0 reconnects and sends status_update with higher IGT — should be dropped
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=99999, death_count=10)
+        time.sleep(0.5)  # Let server process
+
+    # Verify IGT is still frozen at 50000
+    async def check_igt():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.igt_ms, p.death_count
+
+    igt, deaths = asyncio.run(check_igt())
+    assert igt == 50000, f"IGT should be frozen at 50000, got {igt}"
+    assert deaths == 0, f"Death count should not have been updated, got {deaths}"
+
+
+def test_finished_participant_event_flag_ignored(
+    integration_client, race_with_participants, integration_db
+):
+    """event_flag from a finished participant is silently dropped (no layer/zone update)."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Start the race
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    # Player 0 finishes
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_event_flag(9000003, igt_ms=50000)
+        mod0.receive_until_type("leaderboard_update")
+
+    # Player 0 sends an event_flag after finishing — should be dropped
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_event_flag(9000000, igt_ms=60000)
+        time.sleep(0.5)
+
+    # Verify zone_history was NOT updated with node_a
+    async def check_state():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.igt_ms, p.current_layer, p.zone_history
+
+    igt, layer, history = asyncio.run(check_state())
+    assert igt == 50000, f"IGT should be frozen at 50000, got {igt}"
+    assert layer == 5, f"Layer should stay at total_layers (5), got {layer}"
+    # zone_history should NOT contain node_a
+    if history:
+        node_ids = [e.get("node_id") for e in history]
+        assert "node_a" not in node_ids, "Finished player should not gain new zone history"
