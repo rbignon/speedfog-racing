@@ -60,6 +60,7 @@ pub enum IncomingMessage {
         node_id: String,
         display_name: String,
         tier: Option<i32>,
+        original_tier: Option<i32>,
         exits: Vec<ExitInfo>,
     },
     /// Event flag drained from outgoing channel on reconnect — must be re-buffered
@@ -474,12 +475,14 @@ fn message_loop(
                             node_id,
                             display_name,
                             tier,
+                            original_tier,
                             exits,
                         } => {
                             let _ = incoming_tx.send(IncomingMessage::ZoneUpdate {
                                 node_id,
                                 display_name,
                                 tier,
+                                original_tier,
                                 exits,
                             });
                         }

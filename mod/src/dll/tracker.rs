@@ -33,6 +33,7 @@ pub struct ZoneUpdateData {
     pub node_id: String,
     pub display_name: String,
     pub tier: Option<i32>,
+    pub original_tier: Option<i32>,
     pub exits: Vec<ExitInfo>,
 }
 
@@ -613,6 +614,7 @@ impl RaceTracker {
                 node_id,
                 display_name,
                 tier,
+                original_tier,
                 exits,
             } => {
                 self.last_received_debug = Some(format!("zone_update({})", display_name));
@@ -623,6 +625,7 @@ impl RaceTracker {
                     node_id,
                     display_name,
                     tier,
+                    original_tier,
                     exits,
                 });
             }

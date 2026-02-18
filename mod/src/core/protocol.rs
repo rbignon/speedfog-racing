@@ -113,6 +113,8 @@ pub enum ServerMessage {
         display_name: String,
         tier: Option<i32>,
         #[serde(default)]
+        original_tier: Option<i32>,
+        #[serde(default)]
         exits: Vec<ExitInfo>,
     },
     /// Heartbeat ping
@@ -286,11 +288,13 @@ mod tests {
                 node_id,
                 display_name,
                 tier,
+                original_tier,
                 exits,
             } => {
                 assert_eq!(node_id, "graveyard_cave_e235");
                 assert_eq!(display_name, "Cave of Knowledge");
                 assert_eq!(tier, Some(5));
+                assert_eq!(original_tier, None);
                 assert_eq!(exits.len(), 2);
                 assert_eq!(exits[0].text, "Soldier of Godrick front");
                 assert_eq!(exits[0].to_name, "Road's End Catacombs");
@@ -412,6 +416,54 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"zone_query""#));
         assert!(json.contains(r#""grace_entity_id":10002950"#));
+    }
+
+    #[test]
+    fn test_server_zone_update_with_original_tier() {
+        let json = r#"{
+            "type": "zone_update",
+            "node_id": "cave_e235",
+            "display_name": "Cave of Knowledge",
+            "tier": 2,
+            "original_tier": 8,
+            "exits": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ZoneUpdate {
+                tier,
+                original_tier,
+                ..
+            } => {
+                assert_eq!(tier, Some(2));
+                assert_eq!(original_tier, Some(8));
+            }
+            _ => panic!("Expected ZoneUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_server_zone_update_without_original_tier() {
+        // Backward compat: old server sends no original_tier field
+        let json = r#"{
+            "type": "zone_update",
+            "node_id": "start_node",
+            "display_name": "Chapel of Anticipation",
+            "tier": null,
+            "exits": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ZoneUpdate {
+                tier,
+                original_tier,
+                ..
+            } => {
+                assert_eq!(tier, None);
+                assert_eq!(original_tier, None);
+            }
+            _ => panic!("Expected ZoneUpdate"),
+        }
     }
 
     #[test]
