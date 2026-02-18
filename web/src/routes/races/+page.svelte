@@ -16,7 +16,7 @@
 	let liveRaces = $derived(races.filter((r) => r.status === 'running'));
 	let upcomingRaces = $derived(
 		races
-			.filter((r) => r.status === 'open')
+			.filter((r) => r.status === 'setup')
 			.sort((a, b) => {
 				if (a.scheduled_at && b.scheduled_at)
 					return new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime();
@@ -27,7 +27,7 @@
 	);
 
 	onMount(() => {
-		fetchRaces('open,running')
+		fetchRaces('setup,running')
 			.then((r) => (races = r))
 			.catch((e) => console.error('Failed to fetch races:', e))
 			.finally(() => (loadingRaces = false));
