@@ -59,6 +59,12 @@ def compute_zone_update(
     else:
         tier = None
 
+    original_tier = node_data.get("original_tier")
+    if isinstance(original_tier, int | float):
+        original_tier = int(original_tier)
+    else:
+        original_tier = None
+
     # Build set of discovered node_ids from zone_history
     discovered_ids: set[str] = set()
     if zone_history:
@@ -96,6 +102,7 @@ def compute_zone_update(
         "node_id": node_id,
         "display_name": display_name,
         "tier": tier,
+        "original_tier": original_tier,
         "exits": exits,
     }
 

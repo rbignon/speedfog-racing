@@ -300,3 +300,52 @@ def test_compute_zone_update_single_zone_not_annotated():
     assert result is not None
     assert len(result["exits"]) == 1
     assert result["exits"][0]["text"] == "Boss front"
+
+
+# =============================================================================
+# original_tier
+# =============================================================================
+
+
+def test_compute_zone_update_with_original_tier():
+    """Node with original_tier passes it through."""
+    graph = {
+        "nodes": {
+            "cave_e235": {
+                "display_name": "Cave of Knowledge",
+                "tier": 2,
+                "original_tier": 8,
+                "layer": 2,
+                "exits": [],
+            }
+        }
+    }
+    result = compute_zone_update("cave_e235", graph, zone_history=None)
+    assert result is not None
+    assert result["tier"] == 2
+    assert result["original_tier"] == 8
+
+
+def test_compute_zone_update_without_original_tier():
+    """Node without original_tier returns None for it."""
+    graph = {
+        "nodes": {
+            "cave_e235": {
+                "display_name": "Cave of Knowledge",
+                "tier": 5,
+                "layer": 2,
+                "exits": [],
+            }
+        }
+    }
+    result = compute_zone_update("cave_e235", graph, zone_history=None)
+    assert result is not None
+    assert result["original_tier"] is None
+
+
+def test_compute_zone_update_original_tier_in_full_graph():
+    """original_tier works with the full GRAPH_WITH_EXITS fixture."""
+    result = compute_zone_update("cave_e235", GRAPH_WITH_EXITS, zone_history=None)
+    assert result is not None
+    # GRAPH_WITH_EXITS doesn't have original_tier
+    assert result["original_tier"] is None
