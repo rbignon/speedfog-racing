@@ -26,7 +26,7 @@
 	} from './constants';
 	import type { DagNode, PositionedNode, RoutedEdge, DagLayout } from './types';
 	import NodePopup from './NodePopup.svelte';
-	import { computeConnections, computePlayersAtNode, computeVisitors } from './popupData';
+	import { computeConnections, computePlayersAtNode, computeVisitors, parseExitTexts } from './popupData';
 	import type { NodePopupData } from './popupData';
 
 	interface Props {
@@ -199,6 +199,8 @@
 		return above;
 	});
 
+	let exitTexts = $derived(parseExitTexts(graphJson));
+
 	// Popup state
 	let popupData: NodePopupData | null = $state(null);
 	let popupX = $state(0);
@@ -211,7 +213,9 @@
 		const { entrances, exits } = computeConnections(
 			nodeId,
 			graph.edges,
-			nodeMap as Map<string, DagNode>
+			nodeMap as Map<string, DagNode>,
+			undefined,
+			exitTexts
 		);
 		const playersHere = computePlayersAtNode(nodeId, participants);
 		const visitors = computeVisitors(nodeId, participants);

@@ -98,9 +98,14 @@
 			{#each data.entrances as conn}
 				<div class="conn-item">
 					<span class="conn-arrow entrance">&larr;</span>
-					<span class="conn-name" class:undiscovered={!conn.displayName}>
-						{conn.displayName ?? '???'}
-					</span>
+					<div class="conn-details">
+						<span class="conn-name" class:undiscovered={!conn.displayName}>
+							{conn.displayName ?? '???'}
+						</span>
+						{#if conn.text}
+							<span class="conn-text">{conn.text}</span>
+						{/if}
+					</div>
 				</div>
 			{/each}
 		</div>
@@ -112,9 +117,14 @@
 			{#each data.exits as conn}
 				<div class="conn-item">
 					<span class="conn-arrow exit">&rarr;</span>
-					<span class="conn-name" class:undiscovered={!conn.displayName}>
-						{conn.displayName ?? '???'}
-					</span>
+					<div class="conn-details">
+						<span class="conn-name" class:undiscovered={!conn.displayName}>
+							{conn.displayName ?? '???'}
+						</span>
+						{#if conn.text}
+							<span class="conn-text">{conn.text}</span>
+						{/if}
+					</div>
 				</div>
 			{/each}
 		</div>
@@ -234,7 +244,7 @@
 
 	.conn-item {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		gap: 6px;
 		padding: 2px 0;
 	}
@@ -252,6 +262,12 @@
 		color: var(--color-gold, #c8a44e);
 	}
 
+	.conn-details {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+
 	.conn-name {
 		color: var(--color-text, #e8e6e1);
 	}
@@ -259,6 +275,13 @@
 	.conn-name.undiscovered {
 		color: var(--color-text-disabled, #6b7280);
 		font-style: italic;
+	}
+
+	.conn-text {
+		font-size: 0.7rem;
+		color: var(--color-text-disabled, #6b7280);
+		font-style: italic;
+		line-height: 1.3;
 	}
 
 	.player-list {

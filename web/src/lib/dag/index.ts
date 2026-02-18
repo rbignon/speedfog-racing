@@ -76,10 +76,12 @@ export {
   computePlayersAtNode,
   computeVisitors,
   formatIgt,
+  parseExitTexts,
 } from "./popupData";
 export type {
   NodePopupData,
   PopupConnection,
   PopupPlayer,
   PopupVisitor,
+  ExitTextMap,
 } from "./popupData";
