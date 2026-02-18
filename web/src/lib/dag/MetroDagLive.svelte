@@ -269,18 +269,9 @@
 		stroke-linejoin: round;
 	}
 
-	.dag-node {
-		cursor: pointer;
-	}
-
 	.dag-node-shape {
 		transform-box: fill-box;
 		transform-origin: center;
-		transition: transform 0.15s ease;
-	}
-
-	.dag-node:hover .dag-node-shape {
-		transform: scale(1.3);
 	}
 
 	.player-dot {

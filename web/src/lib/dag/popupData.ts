@@ -76,8 +76,7 @@ export function parseExitTexts(
  * Compute entrances and exits for a node.
  *
  * When `discoveredIds` is provided (progressive mode), connections to
- * undiscovered-but-adjacent nodes get `displayName: null` (shown as "???"),
- * and connections to fully hidden nodes are omitted entirely.
+ * undiscovered nodes get `displayName: null` (shown as "???").
  *
  * When `exitTexts` is provided, each connection is enriched with the
  * fog gate location description from graph.json.
