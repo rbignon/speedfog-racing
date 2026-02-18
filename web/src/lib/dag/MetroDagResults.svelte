@@ -24,7 +24,7 @@
 		PARALLEL_PATH_SPACING,
 		MAX_PARALLEL
 	} from './constants';
-	import type { PositionedNode, RoutedEdge, DagLayout } from './types';
+	import type { DagNode, PositionedNode, RoutedEdge, DagLayout } from './types';
 	import NodePopup from './NodePopup.svelte';
 	import { computeConnections, computePlayersAtNode, computeVisitors } from './popupData';
 	import type { NodePopupData } from './popupData';
@@ -211,7 +211,7 @@
 		const { entrances, exits } = computeConnections(
 			nodeId,
 			graph.edges,
-			nodeMap as Map<string, import('./types').DagNode>
+			nodeMap as Map<string, DagNode>
 		);
 		const playersHere = computePlayersAtNode(nodeId, participants);
 		const visitors = computeVisitors(nodeId, participants);

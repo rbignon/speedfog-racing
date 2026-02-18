@@ -114,8 +114,12 @@
 
 		if (pointers.size === 1 && isDragging && svgEl) {
 			if (onpanstart && !hasPannedThisGesture) {
-				onpanstart();
-				hasPannedThisGesture = true;
+				const moveDx = e.clientX - dragStart.clientX;
+				const moveDy = e.clientY - dragStart.clientY;
+				if (Math.abs(moveDx) >= 3 || Math.abs(moveDy) >= 3) {
+					onpanstart();
+					hasPannedThisGesture = true;
+				}
 			}
 			const ctm = svgEl.getScreenCTM();
 			if (!ctm) return;

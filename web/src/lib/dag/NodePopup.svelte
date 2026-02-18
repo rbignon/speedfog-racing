@@ -24,9 +24,9 @@
 
 	let popupEl: HTMLDivElement | undefined = $state();
 
-	// Clamp position to viewport after mount
-	let adjustedX = $state(x);
-	let adjustedY = $state(y);
+	// Clamp position to viewport after mount (initialized by $effect below)
+	let adjustedX = $state(0);
+	let adjustedY = $state(0);
 
 	$effect(() => {
 		if (!popupEl) return;
