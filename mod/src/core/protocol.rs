@@ -171,7 +171,7 @@ mod tests {
         let json = r#"{
             "type": "auth_ok",
             "participant_id": "abc-123",
-            "race": {"id": "123", "name": "Test Race", "status": "open"},
+            "race": {"id": "123", "name": "Test Race", "status": "setup"},
             "seed": {"total_layers": 5},
             "participants": []
         }"#;
@@ -344,7 +344,7 @@ mod tests {
         let json = r#"{
             "type": "auth_ok",
             "participant_id": "abc-123",
-            "race": {"id": "123", "name": "Test Race", "status": "open"},
+            "race": {"id": "123", "name": "Test Race", "status": "setup"},
             "seed": {"total_layers": 5, "spawn_items": [{"id": 42, "qty": 2}]},
             "participants": []
         }"#;
@@ -391,7 +391,7 @@ mod tests {
         let json = r#"{
             "type": "auth_ok",
             "participant_id": "abc-123",
-            "race": {"id": "123", "name": "Test Race", "status": "open"},
+            "race": {"id": "123", "name": "Test Race", "status": "setup"},
             "seed": {"total_layers": 5, "seed_id": "seed-xyz"},
             "participants": []
         }"#;

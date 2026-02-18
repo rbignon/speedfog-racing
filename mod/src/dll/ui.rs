@@ -103,7 +103,7 @@ impl ImguiRenderLoop for RaceTracker {
 
 impl RaceTracker {
     /// Render state banner above player status.
-    /// - OPEN/DRAFT: orange "WAITING FOR START"
+    /// - SETUP: orange "WAITING FOR START"
     /// - RUNNING (first 3s): green "GO!"
     /// - FINISHED: green "RACE FINISHED"
     /// - RUNNING (after 3s): nothing
@@ -113,7 +113,7 @@ impl RaceTracker {
 
         if let Some(race) = self.race_info() {
             match race.status.as_str() {
-                "draft" | "open" => {
+                "setup" => {
                     ui.text_colored(orange, "WAITING FOR START");
                 }
                 "running" => {
