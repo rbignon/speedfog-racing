@@ -23,8 +23,11 @@ def upgrade() -> None:
         # Add new SETUP value to the PostgreSQL enum type.
         # Note: Alembic/PG cannot easily remove enum values, so DRAFT and OPEN
         # will linger in the type definition but never be used by application code.
+        # ALTER TYPE ... ADD VALUE cannot run inside a transaction block,
+        # so we commit Alembic's auto-started transaction first.
+        op.execute("COMMIT")
         op.execute("ALTER TYPE racestatus ADD VALUE IF NOT EXISTS 'SETUP'")
-        op.execute("COMMIT")  # PG requires commit after ADD VALUE before using it
+        op.execute("BEGIN")
         op.execute("UPDATE races SET status = 'SETUP' WHERE status IN ('DRAFT', 'OPEN')")
     else:
         # SQLite: enums stored as plain strings
