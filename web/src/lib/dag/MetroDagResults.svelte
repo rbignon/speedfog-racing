@@ -6,7 +6,8 @@
 	import {
 		expandNodePath,
 		buildPlayerWaypoints,
-		computeSlot
+		computeSlot,
+		canonicalEdgeKey
 	} from './parallel';
 	import {
 		NODE_RADIUS,
@@ -56,13 +57,19 @@
 		return map;
 	});
 
-	// Build adjacency list for BFS gap-filling
+	// Build bidirectional adjacency list for BFS gap-filling.
+	// Players can backtrack through fog gates, so BFS needs reverse edges.
 	let adjacency: Map<string, string[]> = $derived.by(() => {
 		const adj = new Map<string, string[]>();
 		for (const edge of layout.edges) {
-			const list = adj.get(edge.fromId);
-			if (list) list.push(edge.toId);
+			// Forward
+			const fwd = adj.get(edge.fromId);
+			if (fwd) fwd.push(edge.toId);
 			else adj.set(edge.fromId, [edge.toId]);
+			// Reverse (backtracking)
+			const rev = adj.get(edge.toId);
+			if (rev) rev.push(edge.fromId);
+			else adj.set(edge.toId, [edge.fromId]);
 		}
 		return adj;
 	});
@@ -99,11 +106,11 @@
 		}
 
 		// Step 2: Build edge usage map — which participants traverse each edge
-		// Uses a Set for dedup, then converts to ordered array for stable slot assignment
+		// Uses canonical keys so forward and reverse traversals share one slot pool
 		const edgeUsageSets = new Map<string, Set<string>>();
 		for (const [participantId, expanded] of expandedMap) {
 			for (let i = 0; i < expanded.length - 1; i++) {
-				const key = `${expanded[i]}->${expanded[i + 1]}`;
+				const key = canonicalEdgeKey(expanded[i], expanded[i + 1], edgeMap);
 				let s = edgeUsageSets.get(key);
 				if (!s) {
 					s = new Set<string>();

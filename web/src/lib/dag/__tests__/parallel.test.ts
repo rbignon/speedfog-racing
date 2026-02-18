@@ -131,6 +131,47 @@ describe("expandNodePath", () => {
     // No edges: a -> z is unreachable, but we keep z
     expect(expandNodePath(["a", "z"], edgeMap, adjacency)).toEqual(["a", "z"]);
   });
+
+  it("recognizes reverse (backtrack) edge as direct connection", () => {
+    // Edge goes a→b in graph, but player backtracks b→a
+    const nodes = [makeNode("a", 0, 0), makeNode("b", 100, 0)];
+    const edges = [makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }])];
+    const { edgeMap, adjacency } = buildMaps(nodes, edges);
+
+    expect(expandNodePath(["b", "a"], edgeMap, adjacency)).toEqual(["b", "a"]);
+  });
+
+  it("fills backtracking path with bidirectional adjacency", () => {
+    // Graph: a→b→c, a→d. Player goes a→b→c then backtracks to a→d
+    // With bidirectional adjacency, BFS from c to d finds c→b→a→d
+    const nodes = [
+      makeNode("a", 0, 0),
+      makeNode("b", 100, 0),
+      makeNode("c", 200, 0),
+      makeNode("d", 100, 50),
+    ];
+    const edges = [
+      makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }]),
+      makeEdge("b", "c", [{ x1: 100, y1: 0, x2: 200, y2: 0 }]),
+      makeEdge("a", "d", [{ x1: 0, y1: 0, x2: 100, y2: 50 }]),
+    ];
+    const { edgeMap } = buildMaps(nodes, edges);
+
+    // Build bidirectional adjacency (like MetroDagResults does)
+    const biAdj = new Map<string, string[]>();
+    for (const e of edges) {
+      const fwd = biAdj.get(e.fromId);
+      if (fwd) fwd.push(e.toId);
+      else biAdj.set(e.fromId, [e.toId]);
+      const rev = biAdj.get(e.toId);
+      if (rev) rev.push(e.fromId);
+      else biAdj.set(e.toId, [e.fromId]);
+    }
+
+    // Zone history: a, b, c, d — player explored c then backtracked to d
+    const result = expandNodePath(["a", "b", "c", "d"], edgeMap, biAdj);
+    expect(result).toEqual(["a", "b", "c", "b", "a", "d"]);
+  });
 });
 
 // =============================================================================
@@ -311,5 +352,87 @@ describe("buildPlayerWaypoints", () => {
 
     // End: pinch at node b
     expect(points[2]).toEqual({ x: 30, y: 40 });
+  });
+
+  it("traverses reverse edge when backtracking", () => {
+    // Edge is a→b in graph, but player goes b→a (backtrack)
+    const nodes = [makeNode("a", 0, 0), makeNode("b", 100, 0)];
+    const edges = [makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }])];
+    const { nodeMap, edgeMap } = buildMaps(nodes, edges);
+
+    const points = buildPlayerWaypoints(
+      ["b", "a"],
+      nodeMap,
+      edgeMap,
+      () => 0,
+      () => 1,
+      5,
+    );
+
+    expect(points).toHaveLength(2);
+    expect(points[0]).toEqual({ x: 100, y: 0 }); // start at b
+    expect(points[1]).toEqual({ x: 0, y: 0 }); // pinch at a
+  });
+
+  it("traverses reverse edge segments in correct order", () => {
+    // Edge a→b has 3 segments (metro style). Reverse traversal should follow them backward.
+    const nodes = [makeNode("a", 0, 0), makeNode("b", 200, 50)];
+    const edges = [
+      makeEdge("a", "b", [
+        { x1: 0, y1: 0, x2: 50, y2: 0 },
+        { x1: 50, y1: 0, x2: 150, y2: 50 },
+        { x1: 150, y1: 50, x2: 200, y2: 50 },
+      ]),
+    ];
+    const { nodeMap, edgeMap } = buildMaps(nodes, edges);
+
+    const points = buildPlayerWaypoints(
+      ["b", "a"],
+      nodeMap,
+      edgeMap,
+      () => 0,
+      () => 1,
+      5,
+    );
+
+    // Start at b(200,50), then reversed segments:
+    // seg3 reversed: x1=150,y1=50 → waypoint (150,50)
+    // seg2 reversed: x1=50,y1=0 → waypoint (50,0)
+    // seg1 reversed: x1=0,y1=0 → pinch at a(0,0)
+    expect(points).toHaveLength(4);
+    expect(points[0]).toEqual({ x: 200, y: 50 }); // start at b
+    expect(points[1]).toEqual({ x: 150, y: 50 }); // reversed seg3
+    expect(points[2]).toEqual({ x: 50, y: 0 }); // reversed seg2
+    expect(points[3]).toEqual({ x: 0, y: 0 }); // pinch at a
+  });
+
+  it("handles full backtracking path with forward and reverse edges", () => {
+    // Graph: a→b→c. Player goes a→b→c then backtracks to a: expanded = [a,b,c,b,a]
+    const nodes = [
+      makeNode("a", 0, 0),
+      makeNode("b", 100, 0),
+      makeNode("c", 200, 0),
+    ];
+    const edges = [
+      makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }]),
+      makeEdge("b", "c", [{ x1: 100, y1: 0, x2: 200, y2: 0 }]),
+    ];
+    const { nodeMap, edgeMap } = buildMaps(nodes, edges);
+
+    const points = buildPlayerWaypoints(
+      ["a", "b", "c", "b", "a"],
+      nodeMap,
+      edgeMap,
+      () => 0,
+      () => 1,
+      5,
+    );
+
+    expect(points).toHaveLength(5);
+    expect(points[0]).toEqual({ x: 0, y: 0 }); // a
+    expect(points[1]).toEqual({ x: 100, y: 0 }); // b (forward a→b)
+    expect(points[2]).toEqual({ x: 200, y: 0 }); // c (forward b→c)
+    expect(points[3]).toEqual({ x: 100, y: 0 }); // b (reverse c→b)
+    expect(points[4]).toEqual({ x: 0, y: 0 }); // a (reverse b→a)
   });
 });

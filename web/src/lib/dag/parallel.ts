@@ -7,9 +7,29 @@ import { bfsShortestPath } from "./animation";
 import type { PositionedNode, RoutedEdge } from "./types";
 
 /**
+ * Return the canonical (forward) edge key for a pair of nodes.
+ * Forward and reverse traversals of the same physical edge share one key
+ * so they end up in the same slot pool for parallel offset.
+ */
+export function canonicalEdgeKey(
+  fromId: string,
+  toId: string,
+  edgeMap: Map<string, RoutedEdge>,
+): string {
+  const fwd = `${fromId}->${toId}`;
+  if (edgeMap.has(fwd)) return fwd;
+  const rev = `${toId}->${fromId}`;
+  if (edgeMap.has(rev)) return rev;
+  return fwd;
+}
+
+/**
  * Expand a deduplicated node path with BFS gap-filling.
  * When consecutive nodes have no direct edge, fills in
  * intermediate nodes so the path follows the graph topology.
+ * Supports backtracking: reverse edges (to→from) are treated
+ * as valid direct connections. Pass a bidirectional adjacency
+ * map so BFS can find backtracking routes.
  */
 export function expandNodePath(
   nodeIds: string[],
@@ -21,7 +41,7 @@ export function expandNodePath(
   for (let i = 0; i < nodeIds.length - 1; i++) {
     const from = nodeIds[i];
     const to = nodeIds[i + 1];
-    if (edgeMap.has(`${from}->${to}`)) {
+    if (edgeMap.has(`${from}->${to}`) || edgeMap.has(`${to}->${from}`)) {
       expanded.push(to);
     } else {
       const bridge = bfsShortestPath(from, to, adjacency);
@@ -40,12 +60,13 @@ export function expandNodePath(
 /**
  * Build waypoints with perpendicular offset on shared edges.
  * Pinches at node centers (no offset) for a natural "station" effect.
+ * Handles both forward and reverse (backtracking) edge traversals.
  *
  * @param expandedNodeIds - Full expanded node sequence for this player
  * @param nodeMap - Node ID → positioned node lookup
  * @param edgeMap - "fromId->toId" → routed edge lookup
- * @param getSlot - Returns this player's centered slot for a given edge key
- * @param getCount - Returns total player count for a given edge key
+ * @param getSlot - Returns this player's centered slot for a given canonical edge key
+ * @param getCount - Returns total player count for a given canonical edge key
  * @param spacing - Perpendicular spacing in px between parallel lines
  */
 export function buildPlayerWaypoints(
@@ -67,29 +88,54 @@ export function buildPlayerWaypoints(
   for (let i = 0; i < expandedNodeIds.length - 1; i++) {
     const fromId = expandedNodeIds[i];
     const toId = expandedNodeIds[i + 1];
-    const key = `${fromId}->${toId}`;
-    const edge = edgeMap.get(key);
+    const fwdEdge = edgeMap.get(`${fromId}->${toId}`);
+    const revEdge = !fwdEdge ? edgeMap.get(`${toId}->${fromId}`) : undefined;
+    const edge = fwdEdge ?? revEdge;
+
     if (!edge) continue;
 
-    const count = getCount(key);
-    const slot = getSlot(key);
+    const cKey = canonicalEdgeKey(fromId, toId, edgeMap);
+    const count = getCount(cKey);
+    const slot = getSlot(cKey);
 
-    for (const seg of edge.segments) {
-      const dx = seg.x2 - seg.x1;
-      const dy = seg.y2 - seg.y1;
-      const len = Math.sqrt(dx * dx + dy * dy);
+    if (fwdEdge) {
+      for (const seg of fwdEdge.segments) {
+        const dx = seg.x2 - seg.x1;
+        const dy = seg.y2 - seg.y1;
+        const len = Math.sqrt(dx * dx + dy * dy);
 
-      if (count <= 1 || len < 0.5) {
-        points.push({ x: seg.x2, y: seg.y2 });
-      } else {
-        // Perpendicular normal: (-dy, dx) / len
-        const nx = -dy / len;
-        const ny = dx / len;
-        const offset = slot * spacing;
-        points.push({
-          x: seg.x2 + offset * nx,
-          y: seg.y2 + offset * ny,
-        });
+        if (count <= 1 || len < 0.5) {
+          points.push({ x: seg.x2, y: seg.y2 });
+        } else {
+          // Perpendicular normal: (-dy, dx) / len
+          const nx = -dy / len;
+          const ny = dx / len;
+          const offset = slot * spacing;
+          points.push({
+            x: seg.x2 + offset * nx,
+            y: seg.y2 + offset * ny,
+          });
+        }
+      }
+    } else {
+      // Reverse edge: traverse segments backward, using (x1, y1)
+      for (let s = edge.segments.length - 1; s >= 0; s--) {
+        const seg = edge.segments[s];
+        const dx = seg.x1 - seg.x2;
+        const dy = seg.y1 - seg.y2;
+        const len = Math.sqrt(dx * dx + dy * dy);
+
+        if (count <= 1 || len < 0.5) {
+          points.push({ x: seg.x1, y: seg.y1 });
+        } else {
+          const nx = -dy / len;
+          const ny = dx / len;
+          const offset = slot * spacing;
+          points.push({
+            x: seg.x1 + offset * nx,
+            y: seg.y1 + offset * ny,
+          });
+        }
       }
     }
 

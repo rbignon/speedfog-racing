@@ -204,12 +204,16 @@ export function pathToWaypoints(
     edgeMap.set(`${edge.fromId}->${edge.toId}`, edge);
   }
 
-  // Build adjacency list for BFS gap-filling
+  // Build bidirectional adjacency list for BFS gap-filling
+  // (bidirectional so expandNodePath can handle backtracking paths)
   const adjacency = new Map<string, string[]>();
   for (const edge of layout.edges) {
-    const list = adjacency.get(edge.fromId);
-    if (list) list.push(edge.toId);
+    const fwd = adjacency.get(edge.fromId);
+    if (fwd) fwd.push(edge.toId);
     else adjacency.set(edge.fromId, [edge.toId]);
+    const rev = adjacency.get(edge.toId);
+    if (rev) rev.push(edge.fromId);
+    else adjacency.set(edge.toId, [edge.fromId]);
   }
 
   // Expand path: fill gaps between non-adjacent nodes with BFS
