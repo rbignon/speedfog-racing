@@ -25,6 +25,16 @@
 	let activeRaces = $derived(myRaces.filter((r) => r.status === 'running' || r.status === 'open'));
 	let activeTraining = $derived(trainingSessions.filter((s) => s.status === 'active'));
 
+	let activeRaceIds = $derived(new Set(activeRaces.map((r) => r.id)));
+	let activeTrainingIds = $derived(new Set(activeTraining.map((s) => s.id)));
+	let filteredActivity = $derived(
+		activity.filter((item) => {
+			if (item.type === 'training') return !activeTrainingIds.has(item.session_id);
+			if ('race_id' in item) return !activeRaceIds.has(item.race_id);
+			return true;
+		}),
+	);
+
 	// Auth guard + fetch data once auth is ready
 	$effect(() => {
 		if (!auth.initialized) return;
@@ -246,11 +256,11 @@
 		</section>
 
 		<!-- Recent Activity Section -->
-		{#if activity.length > 0}
+		{#if filteredActivity.length > 0}
 			<section class="activity-section">
 				<h2>Recent Activity</h2>
 				<div class="activity-list">
-					{#each activity as item}
+					{#each filteredActivity as item}
 						<a href={activityLink(item)} class="activity-row">
 							<span class="activity-badge badge-{item.type}">{activityBadge(item)}</span>
 							<span class="activity-name">{activityLabel(item)}</span>
