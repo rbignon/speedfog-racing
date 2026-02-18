@@ -32,10 +32,7 @@
 		return name;
 	}
 
-	const MEDALS = ['🥇', '🥈', '🥉'];
-
-	function rankColor(participant: WsParticipant): string | null {
-		if (participant.status !== 'playing' && participant.status !== 'finished') return null;
+	function playerColor(participant: WsParticipant): string {
 		return PLAYER_COLORS[participant.color_index % PLAYER_COLORS.length];
 	}
 
@@ -87,31 +84,24 @@
 	{:else}
 		<ol class="list">
 			{#each participants as participant, index (participant.id)}
-				{@const color = rankColor(participant)}
-				{@const medal =
-					mode === 'finished' && participant.status === 'finished' && index < 3
-						? MEDALS[index]
-						: null}
+				{@const color = playerColor(participant)}
 				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<li
 				class="participant {getStatusClass(participant.status)}"
 				class:selected={hasSelection && selectedIds!.has(participant.id)}
+				style="border-left: 3px solid {color};"
 				onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
 				role={onToggle ? 'button' : undefined}
 				tabindex={onToggle ? 0 : undefined}
 			>
-				{#if medal}
-						<span class="medal">{medal}</span>
-					{:else}
-						<span class="rank" style={color ? `background: ${color}; color: #1a1a2e;` : ''}
+						<span class="rank" style="background: {color}; color: #1a1a2e;"
 							>{index + 1}</span
 						>
-					{/if}
 					<div class="info">
 						{#if participant.status === 'playing'}
 							{@const zone = zoneName(participant.current_zone)}
 							<div class="name-row">
-								<span class="name">
+								<span class="name" style="color: {color};">
 									{#if mode === 'running'}
 										<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
 									{/if}
@@ -129,7 +119,7 @@
 								{/if}
 							</span>
 						{:else}
-							<span class="name">
+							<span class="name" style="color: {color};">
 								{#if mode === 'running' && (participant.status === 'ready' || participant.status === 'registered')}
 									<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
 								{/if}
@@ -235,13 +225,6 @@
 		background: var(--color-surface-elevated);
 	}
 
-	.participant.finished {
-		border-color: var(--color-success);
-	}
-
-	.participant.playing {
-		border-color: var(--color-warning);
-	}
 
 	.participant.abandoned {
 		opacity: 0.5;
@@ -259,11 +242,6 @@
 		font-weight: bold;
 		flex-shrink: 0;
 		color: var(--color-text-secondary);
-	}
-
-	.participant.finished .rank {
-		background: var(--color-success);
-		color: white;
 	}
 
 	.info {
@@ -309,16 +287,6 @@
 	.death-count::before {
 		content: '\1F480';
 		margin-left: 0.25em;
-	}
-
-	.medal {
-		width: 24px;
-		height: 24px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 1.2rem;
-		flex-shrink: 0;
 	}
 
 	.dnf {
