@@ -320,10 +320,8 @@
 							{downloadError}
 						/>
 					{/each}
-				</div>
 
-				{#if initialRace.pending_invites.length > 0}
-					<div class="invite-list">
+					{#if initialRace.pending_invites.length > 0}
 						{#each initialRace.pending_invites as invite (invite.id)}
 							<InviteCard
 								{invite}
@@ -332,8 +330,8 @@
 									handleRevokeInvite(invite.id, invite.twitch_username)}
 							/>
 						{/each}
-					</div>
-				{/if}
+					{/if}
+				</div>
 
 				{#if isOrganizer}
 					{#if showInviteSearch}
@@ -554,13 +552,6 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		overflow-y: auto;
-	}
-
-	.invite-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin-top: 0.5rem;
 	}
 
 	.invite-btn {
