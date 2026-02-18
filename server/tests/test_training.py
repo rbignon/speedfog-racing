@@ -1073,6 +1073,10 @@ def test_training_auth_ok_reconnect_has_tier(training_ws_client, async_session):
         assert p["current_layer"] == 1, f"Expected layer 1, got {p['current_layer']}"
         assert p["current_layer_tier"] == 2, f"Expected tier 2, got {p['current_layer_tier']}"
 
+        # Drain remaining messages to avoid test fragility
+        ws.receive_json()  # race_start
+        ws.receive_json()  # zone_update (reconnect with progress sends to stormveil_01)
+
 
 def test_training_mod_websocket_invalid_token(training_ws_client, training_session_data):
     """Training mod WS: invalid token returns auth_error."""

@@ -173,12 +173,10 @@ impl RaceTracker {
         let green = [0.0, 1.0, 0.0, 1.0];
 
         // --- Line 1: connection dot + race name (left), local IGT in blue (right) ---
-        let (dot_color, _) = match self.ws_status() {
-            ConnectionStatus::Connected => (green, "connected"),
-            ConnectionStatus::Connecting | ConnectionStatus::Reconnecting => {
-                ([1.0, 0.65, 0.0, 1.0], "connecting")
-            }
-            _ => ([1.0, 0.0, 0.0, 1.0], "disconnected"),
+        let dot_color = match self.ws_status() {
+            ConnectionStatus::Connected => green,
+            ConnectionStatus::Connecting | ConnectionStatus::Reconnecting => [1.0, 0.65, 0.0, 1.0],
+            _ => [1.0, 0.0, 0.0, 1.0],
         };
 
         let igt_str = if let Some(igt_ms) = self.read_igt() {

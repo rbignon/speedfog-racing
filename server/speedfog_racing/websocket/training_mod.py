@@ -217,23 +217,12 @@ async def _send_auth_error(websocket: WebSocket, message: str) -> None:
         pass
 
 
-async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
-    """Send auth_ok with training session info."""
+def _build_participant_info(
+    session: TrainingSession, *, mod_connected: bool = True
+) -> ParticipantInfo:
+    """Build ParticipantInfo from a training session, computing layer/tier from progress."""
     seed = session.seed
 
-    event_ids: list[int] = []
-    if seed and seed.graph_json:
-        event_map = seed.graph_json.get("event_map", {})
-        if event_map:
-            event_ids = sorted(int(k) for k in event_map.keys())
-            finish = seed.graph_json.get("finish_event")
-            if isinstance(finish, int) and finish not in event_ids:
-                event_ids.append(finish)
-
-    # Extract gem items from care_package for runtime spawning by the mod
-    spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
-
-    # Compute current_layer and current_layer_tier from progress
     current_layer = 0
     current_layer_tier: int | None = None
     current_zone: str | None = None
@@ -252,9 +241,11 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
     if session.status == TrainingSessionStatus.FINISHED and seed:
         current_layer = seed.total_layers
 
+    # Map training status to participant status for frontend compatibility:
+    # "active" → "playing" (MetroDagLive/Leaderboard expect "playing"/"finished")
     status = "playing" if session.status == TrainingSessionStatus.ACTIVE else session.status.value
 
-    participant_info = ParticipantInfo(
+    return ParticipantInfo(
         id=str(session.id),
         twitch_username=session.user.twitch_username,
         twitch_display_name=session.user.twitch_display_name,
@@ -265,9 +256,26 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
         igt_ms=session.igt_ms,
         death_count=session.death_count,
         color_index=0,
-        mod_connected=True,
+        mod_connected=mod_connected,
         zone_history=session.progress_nodes,
     )
+
+
+async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
+    """Send auth_ok with training session info."""
+    seed = session.seed
+
+    event_ids: list[int] = []
+    if seed and seed.graph_json:
+        event_map = seed.graph_json.get("event_map", {})
+        if event_map:
+            event_ids = sorted(int(k) for k in event_map.keys())
+            finish = seed.graph_json.get("finish_event")
+            if isinstance(finish, int) and finish not in event_ids:
+                event_ids.append(finish)
+
+    # Extract gem items from care_package for runtime spawning by the mod
+    spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
 
     message = AuthOkMessage(
         participant_id=str(session.id),
@@ -284,7 +292,7 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
             event_ids=event_ids,
             spawn_items=spawn_items,
         ),
-        participants=[participant_info],
+        participants=[_build_participant_info(session)],
     )
     await websocket.send_text(message.model_dump_json())
 
@@ -439,46 +447,7 @@ async def _broadcast_participant_update(
     if not room:
         return
 
-    seed = session.seed
-    tier = None
-    current_zone = None
-    if session.progress_nodes:
-        current_zone = session.progress_nodes[-1].get("node_id")
-        if current_zone and seed and seed.graph_json:
-            tier = get_tier_for_node(current_zone, seed.graph_json)
-
-    current_layer = 0
-    if session.progress_nodes and seed and seed.graph_json:
-        for entry in session.progress_nodes:
-            nid = entry.get("node_id")
-            if nid:
-                layer = get_layer_for_node(nid, seed.graph_json)
-                if layer > current_layer:
-                    current_layer = layer
-
-    # Finished sessions show total_layers so progress reads N/N
-    if session.status == TrainingSessionStatus.FINISHED and seed:
-        current_layer = seed.total_layers
-
-    # Map training status to participant status for frontend compatibility:
-    # "active" → "playing" (MetroDagLive/Leaderboard expect "playing"/"finished")
-    status = "playing" if session.status == TrainingSessionStatus.ACTIVE else session.status.value
-
-    info = ParticipantInfo(
-        id=str(session.id),
-        twitch_username=session.user.twitch_username,
-        twitch_display_name=session.user.twitch_display_name,
-        status=status,
-        current_zone=current_zone,
-        current_layer=current_layer,
-        current_layer_tier=tier,
-        igt_ms=session.igt_ms,
-        death_count=session.death_count,
-        color_index=0,
-        mod_connected=room.mod is not None,
-        zone_history=session.progress_nodes,
-    )
-
+    info = _build_participant_info(session, mod_connected=room.mod is not None)
     message = LeaderboardUpdateMessage(participants=[info])
     payload = message.model_dump_json()
     if spectator_only:
