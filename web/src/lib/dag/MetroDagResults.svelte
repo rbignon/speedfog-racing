@@ -30,9 +30,12 @@
 		graphJson: Record<string, unknown>;
 		participants: WsParticipant[];
 		transparent?: boolean;
+		highlightIds?: Set<string>;
 	}
 
-	let { graphJson, participants, transparent = false }: Props = $props();
+	let { graphJson, participants, transparent = false, highlightIds }: Props = $props();
+
+	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
 
 	let layout: DagLayout = $derived.by(() => {
 		const graph = parseDagGraph(graphJson);
@@ -257,7 +260,8 @@
 					stroke-width="4"
 					stroke-linecap="round"
 					stroke-linejoin="round"
-					opacity="0.8"
+					opacity={hasHighlight && !highlightIds!.has(path.id) ? 0.1 : 0.8}
+					class="player-path"
 				>
 					<title>{path.displayName}</title>
 				</polyline>
@@ -335,6 +339,7 @@
 					r={RACER_DOT_RADIUS}
 					fill={path.color}
 					filter="url(#results-player-glow)"
+					opacity={hasHighlight && !highlightIds!.has(path.id) ? 0.1 : 1}
 					class="player-dot"
 				>
 					<title>{path.displayName}</title>
@@ -375,7 +380,12 @@
 		transform: scale(1.3);
 	}
 
+	.player-path {
+		transition: opacity 200ms ease;
+	}
+
 	.player-dot {
 		pointer-events: auto;
+		transition: opacity 200ms ease;
 	}
 </style>
