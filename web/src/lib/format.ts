@@ -1,10 +1,8 @@
 /** Human-friendly label for race and training statuses. */
 export function statusLabel(s: string): string {
   switch (s) {
-    case "draft":
-      return "Draft";
-    case "open":
-      return "Open";
+    case "setup":
+      return "Upcoming";
     case "running":
       return "Live";
     case "finished":

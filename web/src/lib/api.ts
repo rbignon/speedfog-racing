@@ -19,7 +19,7 @@ export interface AuthUser extends User {
   role: string;
 }
 
-export type RaceStatus = "draft" | "open" | "running" | "finished";
+export type RaceStatus = "setup" | "running" | "finished";
 
 export interface Race {
   id: string;
@@ -386,18 +386,7 @@ export async function startRace(raceId: string): Promise<Race> {
 }
 
 /**
- * Transition a race from DRAFT to OPEN.
- */
-export async function openRace(raceId: string): Promise<Race> {
-  const response = await fetch(`${API_BASE}/races/${raceId}/open`, {
-    method: "POST",
-    headers: getAuthHeaders(),
-  });
-  return handleResponse<Race>(response);
-}
-
-/**
- * Re-roll the seed for a DRAFT or OPEN race.
+ * Re-roll the seed for a SETUP race.
  */
 export async function rerollSeed(raceId: string): Promise<RaceDetail> {
   const response = await fetch(`${API_BASE}/races/${raceId}/reroll-seed`, {
