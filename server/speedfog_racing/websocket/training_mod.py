@@ -148,7 +148,7 @@ async def handle_training_mod_websocket(
                         zone_update = translate_zone_update(zone_update, mod_locale)
                         await websocket.send_text(json.dumps(zone_update))
 
-        # Register connection and notify spectator (mod already has auth_ok data)
+        # Register connection and notify spectators (mod already has auth_ok data)
         await training_manager.connect_mod(session_id, user_id, websocket)
         authenticated = True
         await _broadcast_participant_update(session, spectator_only=True)
@@ -192,7 +192,7 @@ async def handle_training_mod_websocket(
     finally:
         if authenticated:
             await training_manager.disconnect_mod(session_id, websocket)
-            # Notify spectator that mod disconnected (mod is already gone)
+            # Notify spectators that mod disconnected (mod is already gone)
             try:
                 async with session_maker() as db:
                     disc_session = await _load_session(db, session_id)
@@ -328,7 +328,7 @@ async def _handle_status_update(
 
         await db.commit()
 
-    # Broadcast to spectator (session is detached from DB but all relationships
+    # Broadcast to spectators (session is detached from DB but all relationships
     # were eagerly loaded and expire_on_commit=False keeps attributes accessible)
     await _broadcast_participant_update(session)
 
@@ -370,7 +370,7 @@ async def _handle_event_flag(
             session.finished_at = datetime.now(UTC)
             await db.commit()
 
-            # Broadcast finish to spectator
+            # Broadcast finish to spectators
             await _broadcast_participant_update(session)
             await _broadcast_status_change(session_id, "finished")
             return
@@ -391,7 +391,7 @@ async def _handle_event_flag(
         session.progress_nodes = [*old_history, {"node_id": node_id, "igt_ms": igt}]
         await db.commit()
 
-    # Broadcast to spectator (session is detached; expire_on_commit=False keeps attrs)
+    # Broadcast to spectators (session is detached; expire_on_commit=False keeps attrs)
     if session:
         await _broadcast_participant_update(session)
 
@@ -464,7 +464,7 @@ async def _broadcast_participant_update(
     message = LeaderboardUpdateMessage(participants=[info])
     payload = message.model_dump_json()
     if spectator_only:
-        await room.broadcast_to_spectator(payload)
+        await room.broadcast_to_spectators(payload)
     else:
         await room.broadcast_to_all(payload)
 

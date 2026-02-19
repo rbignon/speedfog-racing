@@ -1134,6 +1134,39 @@ def test_training_spectator_anonymous_invalid_session(training_ws_client, traini
             pass
 
 
+def test_training_multiple_spectators_coexist(training_ws_client, training_session_data):
+    """Two spectators connect to same session without evicting each other."""
+    sid = training_session_data["session_id"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}/spectate") as ws1:
+        ws1.send_json({"type": "auth"})
+        msg1 = ws1.receive_json()
+        assert msg1["type"] == "race_state"
+
+        with training_ws_client.websocket_connect(f"/ws/training/{sid}/spectate") as ws2:
+            ws2.send_json({"type": "auth"})
+            msg2 = ws2.receive_json()
+            assert msg2["type"] == "race_state"
+
+            # First spectator is still alive — connect mod to trigger a broadcast
+            with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws_mod:
+                ws_mod.send_json(
+                    {
+                        "type": "auth",
+                        "mod_token": training_session_data["mod_token"],
+                    }
+                )
+                ws_mod.receive_json()  # auth_ok
+                ws_mod.receive_json()  # race_start
+
+                # Mod connection triggers a leaderboard_update to spectators
+                lb1 = ws1.receive_json()
+                assert lb1["type"] == "leaderboard_update"
+
+                lb2 = ws2.receive_json()
+                assert lb2["type"] == "leaderboard_update"
+
+
 def test_training_spectator_invalid_token_falls_back_anonymous(
     training_ws_client, training_session_data
 ):
