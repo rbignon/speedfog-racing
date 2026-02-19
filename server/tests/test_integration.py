@@ -87,14 +87,25 @@ class ModTestClient:
         """Send finish event."""
         self.ws.send_json({"type": "finished", "igt_ms": igt_ms})
 
-    def send_zone_query(self, grace_entity_id: int) -> None:
-        """Send zone query (fast travel)."""
-        self.ws.send_json(
-            {
-                "type": "zone_query",
-                "grace_entity_id": grace_entity_id,
-            }
-        )
+    def send_zone_query(
+        self,
+        grace_entity_id: int | None = None,
+        *,
+        map_id: str | None = None,
+        position: list[float] | None = None,
+        play_region_id: int | None = None,
+    ) -> None:
+        """Send zone query (loading screen exit)."""
+        payload: dict[str, Any] = {"type": "zone_query"}
+        if grace_entity_id is not None:
+            payload["grace_entity_id"] = grace_entity_id
+        if map_id is not None:
+            payload["map_id"] = map_id
+        if position is not None:
+            payload["position"] = position
+        if play_region_id is not None:
+            payload["play_region_id"] = play_region_id
+        self.ws.send_json(payload)
 
     def receive(self, timeout: float = 5) -> dict[str, Any]:
         """Receive next message. Raises TimeoutError after *timeout* seconds."""
@@ -1349,6 +1360,251 @@ def test_zone_query_updates_overlay(integration_db, integration_client, seed_fol
 
     current_zone = asyncio.run(verify_db())
     assert current_zone == "stormveil_godrick_48fd"
+
+
+def test_zone_query_map_id_death_respawn(integration_db, integration_client, seed_folder):
+    """zone_query with map_id only (death/respawn) resolves to correct node."""
+    import asyncio
+
+    # m12_04_00_00 → ainsel_boss (unique in graces.json)
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 2,
+        "nodes": {
+            "start_node": {
+                "type": "start",
+                "display_name": "Start",
+                "zones": ["chapel_start"],
+                "layer": 0,
+                "exits": [],
+            },
+            "ainsel_boss_node": {
+                "display_name": "Astel, Naturalborn of the Void",
+                "zones": ["ainsel_boss"],
+                "layer": 1,
+                "tier": 8,
+                "exits": [],
+            },
+        },
+        "event_map": {"1040292800": "ainsel_boss_node"},
+        "finish_event": 1040292801,
+    }
+
+    async def setup():
+        async with integration_db() as db:
+            organizer = User(
+                twitch_id="zqmap_organizer",
+                twitch_username="zqmap_organizer",
+                twitch_display_name="ZQMap Org",
+                api_token="zqmap_organizer_token",
+                role=UserRole.ORGANIZER,
+            )
+            player = User(
+                twitch_id="zqmap_player",
+                twitch_username="zqmap_player",
+                twitch_display_name="ZQMap Player",
+                api_token="zqmap_player_token",
+                role=UserRole.USER,
+            )
+            seed = Seed(
+                seed_number="szqmap_001",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=2,
+                folder_path=str(seed_folder),
+                status=SeedStatus.AVAILABLE,
+            )
+            db.add_all([organizer, player, seed])
+            await db.commit()
+            await db.refresh(organizer)
+            await db.refresh(player)
+            return organizer, player
+
+    organizer, player = asyncio.run(setup())
+    org_headers = {"Authorization": f"Bearer {organizer.api_token}"}
+
+    # Create race
+    resp = integration_client.post(
+        "/api/races",
+        json={"name": "Map ID Zone Query Test", "pool_name": "standard"},
+        headers=org_headers,
+    )
+    assert resp.status_code == 201
+    race_id = resp.json()["id"]
+
+    # Override seed graph
+    async def set_graph():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            if race.seed:
+                race.seed.graph_json = graph_json
+                race.seed.total_layers = 2
+                await db.commit()
+
+    asyncio.run(set_graph())
+
+    # Add participant
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants",
+        json={"twitch_username": player.twitch_username},
+        headers=org_headers,
+    )
+    assert resp.status_code == 200
+
+    # Get mod token
+    async def get_token():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(Participant.race_id == uuid.UUID(race_id))
+            )
+            p = result.scalar_one()
+            return p.mod_token
+
+    mod_token = asyncio.run(get_token())
+
+    # Ready + start
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, mod_token)
+        assert mod.auth()["type"] == "auth_ok"
+        mod.send_ready()
+        mod.receive_until_type("leaderboard_update")
+
+    resp = integration_client.post(f"/api/races/{race_id}/start", headers=org_headers)
+    assert resp.status_code == 200
+
+    # Connect and send zone_query with map_id only (death/respawn scenario)
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, mod_token)
+        assert mod.auth()["type"] == "auth_ok"
+
+        # Send zone_query with map_id only — simulates death/respawn
+        mod.send_zone_query(map_id="m12_04_00_00")
+        zone_update = mod.receive_until_type("zone_update")
+        assert zone_update["node_id"] == "ainsel_boss_node"
+        assert zone_update["display_name"] == "Astel, Naturalborn of the Void"
+
+
+def test_zone_query_no_data_ignored(integration_db, integration_client, seed_folder):
+    """zone_query with no useful fields is silently ignored."""
+    import asyncio
+
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 2,
+        "nodes": {
+            "start_node": {
+                "type": "start",
+                "display_name": "Start",
+                "zones": ["chapel_start"],
+                "layer": 0,
+                "exits": [],
+            },
+        },
+        "event_map": {},
+        "finish_event": 1040292801,
+    }
+
+    async def setup():
+        async with integration_db() as db:
+            organizer = User(
+                twitch_id="zqno_organizer",
+                twitch_username="zqno_organizer",
+                twitch_display_name="ZQNo Org",
+                api_token="zqno_organizer_token",
+                role=UserRole.ORGANIZER,
+            )
+            player = User(
+                twitch_id="zqno_player",
+                twitch_username="zqno_player",
+                twitch_display_name="ZQNo Player",
+                api_token="zqno_player_token",
+                role=UserRole.USER,
+            )
+            seed = Seed(
+                seed_number="szqno_001",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=2,
+                folder_path=str(seed_folder),
+                status=SeedStatus.AVAILABLE,
+            )
+            db.add_all([organizer, player, seed])
+            await db.commit()
+            await db.refresh(organizer)
+            await db.refresh(player)
+            return organizer, player
+
+    organizer, player = asyncio.run(setup())
+    org_headers = {"Authorization": f"Bearer {organizer.api_token}"}
+
+    # Create race
+    resp = integration_client.post(
+        "/api/races",
+        json={"name": "No Data Zone Query Test", "pool_name": "standard"},
+        headers=org_headers,
+    )
+    assert resp.status_code == 201
+    race_id = resp.json()["id"]
+
+    # Override seed graph
+    async def set_graph():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            if race.seed:
+                race.seed.graph_json = graph_json
+                race.seed.total_layers = 2
+                await db.commit()
+
+    asyncio.run(set_graph())
+
+    # Add participant
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants",
+        json={"twitch_username": player.twitch_username},
+        headers=org_headers,
+    )
+    assert resp.status_code == 200
+
+    # Get mod token
+    async def get_token():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(Participant.race_id == uuid.UUID(race_id))
+            )
+            p = result.scalar_one()
+            return p.mod_token
+
+    mod_token = asyncio.run(get_token())
+
+    # Ready + start
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, mod_token)
+        assert mod.auth()["type"] == "auth_ok"
+        mod.send_ready()
+        mod.receive_until_type("leaderboard_update")
+
+    resp = integration_client.post(f"/api/races/{race_id}/start", headers=org_headers)
+    assert resp.status_code == 200
+
+    # Connect and send zone_query with no data — should be silently ignored
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, mod_token)
+        assert mod.auth()["type"] == "auth_ok"
+
+        mod.send_zone_query()  # No grace, no map_id
+        # Should not receive zone_update — next message should time out
+        with pytest.raises(TimeoutError):
+            mod.receive(timeout=1)
 
 
 # =============================================================================

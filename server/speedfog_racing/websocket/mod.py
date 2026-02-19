@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
-from speedfog_racing.services.grace_service import load_graces_mapping, resolve_grace_to_node
+from speedfog_racing.services.grace_service import load_graces_mapping, resolve_zone_query
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
@@ -518,9 +518,16 @@ async def handle_zone_query(
     msg: dict[str, Any],
     locale: str = "en",
 ) -> None:
-    """Handle zone_query from mod (fast travel overlay update)."""
+    """Handle zone_query from mod (loading screen exit overlay update)."""
     grace_entity_id = msg.get("grace_entity_id")
-    if not isinstance(grace_entity_id, int) or grace_entity_id == 0:
+    if isinstance(grace_entity_id, int) and grace_entity_id != 0:
+        pass  # valid
+    else:
+        grace_entity_id = None
+
+    map_id_str = msg.get("map_id") if isinstance(msg.get("map_id"), str) else None
+
+    if grace_entity_id is None and map_id_str is None:
         return
 
     async with session_maker() as db:
@@ -539,11 +546,17 @@ async def handle_zone_query(
             return
 
         graph_json = seed.graph_json
-        node_id = resolve_grace_to_node(grace_entity_id, graph_json, _get_graces_mapping())
+        node_id = resolve_zone_query(
+            graph_json,
+            _get_graces_mapping(),
+            grace_entity_id=grace_entity_id,
+            map_id=map_id_str,
+        )
         if node_id is None:
             logger.debug(
-                "zone_query: grace %d not in graph for race %s",
+                "zone_query: unresolved (grace=%s, map=%s) for race %s",
                 grace_entity_id,
+                map_id_str,
                 participant.race_id,
             )
             return
