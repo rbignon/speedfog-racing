@@ -63,8 +63,8 @@ class TestTranslateName:
 
     def test_composite_partial_translation(self, fr_data: TranslationData) -> None:
         """Untranslated parts stay in English."""
-        result = _translate_name("Altus Plateau - Sage's Cave", fr_data)
-        assert result == "le Plateau Altus - Sage's Cave"
+        result = _translate_name("Altus Plateau - Unknown Dungeon XYZ", fr_data)
+        assert result == "le Plateau Altus - Unknown Dungeon XYZ"
 
 
 # ---------------------------------------------------------------------------
