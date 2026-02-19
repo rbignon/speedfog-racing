@@ -233,6 +233,7 @@ class TrainingSession(Base):
     igt_ms: Mapped[int] = mapped_column(Integer, default=0)
     death_count: Mapped[int] = mapped_column(Integer, default=0)
     progress_nodes: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    current_zone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

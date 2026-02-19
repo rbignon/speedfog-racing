@@ -143,11 +143,12 @@ async def _send_initial_state(
     """Send current training session state to spectator."""
     seed = session.seed
 
-    current_zone = None
+    current_zone = session.current_zone
     current_layer = 0
     tier = None
     if session.progress_nodes:
-        current_zone = session.progress_nodes[-1].get("node_id")
+        if not current_zone:
+            current_zone = session.progress_nodes[-1].get("node_id")
         if current_zone and seed and seed.graph_json:
             tier = get_tier_for_node(current_zone, seed.graph_json)
         for entry in session.progress_nodes:

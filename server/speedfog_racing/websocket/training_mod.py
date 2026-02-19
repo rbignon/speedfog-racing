@@ -232,7 +232,7 @@ def _build_participant_info(
 
     current_layer = 0
     current_layer_tier: int | None = None
-    current_zone: str | None = None
+    current_zone = session.current_zone
     if session.progress_nodes and seed and seed.graph_json:
         for entry in session.progress_nodes:
             nid = entry.get("node_id")
@@ -240,7 +240,8 @@ def _build_participant_info(
                 layer = get_layer_for_node(nid, seed.graph_json)
                 if layer > current_layer:
                     current_layer = layer
-        current_zone = session.progress_nodes[-1].get("node_id")
+        if not current_zone:
+            current_zone = session.progress_nodes[-1].get("node_id")
         if current_zone:
             current_layer_tier = get_tier_for_node(current_zone, seed.graph_json)
 
@@ -329,6 +330,7 @@ async def _handle_status_update(
                 start_node = get_start_node(seed.graph_json)
                 if start_node:
                     session.progress_nodes = [{"node_id": start_node, "igt_ms": 0}]
+                    session.current_zone = start_node
 
         await db.commit()
 
@@ -392,6 +394,7 @@ async def _handle_event_flag(
 
         # Record
         session.igt_ms = igt
+        session.current_zone = node_id
         session.progress_nodes = [*old_history, {"node_id": node_id, "igt_ms": igt}]
         await db.commit()
 
@@ -463,6 +466,9 @@ async def _handle_zone_query(
             )
             return
 
+        session.current_zone = node_id
+        await db.commit()
+
         progress = session.progress_nodes or []
 
     # Unicast zone_update to mod
@@ -477,14 +483,8 @@ async def _handle_zone_query(
             logger.warning("Failed to send zone_update for training zone_query")
 
     # Broadcast to spectators so DAG view reflects current zone
-    # (TrainingSession has no current_zone column — override on the info object)
-    room = training_manager.get_room(session_id)
-    if room:
-        info = _build_participant_info(session, mod_connected=room.mod is not None)
-        info.current_zone = node_id
-        info.current_layer_tier = get_tier_for_node(node_id, graph_json)
-        message = LeaderboardUpdateMessage(participants=[info])
-        await room.broadcast_to_spectators(message.model_dump_json())
+    # (mod already got the unicast zone_update above)
+    await _broadcast_participant_update(session, spectator_only=True)
 
 
 async def _broadcast_participant_update(
