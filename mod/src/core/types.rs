@@ -46,38 +46,6 @@ impl PlayerPosition {
     }
 }
 
-// =============================================================================
-// WARP INFO
-// =============================================================================
-
-/// Warp information from GameMan
-#[derive(Debug, Clone, PartialEq)]
-pub struct WarpInfo {
-    /// Whether a warp is currently requested
-    pub warp_requested: bool,
-    /// Entity ID of the destination (e.g., grace entity ID for fast travel)
-    pub destination_entity_id: u32,
-    /// Map ID (BlockId) of the destination
-    pub destination_map_id: u32,
-}
-
-// =============================================================================
-// SPEFFECT DEBUG INFO
-// =============================================================================
-
-/// Debug information about SpEffect reading
-#[derive(Debug, Clone, Default)]
-pub struct SpEffectDebugInfo {
-    pub world_chr_man_base: usize,
-    pub world_chr_man_ptr: Option<usize>,
-    pub player_ins_offset: usize,
-    pub player_ins: Option<usize>,
-    pub sp_effect_ctrl: Option<usize>,
-    pub first_node: Option<usize>,
-    pub active_effects: Vec<u32>,
-    pub has_teleport_effect: bool,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

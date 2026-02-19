@@ -31,7 +31,6 @@ const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(2);
 /// Zone update data received from server
 #[derive(Debug, Clone)]
 pub struct ZoneUpdateData {
-    pub node_id: String,
     pub display_name: String,
     pub tier: Option<i32>,
     pub original_tier: Option<i32>,
@@ -645,7 +644,6 @@ impl RaceTracker {
                 // Last-writer-wins: if two flags fire in rapid succession, only the
                 // final destination zone is shown (intermediate corridor zones are skipped).
                 self.pending_zone_update = Some(ZoneUpdateData {
-                    node_id,
                     display_name,
                     tier,
                     original_tier,

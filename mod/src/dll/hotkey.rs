@@ -214,11 +214,6 @@ impl Hotkey {
         name_to_keycode(name).map(|key| Hotkey { key })
     }
 
-    /// Get the display name for this hotkey
-    pub fn name(&self) -> String {
-        keycode_to_name(self.key).to_string()
-    }
-
     /// Check if this hotkey was just pressed
     pub fn is_just_pressed(&self) -> bool {
         let (just_pressed, _) = get_cached_key_state(self.key);
