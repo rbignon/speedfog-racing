@@ -165,8 +165,8 @@ impl RaceTracker {
 
     /// 3-line player status:
     /// Line 1: `● RaceName               HH:MM:SS` (IGT in blue)
-    /// Line 2: `  ZoneName                    X/Y` (progress in green)
-    /// Line 3: `  tier X, previously Y   [☠]N`     (tier yellow, deaths green)
+    /// Line 2: `  ZoneName                    X/Y` (X yellow→green on finish, /Y white)
+    /// Line 3: `  tier X, previously Y   [☠]N`     (tier yellow, deaths white)
     fn render_player_status(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
         let blue = [0.4, 0.6, 1.0, 1.0];
         let yellow = [1.0, 1.0, 0.0, 1.0];
@@ -205,15 +205,17 @@ impl RaceTracker {
         ui.same_line_with_pos(max_width - igt_width);
         ui.text_colored(blue, &igt_str);
 
-        // --- Line 2: zone name (left, white), progress X/Y (right, green) ---
+        // --- Line 2: zone name (left, white), progress X/Y (right, X=yellow/green Y=white) ---
         let me = self.my_participant();
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let zone = self.current_zone_info();
 
         let layer = me.map(|p| p.current_layer).unwrap_or(0);
         let display_layer = (layer + 1).min(total_layers);
-        let progress_str = format!("{}/{}", display_layer, total_layers);
-        let progress_width = ui.calc_text_size(&progress_str)[0];
+        let current_str = format!("{}", display_layer);
+        let sep_str = format!("/{}", total_layers);
+        let progress_width = ui.calc_text_size(&current_str)[0] + ui.calc_text_size(&sep_str)[0];
+        let progress_color = if self.am_i_finished() { green } else { yellow };
 
         let zone_text = if let Some(z) = zone {
             format!("  {}", z.display_name)
@@ -225,9 +227,11 @@ impl RaceTracker {
         ui.text(&zone_truncated);
 
         ui.same_line_with_pos(max_width - progress_width);
-        ui.text_colored(green, &progress_str);
+        ui.text_colored(progress_color, &current_str);
+        ui.same_line_with_spacing(0.0, 0.0);
+        ui.text_colored(self.cached_colors.text, &sep_str);
 
-        // --- Line 3: tier info (left, yellow), death icon + count (right, green) ---
+        // --- Line 3: tier info (left, yellow), death icon + count (right, white) ---
         let deaths = self.read_deaths().unwrap_or(0);
         let death_str = format!("{}", deaths);
         let font_height = ui.text_line_height();
@@ -271,7 +275,7 @@ impl RaceTracker {
             Image::new(icon.texture_id(), [icon_size, icon_size]).build(ui);
             ui.same_line_with_spacing(0.0, icon_gap);
         }
-        ui.text_colored(green, &death_str);
+        ui.text_colored(self.cached_colors.text, &death_str);
     }
 
     /// Render exit list from zone_update:
