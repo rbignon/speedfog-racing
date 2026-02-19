@@ -10,7 +10,6 @@ seed = 0
 run_complete_message = "RUN COMPLETE GG"
 
 [budget]
-total_weight = 40
 tolerance = 5
 
 [requirements]

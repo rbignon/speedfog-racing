@@ -10,7 +10,6 @@ seed = 0  # Auto-reroll until valid DAG found
 run_complete_message = "RUN COMPLETE GG"
 
 [budget]
-total_weight = 30
 tolerance = 3
 
 [requirements]
