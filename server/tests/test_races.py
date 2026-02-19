@@ -510,6 +510,12 @@ async def test_start_race(test_client, organizer, seed):
         )
         assert get_response.json()["started_at"] is None
 
+        # Release seeds first
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
         # Start race
         response = await client.post(
             f"/api/races/{race_id}/start",
@@ -533,6 +539,10 @@ async def test_cannot_start_already_started_race(test_client, organizer, seed):
         )
         race_id = create_response.json()["id"]
 
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
         await client.post(
             f"/api/races/{race_id}/start",
             headers={"Authorization": f"Bearer {organizer.api_token}"},
@@ -564,6 +574,12 @@ async def test_download_seed_pack_invalid_token(test_client, organizer, seed):
         )
         race_id = create_response.json()["id"]
 
+        # Release seeds first
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
         # Try to download with invalid token (as organizer)
         response = await client.get(
             f"/api/races/{race_id}/download/invalid_token",
@@ -590,6 +606,12 @@ async def test_download_my_seed_pack_success(
         await client.post(
             f"/api/races/{race_id}/participants",
             json={"twitch_username": "player1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        # Release seeds
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
 

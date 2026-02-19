@@ -726,6 +726,12 @@ async def start_race(
             detail="Race has already started or finished",
         )
 
+    if race.seeds_released_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seeds must be released before starting the race",
+        )
+
     await _transition_status(
         db,
         race,
@@ -797,7 +803,7 @@ async def reroll_seed(
             Race.id == race.id,
             Race.version == current_version,
         )
-        .values(version=current_version + 1, seed_id=race.seed_id)
+        .values(version=current_version + 1, seed_id=race.seed_id, seeds_released_at=None)
     )
     if result.rowcount == 0:  # type: ignore[attr-defined]
         raise HTTPException(
@@ -805,9 +811,60 @@ async def reroll_seed(
             detail="Race was modified concurrently, please retry",
         )
     race.version = current_version + 1
+    race.seeds_released_at = None
     await db.commit()
 
     # Re-fetch with all relationships
+    race = await _get_race_or_404(
+        db, race_id, load_participants=True, load_casters=True, load_invites=True
+    )
+    return _race_detail_response(race, user=user)
+
+
+@router.post("/{race_id}/release-seeds", response_model=RaceDetailResponse)
+async def release_seeds(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RaceDetailResponse:
+    """Release seeds so participants can download their packs."""
+    race = await _get_race_or_404(
+        db, race_id, load_participants=True, load_casters=True, load_invites=True
+    )
+    _require_organizer(race, user)
+
+    if race.status != RaceStatus.SETUP:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only release seeds for setup races",
+        )
+
+    if race.seeds_released_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seeds are already released",
+        )
+
+    # Atomic update with optimistic locking
+    now = datetime.now(UTC)
+    current_version = race.version
+    result = await db.execute(
+        update(Race)
+        .where(Race.id == race.id, Race.version == current_version)
+        .values(seeds_released_at=now, version=current_version + 1)
+    )
+    if result.rowcount == 0:  # type: ignore[attr-defined]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Race was modified concurrently, please retry",
+        )
+    race.seeds_released_at = now
+    race.version = current_version + 1
+    await db.commit()
+
+    # Notify connected clients
+    await broadcast_race_state_update(race_id, race)
+
     race = await _get_race_or_404(
         db, race_id, load_participants=True, load_casters=True, load_invites=True
     )
@@ -948,6 +1005,13 @@ async def download_my_seed_pack(
     """
     race = await _get_race_or_404(db, race_id)
 
+    # Gate download on seed release
+    if race.seeds_released_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Seeds have not been released yet",
+        )
+
     # Find participant by race_id and user_id
     result = await db.execute(
         select(Participant)
@@ -999,6 +1063,13 @@ async def download_seed_pack(
     Caller must be the participant, the race organizer, or a caster.
     """
     race = await _get_race_or_404(db, race_id)
+
+    # Gate download on seed release
+    if race.seeds_released_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Seeds have not been released yet",
+        )
 
     # Find participant by mod_token
     result = await db.execute(

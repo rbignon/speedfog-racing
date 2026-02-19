@@ -278,7 +278,11 @@ async def test_patch_running_race_rejected(test_client, organizer, seed):
         )
         race_id = create_resp.json()["id"]
 
-        # Start the race
+        # Release seeds and start the race
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
         await client.post(
             f"/api/races/{race_id}/start",
             headers={"Authorization": f"Bearer {organizer.api_token}"},

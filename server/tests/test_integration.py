@@ -331,6 +331,13 @@ def race_with_participants(integration_db, integration_client, seed_folder):
         )
         assert response.status_code == 200
 
+    # Release seeds (required before start or download)
+    response = integration_client.post(
+        f"/api/races/{race_id}/release-seeds",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
     # Get mod tokens and ensure seed has area_tiers for layer tests
     async def get_tokens():
         async with integration_db() as db:
@@ -1339,6 +1346,7 @@ def test_zone_query_updates_overlay(integration_db, integration_client, seed_fol
         mod.send_ready()
         mod.receive_until_type("leaderboard_update")
 
+    integration_client.post(f"/api/races/{race_id}/release-seeds", headers=org_headers)
     resp = integration_client.post(f"/api/races/{race_id}/start", headers=org_headers)
     assert resp.status_code == 200
 
@@ -1489,6 +1497,7 @@ def test_zone_query_map_id_death_respawn(integration_db, integration_client, see
         mod.send_ready()
         mod.receive_until_type("leaderboard_update")
 
+    integration_client.post(f"/api/races/{race_id}/release-seeds", headers=org_headers)
     resp = integration_client.post(f"/api/races/{race_id}/start", headers=org_headers)
     assert resp.status_code == 200
 
@@ -1608,6 +1617,7 @@ def test_zone_query_no_data_ignored(integration_db, integration_client, seed_fol
         mod.send_ready()
         mod.receive_until_type("leaderboard_update")
 
+    integration_client.post(f"/api/races/{race_id}/release-seeds", headers=org_headers)
     resp = integration_client.post(f"/api/races/{race_id}/start", headers=org_headers)
     assert resp.status_code == 200
 
