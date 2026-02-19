@@ -74,3 +74,4 @@ auto_upgrade_weapons = true
 auto_upgrade_dropped = true
 reduce_upgrade_cost = true
 dlc = true
+nerf_gargoyles = false
