@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { site } from '$lib/stores/site.svelte';
 	import { fetchRaces, getTwitchLoginUrl, type Race } from '$lib/api';
 	import MetroDagAnimated from '$lib/dag/MetroDagAnimated.svelte';
 	import RaceCard from '$lib/components/RaceCard.svelte';
@@ -72,11 +71,7 @@
 		<h1>SpeedFog Racing<span class="beta-badge">Beta</span></h1>
 		<p class="hero-tagline">Competitive Elden Ring racing through randomized fog gates</p>
 		<div class="hero-buttons">
-			{#if !site.initialized}
-				<!-- Wait for site config before showing CTA -->
-			{:else if site.comingSoon}
-				<span class="btn btn-primary btn-lg btn-disabled">Coming soon</span>
-			{:else if auth.isLoggedIn}
+			{#if auth.isLoggedIn}
 				<a href="/training" class="btn btn-primary btn-lg">Start Training</a>
 			{:else}
 				<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg" data-sveltekit-reload
@@ -106,8 +101,7 @@
 	</div>
 </div>
 
-{#if site.initialized && !site.comingSoon}
-	<main class="public-section">
+<main class="public-section">
 		{#if loadingRaces}
 			<p class="loading">Loading races...</p>
 		{:else}
@@ -152,7 +146,6 @@
 			{/if}
 		{/if}
 	</main>
-{/if}
 
 <style>
 	/* Error banner */

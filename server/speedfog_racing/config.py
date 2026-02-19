@@ -33,9 +33,6 @@ class Settings(BaseSettings):
     discord_webhook_url: str | None = None
     base_url: str = "https://speedfog.malenia.win"
 
-    # Site
-    coming_soon: bool = False
-
     # Server
     log_level: str = "INFO"
     log_json: bool = False

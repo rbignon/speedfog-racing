@@ -10,12 +10,6 @@ Reference document for API endpoints and WebSocket messages.
 | ------ | --------- | ---- | ------------------------------------ |
 | GET    | `/health` | -    | Health check (`{ status, version }`) |
 
-### Site
-
-| Method | Endpoint           | Auth | Description                                         |
-| ------ | ------------------ | ---- | --------------------------------------------------- |
-| GET    | `/api/site-config` | -    | Public site configuration (`{ coming_soon: bool }`) |
-
 ### Authentication
 
 | Method | Endpoint             | Auth   | Description                                         |

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { site } from '$lib/stores/site.svelte';
 	import { createRace, fetchPoolStats, type PoolStats, type PoolInfo } from '$lib/api';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 
@@ -36,7 +35,7 @@
 		if (auth.initialized && !authChecked) {
 			authChecked = true;
 
-			if (!auth.isLoggedIn || site.comingSoon || !auth.canCreateRace) {
+			if (!auth.isLoggedIn || !auth.canCreateRace) {
 				goto('/');
 				return;
 			}

@@ -170,19 +170,6 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 // =============================================================================
-// Site config
-// =============================================================================
-
-export interface SiteConfig {
-  coming_soon: boolean;
-}
-
-export async function fetchSiteConfig(): Promise<SiteConfig> {
-  const response = await fetch(`${API_BASE}/site-config`);
-  return handleResponse<SiteConfig>(response);
-}
-
-// =============================================================================
 // API functions
 // =============================================================================
 

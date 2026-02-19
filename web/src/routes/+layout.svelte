@@ -2,7 +2,6 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { site } from '$lib/stores/site.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getTwitchLoginUrl } from '$lib/api';
@@ -37,7 +36,6 @@
 
 	onMount(() => {
 		auth.init();
-		site.init();
 	});
 </script>
 
@@ -81,10 +79,6 @@
 								</div>
 							{/if}
 						</div>
-					{:else if !site.initialized}
-						<!-- Wait for site config -->
-					{:else if site.comingSoon}
-						<span class="btn btn-twitch btn-disabled">Login with Twitch</span>
 					{:else}
 						<a href={getTwitchLoginUrl()} class="btn btn-twitch" data-sveltekit-reload>Login with Twitch</a>
 					{/if}
