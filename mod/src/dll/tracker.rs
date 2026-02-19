@@ -331,7 +331,8 @@ impl RaceTracker {
                 && self.is_race_running()
                 && !self.am_i_finished()
             {
-                self.ws_client.send_zone_query(grace_id);
+                self.ws_client
+                    .send_zone_query(Some(grace_id), None, None, None);
                 self.last_sent_debug = Some(format!("zone_query(grace={})", grace_id));
                 info!(
                     grace_entity_id = grace_id,

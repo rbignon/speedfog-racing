@@ -35,9 +35,20 @@ pub enum ConnectionStatus {
 #[derive(Debug)]
 pub enum OutgoingMessage {
     Ready,
-    StatusUpdate { igt_ms: u32, death_count: u32 },
-    EventFlag { flag_id: u32, igt_ms: u32 },
-    ZoneQuery { grace_entity_id: u32 },
+    StatusUpdate {
+        igt_ms: u32,
+        death_count: u32,
+    },
+    EventFlag {
+        flag_id: u32,
+        igt_ms: u32,
+    },
+    ZoneQuery {
+        grace_entity_id: Option<u32>,
+        map_id: Option<String>,
+        position: Option<[f32; 3]>,
+        play_region_id: Option<u32>,
+    },
     Shutdown,
 }
 
@@ -185,9 +196,20 @@ impl RaceWebSocketClient {
         }
     }
 
-    pub fn send_zone_query(&self, grace_entity_id: u32) {
+    pub fn send_zone_query(
+        &self,
+        grace_entity_id: Option<u32>,
+        map_id: Option<String>,
+        position: Option<[f32; 3]>,
+        play_region_id: Option<u32>,
+    ) {
         if let Some(tx) = &self.tx {
-            if let Err(e) = tx.try_send(OutgoingMessage::ZoneQuery { grace_entity_id }) {
+            if let Err(e) = tx.try_send(OutgoingMessage::ZoneQuery {
+                grace_entity_id,
+                map_id,
+                position,
+                play_region_id,
+            }) {
                 warn!("[WS] Failed to queue zone_query: {}", e);
             }
         }
@@ -433,8 +455,18 @@ fn message_loop(
                     .send(Message::Text(json))
                     .map_err(|e| e.to_string())?;
             }
-            Ok(OutgoingMessage::ZoneQuery { grace_entity_id }) => {
-                let msg = ClientMessage::ZoneQuery { grace_entity_id };
+            Ok(OutgoingMessage::ZoneQuery {
+                grace_entity_id,
+                map_id,
+                position,
+                play_region_id,
+            }) => {
+                let msg = ClientMessage::ZoneQuery {
+                    grace_entity_id,
+                    map_id,
+                    position,
+                    play_region_id,
+                };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
                     .send(Message::Text(json))
