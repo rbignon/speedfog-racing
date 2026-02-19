@@ -53,6 +53,18 @@ class TestTranslateName:
         """Bosses are checked first, then regions, then locations."""
         assert _translate_name("Loretta", fr_data) == "Loretta"
 
+    def test_composite_name(self, fr_data: TranslationData) -> None:
+        """'Region - Location - Boss' splits and translates each part."""
+        result = _translate_name("Capital Outskirts - Sealed Tunnel - Onyx Lord", fr_data)
+        assert "Faubourgs" in result
+        assert "Galerie scellée" in result
+        assert "Seigneur d'onyx" in result
+
+    def test_composite_partial_translation(self, fr_data: TranslationData) -> None:
+        """Untranslated parts stay in English."""
+        result = _translate_name("Altus Plateau - Sage's Cave", fr_data)
+        assert result == "le Plateau Altus - Sage's Cave"
+
 
 # ---------------------------------------------------------------------------
 # French contractions

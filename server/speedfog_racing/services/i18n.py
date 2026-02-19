@@ -106,9 +106,30 @@ def get_available_locales() -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
+def _lookup_name(name: str, data: TranslationData) -> str | None:
+    """Look up a single name in bosses → regions → locations."""
+    return data.bosses.get(name) or data.regions.get(name) or data.locations.get(name) or None
+
+
 def _translate_name(name: str, data: TranslationData) -> str:
-    """Translate a proper name via bosses → regions → locations lookups."""
-    return data.bosses.get(name) or data.regions.get(name) or data.locations.get(name) or name
+    """Translate a proper name via bosses → regions → locations lookups.
+
+    Handles composite names like ``"Region - Location - Boss"`` by splitting
+    on ``" - "`` and translating each segment individually.
+    """
+    # Try full name first
+    result = _lookup_name(name, data)
+    if result is not None:
+        return result
+
+    # Composite: "Capital Outskirts - Sealed Tunnel - Onyx Lord"
+    parts = name.split(" - ")
+    if len(parts) > 1:
+        translated_parts = [_lookup_name(p, data) or p for p in parts]
+        if translated_parts != parts:
+            return " - ".join(translated_parts)
+
+    return name
 
 
 # ---------------------------------------------------------------------------
