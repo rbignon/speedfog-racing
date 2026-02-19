@@ -260,7 +260,7 @@ impl RaceTracker {
     /// Check if the local player has finished the race.
     /// Once finished, the mod should stop sending status_update and event_flag
     /// to preserve the frozen IGT at finish time.
-    fn am_i_finished(&self) -> bool {
+    pub(crate) fn am_i_finished(&self) -> bool {
         self.my_participant()
             .map(|p| p.status == "finished")
             .unwrap_or(false)
