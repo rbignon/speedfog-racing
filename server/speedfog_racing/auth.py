@@ -85,8 +85,17 @@ async def get_twitch_user(access_token: str) -> TwitchUser | None:
         return None
 
 
-async def get_or_create_user(db: AsyncSession, twitch_user: TwitchUser) -> User:
-    """Get existing user or create new one from Twitch info."""
+async def get_or_create_user(
+    db: AsyncSession,
+    twitch_user: TwitchUser,
+    *,
+    browser_locale: str = "en",
+) -> User:
+    """Get existing user or create new one from Twitch info.
+
+    *browser_locale* is applied to new users and existing users whose locale is
+    still NULL (never explicitly set).
+    """
     result = await db.execute(select(User).where(User.twitch_id == twitch_user.id))
     user = result.scalar_one_or_none()
 
@@ -96,6 +105,9 @@ async def get_or_create_user(db: AsyncSession, twitch_user: TwitchUser) -> User:
         user.twitch_display_name = twitch_user.display_name
         user.twitch_avatar_url = twitch_user.profile_image_url
         user.last_seen = datetime.now(UTC)
+        # Backfill locale for existing users who never set it
+        if user.locale is None:
+            user.locale = browser_locale
         return user
 
     # Create new user
@@ -106,6 +118,7 @@ async def get_or_create_user(db: AsyncSession, twitch_user: TwitchUser) -> User:
         twitch_avatar_url=twitch_user.profile_image_url,
         api_token=generate_token(),
         last_seen=datetime.now(UTC),
+        locale=browser_locale,
     )
     db.add(user)
     return user

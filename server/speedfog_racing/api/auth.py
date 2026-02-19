@@ -21,11 +21,12 @@ from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.models import User
 from speedfog_racing.rate_limit import limiter
+from speedfog_racing.services.i18n import get_available_locales
 
 router = APIRouter()
 
-# In-memory state storage for OAuth: state → (redirect_url, expiry_timestamp)
-_oauth_states: dict[str, tuple[str, float]] = {}
+# In-memory state storage for OAuth: state → (redirect_url, expiry_timestamp, browser_locale)
+_oauth_states: dict[str, tuple[str, float, str]] = {}
 
 _OAUTH_STATE_TTL = 600  # 10 minutes
 
@@ -38,7 +39,7 @@ _AUTH_CODE_TTL = 60  # seconds
 def _cleanup_expired_states() -> None:
     """Remove expired OAuth states and auth codes to prevent memory leaks."""
     now = time.monotonic()
-    expired_states = [s for s, (_, expiry) in _oauth_states.items() if expiry < now]
+    expired_states = [s for s, (_, expiry, _loc) in _oauth_states.items() if expiry < now]
     for s in expired_states:
         del _oauth_states[s]
     expired_codes = [c for c, (_, expiry) in _auth_codes.items() if expiry < now]
@@ -97,14 +98,20 @@ class CodeExchangeResponse(BaseModel):
 async def twitch_login(
     request: Request,
     redirect_url: Annotated[str | None, Query(description="URL to redirect after login")] = None,
+    locale: Annotated[str | None, Query(description="Browser language code (e.g. 'fr')")] = None,
 ) -> RedirectResponse:
     """Redirect to Twitch OAuth authorization page."""
+    # Validate browser locale against available translations, default to "en"
+    valid_codes = {loc["code"] for loc in get_available_locales()}
+    browser_locale = locale if locale in valid_codes else "en"
+
     # Generate state for CSRF protection
     _cleanup_expired_states()
     state = secrets.token_urlsafe(32)
     _oauth_states[state] = (
         redirect_url or settings.oauth_redirect_url,
         time.monotonic() + _OAUTH_STATE_TTL,
+        browser_locale,
     )
 
     oauth_url = get_twitch_oauth_url(state)
@@ -136,7 +143,7 @@ async def twitch_callback(
             detail="Invalid or expired OAuth state",
         )
 
-    redirect_url, state_expiry = _oauth_states.pop(state)
+    redirect_url, state_expiry, browser_locale = _oauth_states.pop(state)
     if time.monotonic() > state_expiry:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -166,8 +173,8 @@ async def twitch_callback(
             detail="Failed to get Twitch user info",
         )
 
-    # Get or create user in our database
-    user = await get_or_create_user(db, twitch_user)
+    # Get or create user in our database (set locale from browser on first login)
+    user = await get_or_create_user(db, twitch_user, browser_locale=browser_locale)
     await db.commit()
 
     # Generate ephemeral code instead of leaking the API token in the URL

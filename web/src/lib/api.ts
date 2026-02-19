@@ -265,7 +265,9 @@ export async function exchangeAuthCode(code: string): Promise<string> {
  */
 export function getTwitchLoginUrl(): string {
   const callbackUrl = `${window.location.origin}/auth/callback`;
-  return `${API_BASE}/auth/twitch?redirect_url=${encodeURIComponent(callbackUrl)}`;
+  const lang =
+    typeof navigator !== "undefined" ? navigator.language?.split("-")[0] : "en";
+  return `${API_BASE}/auth/twitch?redirect_url=${encodeURIComponent(callbackUrl)}&locale=${encodeURIComponent(lang || "en")}`;
 }
 
 /**
@@ -612,11 +614,10 @@ export async function fetchLocales(): Promise<LocaleInfo[]> {
 
 /**
  * Update the current user's locale preference.
- * Pass null to reset to auto-detect.
  */
 export async function updateLocale(
-  locale: string | null,
-): Promise<{ locale: string | null }> {
+  locale: string,
+): Promise<{ locale: string }> {
   const response = await fetch(`${API_BASE}/users/me/locale`, {
     method: "PATCH",
     headers: {
@@ -625,7 +626,7 @@ export async function updateLocale(
     },
     body: JSON.stringify({ locale }),
   });
-  return handleResponse<{ locale: string | null }>(response);
+  return handleResponse<{ locale: string }>(response);
 }
 
 /**

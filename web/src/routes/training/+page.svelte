@@ -202,6 +202,7 @@
 						<tr>
 							<th>Pool</th>
 							<th>Status</th>
+							<th>Progress</th>
 							<th>IGT</th>
 							<th>Deaths</th>
 							<th>Date</th>
@@ -218,6 +219,7 @@
 								<td>
 									<span class="badge badge-{session.status}">{session.status}</span>
 								</td>
+								<td class="mono">{Math.min(session.current_layer + 1, session.seed_total_layers ?? Infinity)}/{session.seed_total_layers ?? '?'}</td>
 								<td class="mono">{formatIgt(session.igt_ms)}</td>
 								<td class="mono">{session.death_count}</td>
 								<td class="date">{timeAgo(session.created_at)}</td>

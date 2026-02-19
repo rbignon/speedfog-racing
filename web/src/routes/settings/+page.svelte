@@ -5,7 +5,7 @@
 	import { fetchLocales, updateLocale, type LocaleInfo } from '$lib/api';
 
 	let locales = $state<LocaleInfo[]>([]);
-	let selectedLocale = $state<string | null>(null);
+	let selectedLocale = $state('en');
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 	let success = $state(false);
@@ -16,7 +16,7 @@
 			return;
 		}
 		locales = await fetchLocales();
-		selectedLocale = auth.user?.locale ?? null;
+		selectedLocale = auth.user?.locale ?? 'en';
 	});
 
 	async function handleSave() {
@@ -52,16 +52,6 @@
 		</p>
 
 		<div class="locale-select">
-			<label>
-				<input
-					type="radio"
-					name="locale"
-					value=""
-					checked={selectedLocale === null}
-					onchange={() => (selectedLocale = null)}
-				/>
-				Auto (detect from browser)
-			</label>
 			{#each locales as locale}
 				<label>
 					<input

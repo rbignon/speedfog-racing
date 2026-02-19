@@ -2,6 +2,13 @@
 
 import time
 
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from speedfog_racing.auth import TwitchUser, get_or_create_user
+from speedfog_racing.database import Base
+
 
 def test_twitch_login_redirects(client):
     """Test that /auth/twitch redirects to Twitch OAuth."""
@@ -103,3 +110,96 @@ def test_exchange_expired_code(client):
     response = client.post("/api/auth/exchange", json={"code": "expired-code"})
     assert response.status_code == 400
     assert "Invalid or expired auth code" in response.json()["detail"]
+
+
+def test_twitch_login_passes_locale(client):
+    """Test that /auth/twitch stores browser locale in OAuth state."""
+    from speedfog_racing.api.auth import _oauth_states
+
+    _oauth_states.clear()
+    response = client.get("/api/auth/twitch?locale=fr", follow_redirects=False)
+    assert response.status_code == 302
+
+    assert len(_oauth_states) == 1
+    _, _, locale = next(iter(_oauth_states.values()))
+    assert locale == "fr"
+
+
+def test_twitch_login_invalid_locale_defaults_to_en(client):
+    """Test that unknown locale falls back to 'en'."""
+    from speedfog_racing.api.auth import _oauth_states
+
+    _oauth_states.clear()
+    response = client.get("/api/auth/twitch?locale=zz", follow_redirects=False)
+    assert response.status_code == 302
+
+    assert len(_oauth_states) == 1
+    _, _, locale = next(iter(_oauth_states.values()))
+    assert locale == "en"
+
+
+# =============================================================================
+# get_or_create_user: locale-on-login behavior
+# =============================================================================
+
+_FAKE_TWITCH_USER = TwitchUser(
+    id="12345",
+    login="testuser",
+    display_name="TestUser",
+    profile_image_url="https://example.com/avatar.png",
+)
+
+
+@pytest.fixture
+async def async_db():
+    """Async in-memory SQLite session for unit tests."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_maker() as session:
+        yield session
+    await engine.dispose()
+
+
+async def test_new_user_gets_browser_locale(async_db: AsyncSession) -> None:
+    """New user gets locale set from browser_locale param."""
+    user = await get_or_create_user(async_db, _FAKE_TWITCH_USER, browser_locale="fr")
+    await async_db.commit()
+    assert user.locale == "fr"
+
+
+async def test_new_user_defaults_to_en(async_db: AsyncSession) -> None:
+    """New user without browser_locale defaults to 'en'."""
+    user = await get_or_create_user(async_db, _FAKE_TWITCH_USER)
+    await async_db.commit()
+    assert user.locale == "en"
+
+
+async def test_existing_user_null_locale_gets_backfilled(async_db: AsyncSession) -> None:
+    """Existing user with NULL locale gets it set from browser_locale on login."""
+    # Create user with NULL locale (simulating pre-migration user)
+    user = await get_or_create_user(async_db, _FAKE_TWITCH_USER)
+    await async_db.commit()
+    user.locale = None
+    await async_db.commit()
+
+    # Re-login with browser locale
+    user = await get_or_create_user(async_db, _FAKE_TWITCH_USER, browser_locale="fr")
+    await async_db.commit()
+    assert user.locale == "fr"
+
+
+async def test_existing_user_keeps_explicit_locale(async_db: AsyncSession) -> None:
+    """Existing user with explicit locale is NOT overwritten by browser_locale."""
+    user = await get_or_create_user(async_db, _FAKE_TWITCH_USER, browser_locale="en")
+    await async_db.commit()
+
+    # Re-login from a French browser — should NOT change the stored "en"
+    user = await get_or_create_user(async_db, _FAKE_TWITCH_USER, browser_locale="fr")
+    await async_db.commit()
+    assert user.locale == "en"

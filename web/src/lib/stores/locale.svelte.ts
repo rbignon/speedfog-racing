@@ -1,15 +1,15 @@
 /**
- * Locale store — resolves effective locale from user preference or browser language.
+ * Locale store — resolves effective locale from user preference.
+ *
+ * User.locale is always set (initialized from browser language on first login),
+ * so this is a simple accessor with a fallback for unauthenticated contexts.
  */
 
 import { auth } from "$lib/stores/auth.svelte";
 
 /**
  * Get the effective locale for the current user.
- * Priority: user DB locale → browser language → "en"
- *
- * Note: browser-detected locale is not validated against available translations.
- * The server handles unknown locales gracefully by returning English data.
+ * Falls back to browser language for unauthenticated spectators.
  */
 export function getEffectiveLocale(): string {
   if (auth.user?.locale) {
