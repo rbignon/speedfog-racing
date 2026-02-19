@@ -149,6 +149,7 @@
 		if (!node) return null;
 
 		return {
+			nodeId: me.current_zone,
 			x: node.x,
 			y: node.y,
 			color: PLAYER_COLORS[me.color_index % PLAYER_COLORS.length],
@@ -415,6 +416,7 @@
 				fill={playerDot.color}
 				filter="url(#player-glow-prog)"
 				class="player-dot"
+				data-node-id={playerDot.nodeId}
 			>
 				<title>{playerDot.displayName}</title>
 			</circle>
@@ -427,8 +429,8 @@
 
 <style>
 	.dag-label {
-		pointer-events: none;
 		user-select: none;
+		cursor: pointer;
 		font-family:
 			system-ui,
 			-apple-system,
@@ -458,6 +460,7 @@
 	}
 
 	.player-dot {
+		cursor: pointer;
 		transition:
 			cx 0.3s ease,
 			cy 0.3s ease;

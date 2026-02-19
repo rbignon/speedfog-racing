@@ -87,6 +87,7 @@
 		color: string;
 		displayName: string;
 		points: string;
+		finalNodeId: string;
 		finalX: number;
 		finalY: number;
 	}
@@ -174,6 +175,7 @@
 				color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
 				displayName: p.twitch_display_name || p.twitch_username,
 				points: pointStr,
+				finalNodeId: expanded[expanded.length - 1],
 				finalX: last.x,
 				finalY: last.y
 			});
@@ -385,6 +387,7 @@
 					filter="url(#results-player-glow)"
 					opacity={hasHighlight && !highlightIds!.has(path.id) ? 0.1 : 1}
 					class="player-dot"
+					data-node-id={path.finalNodeId}
 				>
 					<title>{path.displayName}</title>
 				</circle>
@@ -397,8 +400,8 @@
 
 <style>
 	.dag-label {
-		pointer-events: none;
 		user-select: none;
+		cursor: pointer;
 		font-family:
 			system-ui,
 			-apple-system,
@@ -433,6 +436,7 @@
 
 	.player-dot {
 		pointer-events: auto;
+		cursor: pointer;
 		transition: opacity 200ms ease;
 	}
 </style>
