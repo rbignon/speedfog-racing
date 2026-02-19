@@ -155,6 +155,12 @@ pub struct RaceTracker {
 
     // Seed mismatch: config seed_id doesn't match server seed_id (stale seed pack)
     pub(crate) seed_mismatch: bool,
+
+    // Last auth error message from server.
+    // AuthError is always enqueued before StatusChanged(Error) in the same
+    // channel, so this is guaranteed to be populated when the Error handler
+    // runs within the same poll() drain loop.
+    last_auth_error: Option<String>,
 }
 
 impl RaceTracker {
@@ -245,6 +251,7 @@ impl RaceTracker {
             loading_exit_time: Some(Instant::now() - ZONE_REVEAL_DELAY), // Already elapsed → immediate reveal
             was_position_readable: true,
             seed_mismatch: false,
+            last_auth_error: None,
         })
     }
 
@@ -513,7 +520,11 @@ impl RaceTracker {
                         self.set_status("Reconnecting to server...".to_string());
                     }
                     ConnectionStatus::Error => {
-                        self.set_status("Server error".to_string());
+                        let msg = self
+                            .last_auth_error
+                            .take()
+                            .unwrap_or_else(|| "Server maintenance".to_string());
+                        self.set_status(msg);
                     }
                     ConnectionStatus::Disconnected => {
                         self.set_status("Disconnected".to_string());
@@ -595,6 +606,7 @@ impl RaceTracker {
             IncomingMessage::AuthError(msg) => {
                 self.last_received_debug = Some(format!("auth_error({})", msg));
                 error!(message = %msg, "[WS] Auth failed");
+                self.last_auth_error = Some(msg);
             }
             IncomingMessage::RaceStart => {
                 self.last_received_debug = Some("race_start".to_string());
