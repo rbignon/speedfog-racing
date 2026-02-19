@@ -115,6 +115,8 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 
 Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)).
 
+**Timing:** Regular event flags (fog gate traversals) are detected immediately by polling but deferred until loading screen exit. This ensures spectators see progress updates in sync with the player's arrival, and prevents zone name spoilers during loading screens. The `finish_event` (boss kill) is an exception — it is sent immediately since boss kills don't trigger a loading screen.
+
 ```json
 {
   "type": "event_flag",
@@ -125,20 +127,26 @@ Sent when the mod detects an event flag transition (0 → 1). The server resolve
 
 #### `zone_query`
 
-Sent when the player exits a loading screen after fast-traveling to a grace. The server resolves the grace entity ID to a graph node and responds with a `zone_update`.
+Sent at loading screen exit when no event_flag was detected (death, respawn, fast travel, quit-out). All fields are optional — the server tries grace lookup first, then falls back to map_id-based resolution.
 
 ```json
 {
   "type": "zone_query",
-  "grace_entity_id": 10002950
+  "grace_entity_id": 10002950,
+  "map_id": "m10_00_00_00",
+  "position": [100.0, 50.0, 200.0],
+  "play_region_id": 12345
 }
 ```
 
-| Field             | Type  | Description                                                  |
-| ----------------- | ----- | ------------------------------------------------------------ |
-| `grace_entity_id` | `int` | Grace entity ID captured by the warp hook during fast travel |
+| Field             | Type       | Description                                                  |
+| ----------------- | ---------- | ------------------------------------------------------------ |
+| `grace_entity_id` | `int?`     | Grace entity ID captured by the warp hook during fast travel |
+| `map_id`          | `string?`  | Map ID string (e.g. `m10_00_00_00`) for map-based fallback   |
+| `position`        | `[f32;3]?` | Player position `[x, y, z]` (reserved for future use)        |
+| `play_region_id`  | `int?`     | Play region ID (reserved for future use)                     |
 
-**Response:** The server sends a `zone_update` (unicast) if the grace maps to a node in the current seed's graph. No response if the grace is unknown or not in the graph.
+**Response:** The server sends a `zone_update` (unicast) if the query resolves to a node in the current seed's graph. No response if unresolvable or ambiguous.
 
 **Note:** This message does NOT modify `zone_history` (progression). It only updates `current_zone` (overlay pointer) and triggers a spectator `player_update`.
 
@@ -181,6 +189,7 @@ Authentication successful. Contains initial race state.
   "seed": {
     "total_layers": 12,
     "event_ids": [1040292801, 1040292802, 1040292847],
+    "finish_event": 1040292847,
     "spawn_items": [
       { "id": 10500, "qty": 1 },
       { "id": 16300, "qty": 1 }
@@ -207,6 +216,8 @@ Authentication successful. Contains initial race state.
 `participant_id`: the authenticated participant's UUID, used by the mod to identify itself in leaderboard updates.
 
 `event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod — no mapping to zones or nodes is provided. `graph_json` is always `null` for mods.
+
+`finish_event` _(int | null)_: Flag ID for the final boss kill. The mod sends this immediately (no loading screen on boss kill). All other event flags are deferred to loading screen exit.
 
 `spawn_items`: list of items to spawn at runtime via `func_item_inject`. Used for item types not supported by EMEVD's `DirectlyGivePlayerItem` (e.g., Gem/Ash of War, type 4). Each entry has `id` (EquipParamGem row ID) and `qty` (default 1). The mod spawns these once after game load, using event flag `1040292900` to prevent re-giving on reconnect or game restart. `null` if no runtime-spawned items exist.
 
