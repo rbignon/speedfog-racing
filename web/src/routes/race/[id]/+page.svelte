@@ -334,7 +334,7 @@
 							canRemove={isOrganizer && mp.user.id !== initialRace.organizer.id}
 							onRemove={() =>
 								handleRemoveParticipant(mp.id, mp.user.twitch_username)}
-							canDownload={initialRace.seed_total_layers != null}
+							canDownload={initialRace.seeds_released_at !== null}
 							{downloading}
 							onDownload={handleDownload}
 							{downloadError}
@@ -370,6 +370,12 @@
 					{/if}
 				{/if}
 			</div>
+
+			{#if myParticipant && !initialRace.seeds_released_at}
+				<div class="waiting-seeds">
+					<p>Waiting for seeds to be released...</p>
+				</div>
+			{/if}
 
 			<CasterList
 				casters={initialRace.casters}
@@ -545,7 +551,7 @@
 			/>
 		{/if}
 
-		{#if myParticipant && initialRace.seed_total_layers != null}
+		{#if myParticipant && initialRace.seeds_released_at}
 			<div class="download-section">
 				<button class="btn btn-secondary" onclick={handleDownload} disabled={downloading}>
 					{downloading ? 'Preparing...' : 'Download Race Package'}
@@ -800,6 +806,18 @@
 	.schedule-error {
 		color: var(--color-danger);
 		font-size: var(--font-size-xs);
+	}
+
+	.waiting-seeds {
+		padding: 0.75rem;
+		text-align: center;
+		color: var(--color-text-disabled);
+		font-size: var(--font-size-sm);
+		font-style: italic;
+	}
+
+	.waiting-seeds p {
+		margin: 0;
 	}
 
 	.download-section {
