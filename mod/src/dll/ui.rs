@@ -164,7 +164,7 @@ impl RaceTracker {
     }
 
     /// 3-line player status:
-    /// Line 1: `● RaceName               HH:MM:SS` (IGT in blue)
+    /// Line 1: `● RaceName               HH:MM:SS` (name dimmed, IGT in blue)
     /// Line 2: `  ZoneName                    X/Y` (X yellow→green on finish, /Y white)
     /// Line 3: `  tier X, previously Y   [☠]N`     (tier yellow, deaths white)
     fn render_player_status(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
@@ -200,7 +200,7 @@ impl RaceTracker {
             "Connecting...".to_string()
         };
         let truncated = truncate_to_width(ui, &name_text, name_max);
-        ui.text(&truncated);
+        ui.text_colored(self.cached_colors.text_disabled, &truncated);
 
         ui.same_line_with_pos(max_width - igt_width);
         ui.text_colored(blue, &igt_str);
