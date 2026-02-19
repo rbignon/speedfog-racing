@@ -7,6 +7,7 @@ import pytest
 from speedfog_racing.services.i18n import (
     TranslationData,
     _apply_french_contractions,
+    _format_display_name,
     _translate_name,
     _translate_text,
     load_translations,
@@ -128,6 +129,12 @@ class TestTranslateText:
         result = _translate_text("at the front of Margit's arena", "side_text", fr_data)
         assert result == "devant l'arène de Margit"
 
+    def test_pattern_plural_possessive(self, fr_data: TranslationData) -> None:
+        """Plural possessive {boss}' (no trailing s) matches the pattern."""
+        result = _translate_text("before Cleanrot Knights' arena", "side_text", fr_data)
+        assert "Chevaliers de la Noble putréfaction" in result
+        assert result.startswith("avant l'arène")
+
     def test_pattern_with_contraction(self, fr_data: TranslationData) -> None:
         """Pattern substitution followed by French grammar contraction."""
         result = _translate_text("at the front of Fire Giant's arena", "side_text", fr_data)
@@ -144,6 +151,41 @@ class TestTranslateText:
     def test_pattern_zone_exit(self, fr_data: TranslationData) -> None:
         result = _translate_text("Limgrave exit", "text", fr_data)
         assert result == "Sortie de Nécrolimbe"
+
+
+# ---------------------------------------------------------------------------
+# Display name formatting (article stripping)
+# ---------------------------------------------------------------------------
+
+
+class TestFormatDisplayName:
+    def test_strip_le(self) -> None:
+        assert _format_display_name("le Géant de feu") == "Géant de feu"
+
+    def test_strip_la(self) -> None:
+        assert _format_display_name("la Danseuse de Ranah") == "Danseuse de Ranah"
+
+    def test_strip_les(self) -> None:
+        assert (
+            _format_display_name("les Veilleurs de l'Arbre-Monde") == "Veilleurs de l'Arbre-Monde"
+        )
+
+    def test_strip_l_apostrophe(self) -> None:
+        assert _format_display_name("l'Esprit ancestral") == "Esprit ancestral"
+
+    def test_no_article(self) -> None:
+        assert _format_display_name("Malenia") == "Malenia"
+        assert _format_display_name("Nécrolimbe") == "Nécrolimbe"
+
+    def test_composite_name(self) -> None:
+        result = _format_display_name(
+            "les Faubourgs de la capitale - la Galerie scellée - le Seigneur d'onyx"
+        )
+        assert result == "Faubourgs de la capitale - Galerie scellée - Seigneur d'onyx"
+
+    def test_internal_articles_preserved(self) -> None:
+        """Only the leading article is stripped; internal 'de la', 'du' stay."""
+        assert _format_display_name("le Château de Voilorage") == "Château de Voilorage"
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +221,8 @@ class TestTranslateGraphJson:
         }
         result = translate_graph_json(graph, "fr")
         assert result is not graph  # Deep copy
-        assert result["nodes"]["stormveil_123"]["display_name"] == "le Château de Voilorage"
+        # Articles stripped + capitalized for display context
+        assert result["nodes"]["stormveil_123"]["display_name"] == "Château de Voilorage"
         assert result["nodes"]["limgrave_456"]["display_name"] == "Nécrolimbe"
 
     def test_translates_exit_text(self, fr_data: TranslationData) -> None:
@@ -279,7 +322,9 @@ class TestTranslateZoneUpdate:
         }
         result = translate_zone_update(msg, "fr")
         assert result is not msg
-        assert result["display_name"] == "le Géant de feu"
+        # display_name: article stripped + capitalized
+        assert result["display_name"] == "Géant de feu"
+        # to_name: keeps full article (used in text context)
         assert result["exits"][0]["to_name"] == "Nécrolimbe"
         assert result["exits"][1]["to_name"] == "le Château de Voilorage"
         # Text patterns

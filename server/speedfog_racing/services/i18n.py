@@ -133,6 +133,29 @@ def _translate_name(name: str, data: TranslationData) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Display name formatting (article stripping + capitalization)
+# ---------------------------------------------------------------------------
+
+# Leading articles stripped from display names to produce label-style text.
+# Matches: "le ", "la ", "les ", "l'" (case-insensitive).
+_LEADING_ARTICLE_RE = re.compile(r"^(?:les |le |la |l')", re.IGNORECASE)
+
+
+def _format_display_name(name: str) -> str:
+    """Strip leading French article and capitalize for standalone display.
+
+    Handles composite names (``"Region - Location - Boss"``) by processing
+    each segment independently.
+    """
+    if " - " in name:
+        return " - ".join(_format_display_name(p) for p in name.split(" - "))
+    stripped = _LEADING_ARTICLE_RE.sub("", name)
+    if stripped:
+        return stripped[0].upper() + stripped[1:]
+    return name
+
+
+# ---------------------------------------------------------------------------
 # French grammar contractions
 # ---------------------------------------------------------------------------
 
@@ -193,9 +216,10 @@ def _build_pattern_regex(en_template: str) -> re.Pattern[str]:
         escaped_marker = re.escape(marker)
         escaped = escaped.replace(escaped_marker, f"(?P<{ph}>.+?)")
 
-    # Handle possessive forms: {boss}'s and {boss}' in English
-    escaped = escaped.replace(r"\'s", "(?:'s|')")
-    escaped = escaped.replace(r"\'", "(?:'s|')")
+    # Handle possessive forms: {boss}'s and {boss}' in English.
+    # re.escape() in Python 3.7+ does NOT escape apostrophes, so the literal
+    # pattern contains "'s" (not "\'s") after escaping.
+    escaped = escaped.replace("'s", "(?:'s|')")
 
     regex = re.compile(f"^{escaped}$", re.IGNORECASE)
     _pattern_regex_cache[en_template] = regex
@@ -323,10 +347,10 @@ def _translate_graph_json_impl(graph_json: dict[str, Any], locale: str) -> dict[
         if not isinstance(node_data, dict):
             continue
 
-        # Translate display_name
+        # Translate display_name (strip article + capitalize for label context)
         display_name = node_data.get("display_name")
         if isinstance(display_name, str):
-            node_data["display_name"] = _translate_name(display_name, data)
+            node_data["display_name"] = _format_display_name(_translate_name(display_name, data))
 
         # Add translated display_type (e.g. "legacy_dungeon" → "donjon majeur").
         # Keep original "type" intact — the frontend uses it for rendering logic.
@@ -362,10 +386,10 @@ def translate_zone_update(zone_update: dict[str, Any], locale: str) -> dict[str,
     data = _translations[locale]
     translated = copy.copy(zone_update)
 
-    # Translate display_name
+    # Translate display_name (strip article + capitalize for label context)
     display_name = translated.get("display_name")
     if isinstance(display_name, str):
-        translated["display_name"] = _translate_name(display_name, data)
+        translated["display_name"] = _format_display_name(_translate_name(display_name, data))
 
     # Translate exits
     exits = translated.get("exits")
