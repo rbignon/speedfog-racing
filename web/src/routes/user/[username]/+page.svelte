@@ -416,23 +416,23 @@
 	}
 
 	.activity-badge.participant {
-		background: rgba(59, 130, 246, 0.15);
-		color: var(--color-blue, #3b82f6);
+		background: rgba(200, 164, 78, 0.15);
+		color: var(--color-gold);
 	}
 
 	.activity-badge.organizer {
-		background: rgba(168, 85, 247, 0.15);
-		color: var(--color-purple);
+		background: rgba(200, 164, 78, 0.15);
+		color: var(--color-gold);
 	}
 
 	.activity-badge.caster {
-		background: rgba(236, 72, 153, 0.15);
-		color: #ec4899;
+		background: rgba(200, 164, 78, 0.15);
+		color: var(--color-gold);
 	}
 
 	.activity-badge.training {
-		background: rgba(34, 197, 94, 0.15);
-		color: var(--color-success);
+		background: rgba(139, 92, 246, 0.15);
+		color: var(--color-purple);
 	}
 
 	.badge-row {

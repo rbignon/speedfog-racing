@@ -164,8 +164,8 @@ a:hover {
 
 /* Race status badges */
 .badge-setup {
-  background: rgba(16, 185, 129, 0.15);
-  color: var(--color-success);
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--color-info);
 }
 
 .badge-running {
@@ -174,8 +174,8 @@ a:hover {
 }
 
 .badge-finished {
-  background: rgba(59, 130, 246, 0.15);
-  color: var(--color-info);
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
 }
 
 /* Participant status badges */
@@ -195,8 +195,8 @@ a:hover {
 }
 
 .badge-abandoned {
-  background: rgba(220, 38, 38, 0.2);
-  color: var(--color-danger);
+  background: rgba(107, 114, 128, 0.2);
+  color: var(--color-text-disabled);
 }
 
 /* Training status badges */

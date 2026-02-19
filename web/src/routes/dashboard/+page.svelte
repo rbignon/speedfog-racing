@@ -583,13 +583,13 @@
 	}
 
 	.badge-race_organizer {
-		background: var(--color-info);
-		color: white;
+		background: var(--color-gold);
+		color: var(--color-bg);
 	}
 
 	.badge-race_caster {
-		background: var(--color-purple);
-		color: white;
+		background: var(--color-gold);
+		color: var(--color-bg);
 	}
 
 	.badge-training {

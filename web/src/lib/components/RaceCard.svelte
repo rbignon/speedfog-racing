@@ -172,15 +172,15 @@
 
 	/* Status left-border accents */
 	.border-setup {
-		border-left: 3px solid var(--color-success);
+		border-left: 3px solid var(--color-info);
 	}
 
 	.border-running {
-		border-left: 3px solid var(--color-gold);
+		border-left: 3px solid var(--color-danger);
 	}
 
 	.border-finished {
-		border-left: 3px solid var(--color-info);
+		border-left: 3px solid var(--color-success);
 	}
 
 	/* Header row */
