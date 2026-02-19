@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.discord import build_podium, notify_race_finished
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
 from speedfog_racing.services.grace_service import load_graces_mapping, resolve_zone_query
 from speedfog_racing.services.i18n import translate_zone_update
@@ -660,6 +661,20 @@ async def handle_finished(
         # receives status=finished + zone_history atomically in one message.
         await broadcast_race_state_update(participant.race_id, participant.race)
         await manager.broadcast_race_status(participant.race_id, "finished")
+
+        # Fire-and-forget Discord notification (public races only)
+        race_obj = participant.race
+        if race_obj.is_public:
+            task = asyncio.create_task(
+                notify_race_finished(
+                    race_name=race_obj.name,
+                    race_id=str(race_obj.id),
+                    pool_name=race_obj.seed.pool_name if race_obj.seed else None,
+                    participant_count=len(race_obj.participants),
+                    podium=build_podium(race_obj.participants),
+                )
+            )
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     await manager.broadcast_leaderboard(
         participant.race_id,

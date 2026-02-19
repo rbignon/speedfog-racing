@@ -25,7 +25,12 @@ from speedfog_racing.auth import (
     get_user_by_twitch_username,
 )
 from speedfog_racing.database import get_db
-from speedfog_racing.discord import notify_race_started
+from speedfog_racing.discord import (
+    build_podium,
+    notify_race_created,
+    notify_race_finished,
+    notify_race_started,
+)
 from speedfog_racing.models import (
     Caster,
     Invite,
@@ -271,6 +276,21 @@ async def create_race(
 
     # Reload race with relationships
     race = await _get_race_or_404(db, race.id, load_participants=True)
+
+    # Fire-and-forget Discord notification (public races only)
+    if race.is_public:
+        scheduled_str = f"<t:{int(race.scheduled_at.timestamp())}:F>" if race.scheduled_at else None
+        task = asyncio.create_task(
+            notify_race_created(
+                race_name=race.name,
+                race_id=str(race.id),
+                pool_name=race.seed.pool_name if race.seed else None,
+                organizer_name=race.organizer.twitch_display_name or race.organizer.twitch_username,
+                organizer_avatar_url=race.organizer.twitch_avatar_url,
+                scheduled_at=scheduled_str,
+            )
+        )
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     return race_response(race)
 
@@ -725,18 +745,19 @@ async def start_race(
     )
     await broadcast_race_state_update(race_id, race)
 
-    # Fire-and-forget Discord notification
-    task = asyncio.create_task(
-        notify_race_started(
-            race_name=race.name,
-            race_id=str(race.id),
-            pool_name=race.seed.pool_name if race.seed else None,
-            participant_count=len(race.participants),
-            organizer_name=race.organizer.twitch_display_name or race.organizer.twitch_username,
-            organizer_avatar_url=race.organizer.twitch_avatar_url,
+    # Fire-and-forget Discord notification (public races only)
+    if race.is_public:
+        task = asyncio.create_task(
+            notify_race_started(
+                race_name=race.name,
+                race_id=str(race.id),
+                pool_name=race.seed.pool_name if race.seed else None,
+                participant_count=len(race.participants),
+                organizer_name=race.organizer.twitch_display_name or race.organizer.twitch_username,
+                organizer_avatar_url=race.organizer.twitch_avatar_url,
+            )
         )
-    )
-    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     return race_response(race)
 
@@ -863,6 +884,19 @@ async def finish_race(
     # so spectators get everything atomically in one message.
     await broadcast_race_state_update(race_id, race)
     await manager.broadcast_race_status(race_id, "finished")
+
+    # Fire-and-forget Discord notification (public races only)
+    if race.is_public:
+        task = asyncio.create_task(
+            notify_race_finished(
+                race_name=race.name,
+                race_id=str(race.id),
+                pool_name=race.seed.pool_name if race.seed else None,
+                participant_count=len(race.participants),
+                podium=build_podium(race.participants),
+            )
+        )
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     return race_response(race)
 
