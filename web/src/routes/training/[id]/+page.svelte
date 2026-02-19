@@ -39,10 +39,26 @@
 
 	let graphJson = $derived(trainingStore.seed?.graph_json ?? session?.graph_json ?? null);
 
-	// Build a WsParticipant-compatible object for DAG components
+	// Build a WsParticipant-compatible object for DAG components.
+	// Prefer live WS data; fall back to static session data (abandoned/finished without WS).
 	let dagParticipants = $derived.by(() => {
-		if (!liveParticipant) return [];
-		return [liveParticipant];
+		if (liveParticipant) return [liveParticipant];
+		if (!session || !session.progress_nodes || session.progress_nodes.length === 0) return [];
+		return [
+			{
+				id: session.id,
+				twitch_username: session.user?.twitch_username ?? '',
+				twitch_display_name: session.user?.twitch_display_name ?? null,
+				status: session.status === 'active' ? 'playing' : session.status,
+				current_zone: session.progress_nodes[session.progress_nodes.length - 1]?.node_id ?? null,
+				current_layer: session.current_layer ?? 0,
+				igt_ms: session.igt_ms,
+				death_count: session.death_count,
+				color_index: 0,
+				mod_connected: false,
+				zone_history: session.progress_nodes
+			}
+		];
 	});
 
 	$effect(() => {
@@ -199,7 +215,7 @@
 		<!-- DAG section -->
 		{#if graphJson}
 			<section class="dag-section">
-				{#if status === 'finished' && dagParticipants.length > 0}
+				{#if (status === 'finished' || status === 'abandoned') && dagParticipants.length > 0}
 					<MetroDagResults {graphJson} participants={dagParticipants} />
 				{:else if status === 'active' && dagParticipants.length > 0}
 					<button class="btn btn-secondary btn-sm" onclick={() => (showFullDag = !showFullDag)}>
