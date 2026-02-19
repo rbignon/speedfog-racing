@@ -232,18 +232,24 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
     if not room:
         return
 
-    async def _send_to(i: int, conn: SpectatorConnection) -> int | None:
+    # Snapshot to avoid issues with concurrent list modification
+    snapshot = list(room.spectators)
+
+    async def _send_to(conn: SpectatorConnection) -> SpectatorConnection | None:
         try:
             await asyncio.wait_for(
                 send_race_state(conn.websocket, race, user_id=conn.user_id, locale=conn.locale),
                 timeout=SEND_TIMEOUT,
             )
         except Exception:
-            logger.warning("Error sending race state to spectator %d in race %s", i, race_id)
-            return i
+            logger.warning("Error sending race state to spectator in race %s", race_id)
+            return conn
         return None
 
-    results = await asyncio.gather(*(_send_to(i, conn) for i, conn in enumerate(room.spectators)))
-    # Remove failed connections in reverse order
-    for idx in sorted((r for r in results if r is not None), reverse=True):
-        room.spectators.pop(idx)
+    results = await asyncio.gather(*(_send_to(conn) for conn in snapshot))
+    for conn in results:
+        if conn is not None:
+            try:
+                room.spectators.remove(conn)
+            except ValueError:
+                pass  # Already removed by disconnect handler

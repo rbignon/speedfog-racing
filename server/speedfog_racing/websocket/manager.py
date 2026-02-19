@@ -56,6 +56,9 @@ class RaceRoom:
         if not self.mods:
             return
 
+        # Snapshot to avoid issues with concurrent dict modification
+        snapshot = dict(self.mods)
+
         async def _send(participant_id: uuid.UUID, conn: ModConnection) -> uuid.UUID | None:
             try:
                 await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
@@ -63,7 +66,7 @@ class RaceRoom:
                 return participant_id
             return None
 
-        results = await asyncio.gather(*(_send(pid, conn) for pid, conn in self.mods.items()))
+        results = await asyncio.gather(*(_send(pid, conn) for pid, conn in snapshot.items()))
         for pid in results:
             if pid is not None:
                 self.mods.pop(pid, None)
@@ -73,17 +76,26 @@ class RaceRoom:
         if not self.spectators:
             return
 
-        async def _send(conn: SpectatorConnection) -> bool:
+        # Snapshot to avoid issues with concurrent list modification.
+        # During the gather, connect_spectator/disconnect_spectator can
+        # modify self.spectators; index-based removal would then pop the
+        # wrong connection, silently orphaning innocent spectators.
+        snapshot = list(self.spectators)
+
+        async def _send(conn: SpectatorConnection) -> SpectatorConnection | None:
             try:
                 await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
             except Exception:
-                return True
-            return False
+                return conn
+            return None
 
-        results = await asyncio.gather(*(_send(c) for c in self.spectators))
-        for i in range(len(results) - 1, -1, -1):
-            if results[i]:
-                self.spectators.pop(i)
+        results = await asyncio.gather(*(_send(c) for c in snapshot))
+        for conn in results:
+            if conn is not None:
+                try:
+                    self.spectators.remove(conn)
+                except ValueError:
+                    pass  # Already removed by disconnect handler
 
     async def broadcast_to_all(self, message: str) -> None:
         """Send message to all connections (mods + spectators) concurrently."""
