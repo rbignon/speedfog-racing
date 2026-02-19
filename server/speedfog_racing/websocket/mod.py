@@ -292,15 +292,18 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
     race = participant.race
     seed = race.seed
 
-    # Extract event_ids from graph_json (event_map gates + finish_event)
+    # Extract event_ids and finish_event from graph_json
+    finish_event_id: int | None = None
     event_ids: list[int] = []
     if seed and seed.graph_json:
         event_map = seed.graph_json.get("event_map", {})
+        finish = seed.graph_json.get("finish_event")
+        if isinstance(finish, int):
+            finish_event_id = finish
         if event_map:
             event_ids = sorted(int(k) for k in event_map.keys())
-            finish = seed.graph_json.get("finish_event")
-            if isinstance(finish, int) and finish not in event_ids:
-                event_ids.append(finish)
+            if finish_event_id is not None and finish_event_id not in event_ids:
+                event_ids.append(finish_event_id)
 
     # Extract gem items from care_package for runtime spawning by the mod
     spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
@@ -328,6 +331,7 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
             total_layers=seed.total_layers if seed else 0,
             graph_json=None,  # Mods don't need the graph
             event_ids=event_ids,
+            finish_event=finish_event_id,
             spawn_items=spawn_items,
         ),
         participants=participant_infos,

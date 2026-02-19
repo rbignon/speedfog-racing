@@ -71,6 +71,9 @@ pub struct SeedInfo {
     pub total_layers: i32,
     #[serde(default)]
     pub event_ids: Vec<u32>,
+    /// Flag ID for the final boss kill — sent immediately (no loading screen).
+    #[serde(default)]
+    pub finish_event: Option<u32>,
     #[serde(default)]
     pub spawn_items: Vec<SpawnItem>,
     /// Seed ID — compared against config to detect stale seed packs after re-roll
@@ -388,6 +391,20 @@ mod tests {
         let json = r#"{"total_layers": 5}"#;
         let seed: SeedInfo = serde_json::from_str(json).unwrap();
         assert_eq!(seed.seed_id, None);
+    }
+
+    #[test]
+    fn test_seed_info_with_finish_event() {
+        let json = r#"{"total_layers":5,"event_ids":[100,101],"finish_event":102}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(seed.finish_event, Some(102));
+    }
+
+    #[test]
+    fn test_seed_info_without_finish_event() {
+        let json = r#"{"total_layers":5}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(seed.finish_event, None);
     }
 
     #[test]

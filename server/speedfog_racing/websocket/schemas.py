@@ -104,6 +104,7 @@ class SeedInfo(BaseModel):
     total_nodes: int | None = None
     total_paths: int | None = None
     event_ids: list[int] = Field(default_factory=list)
+    finish_event: int | None = None
     spawn_items: list[SpawnItem] = Field(default_factory=list)
 
 
