@@ -220,7 +220,7 @@ impl RaceTracker {
         let zone_text = if let Some(z) = zone {
             format!("  {}", z.display_name)
         } else {
-            "  --".to_string()
+            String::new()
         };
         let zone_max = max_width - progress_width - gap;
         let zone_truncated = truncate_to_width(ui, &zone_text, zone_max);
@@ -251,12 +251,12 @@ impl RaceTracker {
                     format!("  tier {}", t)
                 }
             } else {
-                "  --".to_string()
+                String::new()
             }
         } else if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
             format!("  tier {}", tier)
         } else {
-            "  --".to_string()
+            String::new()
         };
         let has_tier = zone.is_some_and(|z| z.tier.is_some())
             || me.is_some_and(|p| p.current_layer_tier.is_some());
