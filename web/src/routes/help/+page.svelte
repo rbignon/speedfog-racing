@@ -12,7 +12,7 @@
 	<nav class="toc">
 		<a href="#game-rules" class="toc-card">
 			<strong>Game Rules</strong>
-			<span>Care package, items, bosses, scaling, victory</span>
+			<span>Equipment, route map, zones, bosses, tips</span>
 		</a>
 		<a href="#playing" class="toc-card">
 			<strong>Playing a Race</strong>
@@ -28,7 +28,7 @@
 		</a>
 		<a href="#casting" class="toc-card">
 			<strong>Casting &amp; Spectating</strong>
-			<span>Live route map, caster role</span>
+			<span>Live route map, caster role, OBS overlays</span>
 		</a>
 		<a href="https://discord.gg/Qmw67J3mR9" class="toc-card toc-card-discord" target="_blank" rel="noopener noreferrer">
 			<strong>Discord</strong>
@@ -42,79 +42,74 @@
 
 		<h3>Starting the Run</h3>
 		<p>
-			You spawn at the <strong>Chapel of Anticipation</strong>. From there, you walk through
-			your first fog gate. The <strong>Roundtable Hold</strong> is unlocked immediately — you
-			can teleport there from the start.
+			You spawn at the <strong>Chapel of Anticipation</strong>. Your first two exits are the
+			fog gate in front of the <strong>Grafted Scion</strong> and the fog on the
+			<strong>Roundtable Hold balcony</strong>. The Roundtable Hold is unlocked immediately —
+			you can teleport there from the start.
 		</p>
 
-		<h3>Care Package</h3>
+		<h3>Starting Equipment</h3>
 		<p>
-			At the beginning of each run, you receive a randomized starting build: weapons, shields,
-			catalysts, armor, talismans, sorceries, incantations, and crystal tears. The care package
-			is determined by the seed — everyone in the same race gets the exact same build.
-		</p>
-		<p>
-			Weapons come pre-upgraded (typically +12 standard / +5 somber). You also receive all
-			whetblades so every weapon affinity is available from the start.
-		</p>
-
-		<h3>Key Items</h3>
-		<p>
-			To prevent softlocks, all key items are given at the start of the run:
+			The seed determines a care package — <strong>every player gets the same build</strong>:
 		</p>
 		<ul>
-			<li>Academy Glintstone Key, Drawing-Room Key, all DLC access keys</li>
-			<li>All Great Runes (restored, equippable at graces)</li>
-			<li>3 extra Talisman Pouches (4 talisman slots total)</li>
-			<li>Lantern (hands-free light)</li>
-			<li>Larval Tears for respec at any Site of Grace</li>
+			<li><strong>Randomized gear</strong>: weapons (+0), shields, catalysts, armor, talismans,
+				sorceries, incantations, crystal tears, spirit ashes</li>
+			<li><strong>All whetblades</strong> for every weapon affinity</li>
+			<li><strong>All key items</strong>: Academy Glintstone Key, Drawing-Room Key, DLC keys,
+				all Great Runes (restored), 3 Talisman Pouches (4 slots), Lantern, Torrent</li>
+			<li><strong>Larval Tears</strong> — respec at any Site of Grace</li>
+			<li><strong>~100,000 runes</strong>, Golden Seeds, Sacred Tears</li>
+			<li><strong>All smithing stones</strong> at the Roundtable Hold shop (unlimited stock)</li>
 		</ul>
 
-		<h3>Starting Resources</h3>
+		<h3>Route Map</h3>
+		<p>
+			The route map is organized in <strong>layers of increasing difficulty</strong>. Every
+			parallel path has the <strong>same length and difficulty</strong> — only the specific
+			zones differ.
+		</p>
+		<p>
+			Fog gates are <strong>one-way</strong> — once you walk through, you can't go back.
+			Fast travel to the previous grace if you need to return.
+		</p>
+
+		<h3>Zones</h3>
+		<p>
+			Zones include mini dungeons, legacy dungeons, and boss arenas. Enemy difficulty
+			<strong>scales with zone depth</strong> — basic enemies are randomized between zones of
+			similar difficulty. Item locations are <strong>randomized</strong> too: stat requirements
+			are removed, so you can use <strong>any weapon regardless of stats</strong>. Weapons
+			found in the world are automatically upgraded to match your progression.
+		</p>
+
+		<h3>Bosses</h3>
+		<p>
+			Bosses are <strong>not randomized</strong> — they always stay in their original arena.
+			The route map determines which boss you face, but the fight itself is vanilla. This
+			avoids double randomization (the route already shuffles encounters), keeps bosses in
+			their intended environment, and prevents bugs that occur when bosses are placed outside
+			their arena.
+		</p>
+		<p>
+			Bosses drop <strong>weapons, talismans, Golden Seeds, and Sacred Tears</strong>.
+		</p>
+
+		<h3>Victory</h3>
+		<p>
+			The race ends when you <strong>defeat the final boss</strong>. The final boss varies with
+			each seed — it can be <strong>any major boss</strong> (Radagon, Malenia, Mohg, Radahn...).
+			Your finish time is recorded via <strong>in-game timer (IGT)</strong>.
+		</p>
+
+		<h3>Tips</h3>
 		<ul>
-			<li>~100,000 runes (as Lord's Rune consumables)</li>
-			<li>Golden Seeds and Sacred Tears to upgrade your flasks</li>
+			<li><strong>Kalé</strong> has moved to the Roundtable Hold.</li>
+			<li><strong>Merchants</strong> from the open world are relocated inside the zones — keep
+				an eye out, they can have useful gear.</li>
+			<li>After defeating <strong>Radahn</strong>, make sure to activate the grace or you
+				won't be able to progress to the next zone.</li>
 		</ul>
-
-		<h3>Smithing Stones</h3>
-		<p>
-			All smithing stones (normal and somber, every tier) are available for purchase at the
-			Roundtable Hold shop with unlimited stock. Upgrading costs only one stone per level.
-		</p>
-
-		<h3>Route Map Structure</h3>
-		<p>
-			The route map is organized in layers of increasing difficulty. As you progress deeper
-			through the fog gates, you encounter harder zones and tougher enemies. Every parallel
-			path through the map has the same structure: same length, same difficulty.
-		</p>
-		<p>
-			Zones include mini dungeons (caves, catacombs, tunnels), legacy dungeons (Stormveil,
-			Raya Lucaria...), boss arenas, and major boss encounters.
-		</p>
-
-		<h3>Enemies and Bosses</h3>
-		<p>
-			Enemy difficulty scales with the depth of each zone in the route map.
-			Basic enemies and wildlife are randomized between zones of similar difficulty,
-			but <strong>bosses always stay in their original arena</strong> — the route map
-			determines which boss you face, but once you step through the fog gate into a boss
-			arena, the fight is the vanilla encounter.
-		</p>
-
-		<h3>Items</h3>
-		<p>
-			Item locations are randomized. Stat requirements are removed — you can use any weapon
-			regardless of your stats. Weapons found in the world are automatically upgraded to
-			match your current level.
-		</p>
-
-		<h3>Victory Condition</h3>
-		<p>
-			The race ends when you defeat the final boss. The final boss varies with each seed —
-			it can be any major boss in the game (Radagon, Malenia, Mohg, Radahn, etc.). The
-			in-game timer (IGT) records your finish time.
-		</p>
 	</section>
 
 	<!-- PLAYING -->
@@ -125,32 +120,35 @@
 		<ul>
 			<li>Elden Ring (PC, latest version)</li>
 			<li>A Twitch account (for authentication)</li>
-			<li>An invitation from a race organizer</li>
+			<li>An invite link from the race organizer</li>
 		</ul>
 
 		<h3>Joining a Race</h3>
 		<ol>
-			<li>Log in with Twitch on the SpeedFog Racing website.</li>
-			<li>The organizer adds you to the race.</li>
-			<li>From the race page, download your seed pack — a personalized zip file with
+			<li><strong>Log in</strong> with Twitch on the SpeedFog Racing website.</li>
+			<li>The organizer sends you an <strong>invite link</strong> — click it to join the
+				race.</li>
+			<li>From the race page, <strong>download your seed pack</strong> — a zip file with
 				everything you need.</li>
-			<li>Extract the seed pack into your Elden Ring mod folder.</li>
-			<li>Launch the game. The mod connects automatically to the race server.</li>
+			<li><strong>Extract</strong> the seed pack into your Elden Ring mod folder.</li>
+			<li><strong>Launch the game</strong>. The mod connects automatically to the race
+				server.</li>
 		</ol>
 
 		<h3>During the Race</h3>
 		<p>
-			Once the organizer starts the race, create a new character and begin. The in-game
-			overlay shows:
+			Once the organizer starts the race, create a new character and begin. The
+			<strong>in-game overlay</strong> shows:
 		</p>
 		<ul>
-			<li>Race name and your in-game time (IGT)</li>
-			<li>Your current progression tier and death count</li>
-			<li>A live leaderboard with all participants</li>
+			<li>Race name and your <strong>in-game time (IGT)</strong></li>
+			<li>Your current <strong>zone name</strong> and <strong>available exits</strong></li>
+			<li>Your <strong>progression tier</strong> and <strong>death count</strong></li>
+			<li>A <strong>live leaderboard</strong> with all participants</li>
 		</ul>
 		<p>
-			Your progress is tracked automatically as you walk through fog gates. No manual
-			action is needed — just play.
+			Your progress is tracked <strong>automatically</strong> as you walk through fog gates —
+			no manual action needed, just play.
 		</p>
 	</section>
 
@@ -158,18 +156,18 @@
 	<section class="section" id="training">
 		<h2>Training Mode</h2>
 		<p>
-			Training mode lets you practice solo runs on fresh seeds without joining a race.
-			No account is required — anyone can start a training session.
+			Training mode lets you <strong>practice solo</strong> on fresh seeds without joining a
+			race. <strong>No account required</strong> — anyone can start a training session.
 		</p>
 		<ol>
 			<li>Go to the <a href="/training">Training</a> page.</li>
-			<li>Pick a pool (different durations and settings are available).</li>
-			<li>Download the seed pack and install it like a regular race.</li>
-			<li>Play at your own pace — the route map is visible after you start.</li>
+			<li>Pick a <strong>pool</strong> (different durations and difficulty levels).</li>
+			<li><strong>Download</strong> the seed pack and install it like a regular race.</li>
+			<li>Play at your own pace — the <strong>route map</strong> is visible after you start.</li>
 		</ol>
 		<p>
-			Training sessions are a great way to get familiar with the format, the care package
-			system, and the fog gate navigation before entering a competitive race.
+			Your sessions are saved — you can review your <strong>progress history</strong>, including
+			times, deaths, and route maps from previous runs.
 		</p>
 	</section>
 
@@ -180,20 +178,19 @@
 		<h3>Creating a Race</h3>
 		<ol>
 			<li>Click <strong>Create Race</strong> from the navigation bar.</li>
-			<li>Choose a name, select a seed pool, and configure options.</li>
-			<li>The race starts in <strong>Draft</strong> status — only you can see it.</li>
+			<li>Choose a name, select a <strong>seed pool</strong>, and configure options:
+				<strong>participate</strong> in the race or organize only, set a
+				<strong>scheduled time</strong>, choose <strong>public or private</strong>
+				visibility.</li>
+			<li>The race is created in <strong>Setup</strong> status — invite players and get
+				ready.</li>
 		</ol>
 
 		<h3>Race Lifecycle</h3>
 		<div class="lifecycle">
 			<div class="lifecycle-step">
-				<strong>Draft</strong>
-				<p>Add or remove participants and casters. Configure settings.</p>
-			</div>
-			<span class="lifecycle-arrow">&rarr;</span>
-			<div class="lifecycle-step">
-				<strong>Open</strong>
-				<p>Participants can download their seed packs and connect.</p>
+				<strong>Setup</strong>
+				<p>Invite participants and casters. Configure settings. Players download seed packs.</p>
 			</div>
 			<span class="lifecycle-arrow">&rarr;</span>
 			<div class="lifecycle-step">
@@ -206,12 +203,17 @@
 				<p>Results and full route map revealed to everyone.</p>
 			</div>
 		</div>
+		<p>
+			When everyone is ready, click <strong>Start Race</strong> — all connected players are
+			notified in-game. During setup, you can also <strong>re-roll the seed</strong> if
+			needed — participants will need to re-download their seed pack.
+		</p>
 
 		<h3>Seed Pools</h3>
 		<p>
-			Seeds are pre-generated in pools with different settings. Each pool has a target
-			duration and difficulty level. When you create a race, you pick a pool — the
-			server assigns a fresh seed from that pool.
+			Seeds are pre-generated in pools with different <strong>target durations</strong> and
+			difficulty levels. When you create a race, you pick a pool — the server assigns a fresh
+			seed from that pool.
 		</p>
 	</section>
 
@@ -221,20 +223,26 @@
 
 		<h3>Spectators</h3>
 		<p>
-			Anyone can open a race page and watch the race live. The route map updates in
-			real time, showing each player's current position and progression.
+			Anyone can open a race page and watch live. During setup, the route map is
+			<strong>blurred</strong> to avoid spoilers. Once the race is running, spectators see the
+			<strong>full route map</strong> with real-time player positions and progression.
 		</p>
 
 		<h3>Casters</h3>
 		<p>
-			Casters are a special role assigned by the organizer. Unlike regular spectators,
-			casters have full visibility of the route map during the race — it is not blurred
-			for them. This is designed for streamers who want to commentate and analyze
-			the race live.
+			Casters are a special role assigned by the organizer. Unlike spectators, casters have
+			<strong>full visibility of the route map at all times</strong> — including during setup.
+			This is designed for streamers who want to prepare and commentate the race live.
 		</p>
 		<p>
-			If you are casting, ask the race organizer to add you as a caster before the race
-			starts.
+			If you're casting, ask the organizer to add you as a caster before the race starts.
+		</p>
+
+		<h3>OBS Overlays</h3>
+		<p>
+			The race page provides <strong>Browser Source URLs</strong> for OBS Studio — a
+			<strong>route map overlay</strong> and a <strong>leaderboard overlay</strong>. Click
+			"OBS Overlays" on the race page to get the URLs and recommended sizes.
 		</p>
 	</section>
 </main>
@@ -359,7 +367,7 @@
 	/* Lifecycle */
 	.lifecycle {
 		display: flex;
-		align-items: flex-start;
+		align-items: stretch;
 		gap: 0.5rem;
 		flex-wrap: wrap;
 		margin: 1rem 0;
