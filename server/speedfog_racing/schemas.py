@@ -190,6 +190,7 @@ class RaceResponse(BaseModel):
     created_at: datetime
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
+    seeds_released_at: datetime | None = None
     participant_count: int
     participant_previews: list[UserResponse] = []
     seed_total_layers: int | None = None
@@ -239,6 +240,7 @@ class RaceDetailResponse(BaseModel):
     created_at: datetime
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
+    seeds_released_at: datetime | None = None
     participant_count: int
     seed_number: str | None = None
     seed_total_layers: int | None

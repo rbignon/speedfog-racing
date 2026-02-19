@@ -125,6 +125,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         created_at=race.created_at,
         scheduled_at=race.scheduled_at,
         started_at=race.started_at,
+        seeds_released_at=race.seeds_released_at,
         participant_count=len(race.participants),
         seed_number=race.seed.seed_number if race.seed else None,
         seed_total_layers=race.seed.total_layers if race.seed else None,
