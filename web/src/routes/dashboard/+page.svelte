@@ -273,20 +273,20 @@
 									<span class="badge badge-training-ghost">Training</span>
 								</div>
 							</div>
-							<div class="card-stats">
-								<span class="stat">
-									<span class="stat-label">IGT</span>
-									<span class="stat-value">{formatIgt(session.igt_ms)}</span>
+							<div class="training-stats">
+								<span class="training-stat">
+									<span class="training-stat-label">IGT</span>
+									<span class="training-stat-value">{formatIgt(session.igt_ms)}</span>
 								</span>
-								<span class="stat">
-									<span class="stat-label">Deaths</span>
-									<span class="stat-value">{session.death_count}</span>
+								<span class="training-stat">
+									<span class="training-stat-label">Deaths</span>
+									<span class="training-stat-value">{session.death_count}</span>
 								</span>
 							</div>
 							{#if session.current_layer != null && session.seed_total_layers}
 								<div class="progress-bar">
 									<div
-										class="progress-fill"
+										class="progress-fill progress-fill-training"
 										style="width: {(session.current_layer / session.seed_total_layers) * 100}%"
 									></div>
 								</div>
@@ -628,19 +628,19 @@
 	}
 
 	/* Training stats */
-	.card-stats {
+	.training-stats {
 		display: flex;
 		gap: 1.5rem;
 		margin-bottom: 0.5rem;
 	}
 
-	.stat {
+	.training-stat {
 		display: flex;
 		flex-direction: column;
 		gap: 0.1rem;
 	}
 
-	.stat-label {
+	.training-stat-label {
 		font-size: var(--font-size-xs);
 		color: var(--color-text-secondary);
 		text-transform: uppercase;
@@ -648,7 +648,7 @@
 		font-weight: 500;
 	}
 
-	.stat-value {
+	.training-stat-value {
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 	}
@@ -666,6 +666,10 @@
 		background: var(--color-gold);
 		border-radius: 2px;
 		transition: width 0.3s ease;
+	}
+
+	.progress-fill-training {
+		background: var(--color-purple);
 	}
 
 	/* Recent Activity */
