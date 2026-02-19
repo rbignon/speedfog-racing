@@ -169,32 +169,6 @@
 			{/if}
 		</div>
 
-		<!-- DAG section -->
-		{#if graphJson}
-			<section class="dag-section">
-				{#if status === 'finished' && dagParticipants.length > 0}
-					<MetroDagResults {graphJson} participants={dagParticipants} />
-				{:else if status === 'active' && dagParticipants.length > 0}
-					<button class="btn btn-secondary btn-sm" onclick={() => (showFullDag = !showFullDag)}>
-						{showFullDag ? 'Hide Spoiler' : 'Show Spoiler'}
-					</button>
-					<div class="dag-wrapper">
-						{#if showFullDag}
-							<MetroDagResults {graphJson} participants={dagParticipants} />
-						{:else}
-							<MetroDagProgressive
-								{graphJson}
-								participants={dagParticipants}
-								myParticipantId={liveParticipant?.id ?? ''}
-							/>
-						{/if}
-					</div>
-				{:else}
-					<MetroDag {graphJson} />
-				{/if}
-			</section>
-		{/if}
-
 		<!-- Actions (owner only) -->
 		{#if isOwner}
 			<div class="actions">
@@ -220,6 +194,32 @@
 					{/if}
 				{/if}
 			</div>
+		{/if}
+
+		<!-- DAG section -->
+		{#if graphJson}
+			<section class="dag-section">
+				{#if status === 'finished' && dagParticipants.length > 0}
+					<MetroDagResults {graphJson} participants={dagParticipants} />
+				{:else if status === 'active' && dagParticipants.length > 0}
+					<button class="btn btn-secondary btn-sm" onclick={() => (showFullDag = !showFullDag)}>
+						{showFullDag ? 'Hide Spoiler' : 'Show Spoiler'}
+					</button>
+					<div class="dag-wrapper">
+						{#if showFullDag}
+							<MetroDagResults {graphJson} participants={dagParticipants} />
+						{:else}
+							<MetroDagProgressive
+								{graphJson}
+								participants={dagParticipants}
+								myParticipantId={liveParticipant?.id ?? ''}
+							/>
+						{/if}
+					</div>
+				{:else}
+					<MetroDag {graphJson} />
+				{/if}
+			</section>
 		{/if}
 	{/if}
 </main>
@@ -402,6 +402,7 @@
 		gap: 1rem;
 		align-items: center;
 		flex-wrap: wrap;
+		margin-bottom: 1rem;
 	}
 
 	.confirm-group {
