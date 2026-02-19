@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { auth } from '$lib/stores/auth.svelte';
 	import { raceStore } from '$lib/stores/race.svelte';
 	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
 	import LeaderboardOverlay from '$lib/components/LeaderboardOverlay.svelte';
@@ -11,6 +12,8 @@
 	let mode = $derived<'running' | 'finished'>(raceStatus === 'finished' ? 'finished' : 'running');
 
 	$effect(() => {
+		if (!auth.initialized) return;
+
 		raceStore.connect(data.race.id, getEffectiveLocale());
 		return () => {
 			raceStore.disconnect();

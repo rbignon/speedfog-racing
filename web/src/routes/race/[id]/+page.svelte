@@ -96,6 +96,8 @@
 	});
 
 	$effect(() => {
+		if (!auth.initialized) return;
+
 		raceStore.connect(initialRace.id, getEffectiveLocale());
 
 		return () => {

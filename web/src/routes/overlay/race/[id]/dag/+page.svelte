@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { auth } from '$lib/stores/auth.svelte';
 	import { raceStore } from '$lib/stores/race.svelte';
 	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
 	import { MetroDagBlurred, MetroDagResults } from '$lib/dag';
@@ -12,6 +13,8 @@
 	let totalPaths = $derived(liveSeed?.total_paths ?? data.race.seed_total_paths);
 
 	$effect(() => {
+		if (!auth.initialized) return;
+
 		raceStore.connect(data.race.id, getEffectiveLocale());
 		return () => {
 			raceStore.disconnect();
