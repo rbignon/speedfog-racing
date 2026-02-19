@@ -3,6 +3,7 @@
 from speedfog_racing.services.grace_service import (
     load_graces_mapping,
     resolve_grace_to_node,
+    resolve_zone_query,
 )
 
 # --- load_graces_mapping ---
@@ -82,3 +83,65 @@ def test_resolve_grace_to_node_zero():
     mapping = load_graces_mapping()
     node_id = resolve_grace_to_node(0, SAMPLE_GRAPH, mapping)
     assert node_id is None
+
+
+# --- resolve_zone_query ---
+
+
+def test_resolve_zone_query_grace_primary():
+    """grace_entity_id present → uses grace lookup (highest priority)."""
+    mapping = load_graces_mapping()
+    node_id = resolve_zone_query(SAMPLE_GRAPH, mapping, grace_entity_id=10002950)
+    assert node_id == "stormveil_godrick_48fd"
+
+
+def test_resolve_zone_query_grace_priority_over_map():
+    """grace_entity_id takes priority even when map_id is also provided."""
+    mapping = load_graces_mapping()
+    node_id = resolve_zone_query(
+        SAMPLE_GRAPH, mapping, grace_entity_id=10002950, map_id="m60_44_36_00"
+    )
+    assert node_id == "stormveil_godrick_48fd"
+
+
+def test_resolve_zone_query_map_id_unambiguous():
+    """map_id resolves when exactly one graph node matches."""
+    # m12_04_00_00 maps to only ainsel_boss in graces.json
+    graph = {
+        "nodes": {
+            "ainsel_boss_node": {
+                "display_name": "Astel, Naturalborn of the Void",
+                "zones": ["ainsel_boss"],
+                "layer": 1,
+            },
+        }
+    }
+    mapping = load_graces_mapping()
+    node_id = resolve_zone_query(graph, mapping, map_id="m12_04_00_00")
+    assert node_id == "ainsel_boss_node"
+
+
+def test_resolve_zone_query_map_id_ambiguous():
+    """map_id maps to multiple graph nodes → returns None."""
+    # m10_00_00_00 has graces in stormveil_godrick, stormveil_margit, chapel_start
+    graph = {
+        "nodes": {
+            "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
+            "node_b": {"zones": ["chapel_start"], "layer": 0},
+        }
+    }
+    mapping = load_graces_mapping()
+    node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00")
+    assert node_id is None
+
+
+def test_resolve_zone_query_no_data():
+    """No grace, no map → returns None."""
+    mapping = load_graces_mapping()
+    assert resolve_zone_query(SAMPLE_GRAPH, mapping) is None
+
+
+def test_resolve_zone_query_unknown_map():
+    """map_id not in graces.json → returns None."""
+    mapping = load_graces_mapping()
+    assert resolve_zone_query(SAMPLE_GRAPH, mapping, map_id="m99_99_99_99") is None

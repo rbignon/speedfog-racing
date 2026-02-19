@@ -54,3 +54,50 @@ def resolve_grace_to_node(
                 return str(node_id)
 
     return None
+
+
+def resolve_zone_query(
+    graph_json: dict[str, Any],
+    graces_mapping: dict[str, dict[str, Any]],
+    *,
+    grace_entity_id: int | None = None,
+    map_id: str | None = None,
+    position: tuple[float, float, float] | None = None,
+    play_region_id: int | None = None,
+) -> str | None:
+    """Resolve a zone query to a graph node_id.
+
+    Strategies (in order):
+    1. Grace lookup (grace_entity_id → zone_id → node)
+    2. Map-based lookup (map_id → graces.json reverse index → filter graph nodes)
+    3. None (ambiguous or no data)
+
+    position and play_region_id are accepted for future disambiguation but unused.
+    """
+    # Strategy 1: grace lookup (highest confidence)
+    if grace_entity_id is not None and grace_entity_id != 0:
+        node_id = resolve_grace_to_node(grace_entity_id, graph_json, graces_mapping)
+        if node_id is not None:
+            return node_id
+
+    # Strategy 2: map_id reverse index
+    if map_id is not None:
+        zone_ids_for_map: set[str] = set()
+        for entry in graces_mapping.values():
+            if entry.get("map_id") == map_id:
+                zid = entry.get("zone_id")
+                if zid:
+                    zone_ids_for_map.add(zid)
+
+        nodes = graph_json.get("nodes", {})
+        matching: list[str] = []
+        for nid, node_data in nodes.items():
+            if isinstance(node_data, dict):
+                zones = node_data.get("zones", [])
+                if any(z in zone_ids_for_map for z in zones):
+                    matching.append(nid)
+
+        if len(matching) == 1:
+            return matching[0]
+
+    return None
