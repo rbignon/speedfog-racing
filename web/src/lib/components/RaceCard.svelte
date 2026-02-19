@@ -2,6 +2,7 @@
 	import type { Race, RaceStatus } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { timeAgo, formatScheduledTime } from '$lib/utils/time';
+	import { statusLabel } from '$lib/format';
 	import LiveIndicator from './LiveIndicator.svelte';
 
 	let {
@@ -65,7 +66,7 @@
 			{#if role}
 				<span class="badge badge-role">{role}</span>
 			{/if}
-			<span class="badge badge-{race.status}">{race.status}</span>
+			<span class="badge badge-{race.status}">{statusLabel(race.status)}</span>
 		</div>
 	</div>
 
