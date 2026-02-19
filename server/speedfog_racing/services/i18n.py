@@ -228,6 +228,19 @@ def _translate_text(
     return text
 
 
+def _translate_exit_text(text: str, data: TranslationData) -> str:
+    """Translate exit text, falling back to side_text patterns.
+
+    ``output.py`` puts side_text content into the ``"text"`` field of
+    graph.json exits (there is no separate side_text field), so we try
+    text overrides/patterns first, then side_text ones.
+    """
+    result = _translate_text(text, "text", data)
+    if result == text:
+        result = _translate_text(text, "side_text", data)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Graph JSON translation (cached)
 # ---------------------------------------------------------------------------
@@ -277,7 +290,7 @@ def translate_graph_json(graph_json: dict[str, Any], locale: str) -> dict[str, A
 
 
 def _translate_graph_json_impl(graph_json: dict[str, Any], locale: str) -> dict[str, Any]:
-    """Deep-copy graph_json and translate node display_name + exits."""
+    """Deep-copy graph_json and translate node display_name, type, and exits."""
     data = _translations.get(locale)
     if data is None:
         return graph_json
@@ -294,17 +307,19 @@ def _translate_graph_json_impl(graph_json: dict[str, Any], locale: str) -> dict[
         if isinstance(display_name, str):
             node_data["display_name"] = _translate_name(display_name, data)
 
-        # Translate exits
+        # Translate node type (e.g. "legacy_dungeon" → "donjon majeur")
+        node_type = node_data.get("type")
+        if isinstance(node_type, str) and node_type in data.types:
+            node_data["type"] = data.types[node_type]
+
+        # Translate exits (text field may contain side_text content)
         exits = node_data.get("exits", [])
         for exit_data in exits:
             if not isinstance(exit_data, dict):
                 continue
             text = exit_data.get("text")
             if isinstance(text, str):
-                exit_data["text"] = _translate_text(text, "text", data)
-            side_text = exit_data.get("side_text")
-            if isinstance(side_text, str):
-                exit_data["side_text"] = _translate_text(side_text, "side_text", data)
+                exit_data["text"] = _translate_exit_text(text, data)
 
     return translated
 
@@ -341,7 +356,7 @@ def translate_zone_update(zone_update: dict[str, Any], locale: str) -> dict[str,
             ex = dict(exit_data)
             text = ex.get("text")
             if isinstance(text, str):
-                ex["text"] = _translate_text(text, "text", data)
+                ex["text"] = _translate_exit_text(text, data)
             to_name = ex.get("to_name")
             if isinstance(to_name, str):
                 ex["to_name"] = _translate_name(to_name, data)

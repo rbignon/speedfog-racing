@@ -187,7 +187,36 @@ class TestTranslateGraphJson:
         assert exits[0]["text"] == "Margit (devant)"
         assert exits[1]["text"] == "Margit (derrière)"
 
-    def test_original_not_mutated(self, fr_data: TranslationData) -> None:
+    def test_exit_text_falls_back_to_side_text(self, fr_data: TranslationData) -> None:
+        """Exit text with side_text content (output.py puts side_text into text field)."""
+        graph = {
+            "nodes": {
+                "boss_abc": {
+                    "display_name": "Margit",
+                    "exits": [
+                        {"to": "x", "text": "at the front of Margit's arena"},
+                    ],
+                }
+            }
+        }
+        result = translate_graph_json(graph, "fr")
+        exit_text = result["nodes"]["boss_abc"]["exits"][0]["text"]
+        assert exit_text == "devant l'arène de Margit"
+
+    def test_translates_node_type(self, fr_data: TranslationData) -> None:
+        """Node type should be translated from [types] section."""
+        graph = {
+            "nodes": {
+                "a": {
+                    "display_name": "Limgrave",
+                    "type": "legacy_dungeon",
+                }
+            }
+        }
+        result = translate_graph_json(graph, "fr")
+        assert result["nodes"]["a"]["type"] == "donjon majeur"
+
+    def test_original_not_mutated_graph(self, fr_data: TranslationData) -> None:
         graph = {
             "nodes": {
                 "a": {
@@ -241,6 +270,23 @@ class TestTranslateZoneUpdate:
         # Text patterns
         assert "(avant gauche)" in result["exits"][0]["text"]
         assert "(avant droit)" in result["exits"][1]["text"]
+
+    def test_exit_text_falls_back_to_side_text(self, fr_data: TranslationData) -> None:
+        """Zone update exits also fall back to side_text patterns."""
+        msg = {
+            "type": "zone_update",
+            "node_id": "boss_123",
+            "display_name": "Margit",
+            "exits": [
+                {
+                    "text": "at the front of Margit's arena",
+                    "to_name": "Limgrave",
+                    "discovered": True,
+                },
+            ],
+        }
+        result = translate_zone_update(msg, "fr")
+        assert result["exits"][0]["text"] == "devant l'arène de Margit"
 
     def test_original_not_mutated(self, fr_data: TranslationData) -> None:
         msg = {
