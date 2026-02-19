@@ -73,6 +73,9 @@
 	let totalLayers = $derived(liveSeed?.total_layers ?? initialRace.seed_total_layers);
 	let totalNodes = $derived(liveSeed?.total_nodes ?? initialRace.seed_total_nodes);
 	let totalPaths = $derived(liveSeed?.total_paths ?? initialRace.seed_total_paths);
+	let seedsReleased = $derived(
+		(liveRace?.seeds_released_at ?? initialRace.seeds_released_at) !== null
+	);
 
 	// Build node ID → display name map for leaderboard zone labels
 	let zoneNames: Map<string, string> | null = $derived.by(() => {
@@ -334,7 +337,7 @@
 							canRemove={isOrganizer && mp.user.id !== initialRace.organizer.id}
 							onRemove={() =>
 								handleRemoveParticipant(mp.id, mp.user.twitch_username)}
-							canDownload={initialRace.seeds_released_at !== null}
+							canDownload={seedsReleased}
 							{downloading}
 							onDownload={handleDownload}
 							{downloadError}
@@ -371,7 +374,7 @@
 				{/if}
 			</div>
 
-			{#if myParticipant && !initialRace.seeds_released_at}
+			{#if myParticipant && !seedsReleased}
 				<div class="waiting-seeds">
 					<p>Waiting for seeds to be released...</p>
 				</div>
@@ -551,7 +554,7 @@
 			/>
 		{/if}
 
-		{#if myParticipant && initialRace.seeds_released_at}
+		{#if myParticipant && seedsReleased}
 			<div class="download-section">
 				<button class="btn btn-secondary" onclick={handleDownload} disabled={downloading}>
 					{downloading ? 'Preparing...' : 'Download Race Package'}

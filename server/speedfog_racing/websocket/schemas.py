@@ -86,6 +86,7 @@ class RaceInfo(BaseModel):
     name: str
     status: str
     started_at: str | None = None
+    seeds_released_at: str | None = None
 
 
 class SeedInfo(BaseModel):

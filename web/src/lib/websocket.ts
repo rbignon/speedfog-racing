@@ -27,6 +27,7 @@ export interface WsRaceInfo {
   name: string;
   status: string;
   started_at: string | null;
+  seeds_released_at: string | null;
 }
 
 export interface WsSeedInfo {
