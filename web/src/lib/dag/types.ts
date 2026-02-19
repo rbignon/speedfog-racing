@@ -17,6 +17,7 @@ export type DagNodeType =
 export interface DagNode {
   id: string;
   type: DagNodeType;
+  displayType?: string; // Translated type label from server (e.g. "donjon majeur")
   displayName: string;
   zones: string[];
   layer: number;
@@ -94,6 +95,7 @@ export function parseDagGraph(graphJson: Record<string, unknown>): DagGraph {
     nodes.push({
       id,
       type: nodeType as DagNodeType,
+      displayType: (raw.display_type as string) ?? undefined,
       displayName: (raw.display_name as string) ?? id,
       zones: (raw.zones as string[]) ?? [],
       layer: (raw.layer as number) ?? 0,

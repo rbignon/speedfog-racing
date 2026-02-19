@@ -35,6 +35,7 @@ export interface NodePopupData {
   nodeId: string;
   displayName: string;
   type: DagNodeType;
+  displayType?: string;
   tier: number;
   entrances: PopupConnection[];
   exits: PopupConnection[];

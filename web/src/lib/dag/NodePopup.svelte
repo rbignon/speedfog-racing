@@ -83,7 +83,7 @@
 		</div>
 		<div class="popup-meta">
 			<span class="type-badge" style="color: {typeColor};"
-				>{TYPE_LABELS[data.type] ?? data.type}</span
+				>{data.displayType ?? TYPE_LABELS[data.type] ?? data.type}</span
 			>
 			{#if data.tier > 0}
 				<span class="tier-badge">Tier {data.tier}</span>

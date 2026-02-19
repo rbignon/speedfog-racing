@@ -204,7 +204,7 @@ class TestTranslateGraphJson:
         assert exit_text == "devant l'arène de Margit"
 
     def test_translates_node_type(self, fr_data: TranslationData) -> None:
-        """Node type should be translated from [types] section."""
+        """Node type should get a display_type from [types] section, original type preserved."""
         graph = {
             "nodes": {
                 "a": {
@@ -214,7 +214,10 @@ class TestTranslateGraphJson:
             }
         }
         result = translate_graph_json(graph, "fr")
-        assert result["nodes"]["a"]["type"] == "donjon majeur"
+        # Original type preserved for frontend rendering logic
+        assert result["nodes"]["a"]["type"] == "legacy_dungeon"
+        # Translated type added as display_type
+        assert result["nodes"]["a"]["display_type"] == "donjon majeur"
 
     def test_original_not_mutated_graph(self, fr_data: TranslationData) -> None:
         graph = {

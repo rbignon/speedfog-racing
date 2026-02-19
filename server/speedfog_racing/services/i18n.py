@@ -307,10 +307,11 @@ def _translate_graph_json_impl(graph_json: dict[str, Any], locale: str) -> dict[
         if isinstance(display_name, str):
             node_data["display_name"] = _translate_name(display_name, data)
 
-        # Translate node type (e.g. "legacy_dungeon" → "donjon majeur")
+        # Add translated display_type (e.g. "legacy_dungeon" → "donjon majeur").
+        # Keep original "type" intact — the frontend uses it for rendering logic.
         node_type = node_data.get("type")
         if isinstance(node_type, str) and node_type in data.types:
-            node_data["type"] = data.types[node_type]
+            node_data["display_type"] = data.types[node_type]
 
         # Translate exits (text field may contain side_text content)
         exits = node_data.get("exits", [])

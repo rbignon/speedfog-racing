@@ -224,6 +224,7 @@
 			nodeId,
 			displayName: node.displayName,
 			type: node.type,
+			displayType: node.displayType,
 			tier: node.tier,
 			entrances,
 			exits,
