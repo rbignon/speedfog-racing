@@ -321,10 +321,22 @@ class TestTranslateGraphJson:
 
 
 class TestTranslateZoneUpdate:
-    def test_english_returns_same_object(self) -> None:
+    def test_english_passthrough(self) -> None:
         msg = {"type": "zone_update", "display_name": "Test", "exits": []}
         result = translate_zone_update(msg, "en")
-        assert result is msg
+        assert result["display_name"] == "Test"
+
+    def test_english_assembles_from_zone(self) -> None:
+        msg = {
+            "type": "zone_update",
+            "display_name": "Test",
+            "exits": [
+                {"text": "some exit", "to_name": "Dest", "from_zone": "Roundtable"},
+            ],
+        }
+        result = translate_zone_update(msg, "en")
+        assert result["exits"][0]["text"] == "some exit [Roundtable]"
+        assert "from_zone" not in result["exits"][0]
 
     def test_translates_display_name_and_exits(self, fr_data: TranslationData) -> None:
         msg = {
@@ -367,6 +379,24 @@ class TestTranslateZoneUpdate:
         }
         result = translate_zone_update(msg, "fr")
         assert result["exits"][0]["text"] == "devant l'arène de Margit"
+
+    def test_from_zone_translated_in_french(self, fr_data: TranslationData) -> None:
+        msg = {
+            "type": "zone_update",
+            "display_name": "Limgrave",
+            "exits": [
+                {
+                    "text": "Limgrave entrance",
+                    "to_name": "Stormveil Castle",
+                    "from_zone": "Roundtable Hold",
+                },
+            ],
+        }
+        result = translate_zone_update(msg, "fr")
+        # from_zone should be translated and appended
+        assert "Bastion de la Table ronde" in result["exits"][0]["text"]
+        assert result["exits"][0]["text"].endswith("]")
+        assert "from_zone" not in result["exits"][0]
 
     def test_original_not_mutated(self, fr_data: TranslationData) -> None:
         msg = {

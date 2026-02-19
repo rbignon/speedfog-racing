@@ -428,20 +428,21 @@ def _translate_graph_json_impl(graph_json: dict[str, Any], locale: str) -> dict[
 def translate_zone_update(zone_update: dict[str, Any], locale: str) -> dict[str, Any]:
     """Translate a zone_update message for *locale*.
 
-    Returns the original dict unchanged for ``"en"`` or unknown locales.
+    Also assembles the ``from_zone`` annotation into exit text for all
+    locales (including English).
     """
-    if locale == "en" or locale not in _translations:
-        return zone_update
+    do_translate = locale != "en" and locale in _translations
+    data = _translations.get(locale) if do_translate else None
 
-    data = _translations[locale]
     translated = copy.copy(zone_update)
 
-    # Translate display_name (strip article + capitalize for label context)
-    display_name = translated.get("display_name")
-    if isinstance(display_name, str):
-        translated["display_name"] = _format_display_name(_translate_name(display_name, data))
+    if data:
+        # Translate display_name (strip article + capitalize for label context)
+        display_name = translated.get("display_name")
+        if isinstance(display_name, str):
+            translated["display_name"] = _format_display_name(_translate_name(display_name, data))
 
-    # Translate exits
+    # Translate exits + assemble from_zone annotation
     exits = translated.get("exits")
     if isinstance(exits, list):
         new_exits = []
@@ -450,12 +451,18 @@ def translate_zone_update(zone_update: dict[str, Any], locale: str) -> dict[str,
                 new_exits.append(exit_data)
                 continue
             ex = dict(exit_data)
-            text = ex.get("text")
-            if isinstance(text, str):
-                ex["text"] = _translate_exit_text(text, data)
-            to_name = ex.get("to_name")
-            if isinstance(to_name, str):
-                ex["to_name"] = _translate_name(to_name, data)
+            if data:
+                text = ex.get("text")
+                if isinstance(text, str):
+                    ex["text"] = _translate_exit_text(text, data)
+                to_name = ex.get("to_name")
+                if isinstance(to_name, str):
+                    ex["to_name"] = _translate_name(to_name, data)
+            # Translate sub-zone annotation and merge into text
+            from_zone = ex.pop("from_zone", None)
+            if isinstance(from_zone, str):
+                zone_label = _translate_name(from_zone, data) if data else from_zone
+                ex["text"] = f"{ex['text']} [{zone_label}]"
             new_exits.append(ex)
         translated["exits"] = new_exits
 

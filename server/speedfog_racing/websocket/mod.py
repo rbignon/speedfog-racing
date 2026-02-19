@@ -70,8 +70,7 @@ async def send_zone_update(
     """Send a zone_update unicast to the originating mod."""
     msg = compute_zone_update(node_id, graph_json, zone_history)
     if msg:
-        if locale != "en":
-            msg = translate_zone_update(msg, locale)
+        msg = translate_zone_update(msg, locale)
         try:
             await asyncio.wait_for(websocket.send_text(json.dumps(msg)), timeout=SEND_TIMEOUT)
         except Exception:

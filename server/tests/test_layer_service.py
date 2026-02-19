@@ -276,30 +276,34 @@ GRAPH_MULTI_ZONE = {
 
 
 def test_compute_zone_update_from_subzone_annotated():
-    """Exit from a sub-zone gets annotated with zone name."""
+    """Exit from a sub-zone passes from_zone separately (for i18n assembly)."""
     result = compute_zone_update("volcano_ac44", GRAPH_MULTI_ZONE, zone_history=None)
     assert result is not None
     assert len(result["exits"]) == 1
-    assert result["exits"][0]["text"] == "Before Prison Town Church grace [Volcano Drawingroom]"
+    assert result["exits"][0]["text"] == "Before Prison Town Church grace"
+    assert result["exits"][0]["from_zone"] == "Volcano Drawingroom"
 
 
 def test_compute_zone_update_from_primary_zone_not_annotated():
-    """Exit from the primary zone (zones[0]) is NOT annotated."""
+    """Exit from the primary zone (zones[0]) has no from_zone."""
     result = compute_zone_update("chapel_start_4f96", GRAPH_MULTI_ZONE, zone_history=None)
     assert result is not None
     assert len(result["exits"]) == 2
     # First exit from "chapel_start" (= zones[0]) — no annotation
     assert result["exits"][0]["text"] == "Grafted Scion front"
-    # Second exit from "roundtable" (≠ zones[0]) — annotated
-    assert result["exits"][1]["text"] == "Roundtable Hold gate [Roundtable]"
+    assert "from_zone" not in result["exits"][0]
+    # Second exit from "roundtable" (≠ zones[0]) — from_zone set
+    assert result["exits"][1]["text"] == "Roundtable Hold gate"
+    assert result["exits"][1]["from_zone"] == "Roundtable"
 
 
 def test_compute_zone_update_single_zone_not_annotated():
-    """Exit from a single-zone node is never annotated."""
+    """Exit from a single-zone node has no from_zone."""
     result = compute_zone_update("single_zone_node", GRAPH_MULTI_ZONE, zone_history=None)
     assert result is not None
     assert len(result["exits"]) == 1
     assert result["exits"][0]["text"] == "Boss front"
+    assert "from_zone" not in result["exits"][0]
 
 
 # =============================================================================
