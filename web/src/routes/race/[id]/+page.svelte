@@ -411,7 +411,7 @@
 			</div>
 		{/if}
 
-		{#if isOrganizer || isCaster}
+		{#if isOrganizer || isCaster || myParticipant}
 			<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}>
 				OBS Overlays
 			</button>
