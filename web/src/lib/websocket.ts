@@ -213,6 +213,13 @@ export class RaceWebSocket {
     }
 
     if (this.ws) {
+      // Detach handlers before closing to prevent stale onclose from
+      // triggering phantom reconnects when disconnect() + connect() are
+      // called on the same instance (e.g. scheduleFinishCheck).
+      this.ws.onopen = null;
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
       this.ws.close();
       this.ws = null;
     }

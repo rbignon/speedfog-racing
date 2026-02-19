@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
@@ -47,8 +48,11 @@
 	$effect(() => {
 		if (!auth.initialized) return;
 
+		// Read locale outside reactive tracking — locale changes mid-session
+		// should not trigger a WS reconnect cycle.
+		const locale = untrack(() => getEffectiveLocale());
 		loadSession();
-		trainingStore.connect(sessionId, getEffectiveLocale());
+		trainingStore.connect(sessionId, locale);
 
 		return () => {
 			trainingStore.disconnect();

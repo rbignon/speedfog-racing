@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
 	import { raceStore } from '$lib/stores/race.svelte';
@@ -98,7 +99,8 @@
 	$effect(() => {
 		if (!auth.initialized) return;
 
-		raceStore.connect(initialRace.id, getEffectiveLocale());
+		const locale = untrack(() => getEffectiveLocale());
+		raceStore.connect(initialRace.id, locale);
 
 		return () => {
 			raceStore.disconnect();

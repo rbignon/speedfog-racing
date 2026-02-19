@@ -89,6 +89,13 @@ class TrainingStore {
     }
 
     if (this.ws) {
+      // Detach handlers before closing to prevent stale onclose from
+      // triggering phantom reconnects when disconnect() is followed
+      // by a new connect() call (which resets intentionallyClosed).
+      this.ws.onopen = null;
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
       this.ws.close();
       this.ws = null;
     }
@@ -114,28 +121,32 @@ class TrainingStore {
         : "";
     const url = `${protocol}//${host}/ws/training/${sessionId}/spectate${localeParam}`;
 
-    this.ws = new WebSocket(url);
+    const ws = new WebSocket(url);
+    this.ws = ws;
 
-    this.ws.onopen = () => {
+    ws.onopen = () => {
+      if (this.ws !== ws) return; // Stale connection
       if (import.meta.env.DEV)
         console.log(`[TrainingWS] Connected to session ${sessionId}`);
       this.reconnectAttempt = 0;
       this.connected = true;
 
       // Send auth (token optional — anonymous spectators send without token)
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        const token = getStoredToken();
-        if (token) {
-          this.ws.send(JSON.stringify({ type: "auth", token }));
-        } else {
-          this.ws.send(JSON.stringify({ type: "auth" }));
-        }
+      const token = getStoredToken();
+      if (token) {
+        ws.send(JSON.stringify({ type: "auth", token }));
+      } else {
+        ws.send(JSON.stringify({ type: "auth" }));
       }
     };
 
-    this.ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (this.ws !== ws) return; // Stale connection
       if (import.meta.env.DEV)
-        console.log(`[TrainingWS] Disconnected from session ${sessionId}`);
+        console.log(
+          `[TrainingWS] Disconnected from session ${sessionId} (code=${event.code}, reason=${event.reason || "none"})`,
+        );
+      this.ws = null;
       this.connected = false;
 
       if (!this.intentionallyClosed) {
@@ -143,11 +154,13 @@ class TrainingStore {
       }
     };
 
-    this.ws.onerror = (event) => {
+    ws.onerror = (event) => {
+      if (this.ws !== ws) return; // Stale connection
       console.error("[TrainingWS] Error:", event);
     };
 
-    this.ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
+      if (this.ws !== ws) return; // Stale connection
       try {
         const data: unknown = JSON.parse(event.data);
         // Respond to server heartbeat pings
@@ -157,8 +170,8 @@ class TrainingStore {
           "type" in data &&
           (data as { type: string }).type === "ping"
         ) {
-          if (this.ws?.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type: "pong" }));
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "pong" }));
           }
           return;
         }
