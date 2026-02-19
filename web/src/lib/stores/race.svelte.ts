@@ -20,6 +20,7 @@ class RaceStore {
 
   private ws: RaceWebSocket | null = null;
   private currentRaceId: string | null = null;
+  private currentLocale: string | null = null;
   private finishCheckTimer: ReturnType<typeof setTimeout> | null = null;
 
   leaderboard = $derived.by(() => {
@@ -60,8 +61,12 @@ class RaceStore {
    * Connect to a race's WebSocket for live updates.
    */
   connect(raceId: string, locale: string = "en") {
-    // If already connected to this race, do nothing
-    if (this.currentRaceId === raceId && this.ws?.isConnected()) {
+    // If already connected to this race with same locale, do nothing
+    if (
+      this.currentRaceId === raceId &&
+      this.currentLocale === locale &&
+      this.ws?.isConnected()
+    ) {
       return;
     }
 
@@ -69,6 +74,7 @@ class RaceStore {
     this.disconnect();
 
     this.currentRaceId = raceId;
+    this.currentLocale = locale;
     this.race = null;
     this.seed = null;
     this.participants = [];
@@ -170,6 +176,7 @@ class RaceStore {
       this.ws = null;
     }
     this.currentRaceId = null;
+    this.currentLocale = null;
     this.race = null;
     this.seed = null;
     this.participants = [];

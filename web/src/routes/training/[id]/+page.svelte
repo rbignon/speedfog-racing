@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
 	import { trainingStore } from '$lib/stores/training.svelte';
 	import {
 		fetchTrainingSession,
@@ -47,7 +48,7 @@
 		if (!auth.initialized) return;
 
 		loadSession();
-		trainingStore.connect(sessionId);
+		trainingStore.connect(sessionId, getEffectiveLocale());
 
 		return () => {
 			trainingStore.disconnect();

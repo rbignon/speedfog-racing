@@ -14,6 +14,7 @@ from starlette.websockets import WebSocketDisconnect
 from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
+from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
 from speedfog_racing.websocket.schemas import (
     ParticipantInfo,
@@ -41,6 +42,9 @@ async def handle_training_spectator_websocket(
     Accepts both authenticated and anonymous spectators.
     """
     await websocket.accept()
+
+    # Read locale from query param (e.g. ?locale=fr)
+    locale = websocket.query_params.get("locale", "en")
 
     spectator_id = None
 
@@ -71,6 +75,9 @@ async def handle_training_spectator_websocket(
                 user = await get_user_by_token(db, token)
                 if user:
                     user_id = user.id
+                    # Prefer user's DB locale over query param
+                    if user.locale:
+                        locale = user.locale
 
             # Load session (no ownership check — public read-only)
             result = await db.execute(
@@ -88,7 +95,7 @@ async def handle_training_spectator_websocket(
                 return
 
             # Send initial state
-            await _send_initial_state(websocket, session)
+            await _send_initial_state(websocket, session, locale=locale)
 
         # Register connection — use user_id if authenticated, else random UUID
         spectator_id = user_id or uuid.uuid4()
@@ -130,7 +137,9 @@ async def _heartbeat_loop(websocket: WebSocket) -> None:
             pass
 
 
-async def _send_initial_state(websocket: WebSocket, session: TrainingSession) -> None:
+async def _send_initial_state(
+    websocket: WebSocket, session: TrainingSession, *, locale: str = "en"
+) -> None:
     """Send current training session state to spectator."""
     seed = session.seed
 
@@ -175,6 +184,10 @@ async def _send_initial_state(websocket: WebSocket, session: TrainingSession) ->
         zone_history=session.progress_nodes,
     )
 
+    graph_json = seed.graph_json if seed else None
+    if graph_json is not None and locale != "en":
+        graph_json = translate_graph_json(graph_json, locale)
+
     message = RaceStateMessage(
         race=RaceInfo(
             id=str(session.id),
@@ -186,7 +199,7 @@ async def _send_initial_state(websocket: WebSocket, session: TrainingSession) ->
         ),
         seed=SeedInfo(
             total_layers=seed.total_layers if seed else 0,
-            graph_json=seed.graph_json if seed else None,
+            graph_json=graph_json,
             total_nodes=seed.graph_json.get("total_nodes") if seed and seed.graph_json else None,
             total_paths=seed.graph_json.get("total_paths") if seed and seed.graph_json else None,
         ),

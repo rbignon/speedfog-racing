@@ -51,12 +51,15 @@ class TrainingStore {
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private intentionallyClosed = false;
 
+  private currentLocale: string | null = null;
+
   /**
    * Connect to a training session's spectator WebSocket.
    */
-  connect(sessionId: string) {
+  connect(sessionId: string, locale: string = "en") {
     if (
       this.currentSessionId === sessionId &&
+      this.currentLocale === locale &&
       this.ws?.readyState === WebSocket.OPEN
     ) {
       return;
@@ -65,6 +68,7 @@ class TrainingStore {
     this.disconnect();
 
     this.currentSessionId = sessionId;
+    this.currentLocale = locale;
     this.race = null;
     this.seed = null;
     this.participant = null;
@@ -90,6 +94,7 @@ class TrainingStore {
     }
 
     this.currentSessionId = null;
+    this.currentLocale = null;
     this.race = null;
     this.seed = null;
     this.participant = null;
@@ -103,7 +108,11 @@ class TrainingStore {
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
-    const url = `${protocol}//${host}/ws/training/${sessionId}/spectate`;
+    const localeParam =
+      this.currentLocale && this.currentLocale !== "en"
+        ? `?locale=${this.currentLocale}`
+        : "";
+    const url = `${protocol}//${host}/ws/training/${sessionId}/spectate${localeParam}`;
 
     this.ws = new WebSocket(url);
 

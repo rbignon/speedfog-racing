@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.grace_service import load_graces_mapping, resolve_grace_to_node
+from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
     get_layer_for_node,
@@ -121,6 +122,7 @@ async def handle_training_mod_websocket(
                 return
 
             user_id = session.user_id
+            mod_locale = session.user.locale or "en"
 
             # Send auth_ok
             await _send_auth_ok(websocket, session)
@@ -143,6 +145,7 @@ async def handle_training_mod_websocket(
                         session.progress_nodes or [],
                     )
                     if zone_update:
+                        zone_update = translate_zone_update(zone_update, mod_locale)
                         await websocket.send_text(json.dumps(zone_update))
 
         # Register connection and notify spectator (mod already has auth_ok data)
@@ -168,9 +171,13 @@ async def handle_training_mod_websocket(
                 elif msg_type == "status_update":
                     await _handle_status_update(session_maker, session_id, msg)
                 elif msg_type == "event_flag":
-                    await _handle_event_flag(websocket, session_maker, session_id, msg)
+                    await _handle_event_flag(
+                        websocket, session_maker, session_id, msg, locale=mod_locale
+                    )
                 elif msg_type == "zone_query":
-                    await _handle_zone_query(websocket, session_maker, session_id, msg)
+                    await _handle_zone_query(
+                        websocket, session_maker, session_id, msg, locale=mod_locale
+                    )
         finally:
             heartbeat_task.cancel()
             try:
@@ -331,6 +338,8 @@ async def _handle_event_flag(
     session_maker: async_sessionmaker[AsyncSession],
     session_id: uuid.UUID,
     msg: dict[str, Any],
+    *,
+    locale: str = "en",
 ) -> None:
     """Handle fog gate traversal or boss kill event flag."""
     flag_id = msg.get("flag_id")
@@ -390,6 +399,7 @@ async def _handle_event_flag(
     if node_id and seed_graph:
         zone_update = compute_zone_update(node_id, seed_graph, session.progress_nodes or [])
         if zone_update:
+            zone_update = translate_zone_update(zone_update, locale)
             try:
                 await websocket.send_text(json.dumps(zone_update))
             except Exception:
@@ -401,6 +411,8 @@ async def _handle_zone_query(
     session_maker: async_sessionmaker[AsyncSession],
     session_id: uuid.UUID,
     msg: dict[str, Any],
+    *,
+    locale: str = "en",
 ) -> None:
     """Handle zone_query from mod (fast travel overlay update)."""
     grace_entity_id = msg.get("grace_entity_id")
@@ -431,6 +443,7 @@ async def _handle_zone_query(
     # Unicast zone_update to mod (no DB write needed — just overlay update)
     zone_update = compute_zone_update(node_id, graph_json, progress)
     if zone_update:
+        zone_update = translate_zone_update(zone_update, locale)
         try:
             await asyncio.wait_for(
                 websocket.send_text(json.dumps(zone_update)), timeout=SEND_TIMEOUT
