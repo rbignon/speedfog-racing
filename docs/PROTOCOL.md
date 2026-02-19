@@ -22,19 +22,19 @@ Reference document for API endpoints and WebSocket messages.
 
 ### Races
 
-| Method | Endpoint                               | Auth   | Description                                     |
-| ------ | -------------------------------------- | ------ | ----------------------------------------------- |
-| GET    | `/api/races`                           | -      | List races (`?status=draft,running,...`)        |
-| POST   | `/api/races`                           | Bearer | Create race (DRAFT)                             |
-| GET    | `/api/races/{id}`                      | -      | Race details with participants and casters      |
-| POST   | `/api/races/{id}/participants`         | Bearer | Add participant (organizer only)                |
-| DELETE | `/api/races/{id}/participants/{pid}`   | Bearer | Remove participant (organizer, DRAFT/OPEN only) |
-| POST   | `/api/races/{id}/casters`              | Bearer | Add caster (organizer only)                     |
-| DELETE | `/api/races/{id}/casters/{cid}`        | Bearer | Remove caster (organizer only)                  |
-| POST   | `/api/races/{id}/open`                 | Bearer | Transition DRAFT → OPEN (organizer)             |
-| POST   | `/api/races/{id}/start`                | Bearer | Start race: DRAFT/OPEN → RUNNING (organizer)    |
-| GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack (generated on-demand)    |
-| GET    | `/api/races/{id}/download/{mod_token}` | Bearer | Download participant seed pack (ZIP)            |
+| Method | Endpoint                               | Auth   | Description                                              |
+| ------ | -------------------------------------- | ------ | -------------------------------------------------------- |
+| GET    | `/api/races`                           | -      | List races (`?status=draft,running,...`)                 |
+| POST   | `/api/races`                           | Bearer | Create race (SETUP)                                      |
+| GET    | `/api/races/{id}`                      | -      | Race details with participants and casters               |
+| POST   | `/api/races/{id}/participants`         | Bearer | Add participant (organizer only)                         |
+| DELETE | `/api/races/{id}/participants/{pid}`   | Bearer | Remove participant (organizer, SETUP only)               |
+| POST   | `/api/races/{id}/casters`              | Bearer | Add caster (organizer only)                              |
+| DELETE | `/api/races/{id}/casters/{cid}`        | Bearer | Remove caster (organizer only)                           |
+| POST   | `/api/races/{id}/release-seeds`        | Bearer | Release seeds for download (organizer, SETUP)            |
+| POST   | `/api/races/{id}/start`                | Bearer | Start race: SETUP → RUNNING (organizer)                  |
+| GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack (requires seeds released)         |
+| GET    | `/api/races/{id}/download/{mod_token}` | Bearer | Download participant seed pack (requires seeds released) |
 
 ### Pools
 
@@ -352,7 +352,7 @@ Sent within 2 seconds of connecting. If not sent, connection proceeds as anonymo
 
 #### `race_state`
 
-Sent immediately on connection (after optional auth). Full race state. Also re-sent on status transitions (DRAFT → OPEN, OPEN/DRAFT → RUNNING, race finish) with recomputed DAG access.
+Sent immediately on connection (after optional auth). Full race state. Also re-sent on status transitions (SETUP → RUNNING, race finish) and when seeds are released, with recomputed DAG access.
 
 ```json
 {
@@ -360,7 +360,9 @@ Sent immediately on connection (after optional auth). Full race state. Also re-s
   "race": {
     "id": "uuid",
     "name": "Sunday Showdown",
-    "status": "running"
+    "status": "running",
+    "started_at": "2026-02-19T14:00:00Z",
+    "seeds_released_at": "2026-02-19T13:55:00Z"
   },
   "seed": {
     "total_layers": 12,

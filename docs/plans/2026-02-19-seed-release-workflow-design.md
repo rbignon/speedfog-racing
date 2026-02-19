@@ -1,7 +1,7 @@
 # Seed Release Workflow
 
 **Date:** 2026-02-19
-**Status:** Approved
+**Status:** Implemented
 
 ## Problem
 
@@ -46,25 +46,21 @@ The `GET /api/races/{race_id}/my-seed-pack` and `GET /api/races/{race_id}/downlo
 
 ### WebSocket Notification
 
-When seeds are released, broadcast a message to spectators/mods so the UI updates in real-time:
-
-```json
-{ "type": "seeds_released" }
-```
+When seeds are released, the server broadcasts an updated `race_state` message to all connected spectators and mods. The `RaceInfo` payload includes `seeds_released_at`, so the frontend updates live via the existing `broadcast_race_state_update` pipeline (with per-connection visibility, send timeouts, and dead connection cleanup).
 
 ## UX: Organizer Button States
 
 ### Before release (`seeds_released_at = NULL`, status = SETUP)
 
-- **"Release Seeds"** — visible, active
+- **"Release Seeds"** — primary button, visible and active
 - **"Reroll Seed"** — visible, active
-- **"Start Race"** — visible, greyed out, tooltip: "Release seeds first"
+- **"Start Race"** — hidden (replaced by "Release Seeds")
 
 ### After release (`seeds_released_at != NULL`, status = SETUP)
 
-- **"Release Seeds"** — replaced by "Seeds released ✓" indicator
-- **"Reroll Seed"** — visible, active (with confirmation dialog: "Participants may have already downloaded. Rerolling will require everyone to re-download. Continue?")
-- **"Start Race"** — visible, active
+- **"Seeds released ✓"** indicator shown
+- **"Start Race"** — primary button, visible and active
+- **"Reroll Seed"** — visible, active (with confirmation dialog: "Participants may have already downloaded. Re-rolling will require everyone to re-download. Continue?")
 
 ### Participant Experience
 
