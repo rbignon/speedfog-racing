@@ -246,6 +246,7 @@ GRAPH_MULTI_ZONE = {
                     "text": "Roundtable Hold gate",
                     "fog_id": "AEG099_231_9000",
                     "from": "roundtable",
+                    "from_text": "Roundtable Hold",
                     "to": "siofra_boss_c9b0",
                 },
             ],
@@ -292,9 +293,9 @@ def test_compute_zone_update_from_primary_zone_not_annotated():
     # First exit from "chapel_start" (= zones[0]) — no annotation
     assert result["exits"][0]["text"] == "Grafted Scion front"
     assert "from_zone" not in result["exits"][0]
-    # Second exit from "roundtable" (≠ zones[0]) — from_zone set
+    # Second exit from "roundtable" (≠ zones[0]) — from_zone uses from_text
     assert result["exits"][1]["text"] == "Roundtable Hold gate"
-    assert result["exits"][1]["from_zone"] == "Roundtable"
+    assert result["exits"][1]["from_zone"] == "Roundtable Hold"
 
 
 def test_compute_zone_update_single_zone_not_annotated():

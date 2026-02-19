@@ -84,12 +84,12 @@ def compute_zone_update(
         to_id = exit_data.get("to")
         text = exit_data.get("text", "")
         from_zone = exit_data.get("from")
-        # Pass sub-zone origin separately so i18n can translate it.
+        # Pass sub-zone display name separately so i18n can translate it.
         # ``from_zone`` is consumed by translate_zone_update() which
         # translates it and assembles it into ``text`` as "[Zone Name]".
         from_zone_label: str | None = None
         if from_zone and primary_zone and from_zone != primary_zone:
-            from_zone_label = _format_zone_name(from_zone)
+            from_zone_label = exit_data.get("from_text") or _format_zone_name(from_zone)
         to_node = nodes.get(to_id, {}) if isinstance(to_id, str) else {}
         to_name = to_node.get("display_name", to_id) if isinstance(to_node, dict) else str(to_id)
         ex: dict[str, Any] = {
