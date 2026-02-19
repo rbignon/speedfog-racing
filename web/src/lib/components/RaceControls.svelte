@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import {
+		releaseSeeds,
 		rerollSeed,
 		startRace,
 		resetRace,
@@ -21,10 +22,26 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let showDeleteConfirm = $state(false);
+	let seedsReleased = $derived(race.seeds_released_at !== null);
+
+	async function handleRelease() {
+		loading = true;
+		error = null;
+		try {
+			const updated = await releaseSeeds(race.id);
+			onRaceUpdated(updated);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to release seeds';
+		} finally {
+			loading = false;
+		}
+	}
 
 	async function handleReroll() {
-		if (!confirm('Re-roll the seed? Participants will need to re-download their seed pack.'))
-			return;
+		const msg = seedsReleased
+			? 'Participants may have already downloaded. Re-rolling will require everyone to re-download. Continue?'
+			: 'Re-roll the seed? Participants will need to download a new seed pack.';
+		if (!confirm(msg)) return;
 		loading = true;
 		error = null;
 		try {
@@ -109,14 +126,29 @@
 	{/if}
 
 	{#if raceStatus === 'setup'}
-		<button class="btn btn-primary btn-full" onclick={handleStart} disabled={loading}>
-			{loading ? 'Starting...' : 'Start Race'}
-		</button>
+		{#if seedsReleased}
+			<button class="btn btn-primary btn-full" onclick={handleStart} disabled={loading}>
+				{loading ? 'Starting...' : 'Start Race'}
+			</button>
+		{:else}
+			<button class="btn btn-primary btn-full" onclick={handleRelease} disabled={loading}>
+				{loading ? 'Releasing...' : 'Release Seeds'}
+			</button>
+			<p class="hint">Make seed packs available for download.</p>
+		{/if}
+
+		{#if seedsReleased}
+			<p class="released-badge">Seeds released ✓</p>
+		{/if}
 
 		<button class="btn btn-secondary btn-full" onclick={handleReroll} disabled={loading}>
 			{loading ? 'Re-rolling...' : 'Re-roll Seed'}
 		</button>
-		<p class="hint">Assign a different seed. Participants must re-download their pack.</p>
+		<p class="hint">
+			{seedsReleased
+				? 'Assign a different seed. Participants must re-download.'
+				: 'Assign a different seed.'}
+		</p>
 	{:else if raceStatus === 'running'}
 		<button class="btn btn-primary btn-full" onclick={handleForceFinish} disabled={loading}>
 			{loading ? 'Finishing...' : 'Force Finish'}
@@ -188,6 +220,13 @@
 		font-size: var(--font-size-xs);
 		margin: 0 0 0.5rem 0;
 		line-height: 1.4;
+	}
+
+	.released-badge {
+		color: var(--color-success, #10b981);
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		margin: 0 0 0.5rem 0;
 	}
 
 	.error {
