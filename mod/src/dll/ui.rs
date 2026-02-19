@@ -280,10 +280,10 @@ impl RaceTracker {
 
     /// Render exit list from zone_update:
     /// ```text
-    /// → Soldier of Godrick front
-    ///   ???
-    /// → Stranded Graveyard first door
-    ///   Ruin-Strewn Precipice          (green)
+    /// → Ruin-Strewn Precipice          (green, discovered)
+    ///   Stranded Graveyard first door   (gray, word-wrapped)
+    /// → ???                             (white, undiscovered)
+    ///   Soldier of Godrick front        (gray, word-wrapped)
     /// ```
     fn render_exits(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
         let zone = match self.current_zone_info() {
@@ -292,20 +292,22 @@ impl RaceTracker {
         };
 
         let green = [0.0, 1.0, 0.0, 1.0];
+        let white = self.cached_colors.text;
+        let indent = "  ";
 
         for exit in &zone.exits {
-            // Arrow + fog gate text
-            let arrow_text = format!("\u{2192} {}", exit.text);
-            let truncated = truncate_to_width(ui, &arrow_text, max_width);
-            ui.text_disabled(&truncated);
-
-            // Destination: "???" if undiscovered, green name if discovered
+            // Line 1: destination — green if discovered, white "???" if not
             if exit.discovered {
-                let dest = format!("  {}", exit.to_name);
+                let dest = format!("\u{2192} {}", exit.to_name);
                 let truncated = truncate_to_width(ui, &dest, max_width);
                 ui.text_colored(green, &truncated);
             } else {
-                ui.text_disabled("  ???");
+                ui.text_colored(white, "\u{2192} ???");
+            }
+
+            // Lines 2+: directions to reach the fog gate (gray, word-wrapped)
+            for line in wrap_text(ui, indent, &exit.text, max_width) {
+                ui.text_disabled(&line);
             }
         }
     }
@@ -457,6 +459,40 @@ fn format_time_u32(ms: u32) -> String {
     let mins = secs / 60;
     let hours = mins / 60;
     format!("{:02}:{:02}:{:02}", hours, mins % 60, secs % 60)
+}
+
+/// Word-wrap `text` into lines that fit within `max_width`, prepending `indent` to each line.
+fn wrap_text(ui: &hudhook::imgui::Ui, indent: &str, text: &str, max_width: f32) -> Vec<String> {
+    let full = format!("{}{}", indent, text);
+    if ui.calc_text_size(&full)[0] <= max_width {
+        return vec![full];
+    }
+
+    let mut lines = Vec::new();
+    let mut current_line = indent.to_string();
+    for word in text.split_whitespace() {
+        let candidate = if current_line.len() == indent.len() {
+            format!("{}{}", current_line, word)
+        } else {
+            format!("{} {}", current_line, word)
+        };
+
+        if ui.calc_text_size(&candidate)[0] <= max_width {
+            current_line = candidate;
+        } else if current_line.len() == indent.len() {
+            // Single word exceeds max_width — truncate it
+            let truncated = truncate_to_width(ui, &candidate, max_width);
+            lines.push(truncated.into_owned());
+        } else {
+            lines.push(current_line);
+            current_line = format!("{}{}", indent, word);
+        }
+    }
+    if current_line.len() > indent.len() {
+        lines.push(current_line);
+    }
+
+    lines
 }
 
 /// Truncate text to fit within `max_width` pixels, adding "\u{2026}" if needed.
