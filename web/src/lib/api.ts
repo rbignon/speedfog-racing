@@ -32,6 +32,7 @@ export interface Race {
   created_at: string;
   scheduled_at: string | null;
   started_at: string | null;
+  seeds_released_at: string | null;
   participant_count: number;
   participant_previews: User[];
   casters: Caster[];
@@ -380,6 +381,17 @@ export async function startRace(raceId: string): Promise<Race> {
  */
 export async function rerollSeed(raceId: string): Promise<RaceDetail> {
   const response = await fetch(`${API_BASE}/races/${raceId}/reroll-seed`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<RaceDetail>(response);
+}
+
+/**
+ * Release seeds for a SETUP race. Organizer only.
+ */
+export async function releaseSeeds(raceId: string): Promise<RaceDetail> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/release-seeds`, {
     method: "POST",
     headers: getAuthHeaders(),
   });
