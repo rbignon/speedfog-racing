@@ -226,6 +226,7 @@ GRAPH_MULTI_ZONE = {
                     "text": "Before Prison Town Church grace",
                     "fog_id": "AEG099_232_9005",
                     "from": "volcano_drawingroom",
+                    "from_text": "Mt. Gelmir - Volcano Manor - Drawing Room",
                     "to": "siofra_boss_c9b0",
                 },
             ],
@@ -277,12 +278,13 @@ GRAPH_MULTI_ZONE = {
 
 
 def test_compute_zone_update_from_subzone_annotated():
-    """Exit from a sub-zone passes from_zone separately (for i18n assembly)."""
+    """Exit from a sub-zone passes from_zone last segment (for i18n assembly)."""
     result = compute_zone_update("volcano_ac44", GRAPH_MULTI_ZONE, zone_history=None)
     assert result is not None
     assert len(result["exits"]) == 1
     assert result["exits"][0]["text"] == "Before Prison Town Church grace"
-    assert result["exits"][0]["from_zone"] == "Volcano Drawingroom"
+    # Composite "Mt. Gelmir - Volcano Manor - Drawing Room" → last segment
+    assert result["exits"][0]["from_zone"] == "Drawing Room"
 
 
 def test_compute_zone_update_from_primary_zone_not_annotated():
