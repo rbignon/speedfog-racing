@@ -54,6 +54,7 @@ class UserPublicResponse(BaseModel):
     twitch_display_name: str | None
     twitch_avatar_url: str | None
     role: str
+    locale: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -67,6 +68,7 @@ class UserResponse(BaseModel):
     twitch_avatar_url: str | None
     api_token: str
     role: str
+    locale: str | None = None
 
     model_config = {"from_attributes": True}
 

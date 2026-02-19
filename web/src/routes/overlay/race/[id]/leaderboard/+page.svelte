@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { raceStore } from '$lib/stores/race.svelte';
+	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
 	import LeaderboardOverlay from '$lib/components/LeaderboardOverlay.svelte';
 
 	let { data } = $props();
@@ -10,7 +11,7 @@
 	let mode = $derived<'running' | 'finished'>(raceStatus === 'finished' ? 'finished' : 'running');
 
 	$effect(() => {
-		raceStore.connect(data.race.id);
+		raceStore.connect(data.race.id, getEffectiveLocale());
 		return () => {
 			raceStore.disconnect();
 		};

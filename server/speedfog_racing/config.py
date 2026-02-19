@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     websocket_url: str = "ws://localhost:8000"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8000"]
 
+    # i18n
+    i18n_dir: str = "data/i18n"
+
     # Seeds
     seeds_pool_dir: str = "/data/seeds"
     speedfog_path: str = ""  # Path to speedfog repo for seed generation

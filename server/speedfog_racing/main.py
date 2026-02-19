@@ -19,6 +19,7 @@ from speedfog_racing.config import settings
 from speedfog_racing.database import async_session_maker, get_db_context, init_db
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.services import scan_pool
+from speedfog_racing.services.i18n import load_translations
 from speedfog_racing.websocket import (
     handle_mod_websocket,
     handle_spectator_websocket,
@@ -44,6 +45,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Database initialized")
     except Exception as e:
         logger.warning(f"Database initialization skipped: {e}")
+
+    # Load i18n translations
+    try:
+        i18n_dir = Path(settings.i18n_dir)
+        if not i18n_dir.is_absolute():
+            i18n_dir = Path(__file__).resolve().parent.parent / i18n_dir
+        translations = load_translations(i18n_dir)
+        logger.info("Loaded %d translation locale(s)", len(translations))
+    except Exception as e:
+        logger.warning(f"i18n loading failed: {e}")
 
     # Scan all seed pools
     try:

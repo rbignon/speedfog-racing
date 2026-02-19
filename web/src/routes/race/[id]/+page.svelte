@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { auth } from '$lib/stores/auth.svelte';
+	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
 	import { raceStore } from '$lib/stores/race.svelte';
 	import Leaderboard from '$lib/components/Leaderboard.svelte';
 	import RaceStatus from '$lib/components/RaceStatus.svelte';
@@ -95,7 +96,7 @@
 	});
 
 	$effect(() => {
-		raceStore.connect(initialRace.id);
+		raceStore.connect(initialRace.id, getEffectiveLocale());
 
 		return () => {
 			raceStore.disconnect();

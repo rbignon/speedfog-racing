@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { raceStore } from '$lib/stores/race.svelte';
+	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
 	import { MetroDagBlurred, MetroDagResults } from '$lib/dag';
 
 	let { data } = $props();
@@ -11,7 +12,7 @@
 	let totalPaths = $derived(liveSeed?.total_paths ?? data.race.seed_total_paths);
 
 	$effect(() => {
-		raceStore.connect(data.race.id);
+		raceStore.connect(data.race.id, getEffectiveLocale());
 		return () => {
 			raceStore.disconnect();
 		};

@@ -111,13 +111,19 @@ export class RaceWebSocket {
   private ws: WebSocket | null = null;
   private raceId: string;
   private options: RaceWebSocketOptions;
+  private locale: string;
   private reconnectAttempt = 0;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private intentionallyClosed = false;
 
-  constructor(raceId: string, options: RaceWebSocketOptions = {}) {
+  constructor(
+    raceId: string,
+    options: RaceWebSocketOptions = {},
+    locale: string = "en",
+  ) {
     this.raceId = raceId;
     this.options = options;
+    this.locale = locale;
   }
 
   /**
@@ -133,7 +139,9 @@ export class RaceWebSocket {
     // Determine WebSocket URL
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
-    const url = `${protocol}//${host}/ws/race/${this.raceId}`;
+    const localeParam =
+      this.locale && this.locale !== "en" ? `?locale=${this.locale}` : "";
+    const url = `${protocol}//${host}/ws/race/${this.raceId}${localeParam}`;
 
     this.ws = new WebSocket(url);
 
@@ -266,6 +274,7 @@ export class RaceWebSocket {
 export function createRaceWebSocket(
   raceId: string,
   options: RaceWebSocketOptions = {},
+  locale: string = "en",
 ): RaceWebSocket {
-  return new RaceWebSocket(raceId, options);
+  return new RaceWebSocket(raceId, options, locale);
 }

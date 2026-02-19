@@ -74,6 +74,7 @@ class User(Base):
         String(100), unique=True, nullable=False, default=generate_token
     )
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.USER)
+    locale: Mapped[str | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

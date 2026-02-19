@@ -36,6 +36,7 @@ from speedfog_racing.schemas import (
     UserResponse,
     UserStatsResponse,
 )
+from speedfog_racing.services.i18n import get_available_locales
 
 router = APIRouter()
 
@@ -79,6 +80,26 @@ async def get_my_profile(
 ) -> User:
     """Get current user's profile."""
     return user
+
+
+class UpdateLocaleRequest(BaseModel):
+    locale: str | None = None
+
+
+@router.patch("/me/locale")
+async def update_locale(
+    body: UpdateLocaleRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str | None]:
+    """Set locale preference (null = auto-detect from browser)."""
+    if body.locale is not None:
+        valid_codes = {loc["code"] for loc in get_available_locales()}
+        if body.locale not in valid_codes:
+            raise HTTPException(status_code=400, detail=f"Unknown locale: {body.locale}")
+    user.locale = body.locale
+    await db.commit()
+    return {"locale": user.locale}
 
 
 @router.get("/me/races", response_model=RaceListResponse)

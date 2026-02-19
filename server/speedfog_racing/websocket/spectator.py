@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.models import Caster, Participant, Race, RaceStatus
+from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.websocket.manager import (
     SEND_TIMEOUT,
     SpectatorConnection,
@@ -39,7 +40,11 @@ AUTH_GRACE_PERIOD = 2.0
 HEARTBEAT_INTERVAL = 30.0  # seconds between pings
 
 
-def build_seed_info(race: Race, user_id: uuid.UUID | None = None) -> SeedInfo:
+def build_seed_info(
+    race: Race,
+    user_id: uuid.UUID | None = None,
+    locale: str = "en",
+) -> SeedInfo:
     """Build SeedInfo with conditional graph_json access.
 
     RUNNING/FINISHED: graph_json always included (progressive reveal / results).
@@ -68,10 +73,14 @@ def build_seed_info(race: Race, user_id: uuid.UUID | None = None) -> SeedInfo:
             if is_participant or is_organizer:
                 include_graph = True
 
+    graph = seed.graph_json if include_graph else None
+    if graph is not None and locale != "en":
+        graph = translate_graph_json(graph, locale)
+
     return SeedInfo(
         seed_id=str(seed.id),
         total_layers=seed.total_layers,
-        graph_json=seed.graph_json if include_graph else None,
+        graph_json=graph,
         total_nodes=total_nodes,
         total_paths=total_paths,
     )
@@ -83,7 +92,10 @@ async def handle_spectator_websocket(
     """Handle a spectator WebSocket connection with optional auth."""
     await websocket.accept()
 
-    conn = SpectatorConnection(websocket=websocket)
+    # Read locale from query param (e.g. ?locale=fr)
+    query_locale = websocket.query_params.get("locale", "en")
+
+    conn = SpectatorConnection(websocket=websocket, locale=query_locale)
 
     try:
         # Open a short-lived session for init only
@@ -96,8 +108,17 @@ async def handle_spectator_websocket(
             user_id = await _try_auth(websocket, db)
             conn.user_id = user_id
 
+            # Prefer user's DB locale over query param if set
+            if user_id:
+                from speedfog_racing.models import User
+
+                user_result = await db.execute(select(User).where(User.id == user_id))
+                user_obj = user_result.scalar_one_or_none()
+                if user_obj and user_obj.locale:
+                    conn.locale = user_obj.locale
+
             # Send initial race state (session still open for lazy access)
-            await send_race_state(websocket, race, user_id=conn.user_id)
+            await send_race_state(websocket, race, user_id=conn.user_id, locale=conn.locale)
         # Session closed — released back to pool within ~2s of connect
 
         # Register connection
@@ -180,6 +201,7 @@ async def send_race_state(
     race: Race,
     *,
     user_id: uuid.UUID | None = None,
+    locale: str = "en",
 ) -> None:
     """Send race state to spectator with graph visibility based on role."""
     room = manager.get_room(race.id)
@@ -198,14 +220,14 @@ async def send_race_state(
             status=race.status.value,
             started_at=race.started_at.isoformat() if race.started_at else None,
         ),
-        seed=build_seed_info(race, user_id=user_id),
+        seed=build_seed_info(race, user_id=user_id, locale=locale),
         participants=participant_infos,
     )
     await websocket.send_text(message.model_dump_json())
 
 
 async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
-    """Send race_state to each spectator with per-connection graph visibility."""
+    """Send race_state to each spectator with per-connection graph visibility and locale."""
     room = manager.get_room(race_id)
     if not room:
         return
@@ -213,7 +235,7 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
     async def _send_to(i: int, conn: SpectatorConnection) -> int | None:
         try:
             await asyncio.wait_for(
-                send_race_state(conn.websocket, race, user_id=conn.user_id),
+                send_race_state(conn.websocket, race, user_id=conn.user_id, locale=conn.locale),
                 timeout=SEND_TIMEOUT,
             )
         except Exception:

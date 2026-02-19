@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
 from speedfog_racing.services.grace_service import load_graces_mapping, resolve_grace_to_node
+from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
     get_layer_for_node,
@@ -64,10 +65,13 @@ async def send_zone_update(
     node_id: str,
     graph_json: dict[str, Any],
     zone_history: list[dict[str, Any]] | None,
+    locale: str = "en",
 ) -> None:
     """Send a zone_update unicast to the originating mod."""
     msg = compute_zone_update(node_id, graph_json, zone_history)
     if msg:
+        if locale != "en":
+            msg = translate_zone_update(msg, locale)
         try:
             await asyncio.wait_for(websocket.send_text(json.dumps(msg)), timeout=SEND_TIMEOUT)
         except Exception:
@@ -106,6 +110,7 @@ async def handle_mod_websocket(
 
     participant_id: uuid.UUID | None = None
     user_id: uuid.UUID | None = None
+    mod_locale: str = "en"
 
     try:
         # Wait for auth message with timeout
@@ -151,6 +156,10 @@ async def handle_mod_websocket(
             participant_id = participant.id
             user_id = participant.user_id
 
+            # Resolve locale from user preference
+            if participant.user.locale:
+                mod_locale = participant.user.locale
+
             await send_auth_ok(websocket, participant)
 
             # Send zone_update on reconnect (race already running)
@@ -159,12 +168,12 @@ async def handle_mod_websocket(
                 zone = participant.current_zone or get_start_node(seed.graph_json)
                 if zone:
                     await send_zone_update(
-                        websocket, zone, seed.graph_json, participant.zone_history
+                        websocket, zone, seed.graph_json, participant.zone_history, mod_locale
                     )
         # Session closed — released back to pool
 
-        # Register connection
-        await manager.connect_mod(race_id, participant_id, user_id, websocket)
+        # Register connection (includes locale)
+        await manager.connect_mod(race_id, participant_id, user_id, websocket, mod_locale)
 
         # Broadcast updated connection status to all clients
         try:
@@ -199,11 +208,15 @@ async def handle_mod_websocket(
                 elif msg_type == "status_update":
                     await handle_status_update(websocket, session_maker, participant_id, msg)
                 elif msg_type == "event_flag":
-                    await handle_event_flag(websocket, session_maker, participant_id, msg)
+                    await handle_event_flag(
+                        websocket, session_maker, participant_id, msg, mod_locale
+                    )
                 elif msg_type == "finished":
                     await handle_finished(websocket, session_maker, participant_id, msg)
                 elif msg_type == "zone_query":
-                    await handle_zone_query(websocket, session_maker, participant_id, msg)
+                    await handle_zone_query(
+                        websocket, session_maker, participant_id, msg, mod_locale
+                    )
                 else:
                     logger.warning(f"Unknown message type: {msg_type}")
         finally:
@@ -402,6 +415,7 @@ async def handle_event_flag(
     session_maker: async_sessionmaker[AsyncSession],
     participant_id: uuid.UUID,
     msg: dict[str, Any],
+    locale: str = "en",
 ) -> None:
     """Handle event flag trigger from mod."""
     flag_id = msg.get("flag_id")
@@ -491,7 +505,7 @@ async def handle_event_flag(
 
     # Unicast zone_update to originating mod
     if node_id and seed_graph:
-        await send_zone_update(websocket, node_id, seed_graph, participant.zone_history)
+        await send_zone_update(websocket, node_id, seed_graph, participant.zone_history, locale)
 
 
 async def handle_zone_query(
@@ -499,6 +513,7 @@ async def handle_zone_query(
     session_maker: async_sessionmaker[AsyncSession],
     participant_id: uuid.UUID,
     msg: dict[str, Any],
+    locale: str = "en",
 ) -> None:
     """Handle zone_query from mod (fast travel overlay update)."""
     grace_entity_id = msg.get("grace_entity_id")
@@ -534,7 +549,7 @@ async def handle_zone_query(
         await db.commit()
 
     # Unicast zone_update to originating mod
-    await send_zone_update(websocket, node_id, graph_json, participant.zone_history)
+    await send_zone_update(websocket, node_id, graph_json, participant.zone_history, locale)
 
     # Broadcast player update to spectators (so DAG view updates)
     await manager.broadcast_player_update(participant.race_id, participant, graph_json=graph_json)
@@ -647,7 +662,7 @@ async def broadcast_race_start(
             if start_node:
                 for conn in room.mods.values():
                     await send_zone_update(
-                        conn.websocket, start_node, graph_json, zone_history=None
+                        conn.websocket, start_node, graph_json, None, conn.locale
                     )
 
         # Also notify spectators of status change

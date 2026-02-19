@@ -30,6 +30,7 @@ class ModConnection:
     websocket: WebSocket
     participant_id: uuid.UUID
     user_id: uuid.UUID
+    locale: str = "en"
 
 
 @dataclass
@@ -38,6 +39,7 @@ class SpectatorConnection:
 
     websocket: WebSocket
     user_id: uuid.UUID | None = None
+    locale: str = "en"
 
 
 @dataclass
@@ -113,6 +115,7 @@ class ConnectionManager:
         participant_id: uuid.UUID,
         user_id: uuid.UUID,
         websocket: WebSocket,
+        locale: str = "en",
     ) -> None:
         """Register a mod connection."""
         room = self.get_or_create_room(race_id)
@@ -120,6 +123,7 @@ class ConnectionManager:
             websocket=websocket,
             participant_id=participant_id,
             user_id=user_id,
+            locale=locale,
         )
         logger.info(f"Mod connected: race={race_id}, participant={participant_id}")
 

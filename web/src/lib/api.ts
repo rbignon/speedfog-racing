@@ -17,6 +17,7 @@ export interface User {
 
 export interface AuthUser extends User {
   role: string;
+  locale: string | null;
 }
 
 export type RaceStatus = "setup" | "running" | "finished";
@@ -590,6 +591,53 @@ export async function fetchUserActivity(
   if (!response.ok)
     throw new Error(`Failed to fetch activity: ${response.status}`);
   return response.json();
+}
+
+// =============================================================================
+// i18n / Locale API
+// =============================================================================
+
+export interface LocaleInfo {
+  code: string;
+  name: string;
+}
+
+/**
+ * Fetch available locales (public, no auth).
+ */
+export async function fetchLocales(): Promise<LocaleInfo[]> {
+  const response = await fetch(`${API_BASE}/i18n/locales`);
+  return handleResponse<LocaleInfo[]>(response);
+}
+
+/**
+ * Update the current user's locale preference.
+ * Pass null to reset to auto-detect.
+ */
+export async function updateLocale(
+  locale: string | null,
+): Promise<{ locale: string | null }> {
+  const response = await fetch(`${API_BASE}/users/me/locale`, {
+    method: "PATCH",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ locale }),
+  });
+  return handleResponse<{ locale: string | null }>(response);
+}
+
+/**
+ * Detect locale from browser language, mapped to available locale codes.
+ * Returns "en" if no match.
+ */
+export function detectBrowserLocale(availableLocales: LocaleInfo[]): string {
+  if (typeof navigator === "undefined") return "en";
+  const lang = navigator.language?.split("-")[0];
+  if (!lang) return "en";
+  const codes = new Set(availableLocales.map((l) => l.code));
+  return codes.has(lang) ? lang : "en";
 }
 
 // =============================================================================

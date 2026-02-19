@@ -59,7 +59,7 @@ class RaceStore {
   /**
    * Connect to a race's WebSocket for live updates.
    */
-  connect(raceId: string) {
+  connect(raceId: string, locale: string = "en") {
     // If already connected to this race, do nothing
     if (this.currentRaceId === raceId && this.ws?.isConnected()) {
       return;
@@ -76,79 +76,83 @@ class RaceStore {
     this.connected = false;
     this.loading = true;
 
-    this.ws = createRaceWebSocket(raceId, {
-      onConnect: () => {
-        this.connected = true;
-      },
+    this.ws = createRaceWebSocket(
+      raceId,
+      {
+        onConnect: () => {
+          this.connected = true;
+        },
 
-      onDisconnect: () => {
-        this.connected = false;
-      },
+        onDisconnect: () => {
+          this.connected = false;
+        },
 
-      onRaceState: (msg) => {
-        this.race = msg.race;
-        this.seed = msg.seed;
-        this.participants = msg.participants;
-        this.loading = false;
-        // Cancel pending finish check — race_state already has the data
-        if (this.finishCheckTimer) {
-          clearTimeout(this.finishCheckTimer);
-          this.finishCheckTimer = null;
-        }
-      },
-
-      onLeaderboardUpdate: (msg) => {
-        // When race is finished, preserve zone_history from existing data
-        // in case this update doesn't include it (race condition defense).
-        if (this.race?.status === "finished") {
-          const historyMap = new Map(
-            this.participants
-              .filter((p) => p.zone_history)
-              .map((p) => [p.id, p.zone_history]),
-          );
-          this.participants = msg.participants.map((p) => ({
-            ...p,
-            zone_history: p.zone_history ?? historyMap.get(p.id) ?? null,
-          }));
-        } else {
+        onRaceState: (msg) => {
+          this.race = msg.race;
+          this.seed = msg.seed;
           this.participants = msg.participants;
-        }
-      },
-
-      onPlayerUpdate: (msg) => {
-        // Preserve zone_history when race is finished
-        let player = msg.player;
-        if (this.race?.status === "finished" && !player.zone_history) {
-          const existing = this.participants.find((p) => p.id === player.id);
-          if (existing?.zone_history) {
-            player = { ...player, zone_history: existing.zone_history };
+          this.loading = false;
+          // Cancel pending finish check — race_state already has the data
+          if (this.finishCheckTimer) {
+            clearTimeout(this.finishCheckTimer);
+            this.finishCheckTimer = null;
           }
-        }
-        this.participants = this.participants.map((p) =>
-          p.id === player.id ? player : p,
-        );
-      },
+        },
 
-      onRaceStatusChange: (msg) => {
-        if (this.race) {
-          this.race = {
-            ...this.race,
-            status: msg.status,
-            started_at: msg.started_at ?? this.race.started_at,
-          };
-        }
-        // Safety net: if status changed to "finished" but zone_history is
-        // missing (e.g. race_state broadcast failed), reconnect after a
-        // short delay to get the full state from the initial handshake.
-        if (msg.status === "finished") {
-          this.scheduleFinishCheck();
-        }
-      },
+        onLeaderboardUpdate: (msg) => {
+          // When race is finished, preserve zone_history from existing data
+          // in case this update doesn't include it (race condition defense).
+          if (this.race?.status === "finished") {
+            const historyMap = new Map(
+              this.participants
+                .filter((p) => p.zone_history)
+                .map((p) => [p.id, p.zone_history]),
+            );
+            this.participants = msg.participants.map((p) => ({
+              ...p,
+              zone_history: p.zone_history ?? historyMap.get(p.id) ?? null,
+            }));
+          } else {
+            this.participants = msg.participants;
+          }
+        },
 
-      onSpectatorCount: (msg) => {
-        this.spectatorCount = msg.count;
+        onPlayerUpdate: (msg) => {
+          // Preserve zone_history when race is finished
+          let player = msg.player;
+          if (this.race?.status === "finished" && !player.zone_history) {
+            const existing = this.participants.find((p) => p.id === player.id);
+            if (existing?.zone_history) {
+              player = { ...player, zone_history: existing.zone_history };
+            }
+          }
+          this.participants = this.participants.map((p) =>
+            p.id === player.id ? player : p,
+          );
+        },
+
+        onRaceStatusChange: (msg) => {
+          if (this.race) {
+            this.race = {
+              ...this.race,
+              status: msg.status,
+              started_at: msg.started_at ?? this.race.started_at,
+            };
+          }
+          // Safety net: if status changed to "finished" but zone_history is
+          // missing (e.g. race_state broadcast failed), reconnect after a
+          // short delay to get the full state from the initial handshake.
+          if (msg.status === "finished") {
+            this.scheduleFinishCheck();
+          }
+        },
+
+        onSpectatorCount: (msg) => {
+          this.spectatorCount = msg.count;
+        },
       },
-    });
+      locale,
+    );
 
     this.ws.connect();
   }
