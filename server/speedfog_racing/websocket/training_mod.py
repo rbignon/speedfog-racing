@@ -347,7 +347,7 @@ async def _handle_event_flag(
 ) -> None:
     """Handle fog gate traversal or boss kill event flag."""
     flag_id = msg.get("flag_id")
-    if flag_id is None:
+    if not isinstance(flag_id, int):
         return
 
     igt = msg.get("igt_ms", 0)
@@ -430,6 +430,12 @@ async def _handle_zone_query(
     if grace_entity_id is None and map_id_str is None:
         return
 
+    # Extract optional fields for future disambiguation
+    raw_pos = msg.get("position")
+    position = tuple(raw_pos) if isinstance(raw_pos, list) and len(raw_pos) == 3 else None
+    raw_pr = msg.get("play_region_id")
+    play_region_id = raw_pr if isinstance(raw_pr, int) else None
+
     async with session_maker() as db:
         session = await _load_session(db, session_id)
         if not session or session.status != TrainingSessionStatus.ACTIVE:
@@ -445,6 +451,8 @@ async def _handle_zone_query(
             _get_graces_mapping(),
             grace_entity_id=grace_entity_id,
             map_id=map_id_str,
+            position=position,
+            play_region_id=play_region_id,
         )
         if node_id is None:
             logger.debug(
@@ -457,7 +465,7 @@ async def _handle_zone_query(
 
         progress = session.progress_nodes or []
 
-    # Unicast zone_update to mod (no DB write needed — just overlay update)
+    # Unicast zone_update to mod
     zone_update = compute_zone_update(node_id, graph_json, progress)
     if zone_update:
         zone_update = translate_zone_update(zone_update, locale)
@@ -467,6 +475,16 @@ async def _handle_zone_query(
             )
         except Exception:
             logger.warning("Failed to send zone_update for training zone_query")
+
+    # Broadcast to spectators so DAG view reflects current zone
+    # (TrainingSession has no current_zone column — override on the info object)
+    room = training_manager.get_room(session_id)
+    if room:
+        info = _build_participant_info(session, mod_connected=room.mod is not None)
+        info.current_zone = node_id
+        info.current_layer_tier = get_tier_for_node(node_id, graph_json)
+        message = LeaderboardUpdateMessage(participants=[info])
+        await room.broadcast_to_spectators(message.model_dump_json())
 
 
 async def _broadcast_participant_update(

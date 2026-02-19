@@ -1151,6 +1151,21 @@ def test_auth_ok_spawn_items_includes_gem_items(
         assert spawn_items[1]["id"] == 10300
 
 
+def test_auth_ok_finish_event_present(integration_client, race_with_participants):
+    """auth_ok.seed.finish_event matches the seed's graph_json finish_event."""
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        auth = mod.auth()
+        assert auth["type"] == "auth_ok"
+        # The test fixture graph has finish_event: 9000003
+        assert auth["seed"]["finish_event"] == 9000003
+        # finish_event should also appear in event_ids
+        assert 9000003 in auth["seed"]["event_ids"]
+
+
 # =============================================================================
 # Scenario 7: Race State Gating
 # =============================================================================

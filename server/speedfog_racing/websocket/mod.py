@@ -530,6 +530,12 @@ async def handle_zone_query(
     if grace_entity_id is None and map_id_str is None:
         return
 
+    # Extract optional fields for future disambiguation
+    raw_pos = msg.get("position")
+    position = tuple(raw_pos) if isinstance(raw_pos, list) and len(raw_pos) == 3 else None
+    raw_pr = msg.get("play_region_id")
+    play_region_id = raw_pr if isinstance(raw_pr, int) else None
+
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
         if not participant:
@@ -551,6 +557,8 @@ async def handle_zone_query(
             _get_graces_mapping(),
             grace_entity_id=grace_entity_id,
             map_id=map_id_str,
+            position=position,
+            play_region_id=play_region_id,
         )
         if node_id is None:
             logger.debug(

@@ -139,12 +139,12 @@ Sent at loading screen exit when no event_flag was detected (death, respawn, fas
 }
 ```
 
-| Field             | Type       | Description                                                  |
-| ----------------- | ---------- | ------------------------------------------------------------ |
-| `grace_entity_id` | `int?`     | Grace entity ID captured by the warp hook during fast travel |
-| `map_id`          | `string?`  | Map ID string (e.g. `m10_00_00_00`) for map-based fallback   |
-| `position`        | `[f32;3]?` | Player position `[x, y, z]` (reserved for future use)        |
-| `play_region_id`  | `int?`     | Play region ID (reserved for future use)                     |
+| Field             | Type                        | Description                                                  |
+| ----------------- | --------------------------- | ------------------------------------------------------------ |
+| `grace_entity_id` | `integer \| null`           | Grace entity ID captured by the warp hook during fast travel |
+| `map_id`          | `string \| null`            | Map ID string (e.g. `m10_00_00_00`) for map-based fallback   |
+| `position`        | `[number, number, number]?` | Player position `[x, y, z]` (reserved for future use)        |
+| `play_region_id`  | `integer \| null`           | Play region ID (reserved for future use)                     |
 
 **Response:** The server sends a `zone_update` (unicast) if the query resolves to a node in the current seed's graph. No response if unresolvable or ambiguous.
 

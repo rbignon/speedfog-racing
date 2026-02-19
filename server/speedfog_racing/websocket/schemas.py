@@ -28,13 +28,6 @@ class StatusUpdateMessage(BaseModel):
     death_count: int
 
 
-class FinishedMessage(BaseModel):
-    """Player finished the race."""
-
-    type: Literal["finished"] = "finished"
-    igt_ms: int
-
-
 class EventFlagMessage(BaseModel):
     """Event flag trigger from mod (replaces zone_entered)."""
 
