@@ -11,8 +11,10 @@
 		type Race,
 		type TrainingSession,
 	} from '$lib/api';
-	import { timeAgo } from '$lib/utils/time';
-	import { formatIgt } from '$lib/utils/training';
+	import { timeAgo, formatScheduledTime } from '$lib/utils/time';
+	import { displayPoolName, formatIgt } from '$lib/utils/training';
+	import { statusLabel } from '$lib/format';
+	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
 
 	let profile: UserProfile | null = $state(null);
 	let activity: ActivityItem[] = $state([]);
@@ -202,34 +204,56 @@
 			{:else}
 				<div class="active-cards">
 					{#each activeRaces as race}
-						<a href="/race/{race.id}" class="active-card active-card-race">
+						{@const overflowCount = Math.max(0, race.participant_count - race.participant_previews.length)}
+						{@const relativeTime = race.scheduled_at && race.status === 'setup' ? formatScheduledTime(race.scheduled_at) : timeAgo(race.created_at)}
+						<a href="/race/{race.id}" class="active-card border-{race.status === 'running' ? 'running' : 'setup'}">
 							<div class="active-card-header">
-								<span class="active-badge badge-race"
-									>{race.status === 'running'
-										? 'Racing'
-										: 'Upcoming'}</span
-								>
-								<span class="active-name">{race.name}</span>
+								<div class="active-title">
+									{#if race.status === 'running'}
+										<LiveIndicator dotOnly />
+									{/if}
+									<span class="active-name">{race.name}</span>
+								</div>
+								<div class="active-badges">
+									{#if activeRaceRole(race)}
+										<span class="badge badge-role">{activeRaceRole(race)}</span>
+									{/if}
+									<span class="badge badge-{race.status}">{statusLabel(race.status)}</span>
+								</div>
 							</div>
-							<div class="active-card-body">
-								<span class="active-meta"
-									>{race.participant_count} player{race.participant_count !== 1
-										? 's'
-										: ''}</span
-								>
-								{#if activeRaceRole(race)}
-									<span class="active-meta active-role">{activeRaceRole(race)}</span>
-								{/if}
-								{#if race.my_igt_ms != null}
-									<span class="active-meta">{formatIgt(race.my_igt_ms)}</span>
-								{/if}
-								{#if race.my_death_count != null}
-									<span class="active-meta"
-										>{race.my_death_count} death{race.my_death_count !== 1
-											? 's'
-											: ''}</span
-									>
-								{/if}
+							{#if race.participant_previews.length > 0}
+								<div class="avatar-row">
+									<div class="avatar-stack">
+										{#each race.participant_previews as user}
+											{#if user.twitch_avatar_url}
+												<img src={user.twitch_avatar_url} alt={user.twitch_display_name || user.twitch_username} class="avatar" />
+											{:else}
+												<span class="avatar avatar-placeholder">{(user.twitch_display_name || user.twitch_username).charAt(0).toUpperCase()}</span>
+											{/if}
+										{/each}
+										{#if overflowCount > 0}
+											<span class="avatar avatar-overflow">+{overflowCount}</span>
+										{/if}
+									</div>
+									<span class="relative-time">{relativeTime}</span>
+								</div>
+							{:else}
+								<div class="avatar-row">
+									<span class="no-participants">No players yet</span>
+									<span class="relative-time">{relativeTime}</span>
+								</div>
+							{/if}
+							<div class="active-card-meta">
+								<span>{race.participant_count} player{race.participant_count !== 1 ? 's' : ''}{#if race.pool_name} &middot; {race.pool_name}{/if}</span>
+								<span class="race-organizer">
+									by
+									{#if race.organizer.twitch_avatar_url}
+										<img src={race.organizer.twitch_avatar_url} alt="" class="organizer-avatar" />
+									{/if}
+									<button class="organizer-link" onclick={(e) => { e.preventDefault(); e.stopPropagation(); goto(`/user/${race.organizer.twitch_username}`); }}>
+										{race.organizer.twitch_display_name || race.organizer.twitch_username}
+									</button>
+								</span>
 							</div>
 							{#if (race.status === 'running' || race.status === 'finished') && race.my_current_layer != null && race.seed_total_layers}
 								<div class="progress-bar">
@@ -242,22 +266,22 @@
 						</a>
 					{/each}
 					{#each activeTraining as session}
-						<a href="/training/{session.id}" class="active-card">
+						<a href="/training/{session.id}" class="active-card border-training">
 							<div class="active-card-header">
-								<span class="active-badge badge-training">Training</span>
-								<span class="active-name">{session.pool_name}</span>
+								<span class="active-name">{displayPoolName(session.pool_name)}</span>
+								<div class="active-badges">
+									<span class="badge badge-training-ghost">Training</span>
+								</div>
 							</div>
-							<div class="active-card-body">
-								{#if session.igt_ms}
-									<span class="active-meta">{formatIgt(session.igt_ms)}</span>
-								{/if}
-								{#if session.death_count}
-									<span class="active-meta"
-										>{session.death_count} death{session.death_count !== 1
-											? 's'
-											: ''}</span
-									>
-								{/if}
+							<div class="card-stats">
+								<span class="stat">
+									<span class="stat-label">IGT</span>
+									<span class="stat-value">{formatIgt(session.igt_ms)}</span>
+								</span>
+								<span class="stat">
+									<span class="stat-label">Deaths</span>
+									<span class="stat-value">{session.death_count}</span>
+								</span>
 							</div>
 							{#if session.current_layer != null && session.seed_total_layers}
 								<div class="progress-bar">
@@ -465,62 +489,168 @@
 	}
 
 	.active-card:hover {
-		border-color: var(--color-text-secondary);
+		border-color: var(--color-purple);
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 	}
 
-	.active-card-race {
-		border-color: var(--color-gold);
+	.border-setup {
+		border-left: 3px solid var(--color-info);
 	}
 
-	.active-card-race:hover {
-		box-shadow: var(--glow-gold);
+	.border-running {
+		border-left: 3px solid var(--color-danger);
+	}
+
+	.border-training {
+		border-left: 3px solid var(--color-purple);
 	}
 
 	.active-card-header {
 		display: flex;
+		justify-content: space-between;
 		align-items: center;
-		gap: 0.75rem;
+		gap: 0.5rem;
 		margin-bottom: 0.5rem;
+	}
+
+	.active-title {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-width: 0;
 	}
 
 	.active-name {
-		font-weight: 600;
-		color: var(--color-text);
+		font-size: 1.05rem;
+		font-weight: 500;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
-	.active-badge {
-		font-size: var(--font-size-xs);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		padding: 0.15em 0.5em;
-		border-radius: var(--radius-sm);
-	}
-
-	.badge-race {
-		background: var(--color-gold);
-		color: var(--color-bg);
-	}
-
-	.badge-training {
-		background: var(--color-purple);
-		color: white;
-	}
-
-	.active-card-body {
+	.active-badges {
 		display: flex;
-		gap: 1rem;
-		margin-bottom: 0.5rem;
+		gap: 0.4rem;
+		flex-shrink: 0;
 	}
 
-	.active-meta {
-		font-size: var(--font-size-sm);
+	.badge-role {
+		background: rgba(107, 114, 128, 0.2);
 		color: var(--color-text-secondary);
 	}
 
-	.active-role {
-		color: var(--color-gold);
+	.badge-training-ghost {
+		background: rgba(139, 92, 246, 0.15);
+		color: var(--color-purple);
+	}
+
+	/* Avatar row */
+	.avatar-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.5rem;
+	}
+
+	.avatar-stack {
+		display: flex;
+		align-items: center;
+	}
+
+	.avatar {
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		border: 2px solid var(--color-surface);
+		margin-left: -6px;
+		object-fit: cover;
+	}
+
+	.avatar:first-child {
+		margin-left: 0;
+	}
+
+	.avatar-placeholder,
+	.avatar-overflow {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--color-surface-elevated);
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+	}
+
+	.no-participants {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-disabled);
+		font-style: italic;
+	}
+
+	.relative-time {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-disabled);
+	}
+
+	.active-card-meta {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		margin-bottom: 0.5rem;
+	}
+
+	.race-organizer {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.organizer-avatar {
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+	}
+
+	.organizer-link {
+		background: none;
+		border: none;
+		padding: 0;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.organizer-link:hover {
+		color: var(--color-purple);
+		text-decoration: underline;
+	}
+
+	/* Training stats */
+	.card-stats {
+		display: flex;
+		gap: 1.5rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.stat {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+	}
+
+	.stat-label {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 		font-weight: 500;
+	}
+
+	.stat-value {
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.progress-bar {

@@ -23,6 +23,15 @@
 		</span>
 	</div>
 
+	{#if session.current_layer != null && session.seed_total_layers}
+		<div class="progress-bar">
+			<div
+				class="progress-fill"
+				style="width: {(session.current_layer / session.seed_total_layers) * 100}%"
+			></div>
+		</div>
+	{/if}
+
 	<div class="card-meta">
 		<span>{timeAgo(session.created_at)}</span>
 		<span class="action-label">Resume &rarr;</span>
@@ -88,6 +97,21 @@
 	.stat-value {
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.progress-bar {
+		height: 4px;
+		background: var(--color-border);
+		border-radius: 2px;
+		overflow: hidden;
+		margin-bottom: 0.5rem;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background: var(--color-purple);
+		border-radius: 2px;
+		transition: width 0.3s ease;
 	}
 
 	.card-meta {
