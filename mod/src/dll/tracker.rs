@@ -121,6 +121,10 @@ pub struct RaceTracker {
     pub(crate) triggered_flags: HashSet<u32>,
     /// Event flags detected while disconnected, pending re-send on reconnection
     pending_event_flags: Vec<(u32, u32)>,
+    /// Event flags detected this loading cycle, sent at loading exit
+    deferred_event_flags: Vec<(u32, u32)>,
+    /// finish_event from server — sent immediately (no loading screen on boss kill)
+    finish_event: Option<u32>,
 
     // Status update throttle
     last_status_update: Instant,
@@ -142,11 +146,6 @@ pub struct RaceTracker {
 
     // Zone update received during loading screen, waiting for load to finish
     pending_zone_update: Option<ZoneUpdateData>,
-
-    // Transition gate: true once we've observed a loading screen (invalid position)
-    // after an event flag was detected. Prevents premature zone reveal when the
-    // server's zone_update arrives before the game starts loading.
-    saw_loading: bool,
 
     // Timestamp when position became readable after a loading screen.
     // Used to delay zone reveal so the player has finished fading in / spawning.
@@ -235,6 +234,8 @@ impl RaceTracker {
             event_ids: Vec::new(),
             triggered_flags: HashSet::new(),
             pending_event_flags: Vec::new(),
+            deferred_event_flags: Vec::new(),
+            finish_event: None,
             last_status_update: Instant::now(),
             last_flag_poll: Instant::now(),
             ready_sent: false,
@@ -242,7 +243,6 @@ impl RaceTracker {
             flags_diagnosed: false,
             spawner_thread: None,
             pending_zone_update: None,
-            saw_loading: true, // Start true so first zone_update (from auth) reveals immediately
             loading_exit_time: Some(Instant::now() - ZONE_REVEAL_DELAY), // Already elapsed → immediate reveal
             was_position_readable: true,
             seed_mismatch: false,
@@ -290,65 +290,78 @@ impl RaceTracker {
         // Read position once per frame for loading screen detection
         let position_readable = self.game_state.read_position().is_some();
 
-        // Reveal pending zone update after loading screen + delay.
-        // Transition gate: after an event flag, we must first observe a loading screen
-        // (read_position() returns None) before revealing the zone. This prevents premature
-        // reveal when the server's zone_update arrives before the game starts loading.
-        // After the loading screen ends we wait ZONE_REVEAL_DELAY so the player has finished
-        // fading in / spawning before the overlay updates.
+        // Reveal pending zone update after position becomes readable + delay.
+        // The delay covers fade-in / spawn animation so the overlay doesn't update
+        // while the screen is still black.
         if self.pending_zone_update.is_some() {
             if position_readable {
-                if self.saw_loading {
-                    // Record exit time on first readable frame after loading
-                    if self.loading_exit_time.is_none() {
-                        self.loading_exit_time = Some(Instant::now());
-                    }
-                    // Reveal once delay has elapsed
-                    if self.loading_exit_time.unwrap().elapsed() >= ZONE_REVEAL_DELAY {
-                        let zone = self.pending_zone_update.take().unwrap();
-                        info!(name = %zone.display_name, "[RACE] Zone revealed after loading");
-                        self.race_state.current_zone = Some(zone);
-                    }
+                if self.loading_exit_time.is_none() {
+                    self.loading_exit_time = Some(Instant::now());
+                }
+                if self.loading_exit_time.unwrap().elapsed() >= ZONE_REVEAL_DELAY {
+                    let zone = self.pending_zone_update.take().unwrap();
+                    info!(name = %zone.display_name, "[RACE] Zone revealed");
+                    self.race_state.current_zone = Some(zone);
                 }
             } else {
-                // Loading screen observed — gate is now open for reveal
-                if !self.saw_loading {
-                    info!("[RACE] Loading screen detected, zone reveal unlocked");
-                    self.saw_loading = true;
-                }
-                // Reset exit time during loading (player might re-enter loading)
                 self.loading_exit_time = None;
             }
         }
 
-        // Zone query on fast travel: when exiting a loading screen with a captured grace entity ID,
-        // ask the server to resolve the destination zone for overlay update.
+        // Loading screen exit: send deferred event_flags (certain) or zone_query (probabilistic)
         if position_readable && !self.was_position_readable {
-            // Just exited a loading screen — check for captured grace entity ID
-            let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
-            if grace_id > 0
-                && self.ws_client.is_connected()
-                && self.is_race_running()
-                && !self.am_i_finished()
-            {
-                self.ws_client
-                    .send_zone_query(Some(grace_id), None, None, None);
-                self.last_sent_debug = Some(format!("zone_query(grace={})", grace_id));
-                info!(
-                    grace_entity_id = grace_id,
-                    "[RACE] Zone query sent (fast travel)"
-                );
-                crate::eldenring::warp_hook::clear_captured_grace_entity_id();
-            } else if grace_id > 0 {
-                // Not connected or race not running — clear stale grace ID
-                crate::eldenring::warp_hook::clear_captured_grace_entity_id();
+            if self.ws_client.is_connected() && self.is_race_running() && !self.am_i_finished() {
+                if !self.deferred_event_flags.is_empty() {
+                    // Fog gate traversal — send deferred flags now that loading is done
+                    for (flag_id, igt_ms) in self.deferred_event_flags.drain(..) {
+                        self.ws_client.send_event_flag(flag_id, igt_ms);
+                        self.last_sent_debug = Some(format!(
+                            "event_flag({}, igt={}ms) [deferred]",
+                            flag_id, igt_ms
+                        ));
+                        info!(flag_id, "[RACE] Deferred event flag sent at loading exit");
+                    }
+                } else {
+                    // No fog gate — death/respawn/quit-out/fast-travel
+                    let pos = self.game_state.read_position();
+                    let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
+                    let grace_opt = if grace_id > 0 { Some(grace_id) } else { None };
+                    let map_id = pos.as_ref().map(|p| p.map_id_str.clone());
+                    let position = pos.as_ref().map(|p| [p.x, p.y, p.z]);
+                    let play_region_id = pos.as_ref().and_then(|p| p.play_region_id);
+
+                    if grace_opt.is_some() || map_id.is_some() {
+                        self.ws_client.send_zone_query(
+                            grace_opt,
+                            map_id.clone(),
+                            position,
+                            play_region_id,
+                        );
+                        self.last_sent_debug = Some(format!(
+                            "zone_query(grace={:?}, map={:?})",
+                            grace_opt, map_id
+                        ));
+                        info!(?grace_opt, "[RACE] Zone query sent at loading exit");
+                    }
+
+                    if grace_id > 0 {
+                        crate::eldenring::warp_hook::clear_captured_grace_entity_id();
+                    }
+                }
+            } else {
+                // Not connected or race not running — clean up
+                self.deferred_event_flags.clear();
+                let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
+                if grace_id > 0 {
+                    crate::eldenring::warp_hook::clear_captured_grace_entity_id();
+                }
             }
         }
         self.was_position_readable = position_readable;
 
         // Event flag polling runs ALWAYS (even when disconnected).
-        // Flags are transient in game memory (~seconds), so we must detect them immediately
-        // and buffer them for re-send on reconnection.
+        // Flags are transient in game memory (~seconds), so we must detect them immediately.
+        // Regular flags are deferred until loading exit; finish_event is sent immediately.
         if !self.event_ids.is_empty() && self.last_flag_poll.elapsed() >= Duration::from_millis(100)
         {
             self.last_flag_poll = Instant::now();
@@ -357,24 +370,26 @@ impl RaceTracker {
                 if !self.triggered_flags.contains(&flag_id) {
                     if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
                         self.triggered_flags.insert(flag_id);
-                        // Reset transition gate: require a loading screen + delay
-                        // before revealing the next zone_update
-                        self.saw_loading = false;
-                        self.loading_exit_time = None;
-                        if self.ws_client.is_connected()
-                            && self.is_race_running()
-                            && !self.am_i_finished()
-                        {
-                            self.ws_client.send_event_flag(flag_id, igt_ms);
-                            self.last_sent_debug =
-                                Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
-                            info!(flag_id, "[RACE] Event flag triggered");
-                        } else if !self.am_i_finished() {
-                            self.pending_event_flags.push((flag_id, igt_ms));
-                            info!(
-                                flag_id,
-                                "[RACE] Event flag buffered (disconnected/not running)"
-                            );
+
+                        if self.finish_event == Some(flag_id) {
+                            // finish_event: no loading screen → send immediately
+                            if self.ws_client.is_connected()
+                                && self.is_race_running()
+                                && !self.am_i_finished()
+                            {
+                                self.ws_client.send_event_flag(flag_id, igt_ms);
+                                self.last_sent_debug = Some(format!(
+                                    "event_flag({}, igt={}ms) [finish]",
+                                    flag_id, igt_ms
+                                ));
+                                info!(flag_id, "[RACE] Finish event sent immediately");
+                            } else if !self.am_i_finished() {
+                                self.pending_event_flags.push((flag_id, igt_ms));
+                            }
+                        } else {
+                            // Regular fog gate → defer until loading exit
+                            self.deferred_event_flags.push((flag_id, igt_ms));
+                            info!(flag_id, "[RACE] Event flag deferred until loading exit");
                         }
                     }
                 }
@@ -494,6 +509,8 @@ impl RaceTracker {
                         self.set_status("Server connected".to_string());
                     }
                     ConnectionStatus::Reconnecting => {
+                        self.pending_event_flags
+                            .extend(self.deferred_event_flags.drain(..));
                         self.set_status("Reconnecting to server...".to_string());
                     }
                     ConnectionStatus::Error => {
@@ -521,11 +538,11 @@ impl RaceTracker {
                 ));
                 self.my_participant_id = Some(participant_id);
                 self.event_ids = seed.event_ids.clone();
+                self.finish_event = seed.finish_event;
                 // Don't clear triggered_flags on reconnect: they track which flags
                 // have already been detected. Pending flags are in pending_event_flags.
-                // Reset transition gate: after (re)auth, the server sends the player's
-                // current zone — reveal it immediately without requiring a loading cycle.
-                self.saw_loading = true;
+                // After (re)auth, the server sends the player's current zone — reveal
+                // it immediately without requiring a loading cycle.
                 self.loading_exit_time = Some(Instant::now() - ZONE_REVEAL_DELAY);
                 self.race_state.race = Some(race);
 
