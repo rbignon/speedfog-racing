@@ -66,6 +66,26 @@ class TestTranslateName:
         result = _translate_name("Altus Plateau - Unknown Dungeon XYZ", fr_data)
         assert result == "le Plateau Altus - Unknown Dungeon XYZ"
 
+    def test_display_name_pattern_literal(self, fr_data: TranslationData) -> None:
+        """Literal display_name patterns (no placeholder) match exactly."""
+        assert _translate_name("After Boss", fr_data) == "Après le boss"
+        assert _translate_name("Before Boss", fr_data) == "Avant le boss"
+
+    def test_display_name_pattern_with_entity(self, fr_data: TranslationData) -> None:
+        """Display_name patterns with {name} translate the captured entity."""
+        result = _translate_name("After Margit", fr_data)
+        assert result == "Après Margit"
+
+    def test_display_name_pattern_with_contraction(self, fr_data: TranslationData) -> None:
+        """Display_name pattern + contraction: 'de le' → 'du'."""
+        result = _translate_name("Above Fire Giant", fr_data)
+        assert result == "Au-dessus du Géant de feu"
+
+    def test_display_name_pattern_in_composite(self, fr_data: TranslationData) -> None:
+        """Display_name patterns work inside composite segments."""
+        result = _translate_name("Farum Azula - After Boss", fr_data)
+        assert result == "Farum Azula - Après le boss"
+
 
 # ---------------------------------------------------------------------------
 # French contractions

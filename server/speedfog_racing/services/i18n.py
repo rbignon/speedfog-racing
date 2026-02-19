@@ -38,6 +38,7 @@ class TranslationData:
     locations: dict[str, str] = field(default_factory=dict)
     patterns_text: dict[str, str] = field(default_factory=dict)
     patterns_side_text: dict[str, str] = field(default_factory=dict)
+    patterns_display_name: dict[str, str] = field(default_factory=dict)
     overrides_text: dict[str, str] = field(default_factory=dict)
     overrides_side_text: dict[str, str] = field(default_factory=dict)
 
@@ -83,6 +84,7 @@ def load_translations(i18n_dir: Path) -> dict[str, TranslationData]:
             locations=data.get("names", {}).get("locations", {}),
             patterns_text=data.get("patterns", {}).get("text", {}),
             patterns_side_text=data.get("patterns", {}).get("side_text", {}),
+            patterns_display_name=data.get("patterns", {}).get("display_name", {}),
             overrides_text=data.get("overrides", {}).get("text", {}),
             overrides_side_text=data.get("overrides", {}).get("side_text", {}),
         )
@@ -108,24 +110,72 @@ def get_available_locales() -> list[dict[str, str]]:
 
 def _lookup_name(name: str, data: TranslationData) -> str | None:
     """Look up a single name in bosses → regions → locations."""
-    return data.bosses.get(name) or data.regions.get(name) or data.locations.get(name) or None
+    for table in (data.bosses, data.regions, data.locations):
+        result = table.get(name)
+        if result is not None:
+            return result
+    return None
+
+
+def _match_display_name_pattern(name: str, data: TranslationData) -> str | None:
+    """Try display_name patterns on a name segment.
+
+    Checks literal entries (no placeholders) first for specificity, then
+    patterns with ``{name}`` capture groups.  Captured entities are translated
+    recursively via ``_translate_name``.
+    """
+    if not data.patterns_display_name:
+        return None
+
+    # 1. Literals first (more specific than patterns)
+    for en_template, fr_template in data.patterns_display_name.items():
+        if "{" in en_template:
+            continue
+        regex = _build_pattern_regex(en_template)
+        if regex.match(name):
+            return fr_template
+
+    # 2. Patterns with placeholders
+    for en_template, fr_template in data.patterns_display_name.items():
+        if "{" not in en_template:
+            continue
+        regex = _build_pattern_regex(en_template)
+        m = regex.match(name)
+        if m:
+            result = fr_template
+            for ph in _PLACEHOLDER_NAMES:
+                try:
+                    value = m.group(ph)
+                except IndexError:
+                    continue
+                if value is not None:
+                    result = result.replace("{" + ph + "}", _translate_name(value, data))
+            return _apply_french_contractions(result)
+
+    return None
+
+
+def _translate_name_segment(name: str, data: TranslationData) -> str | None:
+    """Translate a single name segment via lookup then display_name patterns."""
+    return _lookup_name(name, data) or _match_display_name_pattern(name, data)
 
 
 def _translate_name(name: str, data: TranslationData) -> str:
     """Translate a proper name via bosses → regions → locations lookups.
 
+    Falls back to display_name patterns for segments like ``"After Boss"``.
     Handles composite names like ``"Region - Location - Boss"`` by splitting
     on ``" - "`` and translating each segment individually.
     """
     # Try full name first
-    result = _lookup_name(name, data)
+    result = _translate_name_segment(name, data)
     if result is not None:
         return result
 
     # Composite: "Capital Outskirts - Sealed Tunnel - Onyx Lord"
     parts = name.split(" - ")
     if len(parts) > 1:
-        translated_parts = [_lookup_name(p, data) or p for p in parts]
+        translated_parts = [_translate_name_segment(p, data) or p for p in parts]
         if translated_parts != parts:
             return " - ".join(translated_parts)
 
@@ -188,7 +238,7 @@ def _apply_french_contractions(text: str) -> str:
 _pattern_regex_cache: dict[str, re.Pattern[str]] = {}
 
 # Placeholder names used in the TOML pattern templates.
-_PLACEHOLDER_NAMES = {"boss", "zone", "zone1", "zone2", "location", "direction"}
+_PLACEHOLDER_NAMES = {"boss", "zone", "zone1", "zone2", "location", "direction", "name"}
 
 
 def _build_pattern_regex(en_template: str) -> re.Pattern[str]:
