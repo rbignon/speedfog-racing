@@ -6,6 +6,7 @@
 	import type { NodePopupData } from './popupData';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
+	import { expandNodePath, buildPlayerWaypoints } from './parallel';
 	import {
 		computeNodeVisibility,
 		filterVisibleNodes,
@@ -28,9 +29,10 @@
 		RACER_DOT_RADIUS,
 		ADJACENT_NODE_COLOR,
 		ADJACENT_OPACITY,
-		REVEAL_TRANSITION_MS
+		REVEAL_TRANSITION_MS,
+		PARALLEL_PATH_SPACING
 	} from './constants';
-	import type { DagNode, PositionedNode, DagLayout } from './types';
+	import type { DagNode, PositionedNode, RoutedEdge, DagLayout } from './types';
 	import type { NodeVisibility } from './visibility';
 
 	interface Props {
@@ -77,6 +79,63 @@
 			map.set(node.id, node);
 		}
 		return map;
+	});
+
+	// Edge lookup for path computation
+	let edgeMap: Map<string, RoutedEdge> = $derived.by(() => {
+		const map = new Map<string, RoutedEdge>();
+		for (const edge of layout.edges) {
+			map.set(`${edge.fromId}->${edge.toId}`, edge);
+		}
+		return map;
+	});
+
+	// Bidirectional adjacency for BFS gap-filling (backtracking through fog gates)
+	let adjacency: Map<string, string[]> = $derived.by(() => {
+		const adj = new Map<string, string[]>();
+		for (const edge of layout.edges) {
+			const fwd = adj.get(edge.fromId);
+			if (fwd) fwd.push(edge.toId);
+			else adj.set(edge.fromId, [edge.toId]);
+			const rev = adj.get(edge.toId);
+			if (rev) rev.push(edge.fromId);
+			else adj.set(edge.toId, [edge.fromId]);
+		}
+		return adj;
+	});
+
+	// Progression polyline — my participant's path through discovered nodes
+	let playerPath = $derived.by(() => {
+		const me = participants.find((p) => p.id === myParticipantId);
+		if (!me || !me.zone_history || me.zone_history.length === 0) return null;
+
+		const rawNodeIds = me.zone_history.map((e: { node_id: string }) => e.node_id);
+		const deduped: string[] = [];
+		for (const nid of rawNodeIds) {
+			if (deduped.length === 0 || deduped[deduped.length - 1] !== nid) {
+				if (nodeById.has(nid)) {
+					deduped.push(nid);
+				}
+			}
+		}
+		if (deduped.length < 2) return null;
+
+		const expanded = expandNodePath(deduped, edgeMap, adjacency);
+		// Single player — slot is always 0, count always 1
+		const points = buildPlayerWaypoints(
+			expanded,
+			nodeById,
+			edgeMap,
+			() => 0,
+			() => 1,
+			PARALLEL_PATH_SPACING
+		);
+		if (points.length < 2) return null;
+
+		return {
+			points: points.map((w) => `${w.x},${w.y}`).join(' '),
+			color: PLAYER_COLORS[me.color_index % PLAYER_COLORS.length]
+		};
 	});
 
 	// Player dot (only for my participant, only on discovered nodes)
@@ -223,6 +282,22 @@
 				{/each}
 			</g>
 		{/each}
+
+		<!-- Progression path -->
+		{#if playerPath}
+			<polyline
+				points={playerPath.points}
+				fill="none"
+				stroke={playerPath.color}
+				stroke-width="4"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				opacity="0.8"
+				class="player-path"
+			>
+				<title>{playerDot?.displayName ?? 'Your path'}</title>
+			</polyline>
+		{/if}
 
 		<!-- Nodes -->
 		{#each visibleNodes as node (node.id)}
@@ -376,6 +451,10 @@
 
 	.dag-node:hover .dag-node-shape {
 		transform: scale(1.3);
+	}
+
+	.player-path {
+		transition: opacity 200ms ease;
 	}
 
 	.player-dot {
