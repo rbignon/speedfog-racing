@@ -17,6 +17,7 @@ from speedfog_racing.services.seed_service import (
     discard_pool,
     get_available_seed,
     get_pool_stats,
+    reroll_seed_for_race,
     scan_pool,
 )
 
@@ -288,7 +289,7 @@ async def test_get_pool_stats_with_discarded(async_db):
 
 @pytest.mark.asyncio
 async def test_discard_pool(async_db, seed_pool_dir):
-    """discard_pool marks all AVAILABLE seeds as DISCARDED."""
+    """discard_pool marks AVAILABLE and CONSUMED seeds as DISCARDED."""
     with patch("speedfog_racing.services.seed_service.settings") as mock_settings:
         mock_settings.seeds_pool_dir = seed_pool_dir
         await scan_pool(async_db, "standard")
@@ -300,14 +301,14 @@ async def test_discard_pool(async_db, seed_pool_dir):
         await async_db.flush()
         await async_db.commit()
 
-        # Discard the pool — should only affect the remaining AVAILABLE seed
+        # Discard the pool — affects both AVAILABLE and CONSUMED
         count = await discard_pool(async_db, "standard")
-        assert count == 1
+        assert count == 2
 
         stats = await get_pool_stats(async_db)
         assert stats["standard"]["available"] == 0
-        assert stats["standard"]["consumed"] == 1
-        assert stats["standard"]["discarded"] == 1
+        assert stats["standard"]["consumed"] == 0
+        assert stats["standard"]["discarded"] == 2
 
 
 @pytest.mark.asyncio
@@ -315,3 +316,44 @@ async def test_discard_pool_empty(async_db):
     """discard_pool returns 0 when no available seeds."""
     count = await discard_pool(async_db, "nonexistent")
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_reroll_after_discard_keeps_seed_discarded(async_db):
+    """Re-rolling after pool discard keeps the old seed DISCARDED, not AVAILABLE."""
+    # Old seed (consumed by a race, then pool discarded → DISCARDED)
+    old_seed = Seed(
+        seed_number="old001",
+        pool_name="standard",
+        graph_json={"total_layers": 5},
+        total_layers=5,
+        folder_path="/test/seed_old001.zip",
+        status=SeedStatus.DISCARDED,
+    )
+    # New seed from regenerated pool
+    new_seed = Seed(
+        seed_number="new001",
+        pool_name="standard",
+        graph_json={"total_layers": 8},
+        total_layers=8,
+        folder_path="/test/seed_new001.zip",
+        status=SeedStatus.AVAILABLE,
+    )
+    async_db.add_all([old_seed, new_seed])
+    await async_db.flush()
+
+    user = User(twitch_id="u1", twitch_username="user1", role=UserRole.USER)
+    async_db.add(user)
+    await async_db.flush()
+
+    race = Race(name="Test", organizer_id=user.id, seed_id=old_seed.id)
+    race.seed = old_seed
+    async_db.add(race)
+    await async_db.flush()
+
+    # Re-roll: old seed should stay DISCARDED, new seed becomes CONSUMED
+    result = await reroll_seed_for_race(async_db, race)
+
+    assert result.id == new_seed.id
+    assert result.status == SeedStatus.CONSUMED
+    assert old_seed.status == SeedStatus.DISCARDED  # NOT AVAILABLE

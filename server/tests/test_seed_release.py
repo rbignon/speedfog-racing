@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base, get_db
@@ -393,3 +394,49 @@ async def test_start_allowed_after_release(test_client, organizer, seed):
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "running"
+
+
+# =============================================================================
+# Delete After Pool Discard Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_delete_race_after_discard_keeps_seed_discarded(
+    test_client, organizer, async_session
+):
+    """Deleting a SETUP race after pool discard keeps seed DISCARDED."""
+    async with async_session() as db:
+        s = Seed(
+            seed_number="s_disc",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/s_disc.zip",
+            status=SeedStatus.DISCARDED,
+        )
+        db.add(s)
+        await db.flush()
+
+        race = Race(
+            name="Race After Discard",
+            organizer_id=organizer.id,
+            seed_id=s.id,
+            status=RaceStatus.SETUP,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+        seed_id = s.id
+
+    async with test_client as client:
+        resp = await client.delete(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert resp.status_code == 204
+
+    async with async_session() as db:
+        result = await db.execute(select(Seed).where(Seed.id == seed_id))
+        s = result.scalar_one()
+        assert s.status == SeedStatus.DISCARDED

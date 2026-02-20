@@ -185,8 +185,9 @@ async def reroll_seed_for_race(db: AsyncSession, race: Race) -> Seed:
     if new_seed is None:
         raise ValueError(f"No available seeds in pool '{pool_name}'")
 
-    # Release old seed
-    old_seed.status = SeedStatus.AVAILABLE
+    # Release old seed (keep DISCARDED if pool was discarded)
+    if old_seed.status != SeedStatus.DISCARDED:
+        old_seed.status = SeedStatus.AVAILABLE
 
     # Assign new seed
     new_seed.status = SeedStatus.CONSUMED
@@ -222,7 +223,10 @@ async def get_pool_stats(db: AsyncSession) -> dict[str, dict[str, int]]:
 
 
 async def discard_pool(db: AsyncSession, pool_name: str) -> int:
-    """Mark all AVAILABLE seeds in a pool as DISCARDED.
+    """Mark all AVAILABLE and CONSUMED seeds in a pool as DISCARDED.
+
+    CONSUMED seeds are included so they cannot leak back to AVAILABLE
+    when a race re-rolls or is deleted after the pool is discarded.
 
     Args:
         db: Database session
@@ -233,7 +237,10 @@ async def discard_pool(db: AsyncSession, pool_name: str) -> int:
     """
     result = await db.execute(
         update(Seed)
-        .where(Seed.pool_name == pool_name, Seed.status == SeedStatus.AVAILABLE)
+        .where(
+            Seed.pool_name == pool_name,
+            Seed.status.in_([SeedStatus.AVAILABLE, SeedStatus.CONSUMED]),
+        )
         .values(status=SeedStatus.DISCARDED)
     )
     await db.commit()

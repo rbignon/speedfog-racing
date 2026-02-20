@@ -1136,7 +1136,7 @@ async def delete_race(
     if race.seed_id and race.status in (RaceStatus.SETUP,):
         result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
         seed = result.scalar_one_or_none()
-        if seed:
+        if seed and seed.status != SeedStatus.DISCARDED:
             seed.status = SeedStatus.AVAILABLE
 
     await db.delete(race)
