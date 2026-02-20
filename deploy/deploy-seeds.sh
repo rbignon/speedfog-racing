@@ -9,6 +9,7 @@
 #   deploy/deploy-seeds.sh --pool standard --count 5 --game-dir "/path/to/game"
 #   deploy/deploy-seeds.sh --upload-only
 #   deploy/deploy-seeds.sh --upload-only --pool sprint
+#   deploy/deploy-seeds.sh --discard --pool standard
 set -euo pipefail
 
 SERVER="${DEPLOY_HOST:?Set DEPLOY_HOST (e.g. export DEPLOY_HOST=user@host)}"
@@ -23,6 +24,7 @@ GAME_DIR=""
 SEEDS_DIR="${SEEDS_DIR:-/data/SpeedFog/racing/seeds}"
 UPLOAD_ONLY=false
 NO_RESTART=false
+DISCARD=false
 VERBOSE=""
 
 usage() {
@@ -39,6 +41,7 @@ Options:
   --upload-only     Skip generation, upload existing tools/output/
   --output DIR      Local output directory (default: tools/output)
   --no-restart      Upload without restarting the service
+  --discard         Mark AVAILABLE/CONSUMED seeds as DISCARDED on server
   -v, --verbose     Pass -v to generate_pool.py
   -h, --help        Show this help
 
@@ -56,6 +59,9 @@ Examples:
 
   # Just upload what's already in tools/output/
   deploy/deploy-seeds.sh --upload-only
+
+  # Discard old seeds on server before uploading new ones
+  deploy/deploy-seeds.sh --discard --pool standard --count 10 --game-dir "/path/to/game"
 EOF
     exit 0
 }
@@ -70,6 +76,7 @@ while [[ $# -gt 0 ]]; do
         --upload-only) UPLOAD_ONLY=true; shift ;;
         --output) OUTPUT_DIR="$2"; shift 2 ;;
         --no-restart) NO_RESTART=true; shift ;;
+        --discard) DISCARD=true; shift ;;
         -v|--verbose) VERBOSE="-v"; shift ;;
         -h|--help) usage ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -78,14 +85,21 @@ done
 
 # Validate
 if [[ "$UPLOAD_ONLY" == false ]]; then
-    if [[ -z "$COUNT" ]]; then
-        echo "Error: --count is required (or use --upload-only)"
+    # --count and --game-dir required unless --upload-only or --discard alone
+    if [[ -n "$COUNT" && -z "$GAME_DIR" ]]; then
+        echo "Error: --game-dir is required when using --count"
         exit 1
     fi
-    if [[ -z "$GAME_DIR" ]]; then
-        echo "Error: --game-dir is required (or use --upload-only)"
+    if [[ -z "$COUNT" && "$DISCARD" == false ]]; then
+        echo "Error: --count is required (or use --upload-only / --discard)"
         exit 1
     fi
+fi
+
+# Validate pool name (prevent SQL injection, same as cleanup-seeds.sh)
+if [[ -n "$POOL" ]] && [[ ! "$POOL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: invalid pool name '$POOL' (only alphanumeric, underscore, hyphen allowed)"
+    exit 1
 fi
 
 # Determine pools to process
@@ -105,9 +119,44 @@ fi
 
 echo "Pools: ${POOLS[*]}"
 
+# Helper: mark AVAILABLE/CONSUMED seeds as DISCARDED via psql over SSH
+discard_seeds() {
+    ssh "$SERVER" bash -s "${POOLS[*]}" <<'ENDSSH'
+        set -eo pipefail
+        cd /tmp
+        for pool in $1; do
+            result=$(sudo -u speedfog psql -t -A speedfog_racing -c \
+                "UPDATE seeds SET status = 'DISCARDED' WHERE status IN ('AVAILABLE', 'CONSUMED') AND pool_name = '$pool'" </dev/null) || {
+                echo "  ERROR: psql failed for pool $pool"
+                exit 1
+            }
+            count=$(echo "$result" | grep -o '[0-9]*' || echo 0)
+            echo "  $pool: $count seeds discarded"
+        done
+ENDSSH
+}
+
+# --- Discard-only mode ---
+
+if [[ "$DISCARD" == true && "$UPLOAD_ONLY" == false && -z "$COUNT" ]]; then
+    echo "==> Discarding AVAILABLE/CONSUMED seeds on server..."
+    discard_seeds
+    echo "==> Done!"
+    exit 0
+fi
+
 # --- Generation phase ---
 
 if [[ "$UPLOAD_ONLY" == false ]]; then
+    # Clean output directory to avoid re-uploading old seeds
+    for pool in "${POOLS[@]}"; do
+        pool_dir="$OUTPUT_DIR/$pool"
+        if [[ -d "$pool_dir" ]]; then
+            echo "==> Cleaning $pool_dir..."
+            rm -rf "$pool_dir"
+        fi
+    done
+
     echo "==> Generating seeds..."
     for pool in "${POOLS[@]}"; do
         echo ""
@@ -120,6 +169,13 @@ if [[ "$UPLOAD_ONLY" == false ]]; then
             $VERBOSE
     done
     echo ""
+fi
+
+# --- Discard phase (before upload, marks old AVAILABLE seeds) ---
+
+if [[ "$DISCARD" == true ]]; then
+    echo "==> Discarding old AVAILABLE/CONSUMED seeds on server..."
+    discard_seeds
 fi
 
 # --- Upload phase ---
