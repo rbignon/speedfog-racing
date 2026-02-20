@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 import zipfile
 from concurrent.futures import (
@@ -29,10 +30,17 @@ from concurrent.futures import (
     as_completed,
 )
 from pathlib import Path
+from typing import NamedTuple
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 POOLS_DIR = SCRIPT_DIR / "pools"
 DLL_NAME = "speedfog_race_mod.dll"
+
+
+class SeedResult(NamedTuple):
+    slug: str
+    ok: bool
+    duration: float  # seconds
 
 
 def discover_pools() -> list[str]:
@@ -334,12 +342,13 @@ def generate_one_seed(
     failed_dir: Path,
     *,
     verbose: bool = False,
-) -> bool:
-    """Generate and process a single seed. Returns True on success."""
+) -> SeedResult:
+    """Generate and process a single seed."""
     seed_slug = uuid.uuid4().hex[:12]
     prefix = f"[{index}/{total}]"
     print(f"{prefix} Generating seed_{seed_slug}...")
 
+    t0 = time.monotonic()
     temp_dir = tempfile.mkdtemp()
     temp_path = Path(temp_dir)
     ok = False
@@ -354,15 +363,15 @@ def generate_one_seed(
         )
         if seed_dir is None:
             print(f"{prefix} Failed: speedfog generation error")
-            return False
+            return SeedResult(seed_slug, False, time.monotonic() - t0)
 
         if process_seed(seed_dir, dll_source, output_pool_dir, seed_slug):
             print(f"{prefix} Success: seed_{seed_slug}.zip")
             ok = True
-            return True
+            return SeedResult(seed_slug, True, time.monotonic() - t0)
         else:
             print(f"{prefix} Failed: post-processing error")
-            return False
+            return SeedResult(seed_slug, False, time.monotonic() - t0)
     finally:
         if ok:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -432,8 +441,7 @@ def main() -> int:
     print(f"  Output: {output_pool_dir}")
     print()
 
-    succeeded = 0
-    failed = 0
+    results: list[SeedResult] = []
     failed_dir = args.output / f"{args.pool}_failed"
 
     common_kwargs = dict(
@@ -447,12 +455,11 @@ def main() -> int:
         verbose=args.verbose,
     )
 
+    t_start = time.monotonic()
+
     if jobs == 1:
         for i in range(args.count):
-            if generate_one_seed(index=i + 1, **common_kwargs):
-                succeeded += 1
-            else:
-                failed += 1
+            results.append(generate_one_seed(index=i + 1, **common_kwargs))
     else:
         if args.verbose:
             print("Warning: --verbose output may interleave with multiple jobs")
@@ -464,25 +471,41 @@ def main() -> int:
             }
             for future in as_completed(futures):
                 try:
-                    if future.result():
-                        succeeded += 1
-                    else:
-                        failed += 1
+                    results.append(future.result())
                 except Exception as e:
-                    failed += 1
                     print(f"Unexpected error in seed worker: {e}")
+
+    total_time = time.monotonic() - t_start
+    succeeded = sum(1 for r in results if r.ok)
+    failed = args.count - succeeded
 
     # Summary
     print()
-    print(f"Summary: {succeeded} succeeded, {failed} failed")
+    print(f"{'Seed':<22} {'Status':<10} {'Time':>8}")
+    print("-" * 42)
+    for r in results:
+        status = "OK" if r.ok else "FAILED"
+        print(f"  seed_{r.slug:<16} {status:<10} {_fmt_duration(r.duration):>8}")
+    print("-" * 42)
+    print(
+        f"  {succeeded} succeeded, {failed} failed{' ' * 16} {_fmt_duration(total_time):>8}"
+    )
     if failed > 0 and failed_dir.exists():
-        print(f"Failed seeds preserved in: {failed_dir}")
+        print(f"  Failed seeds preserved in: {failed_dir}")
 
     if failed > 0 and succeeded == 0:
         return 1  # total failure
     if failed > 0:
         return 2  # partial failure (some seeds generated)
     return 0
+
+
+def _fmt_duration(seconds: float) -> str:
+    """Format a duration as e.g. '1m32s' or '45s'."""
+    m, s = divmod(int(seconds), 60)
+    if m > 0:
+        return f"{m}m{s:02d}s"
+    return f"{s}s"
 
 
 if __name__ == "__main__":
