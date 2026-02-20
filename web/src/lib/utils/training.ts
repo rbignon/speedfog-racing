@@ -2,13 +2,13 @@
  * Shared utilities for training pages.
  */
 
+import { formatPoolName } from "./format";
+
 /**
- * Strip "training_" prefix and capitalize the pool name for display.
+ * Strip "training_" prefix and format the pool name for display.
  */
 export function displayPoolName(poolName: string): string {
-  return poolName
-    .replace(/^training_/, "")
-    .replace(/^\w/, (c) => c.toUpperCase());
+  return formatPoolName(poolName.replace(/^training_/, ""));
 }
 
 /**

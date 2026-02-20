@@ -4,6 +4,7 @@
 	import { createRace, fetchPoolStats, type PoolStats, type PoolInfo } from '$lib/api';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
+	import { formatPoolName } from '$lib/utils/format';
 
 	let name = $state('');
 	let scheduledAt = $state('');
@@ -18,17 +19,10 @@
 	let error = $state<string | null>(null);
 	let authChecked = $state(false);
 
-	const poolOrder = ['sprint', 'standard', 'hardcore'];
-
 	let sortedPools = $derived(
-		poolOrder
-			.filter((p) => p in pools)
-			.map((p) => [p, pools[p]] as [string, PoolInfo])
-			.concat(
-				Object.entries(pools)
-					.filter(([p]) => !poolOrder.includes(p))
-					.map(([p, info]) => [p, info] as [string, PoolInfo])
-			)
+		Object.entries(pools)
+			.map(([p, info]) => [p, info] as [string, PoolInfo])
+			.sort((a, b) => (a[1].pool_config?.sort_order ?? 99) - (b[1].pool_config?.sort_order ?? 99))
 	);
 
 	let hasAvailablePool = $derived(sortedPools.some(([, info]) => info.available > 0));
@@ -90,9 +84,6 @@
 		}
 	}
 
-	function capitalize(s: string): string {
-		return s.charAt(0).toUpperCase() + s.slice(1);
-	}
 </script>
 
 <svelte:head>
@@ -147,7 +138,7 @@
 					<div class="pool-cards">
 						{#each sortedPools as [pool, info] (pool)}
 							<button type="button" class="pool-card disabled">
-								<span class="pool-name">{capitalize(pool)}</span>
+								<span class="pool-name">{formatPoolName(pool)}</span>
 								{#if info.pool_config?.estimated_duration}
 									<span class="pool-duration">{info.pool_config?.estimated_duration}</span>
 								{/if}
@@ -169,7 +160,7 @@
 								class:disabled
 								onclick={() => { if (!disabled && !creating) poolName = pool; }}
 							>
-								<span class="pool-name">{capitalize(pool)}</span>
+								<span class="pool-name">{formatPoolName(pool)}</span>
 								{#if info.pool_config?.estimated_duration}
 									<span class="pool-duration">{info.pool_config?.estimated_duration}</span>
 								{/if}

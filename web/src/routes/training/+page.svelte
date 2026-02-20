@@ -23,17 +23,10 @@
 	let error = $state<string | null>(null);
 	let authChecked = $state(false);
 
-	const poolOrder = ['training_sprint', 'training_standard', 'training_hardcore'];
-
 	let sortedPools = $derived(
-		poolOrder
-			.filter((p) => p in pools)
-			.map((p) => [p, pools[p]] as [string, PoolInfo])
-			.concat(
-				Object.entries(pools)
-					.filter(([p]) => !poolOrder.includes(p))
-					.map(([p, info]) => [p, info] as [string, PoolInfo]),
-			),
+		Object.entries(pools)
+			.map(([p, info]) => [p, info] as [string, PoolInfo])
+			.sort((a, b) => (a[1].pool_config?.sort_order ?? 99) - (b[1].pool_config?.sort_order ?? 99)),
 	);
 
 	let selectedConfig = $derived(selectedPool ? pools[selectedPool]?.pool_config ?? null : null);
@@ -158,7 +151,7 @@
 				</div>
 				{#if selectedPool && selectedConfig}
 					<div class="pool-detail">
-						<PoolSettingsCard poolName={displayPoolName(selectedPool)} poolConfig={selectedConfig} compact />
+						<PoolSettingsCard poolName={selectedPool.replace(/^training_/, '')} poolConfig={selectedConfig} compact />
 						<div class="pool-detail-footer">
 							<span class="seed-count" class:pool-exhausted={selectedInfo?.played_by_user != null && selectedInfo.played_by_user >= (selectedInfo?.available ?? 0)}>
 								{#if selectedInfo?.played_by_user != null && selectedInfo.played_by_user > 0}

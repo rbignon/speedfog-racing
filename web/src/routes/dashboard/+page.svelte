@@ -13,6 +13,7 @@
 	} from '$lib/api';
 	import { timeAgo, formatScheduledTime } from '$lib/utils/time';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
+	import { formatPoolName } from '$lib/utils/format';
 	import { statusLabel } from '$lib/format';
 	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
 
@@ -78,7 +79,7 @@
 		if (item.type === 'race_participant') return item.race_name;
 		if (item.type === 'race_organizer') return item.race_name;
 		if (item.type === 'race_caster') return item.race_name;
-		if (item.type === 'training') return `Training (${item.pool_name})`;
+		if (item.type === 'training') return `Training (${displayPoolName(item.pool_name)})`;
 		return '';
 	}
 
@@ -244,7 +245,7 @@
 								</div>
 							{/if}
 							<div class="active-card-meta">
-								<span>{race.participant_count} player{race.participant_count !== 1 ? 's' : ''}{#if race.pool_name} &middot; {race.pool_name}{/if}</span>
+								<span>{race.participant_count} player{race.participant_count !== 1 ? 's' : ''}{#if race.pool_name} &middot; {formatPoolName(race.pool_name)}{/if}</span>
 								<span class="race-organizer">
 									by
 									{#if race.organizer.twitch_avatar_url}

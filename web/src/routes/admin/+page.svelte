@@ -14,6 +14,7 @@
 		type ActivityItem
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
+	import { formatPoolName } from '$lib/utils/format';
 	import { displayPoolName } from '$lib/utils/training';
 
 	type Tab = 'users' | 'seeds' | 'activity';
@@ -146,7 +147,7 @@
 	}
 
 	async function handleDiscard(poolName: string) {
-		if (!confirm(`Discard all available seeds in "${poolName}"? This cannot be undone.`)) return;
+		if (!confirm(`Discard all available seeds in "${formatPoolName(poolName)}"? This cannot be undone.`)) return;
 		actionLoading = { ...actionLoading, [`discard_${poolName}`]: true };
 		try {
 			const result = await adminDiscardPool(poolName);
@@ -281,7 +282,7 @@
 					<tbody>
 						{#each Object.entries(seedStats.pools) as [poolName, stats] (poolName)}
 							<tr>
-								<td class="pool-name">{poolName}</td>
+								<td class="pool-name">{formatPoolName(poolName)}</td>
 								<td class="num-cell">{stats.available}</td>
 								<td class="num-cell">{stats.consumed}</td>
 								<td class="num-cell">{stats.discarded}</td>

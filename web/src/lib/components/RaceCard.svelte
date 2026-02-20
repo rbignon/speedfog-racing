@@ -2,6 +2,7 @@
 	import type { Race, RaceStatus } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { timeAgo, formatScheduledTime } from '$lib/utils/time';
+	import { formatPoolName } from '$lib/utils/format';
 	import { statusLabel } from '$lib/format';
 	import LiveIndicator from './LiveIndicator.svelte';
 
@@ -121,7 +122,7 @@
 		<span>
 			{race.participant_count} player{race.participant_count !== 1 ? 's' : ''}
 			{#if race.pool_name}
-				&middot; {race.pool_name}
+				&middot; {formatPoolName(race.pool_name)}
 			{/if}
 		</span>
 		{#if action && hideOrganizer}

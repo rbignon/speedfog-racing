@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PoolConfig } from '$lib/api';
+	import { formatPoolName } from '$lib/utils/format';
 
 	let {
 		poolName,
@@ -11,9 +12,7 @@
 		compact?: boolean;
 	} = $props();
 
-	let title = $derived(
-		poolName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-	);
+	let title = $derived(formatPoolName(poolName));
 
 	let miscNotes = $derived.by(() => {
 		const notes: string[] = [];
