@@ -144,6 +144,11 @@ pub struct RaceTracker {
     // Item spawner thread handle (prevents double-spawn on reconnect)
     spawner_thread: Option<JoinHandle<()>>,
 
+    // Items already spawned this session (in-process guard for reconnects).
+    // The event flag in game memory is unreliable across reconnects — the game
+    // may silently clear our flag via internal sync. This bool is the primary guard.
+    items_spawned: bool,
+
     // Zone update received during loading screen, waiting for load to finish
     pending_zone_update: Option<ZoneUpdateData>,
 
@@ -254,6 +259,7 @@ impl RaceTracker {
             status_message: None,
             flags_diagnosed: false,
             spawner_thread: None,
+            items_spawned: false,
             pending_zone_update: None,
             loading_exit_time: Some(Instant::now() - ZONE_REVEAL_DELAY), // Already elapsed → immediate reveal
             was_position_readable: true,
@@ -627,27 +633,35 @@ impl RaceTracker {
                 // Spawn runtime items (gems/AoW) if present in seed
                 if let Some(ref seed_info) = self.race_state.seed {
                     if !seed_info.spawn_items.is_empty() {
-                        // Guard against double-spawn on reconnect
-                        let already_running = self
-                            .spawner_thread
-                            .as_ref()
-                            .is_some_and(|h| !h.is_finished());
-                        if already_running {
+                        if self.items_spawned {
                             info!(
                                 count = seed_info.spawn_items.len(),
-                                "[RACE] Spawner thread already running, skipping"
+                                "[RACE] Items already spawned this session, skipping"
                             );
                         } else {
-                            let items = seed_info.spawn_items.clone();
-                            let ids: Vec<u32> = items.iter().map(|i| i.id).collect();
-                            info!(count = items.len(), item_ids = ?ids, "[RACE] Spawning runtime items");
-                            let flag_reader = self.event_flag_reader.clone();
-                            self.spawner_thread = Some(std::thread::spawn(move || {
-                                crate::eldenring::item_spawner::spawn_items_blocking(
-                                    items,
-                                    &flag_reader,
+                            // Secondary guard: thread still running from a previous auth_ok
+                            let already_running = self
+                                .spawner_thread
+                                .as_ref()
+                                .is_some_and(|h| !h.is_finished());
+                            if already_running {
+                                info!(
+                                    count = seed_info.spawn_items.len(),
+                                    "[RACE] Spawner thread already running, skipping"
                                 );
-                            }));
+                            } else {
+                                let items = seed_info.spawn_items.clone();
+                                let ids: Vec<u32> = items.iter().map(|i| i.id).collect();
+                                info!(count = items.len(), item_ids = ?ids, "[RACE] Spawning runtime items");
+                                self.items_spawned = true;
+                                let flag_reader = self.event_flag_reader.clone();
+                                self.spawner_thread = Some(std::thread::spawn(move || {
+                                    crate::eldenring::item_spawner::spawn_items_blocking(
+                                        items,
+                                        &flag_reader,
+                                    );
+                                }));
+                            }
                         }
                     }
                 }
