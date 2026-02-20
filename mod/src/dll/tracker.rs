@@ -653,6 +653,9 @@ impl RaceTracker {
                                 let items = seed_info.spawn_items.clone();
                                 let ids: Vec<u32> = items.iter().map(|i| i.id).collect();
                                 info!(count = items.len(), item_ids = ?ids, "[RACE] Spawning runtime items");
+                                // Set before thread spawn: prevents reconnect double-spawn.
+                                // If the thread fails, items won't retry this session
+                                // (event flag in item_spawner covers game restarts).
                                 self.items_spawned = true;
                                 let flag_reader = self.event_flag_reader.clone();
                                 self.spawner_thread = Some(std::thread::spawn(move || {

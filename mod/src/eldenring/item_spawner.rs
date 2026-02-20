@@ -4,9 +4,12 @@
 //! DirectlyGivePlayerItem doesn't support the Gem item type, so we use
 //! func_item_inject (same function as the ER practice tool) at runtime.
 //!
-//! Re-spawn prevention uses event flag 1040292900 in the VirtualMemoryFlag tree.
-//! This flag persists in the save file, so restarting the game or reconnecting
-//! won't re-give items.
+//! Re-spawn prevention has two layers:
+//! 1. In-process `items_spawned` bool in RaceTracker (primary; covers reconnects)
+//! 2. Event flag 1040292900 in VirtualMemoryFlag tree (secondary; covers game restarts)
+//!
+//! The event flag persists in the save file but is unreliable across WebSocket
+//! reconnects — the game may silently clear it via internal flag sync.
 
 use std::ffi::c_void;
 use std::time::Duration;
