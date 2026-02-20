@@ -389,14 +389,19 @@ async def _handle_event_flag(
 
         # Check not duplicate
         old_history = session.progress_nodes or []
-        if any(e.get("node_id") == node_id for e in old_history):
-            return
+        is_revisit = any(e.get("node_id") == node_id for e in old_history)
 
-        # Record
-        session.igt_ms = igt
-        session.current_zone = node_id
-        session.progress_nodes = [*old_history, {"node_id": node_id, "igt_ms": igt}]
-        await db.commit()
+        if is_revisit:
+            # Already discovered — just update position (like zone_query)
+            session.current_zone = node_id
+            session.igt_ms = igt
+            await db.commit()
+        else:
+            # New discovery — record in history
+            session.igt_ms = igt
+            session.current_zone = node_id
+            session.progress_nodes = [*old_history, {"node_id": node_id, "igt_ms": igt}]
+            await db.commit()
 
     # Broadcast to spectators (session is detached; expire_on_commit=False keeps attrs)
     if session:

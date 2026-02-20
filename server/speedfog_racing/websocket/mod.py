@@ -440,6 +440,7 @@ async def handle_event_flag(
         return
 
     is_finish = False
+    is_revisit = False
     igt = 0
     node_id: str | None = None
     seed_graph: dict[str, Any] | None = None
@@ -490,22 +491,27 @@ async def handle_event_flag(
             # Resolve layer for this node
             node_layer = get_layer_for_node(node_id, seed_graph)
 
-            # Check if node already discovered (ignore duplicates)
+            # Check if node already discovered
             old_history = participant.zone_history or []
-            if any(entry.get("node_id") == node_id for entry in old_history):
-                return  # Already discovered
+            is_revisit = any(entry.get("node_id") == node_id for entry in old_history)
 
-            # Record the node and update current position
-            participant.igt_ms = igt
-            participant.current_zone = node_id
-            entry = {"node_id": node_id, "igt_ms": igt}
-            participant.zone_history = [*old_history, entry]
+            if is_revisit:
+                # Already discovered — just update position (like zone_query)
+                participant.current_zone = node_id
+                participant.igt_ms = igt
+                await db.commit()
+            else:
+                # New discovery — record in history and update ranking
+                participant.igt_ms = igt
+                participant.current_zone = node_id
+                new_entry = {"node_id": node_id, "igt_ms": igt}
+                participant.zone_history = [*old_history, new_entry]
 
-            # current_layer is a high watermark (used for ranking) — never regress
-            if node_layer > participant.current_layer:
-                participant.current_layer = node_layer
+                # current_layer is a high watermark (used for ranking) — never regress
+                if node_layer > participant.current_layer:
+                    participant.current_layer = node_layer
 
-            await db.commit()
+                await db.commit()
 
     # Session closed — safe to open new sessions or broadcast
 
@@ -513,16 +519,23 @@ async def handle_event_flag(
         await handle_finished(websocket, session_maker, participant_id, {"igt_ms": igt})
         return
 
-    # Broadcast updated leaderboard (detached objects)
-    await manager.broadcast_leaderboard(
-        participant.race_id,
-        participant.race.participants,
-        graph_json=seed_graph,
-    )
+    if not is_revisit:
+        # Broadcast updated leaderboard only for new discoveries
+        await manager.broadcast_leaderboard(
+            participant.race_id,
+            participant.race.participants,
+            graph_json=seed_graph,
+        )
 
     # Unicast zone_update to originating mod
     if node_id and seed_graph:
         await send_zone_update(websocket, node_id, seed_graph, participant.zone_history, locale)
+
+    # Broadcast player position to spectators (so DAG view updates)
+    if is_revisit:
+        await manager.broadcast_player_update(
+            participant.race_id, participant, graph_json=seed_graph
+        )
 
 
 async def handle_zone_query(
