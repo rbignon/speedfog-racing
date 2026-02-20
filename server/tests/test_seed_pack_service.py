@@ -26,6 +26,7 @@ class MockUser:
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     twitch_username: str = "testplayer"
     twitch_display_name: str = "Test Player"
+    overlay_settings: dict | None = None
 
 
 @dataclass
@@ -134,6 +135,20 @@ def test_generate_player_config_custom_websocket_url(mock_participant, mock_race
     )
 
     assert 'url = "wss://custom.example.com"' in config
+
+
+def test_generate_player_config_uses_user_font_size(mock_participant, mock_race):
+    """Config should use user's font_size when set."""
+    mock_participant.user.overlay_settings = {"font_size": 24.0}
+    config = generate_player_config(mock_participant, mock_race)
+    assert "font_size = 24.0" in config
+
+
+def test_generate_player_config_uses_default_font_size(mock_participant, mock_race):
+    """Config should use 18.0 default when user has no settings."""
+    mock_participant.user.overlay_settings = None
+    config = generate_player_config(mock_participant, mock_race)
+    assert "font_size = 18.0" in config
 
 
 # =============================================================================

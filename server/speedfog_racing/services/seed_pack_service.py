@@ -13,6 +13,15 @@ from speedfog_racing.models import Participant, Race, TrainingSession
 
 logger = logging.getLogger(__name__)
 
+OVERLAY_DEFAULTS: dict[str, float] = {"font_size": 18.0}
+
+
+def _get_overlay_setting(user_settings: dict | None, key: str) -> float:
+    """Get overlay setting from user prefs or defaults."""
+    if user_settings and key in user_settings:
+        return user_settings[key]
+    return OVERLAY_DEFAULTS[key]
+
 
 def sanitize_filename(name: str) -> str:
     """Sanitize a string for safe use as a filename component."""
@@ -50,8 +59,8 @@ enabled = true
 #   - Relative path "fonts/custom.ttf": Relative to DLL directory
 #   - Absolute path "C:\\Fonts\\MyFont.ttf": Uses the specified file
 font_path = ""
-# Font size in pixels (32.0 recommended for 1080p, 64.0 for 4K)
-font_size = 32.0
+# Font size in pixels (18.0 recommended for 1080p, 36.0 for 4K)
+font_size = {_get_overlay_setting(participant.user.overlay_settings, "font_size")}
 # Background color and opacity
 background_color = "#141414"
 background_opacity = 0.3
@@ -149,7 +158,7 @@ training = true
 [overlay]
 enabled = true
 font_path = ""
-font_size = 32.0
+font_size = {_get_overlay_setting(session.user.overlay_settings, "font_size")}
 background_color = "#141414"
 background_opacity = 0.3
 text_color = "#FFFFFF"
