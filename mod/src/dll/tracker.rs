@@ -257,7 +257,7 @@ impl RaceTracker {
         })
     }
 
-    fn is_race_running(&self) -> bool {
+    pub fn is_race_running(&self) -> bool {
         self.race_state
             .race
             .as_ref()
