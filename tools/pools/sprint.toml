@@ -2,7 +2,7 @@
 # ~30 minute races
 
 [display]
-sort_order = 1
+sort_order = 2
 estimated_duration = "~30min"
 description = "Fast-paced race with minimal exploration"
 

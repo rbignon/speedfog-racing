@@ -3,7 +3,7 @@
 
 [display]
 type = "training"
-sort_order = 2
+sort_order = 1
 estimated_duration = "~1h"
 description = "Balanced solo run with legacy dungeons and bosses"
 

@@ -3,7 +3,7 @@
 
 [display]
 type = "training"
-sort_order = 1
+sort_order = 2
 estimated_duration = "~30min"
 description = "Quick solo run — minimal exploration"
 
