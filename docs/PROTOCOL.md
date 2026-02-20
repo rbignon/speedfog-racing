@@ -24,31 +24,44 @@ Reference document for API endpoints and WebSocket messages.
 
 | Method | Endpoint                               | Auth   | Description                                              |
 | ------ | -------------------------------------- | ------ | -------------------------------------------------------- |
-| GET    | `/api/races`                           | -      | List races (`?status=draft,running,...`)                 |
-| POST   | `/api/races`                           | Bearer | Create race (SETUP)                                      |
+| GET    | `/api/races`                           | -      | List races (`?status=setup,running,...`)                 |
+| POST   | `/api/races`                           | Bearer | Create race (status: SETUP)                              |
 | GET    | `/api/races/{id}`                      | -      | Race details with participants and casters               |
+| PATCH  | `/api/races/{id}`                      | Bearer | Update race settings (organizer, SETUP only)             |
 | POST   | `/api/races/{id}/participants`         | Bearer | Add participant (organizer only)                         |
 | DELETE | `/api/races/{id}/participants/{pid}`   | Bearer | Remove participant (organizer, SETUP only)               |
 | POST   | `/api/races/{id}/casters`              | Bearer | Add caster (organizer only)                              |
 | DELETE | `/api/races/{id}/casters/{cid}`        | Bearer | Remove caster (organizer only)                           |
+| DELETE | `/api/races/{id}/invites/{invite_id}`  | Bearer | Revoke invite (organizer, SETUP only)                    |
+| POST   | `/api/races/{id}/join`                 | Bearer | Self-join open-registration race (SETUP only)            |
+| POST   | `/api/races/{id}/leave`                | Bearer | Leave race (SETUP only)                                  |
 | POST   | `/api/races/{id}/release-seeds`        | Bearer | Release seeds for download (organizer, SETUP)            |
+| POST   | `/api/races/{id}/reroll-seed`          | Bearer | Reroll the seed (organizer, SETUP, seeds not released)   |
 | POST   | `/api/races/{id}/start`                | Bearer | Start race: SETUP → RUNNING (organizer)                  |
+| POST   | `/api/races/{id}/reset`                | Bearer | Reset race: RUNNING → SETUP (organizer)                  |
+| POST   | `/api/races/{id}/finish`               | Bearer | Force-finish race: RUNNING → FINISHED (organizer)        |
+| DELETE | `/api/races/{id}`                      | Bearer | Delete race (organizer, SETUP only)                      |
 | GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack (requires seeds released)         |
 | GET    | `/api/races/{id}/download/{mod_token}` | Bearer | Download participant seed pack (requires seeds released) |
 
 ### Pools
 
-| Method | Endpoint     | Auth | Description                                                                                              |
-| ------ | ------------ | ---- | -------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/pools` | -    | Pool stats with TOML metadata (`{ [name]: { available, consumed, estimated_duration?, description? } }`) |
+| Method | Endpoint              | Auth | Description                                                                                              |
+| ------ | --------------------- | ---- | -------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/pools`          | -    | Pool stats with TOML metadata (`{ [name]: { available, consumed, estimated_duration?, description? } }`) |
+| GET    | `/api/pools?type=...` | -    | Filter pools by type (e.g. `?type=training`)                                                             |
 
 ### Users
 
-| Method | Endpoint              | Auth   | Description                                             |
-| ------ | --------------------- | ------ | ------------------------------------------------------- |
-| GET    | `/api/users/search`   | Bearer | Search users by username or display name prefix (`?q=`) |
-| GET    | `/api/users/me`       | Bearer | Get user profile                                        |
-| GET    | `/api/users/me/races` | Bearer | Races where user is organizer or participant            |
+| Method | Endpoint                         | Auth   | Description                                             |
+| ------ | -------------------------------- | ------ | ------------------------------------------------------- |
+| GET    | `/api/users/search`              | Bearer | Search users by username or display name prefix (`?q=`) |
+| GET    | `/api/users/me`                  | Bearer | Get user profile                                        |
+| PATCH  | `/api/users/me/locale`           | Bearer | Update locale preference                                |
+| PATCH  | `/api/users/me/settings`         | Bearer | Update overlay settings (e.g. `font_size`)              |
+| GET    | `/api/users/me/races`            | Bearer | Races where user is organizer or participant            |
+| GET    | `/api/users/{username}`          | -      | Public user profile                                     |
+| GET    | `/api/users/{username}/activity` | -      | User activity timeline                                  |
 
 ### Invites
 
@@ -57,12 +70,22 @@ Reference document for API endpoints and WebSocket messages.
 | GET    | `/api/invite/{token}`        | -      | Get invite info |
 | POST   | `/api/invite/{token}/accept` | Bearer | Accept invite   |
 
+### i18n
+
+| Method | Endpoint            | Auth | Description            |
+| ------ | ------------------- | ---- | ---------------------- |
+| GET    | `/api/i18n/locales` | -    | List available locales |
+
 ### Admin
 
-| Method | Endpoint                 | Auth           | Description                         |
-| ------ | ------------------------ | -------------- | ----------------------------------- |
-| POST   | `/api/admin/seeds/scan`  | Bearer (admin) | Rescan seed pool (`{ pool_name? }`) |
-| GET    | `/api/admin/seeds/stats` | Bearer (admin) | Pool statistics                     |
+| Method | Endpoint                     | Auth           | Description                         |
+| ------ | ---------------------------- | -------------- | ----------------------------------- |
+| POST   | `/api/admin/seeds/scan`      | Bearer (admin) | Rescan seed pool (`{ pool_name? }`) |
+| GET    | `/api/admin/seeds/stats`     | Bearer (admin) | Pool statistics                     |
+| POST   | `/api/admin/seeds/discard`   | Bearer (admin) | Discard seeds from pool             |
+| GET    | `/api/admin/users`           | Bearer (admin) | List all users                      |
+| PATCH  | `/api/admin/users/{user_id}` | Bearer (admin) | Update user role                    |
+| GET    | `/api/admin/activity`        | Bearer (admin) | Admin activity timeline             |
 
 ---
 
@@ -70,11 +93,26 @@ Reference document for API endpoints and WebSocket messages.
 
 **Endpoint:** `WS /ws/mod/{race_id}`
 
+### Connection Lifecycle
+
+```
+CONNECT
+  ↓
+[AUTH PHASE: 5s timeout for auth message]
+  ↓ auth_ok
+REGISTER in room → broadcast leaderboard_update
+  ↓
+[HEARTBEAT: server sends ping every 30s]
+[MESSAGE LOOP: process incoming messages]
+  ↓ disconnect
+UNREGISTER → broadcast leaderboard_update
+```
+
 ### Client → Server
 
 #### `auth`
 
-First message after connection. Authenticates the mod.
+First message after connection. Authenticates the mod. Must arrive within 5 seconds or the connection is closed (code 4001).
 
 ```json
 {
@@ -148,7 +186,7 @@ Sent at loading screen exit when no event_flag was detected (death, respawn, fas
 
 #### `finished`
 
-Player finished the race. Server-side schema only — the mod does not send this directly. Instead, finishing is handled automatically when the server receives an `event_flag` matching the seed's `finish_event`.
+Player finished the race. Server-side schema only — the mod does not send this directly. Instead, finishing is handled automatically when the server receives an `event_flag` matching the seed's `finish_event`. The server does accept `finished` if sent directly, but this path is not used by the mod in practice.
 
 ```json
 {
@@ -180,10 +218,14 @@ Authentication successful. Contains initial race state.
   "race": {
     "id": "uuid",
     "name": "Sunday Showdown",
-    "status": "open"
+    "status": "setup",
+    "started_at": null,
+    "seeds_released_at": null
   },
   "seed": {
+    "seed_id": "uuid",
     "total_layers": 12,
+    "graph_json": null,
     "event_ids": [1040292801, 1040292802, 1040292847],
     "finish_event": 1040292847,
     "spawn_items": [
@@ -199,6 +241,7 @@ Authentication successful. Contains initial race state.
       "status": "registered",
       "current_zone": null,
       "current_layer": 0,
+      "current_layer_tier": null,
       "igt_ms": 0,
       "death_count": 0,
       "color_index": 0,
@@ -211,15 +254,19 @@ Authentication successful. Contains initial race state.
 
 `participant_id`: the authenticated participant's UUID, used by the mod to identify itself in leaderboard updates.
 
+`seed_id`: the seed's UUID, used by the mod to detect stale seed packs after a reroll (compared against the seed_id in the local config).
+
 `event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod — no mapping to zones or nodes is provided. `graph_json` is always `null` for mods.
 
 `finish_event` _(int | null)_: Flag ID for the final boss kill. The mod sends this immediately (no loading screen on boss kill). All other event flags are deferred to loading screen exit.
 
 `spawn_items`: list of items to spawn at runtime via `func_item_inject`. Used for item types not supported by EMEVD's `DirectlyGivePlayerItem` (e.g., Gem/Ash of War, type 4). Each entry has `id` (EquipParamGem row ID) and `qty` (default 1). The mod spawns these once after game load, using event flag `1040292900` to prevent re-giving on reconnect or game restart. `null` if no runtime-spawned items exist.
 
+**Note:** The `race` object includes `started_at` and `seeds_released_at`, but the mod only uses `id`, `name`, and `status` — the other fields are silently ignored.
+
 #### `auth_error`
 
-Authentication failed.
+Authentication failed. Connection is closed with code 4003.
 
 ```json
 {
@@ -241,7 +288,7 @@ Generic error during the message loop (not auth phase). Sent when a gameplay mes
 
 #### `race_start`
 
-Race has started.
+Race has started. Followed immediately by a `zone_update` unicast for the start node.
 
 ```json
 {
@@ -251,7 +298,7 @@ Race has started.
 
 #### `leaderboard_update`
 
-Broadcast when any player's state changes.
+Broadcast to all mods and spectators when any player's state changes (ready, new zone discovery, finish).
 
 ```json
 {
@@ -266,14 +313,22 @@ When the race finishes, `zone_history` is included on each participant (otherwis
 
 #### `race_status_change`
 
-Race status changed.
+Race status changed. Broadcast to all mods and spectators. Includes `started_at` when transitioning to `running`.
 
 ```json
 {
   "type": "race_status_change",
-  "status": "running"
+  "status": "running",
+  "started_at": "2026-02-19T14:00:00Z"
 }
 ```
+
+| Field        | Type      | Description                                           |
+| ------------ | --------- | ----------------------------------------------------- |
+| `status`     | `string`  | New race status (`running`, `finished`)               |
+| `started_at` | `string?` | ISO 8601 timestamp, included when status is `running` |
+
+**Note:** The mod does not currently consume `started_at` from this message — the field is silently ignored by serde.
 
 #### `zone_update`
 
@@ -285,6 +340,7 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
   "node_id": "graveyard_cave_e235",
   "display_name": "Cave of Knowledge",
   "tier": 5,
+  "original_tier": 8,
   "exits": [
     {
       "text": "Soldier of Godrick front",
@@ -300,15 +356,20 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
 }
 ```
 
-| Field                | Type     | Description                                                |
-| -------------------- | -------- | ---------------------------------------------------------- |
-| `node_id`            | `string` | DAG node ID                                                |
-| `display_name`       | `string` | Human-readable zone name                                   |
-| `tier`               | `int?`   | Node tier (null for start node)                            |
-| `exits`              | `list`   | Fog gates leaving this zone                                |
-| `exits[].text`       | `string` | Fog gate label text                                        |
-| `exits[].to_name`    | `string` | Display name of the destination zone                       |
-| `exits[].discovered` | `bool`   | Whether the destination has been visited (in zone_history) |
+| Field                | Type     | Description                                                                |
+| -------------------- | -------- | -------------------------------------------------------------------------- |
+| `node_id`            | `string` | DAG node ID                                                                |
+| `display_name`       | `string` | Human-readable zone name (localized)                                       |
+| `tier`               | `int?`   | Node tier in the current graph layout (null for start node)                |
+| `original_tier`      | `int?`   | Original tier before graph rebalancing (null if same as `tier` or unknown) |
+| `exits`              | `list`   | Fog gates leaving this zone                                                |
+| `exits[].text`       | `string` | Fog gate label text (may include `[Zone Name]` annotation after i18n)      |
+| `exits[].to_name`    | `string` | Display name of the destination zone                                       |
+| `exits[].discovered` | `bool`   | Whether the destination has been visited (in zone_history)                 |
+
+#### `player_update`
+
+**Spectators only.** Single player update — not sent to mod connections. See the [Spectator Connection](#websocket-spectator-connection) section.
 
 #### `ping`
 
@@ -329,13 +390,26 @@ The server sends `{"type": "ping"}` to each connected mod every **30 seconds**. 
 - **Mod timeout:** If no `ping` is received for **60 seconds**, the mod treats the connection as dead and triggers a reconnect
 - The server does not track pong responses — it relies on TCP-level `WebSocketDisconnect` for cleanup
 
+### Reconnection
+
+The mod uses exponential backoff for reconnection: 1s → 2s → 4s → ... → 30s (capped).
+
+On reconnect:
+
+- Stale outgoing `EventFlag` messages are re-queued to `pending_event_flags` (not lost)
+- Stale `StatusUpdate` messages are discarded
+- Mod immediately sends `Ready` (unless training mode)
+- Pending event flags are drained and re-sent
+- Safety-net rescan: all `event_ids` are re-checked in case flags were set during downtime
+- If race is already running, server sends a `zone_update` unicast for the current zone
+
 ---
 
 ## WebSocket: Spectator Connection
 
 **Endpoint:** `WS /ws/race/{race_id}`
 
-No authentication required (public), but optional auth within a 2-second grace period enables role-based DAG access.
+No authentication required (public), but optional auth within a 2-second grace period enables role-based DAG access during SETUP status.
 
 ### Client → Server
 
@@ -354,7 +428,7 @@ Sent within 2 seconds of connecting. If not sent, connection proceeds as anonymo
 
 #### `race_state`
 
-Sent immediately on connection (after optional auth). Full race state. Also re-sent on status transitions (SETUP → RUNNING, race finish) and when seeds are released, with recomputed DAG access.
+Sent immediately on connection (after optional auth). Full race state. Also re-sent on status transitions (SETUP → RUNNING, RUNNING → FINISHED) and when seeds are released, with recomputed DAG access.
 
 ```json
 {
@@ -367,6 +441,7 @@ Sent immediately on connection (after optional auth). Full race state. Also re-s
     "seeds_released_at": "2026-02-19T13:55:00Z"
   },
   "seed": {
+    "seed_id": "uuid",
     "total_layers": 12,
     "graph_json": { "...": "..." },
     "total_nodes": 45,
@@ -379,6 +454,7 @@ Sent immediately on connection (after optional auth). Full race state. Also re-s
       "twitch_display_name": "Player1",
       "current_zone": "m60_51_36_00",
       "current_layer": 8,
+      "current_layer_tier": 3,
       "igt_ms": 123456,
       "death_count": 3,
       "status": "playing",
@@ -390,13 +466,13 @@ Sent immediately on connection (after optional auth). Full race state. Also re-s
 }
 ```
 
-`seed.graph_json` is `null` if the viewer lacks DAG access (see [DAG Access Rules](#dag-access-rules)). `total_nodes` and `total_paths` are always included.
+`seed.graph_json` is `null` if the viewer lacks DAG access (see [DAG Access Rules](#dag-access-rules)). `total_nodes` and `total_paths` are always included. `event_ids`, `finish_event`, and `spawn_items` are **not** included for spectators (mod-only).
 
 `zone_history` is included (as a list) when race status is `finished`, otherwise `null`.
 
 #### `player_update`
 
-Player state changed (on `status_update` from mod).
+Single player update. **Sent to spectators only** (mods receive `leaderboard_update` instead). Triggered by periodic `status_update` from mod, revisited nodes, or `zone_query` resolution.
 
 ```json
 {
@@ -407,7 +483,7 @@ Player state changed (on `status_update` from mod).
 
 #### `leaderboard_update`
 
-Full leaderboard broadcast (on zone progress, ready, or finish events).
+Full leaderboard broadcast to all mods and spectators (on zone progress, ready, or finish events).
 
 ```json
 {
@@ -418,7 +494,7 @@ Full leaderboard broadcast (on zone progress, ready, or finish events).
 
 #### `race_status_change`
 
-Race status changed.
+Race status changed. Broadcast to all mods and spectators.
 
 ```json
 {
@@ -438,6 +514,16 @@ Broadcast to all spectators when spectator count changes (connect/disconnect).
 }
 ```
 
+#### `ping`
+
+Heartbeat ping. Sent every 30 seconds.
+
+```json
+{
+  "type": "ping"
+}
+```
+
 ---
 
 ## Training Mode
@@ -450,10 +536,9 @@ Solo practice mode. Uses the same protocol messages as competitive races but wit
 | ------ | ---------------------------- | ------ | -------------------------------------------------------- |
 | POST   | `/api/training`              | Bearer | Create training session (`{ pool_name }`)                |
 | GET    | `/api/training`              | Bearer | List user's training sessions                            |
-| GET    | `/api/training/{id}`         | Bearer | Training session detail (with `graph_json`)              |
+| GET    | `/api/training/{id}`         | -      | Training session detail (public read-only)               |
 | POST   | `/api/training/{id}/abandon` | Bearer | Abandon session (ACTIVE → ABANDONED)                     |
 | GET    | `/api/training/{id}/pack`    | Bearer | Download training seed pack (ZIP with `training = true`) |
-| GET    | `/api/pools?type=training`   | -      | List training pools only (filtered by `type` in TOML)    |
 
 ### Training Session Status
 
@@ -471,20 +556,21 @@ Same protocol as `/ws/mod/{race_id}` with differences:
 - **Single player**: Only one mod connection per session
 - **Finish detection**: `finish_event` flag triggers session completion (ACTIVE → FINISHED)
 
-Client → Server messages: `auth`, `status_update`, `event_flag` (same format as mod WS).
+Client → Server messages: `auth`, `status_update`, `event_flag`, `zone_query`, `pong` (same format as mod WS).
 
-Server → Client messages: `auth_ok`, `race_start`, `zone_update` (same format as mod WS).
+Server → Client messages: `auth_ok`, `auth_error`, `error`, `race_start`, `zone_update`, `leaderboard_update`, `race_status_change`, `ping` (same format as mod WS).
 
 ### WebSocket: Training Spectator
 
 **Endpoint:** `WS /ws/training/{session_id}/spectate`
 
-Owner-only spectator for live web UI updates during training.
+Live web UI updates during training. Accepts both authenticated and anonymous spectators.
 
-- **Auth required**: Only the session owner can connect (sends `auth` with API token)
-- **`race_state`**: Sent on connect with full graph, seed info, and participant state
+- **Auth handshake required**: An `auth` message must be sent within 5 seconds (connection closed with code 4001 otherwise), but the `token` field is optional — omit it for anonymous access
+- **`race_state`**: Sent on connect with full graph (always included for training), seed info, and participant state
 - **`leaderboard_update`**: Single-participant update on status/zone changes
 - **`race_status_change`**: Sent when session finishes or is abandoned
+- **`ping`**: Heartbeat every 30 seconds
 
 ---
 
@@ -492,7 +578,7 @@ Owner-only spectator for live web UI updates during training.
 
 ### Race Status
 
-`draft` → `open` → `running` → `finished`
+`setup` → `running` → `finished`
 
 ### Participant Status
 
@@ -519,6 +605,37 @@ Shared schema across all WebSocket messages:
 
 `zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456 }`
 
+**Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`). Extra fields like `color_index`, `mod_connected`, and `zone_history` are present on the wire but silently ignored by serde.
+
+### RaceInfo
+
+Included in `auth_ok` and `race_state` messages:
+
+| Field               | Type      | Description                                 |
+| ------------------- | --------- | ------------------------------------------- |
+| `id`                | `string`  | Race UUID                                   |
+| `name`              | `string`  | Race name                                   |
+| `status`            | `string`  | Race status (see above)                     |
+| `started_at`        | `string?` | ISO 8601 timestamp when race started        |
+| `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released |
+
+**Note:** The mod only uses `id`, `name`, and `status` from RaceInfo.
+
+### SeedInfo
+
+Included in `auth_ok` (mod) and `race_state` (spectator):
+
+| Field          | Type      | Mod | Spectator | Description                                         |
+| -------------- | --------- | --- | --------- | --------------------------------------------------- |
+| `seed_id`      | `string?` | yes | yes       | Seed UUID                                           |
+| `total_layers` | `int`     | yes | yes       | Number of layers in the DAG                         |
+| `graph_json`   | `object?` | no  | yes\*     | Full graph for DAG visualization (\* see DAG rules) |
+| `total_nodes`  | `int?`    | no  | yes       | Total number of nodes in the DAG                    |
+| `total_paths`  | `int?`    | no  | yes       | Total number of paths in the DAG                    |
+| `event_ids`    | `int[]`   | yes | no        | Event flag IDs to monitor                           |
+| `finish_event` | `int?`    | yes | no        | Final boss kill flag ID                             |
+| `spawn_items`  | `list`    | yes | no        | Items for runtime spawning                          |
+
 ### Leaderboard Sorting
 
 Participants in `leaderboard_update` are pre-sorted by priority:
@@ -531,19 +648,28 @@ Participants in `leaderboard_update` are pre-sorted by priority:
 
 ### DAG Access Rules
 
-The `graph_json` field in spectator `seed` is conditionally included based on user role:
+The `graph_json` field in spectator `seed` is conditionally included based on race status and user role:
 
-| Race Status  | Rule                                                         |
-| ------------ | ------------------------------------------------------------ |
-| `finished`   | Always visible (race is over)                                |
-| `running`    | Visible unless viewer is a participant (to prevent cheating) |
-| `draft/open` | Visible only to non-participating organizer or caster        |
+| Race Status | Rule                                                             |
+| ----------- | ---------------------------------------------------------------- |
+| `finished`  | Always visible (race is over)                                    |
+| `running`   | Always visible (progressive reveal via zone_history)             |
+| `setup`     | Visible only to participants and the organizer; hidden otherwise |
 
-Anonymous (unauthenticated) spectators: visible during `running` and `finished`, hidden during `draft` and `open`.
+Anonymous (unauthenticated) spectators: visible during `running` and `finished`, hidden during `setup`.
+
+### WebSocket Close Codes
+
+| Code   | Reason                                                | Endpoints                     |
+| ------ | ----------------------------------------------------- | ----------------------------- |
+| `1000` | Normal closure (room shutdown, race reset)            | All                           |
+| `4001` | Auth timeout (no message received within deadline)    | Mod, Training, Training Spec  |
+| `4003` | Auth error (invalid JSON, invalid message, auth fail) | Mod, Training, Training Spec  |
+| `4004` | Resource not found (race or session doesn't exist)    | Spectator, Training Spectator |
 
 ### Security Notes
 
-**Spectator WebSocket authentication (M9):** Spectator connections (`/ws/race/{race_id}`) are intentionally unauthenticated by default. Race leaderboard data is public by design. Optional auth within a 2-second grace period enables role-based DAG visibility — this allows casters to see the graph during a running race while participants cannot. Anonymous spectators see the DAG during `running` and `finished` states. This is an accepted design trade-off.
+**Spectator WebSocket authentication (M9):** Spectator connections (`/ws/race/{race_id}`) are intentionally unauthenticated by default. Race leaderboard data is public by design. Optional auth within a 2-second grace period enables role-based DAG visibility during SETUP — this prevents anonymous viewers from seeing the graph before the race starts. During `running` and `finished`, all spectators see the DAG. This is an accepted design trade-off.
 
 **CSRF (M5):** Auth tokens are stored in `localStorage` and sent via `Authorization` header, not auto-attached cookies. This makes CSRF attacks infeasible since the token is never sent automatically. If token storage changes to cookies in the future, CSRF protection must be added.
 
@@ -555,7 +681,7 @@ Gameplay messages (`status_update`, `event_flag`, `zone_query`, `finished`) are 
 
 1. **Server:** Each handler checks `race.status == RUNNING` before processing. If the race is not running, the server responds with an `error` message and discards the payload.
 2. **Mod (outgoing):** The mod gates `status_update` and `event_flag` sends behind `is_race_running()`. Event flags detected before the race starts are buffered and sent once the race transitions to running.
-3. **Mod (overlay):** A colored banner shows the race state — orange "WAITING FOR START" (draft/open), green "GO!" for 3 seconds (running), and green "RACE FINISHED" (finished).
+3. **Mod (overlay):** A colored banner shows the race state — orange "WAITING FOR START" (setup), green "GO!" for 3 seconds (running), and green "RACE FINISHED" (finished).
 
 The `ready` and `pong` messages are not gated — they are valid in any state.
 
@@ -570,3 +696,20 @@ See `docs/specs/emevd-zone-tracking.md` for the full specification.
 ### Runtime Item Spawning
 
 Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `DirectlyGivePlayerItem`. Instead, the server extracts them from `graph_json.care_package` and sends them in `auth_ok.seed.spawn_items`. The mod spawns them at runtime using `func_item_inject` after the game is fully loaded (MapItemMan initialized). Event flag `1040292900` prevents re-giving items on reconnect or game restart.
+
+### Broadcasting Strategy
+
+| Event                          | Mods                                                | Spectators                          |
+| ------------------------------ | --------------------------------------------------- | ----------------------------------- |
+| Mod connects/disconnects       | `leaderboard_update`                                | `leaderboard_update`                |
+| `ready`                        | `leaderboard_update`                                | `leaderboard_update`                |
+| `status_update` (periodic)     | —                                                   | `player_update`                     |
+| `status_update` (READY→PLAY)   | `leaderboard_update`                                | `leaderboard_update`                |
+| `event_flag` (new node)        | `leaderboard_update`                                | `leaderboard_update`                |
+| `event_flag` (revisit)         | `zone_update` (unicast)                             | `player_update`                     |
+| `event_flag` (finish)          | `leaderboard_update`                                | `race_state` + status change        |
+| `zone_query`                   | `zone_update` (unicast)                             | `player_update`                     |
+| Race starts                    | `race_start` + `zone_update` + `race_status_change` | `race_state` + `race_status_change` |
+| Race finishes                  | `race_status_change`                                | `race_state` + `race_status_change` |
+| Seeds released                 | —                                                   | `race_state`                        |
+| Spectator connects/disconnects | —                                                   | `spectator_count`                   |

@@ -185,6 +185,7 @@ class ZoneUpdateMessage(BaseModel):
     node_id: str
     display_name: str
     tier: int | None = None
+    original_tier: int | None = None
     exits: list[ExitInfo]
 
 
