@@ -96,7 +96,7 @@ fn default_enabled() -> bool {
     true
 }
 fn default_font_size() -> f32 {
-    32.0
+    18.0
 }
 fn default_background_color() -> String {
     "#141414".to_string()
