@@ -26,6 +26,7 @@ UPLOAD_ONLY=false
 NO_RESTART=false
 DISCARD=false
 VERBOSE=""
+FAILED_POOLS=()
 
 usage() {
     cat <<'EOF'
@@ -161,14 +162,37 @@ if [[ "$UPLOAD_ONLY" == false ]]; then
     for pool in "${POOLS[@]}"; do
         echo ""
         echo "--- Pool: $pool ($COUNT seeds) ---"
-        python3 "$TOOLS_DIR/generate_pool.py" \
+        if ! python3 "$TOOLS_DIR/generate_pool.py" \
             --pool "$pool" \
             --count "$COUNT" \
             --game-dir "$GAME_DIR" \
             --output "$OUTPUT_DIR" \
-            $VERBOSE
+            $VERBOSE; then
+            echo "  ERROR: Generation failed for pool '$pool', skipping."
+            rm -rf "${OUTPUT_DIR:?}/$pool"
+            FAILED_POOLS+=("$pool")
+        fi
     done
     echo ""
+
+    # Remove failed pools from upload list
+    if [[ ${#FAILED_POOLS[@]} -gt 0 ]]; then
+        OK_POOLS=()
+        for pool in "${POOLS[@]}"; do
+            skip=false
+            for fp in "${FAILED_POOLS[@]}"; do
+                if [[ "$pool" == "$fp" ]]; then skip=true; break; fi
+            done
+            if [[ "$skip" == false ]]; then OK_POOLS+=("$pool"); fi
+        done
+        POOLS=("${OK_POOLS[@]}")
+
+        if [[ ${#POOLS[@]} -eq 0 ]]; then
+            echo "Error: All pools failed generation. Nothing to upload."
+            exit 1
+        fi
+        echo "Continuing with successful pools: ${POOLS[*]}"
+    fi
 fi
 
 # --- Discard phase (before upload, marks old AVAILABLE seeds) ---
@@ -252,4 +276,11 @@ else
 ENDSSH
 fi
 
-echo "==> Done!"
+if [[ ${#FAILED_POOLS[@]} -gt 0 ]]; then
+    echo ""
+    echo "WARNING: ${#FAILED_POOLS[@]} pool(s) failed generation: ${FAILED_POOLS[*]}"
+    echo "==> Done (with errors)."
+    exit 1
+else
+    echo "==> Done!"
+fi
