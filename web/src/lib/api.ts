@@ -18,6 +18,7 @@ export interface User {
 export interface AuthUser extends User {
   role: string;
   locale: string | null;
+  overlay_settings: { font_size?: number } | null;
 }
 
 export type RaceStatus = "setup" | "running" | "finished";
@@ -626,6 +627,23 @@ export async function updateLocale(
     body: JSON.stringify({ locale }),
   });
   return handleResponse<{ locale: string }>(response);
+}
+
+/**
+ * Update the current user's overlay settings.
+ */
+export async function updateOverlaySettings(settings: {
+  font_size?: number;
+}): Promise<{ overlay_settings: { font_size?: number } }> {
+  const response = await fetch(`${API_BASE}/users/me/settings`, {
+    method: "PATCH",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(settings),
+  });
+  return handleResponse<{ overlay_settings: { font_size?: number } }>(response);
 }
 
 /**

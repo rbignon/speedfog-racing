@@ -2,10 +2,16 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { fetchLocales, updateLocale, type LocaleInfo } from '$lib/api';
+	import {
+		fetchLocales,
+		updateLocale,
+		updateOverlaySettings,
+		type LocaleInfo
+	} from '$lib/api';
 
 	let locales = $state<LocaleInfo[]>([]);
 	let selectedLocale = $state('en');
+	let fontSize = $state(18);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 	let success = $state(false);
@@ -17,6 +23,7 @@
 		}
 		locales = await fetchLocales();
 		selectedLocale = auth.user?.locale ?? 'en';
+		fontSize = auth.user?.overlay_settings?.font_size ?? 18;
 	});
 
 	async function handleSave() {
@@ -24,9 +31,13 @@
 		error = null;
 		success = false;
 		try {
-			const result = await updateLocale(selectedLocale);
+			const [localeResult, overlayResult] = await Promise.all([
+				updateLocale(selectedLocale),
+				updateOverlaySettings({ font_size: fontSize })
+			]);
 			if (auth.user) {
-				auth.user.locale = result.locale;
+				auth.user.locale = localeResult.locale;
+				auth.user.overlay_settings = overlayResult.overlay_settings;
 			}
 			success = true;
 			setTimeout(() => (success = false), 3000);
@@ -68,19 +79,42 @@
 				</label>
 			{/each}
 		</div>
+	</section>
 
-		<div class="actions">
-			<button class="btn btn-primary" onclick={handleSave} disabled={saving}>
-				{saving ? 'Saving...' : 'Save'}
-			</button>
-			{#if success}
-				<span class="success-msg">Saved!</span>
-			{/if}
-			{#if error}
-				<span class="error-msg">{error}</span>
-			{/if}
+	<section class="setting-group">
+		<h2>Overlay</h2>
+		<p class="description">
+			Customize the in-game overlay that displays race information.
+		</p>
+
+		<div class="setting-row">
+			<label for="font-size">Font size</label>
+			<div class="input-with-unit">
+				<input
+					id="font-size"
+					type="number"
+					min="8"
+					max="72"
+					step="1"
+					bind:value={fontSize}
+				/>
+				<span class="unit">px</span>
+			</div>
+			<span class="hint">8–72 px (default: 18)</span>
 		</div>
 	</section>
+
+	<div class="actions">
+		<button class="btn btn-primary" onclick={handleSave} disabled={saving}>
+			{saving ? 'Saving...' : 'Save'}
+		</button>
+		{#if success}
+			<span class="success-msg">Saved!</span>
+		{/if}
+		{#if error}
+			<span class="error-msg">{error}</span>
+		{/if}
+	</div>
 </main>
 
 <style>
@@ -100,6 +134,7 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-sm);
 		padding: 1.5rem;
+		margin-bottom: 1.5rem;
 	}
 
 	.setting-group h2 {
@@ -117,7 +152,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
-		margin-bottom: 1.5rem;
 	}
 
 	.locale-select label {
@@ -131,6 +165,43 @@
 	.locale-code {
 		color: var(--color-text-disabled);
 		font-size: var(--font-size-sm);
+	}
+
+	.setting-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.setting-row label {
+		font-size: var(--font-size-base);
+		min-width: 5rem;
+	}
+
+	.input-with-unit {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.input-with-unit input {
+		width: 5rem;
+		padding: 0.375rem 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-bg);
+		color: var(--color-text);
+		font-size: var(--font-size-base);
+	}
+
+	.unit {
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+	}
+
+	.hint {
+		color: var(--color-text-disabled);
+		font-size: var(--font-size-xs);
 	}
 
 	.actions {
