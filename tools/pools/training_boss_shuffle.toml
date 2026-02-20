@@ -1,9 +1,10 @@
-# SpeedFog Racing - Standard Pool Configuration
-# ~1 hour races
+# SpeedFog Racing - Training Boss Shuffle Pool Configuration
+# ~1 hour solo runs with randomized boss encounters
 
 [display]
+type = "training"
 estimated_duration = "~1h"
-description = "Balanced race with legacy dungeons and bosses"
+description = "Solo run with randomized boss encounters"
 
 [run]
 seed = 0
@@ -19,28 +20,28 @@ mini_dungeons = 5
 
 [structure]
 max_parallel_paths = 3
-min_layers = 25
-max_layers = 30
+min_layers = 23
+max_layers = 28
 final_tier = 20
 split_probability = 0.5
 merge_probability = 0.5
 max_branches = 3
 first_layer_type = "legacy_dungeon"
 major_boss_ratio = 0.3
-final_boss_candidates = ["all"]  # All major bosses
+final_boss_candidates = ["all"]
 
 [starting_items]
-academy_key = true       # Academy Glintstone Key - opens Raya Lucaria
-pureblood_medal = false  # Pureblood Knight's Medal - disabled (warp destination removed)
-drawing_room_key = true  # Drawing-Room Key - access Volcano Manor interior
-lantern = true           # Lantern - hands-free light source
-physick_flask = true     # Flask of Wondrous Physick
+academy_key = true
+pureblood_medal = false
+drawing_room_key = true
+lantern = true
+physick_flask = true
 great_runes = true
-whetblades = true        # All 5 whetblades - unlocks all weapon affinities
+whetblades = true
 talisman_pouches = 3
-golden_seeds = 7         # Golden Seeds to upgrade flask uses (0-99)
-sacred_tears = 4         # Sacred Tears to upgrade flask potency (0-12)
-starting_runes = 100000  # Given as Lord's Rune items (50k each, use from inventory)
+golden_seeds = 7
+sacred_tears = 4
+starting_runes = 100000
 larval_tears = 3
 
 # DLC key items (prevent softlocks in DLC areas)
@@ -68,7 +69,8 @@ crystal_tears = 5
 ashes_of_war = 3
 
 [enemy]
-randomize_bosses = false
+randomize_bosses = true
+lock_final_boss = true
 
 [item_randomizer]
 enabled = true

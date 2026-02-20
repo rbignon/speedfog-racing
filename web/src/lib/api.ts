@@ -88,6 +88,10 @@ export interface PoolConfig {
   items_randomized: boolean | null;
   auto_upgrade_weapons: boolean | null;
   remove_requirements: boolean | null;
+  major_boss_ratio: string | null;
+  randomize_bosses: boolean | null;
+  item_difficulty: string | null;
+  nerf_gargoyles: boolean | null;
 }
 
 export interface PendingInvite {

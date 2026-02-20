@@ -260,6 +260,7 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
     structure = data.get("structure", {})
     care_package = data.get("care_package", {})
     item_randomizer = data.get("item_randomizer", {})
+    enemy = data.get("enemy", {})
     starting_items_raw = data.get("starting_items", {})
 
     # Build human-readable starting items list
@@ -268,6 +269,7 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "pureblood_medal": "Pureblood Medal",
         "drawing_room_key": "Drawing Room Key",
         "lantern": "Lantern",
+        "physick_flask": "Physick Flask",
         "great_runes": "Great Runes",
         "whetblades": "Whetblades",
         "omother": "O, Mother",
@@ -314,6 +316,20 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         if armor_count:
             care_package_items.append(f"{armor_count} Armor pieces")
 
+    # Convert major_boss_ratio to human label
+    mbr = structure.get("major_boss_ratio")
+    if mbr is not None:
+        major_boss_label = "High" if mbr >= 0.35 else ("Medium" if mbr >= 0.15 else "Low")
+    else:
+        major_boss_label = None
+
+    # Convert item difficulty to human label
+    diff = item_randomizer.get("difficulty")
+    if diff is not None:
+        item_diff_label = "Hard" if diff >= 65 else ("Normal" if diff >= 45 else "Easy")
+    else:
+        item_diff_label = None
+
     return {
         "type": display.get("type", "race"),
         "estimated_duration": display.get("estimated_duration"),
@@ -329,6 +345,10 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "items_randomized": item_randomizer.get("enabled"),
         "auto_upgrade_weapons": item_randomizer.get("auto_upgrade_weapons"),
         "remove_requirements": item_randomizer.get("remove_requirements"),
+        "major_boss_ratio": major_boss_label,
+        "randomize_bosses": enemy.get("randomize_bosses"),
+        "item_difficulty": item_diff_label,
+        "nerf_gargoyles": item_randomizer.get("nerf_gargoyles"),
     }
 
 

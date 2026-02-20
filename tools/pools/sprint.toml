@@ -33,6 +33,7 @@ academy_key = true
 pureblood_medal = false
 drawing_room_key = true
 lantern = true
+physick_flask = true
 great_runes = true
 whetblades = true
 talisman_pouches = 3
@@ -64,6 +65,9 @@ arm_armor = 2
 leg_armor = 2
 crystal_tears = 5
 ashes_of_war = 3
+
+[enemy]
+randomize_bosses = false
 
 [item_randomizer]
 enabled = true

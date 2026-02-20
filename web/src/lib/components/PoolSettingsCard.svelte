@@ -11,7 +11,17 @@
 		compact?: boolean;
 	} = $props();
 
-	let title = $derived(poolName.replace(/^\w/, (c) => c.toUpperCase()));
+	let title = $derived(
+		poolName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+	);
+
+	let miscNotes = $derived.by(() => {
+		const notes: string[] = [];
+		if (poolConfig.nerf_gargoyles === false) {
+			notes.push('Gargoyle poison active');
+		}
+		return notes;
+	});
 </script>
 
 <div class="card" class:compact>
@@ -68,6 +78,24 @@
 				<span class="value">Yes</span>
 			</div>
 		{/if}
+		{#if poolConfig.item_difficulty}
+			<div class="info-item">
+				<span class="label">Item Difficulty</span>
+				<span class="value">{poolConfig.item_difficulty}</span>
+			</div>
+		{/if}
+		{#if poolConfig.major_boss_ratio}
+			<div class="info-item">
+				<span class="label">Major Bosses</span>
+				<span class="value">{poolConfig.major_boss_ratio}</span>
+			</div>
+		{/if}
+		{#if poolConfig.randomize_bosses}
+			<div class="info-item">
+				<span class="label">Boss Shuffle</span>
+				<span class="value">Yes</span>
+			</div>
+		{/if}
 	</div>
 	{#if poolConfig.starting_items}
 		<div class="item-section">
@@ -92,6 +120,20 @@
 				<ul class="item-section-list">
 					{#each poolConfig.care_package_items as item}
 						<li>{item}</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{/if}
+	{#if miscNotes.length > 0}
+		<div class="item-section">
+			<span class="label">Misc</span>
+			{#if compact}
+				<span class="item-section-text">{miscNotes.join(', ')}</span>
+			{:else}
+				<ul class="item-section-list">
+					{#each miscNotes as note}
+						<li>{note}</li>
 					{/each}
 				</ul>
 			{/if}
