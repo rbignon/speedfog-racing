@@ -397,8 +397,10 @@ async def handle_status_update(
             participant.death_count = msg["death_count"]
 
         race = participant.race
+        became_playing = False
         if race.status == RaceStatus.RUNNING and participant.status == ParticipantStatus.READY:
             participant.status = ParticipantStatus.PLAYING
+            became_playing = True
             graph_json = _get_graph_json(participant)
             if graph_json:
                 start_node = get_start_node(graph_json)
@@ -411,10 +413,18 @@ async def handle_status_update(
 
         await db.commit()
 
-    # Broadcast player update to spectators (detached objects)
-    await manager.broadcast_player_update(
-        participant.race_id, participant, graph_json=_get_graph_json(participant)
-    )
+    if became_playing:
+        # READY→PLAYING: broadcast full leaderboard so all clients see the transition
+        await manager.broadcast_leaderboard(
+            participant.race_id,
+            participant.race.participants,
+            graph_json=_get_graph_json(participant),
+        )
+    else:
+        # Broadcast player update to spectators (detached objects)
+        await manager.broadcast_player_update(
+            participant.race_id, participant, graph_json=_get_graph_json(participant)
+        )
 
 
 async def handle_event_flag(
