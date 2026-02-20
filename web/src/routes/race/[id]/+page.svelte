@@ -310,7 +310,7 @@
 				<Leaderboard
 					participants={raceStore.leaderboard}
 					{totalLayers}
-					{zoneNames}
+					zoneNames={myWsParticipantId && !myParticipantFinished ? null : zoneNames}
 					selectedIds={selectedParticipantIds}
 					onToggle={handleLeaderboardToggle}
 					onClearSelection={clearSelection}
