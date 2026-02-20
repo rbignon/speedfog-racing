@@ -179,7 +179,15 @@ impl RaceTracker {
             _ => [1.0, 0.0, 0.0, 1.0],
         };
 
-        let igt_str = if let Some(igt_ms) = self.read_igt() {
+        // When race is finished or player has finished, show frozen IGT from server
+        // instead of live game IGT (which keeps ticking)
+        let igt_str = if !self.is_race_running() || self.am_i_finished() {
+            if let Some(me) = self.my_participant().filter(|p| p.igt_ms > 0) {
+                format_time_u32(me.igt_ms as u32)
+            } else {
+                "--:--:--".to_string()
+            }
+        } else if let Some(igt_ms) = self.read_igt() {
             format_time_u32(igt_ms)
         } else {
             "--:--:--".to_string()
