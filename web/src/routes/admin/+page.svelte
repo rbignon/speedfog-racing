@@ -280,7 +280,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each Object.entries(seedStats.pools) as [poolName, stats] (poolName)}
+						{#each Object.entries(seedStats.pools).sort(([a], [b]) => a.localeCompare(b)) as [poolName, stats] (poolName)}
 							<tr>
 								<td class="pool-name">{formatPoolName(poolName)}</td>
 								<td class="num-cell">{stats.available}</td>
