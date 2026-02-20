@@ -160,23 +160,19 @@
 
 	let isOrganizer = $derived(auth.user?.id === initialRace.organizer.id);
 	let isCaster = $derived(
-		auth.user
-			? initialRace.casters.some((c) => c.user.id === auth.user?.id)
-			: false
+		auth.user ? initialRace.casters.some((c) => c.user.id === auth.user?.id) : false
 	);
 	let showObsModal = $state(false);
 
 	let myParticipant = $derived(
-		auth.user
-			? initialRace.participants.find((p) => p.user.id === auth.user?.id)
-			: undefined
+		auth.user ? initialRace.participants.find((p) => p.user.id === auth.user?.id) : undefined
 	);
 
 	let myWsParticipant = $derived.by(() => {
 		if (!myParticipant) return null;
 		return (
 			raceStore.participants.find(
-				(p) => p.twitch_username === myParticipant.user.twitch_username,
+				(p) => p.twitch_username === myParticipant.user.twitch_username
 			) ?? null
 		);
 	});
@@ -215,26 +211,22 @@
 
 	let canJoin = $derived(
 		initialRace.open_registration &&
-		raceStatus === 'setup' &&
-		auth.isLoggedIn &&
-		!myParticipant &&
-		!isCaster &&
-		!isOrganizer &&
-		(initialRace.max_participants === null ||
-			mergedParticipants.length < initialRace.max_participants)
+			raceStatus === 'setup' &&
+			auth.isLoggedIn &&
+			!myParticipant &&
+			!isCaster &&
+			!isOrganizer &&
+			(initialRace.max_participants === null ||
+				mergedParticipants.length < initialRace.max_participants)
 	);
 
 	let raceFull = $derived(
 		initialRace.open_registration &&
-		initialRace.max_participants !== null &&
-		mergedParticipants.length >= initialRace.max_participants
+			initialRace.max_participants !== null &&
+			mergedParticipants.length >= initialRace.max_participants
 	);
 
-	let canLeave = $derived(
-		raceStatus === 'setup' &&
-		!!myParticipant &&
-		!isOrganizer
-	);
+	let canLeave = $derived(raceStatus === 'setup' && !!myParticipant && !isOrganizer);
 
 	async function handleJoin() {
 		joining = true;
@@ -351,11 +343,7 @@
 			<CasterList casters={initialRace.casters} />
 
 			{#if isOrganizer}
-				<RaceControls
-					race={initialRace}
-					{raceStatus}
-					onRaceUpdated={handleRaceUpdated}
-				/>
+				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
 			{/if}
 		{:else if raceStatus === 'running'}
 			<WatchLive casters={initialRace.casters} />
@@ -372,15 +360,14 @@
 			</div>
 
 			{#if isOrganizer}
-				<RaceControls
-					race={initialRace}
-					{raceStatus}
-					onRaceUpdated={handleRaceUpdated}
-				/>
+				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
 			{/if}
 		{:else}
 			<div class="sidebar-section">
-				<h2>Participants ({mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants} / {initialRace.max_participants}{/if})</h2>
+				<h2>
+					Participants ({mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
+						/ {initialRace.max_participants}{/if})
+				</h2>
 				<div class="participant-list">
 					{#each mergedParticipants as mp (mp.id)}
 						<ParticipantCard
@@ -389,12 +376,7 @@
 							isOrganizer={mp.user.id === initialRace.organizer.id}
 							isCurrentUser={auth.user?.id === mp.user.id}
 							canRemove={isOrganizer && mp.user.id !== initialRace.organizer.id}
-							onRemove={() =>
-								handleRemoveParticipant(mp.id, mp.user.twitch_username)}
-							canDownload={seedsReleased}
-							{downloading}
-							onDownload={handleDownload}
-							{downloadError}
+							onRemove={() => handleRemoveParticipant(mp.id, mp.user.twitch_username)}
 						/>
 					{/each}
 
@@ -403,8 +385,7 @@
 							<InviteCard
 								{invite}
 								canRemove={isOrganizer}
-								onRemove={() =>
-									handleRevokeInvite(invite.id, invite.twitch_username)}
+								onRemove={() => handleRevokeInvite(invite.id, invite.twitch_username)}
 							/>
 						{/each}
 					{/if}
@@ -421,9 +402,7 @@
 							/>
 						</div>
 					{:else}
-						<button class="invite-btn" onclick={() => (showInviteSearch = true)}>
-							+ Invite
-						</button>
+						<button class="invite-btn" onclick={() => (showInviteSearch = true)}> + Invite </button>
 					{/if}
 				{/if}
 
@@ -433,9 +412,7 @@
 							{joining ? 'Joining...' : 'Join Race'}
 						</button>
 					{:else if raceFull && !myParticipant}
-						<button class="join-btn disabled" disabled>
-							Race Full
-						</button>
+						<button class="join-btn disabled" disabled> Race Full </button>
 					{/if}
 					{#if canLeave}
 						<button class="leave-btn" onclick={handleLeave} disabled={leaving}>
@@ -453,10 +430,27 @@
 				{/if}
 			</div>
 
-			{#if myParticipant && !seedsReleased}
-				<div class="waiting-seeds">
-					<p>Waiting for seeds to be released...</p>
-				</div>
+			{#if myParticipant}
+				{#if seedsReleased}
+					<button class="sidebar-download-btn" onclick={handleDownload} disabled={downloading}>
+						<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+							<path
+								d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								fill="none"
+							/>
+						</svg>
+						{downloading ? 'Preparing...' : 'Download Race Package'}
+					</button>
+					{#if downloadError}
+						<span class="sidebar-download-error">{downloadError}</span>
+					{/if}
+				{:else}
+					<p class="waiting-seeds">Waiting for seeds...</p>
+				{/if}
 			{/if}
 
 			<CasterList
@@ -467,11 +461,7 @@
 			/>
 
 			{#if isOrganizer}
-				<RaceControls
-					race={initialRace}
-					{raceStatus}
-					onRaceUpdated={handleRaceUpdated}
-				/>
+				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
 			{/if}
 		{/if}
 
@@ -483,15 +473,37 @@
 					disabled={togglingVisibility}
 				>
 					{#if initialRace.is_public}
-						<svg class="visibility-icon" viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
-							<path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
-							<path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/>
+						<svg
+							class="visibility-icon"
+							viewBox="0 0 20 20"
+							fill="currentColor"
+							width="14"
+							height="14"
+						>
+							<path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+							<path
+								fill-rule="evenodd"
+								d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z"
+								clip-rule="evenodd"
+							/>
 						</svg>
 						Public
 					{:else}
-						<svg class="visibility-icon" viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
-							<path fill-rule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z" clip-rule="evenodd"/>
-							<path d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.741L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.065 7 9.542 7 .847 0 1.669-.105 2.454-.303z"/>
+						<svg
+							class="visibility-icon"
+							viewBox="0 0 20 20"
+							fill="currentColor"
+							width="14"
+							height="14"
+						>
+							<path
+								fill-rule="evenodd"
+								d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z"
+								clip-rule="evenodd"
+							/>
+							<path
+								d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.741L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.065 7 9.542 7 .847 0 1.669-.105 2.454-.303z"
+							/>
 						</svg>
 						Private
 					{/if}
@@ -500,9 +512,7 @@
 		{/if}
 
 		{#if isOrganizer || isCaster || myParticipant}
-			<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}>
-				OBS Overlays
-			</button>
+			<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}> OBS Overlays </button>
 		{/if}
 
 		<div class="sidebar-footer">
@@ -546,11 +556,19 @@
 					myParticipantId={myWsParticipantId}
 				/>
 			{:else}
-				<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} highlightIds={selectedParticipantIds} />
+				<MetroDagResults
+					graphJson={liveSeed.graph_json}
+					participants={raceStore.leaderboard}
+					highlightIds={selectedParticipantIds}
+				/>
 			{/if}
 		{:else if liveSeed?.graph_json && raceStatus === 'finished'}
 			<Podium participants={raceStore.leaderboard} />
-			<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} highlightIds={selectedParticipantIds} />
+			<MetroDagResults
+				graphJson={liveSeed.graph_json}
+				participants={raceStore.leaderboard}
+				highlightIds={selectedParticipantIds}
+			/>
 			<RaceStats participants={raceStore.leaderboard} />
 		{:else if liveSeed?.graph_json && myWsParticipantId}
 			<MetroDagProgressive
@@ -561,11 +579,7 @@
 		{:else if liveSeed?.graph_json}
 			<MetroDag graphJson={liveSeed.graph_json} />
 		{:else if totalNodes && totalPaths && totalLayers}
-			<MetroDagBlurred
-				{totalLayers}
-				{totalNodes}
-				{totalPaths}
-			/>
+			<MetroDagBlurred {totalLayers} {totalNodes} {totalPaths} />
 		{:else if totalLayers}
 			<div class="dag-placeholder">
 				<p class="dag-note">DAG hidden until race starts</p>
@@ -590,14 +604,23 @@
 								<input
 									type="datetime-local"
 									bind:value={scheduleInput}
-									min={(() => { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 16); })()}
+									min={(() => {
+										const n = new Date();
+										return new Date(n.getTime() - n.getTimezoneOffset() * 60000)
+											.toISOString()
+											.slice(0, 16);
+									})()}
 									disabled={scheduleSaving}
 								/>
 								<div class="schedule-edit-actions">
 									<button class="btn-inline" onclick={saveSchedule} disabled={scheduleSaving}>
 										{scheduleSaving ? '...' : 'Save'}
 									</button>
-									<button class="btn-inline btn-inline-secondary" onclick={() => (editingSchedule = false)} disabled={scheduleSaving}>
+									<button
+										class="btn-inline btn-inline-secondary"
+										onclick={() => (editingSchedule = false)}
+										disabled={scheduleSaving}
+									>
 										Cancel
 									</button>
 								</div>
@@ -631,17 +654,6 @@
 				poolName={initialRace.pool_name || 'standard'}
 				poolConfig={initialRace.pool_config}
 			/>
-		{/if}
-
-		{#if myParticipant && seedsReleased}
-			<div class="download-section">
-				<button class="btn btn-secondary" onclick={handleDownload} disabled={downloading}>
-					{downloading ? 'Preparing...' : 'Download Race Package'}
-				</button>
-				{#if downloadError}
-					<span class="download-error">{downloadError}</span>
-				{/if}
-			</div>
 		{/if}
 	</main>
 
@@ -963,6 +975,7 @@
 	}
 
 	.waiting-seeds {
+		margin: 0;
 		padding: 0.75rem;
 		text-align: center;
 		color: var(--color-text-disabled);
@@ -970,19 +983,42 @@
 		font-style: italic;
 	}
 
-	.waiting-seeds p {
-		margin: 0;
-	}
-
-	.download-section {
+	.sidebar-download-btn {
+		width: 100%;
 		display: flex;
-		gap: 1rem;
 		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		padding: 0.65rem 1rem;
+		margin-top: 0.75rem;
+		border: 2px solid var(--color-purple);
+		border-radius: var(--radius-sm);
+		background: rgba(139, 92, 246, 0.1);
+		color: var(--color-purple);
+		font-family: var(--font-family);
+		font-size: var(--font-size-base);
+		font-weight: 500;
+		cursor: pointer;
+		transition: all var(--transition);
 	}
 
-	.download-error {
+	.sidebar-download-btn:hover:not(:disabled) {
+		background: rgba(139, 92, 246, 0.2);
+		border-color: var(--color-purple-hover);
+		color: var(--color-purple-hover);
+	}
+
+	.sidebar-download-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.sidebar-download-error {
+		display: block;
+		margin-top: 0.35rem;
 		color: var(--color-danger);
-		font-size: 0.9rem;
+		font-size: var(--font-size-xs);
+		text-align: center;
 	}
 
 	.obs-overlay-btn {
