@@ -143,8 +143,8 @@ def run_speedfog(
     If verbose is True, output is also printed to the terminal.
     """
     log_path = output_dir / "generation.log"
-    try:
-        result = subprocess.run(
+    with open(log_path, "w", encoding="utf-8") as log_file:
+        proc = subprocess.Popen(
             [
                 "uv",
                 "run",
@@ -157,29 +157,28 @@ def run_speedfog(
                 str(game_dir),
             ],
             cwd=speedfog_path,
-            check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
         )
-        log_path.write_text(result.stdout, encoding="utf-8")
-        if verbose:
-            print(result.stdout, end="")
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            log_file.write(line)
+            if verbose:
+                print(line, end="")
+        rc = proc.wait()
 
-        # Find the generated seed directory (should be a single numeric directory)
-        seed_dirs = [d for d in output_dir.iterdir() if d.is_dir() and d.name.isdigit()]
-        if len(seed_dirs) == 1:
-            return seed_dirs[0]
-
-        print(f"  Warning: Expected 1 seed directory, found {len(seed_dirs)}")
+    if rc != 0:
+        print(f"  Error running speedfog (exit code {rc})")
         return None
 
-    except subprocess.CalledProcessError as e:
-        log_path.write_text(e.stdout or "", encoding="utf-8")
-        if verbose and e.stdout:
-            print(e.stdout, end="")
-        print(f"  Error running speedfog (exit code {e.returncode})")
-        return None
+    # Find the generated seed directory (should be a single numeric directory)
+    seed_dirs = [d for d in output_dir.iterdir() if d.is_dir() and d.name.isdigit()]
+    if len(seed_dirs) == 1:
+        return seed_dirs[0]
+
+    print(f"  Warning: Expected 1 seed directory, found {len(seed_dirs)}")
+    return None
 
 
 def copy_mod_dll(seed_dir: Path, dll_source: Path) -> bool:
