@@ -70,7 +70,7 @@ class MyProfileResponse(BaseModel):
     twitch_display_name: str | None
     twitch_avatar_url: str | None
     role: str
-    overlay_settings: dict | None = None
+    overlay_settings: dict[str, float] | None = None
 
     model_config = {"from_attributes": True}
 
@@ -120,7 +120,7 @@ async def update_overlay_settings(
     body: OverlaySettingsRequest,
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> dict[str, dict[str, float] | None]:
     """Update overlay settings (merge with existing)."""
     current = user.overlay_settings or {}
     updates = body.model_dump(exclude_none=True)

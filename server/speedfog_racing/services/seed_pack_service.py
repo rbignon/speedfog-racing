@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 OVERLAY_DEFAULTS: dict[str, float] = {"font_size": 18.0}
 
 
-def _get_overlay_setting(user_settings: dict | None, key: str) -> float:
+def _get_overlay_setting(user_settings: dict[str, float] | None, key: str) -> float:
     """Get overlay setting from user prefs or defaults."""
     if user_settings and key in user_settings:
-        return user_settings[key]
+        return float(user_settings[key])
     return OVERLAY_DEFAULTS[key]
 
 

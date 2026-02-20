@@ -75,7 +75,7 @@ class User(Base):
     )
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.USER)
     locale: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    overlay_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    overlay_settings: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
