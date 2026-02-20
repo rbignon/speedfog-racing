@@ -179,6 +179,8 @@
 												<span class="placement {placementClass(item.placement)}">
 													{placementLabel(item.placement)} / {item.total_participants}
 												</span>
+											{:else if item.status === 'finished'}
+												<span class="placement-dnf">DNF / {item.total_participants}</span>
 											{/if}
 											<span class="mono">{formatIgt(item.igt_ms)}</span>
 											<span>{item.death_count} deaths</span>
@@ -473,6 +475,11 @@
 
 	.placement.bronze {
 		color: #cd7f32;
+	}
+
+	.placement-dnf {
+		font-weight: 600;
+		color: var(--color-text-disabled);
 	}
 
 	.mono {
