@@ -14,19 +14,16 @@ from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.i18n import translate_graph_json
-from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
+from speedfog_racing.websocket.common import heartbeat_loop
 from speedfog_racing.websocket.schemas import (
-    ParticipantInfo,
-    PingMessage,
     RaceInfo,
     RaceStateMessage,
     SeedInfo,
 )
 from speedfog_racing.websocket.training_manager import training_manager
+from speedfog_racing.websocket.training_mod import build_training_participant_info
 
 AUTH_TIMEOUT = 5.0
-HEARTBEAT_INTERVAL = 30.0
-SEND_TIMEOUT = 5.0
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +98,7 @@ async def handle_training_spectator_websocket(
         await training_manager.connect_spectator(session_id, spectator_id, websocket)
 
         # Start heartbeat
-        heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+        heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
 
         try:
             # Spectators only listen
@@ -123,66 +120,14 @@ async def handle_training_spectator_websocket(
             await training_manager.disconnect_spectator(session_id, websocket)
 
 
-async def _heartbeat_loop(websocket: WebSocket) -> None:
-    ping_json = PingMessage().model_dump_json()
-    try:
-        while True:
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
-            await asyncio.wait_for(websocket.send_text(ping_json), timeout=SEND_TIMEOUT)
-    except Exception:
-        try:
-            await websocket.close()
-        except Exception:
-            pass
-
-
 async def _send_initial_state(
     websocket: WebSocket, session: TrainingSession, *, locale: str = "en"
 ) -> None:
     """Send current training session state to spectator."""
     seed = session.seed
-
-    current_zone = session.current_zone
-    current_layer = 0
-    tier = None
-    if session.progress_nodes:
-        if not current_zone:
-            current_zone = session.progress_nodes[-1].get("node_id")
-        if current_zone and seed and seed.graph_json:
-            tier = get_tier_for_node(current_zone, seed.graph_json)
-        for entry in session.progress_nodes:
-            nid = entry.get("node_id")
-            if nid and seed and seed.graph_json:
-                layer = get_layer_for_node(nid, seed.graph_json)
-                if layer > current_layer:
-                    current_layer = layer
-
-    # Finished sessions show total_layers so progress reads N/N
-    if session.status == TrainingSessionStatus.FINISHED and seed:
-        current_layer = seed.total_layers
-
     room = training_manager.get_room(session.id)
-
-    # Map training status to participant status for frontend compatibility:
-    # "active" → "playing" (MetroDagLive/Leaderboard expect "playing"/"finished")
-    participant_status = (
-        "playing" if session.status == TrainingSessionStatus.ACTIVE else session.status.value
-    )
-
-    participant = ParticipantInfo(
-        id=str(session.id),
-        twitch_username=session.user.twitch_username,
-        twitch_display_name=session.user.twitch_display_name,
-        status=participant_status,
-        current_zone=current_zone,
-        current_layer=current_layer,
-        current_layer_tier=tier,
-        igt_ms=session.igt_ms,
-        death_count=session.death_count,
-        color_index=0,
-        mod_connected=room is not None and room.mod is not None,
-        zone_history=session.progress_nodes,
-    )
+    mod_connected = room is not None and room.mod is not None
+    participant = build_training_participant_info(session, mod_connected=mod_connected)
 
     graph_json = seed.graph_json if seed else None
     if graph_json is not None and locale != "en":

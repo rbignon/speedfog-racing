@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.models import Caster, Participant, Race, RaceStatus
 from speedfog_racing.services.i18n import translate_graph_json
+from speedfog_racing.websocket.common import heartbeat_loop
 from speedfog_racing.websocket.manager import (
     SEND_TIMEOUT,
     SpectatorConnection,
@@ -23,7 +24,6 @@ from speedfog_racing.websocket.manager import (
 )
 from speedfog_racing.websocket.schemas import (
     ParticipantInfo,
-    PingMessage,
     RaceInfo,
     RaceStateMessage,
     SeedInfo,
@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 # Accepted risk: unauthenticated connections can observe public race state. This is
 # by design — race data (leaderboard, zone progress) is intended to be public.
 AUTH_GRACE_PERIOD = 2.0
-HEARTBEAT_INTERVAL = 30.0  # seconds between pings
 
 
 def build_seed_info(
@@ -125,7 +124,7 @@ async def handle_spectator_websocket(
         await manager.connect_spectator(race_id, conn)
 
         # Start heartbeat in background
-        heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+        heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
 
         try:
             # Keep connection alive — spectators only receive broadcasts
@@ -147,21 +146,6 @@ async def handle_spectator_websocket(
         logger.error(f"Error in spectator websocket: {e}")
     finally:
         await manager.disconnect_spectator(race_id, conn)
-
-
-async def _heartbeat_loop(websocket: WebSocket) -> None:
-    """Send periodic ping messages to the spectator."""
-    ping_json = PingMessage().model_dump_json()
-    try:
-        while True:
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
-            await asyncio.wait_for(websocket.send_text(ping_json), timeout=SEND_TIMEOUT)
-    except Exception:
-        # Connection lost — close so the main loop's receive_text() raises WebSocketDisconnect
-        try:
-            await websocket.close()
-        except Exception:
-            pass
 
 
 async def _try_auth(websocket: WebSocket, db: AsyncSession) -> uuid.UUID | None:

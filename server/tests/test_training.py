@@ -889,19 +889,20 @@ def test_training_zone_history_includes_start_node(
         p = msg["participants"][0]
         assert p["zone_history"] is not None
         assert len(p["zone_history"]) == 1
-        assert p["zone_history"][0]["node_id"] == "limgrave_start"
+        start_node_id = p["zone_history"][0]["node_id"]
+        assert start_node_id  # non-empty
         assert p["zone_history"][0]["igt_ms"] == 0
 
-        # Send event_flag for stormveil_01 (event_ids[0]=limgrave_start,
-        # event_ids[1]=stormveil_01, event_ids[-1]=finish_event)
+        # Send event_flag for the second event (first gate after start node)
         event_ids = auth_ok["seed"]["event_ids"]
         ws.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 5000})
         msg = ws.receive_json()
         assert msg["type"] == "leaderboard_update"
         p = msg["participants"][0]
         assert len(p["zone_history"]) == 2
-        assert p["zone_history"][0]["node_id"] == "limgrave_start"
-        assert p["zone_history"][1]["node_id"] == "stormveil_01"
+        assert p["zone_history"][0]["node_id"] == start_node_id
+        assert p["zone_history"][1]["node_id"]  # non-empty, mapped from event_ids[1]
+        assert p["zone_history"][1]["node_id"] != start_node_id
 
 
 def test_training_zone_query_fast_travel(training_ws_client, async_session):

@@ -14,25 +14,29 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.discord import build_podium, notify_race_finished
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
-from speedfog_racing.services.grace_service import load_graces_mapping, resolve_zone_query
-from speedfog_racing.services.i18n import translate_zone_update
+from speedfog_racing.services.grace_service import resolve_zone_query
 from speedfog_racing.services.layer_service import (
-    compute_zone_update,
     get_layer_for_node,
     get_start_node,
 )
+from speedfog_racing.websocket.common import (
+    MOD_AUTH_TIMEOUT,
+    extract_event_ids,
+    get_graces_mapping,
+    heartbeat_loop,
+    parse_zone_query_input,
+    send_auth_error,
+    send_error,
+    send_zone_update,
+)
 from speedfog_racing.websocket.manager import (
-    SEND_TIMEOUT,
     manager,
     participant_to_info,
     sort_leaderboard,
 )
 from speedfog_racing.websocket.schemas import (
-    AuthErrorMessage,
     AuthOkMessage,
-    ErrorMessage,
     ParticipantInfo,
-    PingMessage,
     RaceInfo,
     RaceStartMessage,
     SeedInfo,
@@ -42,40 +46,11 @@ from speedfog_racing.websocket.spectator import broadcast_race_state_update
 
 logger = logging.getLogger(__name__)
 
-MOD_AUTH_TIMEOUT = 5.0  # seconds to wait for auth message
-HEARTBEAT_INTERVAL = 30.0  # seconds between pings
-
-_graces_mapping: dict[str, dict[str, Any]] | None = None
-
-
-def _get_graces_mapping() -> dict[str, dict[str, Any]]:
-    global _graces_mapping
-    if _graces_mapping is None:
-        _graces_mapping = load_graces_mapping()
-    return _graces_mapping
-
 
 def _get_graph_json(participant: Participant) -> dict[str, Any] | None:
     """Get graph_json from participant's race seed."""
     seed = participant.race.seed
     return seed.graph_json if seed else None
-
-
-async def send_zone_update(
-    websocket: WebSocket,
-    node_id: str,
-    graph_json: dict[str, Any],
-    zone_history: list[dict[str, Any]] | None,
-    locale: str = "en",
-) -> None:
-    """Send a zone_update unicast to the originating mod."""
-    msg = compute_zone_update(node_id, graph_json, zone_history)
-    if msg:
-        msg = translate_zone_update(msg, locale)
-        try:
-            await asyncio.wait_for(websocket.send_text(json.dumps(msg)), timeout=SEND_TIMEOUT)
-        except Exception:
-            logger.warning("Failed to send zone_update")
 
 
 def _participant_load_options() -> list[Any]:
@@ -191,7 +166,7 @@ async def handle_mod_websocket(
             logger.warning(f"Failed to broadcast connect: race={race_id}")
 
         # Start heartbeat in background
-        heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+        heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
 
         try:
             # Main message loop
@@ -249,21 +224,6 @@ async def handle_mod_websocket(
                 logger.warning(f"Failed to broadcast disconnect: race={race_id}")
 
 
-async def _heartbeat_loop(websocket: WebSocket) -> None:
-    """Send periodic ping messages to the mod."""
-    ping_json = PingMessage().model_dump_json()
-    try:
-        while True:
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
-            await asyncio.wait_for(websocket.send_text(ping_json), timeout=SEND_TIMEOUT)
-    except Exception:
-        # Connection lost — close so the main loop's receive_text() raises WebSocketDisconnect
-        try:
-            await websocket.close()
-        except Exception:
-            pass
-
-
 async def authenticate_mod(
     db: AsyncSession, race_id: uuid.UUID, mod_token: str
 ) -> Participant | None:
@@ -276,42 +236,16 @@ async def authenticate_mod(
     return result.scalar_one_or_none()
 
 
-async def send_auth_error(websocket: WebSocket, message: str) -> None:
-    """Send auth error and close connection."""
-    try:
-        error = AuthErrorMessage(message=message)
-        await websocket.send_text(error.model_dump_json())
-        await websocket.close(code=4003, reason=message)
-    except Exception:
-        pass
-
-
-async def _send_error(websocket: WebSocket, message: str) -> None:
-    """Send a generic error message to the mod."""
-    error = ErrorMessage(message=message)
-    try:
-        await asyncio.wait_for(websocket.send_text(error.model_dump_json()), timeout=SEND_TIMEOUT)
-    except Exception:
-        pass
-
-
 async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
     """Send successful auth response with race state."""
     race = participant.race
     seed = race.seed
 
     # Extract event_ids and finish_event from graph_json
-    finish_event_id: int | None = None
     event_ids: list[int] = []
+    finish_event_id: int | None = None
     if seed and seed.graph_json:
-        event_map = seed.graph_json.get("event_map", {})
-        finish = seed.graph_json.get("finish_event")
-        if isinstance(finish, int):
-            finish_event_id = finish
-        if event_map:
-            event_ids = sorted(int(k) for k in event_map.keys())
-            if finish_event_id is not None and finish_event_id not in event_ids:
-                event_ids.append(finish_event_id)
+        event_ids, finish_event_id = extract_event_ids(seed.graph_json)
 
     # Extract gem items from care_package for runtime spawning by the mod
     spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
@@ -392,7 +326,7 @@ async def handle_status_update(
                 participant.race_id,
                 participant.race.status.value,
             )
-            await _send_error(websocket, "Race not running")
+            await send_error(websocket, "Race not running")
             return
 
         if participant.status == ParticipantStatus.FINISHED:
@@ -463,7 +397,7 @@ async def handle_event_flag(
                 participant.race_id,
                 participant.race.status.value,
             )
-            await _send_error(websocket, "Race not running")
+            await send_error(websocket, "Race not running")
             return
 
         if participant.status == ParticipantStatus.FINISHED:
@@ -553,22 +487,9 @@ async def handle_zone_query(
     locale: str = "en",
 ) -> None:
     """Handle zone_query from mod (loading screen exit overlay update)."""
-    grace_entity_id = msg.get("grace_entity_id")
-    if isinstance(grace_entity_id, int) and grace_entity_id != 0:
-        pass  # valid
-    else:
-        grace_entity_id = None
-
-    map_id_str = msg.get("map_id") if isinstance(msg.get("map_id"), str) else None
-
-    if grace_entity_id is None and map_id_str is None:
+    zq = parse_zone_query_input(msg)
+    if zq is None:
         return
-
-    # Extract optional fields for future disambiguation
-    raw_pos = msg.get("position")
-    position = tuple(raw_pos) if isinstance(raw_pos, list) and len(raw_pos) == 3 else None
-    raw_pr = msg.get("play_region_id")
-    play_region_id = raw_pr if isinstance(raw_pr, int) else None
 
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
@@ -588,18 +509,18 @@ async def handle_zone_query(
         graph_json = seed.graph_json
         node_id = resolve_zone_query(
             graph_json,
-            _get_graces_mapping(),
-            grace_entity_id=grace_entity_id,
-            map_id=map_id_str,
-            position=position,
-            play_region_id=play_region_id,
+            get_graces_mapping(),
+            grace_entity_id=zq.grace_entity_id,
+            map_id=zq.map_id,
+            position=zq.position,
+            play_region_id=zq.play_region_id,
             zone_history=participant.zone_history,
         )
         if node_id is None:
             logger.debug(
                 "zone_query: unresolved (grace=%s, map=%s) for race %s",
-                grace_entity_id,
-                map_id_str,
+                zq.grace_entity_id,
+                zq.map_id,
                 participant.race_id,
             )
             return
@@ -635,7 +556,7 @@ async def handle_finished(
                 participant.race_id,
                 participant.race.status.value,
             )
-            await _send_error(websocket, "Race not running")
+            await send_error(websocket, "Race not running")
             return
 
         if participant.status == ParticipantStatus.FINISHED:
