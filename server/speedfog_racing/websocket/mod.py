@@ -121,7 +121,11 @@ async def handle_mod_websocket(
             await websocket.close(code=4001, reason="Auth timeout")
             return
 
-        auth_msg = json.loads(auth_data)
+        try:
+            auth_msg = json.loads(auth_data)
+        except json.JSONDecodeError:
+            await send_auth_error(websocket, "Invalid JSON")
+            return
 
         if auth_msg.get("type") != "auth" or "mod_token" not in auth_msg:
             await send_auth_error(websocket, "Invalid auth message")
@@ -228,8 +232,8 @@ async def handle_mod_websocket(
 
     except WebSocketDisconnect:
         logger.info(f"Mod disconnected: race={race_id}")
-    except Exception as e:
-        logger.error(f"Error in mod websocket: {e}")
+    except Exception:
+        logger.exception(f"Error in mod websocket: race={race_id}")
     finally:
         if participant_id:
             await manager.disconnect_mod(race_id, participant_id)
@@ -274,9 +278,12 @@ async def authenticate_mod(
 
 async def send_auth_error(websocket: WebSocket, message: str) -> None:
     """Send auth error and close connection."""
-    error = AuthErrorMessage(message=message)
-    await websocket.send_text(error.model_dump_json())
-    await websocket.close()
+    try:
+        error = AuthErrorMessage(message=message)
+        await websocket.send_text(error.model_dump_json())
+        await websocket.close(code=4003, reason=message)
+    except Exception:
+        pass
 
 
 async def _send_error(websocket: WebSocket, message: str) -> None:

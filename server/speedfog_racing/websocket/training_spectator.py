@@ -5,11 +5,10 @@ import json
 import logging
 import uuid
 
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
-from starlette.websockets import WebSocketDisconnect
 
 from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.auth import get_user_by_token

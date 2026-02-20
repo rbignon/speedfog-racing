@@ -7,11 +7,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
-from starlette.websockets import WebSocketDisconnect
 
 from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
@@ -26,6 +25,7 @@ from speedfog_racing.services.layer_service import (
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     AuthOkMessage,
+    ErrorMessage,
     LeaderboardUpdateMessage,
     ParticipantInfo,
     PingMessage,
@@ -51,6 +51,23 @@ def _get_graces_mapping() -> dict[str, dict[str, Any]]:
     if _graces_mapping is None:
         _graces_mapping = load_graces_mapping()
     return _graces_mapping
+
+
+async def _send_zone_update(
+    websocket: WebSocket,
+    node_id: str,
+    graph_json: dict[str, Any],
+    zone_history: list[dict[str, Any]] | None,
+    locale: str = "en",
+) -> None:
+    """Send a zone_update unicast to the originating mod."""
+    msg = compute_zone_update(node_id, graph_json, zone_history)
+    if msg:
+        msg = translate_zone_update(msg, locale)
+        try:
+            await asyncio.wait_for(websocket.send_text(json.dumps(msg)), timeout=SEND_TIMEOUT)
+        except Exception:
+            logger.warning("Failed to send zone_update for training session")
 
 
 def _load_options() -> list[Any]:
@@ -82,6 +99,7 @@ async def handle_training_mod_websocket(
         try:
             auth_data = await asyncio.wait_for(websocket.receive_text(), timeout=MOD_AUTH_TIMEOUT)
         except TimeoutError:
+            logger.warning(f"Training mod auth timeout: session={session_id}")
             await websocket.close(code=4001, reason="Auth timeout")
             return
 
@@ -139,14 +157,13 @@ async def handle_training_mod_websocket(
                 if not last_node:
                     last_node = get_start_node(seed.graph_json)
                 if last_node:
-                    zone_update = compute_zone_update(
+                    await _send_zone_update(
+                        websocket,
                         last_node,
                         seed.graph_json,
                         session.progress_nodes or [],
+                        mod_locale,
                     )
-                    if zone_update:
-                        zone_update = translate_zone_update(zone_update, mod_locale)
-                        await websocket.send_text(json.dumps(zone_update))
 
         # Register connection and notify spectators (mod already has auth_ok data)
         await training_manager.connect_mod(session_id, user_id, websocket)
@@ -161,7 +178,8 @@ async def handle_training_mod_websocket(
                 data = await websocket.receive_text()
                 try:
                     msg = json.loads(data)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Invalid JSON from training mod (ignored): {e}")
                     continue
 
                 msg_type = msg.get("type")
@@ -169,7 +187,7 @@ async def handle_training_mod_websocket(
                 if msg_type == "pong":
                     pass
                 elif msg_type == "status_update":
-                    await _handle_status_update(session_maker, session_id, msg)
+                    await _handle_status_update(websocket, session_maker, session_id, msg)
                 elif msg_type == "event_flag":
                     await _handle_event_flag(
                         websocket, session_maker, session_id, msg, locale=mod_locale
@@ -213,6 +231,17 @@ async def _heartbeat_loop(websocket: WebSocket) -> None:
             await websocket.close()
         except Exception:
             pass
+
+
+async def _send_error(websocket: WebSocket, message: str) -> None:
+    """Send a generic error message to the mod."""
+    try:
+        await asyncio.wait_for(
+            websocket.send_text(ErrorMessage(message=message).model_dump_json()),
+            timeout=SEND_TIMEOUT,
+        )
+    except Exception:
+        pass
 
 
 async def _send_auth_error(websocket: WebSocket, message: str) -> None:
@@ -310,6 +339,7 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
 
 
 async def _handle_status_update(
+    websocket: WebSocket,
     session_maker: async_sessionmaker[AsyncSession],
     session_id: uuid.UUID,
     msg: dict[str, Any],
@@ -318,10 +348,14 @@ async def _handle_status_update(
     async with session_maker() as db:
         session = await _load_session(db, session_id)
         if not session or session.status != TrainingSessionStatus.ACTIVE:
+            if session:
+                await _send_error(websocket, "Training session not active")
             return
 
-        session.igt_ms = msg.get("igt_ms", 0)
-        session.death_count = msg.get("death_count", 0)
+        if isinstance(msg.get("igt_ms"), int):
+            session.igt_ms = msg["igt_ms"]
+        if isinstance(msg.get("death_count"), int):
+            session.death_count = msg["death_count"]
 
         # Record start node on first status_update (mirrors race mode READY→PLAYING)
         if not session.progress_nodes:
@@ -352,13 +386,15 @@ async def _handle_event_flag(
     if not isinstance(flag_id, int):
         return
 
-    igt = msg.get("igt_ms", 0)
+    igt = msg.get("igt_ms", 0) if isinstance(msg.get("igt_ms"), int) else 0
     node_id = None
     seed_graph = None
 
     async with session_maker() as db:
         session = await _load_session(db, session_id)
         if not session or session.status != TrainingSessionStatus.ACTIVE:
+            if session:
+                await _send_error(websocket, "Training session not active")
             return
 
         seed = session.seed
@@ -409,13 +445,9 @@ async def _handle_event_flag(
 
     # Send zone_update to mod
     if node_id and seed_graph:
-        zone_update = compute_zone_update(node_id, seed_graph, session.progress_nodes or [])
-        if zone_update:
-            zone_update = translate_zone_update(zone_update, locale)
-            try:
-                await websocket.send_text(json.dumps(zone_update))
-            except Exception:
-                pass
+        await _send_zone_update(
+            websocket, node_id, seed_graph, session.progress_nodes or [], locale
+        )
 
 
 async def _handle_zone_query(
@@ -478,15 +510,7 @@ async def _handle_zone_query(
         progress = session.progress_nodes or []
 
     # Unicast zone_update to mod
-    zone_update = compute_zone_update(node_id, graph_json, progress)
-    if zone_update:
-        zone_update = translate_zone_update(zone_update, locale)
-        try:
-            await asyncio.wait_for(
-                websocket.send_text(json.dumps(zone_update)), timeout=SEND_TIMEOUT
-            )
-        except Exception:
-            logger.warning("Failed to send zone_update for training zone_query")
+    await _send_zone_update(websocket, node_id, graph_json, progress, locale)
 
     # Broadcast to spectators so DAG view reflects current zone
     # (mod already got the unicast zone_update above)
