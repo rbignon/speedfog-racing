@@ -319,6 +319,7 @@
 
 	.datetime-inputs {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 0.5rem;
 		align-items: center;
 	}
@@ -336,7 +337,7 @@
 		font-size: 1rem;
 		cursor: pointer;
 		transition: border-color var(--transition);
-		min-width: 180px;
+		min-width: 0;
 		text-align: left;
 	}
 
