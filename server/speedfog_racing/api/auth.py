@@ -56,6 +56,7 @@ class UserPublicResponse(BaseModel):
     twitch_avatar_url: str | None
     role: str
     locale: str | None = None
+    overlay_settings: dict | None = None
 
     model_config = {"from_attributes": True}
 

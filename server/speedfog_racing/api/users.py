@@ -6,7 +6,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -70,6 +70,7 @@ class MyProfileResponse(BaseModel):
     twitch_display_name: str | None
     twitch_avatar_url: str | None
     role: str
+    overlay_settings: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -86,6 +87,19 @@ class UpdateLocaleRequest(BaseModel):
     locale: str
 
 
+class OverlaySettingsRequest(BaseModel):
+    """Request to update overlay settings. Only provided fields are updated."""
+
+    font_size: float | None = None
+
+    @field_validator("font_size")
+    @classmethod
+    def validate_font_size(cls, v: float | None) -> float | None:
+        if v is not None and not (8.0 <= v <= 72.0):
+            raise ValueError("font_size must be between 8 and 72")
+        return v
+
+
 @router.patch("/me/locale")
 async def update_locale(
     body: UpdateLocaleRequest,
@@ -99,6 +113,21 @@ async def update_locale(
     user.locale = body.locale
     await db.commit()
     return {"locale": user.locale}
+
+
+@router.patch("/me/settings")
+async def update_overlay_settings(
+    body: OverlaySettingsRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update overlay settings (merge with existing)."""
+    current = user.overlay_settings or {}
+    updates = body.model_dump(exclude_none=True)
+    current.update(updates)
+    user.overlay_settings = current
+    await db.commit()
+    return {"overlay_settings": user.overlay_settings}
 
 
 @router.get("/me/races", response_model=RaceListResponse)
