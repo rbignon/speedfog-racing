@@ -326,21 +326,30 @@ async def list_races(
             ) from e
         query = query.where(Race.status.in_(status_enums))
 
-    # Sort: running first, then setup, then finished
-    query = query.order_by(
-        case(
-            (Race.status == RaceStatus.RUNNING, 0),
-            (Race.status == RaceStatus.SETUP, 1),
-            else_=2,
-        ),
-        # Within setup: scheduled_at ASC (nulls last)
-        case(
-            (Race.scheduled_at.is_(None), 1),
-            else_=0,
-        ),
-        Race.scheduled_at.asc(),
-        Race.created_at.desc(),
-    )
+    # Sort depends on what statuses are requested
+    finished_only = status_filter and all(s.strip() == "finished" for s in status_filter.split(","))
+    if finished_only:
+        # Recent results: most recent first
+        query = query.order_by(
+            Race.started_at.desc().nulls_last(),
+            Race.created_at.desc(),
+        )
+    else:
+        # Mixed listing: running first, then setup, then finished
+        query = query.order_by(
+            case(
+                (Race.status == RaceStatus.RUNNING, 0),
+                (Race.status == RaceStatus.SETUP, 1),
+                else_=2,
+            ),
+            # Within setup: scheduled_at ASC (nulls last)
+            case(
+                (Race.scheduled_at.is_(None), 1),
+                else_=0,
+            ),
+            Race.scheduled_at.asc(),
+            Race.created_at.desc(),
+        )
 
     # Pagination
     if limit is not None:
