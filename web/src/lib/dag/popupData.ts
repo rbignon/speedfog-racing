@@ -29,6 +29,7 @@ export interface PopupVisitor {
   displayName: string;
   color: string;
   arrivedAtMs: number;
+  timeSpentMs?: number; // duration in this zone (until next zone or race finish)
 }
 
 export interface NodePopupData {
@@ -153,6 +154,10 @@ export function computePlayersAtNode(
 
 /**
  * Find all participants who visited a node (from zone_history), sorted by arrival time.
+ *
+ * Time spent is computed as the difference between this zone's arrival IGT and the
+ * next zone's arrival IGT in chronological order. For the last zone in history,
+ * the participant's current/final IGT is used (only if finished or still playing).
  */
 export function computeVisitors(
   nodeId: string,
@@ -161,12 +166,25 @@ export function computeVisitors(
   const visitors: PopupVisitor[] = [];
   for (const p of participants) {
     if (!p.zone_history) continue;
-    const entry = p.zone_history.find((e) => e.node_id === nodeId);
-    if (!entry) continue;
+    const idx = p.zone_history.findIndex((e) => e.node_id === nodeId);
+    if (idx === -1) continue;
+    const entry = p.zone_history[idx];
+
+    let timeSpentMs: number | undefined;
+    if (idx < p.zone_history.length - 1) {
+      // Next zone in chronological history gives us the exit time
+      timeSpentMs = p.zone_history[idx + 1].igt_ms - entry.igt_ms;
+    } else if (p.status === "finished" || p.status === "playing") {
+      // Last zone: use participant's current/final IGT
+      timeSpentMs = p.igt_ms - entry.igt_ms;
+    }
+
     visitors.push({
       displayName: p.twitch_display_name || p.twitch_username,
       color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
       arrivedAtMs: entry.igt_ms,
+      timeSpentMs:
+        timeSpentMs != null && timeSpentMs > 0 ? timeSpentMs : undefined,
     });
   }
   visitors.sort((a, b) => a.arrivedAtMs - b.arrivedAtMs);

@@ -199,13 +199,46 @@ describe("computeVisitors", () => {
     },
   ];
 
-  it("returns visitors sorted by arrival time", () => {
+  it("returns visitors sorted by arrival time with time spent", () => {
     const visitors = computeVisitors("stormveil", participants);
     expect(visitors).toHaveLength(2);
     expect(visitors[0].displayName).toBe("Alice");
     expect(visitors[0].arrivedAtMs).toBe(60000);
+    expect(visitors[0].timeSpentMs).toBe(60000); // next zone (liurnia) at 120000
     expect(visitors[1].displayName).toBe("Bob");
     expect(visitors[1].arrivedAtMs).toBe(80000);
+    expect(visitors[1].timeSpentMs).toBe(70000); // next zone (raya) at 150000
+  });
+
+  it("computes time spent using final IGT for last zone of finished participant", () => {
+    const visitors = computeVisitors("caelid", participants);
+    expect(visitors).toHaveLength(2);
+    expect(visitors[0].arrivedAtMs).toBe(200000);
+    expect(visitors[0].timeSpentMs).toBe(100000); // Alice: 300000 - 200000
+    expect(visitors[1].arrivedAtMs).toBe(250000);
+    expect(visitors[1].timeSpentMs).toBe(100000); // Bob: 350000 - 250000
+  });
+
+  it("computes time spent using current IGT for last zone of playing participant", () => {
+    const playingParticipant = {
+      ...participants[0],
+      status: "playing",
+      igt_ms: 250000,
+    };
+    const visitors = computeVisitors("caelid", [playingParticipant]);
+    expect(visitors).toHaveLength(1);
+    expect(visitors[0].timeSpentMs).toBe(50000); // 250000 - 200000
+  });
+
+  it("returns undefined timeSpentMs for last zone of non-playing/non-finished participant", () => {
+    const readyParticipant = {
+      ...participants[0],
+      status: "ready",
+      zone_history: [{ node_id: "start", igt_ms: 0 }],
+    };
+    const visitors = computeVisitors("start", [readyParticipant]);
+    expect(visitors).toHaveLength(1);
+    expect(visitors[0].timeSpentMs).toBeUndefined();
   });
 
   it("returns empty for unvisited node", () => {

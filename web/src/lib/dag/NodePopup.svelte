@@ -153,7 +153,12 @@
 				<div class="visitor-item">
 					<span class="player-dot" style="background: {visitor.color};"></span>
 					<span class="visitor-name">{visitor.displayName}</span>
-					<span class="visitor-time">{formatIgt(visitor.arrivedAtMs)}</span>
+					<span class="visitor-times">
+						<span class="visitor-time">{formatIgt(visitor.arrivedAtMs)}</span>
+						{#if visitor.timeSpentMs}
+							<span class="visitor-duration">({formatIgt(visitor.timeSpentMs)})</span>
+						{/if}
+					</span>
 				</div>
 			{/each}
 		</div>
@@ -321,9 +326,18 @@
 		white-space: nowrap;
 	}
 
-	.visitor-time {
-		color: var(--color-text-secondary, #9ca3af);
+	.visitor-times {
+		display: flex;
+		gap: 4px;
 		flex-shrink: 0;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.visitor-time {
+		color: var(--color-text-secondary, #9ca3af);
+	}
+
+	.visitor-duration {
+		color: var(--color-text-disabled, #6b7280);
 	}
 </style>
