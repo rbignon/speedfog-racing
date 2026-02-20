@@ -24,8 +24,11 @@ import sys
 import tempfile
 import uuid
 import zipfile
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+)
 from pathlib import Path
-
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 POOLS_DIR = SCRIPT_DIR / "pools"
@@ -81,6 +84,13 @@ Examples:
         type=Path,
         default=None,
         help="Path to speedfog repository (default: SPEEDFOG_PATH env var)",
+    )
+    parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=1,
+        help="Number of parallel workers (default: 1, sequential)",
     )
     parser.add_argument(
         "-v",
@@ -313,6 +323,60 @@ def process_seed(
         return False
 
 
+def generate_one_seed(
+    index: int,
+    total: int,
+    speedfog_path: Path,
+    pool_config: Path,
+    game_dir: Path,
+    dll_source: Path,
+    output_pool_dir: Path,
+    failed_dir: Path,
+    *,
+    verbose: bool = False,
+) -> bool:
+    """Generate and process a single seed. Returns True on success."""
+    seed_slug = uuid.uuid4().hex[:12]
+    prefix = f"[{index}/{total}]"
+    print(f"{prefix} Generating seed_{seed_slug}...")
+
+    temp_dir = tempfile.mkdtemp()
+    temp_path = Path(temp_dir)
+    ok = False
+
+    try:
+        seed_dir = run_speedfog(
+            speedfog_path,
+            pool_config,
+            temp_path,
+            game_dir,
+            verbose=verbose,
+        )
+        if seed_dir is None:
+            print(f"{prefix} Failed: speedfog generation error")
+            return False
+
+        if process_seed(seed_dir, dll_source, output_pool_dir, seed_slug):
+            print(f"{prefix} Success: seed_{seed_slug}.zip")
+            ok = True
+            return True
+        else:
+            print(f"{prefix} Failed: post-processing error")
+            return False
+    finally:
+        if ok:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        elif temp_path.exists() and any(temp_path.iterdir()):
+            failed_dir.mkdir(parents=True, exist_ok=True)
+            fail_dest = failed_dir / f"seed_{seed_slug}"
+            if fail_dest.exists():
+                shutil.rmtree(fail_dest)
+            shutil.move(str(temp_path), str(fail_dest))
+            print(f"{prefix} Kept for investigation: {fail_dest}")
+        else:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def main() -> int:
     """Main entry point."""
     args = parse_args()
@@ -320,6 +384,10 @@ def main() -> int:
     # Validate count
     if args.count <= 0:
         print("Error: --count must be a positive integer")
+        return 1
+
+    if args.jobs <= 0:
+        print("Error: --jobs must be a positive integer")
         return 1
 
     # Validate paths
@@ -350,7 +418,8 @@ def main() -> int:
     # Copy pool TOML to output dir so the server can read display metadata
     shutil.copy2(pool_config, output_pool_dir / "config.toml")
 
-    print(f"Generating {args.count} seeds for pool '{args.pool}'")
+    jobs = min(args.jobs, args.count)
+    print(f"Generating {args.count} seeds for pool '{args.pool}' ({jobs} workers)")
     print(f"  Speedfog: {speedfog_path}")
     print(f"  Config: {pool_config}")
     print(f"  Game: {args.game_dir}")
@@ -361,51 +430,41 @@ def main() -> int:
     failed = 0
     failed_dir = args.output / f"{args.pool}_failed"
 
-    for i in range(args.count):
-        seed_slug = uuid.uuid4().hex[:12]
-        print(f"[{i + 1}/{args.count}] Generating seed_{seed_slug}...")
+    common_kwargs = dict(
+        total=args.count,
+        speedfog_path=speedfog_path,
+        pool_config=pool_config,
+        game_dir=args.game_dir,
+        dll_source=dll_source,
+        output_pool_dir=output_pool_dir,
+        failed_dir=failed_dir,
+        verbose=args.verbose,
+    )
 
-        # Use a temporary directory for speedfog output — managed manually
-        # so we can preserve it on failure for investigation.
-        temp_dir = tempfile.mkdtemp()
-        temp_path = Path(temp_dir)
-        ok = False
-
-        try:
-            # Generate seed
-            seed_dir = run_speedfog(
-                speedfog_path,
-                pool_config,
-                temp_path,
-                args.game_dir,
-                verbose=args.verbose,
-            )
-            if seed_dir is None:
-                print("  Failed: speedfog generation error")
-                failed += 1
-                continue
-
-            # Process and move to output
-            if process_seed(seed_dir, dll_source, output_pool_dir, seed_slug):
-                print(f"  Success: {output_pool_dir / f'seed_{seed_slug}.zip'}")
+    if jobs == 1:
+        for i in range(args.count):
+            if generate_one_seed(index=i + 1, **common_kwargs):
                 succeeded += 1
-                ok = True
             else:
-                print("  Failed: post-processing error")
                 failed += 1
-        finally:
-            if ok:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-            elif temp_path.exists() and any(temp_path.iterdir()):
-                # Preserve failed seed for investigation
-                failed_dir.mkdir(parents=True, exist_ok=True)
-                fail_dest = failed_dir / f"seed_{seed_slug}"
-                if fail_dest.exists():
-                    shutil.rmtree(fail_dest)
-                shutil.move(str(temp_path), str(fail_dest))
-                print(f"  Kept for investigation: {fail_dest}")
-            else:
-                shutil.rmtree(temp_dir, ignore_errors=True)
+    else:
+        if args.verbose:
+            print("Warning: --verbose output may interleave with multiple jobs")
+
+        with ThreadPoolExecutor(max_workers=jobs) as executor:
+            futures = {
+                executor.submit(generate_one_seed, index=i + 1, **common_kwargs): i
+                for i in range(args.count)
+            }
+            for future in as_completed(futures):
+                try:
+                    if future.result():
+                        succeeded += 1
+                    else:
+                        failed += 1
+                except Exception as e:
+                    failed += 1
+                    print(f"Unexpected error in seed worker: {e}")
 
     # Summary
     print()

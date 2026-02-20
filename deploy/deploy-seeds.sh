@@ -26,6 +26,7 @@ UPLOAD_ONLY=false
 NO_RESTART=false
 DISCARD=false
 VERBOSE=""
+JOBS=""
 FAILED_POOLS=()
 
 usage() {
@@ -43,6 +44,7 @@ Options:
   --output DIR      Local output directory (default: tools/output)
   --no-restart      Upload without restarting the service
   --discard         Mark AVAILABLE/CONSUMED seeds as DISCARDED on server
+  -j, --jobs N      Parallel workers per pool (default: 1, sequential)
   -v, --verbose     Pass -v to generate_pool.py
   -h, --help        Show this help
 
@@ -78,6 +80,7 @@ while [[ $# -gt 0 ]]; do
         --output) OUTPUT_DIR="$2"; shift 2 ;;
         --no-restart) NO_RESTART=true; shift ;;
         --discard) DISCARD=true; shift ;;
+        -j|--jobs) JOBS="$2"; shift 2 ;;
         -v|--verbose) VERBOSE="-v"; shift ;;
         -h|--help) usage ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -167,6 +170,7 @@ if [[ "$UPLOAD_ONLY" == false ]]; then
             --count "$COUNT" \
             --game-dir "$GAME_DIR" \
             --output "$OUTPUT_DIR" \
+            ${JOBS:+--jobs "$JOBS"} \
             $VERBOSE; then
             echo "  ERROR: Generation failed for pool '$pool', skipping."
             rm -rf "${OUTPUT_DIR:?}/$pool"
