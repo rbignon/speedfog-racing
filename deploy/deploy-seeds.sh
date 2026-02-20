@@ -228,7 +228,7 @@ for pool in "${POOLS[@]}"; do
         echo "Generate seeds first or check --output path."
         exit 1
     fi
-    local_count=$(find "$pool_dir" -maxdepth 1 -type d -name 'seed_*' | wc -l)
+    local_count=$(find "$pool_dir" -maxdepth 1 -type f -name 'seed_*.zip' | wc -l)
     echo "  $pool: $local_count seeds locally"
 done
 
@@ -261,7 +261,7 @@ ssh "$SERVER" bash -s "$SEEDS_DIR" <<'ENDSSH'
     for pool_dir in "$SEEDS_DIR"/*/; do
         [ -d "$pool_dir" ] || continue
         pool_name=$(basename "$pool_dir")
-        seed_count=$(find "$pool_dir" -maxdepth 1 -type d -name 'seed_*' | wc -l)
+        seed_count=$(find "$pool_dir" -maxdepth 1 -type f -name 'seed_*.zip' | wc -l)
         echo "    $pool_name: $seed_count seeds"
     done
 ENDSSH
