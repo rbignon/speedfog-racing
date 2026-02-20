@@ -3,6 +3,7 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { createRace, fetchPoolStats, type PoolStats, type PoolInfo } from '$lib/api';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
+	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
 
 	let name = $state('');
 	let scheduledAt = $state('');
@@ -71,7 +72,7 @@
 		error = null;
 
 		try {
-			const isoScheduled = scheduledAt ? new Date(scheduledAt).toISOString() : null;
+			const isoScheduled = scheduledAt || null;
 			const race = await createRace(
 				name.trim(),
 				poolName,
@@ -123,12 +124,12 @@
 
 			<div class="form-group">
 				<label for="scheduled">Scheduled Time <span class="optional">(optional)</span></label>
-				<input
-					type="datetime-local"
-					id="scheduled"
-					bind:value={scheduledAt}
-					min={(() => { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 16); })()}
+				<DateTimePicker
+					value={scheduledAt}
+					onchange={(iso) => (scheduledAt = iso)}
+					min={new Date()}
 					disabled={creating}
+					placeholder="Pick a date"
 				/>
 				<p class="hint">
 					Leave empty if you don't have a fixed start time yet.
@@ -345,25 +346,9 @@
 		border-color: var(--color-purple);
 	}
 
-	input[type='text']:disabled,
-	input[type='datetime-local']:disabled {
+	input[type='text']:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
-	}
-
-	input[type='datetime-local'] {
-		padding: 0.75rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-family: var(--font-family);
-		font-size: 1rem;
-	}
-
-	input[type='datetime-local']:focus {
-		outline: none;
-		border-color: var(--color-purple);
 	}
 
 	.optional {
