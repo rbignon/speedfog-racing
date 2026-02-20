@@ -18,6 +18,7 @@
 	import RaceStats from '$lib/components/RaceStats.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
+	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
 	import { MetroDag, MetroDagBlurred, MetroDagProgressive, MetroDagResults } from '$lib/dag';
 	import { parseDagGraph } from '$lib/dag/types';
 	import {
@@ -255,15 +256,7 @@
 	}
 
 	function startEditSchedule() {
-		if (initialRace.scheduled_at) {
-			// Convert ISO to datetime-local format
-			const d = new Date(initialRace.scheduled_at);
-			scheduleInput = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-				.toISOString()
-				.slice(0, 16);
-		} else {
-			scheduleInput = '';
-		}
+		scheduleInput = initialRace.scheduled_at ?? '';
 		scheduleError = null;
 		editingSchedule = true;
 	}
@@ -272,7 +265,7 @@
 		scheduleSaving = true;
 		scheduleError = null;
 		try {
-			const scheduled = scheduleInput ? new Date(scheduleInput).toISOString() : null;
+			const scheduled = scheduleInput || null;
 			await updateRace(initialRace.id, { scheduled_at: scheduled });
 			initialRace = await fetchRace(initialRace.id);
 			editingSchedule = false;
@@ -601,15 +594,10 @@
 						<span class="label">Scheduled</span>
 						{#if editingSchedule}
 							<div class="schedule-edit">
-								<input
-									type="datetime-local"
-									bind:value={scheduleInput}
-									min={(() => {
-										const n = new Date();
-										return new Date(n.getTime() - n.getTimezoneOffset() * 60000)
-											.toISOString()
-											.slice(0, 16);
-									})()}
+								<DateTimePicker
+									value={scheduleInput}
+									onchange={(iso) => (scheduleInput = iso)}
+									min={new Date()}
 									disabled={scheduleSaving}
 								/>
 								<div class="schedule-edit-actions">
@@ -908,21 +896,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;
-	}
-
-	.schedule-edit input {
-		padding: 0.35rem 0.5rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-family: var(--font-family);
-		font-size: var(--font-size-sm);
-	}
-
-	.schedule-edit input:focus {
-		outline: none;
-		border-color: var(--color-purple);
 	}
 
 	.schedule-edit-actions {
