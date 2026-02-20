@@ -16,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
+from speedfog_racing.rate_limit import limiter
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -55,6 +56,13 @@ def setup_test_db():
     # Clean up test.db file
     if os.path.exists("./test.db"):
         os.remove("./test.db")
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Reset rate limiter state between tests to avoid cross-test pollution."""
+    limiter.reset()
+    yield
 
 
 @pytest.fixture(scope="function")

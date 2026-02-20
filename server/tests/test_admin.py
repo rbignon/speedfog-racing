@@ -210,7 +210,8 @@ async def test_discard_pool_endpoint(test_client, admin_user, async_session):
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["discarded"] == 2
+        # discard_pool marks both AVAILABLE and CONSUMED seeds as DISCARDED
+        assert data["discarded"] == 3
         assert data["pool_name"] == "training_standard"
 
         # Verify stats show updated counts
@@ -221,8 +222,8 @@ async def test_discard_pool_endpoint(test_client, admin_user, async_session):
         assert stats_response.status_code == 200
         pools = stats_response.json()["pools"]
         assert pools["training_standard"]["available"] == 0
-        assert pools["training_standard"]["discarded"] == 2
-        assert pools["training_standard"]["consumed"] == 1
+        assert pools["training_standard"]["discarded"] == 3
+        assert pools["training_standard"]["consumed"] == 0
 
 
 @pytest.mark.asyncio
