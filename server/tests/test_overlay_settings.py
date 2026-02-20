@@ -108,6 +108,32 @@ async def test_update_overlay_settings_merges(test_client, user_with_token):
 
 
 @pytest.mark.asyncio
+async def test_update_overlay_settings_persists_after_change(test_client, user_with_token):
+    """PATCH /users/me/settings persists updated value to DB (not just in-memory)."""
+    _, token = user_with_token
+    async with test_client as client:
+        # First set
+        await client.patch(
+            "/api/users/me/settings",
+            json={"font_size": 20.0},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        # Second set (update existing)
+        await client.patch(
+            "/api/users/me/settings",
+            json={"font_size": 22.0},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        # Verify via GET that the DB actually has the new value
+        response = await client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["overlay_settings"]["font_size"] == 22.0
+
+
+@pytest.mark.asyncio
 async def test_get_me_includes_overlay_settings(test_client, user_with_token):
     """/auth/me includes overlay_settings."""
     _, token = user_with_token

@@ -122,7 +122,7 @@ async def update_overlay_settings(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, dict[str, float] | None]:
     """Update overlay settings (merge with existing)."""
-    current = user.overlay_settings or {}
+    current = dict(user.overlay_settings or {})
     updates = body.model_dump(exclude_none=True)
     current.update(updates)
     user.overlay_settings = current
