@@ -398,6 +398,25 @@ class TestTranslateZoneUpdate:
         assert result["exits"][0]["text"].endswith("]")
         assert "from_zone" not in result["exits"][0]
 
+    def test_from_zone_strips_leading_article(self, fr_data: TranslationData) -> None:
+        """from_zone in brackets should not include leading article (le/la/les/l')."""
+        msg = {
+            "type": "zone_update",
+            "display_name": "Limgrave",
+            "exits": [
+                {
+                    "text": "Limgrave entrance",
+                    "to_name": "Limgrave",
+                    "from_zone": "Stormveil Castle",
+                },
+            ],
+        }
+        result = translate_zone_update(msg, "fr")
+        exit_text = result["exits"][0]["text"]
+        # "Stormveil Castle" → "le Château de Voilorage" → strip article → "Château de Voilorage"
+        assert "[Château de Voilorage]" in exit_text
+        assert "[le " not in exit_text
+
     def test_original_not_mutated(self, fr_data: TranslationData) -> None:
         msg = {
             "type": "zone_update",

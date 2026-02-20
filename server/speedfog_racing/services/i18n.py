@@ -462,6 +462,7 @@ def translate_zone_update(zone_update: dict[str, Any], locale: str) -> dict[str,
             from_zone = ex.pop("from_zone", None)
             if isinstance(from_zone, str):
                 zone_label = _translate_name(from_zone, data) if data else from_zone
+                zone_label = _format_display_name(zone_label)
                 ex["text"] = f"{ex['text']} [{zone_label}]"
             new_exits.append(ex)
         translated["exits"] = new_exits
