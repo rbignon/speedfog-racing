@@ -7,8 +7,11 @@ node in graph_json via the node's `zones` array.
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _GRACES_FILE = Path(__file__).parent.parent.parent / "data" / "graces.json"
 
@@ -64,12 +67,15 @@ def resolve_zone_query(
     map_id: str | None = None,
     position: tuple[float, float, float] | None = None,
     play_region_id: int | None = None,
+    zone_history: list[dict[str, Any]] | None = None,
 ) -> str | None:
     """Resolve a zone query to a graph node_id.
 
     Strategies (in order):
     1. Grace lookup (grace_entity_id → zone_id → node)
     2. Map-based lookup (map_id → graces.json reverse index → filter graph nodes)
+       When ambiguous, narrow candidates to nodes already in *zone_history*
+       (the player can only be in a zone they have already explored).
     3. None (ambiguous or no data)
 
     position and play_region_id are accepted for future disambiguation but unused.
@@ -99,5 +105,18 @@ def resolve_zone_query(
 
         if len(matching) == 1:
             return matching[0]
+
+        # Disambiguate: keep only nodes the player has already visited
+        if len(matching) > 1 and zone_history:
+            explored = {e["node_id"] for e in zone_history if "node_id" in e}
+            narrowed = [nid for nid in matching if nid in explored]
+            if len(narrowed) == 1:
+                logger.debug(
+                    "zone_query: map_id %s narrowed %d→1 via history → %s",
+                    map_id,
+                    len(matching),
+                    narrowed[0],
+                )
+                return narrowed[0]
 
     return None

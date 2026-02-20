@@ -573,6 +573,7 @@ async def handle_zone_query(
             map_id=map_id_str,
             position=position,
             play_region_id=play_region_id,
+            zone_history=participant.zone_history,
         )
         if node_id is None:
             logger.debug(

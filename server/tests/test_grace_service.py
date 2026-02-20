@@ -145,3 +145,65 @@ def test_resolve_zone_query_unknown_map():
     """map_id not in graces.json → returns None."""
     mapping = load_graces_mapping()
     assert resolve_zone_query(SAMPLE_GRAPH, mapping, map_id="m99_99_99_99") is None
+
+
+# --- resolve_zone_query: zone_history disambiguation ---
+
+
+def test_resolve_zone_query_ambiguous_narrowed_by_history():
+    """Ambiguous map_id resolved when zone_history narrows to one candidate."""
+    # m10_00_00_00 matches both node_a and node_b
+    graph = {
+        "nodes": {
+            "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
+            "node_b": {"zones": ["chapel_start"], "layer": 0},
+        }
+    }
+    mapping = load_graces_mapping()
+    history = [{"node_id": "node_a", "igt_ms": 0}]
+    node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
+    assert node_id == "node_a"
+
+
+def test_resolve_zone_query_ambiguous_both_explored():
+    """Ambiguous map_id stays ambiguous when both candidates are in history."""
+    graph = {
+        "nodes": {
+            "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
+            "node_b": {"zones": ["chapel_start"], "layer": 0},
+        }
+    }
+    mapping = load_graces_mapping()
+    history = [
+        {"node_id": "node_a", "igt_ms": 0},
+        {"node_id": "node_b", "igt_ms": 5000},
+    ]
+    node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
+    assert node_id is None
+
+
+def test_resolve_zone_query_ambiguous_empty_history():
+    """Ambiguous map_id with empty zone_history still returns None (no filter)."""
+    graph = {
+        "nodes": {
+            "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
+            "node_b": {"zones": ["chapel_start"], "layer": 0},
+        }
+    }
+    mapping = load_graces_mapping()
+    node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=[])
+    assert node_id is None
+
+
+def test_resolve_zone_query_ambiguous_no_history_match():
+    """Ambiguous map_id where no candidate is in history → None."""
+    graph = {
+        "nodes": {
+            "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
+            "node_b": {"zones": ["chapel_start"], "layer": 0},
+        }
+    }
+    mapping = load_graces_mapping()
+    history = [{"node_id": "some_other_node", "igt_ms": 0}]
+    node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
+    assert node_id is None
