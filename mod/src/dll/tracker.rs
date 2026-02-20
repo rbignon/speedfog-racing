@@ -327,6 +327,38 @@ impl RaceTracker {
 
         // Loading screen exit: send deferred event_flags (certain) or zone_query (probabilistic)
         if position_readable && !self.was_position_readable {
+            // Force one immediate flag scan — catches flags set during loading
+            // (e.g. Erdtree burn, Maliketh warp) that the 10Hz poll couldn't read
+            // because is_flag_set() returns None while position is unreadable.
+            if !self.event_ids.is_empty() {
+                let igt_ms = self.game_state.read_igt().unwrap_or(0);
+                for &flag_id in &self.event_ids {
+                    if !self.triggered_flags.contains(&flag_id) {
+                        if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                            self.triggered_flags.insert(flag_id);
+                            if self.finish_event == Some(flag_id) {
+                                if self.ws_client.is_connected()
+                                    && self.is_race_running()
+                                    && !self.am_i_finished()
+                                {
+                                    self.ws_client.send_event_flag(flag_id, igt_ms);
+                                    self.last_sent_debug = Some(format!(
+                                        "event_flag({}, igt={}ms) [finish/loading-exit]",
+                                        flag_id, igt_ms
+                                    ));
+                                    info!(flag_id, "[RACE] Finish event caught at loading exit");
+                                } else if !self.am_i_finished() {
+                                    self.pending_event_flags.push((flag_id, igt_ms));
+                                }
+                            } else {
+                                self.deferred_event_flags.push((flag_id, igt_ms));
+                                info!(flag_id, "[RACE] Event flag caught at loading exit");
+                            }
+                        }
+                    }
+                }
+            }
+
             if self.ws_client.is_connected() && self.is_race_running() && !self.am_i_finished() {
                 if !self.deferred_event_flags.is_empty() {
                     // Fog gate traversal — send deferred flags now that loading is done
