@@ -162,6 +162,11 @@ pub struct RaceTracker {
     // channel, so this is guaranteed to be populated when the Error handler
     // runs within the same poll() drain loop.
     last_auth_error: Option<String>,
+
+    // IGT captured from game memory when the race ends and the player hasn't
+    // finished. The mod's local participant igt_ms is stale (only updated via
+    // leaderboard_update on events), so we freeze the live game IGT instead.
+    pub(crate) frozen_igt_ms: Option<u32>,
 }
 
 impl RaceTracker {
@@ -254,6 +259,7 @@ impl RaceTracker {
             was_position_readable: true,
             seed_mismatch: false,
             last_auth_error: None,
+            frozen_igt_ms: None,
         })
     }
 
@@ -598,6 +604,7 @@ impl RaceTracker {
                 // it immediately without requiring a loading cycle.
                 self.loading_exit_time = Some(Instant::now() - ZONE_REVEAL_DELAY);
                 self.race_state.race = Some(race);
+                self.frozen_igt_ms = None;
 
                 // Detect seed mismatch (stale seed pack after re-roll)
                 let config_seed_id = &self.config.server.seed_id;
@@ -672,6 +679,13 @@ impl RaceTracker {
             IncomingMessage::RaceStatusChange(status) => {
                 self.last_received_debug = Some(format!("race_status_change({})", status));
                 info!(status = %status, "[WS] Race status changed");
+                // If race ends and we haven't finished, freeze our current game IGT.
+                // The mod's local participant igt_ms is stale (only updated via
+                // leaderboard_update on events, not on every status_update).
+                if status == "finished" && !self.am_i_finished() {
+                    self.frozen_igt_ms = self.game_state.read_igt();
+                    info!(frozen_igt_ms = ?self.frozen_igt_ms, "[WS] Froze game IGT (race ended, player not finished)");
+                }
                 if let Some(ref mut race) = self.race_state.race {
                     race.status = status;
                 }

@@ -179,14 +179,20 @@ impl RaceTracker {
             _ => [1.0, 0.0, 0.0, 1.0],
         };
 
-        // When race is finished or player has finished, show frozen IGT from server
-        // instead of live game IGT (which keeps ticking)
-        let igt_str = if !self.is_race_running() || self.am_i_finished() {
+        // When player has finished, show server-frozen IGT (accurate finish time).
+        // When race ended but player didn't finish, show locally captured game IGT
+        // (the mod's participant igt_ms from leaderboard_update is stale).
+        let igt_str = if self.am_i_finished() {
             if let Some(me) = self.my_participant().filter(|p| p.igt_ms > 0) {
                 format_time_u32(me.igt_ms as u32)
             } else {
                 "--:--:--".to_string()
             }
+        } else if let Some(frozen) = self.frozen_igt_ms {
+            format_time_u32(frozen)
+        } else if !self.is_race_running() {
+            // Race finished but no frozen IGT captured (shouldn't happen normally)
+            "--:--:--".to_string()
         } else if let Some(igt_ms) = self.read_igt() {
             format_time_u32(igt_ms)
         } else {
