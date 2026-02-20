@@ -21,4 +21,4 @@ toggle_ui = "f9"
 # Key to toggle debug section (zones, last sent/recv messages)
 toggle_debug = "f3"
 # Key to toggle leaderboard visibility
-toggle_leaderboard = "f4"
+toggle_leaderboard = "f10"

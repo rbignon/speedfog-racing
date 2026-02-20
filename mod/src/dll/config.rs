@@ -157,7 +157,7 @@ fn default_toggle_debug() -> Hotkey {
 }
 
 fn default_toggle_leaderboard() -> Hotkey {
-    Hotkey { key: 0x73 } // F4
+    Hotkey { key: 0x79 } // F10
 }
 
 impl Default for KeyBindings {
