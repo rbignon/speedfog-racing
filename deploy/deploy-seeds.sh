@@ -28,6 +28,7 @@ DISCARD=false
 VERBOSE=""
 JOBS=""
 FAILED_POOLS=()
+PARTIAL_POOLS=()
 
 usage() {
     cat <<'EOF'
@@ -165,14 +166,23 @@ if [[ "$UPLOAD_ONLY" == false ]]; then
     for pool in "${POOLS[@]}"; do
         echo ""
         echo "--- Pool: $pool ($COUNT seeds) ---"
-        if ! python3 "$TOOLS_DIR/generate_pool.py" \
+        python3 "$TOOLS_DIR/generate_pool.py" \
             --pool "$pool" \
             --count "$COUNT" \
             --game-dir "$GAME_DIR" \
             --output "$OUTPUT_DIR" \
             ${JOBS:+--jobs "$JOBS"} \
-            $VERBOSE; then
+            $VERBOSE \
+            && rc=0 || rc=$?
+        if [[ $rc -eq 1 ]]; then
             echo "  ERROR: Generation failed for pool '$pool', skipping."
+            rm -rf "${OUTPUT_DIR:?}/$pool"
+            FAILED_POOLS+=("$pool")
+        elif [[ $rc -eq 2 ]]; then
+            echo "  WARNING: Some seeds failed for pool '$pool', uploading successful ones."
+            PARTIAL_POOLS+=("$pool")
+        elif [[ $rc -ne 0 ]]; then
+            echo "  ERROR: Unexpected exit code $rc for pool '$pool', treating as failure."
             rm -rf "${OUTPUT_DIR:?}/$pool"
             FAILED_POOLS+=("$pool")
         fi
@@ -282,9 +292,17 @@ fi
 
 if [[ ${#FAILED_POOLS[@]} -gt 0 ]]; then
     echo ""
-    echo "WARNING: ${#FAILED_POOLS[@]} pool(s) failed generation: ${FAILED_POOLS[*]}"
+    echo "WARNING: ${#FAILED_POOLS[@]} pool(s) failed generation entirely: ${FAILED_POOLS[*]}"
+    if [[ ${#PARTIAL_POOLS[@]} -gt 0 ]]; then
+        echo "WARNING: ${#PARTIAL_POOLS[@]} pool(s) had partial failures: ${PARTIAL_POOLS[*]}"
+    fi
     echo "==> Done (with errors)."
     exit 1
+elif [[ ${#PARTIAL_POOLS[@]} -gt 0 ]]; then
+    echo ""
+    echo "WARNING: ${#PARTIAL_POOLS[@]} pool(s) had partial failures: ${PARTIAL_POOLS[*]}"
+    echo "==> Done (with warnings)."
+    exit 0
 else
     echo "==> Done!"
 fi

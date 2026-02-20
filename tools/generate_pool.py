@@ -378,7 +378,13 @@ def generate_one_seed(
 
 
 def main() -> int:
-    """Main entry point."""
+    """Main entry point.
+
+    Exit codes:
+        0 - All seeds generated successfully
+        1 - Total failure (no seeds generated)
+        2 - Partial failure (some seeds generated, some failed)
+    """
     args = parse_args()
 
     # Validate count
@@ -472,8 +478,10 @@ def main() -> int:
     if failed > 0 and failed_dir.exists():
         print(f"Failed seeds preserved in: {failed_dir}")
 
+    if failed > 0 and succeeded == 0:
+        return 1  # total failure
     if failed > 0:
-        return 1
+        return 2  # partial failure (some seeds generated)
     return 0
 
 
