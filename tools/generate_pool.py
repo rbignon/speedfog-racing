@@ -473,7 +473,9 @@ def main() -> int:
                 try:
                     results.append(future.result())
                 except Exception as e:
-                    print(f"Unexpected error in seed worker: {e}")
+                    idx = futures[future]
+                    print(f"Unexpected error in seed worker {idx + 1}: {e}")
+                    results.append(SeedResult(slug="error", ok=False, duration=0.0))
 
     total_time = time.monotonic() - t_start
     succeeded = sum(1 for r in results if r.ok)
@@ -481,15 +483,14 @@ def main() -> int:
 
     # Summary
     print()
-    print(f"{'Seed':<22} {'Status':<10} {'Time':>8}")
-    print("-" * 42)
+    print(f"  {'Seed':<20} {'Status':<10} {'Time':>6}")
+    print("  " + "-" * 38)
     for r in results:
         status = "OK" if r.ok else "FAILED"
-        print(f"  seed_{r.slug:<16} {status:<10} {_fmt_duration(r.duration):>8}")
-    print("-" * 42)
-    print(
-        f"  {succeeded} succeeded, {failed} failed{' ' * 16} {_fmt_duration(total_time):>8}"
-    )
+        print(f"  seed_{r.slug:<14} {status:<10} {_fmt_duration(r.duration):>6}")
+    print("  " + "-" * 38)
+    summary = f"{succeeded} succeeded, {failed} failed"
+    print(f"  {summary:<30} {_fmt_duration(total_time):>6}")
     if failed > 0 and failed_dir.exists():
         print(f"  Failed seeds preserved in: {failed_dir}")
 
@@ -501,7 +502,9 @@ def main() -> int:
 
 
 def _fmt_duration(seconds: float) -> str:
-    """Format a duration as e.g. '1m32s' or '45s'."""
+    """Format a duration as e.g. '1m32s', '45s', or '<1s'."""
+    if seconds < 1:
+        return "<1s"
     m, s = divmod(int(seconds), 60)
     if m > 0:
         return f"{m}m{s:02d}s"
