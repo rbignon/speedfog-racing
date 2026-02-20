@@ -109,6 +109,8 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 
 Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)).
 
+**Revisited nodes:** Multiple flags can map to the same DAG node (e.g., shared entrance merges where several branches connect to a single cluster). If the resolved node is already in `zone_history`, the server updates `current_zone` and sends a `zone_update` (same as `zone_query`) but does **not** add a duplicate entry to `zone_history` or broadcast a `leaderboard_update`.
+
 **Timing:** Regular event flags (fog gate traversals) are detected immediately by polling but deferred until loading screen exit. This ensures spectators see progress updates in sync with the player's arrival, and prevents zone name spoilers during loading screens. The `finish_event` (boss kill) is an exception — it is sent immediately since boss kills don't trigger a loading screen.
 
 ```json
@@ -559,7 +561,11 @@ The `ready` and `pong` messages are not gated — they are valid in any state.
 
 ### Zone Tracking
 
-Zone tracking uses EMEVD event flags. The mod monitors a list of event flag IDs (received via `auth_ok`) and reports transitions via `event_flag` messages. The server resolves flag IDs to DAG nodes using the seed's `event_map`. See `docs/specs/emevd-zone-tracking.md` for the full specification.
+Zone tracking uses EMEVD event flags. The mod monitors a list of event flag IDs (received via `auth_ok`) and reports transitions via `event_flag` messages. The server resolves flag IDs to DAG nodes using the seed's `event_map`.
+
+**Per-connection flags:** Each connection in `graph.json` has a unique `flag_id`. The `event_map` is many-to-one: multiple flags can map to the same node (e.g., when a shared entrance merge has 3 branches entering the same cluster). The mod receives all flag IDs as an opaque list; the server performs the flag → node resolution. This ensures the mod detects each fog gate traversal independently, even when the destination cluster was previously visited via a different branch.
+
+See `docs/specs/emevd-zone-tracking.md` for the full specification.
 
 ### Runtime Item Spawning
 
