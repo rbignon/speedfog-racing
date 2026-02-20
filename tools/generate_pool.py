@@ -139,10 +139,12 @@ def run_speedfog(
     """Run speedfog to generate a single seed.
 
     Returns the path to the generated seed directory, or None on failure.
-    If verbose is True, output is streamed in real-time to the terminal.
+    Stdout/stderr are always captured to ``output_dir/generation.log``.
+    If verbose is True, output is also printed to the terminal.
     """
+    log_path = output_dir / "generation.log"
     try:
-        subprocess.run(
+        result = subprocess.run(
             [
                 "uv",
                 "run",
@@ -156,9 +158,13 @@ def run_speedfog(
             ],
             cwd=speedfog_path,
             check=True,
-            stdout=None if verbose else subprocess.DEVNULL,
-            stderr=None if verbose else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
+        log_path.write_text(result.stdout, encoding="utf-8")
+        if verbose:
+            print(result.stdout, end="")
 
         # Find the generated seed directory (should be a single numeric directory)
         seed_dirs = [d for d in output_dir.iterdir() if d.is_dir() and d.name.isdigit()]
@@ -169,6 +175,9 @@ def run_speedfog(
         return None
 
     except subprocess.CalledProcessError as e:
+        log_path.write_text(e.stdout or "", encoding="utf-8")
+        if verbose and e.stdout:
+            print(e.stdout, end="")
         print(f"  Error running speedfog (exit code {e.returncode})")
         return None
 
