@@ -109,6 +109,7 @@ pub struct RaceTracker {
     // UI state
     pub(crate) show_ui: bool,
     pub(crate) show_debug: bool,
+    pub(crate) show_leaderboard: bool,
     last_sent_debug: Option<String>,
     last_received_debug: Option<String>,
 
@@ -233,6 +234,7 @@ impl RaceTracker {
             race_state: RaceState::default(),
             show_ui: true,
             show_debug: false,
+            show_leaderboard: true,
             last_sent_debug: None,
             last_received_debug: None,
             my_participant_id: None,
@@ -286,6 +288,15 @@ impl RaceTracker {
         if self.config.keybindings.toggle_debug.is_just_pressed() {
             self.show_debug = !self.show_debug;
             info!(show_debug = self.show_debug, "[HOTKEY] Toggle debug");
+        }
+
+        // Check toggle_leaderboard hotkey
+        if self.config.keybindings.toggle_leaderboard.is_just_pressed() {
+            self.show_leaderboard = !self.show_leaderboard;
+            info!(
+                show_leaderboard = self.show_leaderboard,
+                "[HOTKEY] Toggle leaderboard"
+            );
         }
 
         // Poll WebSocket

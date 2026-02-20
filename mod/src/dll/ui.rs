@@ -110,7 +110,7 @@ impl ImguiRenderLoop for RaceTracker {
                 self.render_seed_mismatch_warning(ui);
                 self.render_player_status(ui, max_width);
                 self.render_exits(ui, max_width);
-                if !self.config.server.training {
+                if !self.config.server.training && self.show_leaderboard {
                     ui.separator();
                     self.render_leaderboard(ui, max_width);
                 }
