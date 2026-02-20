@@ -57,6 +57,8 @@ def race_response(race: Race) -> RaceResponse:
         status=race.status,
         pool_name=race.seed.pool_name if race.seed else None,
         is_public=race.is_public,
+        open_registration=race.open_registration,
+        max_participants=race.max_participants,
         created_at=race.created_at,
         scheduled_at=race.scheduled_at,
         started_at=race.started_at,

@@ -128,6 +128,10 @@ class Race(Base):
         Boolean, default=True, server_default="1", nullable=False
     )
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    open_registration: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
+    max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Relationships
     organizer: Mapped["User"] = relationship(back_populates="organized_races")

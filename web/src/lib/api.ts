@@ -30,6 +30,8 @@ export interface Race {
   status: RaceStatus;
   pool_name: string | null;
   is_public: boolean;
+  open_registration: boolean;
+  max_participants: number | null;
   created_at: string;
   scheduled_at: string | null;
   started_at: string | null;
@@ -289,6 +291,8 @@ export async function createRace(
   config: Record<string, unknown> = {},
   scheduledAt: string | null = null,
   isPublic: boolean = true,
+  openRegistration: boolean = false,
+  maxParticipants: number | null = null,
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races`, {
     method: "POST",
@@ -303,6 +307,8 @@ export async function createRace(
       config,
       scheduled_at: scheduledAt,
       is_public: isPublic,
+      open_registration: openRegistration,
+      max_participants: maxParticipants,
     }),
   });
   return handleResponse<Race>(response);
@@ -358,6 +364,33 @@ export async function removeParticipant(
       headers: getAuthHeaders(),
     },
   );
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail);
+  }
+}
+
+/**
+ * Self-register as a participant in an open-registration race.
+ */
+export async function joinRace(raceId: string): Promise<Participant> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/join`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<Participant>(response);
+}
+
+/**
+ * Self-remove from a race during setup.
+ */
+export async function leaveRace(raceId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/leave`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     const error: ApiError = await response
       .json()

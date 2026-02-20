@@ -9,6 +9,8 @@
 	let poolName = $state('standard');
 	let organizerParticipates = $state(true);
 	let isPublic = $state(true);
+	let openRegistration = $state(false);
+	let maxParticipants = $state(8);
 	let pools: PoolStats = $state({});
 	let loading = $state(true);
 	let creating = $state(false);
@@ -70,7 +72,16 @@
 
 		try {
 			const isoScheduled = scheduledAt ? new Date(scheduledAt).toISOString() : null;
-			const race = await createRace(name.trim(), poolName, organizerParticipates, {}, isoScheduled, isPublic);
+			const race = await createRace(
+				name.trim(),
+				poolName,
+				organizerParticipates,
+				{},
+				isoScheduled,
+				isPublic,
+				openRegistration,
+				openRegistration ? maxParticipants : null,
+			);
 			goto(`/race/${race.id}`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to create race.';
@@ -234,6 +245,48 @@
 					Private races won't appear on the homepage. Players can still join via direct link
 					or invite.
 				</p>
+			</div>
+
+			<div class="form-group">
+				<label>Registration</label>
+				<div class="radio-group">
+					<label class="radio-label">
+						<input
+							type="radio"
+							name="registration"
+							checked={!openRegistration}
+							onchange={() => (openRegistration = false)}
+							disabled={creating}
+						/>
+						Invite only
+					</label>
+					<label class="radio-label">
+						<input
+							type="radio"
+							name="registration"
+							checked={openRegistration}
+							onchange={() => (openRegistration = true)}
+							disabled={creating}
+						/>
+						Open registration
+					</label>
+				</div>
+				<p class="hint">
+					Open registration lets any logged-in player join the race themselves.
+				</p>
+				{#if openRegistration}
+					<div class="max-participants">
+						<label for="max-participants">Max participants</label>
+						<input
+							type="number"
+							id="max-participants"
+							bind:value={maxParticipants}
+							min="2"
+							max="100"
+							disabled={creating}
+						/>
+					</div>
+				{/if}
 			</div>
 
 			<button type="submit" class="btn btn-primary" disabled={creating || !hasAvailablePool}>
@@ -415,6 +468,38 @@
 		font-size: var(--font-size-sm);
 		margin: 0;
 		line-height: 1.4;
+	}
+
+	.max-participants {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+	}
+
+	.max-participants label {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		white-space: nowrap;
+		font-weight: normal;
+		text-transform: none;
+		letter-spacing: normal;
+	}
+
+	.max-participants input[type='number'] {
+		width: 80px;
+		padding: 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-family: var(--font-family);
+		font-size: 1rem;
+	}
+
+	.max-participants input[type='number']:focus {
+		outline: none;
+		border-color: var(--color-purple);
 	}
 
 	.error {

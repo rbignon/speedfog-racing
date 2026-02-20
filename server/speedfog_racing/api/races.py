@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy import case, delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.background import BackgroundTask
@@ -50,6 +51,7 @@ from speedfog_racing.schemas import (
     CasterResponse,
     CreateRaceRequest,
     InviteResponse,
+    ParticipantResponse,
     PendingInviteResponse,
     PoolConfig,
     RaceDetailResponse,
@@ -122,6 +124,8 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         status=race.status,
         pool_name=race.seed.pool_name if race.seed else None,
         is_public=race.is_public,
+        open_registration=race.open_registration,
+        max_participants=race.max_participants,
         created_at=race.created_at,
         scheduled_at=race.scheduled_at,
         started_at=race.started_at,
@@ -249,6 +253,8 @@ async def create_race(
         status=RaceStatus.SETUP,
         scheduled_at=request.scheduled_at,
         is_public=request.is_public,
+        open_registration=request.open_registration,
+        max_participants=request.max_participants,
     )
     db.add(race)
     await db.flush()
@@ -500,7 +506,7 @@ async def add_participant(
         db.add(participant)
         try:
             await db.commit()
-        except Exception:
+        except IntegrityError:
             await db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -716,6 +722,147 @@ async def remove_caster(
         )
 
     await db.delete(caster)
+    await db.commit()
+
+
+# =============================================================================
+# Open Registration (Self Join / Leave)
+# =============================================================================
+
+
+@router.post(
+    "/{race_id}/join",
+    response_model=ParticipantResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def join_race(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ParticipantResponse:
+    """Self-register as a participant in an open-registration race."""
+    race = await _get_race_or_404(db, race_id, load_participants=True)
+
+    if race.status != RaceStatus.SETUP:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only join a race in setup status",
+        )
+
+    if not race.open_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This race does not allow open registration",
+        )
+
+    # Check capacity
+    if race.max_participants is not None and len(race.participants) >= race.max_participants:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Race is full",
+        )
+
+    # Check if already a participant
+    existing_participant = await db.execute(
+        select(Participant).where(
+            Participant.race_id == race.id,
+            Participant.user_id == user.id,
+        )
+    )
+    if existing_participant.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You are already a participant in this race",
+        )
+
+    # Mutual exclusion: cannot be both caster and participant
+    caster_result = await db.execute(
+        select(Caster).where(
+            Caster.race_id == race.id,
+            Caster.user_id == user.id,
+        )
+    )
+    if caster_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You are a caster for this race",
+        )
+
+    # Organizer irreversibility: non-participating organizer can't join
+    if user.id == race.organizer_id:
+        has_existing = any(p.user_id == user.id for p in race.participants)
+        if not has_existing:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Non-participating organizer cannot join as participant",
+            )
+
+    # Compute next color_index
+    max_result = await db.execute(
+        select(func.max(Participant.color_index)).where(Participant.race_id == race.id)
+    )
+    max_color = max_result.scalar()
+    next_color = (max_color + 1) if max_color is not None else 0
+
+    participant = Participant(
+        race_id=race.id,
+        user_id=user.id,
+        user=user,
+        race=race,
+        color_index=next_color,
+    )
+    db.add(participant)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You are already a participant in this race",
+        )
+    await db.refresh(participant)
+
+    return participant_response(participant)
+
+
+@router.post("/{race_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
+async def leave_race(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Self-remove from a race during setup."""
+    race = await _get_race_or_404(db, race_id)
+
+    if race.status != RaceStatus.SETUP:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only leave a race in setup status",
+        )
+
+    # Find participant
+    result = await db.execute(
+        select(Participant).where(
+            Participant.race_id == race_id,
+            Participant.user_id == user.id,
+        )
+    )
+    participant = result.scalar_one_or_none()
+
+    if not participant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You are not a participant in this race",
+        )
+
+    # Organizer cannot leave their own race
+    if user.id == race.organizer_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organizer cannot leave their own race",
+        )
+
+    await db.delete(participant)
     await db.commit()
 
 

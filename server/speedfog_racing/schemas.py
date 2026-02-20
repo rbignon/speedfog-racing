@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from speedfog_racing.models import ParticipantStatus, RaceStatus, TrainingSessionStatus
 
@@ -22,6 +22,17 @@ class CreateRaceRequest(BaseModel):
     organizer_participates: bool = False
     scheduled_at: datetime | None = None
     is_public: bool = True
+    open_registration: bool = False
+    max_participants: int | None = None
+
+    @model_validator(mode="after")
+    def validate_open_registration(self) -> "CreateRaceRequest":
+        if self.open_registration:
+            if self.max_participants is None or self.max_participants < 2:
+                raise ValueError("max_participants must be >= 2 when open_registration is enabled")
+        if self.max_participants is not None and self.max_participants > 100:
+            raise ValueError("max_participants cannot exceed 100")
+        return self
 
 
 class UpdateRaceRequest(BaseModel):
@@ -187,6 +198,8 @@ class RaceResponse(BaseModel):
     status: RaceStatus
     pool_name: str | None
     is_public: bool
+    open_registration: bool = False
+    max_participants: int | None = None
     created_at: datetime
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
@@ -237,6 +250,8 @@ class RaceDetailResponse(BaseModel):
     status: RaceStatus
     pool_name: str | None
     is_public: bool
+    open_registration: bool = False
+    max_participants: int | None = None
     created_at: datetime
     scheduled_at: datetime | None = None
     started_at: datetime | None = None

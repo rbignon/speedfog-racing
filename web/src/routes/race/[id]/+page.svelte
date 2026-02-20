@@ -26,6 +26,8 @@
 		deleteInvite,
 		fetchRace,
 		updateRace,
+		joinRace,
+		leaveRace,
 		type RaceDetail
 	} from '$lib/api';
 	import { formatScheduledTime } from '$lib/utils/time';
@@ -33,6 +35,9 @@
 	let downloading = $state(false);
 	let downloadError = $state<string | null>(null);
 	let showInviteSearch = $state(false);
+	let joining = $state(false);
+	let leaving = $state(false);
+	let joinLeaveError = $state<string | null>(null);
 	let now = $state(Date.now());
 	let editingSchedule = $state(false);
 	let scheduleInput = $state('');
@@ -208,6 +213,55 @@
 		}
 	}
 
+	let canJoin = $derived(
+		initialRace.open_registration &&
+		raceStatus === 'setup' &&
+		auth.isLoggedIn &&
+		!myParticipant &&
+		!isCaster &&
+		!isOrganizer &&
+		(initialRace.max_participants === null ||
+			mergedParticipants.length < initialRace.max_participants)
+	);
+
+	let raceFull = $derived(
+		initialRace.open_registration &&
+		initialRace.max_participants !== null &&
+		mergedParticipants.length >= initialRace.max_participants
+	);
+
+	let canLeave = $derived(
+		raceStatus === 'setup' &&
+		!!myParticipant &&
+		!isOrganizer
+	);
+
+	async function handleJoin() {
+		joining = true;
+		joinLeaveError = null;
+		try {
+			await joinRace(initialRace.id);
+			initialRace = await fetchRace(initialRace.id);
+		} catch (e) {
+			joinLeaveError = e instanceof Error ? e.message : 'Failed to join';
+		} finally {
+			joining = false;
+		}
+	}
+
+	async function handleLeave() {
+		leaving = true;
+		joinLeaveError = null;
+		try {
+			await leaveRace(initialRace.id);
+			initialRace = await fetchRace(initialRace.id);
+		} catch (e) {
+			joinLeaveError = e instanceof Error ? e.message : 'Failed to leave';
+		} finally {
+			leaving = false;
+		}
+	}
+
 	function startEditSchedule() {
 		if (initialRace.scheduled_at) {
 			// Convert ISO to datetime-local format
@@ -326,7 +380,7 @@
 			{/if}
 		{:else}
 			<div class="sidebar-section">
-				<h2>Participants ({mergedParticipants.length})</h2>
+				<h2>Participants ({mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants} / {initialRace.max_participants}{/if})</h2>
 				<div class="participant-list">
 					{#each mergedParticipants as mp (mp.id)}
 						<ParticipantCard
@@ -370,6 +424,31 @@
 						<button class="invite-btn" onclick={() => (showInviteSearch = true)}>
 							+ Invite
 						</button>
+					{/if}
+				{/if}
+
+				{#if initialRace.open_registration && raceStatus === 'setup'}
+					{#if canJoin}
+						<button class="join-btn" onclick={handleJoin} disabled={joining}>
+							{joining ? 'Joining...' : 'Join Race'}
+						</button>
+					{:else if raceFull && !myParticipant}
+						<button class="join-btn disabled" disabled>
+							Race Full
+						</button>
+					{/if}
+					{#if canLeave}
+						<button class="leave-btn" onclick={handleLeave} disabled={leaving}>
+							{leaving ? 'Leaving...' : 'Leave Race'}
+						</button>
+					{/if}
+					{#if !auth.isLoggedIn}
+						<p class="login-hint">
+							<a href="/auth/login">Log in</a> to join this race
+						</p>
+					{/if}
+					{#if joinLeaveError}
+						<p class="join-leave-error">{joinLeaveError}</p>
 					{/if}
 				{/if}
 			</div>
@@ -627,6 +706,78 @@
 	.invite-btn:hover {
 		border-color: var(--color-purple);
 		color: var(--color-purple);
+	}
+
+	.join-btn {
+		margin-top: 0.75rem;
+		width: 100%;
+		padding: 0.75rem;
+		border: 2px dashed var(--color-success, #10b981);
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--color-success, #10b981);
+		font-family: var(--font-family);
+		font-size: var(--font-size-base);
+		font-weight: 500;
+		cursor: pointer;
+		transition: all var(--transition);
+	}
+
+	.join-btn:hover:not(:disabled) {
+		background: rgba(16, 185, 129, 0.1);
+	}
+
+	.join-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.join-btn.disabled {
+		border-color: var(--color-border);
+		color: var(--color-text-disabled);
+		cursor: not-allowed;
+		opacity: 0.6;
+	}
+
+	.leave-btn {
+		margin-top: 0.5rem;
+		width: 100%;
+		padding: 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--color-text-disabled);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		cursor: pointer;
+		transition: all var(--transition);
+	}
+
+	.leave-btn:hover:not(:disabled) {
+		border-color: var(--color-danger, #ef4444);
+		color: var(--color-danger, #ef4444);
+	}
+
+	.leave-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.login-hint {
+		margin: 0.75rem 0 0;
+		color: var(--color-text-disabled);
+		font-size: var(--font-size-sm);
+		text-align: center;
+	}
+
+	.login-hint a {
+		color: var(--color-purple);
+	}
+
+	.join-leave-error {
+		margin: 0.5rem 0 0;
+		color: var(--color-danger, #ef4444);
+		font-size: var(--font-size-sm);
 	}
 
 	.invite-search {
