@@ -306,7 +306,7 @@
 					stroke-width="4"
 					stroke-linecap="round"
 					stroke-linejoin="round"
-					opacity={hasHighlight && !highlightIds!.has(path.id) ? 0.1 : 0.8}
+					opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : 0.8}
 					class="player-path"
 				>
 					<title>{path.displayName}</title>
@@ -385,7 +385,7 @@
 					r={RACER_DOT_RADIUS}
 					fill={path.color}
 					filter="url(#results-player-glow)"
-					opacity={hasHighlight && !highlightIds!.has(path.id) ? 0.1 : 1}
+					opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : 1}
 					class="player-dot"
 					data-node-id={path.finalNodeId}
 				>
