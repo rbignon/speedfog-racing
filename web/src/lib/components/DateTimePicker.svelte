@@ -28,9 +28,9 @@
 		return `${h}:${m}`;
 	});
 
-	// Calendar view state — initialized to selected month or current month
-	let viewYear = $state(selectedLocalDate?.year ?? new Date().getFullYear());
-	let viewMonth = $state(selectedLocalDate?.month ?? new Date().getMonth());
+	// Calendar view state — initialized to current month, kept in sync by effect below
+	let viewYear = $state(new Date().getFullYear());
+	let viewMonth = $state(new Date().getMonth());
 
 	// Keep view in sync when value changes externally
 	$effect(() => {

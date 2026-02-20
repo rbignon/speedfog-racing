@@ -128,7 +128,7 @@
 			</div>
 
 			<div class="form-group">
-				<label>Seed Pool</label>
+				<span>Seed Pool</span>
 				{#if sortedPools.length === 0}
 					<p class="empty-pools">
 						No seed pools available. Seeds need to be generated before races can be
@@ -180,7 +180,7 @@
 			</div>
 
 			<div class="form-group">
-				<label>Will you participate?</label>
+				<span>Will you participate?</span>
 				<div class="radio-group">
 					<label class="radio-label">
 						<input
@@ -210,7 +210,7 @@
 			</div>
 
 			<div class="form-group">
-				<label>Visibility</label>
+				<span>Visibility</span>
 				<div class="radio-group">
 					<label class="radio-label">
 						<input
@@ -240,7 +240,7 @@
 			</div>
 
 			<div class="form-group">
-				<label>Registration</label>
+				<span>Registration</span>
 				<div class="radio-group">
 					<label class="radio-label">
 						<input
@@ -314,7 +314,7 @@
 		gap: 0.5rem;
 	}
 
-	.form-group > label:first-child {
+	.form-group > :is(label, span):first-child {
 		font-weight: 500;
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);

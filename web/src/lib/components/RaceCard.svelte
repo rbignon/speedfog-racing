@@ -107,13 +107,14 @@
 			</svg>
 			{#each race.casters as caster, i}
 				{#if i > 0}<span class="caster-sep">&middot;</span>{/if}
-				<a
-					href="https://twitch.tv/{caster.user.twitch_username}"
-					target="_blank"
-					rel="noopener noreferrer"
+				<button
 					class="caster-name"
-					onclick={(e: MouseEvent) => e.stopPropagation()}
-				>{caster.user.twitch_display_name || caster.user.twitch_username}</a>
+					onclick={(e: MouseEvent) => {
+						e.preventDefault();
+						e.stopPropagation();
+						window.open(`https://twitch.tv/${caster.user.twitch_username}`, '_blank', 'noopener,noreferrer');
+					}}
+				>{caster.user.twitch_display_name || caster.user.twitch_username}</button>
 			{/each}
 		</div>
 	{/if}
@@ -300,8 +301,12 @@
 	}
 
 	.caster-name {
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
 		color: var(--color-twitch, #9146ff);
-		text-decoration: none;
+		cursor: pointer;
 	}
 
 	.caster-name:hover {

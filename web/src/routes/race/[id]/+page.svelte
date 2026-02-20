@@ -60,7 +60,8 @@
 
 	let { data } = $props();
 
-	let initialRace: RaceDetail = $state(data.race);
+	// untrack: initial snapshot only; the $effect below handles route-change updates
+	let initialRace: RaceDetail = $state(untrack(() => data.race));
 
 	// Update initialRace when route data changes (navigation between races)
 	$effect(() => {
