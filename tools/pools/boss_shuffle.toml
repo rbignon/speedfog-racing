@@ -2,6 +2,7 @@
 # ~1 hour races with randomized boss encounters
 
 [display]
+sort_order = 3
 estimated_duration = "~1h"
 description = "Standard race with randomized boss encounters"
 

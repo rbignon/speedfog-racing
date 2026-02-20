@@ -26,7 +26,7 @@
 	let sortedPools = $derived(
 		Object.entries(pools)
 			.map(([p, info]) => [p, info] as [string, PoolInfo])
-			.sort((a, b) => (a[1].pool_config?.sort_order ?? 99) - (b[1].pool_config?.sort_order ?? 99)),
+			.sort((a, b) => (a[1].pool_config?.sort_order ?? 99) - (b[1].pool_config?.sort_order ?? 99) || a[0].localeCompare(b[0])),
 	);
 
 	let selectedConfig = $derived(selectedPool ? pools[selectedPool]?.pool_config ?? null : null);

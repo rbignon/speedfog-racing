@@ -2,6 +2,7 @@
 # ~1 hour races, reduced resources and harder loot
 
 [display]
+sort_order = 4
 estimated_duration = "~1h"
 description = "Punishing race with scarce resources and tougher encounters"
 

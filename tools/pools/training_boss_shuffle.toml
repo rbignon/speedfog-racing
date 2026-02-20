@@ -3,6 +3,7 @@
 
 [display]
 type = "training"
+sort_order = 3
 estimated_duration = "~1h"
 description = "Solo run with randomized boss encounters"
 

@@ -339,6 +339,7 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
 
     return {
         "type": display.get("type", "race"),
+        "sort_order": display.get("sort_order", 99),
         "estimated_duration": display.get("estimated_duration"),
         "description": display.get("description") or None,
         "legacy_dungeons": requirements.get("legacy_dungeons"),
@@ -385,6 +386,7 @@ def get_pool_metadata(seeds_pool_dir: str) -> dict[str, dict[str, str | None]]:
                 data = tomllib.load(f)
             display = data.get("display", {})
             metadata[subdir.name] = {
+                "sort_order": display.get("sort_order", 99),
                 "estimated_duration": display.get("estimated_duration"),
                 "description": display.get("description"),
             }

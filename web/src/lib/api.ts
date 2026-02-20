@@ -75,6 +75,7 @@ export interface Caster {
 
 export interface PoolConfig {
   type: string | null;
+  sort_order: number;
   estimated_duration: string | null;
   description: string | null;
   legacy_dungeons: number | null;

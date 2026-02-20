@@ -3,6 +3,7 @@
 
 [display]
 type = "training"
+sort_order = 4
 estimated_duration = "~1h"
 description = "Punishing solo run with scarce resources and tougher encounters"
 
