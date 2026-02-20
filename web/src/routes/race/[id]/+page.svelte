@@ -360,7 +360,7 @@
 			<div class="sidebar-section">
 				<h2>
 					Participants ({mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
-						/ {initialRace.max_participants}{/if})
+						/{initialRace.max_participants}{/if})
 				</h2>
 				<div class="participant-list">
 					{#each mergedParticipants as mp (mp.id)}
@@ -584,7 +584,8 @@
 			<div class="info-grid">
 				<div class="info-item">
 					<span class="label">Participants</span>
-					<span class="value">{mergedParticipants.length}</span>
+					<span class="value">{mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
+						/{initialRace.max_participants}{/if}</span>
 				</div>
 				<div class="info-item">
 					<span class="label">Created</span>
