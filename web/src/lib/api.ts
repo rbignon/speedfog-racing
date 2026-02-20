@@ -551,7 +551,9 @@ export async function removeCaster(
 export async function searchUsers(query: string): Promise<User[]> {
   const response = await fetch(
     `${API_BASE}/users/search?q=${encodeURIComponent(query)}`,
-    { headers: getAuthHeaders() },
+    {
+      headers: getAuthHeaders(),
+    },
   );
   return handleResponse<User[]>(response);
 }
@@ -850,7 +852,9 @@ export async function fetchAdminActivity(
 ): Promise<ActivityTimeline> {
   const response = await fetch(
     `${API_BASE}/admin/activity?offset=${offset}&limit=${limit}`,
-    { headers: getAuthHeaders() },
+    {
+      headers: getAuthHeaders(),
+    },
   );
   return handleResponse<ActivityTimeline>(response);
 }

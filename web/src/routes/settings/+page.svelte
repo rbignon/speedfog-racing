@@ -2,12 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
-	import {
-		fetchLocales,
-		updateLocale,
-		updateOverlaySettings,
-		type LocaleInfo
-	} from '$lib/api';
+	import { fetchLocales, updateLocale, updateOverlaySettings, type LocaleInfo } from '$lib/api';
 
 	let locales = $state<LocaleInfo[]>([]);
 	let selectedLocale = $state('en');
@@ -83,21 +78,12 @@
 
 	<section class="setting-group">
 		<h2>Overlay</h2>
-		<p class="description">
-			Customize the in-game overlay that displays race information.
-		</p>
+		<p class="description">Customize the in-game overlay that displays race information.</p>
 
 		<div class="setting-row">
 			<label for="font-size">Font size</label>
 			<div class="input-with-unit">
-				<input
-					id="font-size"
-					type="number"
-					min="8"
-					max="72"
-					step="1"
-					bind:value={fontSize}
-				/>
+				<input id="font-size" type="number" min="8" max="72" step="1" bind:value={fontSize} />
 				<span class="unit">px</span>
 			</div>
 			<span class="hint">8–72 px (default: 18)</span>
