@@ -144,32 +144,36 @@ def run_speedfog(
     """
     log_path = output_dir / "generation.log"
     with open(log_path, "w", encoding="utf-8") as log_file:
-        proc = subprocess.Popen(
-            [
-                "uv",
-                "run",
-                "speedfog",
-                str(config_path.absolute()),
-                "-o",
-                str(output_dir),
-                "--spoiler",
-                "--game-dir",
-                str(game_dir),
-            ],
-            cwd=speedfog_path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            log_file.write(line)
-            if verbose:
-                print(line, end="")
-        rc = proc.wait()
+        try:
+            proc = subprocess.Popen(
+                [
+                    "uv",
+                    "run",
+                    "speedfog",
+                    str(config_path.absolute()),
+                    "-o",
+                    str(output_dir),
+                    "--spoiler",
+                    "--game-dir",
+                    str(game_dir),
+                ],
+                cwd=speedfog_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except OSError as e:
+            print(f"  Error starting speedfog: {e}")
+            return None
+        with proc:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                log_file.write(line)
+                if verbose:
+                    print(line, end="")
 
-    if rc != 0:
-        print(f"  Error running speedfog (exit code {rc})")
+    if proc.returncode != 0:
+        print(f"  Error running speedfog (exit code {proc.returncode})")
         return None
 
     # Find the generated seed directory (should be a single numeric directory)
