@@ -16,8 +16,10 @@
 		)
 	);
 
+	const BAR_MAX_PX = 120;
+
 	function barWidth(runs: number): string {
-		return `${Math.max(8, (runs / maxRuns) * 100)}%`;
+		return `${Math.max(12, (runs / maxRuns) * BAR_MAX_PX)}px`;
 	}
 </script>
 
@@ -169,8 +171,6 @@
 		border-radius: 6px;
 		transition: width 0.3s ease;
 		flex-shrink: 0;
-		min-width: 12px;
-		flex-grow: 1;
 	}
 
 	.bar-race {
