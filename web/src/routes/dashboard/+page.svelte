@@ -4,9 +4,11 @@
 	import {
 		fetchUserProfile,
 		fetchUserActivity,
+		fetchUserPoolStats,
 		fetchMyRaces,
 		fetchTrainingSessions,
 		type UserProfile,
+		type UserPoolStats,
 		type ActivityItem,
 		type Race,
 		type TrainingSession,
@@ -16,8 +18,10 @@
 	import { formatPoolName } from '$lib/utils/format';
 	import { statusLabel } from '$lib/format';
 	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
+	import PoolStatsTable from '$lib/components/PoolStatsTable.svelte';
 
 	let profile: UserProfile | null = $state(null);
+	let poolStats: UserPoolStats | null = $state(null);
 	let activity: ActivityItem[] = $state([]);
 	let myRaces: Race[] = $state([]);
 	let trainingSessions: TrainingSession[] = $state([]);
@@ -56,12 +60,14 @@
 			fetchUserActivity(username, 0, 5),
 			fetchMyRaces(),
 			fetchTrainingSessions(),
+			fetchUserPoolStats(username),
 		])
-			.then(([p, a, r, t]) => {
+			.then(([p, a, r, t, ps]) => {
 				profile = p;
 				activity = a.items;
 				myRaces = r;
 				trainingSessions = t;
+				poolStats = ps;
 			})
 			.catch((e) => {
 				console.error('Dashboard fetch error:', e);
@@ -103,10 +109,6 @@
 		return `${placement}th`;
 	}
 
-	function podiumRateDisplay(rate: number): string {
-		return `${Math.round(rate * 100)}%`;
-	}
-
 	function activeRaceRole(race: Race): string {
 		const isOrganizer = race.organizer.id === auth.user?.id;
 		const isParticipant = race.my_igt_ms != null || race.my_death_count != null;
@@ -144,50 +146,22 @@
 						<span class="stat-label">Training</span>
 					</div>
 					<div class="stat-card">
-						<span class="stat-value">{profile.stats.podium_count}</span>
-						<span class="stat-label">Podiums</span>
+						<span class="stat-value">{profile.stats.organized_count}</span>
+						<span class="stat-label">Organized</span>
+					</div>
+					<div class="stat-card">
+						<span class="stat-value">{profile.stats.casted_count}</span>
+						<span class="stat-label">Casted</span>
 					</div>
 				</div>
-				<div class="stats-context">
-					{#if profile.stats.best_recent_placement}
-						<div class="stat-context-card">
-							<span class="context-medal"
-								>{placementMedal(profile.stats.best_recent_placement.placement)}</span
-							>
-							<div class="context-details">
-								<span class="context-label">Best Placement</span>
-								<a
-									href="/race/{profile.stats.best_recent_placement.race_id}"
-									class="context-link"
-								>
-									{profile.stats.best_recent_placement.race_name}
-								</a>
-								{#if profile.stats.best_recent_placement.finished_at}
-									<span class="context-time"
-										>{timeAgo(profile.stats.best_recent_placement.finished_at)}</span
-									>
-								{/if}
-							</div>
-						</div>
-					{:else}
-						<div class="stat-context-card stat-context-empty">
-							<span class="context-label">No race results yet</span>
-						</div>
-					{/if}
-					{#if profile.stats.podium_rate !== null}
-						<div class="stat-context-card">
-							<span class="context-rate">{podiumRateDisplay(profile.stats.podium_rate)}</span
-							>
-							<div class="context-details">
-								<span class="context-label">Podium Rate</span>
-							</div>
-						</div>
-					{:else}
-						<div class="stat-context-card stat-context-empty">
-							<span class="context-label">No podium data</span>
-						</div>
-					{/if}
-				</div>
+			</section>
+		{/if}
+
+		<!-- Pool Stats Section -->
+		{#if poolStats && poolStats.pools.length > 0}
+			<section class="pool-stats-section">
+				<h2>Pool Stats</h2>
+				<PoolStatsTable pools={poolStats.pools} />
 			</section>
 		{/if}
 
@@ -348,9 +322,8 @@
 
 	.stats-grid {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		grid-template-columns: repeat(4, 1fr);
 		gap: 1rem;
-		margin-bottom: 1rem;
 	}
 
 	.stat-card {
@@ -374,66 +347,8 @@
 		color: var(--color-text-secondary);
 	}
 
-	.stats-context {
-		display: grid;
-		grid-template-columns: repeat(2, 1fr);
-		gap: 1rem;
-	}
-
-	.stat-context-card {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		padding: 1rem 1.25rem;
-		background: var(--color-surface);
-		border-radius: var(--radius-lg);
-	}
-
-	.stat-context-empty {
-		justify-content: center;
-		color: var(--color-text-disabled);
-	}
-
-	.context-medal {
-		font-size: var(--font-size-xl);
-		font-weight: 700;
-		color: var(--color-gold);
-		min-width: 3rem;
-		text-align: center;
-	}
-
-	.context-rate {
-		font-size: var(--font-size-xl);
-		font-weight: 700;
-		color: var(--color-gold);
-		min-width: 3rem;
-		text-align: center;
-	}
-
-	.context-details {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-	}
-
-	.context-label {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
-	}
-
-	.context-link {
-		color: var(--color-text);
-		text-decoration: none;
-		font-size: var(--font-size-sm);
-	}
-
-	.context-link:hover {
-		color: var(--color-gold);
-	}
-
-	.context-time {
-		font-size: var(--font-size-xs);
-		color: var(--color-text-disabled);
+	.pool-stats-section {
+		margin-bottom: 2rem;
 	}
 
 	/* Sections */
@@ -767,10 +682,6 @@
 
 		.stats-grid {
 			grid-template-columns: repeat(2, 1fr);
-		}
-
-		.stats-context {
-			grid-template-columns: 1fr;
 		}
 
 		.active-cards {
