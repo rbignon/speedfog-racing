@@ -6,25 +6,21 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ### Seeds
 
-- Boss placement tracking: randomized boss names are now captured in graph.json
-- Entrance fog gate names added to graph.json nodes for visualization
 - Seedtree and church added as key item placement locations
-- Fix: prune boss_arena exits from one-way entry zones
-- Fix: entity ID overflow on DLC bosses
+- Fix: boss arena exits are now pruned from one-way entry zones
 
 ### In-game
 
-- Per-zone death tracking with zone death counter in overlay
+- Per-zone death tracking with death counter in overlay
 
 ### Metro map
 
 - Node popup now displays the randomized boss name
-- Entrance texts displayed on DAG connections
-- Visitor columns aligned with CSS grid in node popup
+- Entrance fog gate names displayed on connections between zones
 
 ### Website
 
-- Dashboard and profile redesign with 4 stat cards and per-pool stats table
+- Dashboard and profile redesign with stat cards and per-pool stats table
 - Twitch link on user profile page
 
 ## [1.1.0] - 2026-02-20
@@ -73,12 +69,7 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 - More information about seed pools on the website
 - You can change the font size of the in-game overlay in the settings page
-- Custom DateTimePicker for race scheduling
-
-### Tools
-
-- Parallel seed generation with --jobs flag
-- Per-seed timing and summary table
+- Improved date picker for race scheduling
 
 ### Translations
 
@@ -88,68 +79,43 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 Initial release — first version used in a real race.
 
-### Platform
-
-- FastAPI async server with SQLAlchemy 2.0 and Twitch OAuth
-- SvelteKit 5 frontend with runes
-- Rust game mod (DLL injection into Elden Ring)
-
 ### Races
 
-- Race creation, invitations, and participant management
-- Seed pool system with multiple pools (Standard, Sprint, Hardcore)
-- Seed pack generation and download
-- Seed release workflow: organizer controls when participants can download
+- Race creation with invitations and participant management
+- Multiple seed pools: Standard, Sprint, Hardcore
+- Seed pack download with organizer-controlled release timing
 - Seed re-roll during setup
-- Private race support (is_public flag)
-- Scheduled races
-- Caster role for spectators
-- User profile page with stats and activity timeline
+- Private and public races
+- Scheduled races with date/time picker
+- Caster role for commentators
+- User profile with stats and activity timeline
 - Personal dashboard with active sessions and recent activity
-- Dedicated /races page with paginated finished races
-- Anonymous access to training session pages
+- Paginated race listing
+- Training mode with anonymous spectator access
 
 ### In-game
 
 - Real-time overlay with zone name, IGT, deaths, tier, and leaderboard
-- EMEVD event flag system for zone/boss detection
-- Zone query for fast travel detection via warp hook
-- Event flags deferred to loading screen exit for reliability
-- Seed pack mismatch detection after re-roll
-- File logging for debugging
+- Automatic zone and boss detection via event flags
+- Overlay updates on fast travel
+- Reliable zone transitions even during long loading screens
 
 ### Metro map
 
-- Metro-style DAG visualization of the seed graph
-- Node popup: click any node to see fog gate text, exits/entrances, visitors, time spent, and zone deaths
-- Player filtering: click leaderboard players to highlight their path on the DAG
-- Progression polyline showing the current player's route
-- Animated hero DAG on homepage
+- Interactive metro-style visualization of the race path
+- Click any node to see fog gate text, exits/entrances, visitors, time spent, and zone deaths
+- Click leaderboard players to highlight their path on the map
+- Progress line showing your current route
+- Animated map on homepage
 
 ### Website
 
-- Race detail with lobby, running, and finished state layouts
+- Race pages with lobby, running, and finished state layouts
 - Podium for finished races
-- Player colors on leaderboard (20-color palette)
-- OBS Overlays button for race participants
+- Color-coded leaderboard (20-color palette)
+- OBS Overlays for streamers
 - Help & Game Rules page
-
-### Server
-
-- WebSocket for live race updates (mod and spectator connections)
-- WebSocket scalability: parallel broadcasts, heartbeat, per-message sessions
-- Discord webhook notifications on race creation and finish
-- Grace mapping service for zone resolution
-- Enriched zone_query with map_id fallback for death/respawn detection
-
-### Security
-
-- HTTPS with CSP/HSTS headers and rate limiting
-- Ephemeral auth code exchange (token no longer in redirect URL)
-- Optimistic locking with version column
-- WebSocket authentication timeout and failure logging
 
 ### Translations
 
 - French translation of zone names and game data
-- Server-side i18n with locale support

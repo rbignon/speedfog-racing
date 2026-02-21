@@ -211,7 +211,7 @@ VPS deployment with nginx reverse proxy + systemd service. See `deploy/README.md
 
 ## Versioning
 
-- `CHANGELOG.md` — follows [Keep a Changelog](https://keepachangelog.com/) format, includes changes from both this repo and `../speedfog/`
+- `CHANGELOG.md` — user-facing release notes (player audience), follows [Keep a Changelog](https://keepachangelog.com/) format. Includes changes from both this repo and `../speedfog/`. Technical/infra changes stay in git history only.
 - `tools/release.sh <version>` — bumps version in all components (server, web, mod), commits, and creates git tag. Move `[Unreleased]` entries to a new version section in `CHANGELOG.md` before running.
 - Version is synchronized across `server/pyproject.toml`, `server/speedfog_racing/__init__.py`, `mod/Cargo.toml`, and `web/package.json`
 
