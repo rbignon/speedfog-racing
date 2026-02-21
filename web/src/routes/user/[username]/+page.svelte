@@ -9,7 +9,7 @@
 		type ActivityTimeline,
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
-	import { displayPoolName } from '$lib/utils/training';
+	import { displayPoolName, formatIgt } from '$lib/utils/training';
 	import PoolStatsTable from '$lib/components/PoolStatsTable.svelte';
 
 	let username = $derived(page.params.username!);
@@ -75,15 +75,6 @@
 		});
 	}
 
-	function formatIgt(ms: number): string {
-		const totalSec = Math.floor(ms / 1000);
-		const h = Math.floor(totalSec / 3600);
-		const m = Math.floor((totalSec % 3600) / 60);
-		const s = totalSec % 60;
-		if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-		return `${m}:${String(s).padStart(2, '0')}`;
-	}
-
 	function placementLabel(p: number): string {
 		if (p === 1) return '1st';
 		if (p === 2) return '2nd';
@@ -132,6 +123,7 @@
 						rel="noopener noreferrer"
 						class="twitch-link"
 						title="Twitch channel"
+						aria-label="Twitch channel"
 					>
 						<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
 							<path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
@@ -393,6 +385,7 @@
 		font-size: var(--font-size-xl);
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
+		color: var(--color-gold);
 	}
 
 	.stat-label {
@@ -406,7 +399,7 @@
 		font-size: var(--font-size-lg);
 		font-weight: 600;
 		margin: 0 0 1rem 0;
-		color: var(--color-text-primary);
+		color: var(--color-text);
 	}
 
 	.empty {
@@ -482,7 +475,7 @@
 	}
 
 	.activity-title {
-		color: var(--color-text-primary);
+		color: var(--color-text);
 		text-decoration: none;
 		font-weight: 600;
 	}
