@@ -244,6 +244,34 @@ describe("computeVisitors", () => {
   it("returns empty for unvisited node", () => {
     expect(computeVisitors("raya", [participants[0]])).toHaveLength(0);
   });
+
+  it("includes deaths from zone_history entries", () => {
+    const withDeaths = [
+      {
+        ...participants[0],
+        zone_history: [
+          { node_id: "start", igt_ms: 0, deaths: 1 },
+          { node_id: "stormveil", igt_ms: 60000, deaths: 5 },
+          { node_id: "liurnia", igt_ms: 120000 },
+          { node_id: "caelid", igt_ms: 200000, deaths: 3 },
+        ],
+      },
+    ];
+    const stormveil = computeVisitors("stormveil", withDeaths);
+    expect(stormveil[0].deaths).toBe(5);
+
+    const liurnia = computeVisitors("liurnia", withDeaths);
+    expect(liurnia[0].deaths).toBeUndefined(); // no deaths = undefined
+
+    const caelid = computeVisitors("caelid", withDeaths);
+    expect(caelid[0].deaths).toBe(3);
+  });
+
+  it("returns undefined deaths when field is missing (backward compat)", () => {
+    // Original zone_history format without deaths field
+    const visitors = computeVisitors("stormveil", participants);
+    expect(visitors[0].deaths).toBeUndefined();
+  });
 });
 
 describe("formatIgt", () => {
