@@ -9,7 +9,7 @@ speedfog-racing/
 ├── server/          # Python/FastAPI backend
 ├── web/             # SvelteKit frontend
 ├── mod/             # Rust mod injected into the game
-├── tools/           # Seed pool generation scripts
+├── tools/           # Seed pool generation and release scripts
 ├── deploy/          # VPS deployment (systemd, nginx, deploy script)
 └── docs/            # Specs and design documents
 ```
@@ -111,8 +111,7 @@ web/src/
     └── race/
         ├── new/         # Create race form
         └── [id]/
-            ├── +page    # Race detail (spectator view)
-            └── manage/  # Admin page (participants, seed packs, start)
+            └── +page    # Race detail (spectator + organizer view)
 ```
 
 ### Conventions
@@ -209,6 +208,12 @@ VPS deployment with nginx reverse proxy + systemd service. See `deploy/README.md
 - Deploy: `DEPLOY_HOST=user@host ./deploy/deploy.sh` (builds locally, rsync server code, scp frontend, run migrations, restart)
 - Config: `.env` in `server/` read by pydantic-settings (not systemd EnvironmentFile)
 - Permissions: deploy user in `speedfog` group, setgid on `server/` and `web-build/`, sudoers for `speedfog` user and `systemctl restart`
+
+## Versioning
+
+- `CHANGELOG.md` — follows [Keep a Changelog](https://keepachangelog.com/) format, includes changes from both this repo and `../speedfog/`
+- `tools/release.sh <version>` — bumps version in all components (server, web, mod), commits, and creates git tag. Move `[Unreleased]` entries to a new version section in `CHANGELOG.md` before running.
+- Version is synchronized across `server/pyproject.toml`, `server/speedfog_racing/__init__.py`, `mod/Cargo.toml`, and `web/package.json`
 
 ## Related Projects
 
