@@ -371,7 +371,7 @@ describe("computeConnections with exitTexts", () => {
     expect(raya?.text).toBe("via the side path");
   });
 
-  it("attaches entrance text from source node exits", () => {
+  it("does not use exit texts for entrance text", () => {
     const conns = computeConnections(
       "stormveil",
       EDGES,
@@ -379,8 +379,8 @@ describe("computeConnections with exitTexts", () => {
       undefined,
       exitTexts,
     );
-    // Entrance from start → stormveil: text is from start's exit to stormveil
-    expect(conns.entrances[0].text).toBe("before the arena");
+    // No entranceTexts provided → entrance text is undefined
+    expect(conns.entrances[0].text).toBeUndefined();
   });
 
   it("leaves text undefined when no exitTexts provided", () => {
@@ -420,8 +420,8 @@ describe("computeConnections with exitTexts", () => {
     const raya = conns.exits.find((e) => e.nodeId === "raya");
     expect(raya?.displayName).toBeNull();
     expect(raya?.text).toBe("via the side path");
-    // Entrance from start → stormveil: start is discovered → text shown
-    expect(conns.entrances[0].text).toBe("before the arena");
+    // No entranceTexts provided → entrance text undefined
+    expect(conns.entrances[0].text).toBeUndefined();
   });
 
   it("hides entrance text when source node is undiscovered", () => {
@@ -536,7 +536,7 @@ describe("computeConnections with entranceTexts", () => {
     ],
   ]);
 
-  it("prefers entrance text over exit text when both available", () => {
+  it("uses entrance text when available", () => {
     const conns = computeConnections(
       "stormveil",
       EDGES,
@@ -545,12 +545,11 @@ describe("computeConnections with entranceTexts", () => {
       exitTexts,
       entranceTexts,
     );
-    // entranceTexts has "at the front gate" for stormveil←start
     expect(conns.entrances[0].text).toBe("at the front gate");
   });
 
-  it("falls back to exit text when no entrance text available", () => {
-    // liurnia has no entranceTexts entry, so falls back to stormveil's exit text
+  it("shows no entrance text when node has no entrances field", () => {
+    // liurnia has no entranceTexts entry → no text (not fallback to exit text)
     const conns = computeConnections(
       "liurnia",
       EDGES,
@@ -559,7 +558,7 @@ describe("computeConnections with entranceTexts", () => {
       exitTexts,
       entranceTexts,
     );
-    expect(conns.entrances[0].text).toBe("through the gate");
+    expect(conns.entrances[0].text).toBeUndefined();
   });
 
   it("uses entrance text for convergence node with multiple entrances", () => {

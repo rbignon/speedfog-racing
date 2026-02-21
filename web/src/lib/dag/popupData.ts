@@ -116,8 +116,8 @@ export function parseEntranceTexts(
  *
  * When `exitTexts` is provided, each connection is enriched with the
  * fog gate location description from graph.json. When `entranceTexts`
- * is also provided, entrance connections prefer the current node's
- * entrance text over the source node's exit text (fallback).
+ * is provided, entrance connections use the current node's entrance
+ * text; no text is shown if the node has no matching entrance.
  */
 export function computeConnections(
   nodeId: string,
@@ -135,14 +135,12 @@ export function computeConnections(
       const fromNode = nodeMap.get(edge.from);
       if (!fromNode) continue;
       const isUndiscovered = discoveredIds && !discoveredIds.has(edge.from);
-      // Entrance text: prefer current node's entrance field (describes the fog gate
-      // in this zone), fall back to source node's exit field (backward compat).
+      // Entrance text: from current node's entrances field only.
       // Hidden for undiscovered connections (anti-spoiler).
       const text = isUndiscovered
         ? undefined
-        : (entranceTexts?.get(nodeId)?.find((e) => e.fromNodeId === edge.from)
-            ?.text ??
-          exitTexts?.get(edge.from)?.find((e) => e.toNodeId === nodeId)?.text);
+        : entranceTexts?.get(nodeId)?.find((e) => e.fromNodeId === edge.from)
+            ?.text;
       entrances.push({
         nodeId: edge.from,
         displayName: isUndiscovered ? null : fromNode.displayName,
