@@ -123,6 +123,7 @@ export function computeConnections(
   nodeMap: Map<string, DagNode>,
   discoveredIds?: Set<string>,
   exitTexts?: ExitTextMap,
+  entranceTexts?: EntranceTextMap,
 ): { entrances: PopupConnection[]; exits: PopupConnection[] } {
   const entrances: PopupConnection[] = [];
   const exits: PopupConnection[] = [];
@@ -132,12 +133,14 @@ export function computeConnections(
       const fromNode = nodeMap.get(edge.from);
       if (!fromNode) continue;
       const isUndiscovered = discoveredIds && !discoveredIds.has(edge.from);
-      // Entrance text: the source node's exit pointing to us.
+      // Entrance text: prefer current node's entrance field (describes the fog gate
+      // in this zone), fall back to source node's exit field (backward compat).
       // Hidden for undiscovered connections (anti-spoiler).
-      // Assumes at most one exit per (from, to) pair in graph.json.
       const text = isUndiscovered
         ? undefined
-        : exitTexts?.get(edge.from)?.find((e) => e.toNodeId === nodeId)?.text;
+        : (entranceTexts?.get(nodeId)?.find((e) => e.fromNodeId === edge.from)
+            ?.text ??
+          exitTexts?.get(edge.from)?.find((e) => e.toNodeId === nodeId)?.text);
       entrances.push({
         nodeId: edge.from,
         displayName: isUndiscovered ? null : fromNode.displayName,

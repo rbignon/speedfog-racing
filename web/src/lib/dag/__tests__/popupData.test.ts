@@ -510,3 +510,104 @@ describe("parseEntranceTexts", () => {
     expect(parseEntranceTexts(graphJson)).toEqual(new Map());
   });
 });
+
+describe("computeConnections with entranceTexts", () => {
+  const nodeMap = new Map(NODES.map((n) => [n.id, n]));
+
+  const exitTexts = new Map([
+    ["start", [{ text: "before the arena", toNodeId: "stormveil" }]],
+    [
+      "stormveil",
+      [
+        { text: "through the gate", toNodeId: "liurnia" },
+        { text: "via the side path", toNodeId: "raya" },
+      ],
+    ],
+  ]);
+
+  const entranceTexts = new Map([
+    ["stormveil", [{ text: "at the front gate", fromNodeId: "start" }]],
+    [
+      "caelid",
+      [
+        { text: "from the swamp", fromNodeId: "liurnia" },
+        { text: "past the ruins", fromNodeId: "raya" },
+      ],
+    ],
+  ]);
+
+  it("prefers entrance text over exit text when both available", () => {
+    const conns = computeConnections(
+      "stormveil",
+      EDGES,
+      nodeMap,
+      undefined,
+      exitTexts,
+      entranceTexts,
+    );
+    // entranceTexts has "at the front gate" for stormveil←start
+    expect(conns.entrances[0].text).toBe("at the front gate");
+  });
+
+  it("falls back to exit text when no entrance text available", () => {
+    // liurnia has no entranceTexts entry, so falls back to stormveil's exit text
+    const conns = computeConnections(
+      "liurnia",
+      EDGES,
+      nodeMap,
+      undefined,
+      exitTexts,
+      entranceTexts,
+    );
+    expect(conns.entrances[0].text).toBe("through the gate");
+  });
+
+  it("uses entrance text for convergence node with multiple entrances", () => {
+    const conns = computeConnections(
+      "caelid",
+      EDGES,
+      nodeMap,
+      undefined,
+      exitTexts,
+      entranceTexts,
+    );
+    const fromLiurnia = conns.entrances.find((e) => e.nodeId === "liurnia");
+    const fromRaya = conns.entrances.find((e) => e.nodeId === "raya");
+    expect(fromLiurnia?.text).toBe("from the swamp");
+    expect(fromRaya?.text).toBe("past the ruins");
+  });
+
+  it("hides entrance text when source is undiscovered (anti-spoiler)", () => {
+    const discovered = new Set(["stormveil", "caelid", "liurnia"]);
+    const conns = computeConnections(
+      "caelid",
+      EDGES,
+      nodeMap,
+      discovered,
+      exitTexts,
+      entranceTexts,
+    );
+    // liurnia is discovered → text shown
+    const fromLiurnia = conns.entrances.find((e) => e.nodeId === "liurnia");
+    expect(fromLiurnia?.text).toBe("from the swamp");
+    // raya is NOT discovered → text hidden
+    const fromRaya = conns.entrances.find((e) => e.nodeId === "raya");
+    expect(fromRaya?.text).toBeUndefined();
+  });
+
+  it("does not affect exit text logic", () => {
+    const conns = computeConnections(
+      "stormveil",
+      EDGES,
+      nodeMap,
+      undefined,
+      exitTexts,
+      entranceTexts,
+    );
+    // Exits still use exitTexts as before
+    const liurnia = conns.exits.find((e) => e.nodeId === "liurnia");
+    expect(liurnia?.text).toBe("through the gate");
+    const raya = conns.exits.find((e) => e.nodeId === "raya");
+    expect(raya?.text).toBe("via the side path");
+  });
+});
