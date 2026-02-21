@@ -334,8 +334,20 @@ async def handle_status_update(
 
         if isinstance(msg.get("igt_ms"), int):
             participant.igt_ms = msg["igt_ms"]
-        if isinstance(msg.get("death_count"), int):
-            participant.death_count = msg["death_count"]
+
+        new_death_count = msg.get("death_count")
+        if isinstance(new_death_count, int):
+            delta = new_death_count - participant.death_count
+            if delta > 0 and participant.current_zone and participant.zone_history:
+                # Deep-copy entries so mutations don't affect the committed
+                # state — SQLAlchemy compares new vs committed to detect dirt.
+                history = [dict(e) for e in participant.zone_history]
+                for entry in history:
+                    if entry.get("node_id") == participant.current_zone:
+                        entry["deaths"] = entry.get("deaths", 0) + delta
+                        break
+                participant.zone_history = history
+            participant.death_count = new_death_count
 
         race = participant.race
         became_playing = False

@@ -30,6 +30,7 @@ export interface PopupVisitor {
   color: string;
   arrivedAtMs: number;
   timeSpentMs?: number; // duration in this zone (until next zone or race finish)
+  deaths?: number;
 }
 
 export interface NodePopupData {
@@ -185,6 +186,7 @@ export function computeVisitors(
       arrivedAtMs: entry.igt_ms,
       timeSpentMs:
         timeSpentMs != null && timeSpentMs > 0 ? timeSpentMs : undefined,
+      deaths: entry.deaths && entry.deaths > 0 ? entry.deaths : undefined,
     });
   }
   visitors.sort((a, b) => a.arrivedAtMs - b.arrivedAtMs);

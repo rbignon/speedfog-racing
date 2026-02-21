@@ -19,7 +19,7 @@ export interface WsParticipant {
   death_count: number;
   color_index: number;
   mod_connected: boolean;
-  zone_history: { node_id: string; igt_ms: number }[] | null;
+  zone_history: { node_id: string; igt_ms: number; deaths?: number }[] | null;
 }
 
 export interface WsRaceInfo {

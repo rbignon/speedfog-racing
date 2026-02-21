@@ -811,6 +811,123 @@ def test_zone_history_accumulates(integration_client, race_with_participants, in
     assert history[1]["igt_ms"] == 20000
 
 
+def test_per_zone_death_tracking(integration_client, race_with_participants, integration_db):
+    """Deaths are attributed to the zone_history entry matching current_zone."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Start the race
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # Discover node_a (sets current_zone=node_a, adds to zone_history)
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        mod0.receive_until_type("leaderboard_update")
+
+        # Die twice in node_a (player_update goes to spectators only)
+        mod0.send_status_update(igt_ms=15000, death_count=2)
+        time.sleep(0.3)
+
+        # Discover node_b (sets current_zone=node_b, adds to zone_history)
+        mod0.send_event_flag(9000001, igt_ms=20000)
+        mod0.receive_until_type("leaderboard_update")
+
+        # Die three times in node_b
+        mod0.send_status_update(igt_ms=25000, death_count=5)
+        time.sleep(0.3)
+
+    # Verify zone_history deaths in DB
+    async def check_deaths():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history, p.death_count
+
+    history, total_deaths = asyncio.run(check_deaths())
+    assert total_deaths == 5
+    assert len(history) == 2
+
+    # node_a got 2 deaths
+    node_a_entry = next(e for e in history if e["node_id"] == "node_a")
+    assert node_a_entry["deaths"] == 2
+
+    # node_b got 3 deaths
+    node_b_entry = next(e for e in history if e["node_id"] == "node_b")
+    assert node_b_entry["deaths"] == 3
+
+
+def test_per_zone_death_tracking_start_node(
+    integration_client, race_with_participants, integration_db
+):
+    """Deaths in start_node (from READY→PLAYING transition) are correctly attributed."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Send ready first so participant is READY
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[1]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    # Start the race
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    # Reconnect; status_update triggers READY→PLAYING with start_node
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[1]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # Transition READY→PLAYING (adds start_node to zone_history)
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        time.sleep(0.5)
+
+        # Die 4 times in start zone (entry has no initial deaths key)
+        mod0.send_status_update(igt_ms=5000, death_count=4)
+        time.sleep(0.3)
+
+    # Verify in DB
+    async def check():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[1]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history, p.death_count
+
+    history, total_deaths = asyncio.run(check())
+    assert total_deaths == 4
+    assert len(history) >= 1
+
+    start_entry = next(e for e in history if e["node_id"] == "start_node")
+    assert start_entry["deaths"] == 4
+
+
 def test_event_flag_unknown_ignored(integration_client, race_with_participants, integration_db):
     """Unknown event flag IDs are silently ignored."""
     import asyncio
