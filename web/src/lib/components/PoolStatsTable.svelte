@@ -37,11 +37,12 @@
 		</thead>
 		<tbody>
 			{#each pools as pool}
-				<tr class="race-row">
-					<td class="pool-name" rowspan={pool.training ? 2 : 1}>
-						{formatPoolName(pool.pool_name)}
-					</td>
-					{#if pool.race}
+				{@const rowCount = (pool.race ? 1 : 0) + (pool.training ? 1 : 0)}
+				{#if pool.race}
+					<tr class="race-row">
+						<td class="pool-name" rowspan={rowCount}>
+							{formatPoolName(pool.pool_name)}
+						</td>
 						<td class="type-label race-type">Race</td>
 						<td class="runs-cell">
 							<div class="bar bar-race" style="width: {barWidth(pool.race.runs)}"></div>
@@ -50,16 +51,15 @@
 						<td class="num">{formatIgt(pool.race.avg_time_ms)}</td>
 						<td class="num">{formatIgt(pool.race.best_time_ms)}</td>
 						<td class="num">{pool.race.avg_deaths.toFixed(1)}</td>
-					{:else}
-						<td class="type-label race-type">Race</td>
-						<td class="dash">&mdash;</td>
-						<td class="dash num">&mdash;</td>
-						<td class="dash num">&mdash;</td>
-						<td class="dash num">&mdash;</td>
-					{/if}
-				</tr>
+					</tr>
+				{/if}
 				{#if pool.training}
-					<tr class="training-row">
+					<tr class={pool.race ? 'training-row' : 'training-row-first'}>
+						{#if !pool.race}
+							<td class="pool-name" rowspan={rowCount}>
+								{formatPoolName(pool.pool_name)}
+							</td>
+						{/if}
 						<td class="type-label training-type">Training</td>
 						<td class="runs-cell">
 							<div
@@ -138,11 +138,8 @@
 		color: var(--color-purple);
 	}
 
-	.dash {
-		color: var(--color-text-disabled);
-	}
-
-	.race-row td {
+	.race-row td,
+	.training-row-first td {
 		border-top: 1px solid var(--color-border);
 	}
 
@@ -150,7 +147,7 @@
 		border-top: none;
 	}
 
-	/* First pool group should not have a top border on the race row */
+	/* First pool group should not have a top border */
 	tbody tr:first-child td {
 		border-top: none;
 	}
