@@ -635,6 +635,20 @@ export async function fetchUserActivity(
   return response.json();
 }
 
+/**
+ * Fetch per-pool aggregated stats for a user.
+ */
+export async function fetchUserPoolStats(
+  username: string,
+): Promise<UserPoolStats> {
+  const response = await fetch(
+    `${API_BASE}/users/${encodeURIComponent(username)}/pool-stats`,
+  );
+  if (!response.ok)
+    throw new Error(`Failed to fetch pool stats: ${response.status}`);
+  return response.json();
+}
+
 // =============================================================================
 // i18n / Locale API
 // =============================================================================
@@ -715,22 +729,11 @@ export interface AdminUser {
 }
 
 // User profile
-export interface BestRecentPlacement {
-  placement: number;
-  race_name: string;
-  race_id: string;
-  finished_at: string | null;
-}
-
 export interface UserStats {
   race_count: number;
   training_count: number;
-  podium_count: number;
-  first_place_count: number;
   organized_count: number;
   casted_count: number;
-  podium_rate: number | null;
-  best_recent_placement: BestRecentPlacement | null;
 }
 
 export interface UserProfile {
@@ -741,6 +744,24 @@ export interface UserProfile {
   role: string;
   created_at: string;
   stats: UserStats;
+}
+
+export interface PoolTypeStats {
+  runs: number;
+  avg_time_ms: number;
+  avg_deaths: number;
+  best_time_ms: number;
+}
+
+export interface UserPoolStatsEntry {
+  pool_name: string;
+  race: PoolTypeStats | null;
+  training: PoolTypeStats | null;
+  total_runs: number;
+}
+
+export interface UserPoolStats {
+  pools: UserPoolStatsEntry[];
 }
 
 export type ActivityType =
