@@ -17,7 +17,7 @@
 	);
 
 	function barWidth(runs: number): string {
-		return `${Math.max(4, (runs / maxRuns) * 100)}%`;
+		return `${Math.max(8, (runs / maxRuns) * 100)}%`;
 	}
 </script>
 
@@ -27,10 +27,10 @@
 			<tr>
 				<th>Pool</th>
 				<th>Type</th>
-				<th>Runs</th>
-				<th>Avg Time</th>
-				<th>Best Time</th>
-				<th>Avg Deaths</th>
+				<th class="th-runs">Runs</th>
+				<th class="th-right">Avg Time</th>
+				<th class="th-right">Best Time</th>
+				<th class="th-right">Avg Deaths</th>
 			</tr>
 		</thead>
 		<tbody>
@@ -43,17 +43,17 @@
 						<td class="type-label race-type">Race</td>
 						<td class="runs-cell">
 							<div class="bar bar-race" style="width: {barWidth(pool.race.runs)}"></div>
-							<span>{pool.race.runs}</span>
+							<span class="runs-value">{pool.race.runs}</span>
 						</td>
-						<td>{formatIgt(pool.race.avg_time_ms)}</td>
-						<td>{formatIgt(pool.race.best_time_ms)}</td>
-						<td>{pool.race.avg_deaths.toFixed(1)}</td>
+						<td class="num">{formatIgt(pool.race.avg_time_ms)}</td>
+						<td class="num">{formatIgt(pool.race.best_time_ms)}</td>
+						<td class="num">{pool.race.avg_deaths.toFixed(1)}</td>
 					{:else}
 						<td class="type-label race-type">Race</td>
 						<td class="dash">&mdash;</td>
-						<td class="dash">&mdash;</td>
-						<td class="dash">&mdash;</td>
-						<td class="dash">&mdash;</td>
+						<td class="dash num">&mdash;</td>
+						<td class="dash num">&mdash;</td>
+						<td class="dash num">&mdash;</td>
 					{/if}
 				</tr>
 				{#if pool.training}
@@ -64,11 +64,11 @@
 								class="bar bar-training"
 								style="width: {barWidth(pool.training.runs)}"
 							></div>
-							<span>{pool.training.runs}</span>
+							<span class="runs-value">{pool.training.runs}</span>
 						</td>
-						<td>{formatIgt(pool.training.avg_time_ms)}</td>
-						<td>{formatIgt(pool.training.best_time_ms)}</td>
-						<td>{pool.training.avg_deaths.toFixed(1)}</td>
+						<td class="num">{formatIgt(pool.training.avg_time_ms)}</td>
+						<td class="num">{formatIgt(pool.training.best_time_ms)}</td>
+						<td class="num">{pool.training.avg_deaths.toFixed(1)}</td>
 					</tr>
 				{/if}
 			{/each}
@@ -99,9 +99,22 @@
 		border-bottom: 1px solid var(--color-border);
 	}
 
+	.th-right {
+		text-align: right;
+	}
+
+	.th-runs {
+		width: 30%;
+	}
+
 	tbody td {
-		padding: 0.4rem 0.75rem;
+		padding: 0.5rem 0.75rem;
 		color: var(--color-text);
+	}
+
+	.num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.pool-name {
@@ -146,11 +159,18 @@
 		gap: 0.5rem;
 	}
 
+	.runs-value {
+		font-variant-numeric: tabular-nums;
+		flex-shrink: 0;
+	}
+
 	.bar {
-		height: 6px;
-		border-radius: 3px;
+		height: 12px;
+		border-radius: 6px;
 		transition: width 0.3s ease;
 		flex-shrink: 0;
+		min-width: 12px;
+		flex-grow: 1;
 	}
 
 	.bar-race {
