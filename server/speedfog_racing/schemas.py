@@ -83,6 +83,30 @@ class UserStatsResponse(BaseModel):
     casted_count: int
 
 
+class PoolTypeStatsResponse(BaseModel):
+    """Stats for one type (race or training) in a pool."""
+
+    runs: int
+    avg_time_ms: int
+    avg_deaths: float
+    best_time_ms: int
+
+
+class UserPoolStatsEntry(BaseModel):
+    """Per-pool stats for a user."""
+
+    pool_name: str
+    race: PoolTypeStatsResponse | None = None
+    training: PoolTypeStatsResponse | None = None
+    total_runs: int
+
+
+class UserPoolStatsResponse(BaseModel):
+    """Aggregated pool stats for a user."""
+
+    pools: list[UserPoolStatsEntry]
+
+
 class UserProfileDetailResponse(BaseModel):
     """Public user profile with stats."""
 

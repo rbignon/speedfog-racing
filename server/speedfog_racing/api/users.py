@@ -17,17 +17,22 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    Seed,
     TrainingSession,
+    TrainingSessionStatus,
     User,
 )
 from speedfog_racing.schemas import (
     ActivityItem,
     ActivityTimelineResponse,
+    PoolTypeStatsResponse,
     RaceCasterActivity,
     RaceListResponse,
     RaceOrganizerActivity,
     RaceParticipantActivity,
     TrainingActivity,
+    UserPoolStatsEntry,
+    UserPoolStatsResponse,
     UserProfileDetailResponse,
     UserResponse,
     UserStatsResponse,
@@ -160,6 +165,95 @@ async def get_my_races(
         race_responses.append(resp)
 
     return RaceListResponse(races=race_responses)
+
+
+@router.get("/{username}/pool-stats", response_model=UserPoolStatsResponse)
+async def get_user_pool_stats(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+) -> UserPoolStatsResponse:
+    """Get per-pool aggregated stats for a user."""
+    result = await db.execute(select(User).where(User.twitch_username == username))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_id = user.id
+
+    # Race stats: aggregate finished participations grouped by pool_name
+    race_stats_q = await db.execute(
+        select(
+            Seed.pool_name,
+            func.count().label("runs"),
+            func.avg(Participant.igt_ms).label("avg_time_ms"),
+            func.avg(Participant.death_count).label("avg_deaths"),
+            func.min(Participant.igt_ms).label("best_time_ms"),
+        )
+        .select_from(Participant)
+        .join(Race, Participant.race_id == Race.id)
+        .join(Seed, Race.seed_id == Seed.id)
+        .where(
+            Participant.user_id == user_id,
+            Participant.status == ParticipantStatus.FINISHED,
+        )
+        .group_by(Seed.pool_name)
+    )
+    race_stats = {
+        row.pool_name: PoolTypeStatsResponse(
+            runs=row.runs,
+            avg_time_ms=int(row.avg_time_ms),
+            avg_deaths=round(float(row.avg_deaths), 1),
+            best_time_ms=row.best_time_ms,
+        )
+        for row in race_stats_q.all()
+    }
+
+    # Training stats: aggregate finished sessions grouped by pool_name
+    training_stats_q = await db.execute(
+        select(
+            Seed.pool_name,
+            func.count().label("runs"),
+            func.avg(TrainingSession.igt_ms).label("avg_time_ms"),
+            func.avg(TrainingSession.death_count).label("avg_deaths"),
+            func.min(TrainingSession.igt_ms).label("best_time_ms"),
+        )
+        .select_from(TrainingSession)
+        .join(Seed, TrainingSession.seed_id == Seed.id)
+        .where(
+            TrainingSession.user_id == user_id,
+            TrainingSession.status == TrainingSessionStatus.FINISHED,
+        )
+        .group_by(Seed.pool_name)
+    )
+    training_stats = {
+        row.pool_name: PoolTypeStatsResponse(
+            runs=row.runs,
+            avg_time_ms=int(row.avg_time_ms),
+            avg_deaths=round(float(row.avg_deaths), 1),
+            best_time_ms=row.best_time_ms,
+        )
+        for row in training_stats_q.all()
+    }
+
+    # Merge all pool names
+    all_pools = set(race_stats.keys()) | set(training_stats.keys())
+    entries = []
+    for pool_name in all_pools:
+        race = race_stats.get(pool_name)
+        training = training_stats.get(pool_name)
+        total_runs = (race.runs if race else 0) + (training.runs if training else 0)
+        entries.append(
+            UserPoolStatsEntry(
+                pool_name=pool_name,
+                race=race,
+                training=training,
+                total_runs=total_runs,
+            )
+        )
+
+    entries.sort(key=lambda e: e.total_runs, reverse=True)
+
+    return UserPoolStatsResponse(pools=entries)
 
 
 @router.get(
