@@ -205,6 +205,7 @@
 			type: node.type,
 			displayType: node.displayType,
 			tier: node.tier,
+			randomizedBoss: node.randomizedBoss,
 			entrances,
 			exits,
 			// No playersHere or visitors — anti-spoiler

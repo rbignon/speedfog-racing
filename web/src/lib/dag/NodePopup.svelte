@@ -89,6 +89,11 @@
 				<span class="tier-badge">Tier {data.tier}</span>
 			{/if}
 		</div>
+		{#if data.randomizedBoss}
+			<div class="popup-boss">
+				<span class="boss-label">Boss:</span> {data.randomizedBoss}
+			</div>
+		{/if}
 	</div>
 
 	<!-- Connections -->
@@ -234,6 +239,19 @@
 	.tier-badge {
 		font-size: 0.75rem;
 		color: var(--color-gold, #c8a44e);
+	}
+
+	.popup-boss {
+		font-size: 0.8rem;
+		margin-top: 4px;
+		color: var(--color-text-secondary, #9ca3af);
+	}
+
+	.boss-label {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-text-disabled, #6b7280);
 	}
 
 	.popup-section {

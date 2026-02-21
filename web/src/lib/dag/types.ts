@@ -23,6 +23,7 @@ export interface DagNode {
   layer: number;
   tier: number;
   weight: number;
+  randomizedBoss?: string; // Boss name when boss randomization is active
 }
 
 export interface DagEdge {
@@ -101,6 +102,7 @@ export function parseDagGraph(graphJson: Record<string, unknown>): DagGraph {
       layer: (raw.layer as number) ?? 0,
       tier: (raw.tier as number) ?? 0,
       weight: (raw.weight as number) ?? 1,
+      randomizedBoss: (raw.randomized_boss as string) ?? undefined,
     });
   }
 
