@@ -115,7 +115,9 @@ export function parseEntranceTexts(
  * undiscovered nodes get `displayName: null` (shown as "???").
  *
  * When `exitTexts` is provided, each connection is enriched with the
- * fog gate location description from graph.json.
+ * fog gate location description from graph.json. When `entranceTexts`
+ * is also provided, entrance connections prefer the current node's
+ * entrance text over the source node's exit text (fallback).
  */
 export function computeConnections(
   nodeId: string,
