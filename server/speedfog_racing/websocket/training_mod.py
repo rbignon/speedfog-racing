@@ -291,10 +291,9 @@ async def _handle_status_update(
 
         if isinstance(msg.get("igt_ms"), int):
             session.igt_ms = msg["igt_ms"]
-        if isinstance(msg.get("death_count"), int):
-            session.death_count = msg["death_count"]
 
-        # Record start node on first status_update (mirrors race mode READY→PLAYING)
+        # Record start node on first status_update (mirrors race mode READY→PLAYING).
+        # Must happen BEFORE death attribution so current_zone/progress_nodes exist.
         if not session.progress_nodes:
             seed = session.seed
             if seed and seed.graph_json:
@@ -302,6 +301,28 @@ async def _handle_status_update(
                 if start_node:
                     session.progress_nodes = [{"node_id": start_node, "igt_ms": 0}]
                     session.current_zone = start_node
+
+        new_death_count = msg.get("death_count")
+        if isinstance(new_death_count, int):
+            delta = new_death_count - session.death_count
+            if delta < 0:
+                logger.warning(
+                    "Negative death delta %d for training session %s (stored=%d, received=%d)",
+                    delta,
+                    session_id,
+                    session.death_count,
+                    new_death_count,
+                )
+            if delta > 0 and session.current_zone and session.progress_nodes:
+                # Deep-copy entries so mutations don't affect the committed
+                # state — SQLAlchemy compares new vs committed to detect dirt.
+                history = [dict(e) for e in session.progress_nodes]
+                for entry in history:
+                    if entry.get("node_id") == session.current_zone:
+                        entry["deaths"] = entry.get("deaths", 0) + delta
+                        break
+                session.progress_nodes = history
+            session.death_count = new_death_count
 
         await db.commit()
 

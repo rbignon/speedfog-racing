@@ -905,6 +905,98 @@ def test_training_zone_history_includes_start_node(
         assert p["zone_history"][1]["node_id"] != start_node_id
 
 
+def test_training_per_zone_death_tracking(training_ws_client, training_session_data, async_session):
+    """Training mod WS: deaths are attributed to the zone_history entry matching current_zone."""
+    import time
+    import uuid as _uuid
+
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        auth_ok = ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update (start node)
+
+        event_ids = auth_ok["seed"]["event_ids"]
+
+        # First status_update: initialises start node
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        msg = ws.receive_json()
+        assert msg["type"] == "leaderboard_update"
+        start_node_id = msg["participants"][0]["zone_history"][0]["node_id"]
+
+        # Die twice in start zone
+        ws.send_json({"type": "status_update", "igt_ms": 5000, "death_count": 2})
+        msg = ws.receive_json()  # consume leaderboard_update
+        assert msg["type"] == "leaderboard_update"
+
+        # Discover next zone via event_flag (event_ids[0] maps to start_node,
+        # so use event_ids[1] which maps to stormveil_01)
+        ws.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 10000})
+        msg = ws.receive_json()
+        assert msg["type"] == "leaderboard_update"
+        second_node_id = msg["participants"][0]["zone_history"][-1]["node_id"]
+        assert second_node_id != start_node_id
+        ws.receive_json()  # consume zone_update
+
+        # Die three more times in second zone
+        ws.send_json({"type": "status_update", "igt_ms": 15000, "death_count": 5})
+        time.sleep(0.3)
+
+    # Verify zone_history deaths in DB
+    async def _check():
+        async with async_session() as db:
+            result = await db.execute(
+                select(TrainingSession).where(TrainingSession.id == _uuid.UUID(sid))
+            )
+            s = result.scalar_one()
+            assert s.death_count == 5
+            assert len(s.progress_nodes) == 2
+
+            start_entry = next(e for e in s.progress_nodes if e["node_id"] == start_node_id)
+            assert start_entry["deaths"] == 2
+
+            second_entry = next(e for e in s.progress_nodes if e["node_id"] == second_node_id)
+            assert second_entry["deaths"] == 3
+
+    asyncio.run(_check())
+
+
+def test_training_per_zone_death_tracking_start_node(
+    training_ws_client, training_session_data, async_session
+):
+    """Training: deaths on first status_update (with start_node init) are correctly attributed."""
+    import time
+    import uuid as _uuid
+
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update
+
+        # First status_update with deaths > 0 (start_node init + death attribution)
+        ws.send_json({"type": "status_update", "igt_ms": 3000, "death_count": 4})
+        time.sleep(0.3)
+
+    async def _check():
+        async with async_session() as db:
+            result = await db.execute(
+                select(TrainingSession).where(TrainingSession.id == _uuid.UUID(sid))
+            )
+            s = result.scalar_one()
+            assert s.death_count == 4
+            assert len(s.progress_nodes) == 1
+            assert s.progress_nodes[0]["deaths"] == 4
+
+    asyncio.run(_check())
+
+
 def test_training_zone_query_fast_travel(training_ws_client, async_session):
     """Training mod WS: zone_query resolves grace → node and sends zone_update."""
 
