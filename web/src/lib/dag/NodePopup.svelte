@@ -159,7 +159,7 @@
 					<span class="player-dot" style="background: {visitor.color};"></span>
 					<span class="visitor-name">{visitor.displayName}</span>
 					<span class="visitor-deaths"
-						>{#if visitor.deaths}☠ {visitor.deaths}{/if}</span
+						>{#if visitor.deaths}💀 {visitor.deaths}{/if}</span
 					>
 					<span class="visitor-time">{formatIgt(visitor.arrivedAtMs)}</span>
 					<span class="visitor-duration"
@@ -347,6 +347,7 @@
 
 	.visitor-deaths {
 		color: var(--color-danger, #ef4444);
+		margin-right: 10px;
 	}
 
 	.visitor-time {
