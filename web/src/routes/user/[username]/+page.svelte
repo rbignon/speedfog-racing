@@ -3,14 +3,18 @@
 	import {
 		fetchUserProfile,
 		fetchUserActivity,
+		fetchUserPoolStats,
 		type UserProfile,
+		type UserPoolStats,
 		type ActivityTimeline,
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
 	import { displayPoolName } from '$lib/utils/training';
+	import PoolStatsTable from '$lib/components/PoolStatsTable.svelte';
 
 	let username = $derived(page.params.username!);
 	let profile = $state<UserProfile | null>(null);
+	let poolStats = $state<UserPoolStats | null>(null);
 	let activity = $state<ActivityTimeline | null>(null);
 	let loading = $state(true);
 	let loadingMore = $state(false);
@@ -24,12 +28,14 @@
 		loading = true;
 		error = null;
 		try {
-			const [p, a] = await Promise.all([
+			const [p, a, ps] = await Promise.all([
 				fetchUserProfile(username),
 				fetchUserActivity(username),
+				fetchUserPoolStats(username),
 			]);
 			profile = p;
 			activity = a;
+			poolStats = ps;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load profile.';
 		} finally {
@@ -120,6 +126,17 @@
 			<div class="profile-info">
 				<div class="profile-name-row">
 					<h1>{profile.twitch_display_name || profile.twitch_username}</h1>
+					<a
+						href="https://twitch.tv/{profile.twitch_username}"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="twitch-link"
+						title="Twitch channel"
+					>
+						<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+							<path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
+						</svg>
+					</a>
 					{#if profile.role !== 'user'}
 						<span class="role-badge {profile.role}">{profile.role}</span>
 					{/if}
@@ -135,15 +152,7 @@
 			</div>
 			<div class="stat-card">
 				<span class="stat-number">{profile.stats.training_count}</span>
-				<span class="stat-label">Trainings</span>
-			</div>
-			<div class="stat-card">
-				<span class="stat-number">{profile.stats.podium_count}</span>
-				<span class="stat-label">Podiums</span>
-			</div>
-			<div class="stat-card">
-				<span class="stat-number">{profile.stats.first_place_count}</span>
-				<span class="stat-label">1st Places</span>
+				<span class="stat-label">Training</span>
 			</div>
 			<div class="stat-card">
 				<span class="stat-number">{profile.stats.organized_count}</span>
@@ -154,6 +163,13 @@
 				<span class="stat-label">Casted</span>
 			</div>
 		</div>
+
+		{#if poolStats && poolStats.pools.length > 0}
+			<section class="pool-stats-section">
+				<h2>Pool Stats</h2>
+				<PoolStatsTable pools={poolStats.pools} />
+			</section>
+		{/if}
 
 		{#if activity}
 			<section class="activity-section">
@@ -333,11 +349,33 @@
 		color: var(--color-text-secondary);
 	}
 
+	.twitch-link {
+		color: var(--color-text-secondary);
+		display: flex;
+		align-items: center;
+		transition: color var(--transition);
+	}
+
+	.twitch-link:hover {
+		color: var(--color-purple);
+	}
+
 	.stats-grid {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		grid-template-columns: repeat(4, 1fr);
 		gap: 0.75rem;
 		margin-bottom: 2.5rem;
+	}
+
+	.pool-stats-section {
+		margin-bottom: 2.5rem;
+	}
+
+	.pool-stats-section h2 {
+		font-size: var(--font-size-lg);
+		font-weight: 600;
+		margin: 0 0 1rem 0;
+		color: var(--color-gold);
 	}
 
 	.stat-card {
