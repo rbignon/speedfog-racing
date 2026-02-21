@@ -355,6 +355,14 @@ async def handle_status_update(
         new_death_count = msg.get("death_count")
         if isinstance(new_death_count, int):
             delta = new_death_count - participant.death_count
+            if delta < 0:
+                logger.warning(
+                    "Negative death delta %d for participant %s (stored=%d, received=%d)",
+                    delta,
+                    participant.id,
+                    participant.death_count,
+                    new_death_count,
+                )
             if delta > 0 and participant.current_zone and participant.zone_history:
                 # Deep-copy entries so mutations don't affect the committed
                 # state — SQLAlchemy compares new vs committed to detect dirt.
