@@ -77,6 +77,7 @@ export {
   computeVisitors,
   formatIgt,
   parseExitTexts,
+  parseEntranceTexts,
 } from "./popupData";
 export type {
   NodePopupData,
@@ -84,4 +85,5 @@ export type {
   PopupPlayer,
   PopupVisitor,
   ExitTextMap,
+  EntranceTextMap,
 } from "./popupData";

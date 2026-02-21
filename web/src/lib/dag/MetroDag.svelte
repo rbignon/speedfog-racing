@@ -16,7 +16,7 @@
 	} from './constants';
 	import type { DagNode, PositionedNode, DagLayout } from './types';
 	import NodePopup from './NodePopup.svelte';
-	import { computeConnections, parseExitTexts } from './popupData';
+	import { computeConnections, parseExitTexts, parseEntranceTexts } from './popupData';
 	import type { NodePopupData } from './popupData';
 
 	let { graphJson }: { graphJson: Record<string, unknown> } = $props();
@@ -60,12 +60,13 @@
 	});
 
 	let exitTexts = $derived(parseExitTexts(graphJson));
+	let entranceTexts = $derived(parseEntranceTexts(graphJson));
 
 	function onNodeClick(nodeId: string, event: PointerEvent) {
 		const node = nodeMap.get(nodeId);
 		if (!node) return;
 
-		const { entrances, exits } = computeConnections(nodeId, graph.edges, nodeMap, undefined, exitTexts);
+		const { entrances, exits } = computeConnections(nodeId, graph.edges, nodeMap, undefined, exitTexts, entranceTexts);
 
 		popupData = {
 			nodeId,

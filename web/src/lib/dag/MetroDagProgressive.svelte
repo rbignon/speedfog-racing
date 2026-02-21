@@ -2,7 +2,7 @@
 	import type { WsParticipant } from '$lib/websocket';
 	import ZoomableSvg from './ZoomableSvg.svelte';
 	import NodePopup from './NodePopup.svelte';
-	import { computeConnections, parseExitTexts } from './popupData';
+	import { computeConnections, parseExitTexts, parseEntranceTexts } from './popupData';
 	import type { NodePopupData } from './popupData';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
@@ -184,6 +184,7 @@
 	});
 
 	let exitTexts = $derived(parseExitTexts(graphJson));
+	let entranceTexts = $derived(parseEntranceTexts(graphJson));
 
 	let popupData: NodePopupData | null = $state(null);
 	let popupX = $state(0);
@@ -196,7 +197,7 @@
 		const node = dagNodeMap.get(nodeId);
 		if (!node) return;
 
-		const { entrances, exits } = computeConnections(nodeId, graph.edges, dagNodeMap, discoveredIds, exitTexts);
+		const { entrances, exits } = computeConnections(nodeId, graph.edges, dagNodeMap, discoveredIds, exitTexts, entranceTexts);
 
 		popupData = {
 			nodeId,
