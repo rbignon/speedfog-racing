@@ -154,21 +154,19 @@
 	{#if data.visitors && data.visitors.length > 0}
 		<div class="popup-section">
 			<div class="section-title">Visited by</div>
-			{#each data.visitors as visitor}
-				<div class="visitor-item">
+			<div class="visitor-grid">
+				{#each data.visitors as visitor}
 					<span class="player-dot" style="background: {visitor.color};"></span>
 					<span class="visitor-name">{visitor.displayName}</span>
-					<span class="visitor-times">
-						{#if visitor.deaths}
-							<span class="visitor-deaths">☠{visitor.deaths}</span>
-						{/if}
-						<span class="visitor-time">{formatIgt(visitor.arrivedAtMs)}</span>
-						{#if visitor.timeSpentMs}
-							<span class="visitor-duration">({formatIgt(visitor.timeSpentMs)})</span>
-						{/if}
-					</span>
-				</div>
-			{/each}
+					<span class="visitor-deaths"
+						>{#if visitor.deaths}☠ {visitor.deaths}{/if}</span
+					>
+					<span class="visitor-time">{formatIgt(visitor.arrivedAtMs)}</span>
+					<span class="visitor-duration"
+						>{#if visitor.timeSpentMs}({formatIgt(visitor.timeSpentMs)}){/if}</span
+					>
+				{/each}
+			</div>
 		</div>
 	{/if}
 </div>
@@ -331,39 +329,33 @@
 		flex-shrink: 0;
 	}
 
-	.visitor-item {
-		display: flex;
+	.visitor-grid {
+		display: grid;
+		grid-template-columns: auto 1fr auto auto auto;
+		gap: 2px 6px;
 		align-items: center;
-		gap: 6px;
-		padding: 2px 0;
 		font-size: 0.8rem;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.visitor-name {
-		flex: 1;
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.visitor-times {
-		display: flex;
-		gap: 4px;
-		flex-shrink: 0;
-		font-variant-numeric: tabular-nums;
+	.visitor-deaths {
+		color: var(--color-danger, #ef4444);
 	}
 
 	.visitor-time {
 		color: var(--color-text-secondary, #9ca3af);
+		justify-self: end;
 	}
 
 	.visitor-duration {
 		color: var(--color-text-disabled, #6b7280);
-	}
-
-	.visitor-deaths {
-		color: var(--color-danger, #ef4444);
-		font-size: 0.75rem;
+		justify-self: end;
 	}
 </style>
