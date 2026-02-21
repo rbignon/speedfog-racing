@@ -1,9 +1,6 @@
 """User API routes."""
 
-from itertools import groupby
-from operator import itemgetter
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
@@ -26,7 +23,6 @@ from speedfog_racing.models import (
 from speedfog_racing.schemas import (
     ActivityItem,
     ActivityTimelineResponse,
-    BestRecentPlacement,
     RaceCasterActivity,
     RaceListResponse,
     RaceOrganizerActivity,
@@ -331,82 +327,11 @@ async def get_user_profile(
     )
     casted_count = casted_count_q.scalar_one()
 
-    # Podium and first place: rank finished participants per race by IGT
-    # Fetch all finished participants for the user's races in a single query,
-    # then compute ranks in Python to avoid N+1 queries.
-    podium_count = 0
-    first_place_count = 0
-
-    # Get all participations where user finished
-    user_finished_q = await db.execute(
-        select(Participant.race_id, Participant.igt_ms, Participant.id).where(
-            Participant.user_id == user_id,
-            Participant.status == ParticipantStatus.FINISHED,
-        )
-    )
-    user_finished = user_finished_q.all()
-
-    podium_rate: float | None = None
-    best_recent_placement: BestRecentPlacement | None = None
-
-    if user_finished:
-        race_ids = [r[0] for r in user_finished]
-        user_pid_by_race = {r[0]: r[2] for r in user_finished}  # race_id -> participant_id
-
-        # Single query: all finished participants in those races, sorted for ranking
-        all_finished_q = await db.execute(
-            select(Participant.race_id, Participant.id, Participant.igt_ms)
-            .where(
-                Participant.race_id.in_(race_ids),
-                Participant.status == ParticipantStatus.FINISHED,
-            )
-            .order_by(Participant.race_id, Participant.igt_ms)
-        )
-        all_finished = all_finished_q.all()
-
-        # Fetch race metadata for best placement display
-        races_q = await db.execute(
-            select(Race.id, Race.name, Race.started_at).where(Race.id.in_(race_ids))
-        )
-        race_meta = {r[0]: (r[1], r[2]) for r in races_q.all()}
-
-        # Group by race, compute ranks
-        placements: list[tuple[int, UUID]] = []  # (rank, race_id)
-        for race_id, group in groupby(all_finished, key=itemgetter(0)):
-            if race_id not in user_pid_by_race:
-                continue
-            user_pid = user_pid_by_race[race_id]
-            for rank_idx, (_, pid, _) in enumerate(list(group)):
-                if pid == user_pid:
-                    rank = rank_idx + 1
-                    if rank <= 3:
-                        podium_count += 1
-                    if rank == 1:
-                        first_place_count += 1
-                    placements.append((rank, race_id))
-                    break
-
-        podium_rate = podium_count / race_count if race_count > 0 else None
-
-        if placements:
-            best_rank, best_race_id = min(placements, key=lambda x: x[0])
-            race_name, race_started_at = race_meta.get(best_race_id, ("", None))
-            best_recent_placement = BestRecentPlacement(
-                placement=best_rank,
-                race_name=race_name,
-                race_id=best_race_id,
-                finished_at=race_started_at,
-            )
-
     stats = UserStatsResponse(
         race_count=race_count,
         training_count=training_count,
-        podium_count=podium_count,
-        first_place_count=first_place_count,
         organized_count=organized_count,
         casted_count=casted_count,
-        podium_rate=podium_rate,
-        best_recent_placement=best_recent_placement,
     )
 
     return UserProfileDetailResponse(
