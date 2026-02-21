@@ -31,7 +31,6 @@
 				<th>Avg Time</th>
 				<th>Best Time</th>
 				<th>Avg Deaths</th>
-				<th class="bar-col"></th>
 			</tr>
 		</thead>
 		<tbody>
@@ -42,35 +41,34 @@
 					</td>
 					{#if pool.race}
 						<td class="type-label race-type">Race</td>
-						<td>{pool.race.runs}</td>
+						<td class="runs-cell">
+							<div class="bar bar-race" style="width: {barWidth(pool.race.runs)}"></div>
+							<span>{pool.race.runs}</span>
+						</td>
 						<td>{formatIgt(pool.race.avg_time_ms)}</td>
 						<td>{formatIgt(pool.race.best_time_ms)}</td>
 						<td>{pool.race.avg_deaths.toFixed(1)}</td>
-						<td class="bar-col">
-							<div class="bar bar-race" style="width: {barWidth(pool.race.runs)}"></div>
-						</td>
 					{:else}
 						<td class="type-label race-type">Race</td>
 						<td class="dash">&mdash;</td>
 						<td class="dash">&mdash;</td>
 						<td class="dash">&mdash;</td>
 						<td class="dash">&mdash;</td>
-						<td class="bar-col"></td>
 					{/if}
 				</tr>
 				{#if pool.training}
 					<tr class="training-row">
 						<td class="type-label training-type">Training</td>
-						<td>{pool.training.runs}</td>
-						<td>{formatIgt(pool.training.avg_time_ms)}</td>
-						<td>{formatIgt(pool.training.best_time_ms)}</td>
-						<td>{pool.training.avg_deaths.toFixed(1)}</td>
-						<td class="bar-col">
+						<td class="runs-cell">
 							<div
 								class="bar bar-training"
 								style="width: {barWidth(pool.training.runs)}"
 							></div>
+							<span>{pool.training.runs}</span>
 						</td>
+						<td>{formatIgt(pool.training.avg_time_ms)}</td>
+						<td>{formatIgt(pool.training.best_time_ms)}</td>
+						<td>{pool.training.avg_deaths.toFixed(1)}</td>
 					</tr>
 				{/if}
 			{/each}
@@ -142,15 +140,17 @@
 		border-top: none;
 	}
 
-	.bar-col {
-		width: 100px;
-		min-width: 60px;
+	.runs-cell {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	.bar {
 		height: 6px;
 		border-radius: 3px;
 		transition: width 0.3s ease;
+		flex-shrink: 0;
 	}
 
 	.bar-race {
@@ -159,15 +159,5 @@
 
 	.bar-training {
 		background: var(--color-purple);
-	}
-
-	@media (max-width: 640px) {
-		.bar-col {
-			display: none;
-		}
-
-		thead th.bar-col {
-			display: none;
-		}
 	}
 </style>

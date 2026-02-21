@@ -225,15 +225,16 @@ async def get_user_pool_stats(
         )
         .group_by(Seed.pool_name)
     )
-    training_stats = {
-        row.pool_name: PoolTypeStatsResponse(
+    training_stats = {}
+    for row in training_stats_q.all():
+        # Normalize "training_X" → "X" so training merges with its race pool
+        pool = row.pool_name.removeprefix("training_")
+        training_stats[pool] = PoolTypeStatsResponse(
             runs=row.runs,
             avg_time_ms=int(row.avg_time_ms),
             avg_deaths=round(float(row.avg_deaths), 1),
             best_time_ms=row.best_time_ms,
         )
-        for row in training_stats_q.all()
-    }
 
     # Merge all pool names
     all_pools = set(race_stats.keys()) | set(training_stats.keys())

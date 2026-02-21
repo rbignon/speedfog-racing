@@ -90,7 +90,16 @@ async def user_with_pool_data(async_session):
             folder_path="/fake/sprint",
             status=SeedStatus.CONSUMED,
         )
-        db.add_all([seed_std, seed_sprint])
+        # Training seed for standard pool (pool_name has "training_" prefix)
+        seed_training_std = Seed(
+            seed_number="tr_std_001",
+            pool_name="training_standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=5,
+            folder_path="/fake/training_standard",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add_all([seed_std, seed_sprint, seed_training_std])
         await db.flush()
 
         # 2 finished races on standard pool
@@ -151,22 +160,22 @@ async def user_with_pool_data(async_session):
             )
         )
 
-        # 1 finished training on standard
+        # 1 finished training on training_standard (should merge with "standard")
         db.add(
             TrainingSession(
                 user_id=player.id,
-                seed_id=seed_std.id,
+                seed_id=seed_training_std.id,
                 status=TrainingSessionStatus.FINISHED,
                 igt_ms=100000,
                 death_count=3,
             )
         )
 
-        # 1 active training on standard (should NOT count)
+        # 1 active training on training_standard (should NOT count)
         db.add(
             TrainingSession(
                 user_id=player.id,
-                seed_id=seed_std.id,
+                seed_id=seed_training_std.id,
                 status=TrainingSessionStatus.ACTIVE,
                 igt_ms=30000,
                 death_count=1,
