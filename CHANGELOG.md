@@ -2,7 +2,7 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
-## [Unreleased]
+## [1.1.1] - 2026-02-21
 
 ### Seeds
 
