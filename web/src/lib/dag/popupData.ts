@@ -20,6 +20,12 @@ export interface PopupConnection {
 /** Map from nodeId → its exits with fog gate text and destination nodeId. */
 export type ExitTextMap = Map<string, { text: string; toNodeId: string }[]>;
 
+/** Map from nodeId → its entrances with fog gate text and source nodeId. */
+export type EntranceTextMap = Map<
+  string,
+  { text: string; fromNodeId: string }[]
+>;
+
 export interface PopupPlayer {
   displayName: string;
   color: string;
@@ -70,6 +76,33 @@ export function parseExitTexts(
     map.set(
       nodeId,
       exits.map((e) => ({ text: e.text, toNodeId: e.to })),
+    );
+  }
+  return map;
+}
+
+/**
+ * Parse per-node entrance texts from raw graph.json.
+ * Each node may have an `entrances` array with `{ text, from (nodeId) }`.
+ * Returns empty map for older graph.json files without the entrances field.
+ */
+export function parseEntranceTexts(
+  graphJson: Record<string, unknown>,
+): EntranceTextMap {
+  const map: EntranceTextMap = new Map();
+  const rawNodes = graphJson.nodes as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  if (!rawNodes) return map;
+
+  for (const [nodeId, raw] of Object.entries(rawNodes)) {
+    const entrances = raw.entrances as
+      | Array<{ text: string; from: string; to: string; to_text: string }>
+      | undefined;
+    if (!entrances || entrances.length === 0) continue;
+    map.set(
+      nodeId,
+      entrances.map((e) => ({ text: e.text, fromNodeId: e.from })),
     );
   }
   return map;

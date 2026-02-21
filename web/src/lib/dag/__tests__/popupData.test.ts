@@ -5,6 +5,7 @@ import {
   computeVisitors,
   formatIgt,
   parseExitTexts,
+  parseEntranceTexts,
 } from "../popupData";
 import type { DagEdge, DagNode } from "../types";
 
@@ -437,5 +438,75 @@ describe("computeConnections with exitTexts", () => {
     const startEntrance = conns.entrances.find((e) => e.nodeId === "start");
     expect(startEntrance?.displayName).toBeNull();
     expect(startEntrance?.text).toBeUndefined();
+  });
+});
+
+describe("parseEntranceTexts", () => {
+  it("extracts entrance texts from graph.json nodes", () => {
+    const graphJson = {
+      nodes: {
+        stormveil: {
+          type: "legacy_dungeon",
+          display_name: "Stormveil",
+          entrances: [
+            {
+              text: "at the front of Margit's arena",
+              from: "start",
+              to: "stormveil_zone",
+              to_text: "Stormveil Castle",
+            },
+            {
+              text: "through the side gate",
+              from: "liurnia",
+              to: "stormveil_zone",
+              to_text: "Stormveil Castle",
+            },
+          ],
+        },
+        liurnia: {
+          type: "mini_dungeon",
+          display_name: "Liurnia",
+          entrances: [
+            {
+              text: "at the cave entrance",
+              from: "stormveil",
+              to: "liurnia_zone",
+              to_text: "Liurnia",
+            },
+          ],
+        },
+        start: { type: "start", display_name: "Start" },
+      },
+    };
+    const map = parseEntranceTexts(graphJson);
+    expect(map.size).toBe(2);
+    expect(map.get("stormveil")).toEqual([
+      { text: "at the front of Margit's arena", fromNodeId: "start" },
+      { text: "through the side gate", fromNodeId: "liurnia" },
+    ]);
+    expect(map.get("liurnia")).toEqual([
+      { text: "at the cave entrance", fromNodeId: "stormveil" },
+    ]);
+    expect(map.has("start")).toBe(false);
+  });
+
+  it("returns empty map when no nodes", () => {
+    expect(parseEntranceTexts({})).toEqual(new Map());
+  });
+
+  it("returns empty map when nodes have no entrances field", () => {
+    const graphJson = {
+      nodes: {
+        start: { type: "start", display_name: "Start" },
+        stormveil: {
+          type: "legacy_dungeon",
+          display_name: "Stormveil",
+          exits: [
+            { fog_id: "f1", text: "exit text", from: "z", to: "liurnia" },
+          ],
+        },
+      },
+    };
+    expect(parseEntranceTexts(graphJson)).toEqual(new Map());
   });
 });
