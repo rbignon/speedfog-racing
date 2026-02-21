@@ -335,20 +335,8 @@ async def handle_status_update(
         if isinstance(msg.get("igt_ms"), int):
             participant.igt_ms = msg["igt_ms"]
 
-        new_death_count = msg.get("death_count")
-        if isinstance(new_death_count, int):
-            delta = new_death_count - participant.death_count
-            if delta > 0 and participant.current_zone and participant.zone_history:
-                # Deep-copy entries so mutations don't affect the committed
-                # state — SQLAlchemy compares new vs committed to detect dirt.
-                history = [dict(e) for e in participant.zone_history]
-                for entry in history:
-                    if entry.get("node_id") == participant.current_zone:
-                        entry["deaths"] = entry.get("deaths", 0) + delta
-                        break
-                participant.zone_history = history
-            participant.death_count = new_death_count
-
+        # Transition READY→PLAYING first so current_zone/zone_history are
+        # set before death attribution (handles reconnect with deaths > 0).
         race = participant.race
         became_playing = False
         if race.status == RaceStatus.RUNNING and participant.status == ParticipantStatus.READY:
@@ -363,6 +351,20 @@ async def handle_status_update(
                     history = participant.zone_history or []
                     history.append({"node_id": start_node, "igt_ms": 0})
                     participant.zone_history = history
+
+        new_death_count = msg.get("death_count")
+        if isinstance(new_death_count, int):
+            delta = new_death_count - participant.death_count
+            if delta > 0 and participant.current_zone and participant.zone_history:
+                # Deep-copy entries so mutations don't affect the committed
+                # state — SQLAlchemy compares new vs committed to detect dirt.
+                history = [dict(e) for e in participant.zone_history]
+                for entry in history:
+                    if entry.get("node_id") == participant.current_zone:
+                        entry["deaths"] = entry.get("deaths", 0) + delta
+                        break
+                participant.zone_history = history
+            participant.death_count = new_death_count
 
         await db.commit()
 

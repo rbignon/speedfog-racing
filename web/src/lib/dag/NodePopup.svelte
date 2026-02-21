@@ -345,7 +345,7 @@
 	}
 
 	.visitor-deaths {
-		color: #e05050;
+		color: var(--color-danger, #ef4444);
 		font-size: 0.75rem;
 	}
 </style>

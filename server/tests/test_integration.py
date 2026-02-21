@@ -874,7 +874,7 @@ def test_per_zone_death_tracking(integration_client, race_with_participants, int
 def test_per_zone_death_tracking_start_node(
     integration_client, race_with_participants, integration_db
 ):
-    """Deaths in start_node (from READY→PLAYING transition) are correctly attributed."""
+    """Deaths on the very first status_update (reconnect) are attributed to start_node."""
     import asyncio
 
     race_id = race_with_participants["race_id"]
@@ -895,17 +895,19 @@ def test_per_zone_death_tracking_start_node(
     )
     assert response.status_code == 200
 
-    # Reconnect; status_update triggers READY→PLAYING with start_node
+    # Reconnect; first status_update carries death_count=2 (player died
+    # before reconnecting). READY→PLAYING must fire before death attribution
+    # so current_zone/zone_history exist when the delta is computed.
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[1]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
 
-        # Transition READY→PLAYING (adds start_node to zone_history)
-        mod0.send_status_update(igt_ms=1000, death_count=0)
+        # Single status_update: transitions READY→PLAYING AND carries deaths
+        mod0.send_status_update(igt_ms=5000, death_count=2)
         time.sleep(0.5)
 
-        # Die 4 times in start zone (entry has no initial deaths key)
-        mod0.send_status_update(igt_ms=5000, death_count=4)
+        # Die 2 more times in start zone
+        mod0.send_status_update(igt_ms=10000, death_count=4)
         time.sleep(0.3)
 
     # Verify in DB
@@ -922,7 +924,7 @@ def test_per_zone_death_tracking_start_node(
 
     history, total_deaths = asyncio.run(check())
     assert total_deaths == 4
-    assert len(history) >= 1
+    assert len(history) == 1
 
     start_entry = next(e for e in history if e["node_id"] == "start_node")
     assert start_entry["deaths"] == 4
