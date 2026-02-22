@@ -167,6 +167,8 @@ feat(db): rename training to solo, add pool_type to seeds
 - Modify: `server/speedfog_racing/services/__init__.py`
 - Modify: `server/speedfog_racing/services/seed_service.py`
 - Modify: `server/speedfog_racing/services/seed_pack_service.py`
+- Rename: `server/tests/test_training.py` → `test_solo.py`
+- Modify: `server/tests/conftest.py` (add `pool_type` to seed fixtures)
 
 **Changes in `solo_service.py` (renamed from training_service.py):**
 
@@ -207,6 +209,16 @@ feat(db): rename training to solo, add pool_type to seeds
 
 - Update all exports: `create_solo_session`, `get_solo_seed`, etc.
 
+**Test updates:**
+
+- Rename `test_training.py` → `test_solo.py`
+- All `training_` prefixed variable/fixture names → `solo_`
+- Pool names: `"training_standard"` → `"standard"` (with `pool_type="solo"` in Seed creation)
+- Model refs: `SoloSession`, `SoloSessionStatus`
+- Update `conftest.py`: add `pool_type` field to seed fixtures (default `"race"`, solo fixtures use `"solo"`)
+
+**Run tests:** `cd server && uv run pytest -x -v`
+
 **Commit:**
 
 ```
@@ -226,12 +238,17 @@ refactor(server): rename training service to solo, add pool_type to seed queries
 - Modify: `server/speedfog_racing/api/admin.py`
 - Modify: `server/speedfog_racing/schemas.py`
 - Modify: `server/speedfog_racing/discord.py` (if exists)
+- Modify: `server/tests/test_solo.py` (API endpoints)
+- Modify: `server/tests/test_admin.py`
+- Modify: `server/tests/test_pool_stats.py`
+- Modify: `server/tests/test_user_profile.py`
+- Modify: `server/tests/test_discord.py` (if exists)
 
 **Changes in `solo.py` (renamed from training.py):**
 
 - All function names: `create_session()`, `list_sessions()`, etc. (drop "training" prefix where present)
 - All imports: `SoloSession`, `SoloSessionStatus`, `create_solo_session`, `get_solo_seed`
-- Pool validation: check `type == "solo"` instead of `type == "training"`
+- Pool validation: check `pool_type == "solo"` from DB instead of reading type from TOML config
 - Error messages: "training session" → "solo session"
 - Default pool*name in `CreateSoloRequest`: just `"standard"` (no `training*` prefix)
 
@@ -249,14 +266,13 @@ refactor(server): rename training service to solo, add pool_type to seed queries
 - `TrainingActivity` → `SoloActivity` (type field: `"solo"`)
 - `UserStatsResponse.training_count` → `solo_count`
 - `UserPoolStatsEntry.training` → `solo`
-- `PoolConfig.type` default stays `"race"`, valid values now `"race"` | `"solo"`
+- `PoolConfig.type`: keep field, but source changes — populated from DB `pool_type` column or request context, NOT from TOML config
 - `ActivityItem` union: replace `TrainingActivity` with `SoloActivity`
 
 **Changes in `pools.py`:**
 
-- Filter: `type == "solo"` instead of `type == "training"`
-- Use `pool_type` column from DB stats instead of reading TOML config for type detection
-- Pass `pool_type` to `get_pool_config()`
+- Filter: `pool_type == "solo"` from DB column instead of `type == "training"` from TOML
+- Pass `pool_type` to `get_pool_config()` for correct filesystem path resolution
 
 **Changes in `users.py`:**
 
@@ -272,6 +288,16 @@ refactor(server): rename training service to solo, add pool_type to seed queries
 
 - `is_training` → `is_solo`
 - Check `pool_type == "solo"` from context instead of `pool_name.startswith("training_")`
+
+**Test updates:**
+
+- `test_solo.py`: API endpoints `/api/training` → `/api/solo`
+- `test_admin.py`: `training_count` → `solo_count`
+- `test_pool_stats.py`: pool name references, type filters
+- `test_user_profile.py`: stats field names
+- `test_discord.py`: `is_training` logic
+
+**Run tests:** `cd server && uv run pytest -x -v`
 
 **Commit:**
 
@@ -336,6 +362,12 @@ refactor(server): rename training API routes to solo
               added = await scan_pool(db, subdir.name, pool_type=pool_type_dir)
   ```
 
+**Test updates:**
+
+- `test_solo.py`: WS endpoints `/ws/training/` → `/ws/solo/`
+
+**Run tests:** `cd server && uv run pytest -x -v`
+
 **Commit:**
 
 ```
@@ -367,23 +399,26 @@ estimated_duration = "~1h"
 description = "Balanced race with legacy dungeons and bosses"
 ```
 
-**Update `PoolConfig` schema** in `schemas.py` to include `name`:
+**Update `PoolConfig` schema** in `schemas.py` to add `name`:
 
 ```python
 class PoolConfig(BaseModel):
     name: str | None = None
-    type: str = "race"
+    type: str = "race"  # kept for API responses, but populated from DB/context, not TOML
     ...
 ```
 
-**Update `get_pool_config()`** in `seed_service.py` to return `name`:
+**Update `get_pool_config()`** in `seed_service.py` to return `name` and accept `pool_type`:
 
 ```python
-return {
-    "name": display.get("name"),
-    "type": display.get("type", "race"),
+def get_pool_config(pool_name: str, pool_type: str = "race") -> dict[str, Any] | None:
+    config_file = Path(settings.seeds_pool_dir) / pool_type / pool_name / "config.toml"
     ...
-}
+    return {
+        "name": display.get("name"),
+        "type": pool_type,  # from parameter, NOT from TOML content
+        ...
+    }
 ```
 
 **Commit:**
@@ -403,10 +438,10 @@ refactor(tools): delete duplicate training pool configs, add display name
 **Changes:**
 
 - Add `--solo` flag to argparse
-- When `--solo`: output to `output/solo/{pool_name}/`, inject `type = "solo"` into config.toml
+- When `--solo`: output to `output/solo/{pool_name}/`
 - When not `--solo`: output to `output/race/{pool_name}/`
 - Pool discovery: only list base configs (no `training_*` since they're deleted)
-- Config.toml written to output: copy pool TOML, set `[display] type` based on --solo flag
+- Config.toml: copy pool TOML as-is (no `type` field — server infers pool_type from directory structure)
 
 **Key changes in `main()`:**
 
@@ -416,17 +451,9 @@ pool_type = "solo" if args.solo else "race"
 output_pool_dir = args.output / pool_type / args.pool
 output_pool_dir.mkdir(parents=True, exist_ok=True)
 
-# Copy pool TOML as config.toml, inject type
-import tomllib, tomli_w  # or manual string manipulation
-config_content = pool_config.read_text()
-# Inject/replace type field in [display] section
+# Copy pool TOML as config.toml (same content for race and solo)
 shutil.copy2(pool_config, output_pool_dir / "config.toml")
-# Then patch the type field in the copied config.toml
 ```
-
-Note: Since we don't want to add `tomli_w` as a dependency, use string manipulation to inject `type = "solo"` into the copied config.toml (or just let the config have no `type` field and rely on directory structure).
-
-**Simpler approach:** The config.toml doesn't need a `type` field at all — the server infers pool_type from the directory structure (`race/` vs `solo/`). Just copy the same TOML to both locations.
 
 **Commit:**
 
@@ -588,14 +615,10 @@ refactor(mod): rename training to solo with backward compat alias
 
 ---
 
-### ~~Task 11: Server tests~~ — MERGED into tasks 2-4
+### Note: Server tests are integrated into tasks 2-4
 
 > **Design decision:** Tests are updated alongside each server component, not in a separate task.
->
-> - Task 2: updates `test_solo.py` (renamed from `test_training.py`), `conftest.py` fixtures
-> - Task 3: updates `test_admin.py`, `test_pool_stats.py`, `test_user_profile.py`, `test_discord.py`
-> - Task 4: updates WS-related test assertions
-> - Each task runs `uv run pytest -x -v` to verify before committing.
+> Each task's "Test updates" and "Run tests" sections detail the changes.
 
 ---
 
