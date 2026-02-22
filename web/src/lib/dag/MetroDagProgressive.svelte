@@ -2,7 +2,7 @@
 	import type { WsParticipant } from '$lib/websocket';
 	import ZoomableSvg from './ZoomableSvg.svelte';
 	import NodePopup from './NodePopup.svelte';
-	import { computeConnections, parseExitTexts, parseEntranceTexts } from './popupData';
+	import { computeConnections, computeVisitors, parseExitTexts, parseEntranceTexts } from './popupData';
 	import type { NodePopupData } from './popupData';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
@@ -212,6 +212,10 @@
 
 		const { entrances, exits } = computeConnections(nodeId, graph.edges, dagNodeMap, discoveredIds, exitTexts, entranceTexts);
 
+		// Only show own stats (anti-spoiler: no other players' data)
+		const me = participants.find((p) => p.id === myParticipantId);
+		const visitors = me ? computeVisitors(nodeId, [me]) : [];
+
 		popupData = {
 			nodeId,
 			displayName: node.displayName,
@@ -221,7 +225,7 @@
 			randomizedBoss: node.randomizedBoss,
 			entrances,
 			exits,
-			// No playersHere or visitors — anti-spoiler
+			visitors: visitors.length > 0 ? visitors : undefined
 		};
 		popupX = event.clientX;
 		popupY = event.clientY;
