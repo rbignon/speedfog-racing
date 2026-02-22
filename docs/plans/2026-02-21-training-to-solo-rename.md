@@ -18,6 +18,8 @@
 - **Mod config: `solo = true`** — simple boolean rename (not decomposed into `hide_leaderboard` etc.) because the 3 behaviors (WS endpoint, leaderboard, ready) are fundamentally coupled to the server-side mode.
 - **API breaking change OK** — no external clients use `/api/training`, only the SvelteKit frontend.
 - **Include `name` field** — add display name to pool TOMLs while we're touching them.
+- **`pool_type` as PostgreSQL enum** — `Enum("race", "solo", name="pooltype")` instead of `String(10)`. Only 2 valid values; enum prevents typos and documents intent at the DB level.
+- **`/training` → `/solo` redirect** — SvelteKit 301 redirects to preserve existing bookmarks and shared links.
 
 ---
 
@@ -28,6 +30,7 @@
 - **VPS migration** — filesystem restructuring from flat `training_standard/`, `standard/` to nested `race/standard/`, `solo/standard/`. One-time deploy step.
 - **DB migration** — rename table `training_sessions` → `solo_sessions`, add `pool_type` to `seeds`, normalize `pool_name` (strip `training_` prefix), update `folder_path`.
 - **Existing alembic migrations** — NEVER modify. Create new ones.
+- **Local `$SEEDS_DIR` restructuring** — restructure local dev seed directories to `race/`/`solo/` nested layout **before starting Task 2**. The server code from Task 2 onward expects the new filesystem structure. Run the same commands as Task 11's `migrate-pool-dirs.sh` but against your local seeds directory.
 
 ## Filesystem structure change
 
@@ -62,10 +65,12 @@ $SEEDS_DIR/
 
 ### Task 1: Alembic migration — add pool_type, rename table, normalize data
 
+> **Note:** This task only adds the `pool_type` column to `Seed` and performs the DB migration (table/enum renames, data backfill). The Python model class renames (`TrainingSession` → `SoloSession`, `TrainingSessionStatus` → `SoloSessionStatus`) are deferred to Task 2 to avoid breaking all imports on master between commits.
+
 **Files:**
 
 - Create: `server/alembic/versions/XXXX_rename_training_to_solo.py`
-- Modify: `server/speedfog_racing/models.py` (Seed model + enum rename)
+- Modify: `server/speedfog_racing/models.py` (Seed model only — add `pool_type` column)
 
 #### Step 1: Create the Alembic migration
 
@@ -77,8 +82,10 @@ Then edit the generated migration to include:
 
 ```python
 def upgrade():
-    # 1. Add pool_type column to seeds (nullable initially for backfill)
-    op.add_column("seeds", sa.Column("pool_type", sa.String(10), nullable=True))
+    # 1. Create pool_type enum and add column (nullable initially for backfill)
+    pooltype_enum = sa.Enum("race", "solo", name="pooltype")
+    pooltype_enum.create(op.get_bind(), checkfirst=True)
+    op.add_column("seeds", sa.Column("pool_type", pooltype_enum, nullable=True))
 
     # 2. Backfill pool_type from pool_name prefix
     op.execute("UPDATE seeds SET pool_type = 'solo' WHERE pool_name LIKE 'training\\_%'")
@@ -131,19 +138,29 @@ def downgrade():
         WHERE pool_type = 'race'
     """)
     op.drop_column("seeds", "pool_type")
+    sa.Enum(name="pooltype").drop(op.get_bind(), checkfirst=True)
 ```
 
-#### Step 2: Update models.py
+#### Step 2: Update models.py (Seed only)
 
-- Rename `TrainingSessionStatus` → `SoloSessionStatus`
-- Rename `TrainingSession` → `SoloSession` (set `__tablename__ = "solo_sessions"`)
-- Add `pool_type` column to `Seed` model:
+- Add `pool_type` column to `Seed` model using a PostgreSQL enum:
 
   ```python
-  pool_type: Mapped[str] = mapped_column(String(10), nullable=False, default="race")
+  import enum
+
+  class PoolType(str, enum.Enum):
+      RACE = "race"
+      SOLO = "solo"
+
+  # In Seed model:
+  pool_type: Mapped[PoolType] = mapped_column(
+      SAEnum(PoolType, name="pooltype", create_constraint=True),
+      nullable=False, default=PoolType.RACE,
+  )
   ```
 
 - Update Seed comment: `# "standard", "sprint"` (already correct without prefix)
+- **Do NOT rename** `TrainingSession`/`TrainingSessionStatus` yet — deferred to Task 2
 
 #### Step 3: Run migration locally to verify
 
@@ -159,16 +176,24 @@ feat(db): rename training to solo, add pool_type to seeds
 
 ---
 
-### Task 2: Server services — rename training_service → solo_service, add pool_type queries
+### Task 2: Server services — rename models + training_service → solo_service, add pool_type queries
+
+> **Prerequisite:** Restructure local `$SEEDS_DIR` to `race/`/`solo/` layout before starting this task (see Important Context).
 
 **Files:**
 
+- Modify: `server/speedfog_racing/models.py` (rename `TrainingSession` → `SoloSession`, `TrainingSessionStatus` → `SoloSessionStatus`)
 - Rename: `server/speedfog_racing/services/training_service.py` → `solo_service.py`
 - Modify: `server/speedfog_racing/services/__init__.py`
 - Modify: `server/speedfog_racing/services/seed_service.py`
 - Modify: `server/speedfog_racing/services/seed_pack_service.py`
 - Rename: `server/tests/test_training.py` → `test_solo.py`
 - Modify: `server/tests/conftest.py` (add `pool_type` to seed fixtures)
+
+**Changes in `models.py` (deferred from Task 1):**
+
+- Rename `TrainingSessionStatus` → `SoloSessionStatus`
+- Rename `TrainingSession` → `SoloSession` (set `__tablename__ = "solo_sessions"`)
 
 **Changes in `solo_service.py` (renamed from training_service.py):**
 
@@ -266,7 +291,7 @@ refactor(server): rename training service to solo, add pool_type to seed queries
 - `TrainingActivity` → `SoloActivity` (type field: `"solo"`)
 - `UserStatsResponse.training_count` → `solo_count`
 - `UserPoolStatsEntry.training` → `solo`
-- `PoolConfig.type`: keep field, but source changes — populated from DB `pool_type` column or request context, NOT from TOML config
+- `PoolConfig.type` → `PoolConfig.pool_type`: rename field for clarity, populated from DB `pool_type` column or request context, NOT from TOML config
 - `ActivityItem` union: replace `TrainingActivity` with `SoloActivity`
 
 **Changes in `pools.py`:**
@@ -404,22 +429,12 @@ description = "Balanced race with legacy dungeons and bosses"
 ```python
 class PoolConfig(BaseModel):
     name: str | None = None
-    type: str = "race"  # kept for API responses, but populated from DB/context, not TOML
+    pool_type: str = "race"  # populated from DB/context, NOT from TOML
     ...
 ```
 
-**Update `get_pool_config()`** in `seed_service.py` to return `name` and accept `pool_type`:
-
-```python
-def get_pool_config(pool_name: str, pool_type: str = "race") -> dict[str, Any] | None:
-    config_file = Path(settings.seeds_pool_dir) / pool_type / pool_name / "config.toml"
-    ...
-    return {
-        "name": display.get("name"),
-        "type": pool_type,  # from parameter, NOT from TOML content
-        ...
-    }
-```
+> **Note:** `get_pool_config()` signature change (accepting `pool_type` param) is already done in Task 2.
+> This task only adds the `name` field to the return dict in `get_pool_config()`.
 
 **Commit:**
 
@@ -537,6 +552,20 @@ refactor(web): rename training API client to solo
 - Modify: `web/src/routes/admin/+page.svelte`
 - Modify: `web/src/routes/help/+page.svelte`
 - Modify: `web/src/lib/components/PoolStatsTable.svelte`
+
+**Add redirect for old `/training` URLs:**
+
+- Create `web/src/routes/training/+page.ts` (or `+layout.ts`) that redirects to `/solo`:
+
+  ```typescript
+  import { redirect } from "@sveltejs/kit";
+  export function load() {
+    redirect(301, "/solo");
+  }
+  ```
+
+- Similarly, `web/src/routes/training/[id]/+page.ts` redirects to `/solo/{id}`
+- This preserves existing bookmarks and shared links
 
 **Changes in store (`solo.svelte.ts`):**
 
@@ -661,10 +690,13 @@ echo "Done! Run alembic upgrade head to update DB paths."
 
 **Deploy order:**
 
-1. Run `migrate-pool-dirs.sh` on VPS (moves directories)
-2. Deploy code (new server + frontend)
-3. Alembic migration runs automatically (updates DB pool_name, pool_type, folder_path)
-4. Service restart picks up new pool structure
+1. **Stop the service** (`sudo systemctl stop speedfog-racing`) — required because moving directories while the server is running will cause seed lookup failures
+2. Run `migrate-pool-dirs.sh` on VPS (moves directories)
+3. Deploy code (new server + frontend)
+4. Alembic migration runs automatically (updates DB pool_name, pool_type, folder_path)
+5. Service restart picks up new pool structure
+
+> **Downtime:** Steps 1-5 require brief downtime. The service is stopped before the filesystem migration and only restarted after code + DB migration are both complete.
 
 **Commit:**
 
