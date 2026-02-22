@@ -405,20 +405,19 @@
 					{/if}
 				</g>
 
-				<!-- Death icon + Label (only for discovered nodes) -->
+				<!-- Death icon (opposite side of label, only for discovered nodes) -->
+				{#if isDiscovered(node) && nodesWithDeaths.has(node.id)}
+					<text
+						x={node.x}
+						y={labelAbove.has(node.id) ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2 : node.y - nodeRadius(node) - 6}
+						text-anchor="middle"
+						font-size={LABEL_FONT_SIZE - 1}
+						class="death-icon"
+					>💀</text>
+				{/if}
+
+				<!-- Label (only for discovered nodes) -->
 				{#if isDiscovered(node)}
-					{#if nodesWithDeaths.has(node.id)}
-						<text
-							x={labelX(node)}
-							y={labelY(node)}
-							text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
-							font-size={LABEL_FONT_SIZE - 1}
-							fill={LABEL_COLOR}
-							class="dag-label"
-							transform="rotate(-30, {labelX(node)}, {labelY(node)})"
-							dx={labelAbove.has(node.id) ? 0 : LABEL_FONT_SIZE + 5}
-						>💀</text>
-					{/if}
 					<text
 						x={labelX(node)}
 						y={labelY(node)}
@@ -427,7 +426,6 @@
 						fill={LABEL_COLOR}
 						class="dag-label"
 						transform="rotate(-30, {labelX(node)}, {labelY(node)})"
-						dx={labelAbove.has(node.id) && nodesWithDeaths.has(node.id) ? LABEL_FONT_SIZE + 5 : 0}
 					>
 						{truncateLabel(node.displayName)}
 					</text>

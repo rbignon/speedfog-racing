@@ -380,20 +380,19 @@
 						{/if}
 					</g>
 
-					<!-- Death icon + Label -->
+					<!-- Death icon (opposite side of label) -->
 					{#if nodesWithDeaths.has(node.id)}
 						<text
-							x={labelX(node)}
-							y={labelY(node)}
-							text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
+							x={node.x}
+							y={labelAbove.has(node.id) ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2 : node.y - nodeRadius(node) - 6}
+							text-anchor="middle"
 							font-size={LABEL_FONT_SIZE - 1}
-							fill={LABEL_COLOR}
-							class="dag-label death-icon"
+							class="death-icon"
 							class:transparent-label={transparent}
-							transform="rotate(-30, {labelX(node)}, {labelY(node)})"
-							dx={labelAbove.has(node.id) ? 0 : LABEL_FONT_SIZE + 5}
 						>💀</text>
 					{/if}
+
+					<!-- Label -->
 					<text
 						x={labelX(node)}
 						y={labelY(node)}
@@ -403,7 +402,6 @@
 						class="dag-label"
 						class:transparent-label={transparent}
 						transform="rotate(-30, {labelX(node)}, {labelY(node)})"
-						dx={labelAbove.has(node.id) && nodesWithDeaths.has(node.id) ? LABEL_FONT_SIZE + 5 : 0}
 					>
 						{truncateLabel(node.displayName)}
 					</text>
