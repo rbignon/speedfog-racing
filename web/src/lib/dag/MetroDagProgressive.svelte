@@ -183,6 +183,19 @@
 		return map;
 	});
 
+	// Compute which nodes had deaths (only my participant)
+	let nodesWithDeaths: Set<string> = $derived.by(() => {
+		const result = new Set<string>();
+		const me = participants.find((p) => p.id === myParticipantId);
+		if (!me?.zone_history) return result;
+		for (const entry of me.zone_history) {
+			if (entry.deaths && entry.deaths > 0) {
+				result.add(entry.node_id);
+			}
+		}
+		return result;
+	});
+
 	let exitTexts = $derived(parseExitTexts(graphJson));
 	let entranceTexts = $derived(parseEntranceTexts(graphJson));
 
@@ -392,8 +405,20 @@
 					{/if}
 				</g>
 
-				<!-- Label (only for discovered nodes) -->
+				<!-- Death icon + Label (only for discovered nodes) -->
 				{#if isDiscovered(node)}
+					{#if nodesWithDeaths.has(node.id)}
+						<text
+							x={labelX(node)}
+							y={labelY(node)}
+							text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
+							font-size={LABEL_FONT_SIZE - 1}
+							fill={LABEL_COLOR}
+							class="dag-label"
+							transform="rotate(-30, {labelX(node)}, {labelY(node)})"
+							dx={labelAbove.has(node.id) ? 0 : LABEL_FONT_SIZE + 5}
+						>💀</text>
+					{/if}
 					<text
 						x={labelX(node)}
 						y={labelY(node)}
@@ -402,6 +427,7 @@
 						fill={LABEL_COLOR}
 						class="dag-label"
 						transform="rotate(-30, {labelX(node)}, {labelY(node)})"
+						dx={labelAbove.has(node.id) && nodesWithDeaths.has(node.id) ? LABEL_FONT_SIZE + 5 : 0}
 					>
 						{truncateLabel(node.displayName)}
 					</text>

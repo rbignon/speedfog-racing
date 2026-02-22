@@ -103,6 +103,20 @@
 		return dots;
 	});
 
+	// Compute which nodes had deaths (any participant)
+	let nodesWithDeaths: Set<string> = $derived.by(() => {
+		const result = new Set<string>();
+		for (const p of participants) {
+			if (!p.zone_history) continue;
+			for (const entry of p.zone_history) {
+				if (entry.deaths && entry.deaths > 0) {
+					result.add(entry.node_id);
+				}
+			}
+		}
+		return result;
+	});
+
 	// Label placement (same logic as MetroDag)
 	let labelAbove: Set<string> = $derived.by(() => {
 		const above = new Set<string>();
@@ -224,7 +238,19 @@
 					{/if}
 				</g>
 
-				<!-- Label -->
+				<!-- Death icon + Label -->
+				{#if nodesWithDeaths.has(node.id)}
+					<text
+						x={labelX(node)}
+						y={labelY(node)}
+						text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
+						font-size={LABEL_FONT_SIZE - 1}
+						fill={LABEL_COLOR}
+						class="dag-label"
+						transform="rotate(-30, {labelX(node)}, {labelY(node)})"
+						dx={labelAbove.has(node.id) ? 0 : LABEL_FONT_SIZE + 5}
+					>💀</text>
+				{/if}
 				<text
 					x={labelX(node)}
 					y={labelY(node)}
@@ -233,6 +259,7 @@
 					fill={LABEL_COLOR}
 					class="dag-label"
 					transform="rotate(-30, {labelX(node)}, {labelY(node)})"
+					dx={labelAbove.has(node.id) && nodesWithDeaths.has(node.id) ? LABEL_FONT_SIZE + 5 : 0}
 				>
 					{truncateLabel(node.displayName)}
 				</text>

@@ -201,6 +201,22 @@
 		return above;
 	});
 
+	// Compute which nodes had deaths, respecting player selection
+	let nodesWithDeaths: Set<string> = $derived.by(() => {
+		const result = new Set<string>();
+		for (const p of participants) {
+			if (!p.zone_history) continue;
+			// If players are selected, only count their deaths
+			if (hasHighlight && !highlightIds!.has(p.id)) continue;
+			for (const entry of p.zone_history) {
+				if (entry.deaths && entry.deaths > 0) {
+					result.add(entry.node_id);
+				}
+			}
+		}
+		return result;
+	});
+
 	let exitTexts = $derived(parseExitTexts(graphJson));
 	let entranceTexts = $derived(parseEntranceTexts(graphJson));
 
@@ -364,7 +380,20 @@
 						{/if}
 					</g>
 
-					<!-- Label -->
+					<!-- Death icon + Label -->
+					{#if nodesWithDeaths.has(node.id)}
+						<text
+							x={labelX(node)}
+							y={labelY(node)}
+							text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
+							font-size={LABEL_FONT_SIZE - 1}
+							fill={LABEL_COLOR}
+							class="dag-label death-icon"
+							class:transparent-label={transparent}
+							transform="rotate(-30, {labelX(node)}, {labelY(node)})"
+							dx={labelAbove.has(node.id) ? 0 : LABEL_FONT_SIZE + 5}
+						>💀</text>
+					{/if}
 					<text
 						x={labelX(node)}
 						y={labelY(node)}
@@ -374,6 +403,7 @@
 						class="dag-label"
 						class:transparent-label={transparent}
 						transform="rotate(-30, {labelX(node)}, {labelY(node)})"
+						dx={labelAbove.has(node.id) && nodesWithDeaths.has(node.id) ? LABEL_FONT_SIZE + 5 : 0}
 					>
 						{truncateLabel(node.displayName)}
 					</text>
