@@ -12,15 +12,15 @@
 	<nav class="toc">
 		<a href="#game-rules" class="toc-card">
 			<strong>Game Rules</strong>
-			<span>Equipment, route map, zones, bosses, tips</span>
+			<span>Equipment, route map, zones, bosses, race rules</span>
 		</a>
 		<a href="#playing" class="toc-card">
 			<strong>Playing a Race</strong>
 			<span>Requirements, joining, in-game overlay</span>
 		</a>
 		<a href="#training" class="toc-card">
-			<strong>Training Mode</strong>
-			<span>Solo practice runs, no account needed</span>
+			<strong>Solo Mode</strong>
+			<span>Run fresh seeds at your own pace</span>
 		</a>
 		<a href="#organizing" class="toc-card">
 			<strong>Organizing a Race</strong>
@@ -102,6 +102,15 @@
 			Your finish time is recorded via <strong>in-game timer (IGT)</strong>.
 		</p>
 
+		<h3>Race Rules</h3>
+		<ul>
+			<li><strong>Glitchless</strong> — no glitch exploits allowed</li>
+			<li><strong>No quit-outs</strong> — don't close the game to manipulate state</li>
+			<li><strong>No LiveSplit</strong> — IGT is tracked automatically by the mod</li>
+			<li><strong>No other mods</strong> — only SpeedFog, no additional modifications</li>
+			<li><strong>Skips are allowed</strong> — creative routing is fair game</li>
+		</ul>
+
 		<h3>Tips</h3>
 		<ul>
 			<li><strong>Kalé</strong> has moved to the Roundtable Hold.</li>
@@ -154,13 +163,13 @@
 
 	<!-- TRAINING -->
 	<section class="section" id="training">
-		<h2>Training Mode</h2>
+		<h2>Solo Mode</h2>
 		<p>
-			Training mode lets you <strong>practice solo</strong> on fresh seeds without joining a
-			race. <strong>No account required</strong> — anyone can start a training session.
+			Solo mode lets you <strong>play on fresh seeds</strong> at your own pace, without joining a
+			race. <strong>No account required</strong> — anyone can start a solo session.
 		</p>
 		<ol>
-			<li>Go to the <a href="/training">Training</a> page.</li>
+			<li>Go to the <a href="/training">Solo</a> page.</li>
 			<li>Pick a <strong>pool</strong> (different durations and difficulty levels).</li>
 			<li><strong>Download</strong> the seed pack and install it like a regular race.</li>
 			<li>Play at your own pace — the <strong>route map</strong> is visible after you start.</li>
