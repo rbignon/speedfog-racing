@@ -53,11 +53,11 @@
 					{#if auth.loading}
 						<span class="loading">Loading...</span>
 					{:else if auth.isLoggedIn}
-						<a href="/races" class="btn btn-secondary">Races</a>
-						<a href="/training" class="btn btn-secondary">Solo</a>
 						{#if auth.isAdmin}
 							<a href="/admin" class="btn btn-secondary">Admin</a>
 						{/if}
+						<a href="/training" class="btn btn-secondary">Solo</a>
+						<a href="/races" class="btn btn-secondary">Races</a>
 						{#if auth.canCreateRace}
 							<a href="/race/new" class="btn btn-primary">Create Race</a>
 						{/if}
