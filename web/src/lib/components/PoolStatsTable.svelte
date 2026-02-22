@@ -60,7 +60,7 @@
 								{formatPoolName(pool.pool_name)}
 							</td>
 						{/if}
-						<td class="type-label training-type">Training</td>
+						<td class="type-label training-type">Solo</td>
 						<td class="runs-cell">
 							<div
 								class="bar bar-training"

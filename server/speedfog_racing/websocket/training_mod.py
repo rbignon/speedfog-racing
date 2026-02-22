@@ -107,7 +107,7 @@ async def handle_training_mod_websocket(
                 return
 
             if session.status != TrainingSessionStatus.ACTIVE:
-                await send_auth_error(websocket, "Training session is not active")
+                await send_auth_error(websocket, "Solo session is not active")
                 return
 
             if training_manager.is_mod_connected(session_id):
@@ -258,7 +258,7 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
         participant_id=str(session.id),
         race=RaceInfo(
             id=str(session.id),
-            name=f"Training {format_pool_display_name(seed.pool_name)}" if seed else "Training",
+            name=format_pool_display_name(seed.pool_name) if seed else "Solo",
             status="running",
             started_at=session.created_at.isoformat() if session.created_at else None,
         ),
@@ -286,7 +286,7 @@ async def _handle_status_update(
         session = await _load_session(db, session_id)
         if not session or session.status != TrainingSessionStatus.ACTIVE:
             if session:
-                await send_error(websocket, "Training session not active")
+                await send_error(websocket, "Solo session not active")
             return
 
         if isinstance(msg.get("igt_ms"), int):
@@ -352,7 +352,7 @@ async def _handle_event_flag(
         session = await _load_session(db, session_id)
         if not session or session.status != TrainingSessionStatus.ACTIVE:
             if session:
-                await send_error(websocket, "Training session not active")
+                await send_error(websocket, "Solo session not active")
             return
 
         seed = session.seed

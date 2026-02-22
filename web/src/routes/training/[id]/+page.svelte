@@ -117,7 +117,7 @@
 
 <svelte:head>
 	<title>
-		{session ? `Training — ${displayPoolName(session.pool_name)}` : 'Training'} - SpeedFog Racing
+		{session ? `Solo — ${displayPoolName(session.pool_name)}` : 'Solo'} - SpeedFog Racing
 	</title>
 </svelte:head>
 
@@ -127,13 +127,13 @@
 	{:else if error && !session}
 		<div class="error-state">
 			<p>{error}</p>
-			<a href="/training" class="btn btn-secondary">Back to Training</a>
+			<a href="/training" class="btn btn-secondary">Back to Solo</a>
 		</div>
 	{:else if session}
 		<!-- Header -->
 		<div class="header">
 			<div class="header-left">
-				<a href="/training" class="back-link">&larr; Training</a>
+				<a href="/training" class="back-link">&larr; Solo</a>
 				<h1>{displayPoolName(session.pool_name)}</h1>
 				{#if session.user}
 					<span class="player-name">

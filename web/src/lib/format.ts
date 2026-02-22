@@ -1,4 +1,4 @@
-/** Human-friendly label for race and training statuses. */
+/** Human-friendly label for race and solo statuses. */
 export function statusLabel(s: string): string {
   switch (s) {
     case "setup":

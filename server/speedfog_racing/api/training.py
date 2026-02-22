@@ -59,13 +59,9 @@ async def _get_session_or_404(
     )
     session = result.scalar_one_or_none()
     if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Training session not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solo session not found")
     if session.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not your training session"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your solo session")
     return session
 
 
@@ -78,9 +74,7 @@ async def _get_session_or_404_public(db: AsyncSession, session_id: uuid.UUID) ->
     )
     session = result.scalar_one_or_none()
     if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Training session not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solo session not found")
     return session
 
 

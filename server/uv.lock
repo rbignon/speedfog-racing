@@ -830,7 +830,7 @@ wheels = [
 
 [[package]]
 name = "speedfog-racing"
-version = "0.1.0"
+version = "1.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

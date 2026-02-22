@@ -72,7 +72,7 @@
 		<p class="hero-tagline">Competitive Elden Ring racing through randomized fog gates</p>
 		<div class="hero-buttons">
 			{#if auth.isLoggedIn}
-				<a href="/training" class="btn btn-primary btn-lg">Start Training</a>
+				<a href="/training" class="btn btn-primary btn-lg">Play Solo</a>
 			{:else}
 				<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg" data-sveltekit-reload
 					>Try a seed</a

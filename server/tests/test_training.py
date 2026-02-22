@@ -723,7 +723,7 @@ def test_training_mod_websocket_auth(training_ws_client, training_session_data):
         ws.send_json({"type": "auth", "mod_token": token})
         auth_ok = ws.receive_json()
         assert auth_ok["type"] == "auth_ok"
-        assert auth_ok["race"]["name"].startswith("Training ")
+        assert auth_ok["race"]["name"]  # pool display name, e.g. "Standard"
         assert "seed" in auth_ok
         assert auth_ok["seed"]["event_ids"] is not None
 

@@ -43,8 +43,8 @@ async def _send_webhook(embed: dict[str, object]) -> None:
 def _race_label_and_color(pool_name: str | None) -> tuple[str, int]:
     """Return (label, color) based on pool type."""
     is_training = pool_name.startswith("training_") if pool_name else False
-    label = "Training" if is_training else "Race"
-    color = 0x3B82F6 if is_training else 0xF97316  # blue for training, orange for race
+    label = "Solo" if is_training else "Race"
+    color = 0x3B82F6 if is_training else 0xF97316  # blue for solo, orange for race
     return label, color
 
 

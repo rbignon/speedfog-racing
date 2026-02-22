@@ -123,9 +123,9 @@
 				</p>
 			</div>
 			<div class="feature-card">
-				<strong>Training Mode</strong>
+				<strong>Solo Mode</strong>
 				<p>
-					Practice solo runs on fresh seeds at any time — no account required.
+					Play on fresh seeds at your own pace — no account required.
 					Perfect to learn the format before joining a race.
 				</p>
 			</div>

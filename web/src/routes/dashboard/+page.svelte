@@ -85,7 +85,7 @@
 		if (item.type === 'race_participant') return item.race_name;
 		if (item.type === 'race_organizer') return item.race_name;
 		if (item.type === 'race_caster') return item.race_name;
-		if (item.type === 'training') return `Training (${displayPoolName(item.pool_name)})`;
+		if (item.type === 'training') return `${displayPoolName(item.pool_name)}`;
 		return '';
 	}
 
@@ -98,7 +98,7 @@
 		}
 		if (item.type === 'race_organizer') return 'Organized';
 		if (item.type === 'race_caster') return 'Casted';
-		if (item.type === 'training') return 'Training';
+		if (item.type === 'training') return 'Solo';
 		return '';
 	}
 
@@ -143,7 +143,7 @@
 					</div>
 					<div class="stat-card">
 						<span class="stat-value">{profile.stats.training_count}</span>
-						<span class="stat-label">Training</span>
+						<span class="stat-label">Solo</span>
 					</div>
 					<div class="stat-card">
 						<span class="stat-value">{profile.stats.organized_count}</span>
@@ -172,7 +172,7 @@
 				<div class="empty-state">
 					<p>No active sessions</p>
 					<div class="empty-actions">
-						<a href="/training" class="btn btn-secondary">Start Training</a>
+						<a href="/training" class="btn btn-secondary">Play Solo</a>
 						<a href="/races" class="btn btn-secondary">Browse Races</a>
 					</div>
 				</div>
@@ -245,7 +245,7 @@
 							<div class="active-card-header">
 								<span class="active-name">{displayPoolName(session.pool_name)}</span>
 								<div class="active-badges">
-									<span class="badge badge-training-ghost">Training</span>
+									<span class="badge badge-training-ghost">Solo</span>
 								</div>
 							</div>
 							<div class="training-stats">

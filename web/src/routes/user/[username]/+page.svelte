@@ -144,7 +144,7 @@
 			</div>
 			<div class="stat-card">
 				<span class="stat-number">{profile.stats.training_count}</span>
-				<span class="stat-label">Training</span>
+				<span class="stat-label">Solo</span>
 			</div>
 			<div class="stat-card">
 				<span class="stat-number">{profile.stats.organized_count}</span>
@@ -220,7 +220,7 @@
 								{:else if item.type === 'training'}
 									<div class="activity-body">
 										<div class="badge-row">
-											<span class="activity-badge training">Training</span>
+											<span class="activity-badge training">Solo</span>
 											<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
 										</div>
 										<a href="/training/{item.session_id}" class="activity-title">

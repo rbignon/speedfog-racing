@@ -152,7 +152,7 @@ async def test_created_training_notification(created_kwargs):
 
         payload = mock_client.post.call_args[1]["json"]
         embed = payload["embeds"][0]
-        assert "New Training" in embed["title"]
+        assert "New Solo" in embed["title"]
         assert embed["color"] == 0x3B82F6  # blue
 
 
@@ -216,7 +216,7 @@ async def test_sends_training_notification(race_kwargs):
 
         payload = mock_client.post.call_args[1]["json"]
         embed = payload["embeds"][0]
-        assert "Training Started" in embed["title"]
+        assert "Solo Started" in embed["title"]
         assert embed["color"] == 0x3B82F6  # blue
         fields = {f["name"]: f["value"] for f in embed["fields"]}
         assert fields["Pool"] == "Hardcore"

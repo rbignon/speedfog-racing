@@ -136,7 +136,7 @@ async def _send_initial_state(
     message = RaceStateMessage(
         race=RaceInfo(
             id=str(session.id),
-            name=f"Training {format_pool_display_name(seed.pool_name)}" if seed else "Training",
+            name=format_pool_display_name(seed.pool_name) if seed else "Solo",
             status="running"
             if session.status == TrainingSessionStatus.ACTIVE
             else session.status.value,

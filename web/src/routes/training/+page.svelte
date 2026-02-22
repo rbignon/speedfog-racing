@@ -58,8 +58,8 @@
 			const available = sortedPools.find(([, info]) => info.available > 0);
 			if (available) selectedPool = available[0];
 		} catch (e) {
-			console.error('Failed to load training data:', e);
-			error = 'Failed to load training data.';
+			console.error('Failed to load solo data:', e);
+			error = 'Failed to load solo data.';
 		} finally {
 			loadingPools = false;
 			loadingSessions = false;
@@ -74,7 +74,7 @@
 			const session = await createTrainingSession(poolName);
 			goto(`/training/${session.id}`);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to start training session.';
+			error = e instanceof Error ? e.message : 'Failed to start solo session.';
 			startingPool = null;
 			// Refresh sessions so UI reflects server state (e.g., 409 = active session exists)
 			try {
@@ -88,12 +88,12 @@
 </script>
 
 <svelte:head>
-	<title>Training - SpeedFog Racing</title>
+	<title>Solo - SpeedFog Racing</title>
 </svelte:head>
 
 <main class="training-page">
-	<h1>Training</h1>
-	<p class="subtitle">Practice solo runs to improve your speed and routing.</p>
+	<h1>Solo</h1>
+	<p class="subtitle">Run fresh seeds at your own pace — no race, no pressure.</p>
 
 	{#if error}
 		<div class="error-banner">
@@ -117,7 +117,7 @@
 		{:else}
 			<h2>Start a Run</h2>
 			{#if sortedPools.length === 0}
-				<p class="empty">No training pools available.</p>
+				<p class="empty">No pools available.</p>
 			{:else}
 				<div class="pool-cards">
 					{#each sortedPools as [pool, info] (pool)}
@@ -187,7 +187,7 @@
 		{#if loadingSessions}
 			<p class="loading">Loading sessions...</p>
 		{:else if sessions.length === 0}
-			<p class="empty">No training sessions yet. Start a run above!</p>
+			<p class="empty">No solo sessions yet. Start a run above!</p>
 		{:else}
 			<div class="history-table-wrapper">
 				<table class="history-table">

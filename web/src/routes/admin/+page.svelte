@@ -222,7 +222,7 @@
 						<tr>
 							<th>User</th>
 							<th>Role</th>
-							<th class="num-col">Trainings</th>
+							<th class="num-col">Solo</th>
 							<th class="num-col">Races</th>
 							<th>Last Seen</th>
 							<th>Joined</th>
@@ -344,7 +344,7 @@
 								{:else if item.type === 'race_caster'}
 									<span class="activity-badge caster">Casted</span>
 								{:else if item.type === 'training'}
-									<span class="activity-badge training">Training</span>
+									<span class="activity-badge training">Solo</span>
 								{/if}
 								<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
 							</div>

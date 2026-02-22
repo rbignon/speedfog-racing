@@ -1009,7 +1009,7 @@ export async function downloadTrainingPack(sessionId: string): Promise<void> {
   a.href = url;
   const disposition = response.headers.get("content-disposition");
   const match = disposition?.match(/filename="?([^"]+)"?/);
-  a.download = match?.[1] ?? `speedfog_training_${sessionId}.zip`;
+  a.download = match?.[1] ?? `speedfog_solo_${sessionId}.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
