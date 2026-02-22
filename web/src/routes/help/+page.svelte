@@ -166,7 +166,7 @@
 		<h2>Solo Mode</h2>
 		<p>
 			Solo mode lets you <strong>play on fresh seeds</strong> at your own pace, without joining a
-			race. <strong>No account required</strong> — anyone can start a solo session.
+			race.
 		</p>
 		<ol>
 			<li>Go to the <a href="/training">Solo</a> page.</li>
