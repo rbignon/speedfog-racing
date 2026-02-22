@@ -269,8 +269,31 @@
 				<div class="activity-list">
 					{#each activity as item}
 						<a href={activityLink(item)} class="activity-row">
-							<span class="activity-badge badge-{item.type}">{activityBadge(item)}</span>
-							<span class="activity-name">{activityLabel(item)}</span>
+							<span class="activity-badge badge-{item.type === 'training' ? 'training' : item.status}">{activityBadge(item)}</span>
+							<div class="activity-content">
+								<span class="activity-name">{activityLabel(item)}</span>
+								<span class="activity-details">
+									{#if item.type === 'race_participant'}
+										{#if item.status === 'finished' && item.placement}
+											{placementMedal(item.placement)}/{item.total_participants}
+											&middot;
+										{:else if item.status === 'finished'}
+											DNF &middot;
+										{:else if item.status !== 'setup'}
+											{item.total_participants} players &middot;
+										{/if}
+										{#if item.igt_ms > 0}
+											{formatIgt(item.igt_ms)} &middot; {item.death_count} deaths
+										{/if}
+									{:else if item.type === 'race_organizer'}
+										{item.participant_count} player{item.participant_count !== 1 ? 's' : ''}
+									{:else if item.type === 'training'}
+										{#if item.igt_ms > 0}
+											{formatIgt(item.igt_ms)} &middot; {item.death_count} deaths
+										{/if}
+									{/if}
+								</span>
+							</div>
 							<span class="activity-time">{timeAgo(item.date)}</span>
 						</a>
 					{/each}
@@ -617,30 +640,28 @@
 		flex-shrink: 0;
 	}
 
-	.badge-race_participant {
-		background: var(--color-gold);
-		color: var(--color-bg);
-	}
-
-	.badge-race_organizer {
-		background: var(--color-gold);
-		color: var(--color-bg);
-	}
-
-	.badge-race_caster {
-		background: var(--color-gold);
-		color: var(--color-bg);
-	}
-
 	.badge-training {
 		background: var(--color-purple);
 		color: white;
 	}
 
-	.activity-name {
+	.activity-content {
 		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		min-width: 0;
+	}
+
+	.activity-name {
 		color: var(--color-text);
 		font-size: var(--font-size-sm);
+	}
+
+	.activity-details {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.activity-time {
