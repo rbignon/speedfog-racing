@@ -10,7 +10,7 @@
 		downloadTrainingPack,
 		type TrainingSessionDetail
 	} from '$lib/api';
-	import { MetroDag, MetroDagProgressive, MetroDagResults } from '$lib/dag';
+	import { MetroDag, MetroDagProgressive, MetroDagFull } from '$lib/dag';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
@@ -216,14 +216,14 @@
 		{#if graphJson}
 			<section class="dag-section">
 				{#if (status === 'finished' || status === 'abandoned') && dagParticipants.length > 0}
-					<MetroDagResults {graphJson} participants={dagParticipants} />
+					<MetroDagFull {graphJson} participants={dagParticipants} />
 				{:else if status === 'active' && dagParticipants.length > 0}
 					<button class="btn btn-secondary btn-sm" onclick={() => (showFullDag = !showFullDag)}>
 						{showFullDag ? 'Hide Spoiler' : 'Show Spoiler'}
 					</button>
 					<div class="dag-wrapper">
 						{#if showFullDag}
-							<MetroDagResults {graphJson} participants={dagParticipants} />
+							<MetroDagFull {graphJson} participants={dagParticipants} />
 						{:else}
 							<MetroDagProgressive
 								{graphJson}

@@ -20,7 +20,7 @@
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
 	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
-	import { MetroDag, MetroDagBlurred, MetroDagProgressive, MetroDagResults } from '$lib/dag';
+	import { MetroDag, MetroDagBlurred, MetroDagProgressive, MetroDagFull } from '$lib/dag';
 	import { parseDagGraph } from '$lib/dag/types';
 	import {
 		downloadMySeedPack,
@@ -557,7 +557,7 @@
 					myParticipantId={myWsParticipantId}
 				/>
 			{:else}
-				<MetroDagResults
+				<MetroDagFull
 					graphJson={liveSeed.graph_json}
 					participants={raceStore.leaderboard}
 					highlightIds={selectedParticipantIds}
@@ -565,7 +565,7 @@
 			{/if}
 		{:else if liveSeed?.graph_json && raceStatus === 'finished'}
 			<Podium participants={raceStore.leaderboard} />
-			<MetroDagResults
+			<MetroDagFull
 				graphJson={liveSeed.graph_json}
 				participants={raceStore.leaderboard}
 				highlightIds={selectedParticipantIds}

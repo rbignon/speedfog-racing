@@ -184,7 +184,7 @@
 		return paths;
 	});
 
-	// Label placement (same logic as MetroDag/MetroDagLive)
+	// Label placement (same logic as MetroDag)
 	let labelAbove: Set<string> = $derived.by(() => {
 		const above = new Set<string>();
 		const byLayer = new Map<number, PositionedNode[]>();

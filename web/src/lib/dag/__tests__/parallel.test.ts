@@ -157,7 +157,7 @@ describe("expandNodePath", () => {
     ];
     const { edgeMap } = buildMaps(nodes, edges);
 
-    // Build bidirectional adjacency (like MetroDagResults does)
+    // Build bidirectional adjacency (like MetroDagFull does)
     const biAdj = new Map<string, string[]>();
     for (const e of edges) {
       const fwd = biAdj.get(e.fromId);

@@ -3,7 +3,7 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { raceStore } from '$lib/stores/race.svelte';
 	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
-	import { MetroDagBlurred, MetroDagResults } from '$lib/dag';
+	import { MetroDagBlurred, MetroDagFull } from '$lib/dag';
 
 	let { data } = $props();
 
@@ -26,7 +26,7 @@
 
 <div class="dag-overlay">
 	{#if liveSeed?.graph_json && (raceStatus === 'running' || raceStatus === 'finished')}
-		<MetroDagResults graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} transparent />
+		<MetroDagFull graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} transparent />
 	{:else if totalNodes && totalPaths && totalLayers}
 		<MetroDagBlurred {totalLayers} {totalNodes} {totalPaths} transparent />
 	{/if}

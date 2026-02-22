@@ -1,9 +1,8 @@
 export { default as MetroDag } from "./MetroDag.svelte";
 export { default as MetroDagAnimated } from "./MetroDagAnimated.svelte";
 export { default as MetroDagBlurred } from "./MetroDagBlurred.svelte";
-export { default as MetroDagLive } from "./MetroDagLive.svelte";
+export { default as MetroDagFull } from "./MetroDagFull.svelte";
 export { default as MetroDagProgressive } from "./MetroDagProgressive.svelte";
-export { default as MetroDagResults } from "./MetroDagResults.svelte";
 export { default as ZoomableSvg } from "./ZoomableSvg.svelte";
 export { computeLayout } from "./layout";
 export { parseDagGraph } from "./types";
