@@ -18,6 +18,7 @@
 	import RaceStats from '$lib/components/RaceStats.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
+	import DownloadModal from '$lib/components/DownloadModal.svelte';
 	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
 	import { MetroDag, MetroDagBlurred, MetroDagProgressive, MetroDagResults } from '$lib/dag';
 	import { parseDagGraph } from '$lib/dag/types';
@@ -45,12 +46,14 @@
 	let scheduleError = $state<string | null>(null);
 	let scheduleSaving = $state(false);
 	let selectedParticipantIds = $state<Set<string>>(new Set());
+	let showDownloadModal = $state(false);
 
 	async function handleDownload() {
 		downloading = true;
 		downloadError = null;
 		try {
 			await downloadMySeedPack(initialRace.id);
+			showDownloadModal = false;
 		} catch (e) {
 			downloadError = e instanceof Error ? e.message : 'Download failed';
 		} finally {
@@ -426,7 +429,14 @@
 
 			{#if myParticipant}
 				{#if seedsReleased}
-					<button class="sidebar-download-btn" onclick={handleDownload} disabled={downloading}>
+					<button
+						class="sidebar-download-btn"
+						onclick={() => {
+							downloadError = null;
+							showDownloadModal = true;
+						}}
+						disabled={downloading}
+					>
 						<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
 							<path
 								d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
@@ -439,9 +449,6 @@
 						</svg>
 						{downloading ? 'Preparing...' : 'Download Race Package'}
 					</button>
-					{#if downloadError}
-						<span class="sidebar-download-error">{downloadError}</span>
-					{/if}
 				{:else}
 					<p class="waiting-seeds">Waiting for seeds...</p>
 				{/if}
@@ -649,6 +656,15 @@
 
 	{#if showObsModal}
 		<ObsOverlayModal raceId={initialRace.id} onClose={() => (showObsModal = false)} />
+	{/if}
+
+	{#if showDownloadModal}
+		<DownloadModal
+			{downloading}
+			error={downloadError}
+			onClose={() => (showDownloadModal = false)}
+			onDownload={handleDownload}
+		/>
 	{/if}
 </div>
 
@@ -986,14 +1002,6 @@
 	.sidebar-download-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
-	}
-
-	.sidebar-download-error {
-		display: block;
-		margin-top: 0.35rem;
-		color: var(--color-danger);
-		font-size: var(--font-size-xs);
-		text-align: center;
 	}
 
 	.obs-overlay-btn {
