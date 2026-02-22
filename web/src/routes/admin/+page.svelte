@@ -576,8 +576,8 @@
 	}
 
 	.role-badge.admin {
-		background: var(--color-purple);
-		color: white;
+		background: rgba(239, 68, 68, 0.15);
+		color: var(--color-danger);
 	}
 
 	select {

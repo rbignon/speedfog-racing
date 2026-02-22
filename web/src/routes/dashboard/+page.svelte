@@ -641,8 +641,8 @@
 	}
 
 	.badge-training {
-		background: var(--color-purple);
-		color: white;
+		background: rgba(139, 92, 246, 0.15);
+		color: var(--color-purple);
 	}
 
 	.activity-content {
