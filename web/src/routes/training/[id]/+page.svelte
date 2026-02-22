@@ -190,7 +190,7 @@
 			<div class="actions">
 				{#if status === 'active'}
 					<button class="btn btn-secondary" disabled={downloading} onclick={handleDownload}>
-						{downloading ? 'Downloading...' : 'Download Pack'}
+						{downloading ? 'Preparing...' : 'Download Pack'}
 					</button>
 				{/if}
 
