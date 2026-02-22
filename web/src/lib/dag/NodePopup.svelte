@@ -108,7 +108,7 @@
 							{conn.displayName ?? '???'}
 						</span>
 						{#if conn.text}
-							<span class="conn-text">{conn.text}</span>
+							<span class="conn-text">To: {conn.text}</span>
 						{/if}
 					</div>
 				</div>
@@ -127,7 +127,7 @@
 							{conn.displayName ?? '???'}
 						</span>
 						{#if conn.text}
-							<span class="conn-text">{conn.text}</span>
+							<span class="conn-text">From: {conn.text}</span>
 						{/if}
 					</div>
 				</div>
