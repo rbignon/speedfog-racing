@@ -9,13 +9,15 @@ export const REPLAY_DEFAULTS = {
   /** Orbit period in ms (wall-clock) — one full circle */
   ORBIT_PERIOD_MS: 2000,
   /** Duration of a skull pop-and-fade animation (ms) */
-  SKULL_ANIM_MS: 600,
+  SKULL_ANIM_MS: 800,
   /** Skull peak scale (overshoot) */
-  SKULL_PEAK_SCALE: 1.3,
+  SKULL_PEAK_SCALE: 2.0,
   /** Edge transition takes this fraction of the zone's replay time (rest is orbiting) */
   EDGE_TRANSIT_FRACTION: 0.15,
   /** Minimum transit duration in replay ms (so transitions aren't instant) */
   MIN_TRANSIT_MS: 200,
+  /** X offset for finished player dots (right of last node) */
+  FINISHED_X_OFFSET: 20,
   /** Slow-mo speed multiplier during finish */
   FINISH_SLOWMO: 0.3,
   /** How long before max IGT the slow-mo kicks in (as fraction of total IGT) */

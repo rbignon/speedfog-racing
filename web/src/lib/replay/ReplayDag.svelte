@@ -76,13 +76,15 @@
 	}
 
 	function skullScale(progress: number): number {
-		// Overshoot in first 30%, then settle, then fade
+		// Overshoot in first 30%, then settle to 1.0, then hold
 		if (progress < 0.3) {
 			const t = progress / 0.3;
 			return t * REPLAY_DEFAULTS.SKULL_PEAK_SCALE;
 		}
-		if (progress < 0.5)
-			return REPLAY_DEFAULTS.SKULL_PEAK_SCALE - ((progress - 0.3) / 0.2) * 0.3;
+		if (progress < 0.5) {
+			const overshoot = REPLAY_DEFAULTS.SKULL_PEAK_SCALE - 1.0;
+			return REPLAY_DEFAULTS.SKULL_PEAK_SCALE - ((progress - 0.3) / 0.2) * overshoot;
+		}
 		return 1.0;
 	}
 
@@ -125,9 +127,9 @@
 		{#if snap.participantId === leaderId}
 			<text
 				x={snap.x}
-				y={snap.y - RACER_DOT_RADIUS - 4}
+				y={snap.y - RACER_DOT_RADIUS - 5}
 				text-anchor="middle"
-				font-size="10"
+				font-size="14"
 				fill={leaderChanged ? '#FACC15' : '#C8A44E'}
 				class="leader-star"
 				class:flash={leaderChanged}
@@ -145,7 +147,7 @@
 			y={pos.y}
 			text-anchor="middle"
 			dominant-baseline="central"
-			font-size={14 * skullScale(skull.progress)}
+			font-size={18 * skullScale(skull.progress)}
 			opacity={skullOpacity(skull.progress)}
 			class="skull-anim"
 		>&#x1F480;</text>
@@ -174,10 +176,10 @@
 	@keyframes star-flash {
 		0%,
 		100% {
-			font-size: 10px;
+			font-size: 14px;
 		}
 		50% {
-			font-size: 16px;
+			font-size: 20px;
 		}
 	}
 

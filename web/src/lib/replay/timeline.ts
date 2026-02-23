@@ -145,6 +145,24 @@ export function computePlayerPosition(
   orbitPhaseOffset: number,
   replayElapsedMs: number,
 ): PlayerSnapshot | null {
+  // Finished players: park to the right of their last node, static
+  if (rp.finished && igtMs >= rp.totalIgt && rp.zoneVisits.length > 0) {
+    const lastVisit = rp.zoneVisits[rp.zoneVisits.length - 1];
+    const lastPos = nodePositions.get(lastVisit.nodeId);
+    if (lastPos) {
+      const layer = nodeInfo.get(lastVisit.nodeId)?.layer ?? 0;
+      const ySpread = orbitPhaseOffset / (Math.PI * 2) - 0.5;
+      return {
+        participantId: rp.id,
+        x: lastPos.x + REPLAY_DEFAULTS.FINISHED_X_OFFSET,
+        y: lastPos.y + ySpread * 16,
+        currentNodeId: lastVisit.nodeId,
+        inTransit: false,
+        layer,
+      };
+    }
+  }
+
   const zoneIdx = findCurrentZone(rp, igtMs);
   if (zoneIdx < 0) return null;
 

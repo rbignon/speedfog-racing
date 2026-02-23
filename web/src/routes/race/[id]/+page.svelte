@@ -50,8 +50,11 @@
 	let selectedParticipantIds = $state<Set<string>>(new Set());
 	let showDownloadModal = $state(false);
 	let highlightFocusNodeId = $state<string | null>(null);
+	let dagView = $state<'map' | 'replay'>('map');
 
 	function handleHighlightZoneClick(nodeId: string) {
+		// Switch to map view so the focused node is visible
+		dagView = 'map';
 		// Reset first so re-clicking the same zone re-triggers the $effect
 		highlightFocusNodeId = null;
 		requestAnimationFrame(() => {
@@ -577,14 +580,21 @@
 			{/if}
 		{:else if liveSeed?.graph_json && raceStatus === 'finished'}
 			<Podium participants={raceStore.leaderboard} />
-			<MetroDagFull
-				graphJson={liveSeed.graph_json}
-				participants={raceStore.leaderboard}
-				{raceStatus}
-				highlightIds={selectedParticipantIds}
-				focusNodeId={highlightFocusNodeId}
-			/>
-			<RaceReplay graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
+			<div class="dag-view-toggle">
+				<button class="toggle-btn" class:active={dagView === 'map'} onclick={() => (dagView = 'map')}>Map</button>
+				<button class="toggle-btn" class:active={dagView === 'replay'} onclick={() => (dagView = 'replay')}>Replay</button>
+			</div>
+			{#if dagView === 'map'}
+				<MetroDagFull
+					graphJson={liveSeed.graph_json}
+					participants={raceStore.leaderboard}
+					{raceStatus}
+					highlightIds={selectedParticipantIds}
+					focusNodeId={highlightFocusNodeId}
+				/>
+			{:else}
+				<RaceReplay graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
+			{/if}
 			<RaceStats participants={raceStore.leaderboard} />
 			<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} onzoneclick={handleHighlightZoneClick} />
 		{:else if liveSeed?.graph_json && myWsParticipantId}
@@ -685,6 +695,37 @@
 </div>
 
 <style>
+	.dag-view-toggle {
+		display: flex;
+		gap: 0.25rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		padding: 0.25rem;
+		width: fit-content;
+	}
+
+	.toggle-btn {
+		all: unset;
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		color: var(--color-text-disabled);
+		padding: 0.35rem 0.9rem;
+		border-radius: var(--radius-md);
+		cursor: pointer;
+		transition: all var(--transition);
+	}
+
+	.toggle-btn:hover {
+		color: var(--color-text-secondary);
+	}
+
+	.toggle-btn.active {
+		background: var(--color-border);
+		color: var(--color-text);
+		font-weight: 600;
+	}
+
 	.race-page {
 		display: flex;
 		flex: 1;

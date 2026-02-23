@@ -207,7 +207,7 @@
 				return {
 					title: ev.highlight.title,
 					text: ev.highlight.segments
-						.map((s) => (s.type === 'text' ? s.value : s.type === 'player' ? s.name : s.name))
+						.map((s) => (s.type === 'text' ? s.value : s.name))
 						.join(''),
 					opacity
 				};
