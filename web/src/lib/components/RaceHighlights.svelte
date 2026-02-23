@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
-	import { computeHighlights, type DescriptionSegment } from '$lib/highlights';
+	import { computeHighlights } from '$lib/highlights';
 	import { PLAYER_COLORS } from '$lib/dag/constants';
 
 	interface Props {

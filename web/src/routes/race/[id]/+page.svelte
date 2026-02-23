@@ -51,9 +51,8 @@
 	let highlightFocusNodeId = $state<string | null>(null);
 
 	function handleHighlightZoneClick(nodeId: string) {
-		// Reset first so re-clicking the same zone re-triggers the effect
+		// Reset first so re-clicking the same zone re-triggers the $effect
 		highlightFocusNodeId = null;
-		// Use tick to ensure the reset propagates before setting new value
 		requestAnimationFrame(() => {
 			highlightFocusNodeId = nodeId;
 		});
