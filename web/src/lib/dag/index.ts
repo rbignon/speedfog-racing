@@ -1,3 +1,4 @@
+export { default as DagBaseLayer } from "./DagBaseLayer.svelte";
 export { default as MetroDag } from "./MetroDag.svelte";
 export { default as MetroDagAnimated } from "./MetroDagAnimated.svelte";
 export { default as MetroDagBlurred } from "./MetroDagBlurred.svelte";

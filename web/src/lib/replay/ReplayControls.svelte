@@ -27,7 +27,7 @@
 
 	function handlePointerDown(e: PointerEvent) {
 		isDragging = true;
-		(e.target as HTMLElement).setPointerCapture(e.pointerId);
+		progressBar?.setPointerCapture(e.pointerId);
 		handleProgressClick(e);
 	}
 

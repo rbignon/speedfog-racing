@@ -18,10 +18,6 @@ export const REPLAY_DEFAULTS = {
   MIN_TRANSIT_MS: 200,
   /** X offset for finished player dots (right of last node) */
   FINISHED_X_OFFSET: 20,
-  /** Slow-mo speed multiplier during finish */
-  FINISH_SLOWMO: 0.3,
-  /** How long before max IGT the slow-mo kicks in (as fraction of total IGT) */
-  FINISH_SLOWMO_THRESHOLD: 0.02,
   /** Commentary display duration (ms wall-clock) */
   COMMENTARY_DURATION_MS: 4000,
 };

@@ -6,26 +6,14 @@
 		buildReplayParticipants,
 		collectSkullEvents,
 		igtToReplayMs,
-		replayMsToIgt,
-		computePlayerPosition,
-		computeLeader
+		replayMsToIgt
 	} from './timeline';
 	import { mapHighlightsToTimeline } from './highlights';
 	import { computeHighlights } from '$lib/highlights';
 	import { parseDagGraph } from '$lib/dag/types';
 	import { computeLayout } from '$lib/dag/layout';
 	import ZoomableSvg from '$lib/dag/ZoomableSvg.svelte';
-	import {
-		NODE_RADIUS,
-		NODE_COLORS,
-		BG_COLOR,
-		EDGE_STROKE_WIDTH,
-		EDGE_COLOR,
-		LABEL_MAX_CHARS,
-		LABEL_FONT_SIZE,
-		LABEL_COLOR,
-		LABEL_OFFSET_Y
-	} from '$lib/dag/constants';
+	import DagBaseLayer from '$lib/dag/DagBaseLayer.svelte';
 	import type { PositionedNode } from '$lib/dag/types';
 	import ReplayDag from './ReplayDag.svelte';
 	import ReplayControls from './ReplayControls.svelte';
@@ -90,9 +78,17 @@
 	let speed = $state(1);
 	let replayElapsedMs = $state(0);
 	let currentIgt = $state(0);
-	let previousLeader: string | null = $state(null);
 	let animationFrameId: number | null = null;
 	let lastFrameTime: number | null = null;
+
+	// Leader tracking — updated by ReplayDag via callback to avoid double computation
+	let leaderId: string | null = $state(null);
+	let previousLeader: string | null = $state(null);
+
+	function handleLeaderChange(newLeaderId: string | null) {
+		previousLeader = leaderId;
+		leaderId = newLeaderId;
+	}
 
 	function tick(timestamp: number) {
 		if (lastFrameTime === null) {
@@ -107,28 +103,6 @@
 
 		// Map replay elapsed to IGT
 		currentIgt = replayMsToIgt(replayElapsedMs, maxIgt);
-
-		// Track leader for flash effect
-		const snapshots = [];
-		for (let i = 0; i < replayParticipants.length; i++) {
-			const rp = replayParticipants[i];
-			const phaseOffset = (i / replayParticipants.length) * Math.PI * 2;
-			const snap = computePlayerPosition(
-				rp,
-				currentIgt,
-				nodePositions,
-				nodeInfo,
-				phaseOffset,
-				replayElapsedMs,
-				i,
-				replayParticipants.length
-			);
-			if (snap) snapshots.push(snap);
-		}
-		const newLeader = computeLeader(snapshots);
-		if (newLeader !== previousLeader) {
-			previousLeader = newLeader;
-		}
 
 		if (replayElapsedMs >= REPLAY_DEFAULTS.DURATION_MS) {
 			replayState = 'finished';
@@ -209,32 +183,6 @@
 		return null;
 	});
 
-	function truncateLabel(name: string): string {
-		const short = name.includes(' - ') ? name.split(' - ').pop()! : name;
-		if (short.length <= LABEL_MAX_CHARS) return short;
-		return short.slice(0, LABEL_MAX_CHARS - 1) + '\u2026';
-	}
-
-	function nodeRadius(node: PositionedNode): number {
-		return NODE_RADIUS[node.type];
-	}
-
-	function nodeColor(node: PositionedNode): string {
-		return NODE_COLORS[node.type];
-	}
-
-	function labelX(node: PositionedNode): number {
-		if (labelAbove.has(node.id)) return node.x;
-		return node.x - 6;
-	}
-
-	function labelY(node: PositionedNode): number {
-		const r = nodeRadius(node);
-		if (labelAbove.has(node.id)) {
-			return node.y - r - 8;
-		}
-		return node.y + r + LABEL_OFFSET_Y - 6;
-	}
 </script>
 
 {#if replayParticipants.length >= 2 && maxIgt > 0}
@@ -251,82 +199,7 @@
 					</filter>
 				</defs>
 
-				<!-- Base edges (dimmed) -->
-				{#each layout.edges as edge}
-					{#each edge.segments as seg}
-						<line
-							x1={seg.x1}
-							y1={seg.y1}
-							x2={seg.x2}
-							y2={seg.y2}
-							stroke={EDGE_COLOR}
-							stroke-width={EDGE_STROKE_WIDTH}
-							stroke-linecap="round"
-							opacity="0.25"
-						/>
-					{/each}
-				{/each}
-
-				<!-- Nodes -->
-				{#each layout.nodes as node}
-					<g class="dag-node" data-type={node.type} data-node-id={node.id}>
-						{#if node.type === 'start'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-							<polygon
-								points="{node.x - 3},{node.y - 5} {node.x - 3},{node.y + 5} {node.x + 5},{node.y}"
-								fill={BG_COLOR}
-							/>
-						{:else if node.type === 'final_boss'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-							<rect x={node.x - 4} y={node.y - 4} width="8" height="8" fill={BG_COLOR} />
-						{:else if node.type === 'mini_dungeon'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-						{:else if node.type === 'boss_arena'}
-							<circle
-								cx={node.x}
-								cy={node.y}
-								r={nodeRadius(node)}
-								fill={BG_COLOR}
-								stroke={nodeColor(node)}
-								stroke-width="3"
-							/>
-						{:else if node.type === 'major_boss'}
-							<rect
-								x={node.x - nodeRadius(node) * 0.7}
-								y={node.y - nodeRadius(node) * 0.7}
-								width={nodeRadius(node) * 1.4}
-								height={nodeRadius(node) * 1.4}
-								fill={nodeColor(node)}
-								transform="rotate(45 {node.x} {node.y})"
-							/>
-						{:else if node.type === 'legacy_dungeon'}
-							<circle
-								cx={node.x}
-								cy={node.y}
-								r={nodeRadius(node)}
-								fill="none"
-								stroke={nodeColor(node)}
-								stroke-width="3"
-							/>
-							<circle
-								cx={node.x}
-								cy={node.y}
-								r={nodeRadius(node) * 0.5}
-								fill={nodeColor(node)}
-							/>
-						{/if}
-
-						<text
-							x={labelX(node)}
-							y={labelY(node)}
-							text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
-							font-size={LABEL_FONT_SIZE}
-							fill={LABEL_COLOR}
-							class="dag-label"
-							transform="rotate(-30, {labelX(node)}, {labelY(node)})"
-						>{truncateLabel(node.displayName)}</text>
-					</g>
-				{/each}
+				<DagBaseLayer {layout} {labelAbove} />
 
 				<!-- Animated overlay -->
 				{#if replayState !== 'idle'}
@@ -338,7 +211,9 @@
 						{skullEvents}
 						{nodePositions}
 						{nodeInfo}
+						{leaderId}
 						{previousLeader}
+						onleaderchange={handleLeaderChange}
 					/>
 				{/if}
 			</ZoomableSvg>
@@ -407,16 +282,4 @@
 		color: var(--color-text-secondary);
 	}
 
-	.dag-node {
-		cursor: default;
-	}
-
-	.dag-label {
-		user-select: none;
-		font-family: system-ui, -apple-system, sans-serif;
-		paint-order: stroke;
-		stroke: var(--color-surface, #1a1a2e);
-		stroke-width: 4px;
-		stroke-linejoin: round;
-	}
 </style>

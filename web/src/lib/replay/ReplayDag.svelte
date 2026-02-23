@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ReplayParticipant, PlayerSnapshot, SkullEvent, CommentaryEvent } from './types';
+	import type { ReplayParticipant, PlayerSnapshot, SkullEvent } from './types';
 	import { REPLAY_DEFAULTS } from './types';
 	import { computePlayerPosition, computeLeader, computeNodeHeat, igtToReplayMs } from './timeline';
 	import { RACER_DOT_RADIUS } from '$lib/dag/constants';
@@ -14,7 +14,10 @@
 		skullEvents: SkullEvent[];
 		nodePositions: Map<string, { x: number; y: number }>;
 		nodeInfo: Map<string, { layer: number; type: string }>;
+		leaderId: string | null;
 		previousLeader: string | null;
+		/** Callback when leader changes */
+		onleaderchange: (newLeaderId: string | null) => void;
 	}
 
 	let {
@@ -25,10 +28,12 @@
 		skullEvents,
 		nodePositions,
 		nodeInfo,
-		previousLeader
+		leaderId,
+		previousLeader,
+		onleaderchange
 	}: Props = $props();
 
-	// Compute player snapshots
+	// Compute player snapshots (single source of truth for positions)
 	let snapshots: PlayerSnapshot[] = $derived.by(() => {
 		const result: PlayerSnapshot[] = [];
 		for (let i = 0; i < replayParticipants.length; i++) {
@@ -49,8 +54,15 @@
 		return result;
 	});
 
-	// Leader
-	let leaderId = $derived(computeLeader(snapshots));
+	// Derive leader from snapshots and notify parent on change
+	let computedLeader = $derived(computeLeader(snapshots));
+
+	$effect(() => {
+		if (computedLeader !== leaderId) {
+			onleaderchange(computedLeader);
+		}
+	});
+
 	let leaderChanged = $derived(leaderId !== previousLeader && previousLeader !== null);
 
 	// Node heat
