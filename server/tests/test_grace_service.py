@@ -287,3 +287,24 @@ def test_resolve_zone_query_leyndell_with_position():
         zone_history=history,
     )
     assert node_id == "leyndell_sanctuary_d3e5"
+
+
+def test_resolve_zone_query_single_match_unexplored():
+    """Single graph node match should NOT resolve if player hasn't explored it.
+
+    zone_query is only sent on death/respawn/fast-travel (never on fog gate
+    traversal), so the target zone must already be in zone_history.
+    """
+    graph = {
+        "nodes": {
+            "ainsel_boss_node": {
+                "zones": ["ainsel_boss"],
+                "layer": 3,
+            }
+        }
+    }
+    mapping = load_graces_mapping()
+    # Player has explored a different node — ainsel_boss_node is not in history
+    history = [{"node_id": "some_other_node", "igt_ms": 60000}]
+    node_id = resolve_zone_query(graph, mapping, map_id="m12_04_00_00", zone_history=history)
+    assert node_id is None

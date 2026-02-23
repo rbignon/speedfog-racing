@@ -113,20 +113,14 @@ def resolve_zone_query(
                 if any(z in zone_ids_for_map for z in zones):
                     matching.append(nid)
 
+        # Filter by history: player can only be in an explored zone
+        # (zone_query is only sent on death/respawn/fast-travel, never on
+        # fog gate traversal, so the target zone is always already explored)
+        if matching and zone_history:
+            explored = {e["node_id"] for e in zone_history if "node_id" in e}
+            matching = [nid for nid in matching if nid in explored]
+
         if len(matching) == 1:
             return matching[0]
-
-        # Disambiguate: keep only nodes the player has already visited
-        if len(matching) > 1 and zone_history:
-            explored = {e["node_id"] for e in zone_history if "node_id" in e}
-            narrowed = [nid for nid in matching if nid in explored]
-            if len(narrowed) == 1:
-                logger.debug(
-                    "zone_query: map_id %s narrowed %d→1 via history → %s",
-                    map_id,
-                    len(matching),
-                    narrowed[0],
-                )
-                return narrowed[0]
 
     return None
