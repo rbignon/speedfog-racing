@@ -10,6 +10,7 @@
 	} from './timeline';
 	import { mapHighlightsToTimeline } from './highlights';
 	import { computeHighlights } from '$lib/highlights';
+	import { PLAYER_COLORS } from '$lib/dag/constants';
 	import { parseDagGraph } from '$lib/dag/types';
 	import { computeLayout } from '$lib/dag/layout';
 	import ZoomableSvg from '$lib/dag/ZoomableSvg.svelte';
@@ -80,6 +81,11 @@
 	let currentIgt = $state(0);
 	let animationFrameId: number | null = null;
 	let lastFrameTime: number | null = null;
+
+	function playerColor(playerId: string): string {
+		const p = participants.find((pp) => pp.id === playerId);
+		return p ? PLAYER_COLORS[p.color_index % PLAYER_COLORS.length] : '#9CA3AF';
+	}
 
 	// Leader tracking — updated by ReplayDag via callback to avoid double computation
 	let leaderId: string | null = $state(null);
@@ -173,9 +179,7 @@
 				const opacity = fadeProgress > 0.8 ? 1 - (fadeProgress - 0.8) / 0.2 : 1;
 				return {
 					title: ev.highlight.title,
-					text: ev.highlight.segments
-						.map((s) => (s.type === 'text' ? s.value : s.name))
-						.join(''),
+					segments: ev.highlight.segments,
 					opacity
 				};
 			}
@@ -222,7 +226,17 @@
 			{#if activeCommentary}
 				<div class="commentary" style="opacity: {activeCommentary.opacity}">
 					<span class="commentary-title">{activeCommentary.title}</span>
-					<span class="commentary-text">{activeCommentary.text}</span>
+					<span class="commentary-text">
+						{#each activeCommentary.segments as seg}
+							{#if seg.type === 'text'}
+								{seg.value}
+							{:else if seg.type === 'player'}
+								<span class="commentary-player" style="color: {playerColor(seg.playerId)}">{seg.name}</span>
+							{:else if seg.type === 'zone'}
+								<span class="commentary-zone">{seg.name}</span>
+							{/if}
+						{/each}
+					</span>
 				</div>
 			{/if}
 
@@ -281,4 +295,12 @@
 		color: var(--color-text-secondary);
 	}
 
+	.commentary-player {
+		font-weight: 600;
+	}
+
+	.commentary-zone {
+		color: var(--color-purple);
+		font-weight: 500;
+	}
 </style>
