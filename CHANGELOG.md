@@ -2,6 +2,48 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.2.0] - 2026-02-23
+
+### Logic
+
+- Completely reworked seed generation algorithm: zones are now selected cluster-first, producing more varied and balanced paths
+- 5 additional major boss correctly integrated: Hoarah-Loux, Gideon, Placidusax, Putrescent Knight, and Rennala
+- Radagon/Elden Beast is now a valid final boss — the Erdtree warp now correctly forces Maliketh's defeat, preventing the softlock where Erdtree thorns blocked access
+- Major bosses with a single fog gate (Messmer, Malenia, Bayle, etc.) can now appear as pass-through zones mid-run, not just as final boss dead-ends
+- Great Runes are now pre-activated at the start of a run to prevent a softlock at Fia's Champions
+- Fix: zone tracking could resolve to an unexplored zone on death or fast travel
+
+### Seeds
+
+- 6 Stonesword Keys given as starting items
+- Miquella's Cross locations can now contain key items and flask upgrades
+- Training pools aligned with their race counterparts
+
+### Race Replay
+
+- Animated race replay on the metro map: watch all participants progress through the map in real time
+- Playback controls: play/pause, speed adjustment, and seekbar
+- Player tokens show skulls on death and a crown for the winner
+- Toggle between the static map and the animated replay
+
+### Race Highlights
+
+- Automatically generated post-race highlights: fastest zones, closest finishes, death-heavy areas, and more
+- Highlights are displayed on the finished race page with interactive links to the relevant zones on the map
+
+### Metro map
+
+- Death skull icons on nodes where players died
+- Node popup now shows your own visit stats (time spent, deaths) during a race
+- Entrance/exit labels prefixed with "From"/"To" for clarity
+
+### Website
+
+- "Training" mode renamed to "Solo"
+- Seed pack download now shows a confirmation modal with rules and installation steps
+- Dashboard activity rows show more details and color-coded status
+- Game rules section added to the help page
+
 ## [1.1.1] - 2026-02-21
 
 ### Seeds
