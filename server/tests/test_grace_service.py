@@ -105,8 +105,9 @@ def test_resolve_zone_query_grace_priority_over_map():
 
 
 def test_resolve_zone_query_map_id_unambiguous():
-    """map_id resolves when exactly one graph node matches."""
-    # m12_04_00_00 maps to only ainsel_boss in graces.json
+    """map_id resolves when exactly one graph node matches fog.txt zones."""
+    # m12_04_00_00 maps to ainsel_preboss, ainsel_boss, ainsel_postboss in fog.txt
+    # But graph only has ainsel_boss → unique match
     graph = {
         "nodes": {
             "ainsel_boss_node": {
@@ -123,11 +124,11 @@ def test_resolve_zone_query_map_id_unambiguous():
 
 def test_resolve_zone_query_map_id_ambiguous():
     """map_id maps to multiple graph nodes → returns None."""
-    # m10_00_00_00 has graces in stormveil_godrick, stormveil_margit, chapel_start
+    # m10_00_00_00 has stormveil_godrick, stormhill, etc. in fog.txt
     graph = {
         "nodes": {
             "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
-            "node_b": {"zones": ["chapel_start"], "layer": 0},
+            "node_b": {"zones": ["stormhill"], "layer": 0},
         }
     }
     mapping = load_graces_mapping()
@@ -142,7 +143,7 @@ def test_resolve_zone_query_no_data():
 
 
 def test_resolve_zone_query_unknown_map():
-    """map_id not in graces.json → returns None."""
+    """map_id not in fog.txt → returns None."""
     mapping = load_graces_mapping()
     assert resolve_zone_query(SAMPLE_GRAPH, mapping, map_id="m99_99_99_99") is None
 
@@ -156,7 +157,7 @@ def test_resolve_zone_query_ambiguous_narrowed_by_history():
     graph = {
         "nodes": {
             "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
-            "node_b": {"zones": ["chapel_start"], "layer": 0},
+            "node_b": {"zones": ["stormhill"], "layer": 0},
         }
     }
     mapping = load_graces_mapping()
@@ -170,7 +171,7 @@ def test_resolve_zone_query_ambiguous_both_explored():
     graph = {
         "nodes": {
             "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
-            "node_b": {"zones": ["chapel_start"], "layer": 0},
+            "node_b": {"zones": ["stormhill"], "layer": 0},
         }
     }
     mapping = load_graces_mapping()
@@ -187,7 +188,7 @@ def test_resolve_zone_query_ambiguous_empty_history():
     graph = {
         "nodes": {
             "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
-            "node_b": {"zones": ["chapel_start"], "layer": 0},
+            "node_b": {"zones": ["stormhill"], "layer": 0},
         }
     }
     mapping = load_graces_mapping()
@@ -200,10 +201,89 @@ def test_resolve_zone_query_ambiguous_no_history_match():
     graph = {
         "nodes": {
             "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
-            "node_b": {"zones": ["chapel_start"], "layer": 0},
+            "node_b": {"zones": ["stormhill"], "layer": 0},
         }
     }
     mapping = load_graces_mapping()
     history = [{"node_id": "some_other_node", "igt_ms": 0}]
     node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
     assert node_id is None
+
+
+# --- resolve_zone_query: Leyndell bug regression ---
+
+
+def test_resolve_zone_query_leyndell_bug():
+    """Regression: Leyndell map_id should NOT resolve to leyndell_sanctuary when
+    player has only visited leyndell.
+
+    Previously, graces.json had no map_id for regular Leyndell graces, so
+    m11_00_00_00 only matched leyndell_sanctuary → false resolution.
+    With fog.txt, both zones are candidates and zone_history disambiguates.
+    """
+    graph = {
+        "nodes": {
+            "leyndell_1259": {
+                "display_name": "Leyndell",
+                "zones": ["leyndell"],
+                "layer": 5,
+            },
+            "leyndell_sanctuary_d3e5": {
+                "display_name": "Erdtree Sanctuary",
+                "zones": ["leyndell_sanctuary"],
+                "layer": 8,
+            },
+        }
+    }
+    mapping = load_graces_mapping()
+    history = [{"node_id": "leyndell_1259", "igt_ms": 120000}]
+    node_id = resolve_zone_query(
+        graph,
+        mapping,
+        map_id="m11_00_00_00",
+        zone_history=history,
+    )
+    assert node_id == "leyndell_1259"
+
+
+def test_resolve_zone_query_leyndell_with_position():
+    """Position disambiguates Leyndell even when both nodes are visited."""
+    graph = {
+        "nodes": {
+            "leyndell_1259": {
+                "display_name": "Leyndell",
+                "zones": ["leyndell"],
+                "layer": 5,
+            },
+            "leyndell_sanctuary_d3e5": {
+                "display_name": "Erdtree Sanctuary",
+                "zones": ["leyndell_sanctuary"],
+                "layer": 8,
+            },
+        }
+    }
+    mapping = load_graces_mapping()
+    history = [
+        {"node_id": "leyndell_1259", "igt_ms": 120000},
+        {"node_id": "leyndell_sanctuary_d3e5", "igt_ms": 300000},
+    ]
+
+    # Main city position (low Y) → resolves to leyndell
+    node_id = resolve_zone_query(
+        graph,
+        mapping,
+        map_id="m11_00_00_00",
+        position=(0.0, -50.0, 0.0),
+        zone_history=history,
+    )
+    assert node_id == "leyndell_1259"
+
+    # Sanctuary position (high Y, low Z) → resolves to leyndell_sanctuary
+    node_id = resolve_zone_query(
+        graph,
+        mapping,
+        map_id="m11_00_00_00",
+        position=(0.0, 30.0, -400.0),
+        zone_history=history,
+    )
+    assert node_id == "leyndell_sanctuary_d3e5"

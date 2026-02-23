@@ -4,12 +4,20 @@ Maps grace entity IDs (captured by the mod's warp hook during fast travel)
 to graph nodes in the current seed. Uses graces.json from er-fog-vizu as the
 static game-data mapping (grace_entity_id → zone_id), then finds the matching
 node in graph_json via the node's `zones` array.
+
+For map_id-based resolution, uses fog.txt (complete map→zone mapping) and
+submaps.txt (position-based disambiguation) via the zone_resolver module.
 """
 
 import json
 import logging
 from pathlib import Path
 from typing import Any
+
+from speedfog_racing.services.zone_resolver import (
+    get_zones_for_map,
+    resolve_zone_by_position,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,19 +74,19 @@ def resolve_zone_query(
     grace_entity_id: int | None = None,
     map_id: str | None = None,
     position: tuple[float, float, float] | None = None,
-    play_region_id: int | None = None,
+    play_region_id: int | None = None,  # reserved for future disambiguation
     zone_history: list[dict[str, Any]] | None = None,
 ) -> str | None:
     """Resolve a zone query to a graph node_id.
 
     Strategies (in order):
     1. Grace lookup (grace_entity_id → zone_id → node)
-    2. Map-based lookup (map_id → graces.json reverse index → filter graph nodes)
-       When ambiguous, narrow candidates to nodes already in *zone_history*
-       (the player can only be in a zone they have already explored).
+    2. Map-based lookup (map_id → fog.txt zone mapping → filter graph nodes)
+       a. Get candidate zone_ids from fog.txt (complete map→zone mapping)
+       b. If position available, use submaps.txt to narrow to one zone_id
+       c. Find graph nodes whose zones intersect candidates
+       d. If still ambiguous, narrow by zone_history (visited nodes only)
     3. None (ambiguous or no data)
-
-    position and play_region_id are accepted for future disambiguation but unused.
     """
     # Strategy 1: grace lookup (highest confidence)
     if grace_entity_id is not None and grace_entity_id != 0:
@@ -86,15 +94,17 @@ def resolve_zone_query(
         if node_id is not None:
             return node_id
 
-    # Strategy 2: map_id reverse index
+    # Strategy 2: map_id → fog.txt zone lookup + position disambiguation
     if map_id is not None:
-        zone_ids_for_map: set[str] = set()
-        for entry in graces_mapping.values():
-            if entry.get("map_id") == map_id:
-                zid = entry.get("zone_id")
-                if zid:
-                    zone_ids_for_map.add(zid)
+        zone_ids_for_map = get_zones_for_map(map_id)
 
+        # Use position to narrow candidates when available
+        if position is not None and zone_ids_for_map:
+            resolved = resolve_zone_by_position(map_id, *position)
+            if resolved and resolved in zone_ids_for_map:
+                zone_ids_for_map = {resolved}
+
+        # Find graph nodes whose zones intersect candidates
         nodes = graph_json.get("nodes", {})
         matching: list[str] = []
         for nid, node_data in nodes.items():
