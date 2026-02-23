@@ -2,7 +2,7 @@
 	import type { ReplayState } from './types';
 
 	interface Props {
-		state: ReplayState;
+		replayState: ReplayState;
 		/** Current position in replay, 0–1 */
 		progress: number;
 		/** Current playback speed multiplier */
@@ -13,7 +13,7 @@
 		onspeed: (speed: number) => void;
 	}
 
-	let { state, progress, speed, onplay, onpause, onseek, onspeed }: Props = $props();
+	let { replayState, progress, speed, onplay, onpause, onseek, onspeed }: Props = $props();
 
 	let progressBar: HTMLDivElement | undefined = $state();
 	let isDragging = $state(false);
@@ -53,10 +53,10 @@
 <div class="replay-controls">
 	<button
 		class="play-btn"
-		onclick={() => (state === 'playing' ? onpause() : onplay())}
-		aria-label={state === 'playing' ? 'Pause' : 'Play'}
+		onclick={() => (replayState === 'playing' ? onpause() : onplay())}
+		aria-label={replayState === 'playing' ? 'Pause' : 'Play'}
 	>
-		{#if state === 'playing'}
+		{#if replayState === 'playing'}
 			<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
 				<rect x="6" y="5" width="4" height="14" rx="1" />
 				<rect x="14" y="5" width="4" height="14" rx="1" />
