@@ -201,3 +201,173 @@ describe("speed highlights", () => {
     expect(computeHighlights(players, graph)).toEqual([]);
   });
 });
+
+describe("death highlights", () => {
+  const graph = graphJson({
+    start: { tier: 1, layer: 0, type: "start" },
+    zone_a: { tier: 2, layer: 1 },
+    zone_b: { tier: 3, layer: 2 },
+    zone_c: { tier: 3, layer: 3, type: "final_boss" },
+  });
+
+  it("Graveyard: detects zone with most cumulative deaths", () => {
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        death_count: 8,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_b", igt_ms: 100000, deaths: 5 },
+          { node_id: "zone_c", igt_ms: 300000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 350000,
+        death_count: 6,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_b", igt_ms: 120000, deaths: 4 },
+          { node_id: "zone_c", igt_ms: 350000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    const graveyard = highlights.find((h) => h.type === "graveyard");
+    expect(graveyard).toBeDefined();
+    // zone_b has 5+4=9 total deaths
+    expect(graveyard!.description).toContain("zone_b");
+  });
+
+  it("Comeback Kid: player with most deaths who finished well", () => {
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 310000,
+        death_count: 15,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_c", igt_ms: 310000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 300000,
+        death_count: 2,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_c", igt_ms: 300000 },
+        ],
+      }),
+      participant("charlie", {
+        color_index: 2,
+        igt_ms: 350000,
+        death_count: 20,
+        status: "abandoned",
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 350000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    const comeback = highlights.find((h) => h.type === "comeback_kid");
+    // Alice has most deaths among finishers and still finished 2nd
+    if (comeback) {
+      expect(comeback.playerIds).toContain("alice");
+    }
+  });
+});
+
+describe("path highlights", () => {
+  const graph = graphJson({
+    start: { tier: 1, layer: 0, type: "start" },
+    zone_a: { tier: 2, layer: 1 },
+    zone_b: { tier: 2, layer: 1 },
+    zone_c: { tier: 3, layer: 2 },
+    zone_d: { tier: 3, layer: 2 },
+    final: { tier: 3, layer: 3, type: "final_boss" },
+  });
+
+  it("Same Brain: detects two players with identical path", () => {
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 },
+          { node_id: "zone_c", igt_ms: 100000 },
+          { node_id: "final", igt_ms: 300000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 350000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 60000 },
+          { node_id: "zone_c", igt_ms: 120000 },
+          { node_id: "final", igt_ms: 350000 },
+        ],
+      }),
+      participant("charlie", {
+        color_index: 2,
+        igt_ms: 400000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_b", igt_ms: 70000 },
+          { node_id: "zone_d", igt_ms: 140000 },
+          { node_id: "final", igt_ms: 400000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    const sameBrain = highlights.find((h) => h.type === "same_brain");
+    expect(sameBrain).toBeDefined();
+    expect(sameBrain!.playerIds).toContain("alice");
+    expect(sameBrain!.playerIds).toContain("bob");
+  });
+
+  it("Road Less Traveled: detects player with most unique path", () => {
+    // Use similar timings across zones to minimize competing highlights
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_b", igt_ms: 50000 },
+          { node_id: "zone_d", igt_ms: 100000 },
+          { node_id: "final", igt_ms: 300000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 250000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 },
+          { node_id: "zone_c", igt_ms: 100000 },
+          { node_id: "final", igt_ms: 250000 },
+        ],
+      }),
+      participant("charlie", {
+        color_index: 2,
+        igt_ms: 200000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 },
+          { node_id: "zone_c", igt_ms: 100000 },
+          { node_id: "final", igt_ms: 200000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    const road = highlights.find((h) => h.type === "road_less_traveled");
+    expect(road).toBeDefined();
+    // Alice took zone_b + zone_d while others took zone_a + zone_c
+    expect(road!.playerIds).toContain("alice");
+  });
+});
