@@ -10,6 +10,7 @@ description = "Quick solo run — minimal exploration"
 [run]
 seed = 0
 run_complete_message = "RUN COMPLETE GG"
+chapel_grace = true
 
 [budget]
 tolerance = 3
@@ -43,6 +44,7 @@ golden_seeds = 5
 sacred_tears = 4
 starting_runes = 100000
 larval_tears = 1
+stonesword_keys = 6
 
 # DLC key items (prevent softlocks in DLC areas)
 omother = true
@@ -79,3 +81,5 @@ auto_upgrade_weapons = true
 auto_upgrade_dropped = true
 reduce_upgrade_cost = true
 dlc = true
+nerf_gargoyles = true
+item_preset = true

@@ -16,8 +16,8 @@
 
 	let miscNotes = $derived.by(() => {
 		const notes: string[] = [];
-		if (poolConfig.nerf_gargoyles === false) {
-			notes.push('Gargoyle poison active');
+		if (poolConfig.nerf_gargoyles === true) {
+			notes.push('Gargoyle poison disabled');
 		}
 		return notes;
 	});

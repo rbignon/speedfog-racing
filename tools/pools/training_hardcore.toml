@@ -10,6 +10,7 @@ description = "Punishing solo run with scarce resources and tougher encounters"
 [run]
 seed = 0
 run_complete_message = "RUN COMPLETE GG"
+chapel_grace = true
 
 [budget]
 tolerance = 5
@@ -21,8 +22,8 @@ mini_dungeons = 5
 
 [structure]
 max_parallel_paths = 3
-min_layers = 23
-max_layers = 28
+min_layers = 25
+max_layers = 30
 final_tier = 28
 split_probability = 0.5
 merge_probability = 0.5
@@ -44,6 +45,7 @@ golden_seeds = 3
 sacred_tears = 2
 starting_runes = 50000
 larval_tears = 2
+stonesword_keys = 3
 
 # DLC key items (prevent softlocks in DLC areas)
 omother = true
@@ -81,3 +83,4 @@ auto_upgrade_dropped = true
 reduce_upgrade_cost = true
 dlc = true
 nerf_gargoyles = false
+item_preset = true

@@ -300,6 +300,8 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         starting_items.append(f"{sr // 1000}k Runes" if sr >= 1000 else f"{sr} Runes")
     if lt := starting_items_raw.get("larval_tears"):
         starting_items.append(f"{lt} Larval Tears" if lt > 1 else "1 Larval Tear")
+    if sk := starting_items_raw.get("stonesword_keys"):
+        starting_items.append(f"{sk} Stonesword Keys" if sk > 1 else "1 Stonesword Key")
 
     # Build care package items list
     care_package_items: list[str] = []
