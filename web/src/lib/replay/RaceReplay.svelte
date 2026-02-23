@@ -139,7 +139,7 @@
 	function seek(progress: number) {
 		replayElapsedMs = progress * REPLAY_DEFAULTS.DURATION_MS;
 		currentIgt = replayMsToIgt(replayElapsedMs, maxIgt);
-		if (replayState === 'finished' && progress < 1) {
+		if (replayState === 'idle' || (replayState === 'finished' && progress < 1)) {
 			replayState = 'paused';
 		}
 	}
