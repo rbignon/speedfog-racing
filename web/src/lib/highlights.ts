@@ -19,11 +19,16 @@ export interface ZoneTime {
 
 export type HighlightCategory = "speed" | "deaths" | "path" | "competitive";
 
+export type DescriptionSegment =
+  | { type: "text"; value: string }
+  | { type: "player"; playerId: string; name: string }
+  | { type: "zone"; nodeId: string; name: string };
+
 export interface Highlight {
   type: string;
   category: HighlightCategory;
   title: string;
-  description: string;
+  segments: DescriptionSegment[];
   /** Participant ID(s) involved */
   playerIds: string[];
   /** Internal score for ranking (higher = more interesting) */
@@ -79,8 +84,27 @@ function buildNodeInfo(
   return map;
 }
 
-function displayName(p: WsParticipant): string {
-  return p.twitch_display_name || p.twitch_username;
+function pSeg(p: WsParticipant): DescriptionSegment {
+  return {
+    type: "player",
+    playerId: p.id,
+    name: p.twitch_display_name || p.twitch_username,
+  };
+}
+
+function zSeg(
+  nodeId: string,
+  nodeInfo: Map<string, NodeInfo>,
+): DescriptionSegment {
+  return {
+    type: "zone",
+    nodeId,
+    name: nodeInfo.get(nodeId)?.displayName ?? nodeId,
+  };
+}
+
+function tSeg(value: string): DescriptionSegment {
+  return { type: "text", value };
 }
 
 function formatTime(ms: number): string {
@@ -95,24 +119,20 @@ function formatTime(ms: number): string {
   return `${min}:${String(sec).padStart(2, "0")}`;
 }
 
-function nodeName(nodeId: string, nodeInfo: Map<string, NodeInfo>): string {
-  return nodeInfo.get(nodeId)?.displayName ?? nodeId;
+/** Flatten segments into a plain description string (for tests / fallback). */
+export function descriptionText(h: Highlight): string {
+  return h.segments.map((s) => (s.type === "text" ? s.value : s.name)).join("");
 }
 
 // =============================================================================
 // Detectors
 // =============================================================================
 
-/**
- * Speed Demon: player who cleared a zone much faster than average.
- * Looks at zones visited by 2+ players and finds the biggest speed ratio.
- */
 function detectSpeedDemon(
   participants: WsParticipant[],
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  // Collect times per zone across all players
   const zonePlayerTimes = new Map<
     string,
     { playerId: string; timeMs: number }[]
@@ -133,7 +153,6 @@ function detectSpeedDemon(
 
   for (const [zoneId, times] of zonePlayerTimes) {
     if (times.length < 2) continue;
-    // Skip start zones (tier 1, layer 0)
     const info = nodeInfo.get(zoneId);
     if (info?.type === "start") continue;
 
@@ -142,7 +161,7 @@ function detectSpeedDemon(
 
     for (const t of times) {
       if (t.timeMs <= 0) continue;
-      const ratio = avg / t.timeMs; // Higher = faster relative to avg
+      const ratio = avg / t.timeMs;
       const tierMult = info ? info.tier : 1;
       const score = ratio * tierMult;
       if (score > bestRatio) {
@@ -154,7 +173,7 @@ function detectSpeedDemon(
     }
   }
 
-  if (bestRatio < 1.5) return null; // Need at least 50% faster than average
+  if (bestRatio < 1.5) return null;
 
   const p = participants.find((pp) => pp.id === bestPlayerId);
   if (!p) return null;
@@ -163,15 +182,17 @@ function detectSpeedDemon(
     type: "speed_demon",
     category: "speed",
     title: "Speed Demon",
-    description: `${displayName(p)} blitzed through ${nodeName(bestZone, nodeInfo)} in ${formatTime(bestTime)}`,
+    segments: [
+      pSeg(p),
+      tSeg(" blitzed through "),
+      zSeg(bestZone, nodeInfo),
+      tSeg(` in ${formatTime(bestTime)}`),
+    ],
     playerIds: [bestPlayerId],
     score: Math.min(100, bestRatio * 20),
   };
 }
 
-/**
- * Zone Wall: player who spent disproportionately long in a zone vs others.
- */
 function detectZoneWall(
   participants: WsParticipant[],
   allZoneTimes: Map<string, ZoneTime[]>,
@@ -204,7 +225,7 @@ function detectZoneWall(
     if (avg <= 0) continue;
 
     for (const t of times) {
-      const ratio = t.timeMs / avg; // Higher = slower relative to avg
+      const ratio = t.timeMs / avg;
       const tierMult = info ? info.tier : 1;
       const score = ratio * tierMult;
       if (score > bestRatio) {
@@ -216,7 +237,7 @@ function detectZoneWall(
     }
   }
 
-  if (bestRatio < 2.0) return null; // Need at least 2x slower than average
+  if (bestRatio < 2.0) return null;
 
   const p = participants.find((pp) => pp.id === bestPlayerId);
   if (!p) return null;
@@ -225,15 +246,17 @@ function detectZoneWall(
     type: "zone_wall",
     category: "speed",
     title: "Zone Wall",
-    description: `${nodeName(bestZone, nodeInfo)} was ${displayName(p)}'s nemesis — stuck for ${formatTime(bestTime)}`,
+    segments: [
+      zSeg(bestZone, nodeInfo),
+      tSeg(" was "),
+      pSeg(p),
+      tSeg(`'s nemesis — stuck for ${formatTime(bestTime)}`),
+    ],
     playerIds: [bestPlayerId],
     score: Math.min(100, bestRatio * 15),
   };
 }
 
-/**
- * Fast Starter: player who reached layer 2 first.
- */
 function detectFastStarter(
   participants: WsParticipant[],
   nodeInfo: Map<string, NodeInfo>,
@@ -261,15 +284,15 @@ function detectFastStarter(
     type: "fast_starter",
     category: "speed",
     title: "Fast Starter",
-    description: `${displayName(fastestPlayer)} was first to push past tier 1 at ${formatTime(fastestTime)}`,
+    segments: [
+      pSeg(fastestPlayer),
+      tSeg(` was first to push past tier 1 at ${formatTime(fastestTime)}`),
+    ],
     playerIds: [fastestPlayer.id],
     score: 40,
   };
 }
 
-/**
- * Sprint Final: fastest time in the last tier zones.
- */
 function detectSprintFinal(
   participants: WsParticipant[],
   allZoneTimes: Map<string, ZoneTime[]>,
@@ -307,15 +330,15 @@ function detectSprintFinal(
     type: "sprint_final",
     category: "speed",
     title: "Sprint Final",
-    description: `${displayName(bestPlayer)} raced through the final tier in just ${formatTime(bestTime)}`,
+    segments: [
+      pSeg(bestPlayer),
+      tSeg(` raced through the final tier in just ${formatTime(bestTime)}`),
+    ],
     playerIds: [bestPlayer.id],
     score: 55,
   };
 }
 
-/**
- * Graveyard: zone with the most cumulative deaths across all players.
- */
 function detectGraveyard(
   participants: WsParticipant[],
   allZoneTimes: Map<string, ZoneTime[]>,
@@ -337,21 +360,21 @@ function detectGraveyard(
     }
   }
 
-  if (maxDeaths < 3) return null; // Need at least 3 total deaths
+  if (maxDeaths < 3) return null;
 
   return {
     type: "graveyard",
     category: "deaths",
     title: "Graveyard",
-    description: `${nodeName(maxZone, nodeInfo)} claimed ${maxDeaths} deaths across all racers`,
+    segments: [
+      zSeg(maxZone, nodeInfo),
+      tSeg(` claimed ${maxDeaths} deaths across all racers`),
+    ],
     playerIds: [],
     score: Math.min(100, maxDeaths * 8),
   };
 }
 
-/**
- * Death Zone: most deaths by a single player in one zone.
- */
 function detectDeathZone(
   participants: WsParticipant[],
   allZoneTimes: Map<string, ZoneTime[]>,
@@ -380,15 +403,16 @@ function detectDeathZone(
     type: "death_zone",
     category: "deaths",
     title: "Death Zone",
-    description: `${displayName(p)} died ${maxDeaths} times in ${nodeName(maxZone, nodeInfo)}`,
+    segments: [
+      pSeg(p),
+      tSeg(` died ${maxDeaths} times in `),
+      zSeg(maxZone, nodeInfo),
+    ],
     playerIds: [maxPlayerId],
     score: Math.min(100, maxDeaths * 10),
   };
 }
 
-/**
- * Deathless: player with 0 deaths in a tier 3+ zone.
- */
 function detectDeathless(
   participants: WsParticipant[],
   allZoneTimes: Map<string, ZoneTime[]>,
@@ -411,7 +435,7 @@ function detectDeathless(
         type: "deathless",
         category: "deaths",
         title: "Deathless",
-        description: `${displayName(p)} cleared all high-tier zones without dying`,
+        segments: [pSeg(p), tSeg(" cleared all high-tier zones without dying")],
         playerIds: [p.id],
         score: 70,
       };
@@ -421,9 +445,6 @@ function detectDeathless(
   return null;
 }
 
-/**
- * Comeback Kid: player with the most deaths who still finished well.
- */
 function detectComebackKid(participants: WsParticipant[]): Highlight | null {
   const finishers = participants
     .filter((p) => p.status === "finished")
@@ -431,7 +452,6 @@ function detectComebackKid(participants: WsParticipant[]): Highlight | null {
 
   if (finishers.length < 2) return null;
 
-  // Find player with most deaths among finishers who finished in top half
   const topHalf = finishers.slice(0, Math.ceil(finishers.length / 2));
   let maxDeaths = 0;
   let maxPlayer: WsParticipant | null = null;
@@ -453,15 +473,15 @@ function detectComebackKid(participants: WsParticipant[]): Highlight | null {
     type: "comeback_kid",
     category: "deaths",
     title: "Comeback Kid",
-    description: `${displayName(maxPlayer)} died ${maxDeaths} times but still finished ${rank}${suffix}`,
+    segments: [
+      pSeg(maxPlayer),
+      tSeg(` died ${maxDeaths} times but still finished ${rank}${suffix}`),
+    ],
     playerIds: [maxPlayer.id],
     score: Math.min(100, maxDeaths * 5 + (finishers.length - rank) * 10),
   };
 }
 
-/**
- * Road Less Traveled: player with the most unique path (fewest nodes in common with others).
- */
 function detectRoadLessTraveled(
   participants: WsParticipant[],
 ): Highlight | null {
@@ -479,7 +499,6 @@ function detectRoadLessTraveled(
     const myNodes = paths[i].nodes;
     if (myNodes.size < 2) continue;
 
-    // Average overlap with other players
     let totalOverlap = 0;
     for (let j = 0; j < paths.length; j++) {
       if (i === j) continue;
@@ -504,15 +523,12 @@ function detectRoadLessTraveled(
     type: "road_less_traveled",
     category: "path",
     title: "Road Less Traveled",
-    description: `${displayName(bestPlayer)} forged a unique path through the fog`,
+    segments: [pSeg(bestPlayer), tSeg(" forged a unique path through the fog")],
     playerIds: [bestPlayer.id],
     score: Math.min(100, bestUniqueness * 80),
   };
 }
 
-/**
- * Same Brain: two players with identical zone path.
- */
 function detectSameBrain(participants: WsParticipant[]): Highlight | null {
   for (let i = 0; i < participants.length; i++) {
     const pathA = participants[i].zone_history?.map((z) => z.node_id);
@@ -527,7 +543,12 @@ function detectSameBrain(participants: WsParticipant[]): Highlight | null {
           type: "same_brain",
           category: "path",
           title: "Same Brain",
-          description: `${displayName(participants[i])} and ${displayName(participants[j])} took the exact same path`,
+          segments: [
+            pSeg(participants[i]),
+            tSeg(" and "),
+            pSeg(participants[j]),
+            tSeg(" took the exact same path"),
+          ],
           playerIds: [participants[i].id, participants[j].id],
           score: 65,
         };
@@ -538,9 +559,6 @@ function detectSameBrain(participants: WsParticipant[]): Highlight | null {
   return null;
 }
 
-/**
- * Detour: player who visited the most nodes.
- */
 function detectDetour(participants: WsParticipant[]): Highlight | null {
   let maxNodes = 0;
   let maxPlayer: WsParticipant | null = null;
@@ -563,15 +581,15 @@ function detectDetour(participants: WsParticipant[]): Highlight | null {
     type: "detour",
     category: "path",
     title: "Scenic Route",
-    description: `${displayName(maxPlayer)} explored ${maxNodes} zones — more than anyone else`,
+    segments: [
+      pSeg(maxPlayer),
+      tSeg(` explored ${maxNodes} zones — more than anyone else`),
+    ],
     playerIds: [maxPlayer.id],
     score: Math.min(100, (maxNodes / avgNodes) * 30),
   };
 }
 
-/**
- * Photo Finish: closest IGT gap between consecutive finishers.
- */
 function detectPhotoFinish(participants: WsParticipant[]): Highlight | null {
   const finishers = participants
     .filter((p) => p.status === "finished")
@@ -592,21 +610,23 @@ function detectPhotoFinish(participants: WsParticipant[]): Highlight | null {
     }
   }
 
-  if (!player1 || !player2 || minGap > 30000) return null; // Must be within 30s
+  if (!player1 || !player2 || minGap > 30000) return null;
 
   return {
     type: "photo_finish",
     category: "competitive",
     title: "Photo Finish",
-    description: `${displayName(player1)} and ${displayName(player2)} finished just ${formatTime(minGap)} apart`,
+    segments: [
+      pSeg(player1),
+      tSeg(" and "),
+      pSeg(player2),
+      tSeg(` finished just ${formatTime(minGap)} apart`),
+    ],
     playerIds: [player1.id, player2.id],
     score: Math.min(100, (30000 / Math.max(minGap, 1000)) * 20),
   };
 }
 
-/**
- * Lead Changes: counts how many times the leader changed across layers.
- */
 function detectLeadChanges(
   participants: WsParticipant[],
   nodeInfo: Map<string, NodeInfo>,
@@ -614,7 +634,6 @@ function detectLeadChanges(
   const maxLayer = Math.max(...[...nodeInfo.values()].map((n) => n.layer), 0);
   if (maxLayer < 2) return null;
 
-  // For each layer, find who arrived at that layer first
   const leaders: string[] = [];
   for (let layer = 1; layer <= maxLayer; layer++) {
     let earliest = Infinity;
@@ -644,15 +663,12 @@ function detectLeadChanges(
     type: "lead_changes",
     category: "competitive",
     title: "Back and Forth",
-    description: `The lead changed ${changes} times throughout the race`,
+    segments: [tSeg(`The lead changed ${changes} times throughout the race`)],
     playerIds: [...new Set(leaders)],
     score: Math.min(100, changes * 25),
   };
 }
 
-/**
- * Dominant: player who led at every layer checkpoint.
- */
 function detectDominant(
   participants: WsParticipant[],
   nodeInfo: Map<string, NodeInfo>,
@@ -689,7 +705,7 @@ function detectDominant(
     type: "dominant",
     category: "competitive",
     title: "Dominant",
-    description: `${displayName(p)} led from start to finish`,
+    segments: [pSeg(p), tSeg(" led from start to finish")],
     playerIds: [dominantId],
     score: 60,
   };
@@ -733,10 +749,8 @@ export function computeHighlights(
   push(detectLeadChanges(eligible, nodeInfo));
   push(detectDominant(eligible, nodeInfo));
 
-  // Sort by score descending
   candidates.sort((a, b) => b.score - a.score);
 
-  // Diversity filter: max 2 per category
   const categoryCounts = new Map<string, number>();
   const selected: Highlight[] = [];
   for (const h of candidates) {

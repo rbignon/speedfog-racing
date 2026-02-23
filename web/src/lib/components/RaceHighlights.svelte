@@ -1,15 +1,22 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
-	import { computeHighlights } from '$lib/highlights';
+	import { computeHighlights, type DescriptionSegment } from '$lib/highlights';
+	import { PLAYER_COLORS } from '$lib/dag/constants';
 
 	interface Props {
 		participants: WsParticipant[];
 		graphJson: Record<string, unknown>;
+		onzoneclick?: (nodeId: string) => void;
 	}
 
-	let { participants, graphJson }: Props = $props();
+	let { participants, graphJson, onzoneclick }: Props = $props();
 
 	let highlights = $derived(computeHighlights(participants, graphJson));
+
+	function playerColor(playerId: string): string {
+		const p = participants.find((pp) => pp.id === playerId);
+		return p ? PLAYER_COLORS[p.color_index % PLAYER_COLORS.length] : '#9CA3AF';
+	}
 </script>
 
 {#if highlights.length > 0}
@@ -19,7 +26,24 @@
 			{#each highlights as highlight}
 				<li class="highlight-item">
 					<span class="highlight-title">{highlight.title}</span>
-					<span class="highlight-desc">{highlight.description}</span>
+					<span class="highlight-desc">
+						{#each highlight.segments as seg}
+							{#if seg.type === 'text'}
+								{seg.value}
+							{:else if seg.type === 'player'}
+								<span class="player-link" style="color: {playerColor(seg.playerId)}"
+									>{seg.name}</span
+								>
+							{:else if seg.type === 'zone'}
+								<button
+									class="zone-link"
+									onclick={() => onzoneclick?.(seg.nodeId)}
+								>
+									{seg.name}
+								</button>
+							{/if}
+						{/each}
+					</span>
 				</li>
 			{/each}
 		</ul>
@@ -71,5 +95,23 @@
 	.highlight-desc {
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
+	}
+
+	.player-link {
+		font-weight: 600;
+	}
+
+	.zone-link {
+		all: unset;
+		color: var(--color-purple);
+		cursor: pointer;
+		font: inherit;
+		text-decoration: underline;
+		text-decoration-color: transparent;
+		transition: text-decoration-color var(--transition);
+	}
+
+	.zone-link:hover {
+		text-decoration-color: var(--color-purple);
 	}
 </style>

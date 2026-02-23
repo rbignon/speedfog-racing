@@ -48,6 +48,16 @@
 	let scheduleSaving = $state(false);
 	let selectedParticipantIds = $state<Set<string>>(new Set());
 	let showDownloadModal = $state(false);
+	let highlightFocusNodeId = $state<string | null>(null);
+
+	function handleHighlightZoneClick(nodeId: string) {
+		// Reset first so re-clicking the same zone re-triggers the effect
+		highlightFocusNodeId = null;
+		// Use tick to ensure the reset propagates before setting new value
+		requestAnimationFrame(() => {
+			highlightFocusNodeId = nodeId;
+		});
+	}
 
 	async function handleDownload() {
 		downloading = true;
@@ -570,9 +580,10 @@
 				graphJson={liveSeed.graph_json}
 				participants={raceStore.leaderboard}
 				highlightIds={selectedParticipantIds}
+				focusNodeId={highlightFocusNodeId}
 			/>
 			<RaceStats participants={raceStore.leaderboard} />
-			<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} />
+			<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} onzoneclick={handleHighlightZoneClick} />
 		{:else if liveSeed?.graph_json && myWsParticipantId}
 			<MetroDagProgressive
 				graphJson={liveSeed.graph_json}

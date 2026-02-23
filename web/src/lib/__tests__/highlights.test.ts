@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeZoneTimes,
   computeHighlights,
+  descriptionText,
   type ZoneTime,
   type Highlight,
 } from "$lib/highlights";
@@ -237,7 +238,7 @@ describe("death highlights", () => {
     const graveyard = highlights.find((h) => h.type === "graveyard");
     expect(graveyard).toBeDefined();
     // zone_b has 5+4=9 total deaths
-    expect(graveyard!.description).toContain("zone_b");
+    expect(descriptionText(graveyard!)).toContain("zone_b");
   });
 
   it("Comeback Kid: player with most deaths who finished well", () => {

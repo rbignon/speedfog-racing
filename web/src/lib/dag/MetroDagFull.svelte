@@ -34,9 +34,10 @@
 		participants: WsParticipant[];
 		transparent?: boolean;
 		highlightIds?: Set<string>;
+		focusNodeId?: string | null;
 	}
 
-	let { graphJson, participants, transparent = false, highlightIds }: Props = $props();
+	let { graphJson, participants, transparent = false, highlightIds, focusNodeId = null }: Props = $props();
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
 
@@ -260,6 +261,60 @@
 		popupData = null;
 	}
 
+	let dagContainer: HTMLElement | undefined = $state();
+
+	function openPopupForNode(nodeId: string) {
+		const node = nodeMap.get(nodeId);
+		if (!node) return;
+
+		const { entrances, exits } = computeConnections(
+			nodeId,
+			graph.edges,
+			nodeMap as Map<string, DagNode>,
+			undefined,
+			exitTexts,
+			entranceTexts
+		);
+		const playersHere = computePlayersAtNode(nodeId, participants);
+		const visitors = computeVisitors(nodeId, participants);
+
+		popupData = {
+			nodeId,
+			displayName: node.displayName,
+			type: node.type,
+			displayType: node.displayType,
+			tier: node.tier,
+			randomizedBoss: node.randomizedBoss,
+			entrances,
+			exits,
+			playersHere,
+			visitors
+		};
+
+		// Position popup near the SVG node element
+		if (dagContainer) {
+			const el = dagContainer.querySelector(`[data-node-id="${CSS.escape(nodeId)}"]`);
+			if (el) {
+				const rect = el.getBoundingClientRect();
+				popupX = rect.left + rect.width / 2;
+				popupY = rect.top;
+				return;
+			}
+		}
+		// Fallback: center of container
+		if (dagContainer) {
+			const rect = dagContainer.getBoundingClientRect();
+			popupX = rect.left + rect.width / 2;
+			popupY = rect.top + rect.height / 2;
+		}
+	}
+
+	$effect(() => {
+		if (focusNodeId) {
+			openPopupForNode(focusNodeId);
+		}
+	});
+
 	function truncateLabel(name: string): string {
 		const short = name.includes(' - ') ? name.split(' - ').pop()! : name;
 		if (short.length <= LABEL_MAX_CHARS) return short;
@@ -289,6 +344,7 @@
 </script>
 
 {#if layout.nodes.length > 0}
+<div bind:this={dagContainer}>
 	<ZoomableSvg width={layout.width} height={layout.height} {transparent} onnodeclick={onNodeClick} onpanstart={closePopup}>
 			<defs>
 				<filter id="results-player-glow" x="-50%" y="-50%" width="200%" height="200%">
@@ -427,6 +483,7 @@
 	{#if popupData}
 		<NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
 	{/if}
+</div>
 {/if}
 
 <style>
