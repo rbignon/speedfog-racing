@@ -275,6 +275,207 @@ describe("computeVisitors", () => {
   });
 });
 
+describe("computeVisitors with nodeLayers (outcome)", () => {
+  const nodeLayers = new Map([
+    ["start", 0],
+    ["stormveil", 1],
+    ["liurnia", 2],
+    ["raya", 2],
+    ["caelid", 3],
+  ]);
+
+  it("marks zone as cleared when next zone is on higher layer", () => {
+    const participants = [
+      {
+        id: "p1",
+        twitch_display_name: "Alice",
+        twitch_username: "alice",
+        status: "finished",
+        current_zone: "caelid",
+        color_index: 0,
+        igt_ms: 300000,
+        death_count: 0,
+        current_layer: 3,
+        mod_connected: false,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "stormveil", igt_ms: 60000 },
+          { node_id: "liurnia", igt_ms: 120000 },
+          { node_id: "caelid", igt_ms: 200000 },
+        ],
+      },
+    ];
+    const visitors = computeVisitors("start", participants, nodeLayers);
+    expect(visitors[0].outcome).toBe("cleared"); // layer 0 → 1
+    const stormveil = computeVisitors("stormveil", participants, nodeLayers);
+    expect(stormveil[0].outcome).toBe("cleared"); // layer 1 → 2
+  });
+
+  it("marks zone as backed when next zone is on same/lower layer", () => {
+    const participants = [
+      {
+        id: "p1",
+        twitch_display_name: "Alice",
+        twitch_username: "alice",
+        status: "finished",
+        current_zone: "caelid",
+        color_index: 0,
+        igt_ms: 300000,
+        death_count: 0,
+        current_layer: 3,
+        mod_connected: false,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "liurnia", igt_ms: 60000 },
+          { node_id: "raya", igt_ms: 120000 }, // layer 2 → 2 = backed
+          { node_id: "caelid", igt_ms: 200000 },
+        ],
+      },
+    ];
+    const visitors = computeVisitors("liurnia", participants, nodeLayers);
+    expect(visitors[0].outcome).toBe("backed"); // layer 2 → 2
+  });
+
+  it("marks last zone as playing for playing participant", () => {
+    const participants = [
+      {
+        id: "p1",
+        twitch_display_name: "Alice",
+        twitch_username: "alice",
+        status: "playing",
+        current_zone: "liurnia",
+        color_index: 0,
+        igt_ms: 200000,
+        death_count: 0,
+        current_layer: 2,
+        mod_connected: true,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "liurnia", igt_ms: 60000 },
+        ],
+      },
+    ];
+    const visitors = computeVisitors("liurnia", participants, nodeLayers);
+    expect(visitors[0].outcome).toBe("playing");
+  });
+
+  it("marks last zone as abandoned for abandoned participant", () => {
+    const participants = [
+      {
+        id: "p1",
+        twitch_display_name: "Alice",
+        twitch_username: "alice",
+        status: "abandoned",
+        current_zone: "stormveil",
+        color_index: 0,
+        igt_ms: 100000,
+        death_count: 5,
+        current_layer: 1,
+        mod_connected: false,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "stormveil", igt_ms: 60000 },
+        ],
+      },
+    ];
+    const visitors = computeVisitors("stormveil", participants, nodeLayers);
+    expect(visitors[0].outcome).toBe("abandoned");
+  });
+
+  it("marks last zone as cleared for finished participant", () => {
+    const participants = [
+      {
+        id: "p1",
+        twitch_display_name: "Alice",
+        twitch_username: "alice",
+        status: "finished",
+        current_zone: "caelid",
+        color_index: 0,
+        igt_ms: 300000,
+        death_count: 0,
+        current_layer: 3,
+        mod_connected: false,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "caelid", igt_ms: 200000 },
+        ],
+      },
+    ];
+    const visitors = computeVisitors("caelid", participants, nodeLayers);
+    expect(visitors[0].outcome).toBe("cleared");
+  });
+
+  it("sorts by outcome priority then time", () => {
+    const participants = [
+      {
+        id: "p1",
+        twitch_display_name: "Alice",
+        twitch_username: "alice",
+        status: "abandoned",
+        current_zone: "stormveil",
+        color_index: 0,
+        igt_ms: 100000,
+        death_count: 0,
+        current_layer: 1,
+        mod_connected: false,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "stormveil", igt_ms: 30000 },
+        ],
+      },
+      {
+        id: "p2",
+        twitch_display_name: "Bob",
+        twitch_username: "bob",
+        status: "finished",
+        current_zone: "caelid",
+        color_index: 1,
+        igt_ms: 300000,
+        death_count: 0,
+        current_layer: 3,
+        mod_connected: false,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "stormveil", igt_ms: 60000 },
+          { node_id: "caelid", igt_ms: 200000 },
+        ],
+      },
+    ];
+    const visitors = computeVisitors("stormveil", participants, nodeLayers);
+    expect(visitors).toHaveLength(2);
+    // Bob cleared (layer 1→3), Alice abandoned → Bob first
+    expect(visitors[0].displayName).toBe("Bob");
+    expect(visitors[0].outcome).toBe("cleared");
+    expect(visitors[1].displayName).toBe("Alice");
+    expect(visitors[1].outcome).toBe("abandoned");
+  });
+
+  it("defaults to cleared/backed without nodeLayers (no layer info)", () => {
+    // Without nodeLayers, all layers default to 0, so non-last zones are "backed"
+    const participants = [
+      {
+        id: "p1",
+        twitch_display_name: "Alice",
+        twitch_username: "alice",
+        status: "finished",
+        current_zone: "caelid",
+        color_index: 0,
+        igt_ms: 300000,
+        death_count: 0,
+        current_layer: 3,
+        mod_connected: false,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "stormveil", igt_ms: 60000 },
+        ],
+      },
+    ];
+    // Without nodeLayers, layers default to 0 → same layer = backed
+    const visitors = computeVisitors("start", participants);
+    expect(visitors[0].outcome).toBe("backed");
+  });
+});
+
 describe("formatIgt", () => {
   it("formats minutes and seconds", () => {
     expect(formatIgt(65000)).toBe("1:05");

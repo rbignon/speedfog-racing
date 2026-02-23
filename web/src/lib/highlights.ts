@@ -62,29 +62,27 @@ export function computeZoneTimes(
 ): ZoneTime[] {
   if (!p.zone_history || p.zone_history.length === 0) return [];
 
+  // Build a layer-only map from nodeInfo for computeOutcome
+  const nodeLayers = nodeInfo
+    ? new Map([...nodeInfo.entries()].map(([id, info]) => [id, info.layer]))
+    : undefined;
+
   return p.zone_history.map((entry, i) => {
     const isLast = i >= p.zone_history!.length - 1;
     const nextIgt = isLast ? p.igt_ms : p.zone_history![i + 1].igt_ms;
-
-    let outcome: ZoneOutcome;
-    if (!isLast) {
-      const nextNodeId = p.zone_history![i + 1].node_id;
-      const curLayer = nodeInfo?.get(entry.node_id)?.layer ?? 0;
-      const nextLayer = nodeInfo?.get(nextNodeId)?.layer ?? 0;
-      outcome = nextLayer > curLayer ? "cleared" : "backed";
-    } else if (p.status === "finished") {
-      outcome = "cleared";
-    } else if (p.status === "playing") {
-      outcome = "playing";
-    } else {
-      outcome = "abandoned";
-    }
+    const nextNodeId = isLast ? undefined : p.zone_history![i + 1].node_id;
 
     return {
       nodeId: entry.node_id,
       timeMs: Math.max(0, nextIgt - entry.igt_ms),
       deaths: entry.deaths ?? 0,
-      outcome,
+      outcome: computeOutcome(
+        isLast,
+        entry.node_id,
+        nextNodeId,
+        p.status,
+        nodeLayers,
+      ),
     };
   });
 }
@@ -155,6 +153,76 @@ export function descriptionText(h: Highlight): string {
   return h.segments.map((s) => (s.type === "text" ? s.value : s.name)).join("");
 }
 
+/**
+ * Compute outcome for a zone entry based on its position and layer progression.
+ */
+export function computeOutcome(
+  isLast: boolean,
+  currentNodeId: string,
+  nextNodeId: string | undefined,
+  participantStatus: string,
+  nodeLayers?: Map<string, number>,
+): ZoneOutcome {
+  if (!isLast && nextNodeId !== undefined) {
+    const curLayer = nodeLayers?.get(currentNodeId) ?? 0;
+    const nextLayer = nodeLayers?.get(nextNodeId) ?? 0;
+    return nextLayer > curLayer ? "cleared" : "backed";
+  }
+  if (participantStatus === "finished") return "cleared";
+  if (participantStatus === "playing") return "playing";
+  return "abandoned";
+}
+
+/**
+ * Build a map of zoneId → list of player times (only cleared zones).
+ * Shared by detectSpeedDemon and detectZoneWall.
+ */
+function buildZonePlayerTimes(
+  allZoneTimes: Map<string, ZoneTime[]>,
+  clearedOnly: boolean,
+): Map<string, { playerId: string; timeMs: number }[]> {
+  const map = new Map<string, { playerId: string; timeMs: number }[]>();
+  for (const [pid, zones] of allZoneTimes) {
+    for (const zt of zones) {
+      if (clearedOnly && zt.outcome !== "cleared") continue;
+      if (!map.has(zt.nodeId)) map.set(zt.nodeId, []);
+      map.get(zt.nodeId)!.push({ playerId: pid, timeMs: zt.timeMs });
+    }
+  }
+  return map;
+}
+
+/**
+ * Compute the leader (first to reach each layer) across all layers.
+ * Shared by detectLeadChanges and detectDominant.
+ */
+function computeLeadersPerLayer(
+  participants: WsParticipant[],
+  nodeInfo: Map<string, NodeInfo>,
+): string[] {
+  const maxLayer = Math.max(...[...nodeInfo.values()].map((n) => n.layer), 0);
+  if (maxLayer < 2) return [];
+
+  const leaders: string[] = [];
+  for (let layer = 1; layer <= maxLayer; layer++) {
+    let earliest = Infinity;
+    let leaderId = "";
+    for (const p of participants) {
+      if (!p.zone_history) continue;
+      for (const entry of p.zone_history) {
+        const info = nodeInfo.get(entry.node_id);
+        if (info && info.layer >= layer && entry.igt_ms < earliest) {
+          earliest = entry.igt_ms;
+          leaderId = p.id;
+          break;
+        }
+      }
+    }
+    if (leaderId) leaders.push(leaderId);
+  }
+  return leaders;
+}
+
 // =============================================================================
 // Detectors
 // =============================================================================
@@ -164,19 +232,7 @@ function detectSpeedDemon(
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  const zonePlayerTimes = new Map<
-    string,
-    { playerId: string; timeMs: number }[]
-  >();
-  for (const [pid, zones] of allZoneTimes) {
-    for (const zt of zones) {
-      if (zt.outcome !== "cleared") continue;
-      if (!zonePlayerTimes.has(zt.nodeId)) zonePlayerTimes.set(zt.nodeId, []);
-      zonePlayerTimes
-        .get(zt.nodeId)!
-        .push({ playerId: pid, timeMs: zt.timeMs });
-    }
-  }
+  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes, true);
 
   let bestRatio = 0;
   let bestPlayerId = "";
@@ -230,18 +286,7 @@ function detectZoneWall(
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  const zonePlayerTimes = new Map<
-    string,
-    { playerId: string; timeMs: number }[]
-  >();
-  for (const [pid, zones] of allZoneTimes) {
-    for (const zt of zones) {
-      if (!zonePlayerTimes.has(zt.nodeId)) zonePlayerTimes.set(zt.nodeId, []);
-      zonePlayerTimes
-        .get(zt.nodeId)!
-        .push({ playerId: pid, timeMs: zt.timeMs });
-    }
-  }
+  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes, false);
 
   let bestRatio = 0;
   let bestPlayerId = "";
@@ -293,35 +338,39 @@ function detectFastStarter(
   participants: WsParticipant[],
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  let fastestTime = Infinity;
-  let fastestPlayer: WsParticipant | null = null;
+  const times: { player: WsParticipant; time: number }[] = [];
 
   for (const p of participants) {
     if (!p.zone_history) continue;
     for (const entry of p.zone_history) {
       const info = nodeInfo.get(entry.node_id);
       if (info && info.layer >= 2) {
-        if (entry.igt_ms < fastestTime) {
-          fastestTime = entry.igt_ms;
-          fastestPlayer = p;
-        }
+        times.push({ player: p, time: entry.igt_ms });
         break;
       }
     }
   }
 
-  if (!fastestPlayer || fastestTime === Infinity) return null;
+  if (times.length === 0) return null;
+  times.sort((a, b) => a.time - b.time);
+
+  const fastest = times[0];
+  // Score based on gap to 2nd place (or use own time if solo)
+  const secondTime = times.length > 1 ? times[1].time : fastest.time * 2;
+  const gap = secondTime - fastest.time;
+  const gapRatio = gap / Math.max(fastest.time, 1);
+  const score = Math.min(100, Math.max(20, 30 + gapRatio * 40));
 
   return {
     type: "fast_starter",
     category: "speed",
     title: "Fast Starter",
     segments: [
-      pSeg(fastestPlayer),
-      tSeg(` was first to push past tier 1 at ${formatTime(fastestTime)}`),
+      pSeg(fastest.player),
+      tSeg(` was first to push past tier 1 at ${formatTime(fastest.time)}`),
     ],
-    playerIds: [fastestPlayer.id],
-    score: 40,
+    playerIds: [fastest.player.id],
+    score,
   };
 }
 
@@ -359,6 +408,32 @@ function detectSprintFinal(
 
   if (!bestPlayer) return null;
 
+  // Compute average final-tier time across all players for dynamic score
+  let totalFinalTier = 0;
+  let countFinalTier = 0;
+  for (const p of participants) {
+    const zones = allZoneTimes.get(p.id);
+    if (!zones) continue;
+    let pTotal = 0;
+    let pHas = false;
+    for (const zt of zones) {
+      if (zt.outcome !== "cleared") continue;
+      const info = nodeInfo.get(zt.nodeId);
+      if (info && info.tier >= maxTier) {
+        pTotal += zt.timeMs;
+        pHas = true;
+      }
+    }
+    if (pHas) {
+      totalFinalTier += pTotal;
+      countFinalTier++;
+    }
+  }
+  const avgFinalTier =
+    countFinalTier > 1 ? totalFinalTier / countFinalTier : bestTime * 2;
+  const ratio = avgFinalTier / Math.max(bestTime, 1);
+  const score = Math.min(100, Math.max(20, ratio * 25));
+
   return {
     type: "sprint_final",
     category: "speed",
@@ -368,7 +443,7 @@ function detectSprintFinal(
       tSeg(` raced through the final tier in just ${formatTime(bestTime)}`),
     ],
     playerIds: [bestPlayer.id],
-    score: 55,
+    score,
   };
 }
 
@@ -451,6 +526,9 @@ function detectDeathless(
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
+  let bestPlayer: WsParticipant | null = null;
+  let bestCount = 0;
+
   for (const p of participants) {
     const zones = allZoneTimes.get(p.id);
     if (!zones) continue;
@@ -463,20 +541,29 @@ function detectDeathless(
 
     if (
       highTierZones.length > 0 &&
-      highTierZones.every((zt) => zt.deaths === 0)
+      highTierZones.every((zt) => zt.deaths === 0) &&
+      highTierZones.length > bestCount
     ) {
-      return {
-        type: "deathless",
-        category: "deaths",
-        title: "Deathless",
-        segments: [pSeg(p), tSeg(" cleared all high-tier zones without dying")],
-        playerIds: [p.id],
-        score: 70,
-      };
+      bestCount = highTierZones.length;
+      bestPlayer = p;
     }
   }
 
-  return null;
+  if (!bestPlayer) return null;
+
+  return {
+    type: "deathless",
+    category: "deaths",
+    title: "Deathless",
+    segments: [
+      pSeg(bestPlayer),
+      tSeg(
+        ` cleared ${bestCount} high-tier zone${bestCount !== 1 ? "s" : ""} without dying`,
+      ),
+    ],
+    playerIds: [bestPlayer.id],
+    score: Math.min(100, 50 + bestCount * 10),
+  };
 }
 
 function detectComebackKid(participants: WsParticipant[]): Highlight | null {
@@ -573,6 +660,8 @@ function detectSameBrain(participants: WsParticipant[]): Highlight | null {
       const pathB = participants[j].zone_history?.map((z) => z.node_id);
       if (!pathB) continue;
       if (pathB.join(",") === keyA) {
+        // Longer matching paths are more impressive
+        const score = Math.min(100, 40 + pathA.length * 8);
         return {
           type: "same_brain",
           category: "path",
@@ -584,7 +673,7 @@ function detectSameBrain(participants: WsParticipant[]): Highlight | null {
             tSeg(" took the exact same path"),
           ],
           playerIds: [participants[i].id, participants[j].id],
-          score: 65,
+          score,
         };
       }
     }
@@ -665,26 +754,8 @@ function detectLeadChanges(
   participants: WsParticipant[],
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  const maxLayer = Math.max(...[...nodeInfo.values()].map((n) => n.layer), 0);
-  if (maxLayer < 2) return null;
-
-  const leaders: string[] = [];
-  for (let layer = 1; layer <= maxLayer; layer++) {
-    let earliest = Infinity;
-    let leaderId = "";
-    for (const p of participants) {
-      if (!p.zone_history) continue;
-      for (const entry of p.zone_history) {
-        const info = nodeInfo.get(entry.node_id);
-        if (info && info.layer >= layer && entry.igt_ms < earliest) {
-          earliest = entry.igt_ms;
-          leaderId = p.id;
-          break;
-        }
-      }
-    }
-    if (leaderId) leaders.push(leaderId);
-  }
+  const leaders = computeLeadersPerLayer(participants, nodeInfo);
+  if (leaders.length < 2) return null;
 
   let changes = 0;
   for (let i = 1; i < leaders.length; i++) {
@@ -707,26 +778,7 @@ function detectDominant(
   participants: WsParticipant[],
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  const maxLayer = Math.max(...[...nodeInfo.values()].map((n) => n.layer), 0);
-  if (maxLayer < 2) return null;
-
-  const leaders: string[] = [];
-  for (let layer = 1; layer <= maxLayer; layer++) {
-    let earliest = Infinity;
-    let leaderId = "";
-    for (const p of participants) {
-      if (!p.zone_history) continue;
-      for (const entry of p.zone_history) {
-        const info = nodeInfo.get(entry.node_id);
-        if (info && info.layer >= layer && entry.igt_ms < earliest) {
-          earliest = entry.igt_ms;
-          leaderId = p.id;
-          break;
-        }
-      }
-    }
-    if (leaderId) leaders.push(leaderId);
-  }
+  const leaders = computeLeadersPerLayer(participants, nodeInfo);
 
   const uniqueLeaders = new Set(leaders);
   if (uniqueLeaders.size !== 1 || leaders.length < 2) return null;
@@ -735,13 +787,16 @@ function detectDominant(
   const p = participants.find((pp) => pp.id === dominantId);
   if (!p) return null;
 
+  // More layers dominated = more impressive
+  const score = Math.min(100, 40 + leaders.length * 8);
+
   return {
     type: "dominant",
     category: "competitive",
     title: "Dominant",
     segments: [pSeg(p), tSeg(" led from start to finish")],
     playerIds: [dominantId],
-    score: 60,
+    score,
   };
 }
 
@@ -815,7 +870,7 @@ function detectRageInducer(
     segments: [
       zSeg(maxZone, nodeInfo),
       tSeg(
-        ` made ${maxAbandons} player${maxAbandons > 2 ? "s" : ""} rage-quit`,
+        ` made ${maxAbandons} player${maxAbandons !== 1 ? "s" : ""} rage-quit`,
       ),
     ],
     playerIds: [],
@@ -845,8 +900,8 @@ function detectEarlyExit(participants: WsParticipant[]): Highlight | null {
   if (!earliest) return null;
 
   const ratio = earliest.igt_ms / medianIgt;
-  const score = Math.max(0, 80 - ratio * 60);
-  if (score < 10) return null;
+  if (ratio > 0.8) return null;
+  const score = Math.min(100, Math.max(20, 90 - ratio * 100));
 
   return {
     type: "early_exit",

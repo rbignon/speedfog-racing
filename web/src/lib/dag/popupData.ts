@@ -5,6 +5,7 @@
 import type { DagEdge, DagNode, DagNodeType } from "./types";
 import type { WsParticipant } from "$lib/websocket";
 import { PLAYER_COLORS } from "./constants";
+import { computeOutcome, type ZoneOutcome } from "$lib/highlights";
 
 // =============================================================================
 // Types
@@ -31,7 +32,7 @@ export interface PopupPlayer {
   color: string;
 }
 
-export type VisitOutcome = "cleared" | "backed" | "playing" | "abandoned";
+export type VisitOutcome = ZoneOutcome;
 
 export interface PopupVisitor {
   displayName: string;
@@ -225,19 +226,14 @@ export function computeVisitors(
       timeSpentMs = p.igt_ms - entry.igt_ms;
     }
 
-    let outcome: VisitOutcome;
-    if (!isLast) {
-      const nextNodeId = p.zone_history[idx + 1].node_id;
-      const curLayer = nodeLayers?.get(entry.node_id) ?? 0;
-      const nextLayer = nodeLayers?.get(nextNodeId) ?? 0;
-      outcome = nextLayer > curLayer ? "cleared" : "backed";
-    } else if (p.status === "finished") {
-      outcome = "cleared";
-    } else if (p.status === "playing") {
-      outcome = "playing";
-    } else {
-      outcome = "abandoned";
-    }
+    const nextNodeId = isLast ? undefined : p.zone_history[idx + 1].node_id;
+    const outcome = computeOutcome(
+      isLast,
+      entry.node_id,
+      nextNodeId,
+      p.status,
+      nodeLayers,
+    );
 
     visitors.push({
       displayName: p.twitch_display_name || p.twitch_username,

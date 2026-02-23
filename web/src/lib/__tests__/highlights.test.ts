@@ -240,10 +240,11 @@ describe("speed highlights", () => {
   });
 
   it("Zone Wall: detects player who spent disproportionately long in a zone", () => {
-    // Use custom graph where zone_a is high-tier so Alice's wall there dominates
+    // Both players reach each layer at similar times to minimize fast_starter score,
+    // but Alice spends much longer in zone_b specifically.
     const wallGraph = graphJson({
       start: { tier: 1, layer: 0, type: "start" },
-      zone_a: { tier: 3, layer: 1 },
+      zone_a: { tier: 2, layer: 1 },
       zone_b: { tier: 3, layer: 2 },
       zone_c: { tier: 3, layer: 3, type: "final_boss" },
     });
@@ -253,9 +254,9 @@ describe("speed highlights", () => {
         igt_ms: 400000,
         zone_history: [
           { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_a", igt_ms: 10000 },
-          { node_id: "zone_b", igt_ms: 300000 }, // 290s in zone_a!
-          { node_id: "zone_c", igt_ms: 350000 }, // 50s in zone_b
+          { node_id: "zone_a", igt_ms: 10000 }, // 10s in start
+          { node_id: "zone_b", igt_ms: 30000 }, // 20s in zone_a
+          { node_id: "zone_c", igt_ms: 350000 }, // 320s in zone_b!
         ],
       }),
       participant("bob", {
@@ -263,16 +264,16 @@ describe("speed highlights", () => {
         igt_ms: 200000,
         zone_history: [
           { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_a", igt_ms: 10000 },
-          { node_id: "zone_b", igt_ms: 40000 }, // 30s in zone_a
-          { node_id: "zone_c", igt_ms: 100000 }, // 60s in zone_b
+          { node_id: "zone_a", igt_ms: 12000 }, // 12s in start (similar to alice)
+          { node_id: "zone_b", igt_ms: 35000 }, // 23s in zone_a (similar to alice)
+          { node_id: "zone_c", igt_ms: 100000 }, // 65s in zone_b
         ],
       }),
     ];
     const highlights = computeHighlights(players, wallGraph);
     const wall = highlights.find((h) => h.type === "zone_wall");
     expect(wall).toBeDefined();
-    // Alice spent 290s in zone_a vs Bob's 30s — extreme zone wall
+    // Alice spent 320s in zone_b vs Bob's 65s — extreme zone wall
     expect(wall!.playerIds).toContain("alice");
   });
 
