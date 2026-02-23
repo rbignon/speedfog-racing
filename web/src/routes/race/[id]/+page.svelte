@@ -23,6 +23,7 @@
 	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
 	import { MetroDag, MetroDagBlurred, MetroDagProgressive, MetroDagFull } from '$lib/dag';
 	import { parseDagGraph } from '$lib/dag/types';
+	import { RaceReplay } from '$lib/replay';
 	import {
 		downloadMySeedPack,
 		removeParticipant,
@@ -583,6 +584,7 @@
 				highlightIds={selectedParticipantIds}
 				focusNodeId={highlightFocusNodeId}
 			/>
+			<RaceReplay graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
 			<RaceStats participants={raceStore.leaderboard} />
 			<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} onzoneclick={handleHighlightZoneClick} />
 		{:else if liveSeed?.graph_json && myWsParticipantId}
