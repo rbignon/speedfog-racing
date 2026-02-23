@@ -144,6 +144,8 @@ export function computePlayerPosition(
   nodeInfo: Map<string, NodeInfo>,
   orbitPhaseOffset: number,
   replayElapsedMs: number,
+  participantIndex: number = 0,
+  participantCount: number = 1,
 ): PlayerSnapshot | null {
   // Finished players: park to the right of their last node, static
   if (rp.finished && igtMs >= rp.totalIgt && rp.zoneVisits.length > 0) {
@@ -151,10 +153,9 @@ export function computePlayerPosition(
     const lastPos = nodePositions.get(lastVisit.nodeId);
     if (lastPos) {
       const layer = nodeInfo.get(lastVisit.nodeId)?.layer ?? 0;
-      // Space finished dots vertically by one dot diameter, centered on node
-      const index = orbitPhaseOffset / (Math.PI * 2);
       const spacing = RACER_DOT_RADIUS * 2.5;
-      const yOffset = (index - 0.5) * spacing;
+      const totalSpread = (participantCount - 1) * spacing;
+      const yOffset = -totalSpread / 2 + participantIndex * spacing;
       return {
         participantId: rp.id,
         x: lastPos.x + REPLAY_DEFAULTS.FINISHED_X_OFFSET,

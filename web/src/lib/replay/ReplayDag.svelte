@@ -40,7 +40,9 @@
 				nodePositions,
 				nodeInfo,
 				phaseOffset,
-				replayElapsedMs
+				replayElapsedMs,
+				i,
+				replayParticipants.length
 			);
 			if (snap) result.push(snap);
 		}
