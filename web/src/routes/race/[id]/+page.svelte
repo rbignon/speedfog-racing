@@ -16,6 +16,7 @@
 	import Podium from '$lib/components/Podium.svelte';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 	import RaceStats from '$lib/components/RaceStats.svelte';
+	import RaceHighlights from '$lib/components/RaceHighlights.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
@@ -571,6 +572,7 @@
 				highlightIds={selectedParticipantIds}
 			/>
 			<RaceStats participants={raceStore.leaderboard} />
+			<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} />
 		{:else if liveSeed?.graph_json && myWsParticipantId}
 			<MetroDagProgressive
 				graphJson={liveSeed.graph_json}
