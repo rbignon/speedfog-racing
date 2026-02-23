@@ -29,6 +29,43 @@ function participant(
   };
 }
 
+// Minimal graph_json factory
+function graphJson(
+  nodes: Record<string, { tier?: number; layer?: number; type?: string }>,
+) {
+  const nodeEntries: Record<string, unknown> = {};
+  for (const [id, data] of Object.entries(nodes)) {
+    nodeEntries[id] = {
+      type: data.type ?? "mini_dungeon",
+      display_name: id,
+      zones: [],
+      layer: data.layer ?? 0,
+      tier: data.tier ?? 1,
+      weight: 1,
+    };
+  }
+  return { nodes: nodeEntries, edges: [], total_layers: 3 };
+}
+
+// Node info map factory (for computeZoneTimes)
+function nodeInfoMap(
+  nodes: Record<string, { layer: number }>,
+): Map<
+  string,
+  { tier: number; layer: number; displayName: string; type: string }
+> {
+  const map = new Map();
+  for (const [id, data] of Object.entries(nodes)) {
+    map.set(id, {
+      tier: 1,
+      layer: data.layer,
+      displayName: id,
+      type: "mini_dungeon",
+    });
+  }
+  return map;
+}
+
 describe("computeZoneTimes", () => {
   it("computes time spent in each zone from zone_history", () => {
     const p = participant("alice", {
@@ -39,11 +76,16 @@ describe("computeZoneTimes", () => {
         { node_id: "zone_b", igt_ms: 120000 },
       ],
     });
-    const result = computeZoneTimes(p);
+    const info = nodeInfoMap({
+      start: { layer: 0 },
+      zone_a: { layer: 1 },
+      zone_b: { layer: 2 },
+    });
+    const result = computeZoneTimes(p, info);
     expect(result).toEqual([
-      { nodeId: "start", timeMs: 60000, deaths: 0 },
-      { nodeId: "zone_a", timeMs: 60000, deaths: 0 },
-      { nodeId: "zone_b", timeMs: 180000, deaths: 0 },
+      { nodeId: "start", timeMs: 60000, deaths: 0, outcome: "cleared" },
+      { nodeId: "zone_a", timeMs: 60000, deaths: 0, outcome: "cleared" },
+      { nodeId: "zone_b", timeMs: 180000, deaths: 0, outcome: "cleared" },
     ]);
   });
 
@@ -70,27 +112,56 @@ describe("computeZoneTimes", () => {
       zone_history: [{ node_id: "start", igt_ms: 0 }],
     });
     const result = computeZoneTimes(p);
-    expect(result).toEqual([{ nodeId: "start", timeMs: 100000, deaths: 0 }]);
+    expect(result).toEqual([
+      { nodeId: "start", timeMs: 100000, deaths: 0, outcome: "cleared" },
+    ]);
+  });
+
+  it("detects 'backed' outcome when next zone is on same/lower layer", () => {
+    const p = participant("alice", {
+      igt_ms: 200000,
+      zone_history: [
+        { node_id: "zone_a", igt_ms: 0 },
+        { node_id: "zone_b", igt_ms: 50000 },
+        { node_id: "zone_c", igt_ms: 100000 },
+      ],
+    });
+    const info = nodeInfoMap({
+      zone_a: { layer: 0 },
+      zone_b: { layer: 1 },
+      zone_c: { layer: 1 },
+    });
+    const result = computeZoneTimes(p, info);
+    expect(result[0].outcome).toBe("cleared"); // layer 0 → 1
+    expect(result[1].outcome).toBe("backed"); // layer 1 → 1 (same)
+  });
+
+  it("detects 'playing' outcome for last zone when status is playing", () => {
+    const p = participant("alice", {
+      status: "playing",
+      igt_ms: 200000,
+      zone_history: [
+        { node_id: "zone_a", igt_ms: 0 },
+        { node_id: "zone_b", igt_ms: 50000 },
+      ],
+    });
+    const result = computeZoneTimes(p);
+    expect(result[1].outcome).toBe("playing");
+  });
+
+  it("detects 'abandoned' outcome for last zone when status is abandoned", () => {
+    const p = participant("alice", {
+      status: "abandoned",
+      igt_ms: 200000,
+      zone_history: [
+        { node_id: "zone_a", igt_ms: 0 },
+        { node_id: "zone_b", igt_ms: 50000 },
+      ],
+    });
+    const result = computeZoneTimes(p);
+    expect(result[1].outcome).toBe("abandoned");
   });
 });
-
-// Minimal graph_json factory
-function graphJson(
-  nodes: Record<string, { tier?: number; layer?: number; type?: string }>,
-) {
-  const nodeEntries: Record<string, unknown> = {};
-  for (const [id, data] of Object.entries(nodes)) {
-    nodeEntries[id] = {
-      type: data.type ?? "mini_dungeon",
-      display_name: id,
-      zones: [],
-      layer: data.layer ?? 0,
-      tier: data.tier ?? 1,
-      weight: 1,
-    };
-  }
-  return { nodes: nodeEntries, edges: [], total_layers: 3 };
-}
 
 describe("speed highlights", () => {
   const graph = graphJson({
@@ -128,6 +199,44 @@ describe("speed highlights", () => {
     expect(speedDemon).toBeDefined();
     // Alice cleared zone_a in 20s vs Bob's 75s — Alice is the speed demon
     expect(speedDemon!.playerIds).toContain("alice");
+  });
+
+  it("Speed Demon: ignores backed zones", () => {
+    // Alice "blitzes" zone_a but actually backed out — should not count
+    const graph2 = graphJson({
+      start: { tier: 1, layer: 0, type: "start" },
+      zone_a: { tier: 2, layer: 1 },
+      zone_b: { tier: 2, layer: 1 }, // same layer as zone_a = backed
+      zone_c: { tier: 3, layer: 3, type: "final_boss" },
+    });
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 10000 }, // 10s in start
+          { node_id: "zone_b", igt_ms: 15000 }, // 5s in zone_a (backed!)
+          { node_id: "zone_c", igt_ms: 300000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 350000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 15000 },
+          { node_id: "zone_c", igt_ms: 350000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph2);
+    const speedDemon = highlights.find((h) => h.type === "speed_demon");
+    // Alice's zone_a time should not count since she backed out
+    if (speedDemon) {
+      // If a speed demon is found, it shouldn't be for zone_a with alice backing
+      expect(descriptionText(speedDemon)).not.toContain("zone_a");
+    }
   });
 
   it("Zone Wall: detects player who spent disproportionately long in a zone", () => {
@@ -370,5 +479,129 @@ describe("path highlights", () => {
     expect(road).toBeDefined();
     // Alice took zone_b + zone_d while others took zone_a + zone_c
     expect(road!.playerIds).toContain("alice");
+  });
+});
+
+describe("outcome-based highlights", () => {
+  const graph = graphJson({
+    start: { tier: 1, layer: 0, type: "start" },
+    zone_a: { tier: 2, layer: 1 },
+    zone_b: { tier: 2, layer: 1 },
+    zone_c: { tier: 3, layer: 2 },
+    final: { tier: 3, layer: 3, type: "final_boss" },
+  });
+
+  it("Hard Pass: detects zone with multiple backs", () => {
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 30000 },
+          { node_id: "zone_b", igt_ms: 40000 }, // backed from zone_a (same layer)
+          { node_id: "zone_c", igt_ms: 100000 },
+          { node_id: "final", igt_ms: 300000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 350000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 40000 },
+          { node_id: "zone_b", igt_ms: 50000 }, // also backed from zone_a
+          { node_id: "zone_c", igt_ms: 120000 },
+          { node_id: "final", igt_ms: 350000 },
+        ],
+      }),
+      participant("charlie", {
+        color_index: 2,
+        igt_ms: 280000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 35000 },
+          { node_id: "zone_c", igt_ms: 100000 }, // cleared zone_a normally
+          { node_id: "final", igt_ms: 280000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    const hardPass = highlights.find((h) => h.type === "hard_pass");
+    expect(hardPass).toBeDefined();
+    expect(descriptionText(hardPass!)).toContain("zone_a");
+    expect(descriptionText(hardPass!)).toContain("2 players backed out");
+  });
+
+  it("Early Exit: detects earliest rage-quit", () => {
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_c", igt_ms: 100000 },
+          { node_id: "final", igt_ms: 300000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 350000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_c", igt_ms: 120000 },
+          { node_id: "final", igt_ms: 350000 },
+        ],
+      }),
+      participant("charlie", {
+        color_index: 2,
+        igt_ms: 50000,
+        status: "abandoned",
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    const earlyExit = highlights.find((h) => h.type === "early_exit");
+    expect(earlyExit).toBeDefined();
+    expect(earlyExit!.playerIds).toContain("charlie");
+  });
+
+  it("Rage Inducer: detects zone that caused multiple abandonments", () => {
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_c", igt_ms: 100000 },
+          { node_id: "final", igt_ms: 300000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 150000,
+        status: "abandoned",
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_c", igt_ms: 150000 },
+        ],
+      }),
+      participant("charlie", {
+        color_index: 2,
+        igt_ms: 180000,
+        status: "abandoned",
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_c", igt_ms: 180000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    const rageInducer = highlights.find((h) => h.type === "rage_inducer");
+    expect(rageInducer).toBeDefined();
+    expect(descriptionText(rageInducer!)).toContain("zone_c");
   });
 });

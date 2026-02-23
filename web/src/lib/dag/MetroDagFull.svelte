@@ -26,18 +26,19 @@
 	} from './constants';
 	import type { DagNode, PositionedNode, RoutedEdge, DagLayout } from './types';
 	import NodePopup from './NodePopup.svelte';
-	import { computeConnections, computePlayersAtNode, computeVisitors, parseExitTexts, parseEntranceTexts } from './popupData';
+	import { computeConnections, computePlayersAtNode, computeVisitors, parseExitTexts, parseEntranceTexts, parseNodeLayers } from './popupData';
 	import type { NodePopupData } from './popupData';
 
 	interface Props {
 		graphJson: Record<string, unknown>;
 		participants: WsParticipant[];
+		raceStatus?: string;
 		transparent?: boolean;
 		highlightIds?: Set<string>;
 		focusNodeId?: string | null;
 	}
 
-	let { graphJson, participants, transparent = false, highlightIds, focusNodeId = null }: Props = $props();
+	let { graphJson, participants, raceStatus, transparent = false, highlightIds, focusNodeId = null }: Props = $props();
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
 
@@ -220,6 +221,8 @@
 
 	let exitTexts = $derived(parseExitTexts(graphJson));
 	let entranceTexts = $derived(parseEntranceTexts(graphJson));
+	let nodeLayers = $derived(parseNodeLayers(graphJson));
+	let raceFinished = $derived(raceStatus === 'finished');
 
 	// Popup state
 	let popupData: NodePopupData | null = $state(null);
@@ -239,7 +242,7 @@
 			entranceTexts
 		);
 		const playersHere = computePlayersAtNode(nodeId, participants);
-		const visitors = computeVisitors(nodeId, participants);
+		const visitors = computeVisitors(nodeId, participants, nodeLayers);
 
 		popupData = {
 			nodeId,
@@ -250,8 +253,9 @@
 			randomizedBoss: node.randomizedBoss,
 			entrances,
 			exits,
-			playersHere,
-			visitors
+			playersHere: raceFinished ? undefined : playersHere,
+			visitors,
+			raceFinished
 		};
 		popupX = event.clientX;
 		popupY = event.clientY;
@@ -276,7 +280,7 @@
 			entranceTexts
 		);
 		const playersHere = computePlayersAtNode(nodeId, participants);
-		const visitors = computeVisitors(nodeId, participants);
+		const visitors = computeVisitors(nodeId, participants, nodeLayers);
 
 		popupData = {
 			nodeId,
@@ -287,8 +291,9 @@
 			randomizedBoss: node.randomizedBoss,
 			entrances,
 			exits,
-			playersHere,
-			visitors
+			playersHere: raceFinished ? undefined : playersHere,
+			visitors,
+			raceFinished
 		};
 
 		// Position popup near the SVG node element

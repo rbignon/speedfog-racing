@@ -570,6 +570,7 @@
 				<MetroDagFull
 					graphJson={liveSeed.graph_json}
 					participants={raceStore.leaderboard}
+					{raceStatus}
 					highlightIds={selectedParticipantIds}
 				/>
 			{/if}
@@ -578,6 +579,7 @@
 			<MetroDagFull
 				graphJson={liveSeed.graph_json}
 				participants={raceStore.leaderboard}
+				{raceStatus}
 				highlightIds={selectedParticipantIds}
 				focusNodeId={highlightFocusNodeId}
 			/>

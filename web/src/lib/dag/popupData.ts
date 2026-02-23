@@ -31,12 +31,15 @@ export interface PopupPlayer {
   color: string;
 }
 
+export type VisitOutcome = "cleared" | "backed" | "playing" | "abandoned";
+
 export interface PopupVisitor {
   displayName: string;
   color: string;
   arrivedAtMs: number;
   timeSpentMs?: number; // duration in this zone (until next zone or race finish)
   deaths?: number;
+  outcome: VisitOutcome;
 }
 
 export interface NodePopupData {
@@ -50,6 +53,7 @@ export interface NodePopupData {
   exits: PopupConnection[];
   playersHere?: PopupPlayer[];
   visitors?: PopupVisitor[];
+  raceFinished?: boolean;
 }
 
 // =============================================================================
@@ -191,15 +195,20 @@ export function computePlayersAtNode(
 }
 
 /**
- * Find all participants who visited a node (from zone_history), sorted by arrival time.
+ * Find all participants who visited a node (from zone_history).
  *
- * Time spent is computed as the difference between this zone's arrival IGT and the
- * next zone's arrival IGT in chronological order. For the last zone in history,
- * the participant's current/final IGT is used (only if finished or still playing).
+ * Computes outcome per visitor:
+ * - cleared: next zone is on a higher layer
+ * - backed: next zone is on same/lower layer
+ * - playing: last zone + status playing
+ * - abandoned: last zone + status abandoned/finished-but-stuck
+ *
+ * Sorted: cleared first (by time asc), then backed/playing/abandoned.
  */
 export function computeVisitors(
   nodeId: string,
   participants: WsParticipant[],
+  nodeLayers?: Map<string, number>,
 ): PopupVisitor[] {
   const visitors: PopupVisitor[] = [];
   for (const p of participants) {
@@ -207,14 +216,27 @@ export function computeVisitors(
     const idx = p.zone_history.findIndex((e) => e.node_id === nodeId);
     if (idx === -1) continue;
     const entry = p.zone_history[idx];
+    const isLast = idx >= p.zone_history.length - 1;
 
     let timeSpentMs: number | undefined;
-    if (idx < p.zone_history.length - 1) {
-      // Next zone in chronological history gives us the exit time
+    if (!isLast) {
       timeSpentMs = p.zone_history[idx + 1].igt_ms - entry.igt_ms;
     } else if (p.status === "finished" || p.status === "playing") {
-      // Last zone: use participant's current/final IGT
       timeSpentMs = p.igt_ms - entry.igt_ms;
+    }
+
+    let outcome: VisitOutcome;
+    if (!isLast) {
+      const nextNodeId = p.zone_history[idx + 1].node_id;
+      const curLayer = nodeLayers?.get(entry.node_id) ?? 0;
+      const nextLayer = nodeLayers?.get(nextNodeId) ?? 0;
+      outcome = nextLayer > curLayer ? "cleared" : "backed";
+    } else if (p.status === "finished") {
+      outcome = "cleared";
+    } else if (p.status === "playing") {
+      outcome = "playing";
+    } else {
+      outcome = "abandoned";
     }
 
     visitors.push({
@@ -224,10 +246,39 @@ export function computeVisitors(
       timeSpentMs:
         timeSpentMs != null && timeSpentMs > 0 ? timeSpentMs : undefined,
       deaths: entry.deaths && entry.deaths > 0 ? entry.deaths : undefined,
+      outcome,
     });
   }
-  visitors.sort((a, b) => a.arrivedAtMs - b.arrivedAtMs);
+  // Cleared first (by time asc), then others
+  const outcomeOrder: Record<VisitOutcome, number> = {
+    cleared: 0,
+    backed: 1,
+    playing: 2,
+    abandoned: 3,
+  };
+  visitors.sort(
+    (a, b) =>
+      outcomeOrder[a.outcome] - outcomeOrder[b.outcome] ||
+      (a.timeSpentMs ?? 0) - (b.timeSpentMs ?? 0),
+  );
   return visitors;
+}
+
+/**
+ * Extract node layer map from raw graph.json for outcome computation.
+ */
+export function parseNodeLayers(
+  graphJson: Record<string, unknown>,
+): Map<string, number> {
+  const map = new Map<string, number>();
+  const rawNodes = graphJson.nodes as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  if (!rawNodes) return map;
+  for (const [nodeId, raw] of Object.entries(rawNodes)) {
+    map.set(nodeId, (raw.layer as number) ?? 0);
+  }
+  return map;
 }
 
 /**

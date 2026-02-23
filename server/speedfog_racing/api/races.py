@@ -1089,6 +1089,11 @@ async def finish_race(
 
     await _transition_status(db, race, [RaceStatus.RUNNING], RaceStatus.FINISHED)
 
+    # Mark remaining playing participants as abandoned
+    for p in race.participants:
+        if p.status == ParticipantStatus.PLAYING:
+            p.status = ParticipantStatus.ABANDONED
+
     await db.commit()
 
     # Re-query with eager-loaded relationships (refresh only reloads columns)

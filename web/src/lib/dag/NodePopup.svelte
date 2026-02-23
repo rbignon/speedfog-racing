@@ -157,13 +157,15 @@
 			<div class="visitor-grid">
 				{#each data.visitors as visitor}
 					<span class="player-dot" style="background: {visitor.color};"></span>
-					<span class="visitor-name">{visitor.displayName}</span>
+					<span class="visitor-name" class:visitor-backed={visitor.outcome === 'backed'} class:visitor-abandoned={visitor.outcome === 'abandoned' || (visitor.outcome === 'playing' && data.raceFinished)} class:visitor-playing={visitor.outcome === 'playing' && !data.raceFinished}>{visitor.displayName}</span>
+					<span class="visitor-outcome"
+						>{#if visitor.outcome === 'backed'}↩{:else if visitor.outcome === 'playing' && !data.raceFinished}⏳{:else if visitor.outcome === 'abandoned' || (visitor.outcome === 'playing' && data.raceFinished)}✗{/if}</span
+					>
 					<span class="visitor-deaths"
 						>{#if visitor.deaths}💀 {visitor.deaths}{/if}</span
 					>
-					<span class="visitor-time">{formatIgt(visitor.arrivedAtMs)}</span>
 					<span class="visitor-duration"
-						>{#if visitor.timeSpentMs}({formatIgt(visitor.timeSpentMs)}){/if}</span
+						>{#if visitor.timeSpentMs}{formatIgt(visitor.timeSpentMs)}{/if}</span
 					>
 				{/each}
 			</div>
@@ -345,18 +347,30 @@
 		white-space: nowrap;
 	}
 
-	.visitor-deaths {
-		color: var(--color-danger, #ef4444);
-		margin-right: 10px;
+	.visitor-backed {
+		opacity: 0.6;
 	}
 
-	.visitor-time {
-		color: var(--color-text-secondary, #9ca3af);
-		justify-self: end;
+	.visitor-abandoned {
+		opacity: 0.4;
+	}
+
+	.visitor-playing {
+		color: var(--color-gold, #c8a44e);
+	}
+
+	.visitor-outcome {
+		font-size: 0.75rem;
+		width: 1.2em;
+		text-align: center;
+	}
+
+	.visitor-deaths {
+		color: var(--color-danger, #ef4444);
 	}
 
 	.visitor-duration {
-		color: var(--color-text-disabled, #6b7280);
+		color: var(--color-text-secondary, #9ca3af);
 		justify-self: end;
 	}
 </style>

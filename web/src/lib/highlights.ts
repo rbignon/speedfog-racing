@@ -11,10 +11,17 @@ import type { WsParticipant } from "$lib/websocket";
 // Types
 // =============================================================================
 
+export type ZoneOutcome =
+  | "cleared" // next zone is on a higher layer
+  | "backed" // next zone is on same/lower layer
+  | "playing" // last zone + status playing
+  | "abandoned"; // last zone + status abandoned/finished without progressing
+
 export interface ZoneTime {
   nodeId: string;
   timeMs: number;
   deaths: number;
+  outcome: ZoneOutcome;
 }
 
 export type HighlightCategory = "speed" | "deaths" | "path" | "competitive";
@@ -40,20 +47,44 @@ export interface Highlight {
 // =============================================================================
 
 /**
- * Compute time spent in each zone for a participant.
- * Time in zone N = entry time of zone N+1 - entry time of zone N.
- * For the last zone, uses participant's final igt_ms.
+ * Compute time spent in each zone for a participant, with outcome.
+ *
+ * Outcome logic:
+ * - If there's a next zone on a strictly higher layer → "cleared"
+ * - If there's a next zone on same/lower layer → "backed"
+ * - If last zone + status "finished" → "cleared" (beat final boss)
+ * - If last zone + status "playing" → "playing"
+ * - If last zone + status "abandoned" → "abandoned"
  */
-export function computeZoneTimes(p: WsParticipant): ZoneTime[] {
+export function computeZoneTimes(
+  p: WsParticipant,
+  nodeInfo?: Map<string, NodeInfo>,
+): ZoneTime[] {
   if (!p.zone_history || p.zone_history.length === 0) return [];
 
   return p.zone_history.map((entry, i) => {
-    const nextIgt =
-      i < p.zone_history!.length - 1 ? p.zone_history![i + 1].igt_ms : p.igt_ms;
+    const isLast = i >= p.zone_history!.length - 1;
+    const nextIgt = isLast ? p.igt_ms : p.zone_history![i + 1].igt_ms;
+
+    let outcome: ZoneOutcome;
+    if (!isLast) {
+      const nextNodeId = p.zone_history![i + 1].node_id;
+      const curLayer = nodeInfo?.get(entry.node_id)?.layer ?? 0;
+      const nextLayer = nodeInfo?.get(nextNodeId)?.layer ?? 0;
+      outcome = nextLayer > curLayer ? "cleared" : "backed";
+    } else if (p.status === "finished") {
+      outcome = "cleared";
+    } else if (p.status === "playing") {
+      outcome = "playing";
+    } else {
+      outcome = "abandoned";
+    }
+
     return {
       nodeId: entry.node_id,
       timeMs: Math.max(0, nextIgt - entry.igt_ms),
       deaths: entry.deaths ?? 0,
+      outcome,
     };
   });
 }
@@ -139,6 +170,7 @@ function detectSpeedDemon(
   >();
   for (const [pid, zones] of allZoneTimes) {
     for (const zt of zones) {
+      if (zt.outcome !== "cleared") continue;
       if (!zonePlayerTimes.has(zt.nodeId)) zonePlayerTimes.set(zt.nodeId, []);
       zonePlayerTimes
         .get(zt.nodeId)!
@@ -311,6 +343,7 @@ function detectSprintFinal(
     let totalLastTier = 0;
     let hasLastTier = false;
     for (const zt of zones) {
+      if (zt.outcome !== "cleared") continue;
       const info = nodeInfo.get(zt.nodeId);
       if (info && info.tier >= maxTier) {
         totalLastTier += zt.timeMs;
@@ -423,6 +456,7 @@ function detectDeathless(
     if (!zones) continue;
 
     const highTierZones = zones.filter((zt) => {
+      if (zt.outcome !== "cleared") return false;
       const info = nodeInfo.get(zt.nodeId);
       return info && info.tier >= 3;
     });
@@ -711,6 +745,122 @@ function detectDominant(
   };
 }
 
+function detectHardPass(
+  allZoneTimes: Map<string, ZoneTime[]>,
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const backCounts = new Map<string, number>();
+  for (const [, zones] of allZoneTimes) {
+    for (const zt of zones) {
+      if (zt.outcome === "backed") {
+        backCounts.set(zt.nodeId, (backCounts.get(zt.nodeId) ?? 0) + 1);
+      }
+    }
+  }
+
+  let maxBacks = 0;
+  let maxZone = "";
+  for (const [zoneId, count] of backCounts) {
+    if (count > maxBacks) {
+      maxBacks = count;
+      maxZone = zoneId;
+    }
+  }
+
+  if (maxBacks < 2) return null;
+
+  const tier = nodeInfo.get(maxZone)?.tier ?? 1;
+
+  return {
+    type: "hard_pass",
+    category: "path",
+    title: "Hard Pass",
+    segments: [
+      tSeg(`${maxBacks} players backed out of `),
+      zSeg(maxZone, nodeInfo),
+    ],
+    playerIds: [],
+    score: Math.min(100, maxBacks * tier * 15),
+  };
+}
+
+function detectRageInducer(
+  allZoneTimes: Map<string, ZoneTime[]>,
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const abandonCounts = new Map<string, number>();
+  for (const [, zones] of allZoneTimes) {
+    for (const zt of zones) {
+      if (zt.outcome === "abandoned") {
+        abandonCounts.set(zt.nodeId, (abandonCounts.get(zt.nodeId) ?? 0) + 1);
+      }
+    }
+  }
+
+  let maxAbandons = 0;
+  let maxZone = "";
+  for (const [zoneId, count] of abandonCounts) {
+    if (count > maxAbandons) {
+      maxAbandons = count;
+      maxZone = zoneId;
+    }
+  }
+
+  if (maxAbandons < 2) return null;
+
+  return {
+    type: "rage_inducer",
+    category: "deaths",
+    title: "Rage Inducer",
+    segments: [
+      zSeg(maxZone, nodeInfo),
+      tSeg(
+        ` made ${maxAbandons} player${maxAbandons > 2 ? "s" : ""} rage-quit`,
+      ),
+    ],
+    playerIds: [],
+    score: Math.min(100, maxAbandons * 40),
+  };
+}
+
+function detectEarlyExit(participants: WsParticipant[]): Highlight | null {
+  const finishers = participants.filter((p) => p.status === "finished");
+  if (finishers.length === 0) return null;
+  const medianIgt =
+    finishers.map((p) => p.igt_ms).sort((a, b) => a - b)[
+      Math.floor(finishers.length / 2)
+    ] ?? 0;
+  if (medianIgt <= 0) return null;
+
+  const abandoned = participants.filter((p) => p.status === "abandoned");
+  if (abandoned.length === 0) return null;
+
+  let earliest: WsParticipant | null = null;
+  for (const p of abandoned) {
+    if (!earliest || p.igt_ms < earliest.igt_ms) {
+      earliest = p;
+    }
+  }
+
+  if (!earliest) return null;
+
+  const ratio = earliest.igt_ms / medianIgt;
+  const score = Math.max(0, 80 - ratio * 60);
+  if (score < 10) return null;
+
+  return {
+    type: "early_exit",
+    category: "competitive",
+    title: "Early Exit",
+    segments: [
+      pSeg(earliest),
+      tSeg(` rage-quit after just ${formatTime(earliest.igt_ms)}`),
+    ],
+    playerIds: [earliest.id],
+    score,
+  };
+}
+
 // =============================================================================
 // Orchestrator
 // =============================================================================
@@ -726,7 +876,7 @@ export function computeHighlights(
 
   const nodeInfo = buildNodeInfo(graphJson);
   const allZoneTimes = new Map(
-    eligible.map((p) => [p.id, computeZoneTimes(p)]),
+    eligible.map((p) => [p.id, computeZoneTimes(p, nodeInfo)]),
   );
 
   const candidates: Highlight[] = [];
@@ -748,6 +898,9 @@ export function computeHighlights(
   push(detectPhotoFinish(eligible));
   push(detectLeadChanges(eligible, nodeInfo));
   push(detectDominant(eligible, nodeInfo));
+  push(detectHardPass(allZoneTimes, nodeInfo));
+  push(detectRageInducer(allZoneTimes, nodeInfo));
+  push(detectEarlyExit(eligible));
 
   candidates.sort((a, b) => b.score - a.score);
 
