@@ -153,7 +153,7 @@ export function computePlayerPosition(
     const lastPos = nodePositions.get(lastVisit.nodeId);
     if (lastPos) {
       const layer = nodeInfo.get(lastVisit.nodeId)?.layer ?? 0;
-      const spacing = RACER_DOT_RADIUS * 2.5;
+      const spacing = RACER_DOT_RADIUS * 2;
       const totalSpread = (participantCount - 1) * spacing;
       const yOffset = -totalSpread / 2 + participantIndex * spacing;
       return {

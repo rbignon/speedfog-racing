@@ -1081,11 +1081,11 @@
 	}
 
 	:global(.race-page .zoomable-container) {
-		min-height: 500px;
+		min-height: 400px;
 	}
 
 	:global(.race-page .zoomable-container svg) {
-		min-height: 500px;
+		min-height: 400px;
 	}
 
 	@media (max-width: 768px) {

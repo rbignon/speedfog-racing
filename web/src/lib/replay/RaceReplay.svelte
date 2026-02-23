@@ -244,13 +244,12 @@
 	.race-replay {
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
 	}
 
 	.replay-dag-container {
 		position: relative;
 		background: var(--color-surface);
-		border-radius: var(--radius-lg);
+		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 		overflow: hidden;
 	}
 
