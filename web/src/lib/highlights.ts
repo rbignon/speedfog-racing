@@ -121,14 +121,21 @@ function pSeg(p: WsParticipant): DescriptionSegment {
   };
 }
 
+function shortName(displayName: string): string {
+  return displayName.includes(" - ")
+    ? displayName.split(" - ").pop()!
+    : displayName;
+}
+
 function zSeg(
   nodeId: string,
   nodeInfo: Map<string, NodeInfo>,
 ): DescriptionSegment {
+  const full = nodeInfo.get(nodeId)?.displayName ?? nodeId;
   return {
     type: "zone",
     nodeId,
-    name: nodeInfo.get(nodeId)?.displayName ?? nodeId,
+    name: shortName(full),
   };
 }
 
