@@ -94,15 +94,6 @@
 	let animationFrameId: number | null = null;
 	let lastFrameTime: number | null = null;
 
-	// Slow-mo detection: when approaching race end
-	let inSlowMo = $derived.by(() => {
-		if (maxIgt <= 0) return false;
-		const threshold = maxIgt * (1 - REPLAY_DEFAULTS.FINISH_SLOWMO_THRESHOLD);
-		return currentIgt >= threshold;
-	});
-
-	let effectiveSpeed = $derived(inSlowMo ? speed * REPLAY_DEFAULTS.FINISH_SLOWMO : speed);
-
 	function tick(timestamp: number) {
 		if (lastFrameTime === null) {
 			lastFrameTime = timestamp;
@@ -110,7 +101,7 @@
 			return;
 		}
 
-		const delta = (timestamp - lastFrameTime) * effectiveSpeed;
+		const delta = (timestamp - lastFrameTime) * speed;
 		lastFrameTime = timestamp;
 		replayElapsedMs += delta;
 
@@ -246,18 +237,6 @@
 
 {#if replayParticipants.length >= 2 && maxIgt > 0}
 	<div class="race-replay">
-		<h2>Race Replay</h2>
-
-		<ReplayControls
-			{replayState}
-			{progress}
-			{speed}
-			onplay={play}
-			onpause={pause}
-			onseek={seek}
-			onspeed={setSpeed}
-		/>
-
 		<div class="replay-dag-container">
 			<ZoomableSvg width={layout.width} height={layout.height}>
 				<defs>
@@ -370,11 +349,17 @@
 				</div>
 			{/if}
 
-			<!-- Slow-mo indicator -->
-			{#if inSlowMo && replayState === 'playing'}
-				<div class="slowmo-badge">SLOW-MO</div>
-			{/if}
 		</div>
+
+		<ReplayControls
+			{replayState}
+			{progress}
+			{speed}
+			onplay={play}
+			onpause={pause}
+			onseek={seek}
+			onspeed={setSpeed}
+		/>
 	</div>
 {/if}
 
@@ -383,13 +368,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
-	}
-
-	h2 {
-		color: var(--color-gold);
-		margin: 0;
-		font-size: var(--font-size-lg);
-		font-weight: 600;
 	}
 
 	.replay-dag-container {
@@ -425,32 +403,6 @@
 	.commentary-text {
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
-	}
-
-	.slowmo-badge {
-		position: absolute;
-		top: 0.75rem;
-		right: 0.75rem;
-		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
-		font-size: var(--font-size-xs);
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		padding: 0.2rem 0.6rem;
-		border-radius: var(--radius-sm);
-		animation: pulse-slow 2s ease infinite;
-		pointer-events: none;
-	}
-
-	@keyframes pulse-slow {
-		0%,
-		100% {
-			opacity: 0.6;
-		}
-		50% {
-			opacity: 1;
-		}
 	}
 
 	.dag-node {

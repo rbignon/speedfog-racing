@@ -6,7 +6,7 @@ import type {
   SkullEvent,
 } from "./types";
 import { REPLAY_DEFAULTS } from "./types";
-import { PLAYER_COLORS } from "$lib/dag/constants";
+import { PLAYER_COLORS, RACER_DOT_RADIUS } from "$lib/dag/constants";
 
 interface NodeInfo {
   layer: number;
@@ -151,11 +151,14 @@ export function computePlayerPosition(
     const lastPos = nodePositions.get(lastVisit.nodeId);
     if (lastPos) {
       const layer = nodeInfo.get(lastVisit.nodeId)?.layer ?? 0;
-      const ySpread = orbitPhaseOffset / (Math.PI * 2) - 0.5;
+      // Space finished dots vertically by one dot diameter, centered on node
+      const index = orbitPhaseOffset / (Math.PI * 2);
+      const spacing = RACER_DOT_RADIUS * 2.5;
+      const yOffset = (index - 0.5) * spacing;
       return {
         participantId: rp.id,
         x: lastPos.x + REPLAY_DEFAULTS.FINISHED_X_OFFSET,
-        y: lastPos.y + ySpread * 16,
+        y: lastPos.y + yOffset,
         currentNodeId: lastVisit.nodeId,
         inTransit: false,
         layer,
