@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { fetchRaces, getTwitchLoginUrl, type Race } from '$lib/api';
+	import { fetchRaces, fetchRacesPaginated, getTwitchLoginUrl, type Race } from '$lib/api';
 	import MetroDagAnimated from '$lib/dag/MetroDagAnimated.svelte';
 	import RaceCard from '$lib/components/RaceCard.svelte';
 	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
@@ -10,6 +10,8 @@
 
 	let races: Race[] = $state([]);
 	let loadingRaces = $state(true);
+	let recentRaces: Race[] = $state([]);
+	let loadingRecent = $state(true);
 	let errorMessage = $state<string | null>(null);
 
 	let liveRaces = $derived(races.filter((r) => r.status === 'running'));
@@ -36,6 +38,11 @@
 			.then((r) => (races = r))
 			.catch((e) => console.error('Failed to fetch races:', e))
 			.finally(() => (loadingRaces = false));
+
+		fetchRacesPaginated('finished', 0, 2)
+			.then((data) => (recentRaces = data.races))
+			.catch((e) => console.error('Failed to fetch recent races:', e))
+			.finally(() => (loadingRecent = false));
 	});
 
 	function getErrorMessage(error: string): string {
@@ -144,6 +151,22 @@
 					<p class="empty-title">No active races right now</p>
 				</div>
 			{/if}
+		{/if}
+
+		{#if loadingRecent}
+			<p class="loading">Loading recent results...</p>
+		{:else if recentRaces.length > 0}
+			<section class="public-races">
+				<h2>Recent Results</h2>
+				<div class="race-grid">
+					{#each recentRaces as race}
+						<RaceCard {race} />
+					{/each}
+				</div>
+				<div class="see-all">
+					<a href="/races" class="see-all-link">See all results &rarr;</a>
+				</div>
+			</section>
 		{/if}
 	</main>
 
@@ -299,6 +322,23 @@
 		font-size: var(--font-size-lg);
 		font-weight: 600;
 		color: var(--color-text-secondary);
+	}
+
+	.see-all {
+		display: flex;
+		justify-content: center;
+		margin-top: 1rem;
+	}
+
+	.see-all-link {
+		color: var(--color-text-secondary);
+		text-decoration: none;
+		font-size: var(--font-size-sm);
+		transition: color 0.15s ease;
+	}
+
+	.see-all-link:hover {
+		color: var(--color-purple);
 	}
 
 	@media (max-width: 640px) {
