@@ -15,6 +15,10 @@ export interface User {
   twitch_avatar_url: string | null;
 }
 
+export interface ParticipantPreview extends User {
+  placement: number | null;
+}
+
 export interface AuthUser extends User {
   role: string;
   locale: string | null;
@@ -37,7 +41,7 @@ export interface Race {
   started_at: string | null;
   seeds_released_at: string | null;
   participant_count: number;
-  participant_previews: User[];
+  participant_previews: ParticipantPreview[];
   casters: Caster[];
   seed_total_layers?: number | null;
   my_current_layer?: number | null;
