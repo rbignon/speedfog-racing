@@ -1,8 +1,9 @@
 """Shared API response helpers."""
 
-from speedfog_racing.models import Caster, Participant, Race, User
+from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus, User
 from speedfog_racing.schemas import (
     CasterResponse,
+    ParticipantPreview,
     ParticipantResponse,
     RaceResponse,
     UserResponse,
@@ -24,6 +25,17 @@ def user_response(user: User) -> UserResponse:
         twitch_username=user.twitch_username,
         twitch_display_name=user.twitch_display_name,
         twitch_avatar_url=user.twitch_avatar_url,
+    )
+
+
+def participant_preview(user: User, placement: int | None = None) -> ParticipantPreview:
+    """Convert User model to ParticipantPreview."""
+    return ParticipantPreview(
+        id=user.id,
+        twitch_username=user.twitch_username,
+        twitch_display_name=user.twitch_display_name,
+        twitch_avatar_url=user.twitch_avatar_url,
+        placement=placement,
     )
 
 
@@ -50,6 +62,18 @@ def caster_response(caster: Caster) -> CasterResponse:
 
 def race_response(race: Race) -> RaceResponse:
     """Convert Race model to RaceResponse."""
+    if race.status == RaceStatus.FINISHED:
+        finished = sorted(
+            [p for p in race.participants if p.status == ParticipantStatus.FINISHED],
+            key=lambda p: p.igt_ms,
+        )
+        non_finished = [p for p in race.participants if p.status != ParticipantStatus.FINISHED]
+        previews = [
+            participant_preview(p.user, placement=i + 1) for i, p in enumerate(finished)
+        ] + [participant_preview(p.user) for p in non_finished]
+    else:
+        previews = [participant_preview(p.user) for p in race.participants[:5]]
+
     return RaceResponse(
         id=race.id,
         name=race.name,
@@ -64,6 +88,6 @@ def race_response(race: Race) -> RaceResponse:
         started_at=race.started_at,
         seeds_released_at=race.seeds_released_at,
         participant_count=len(race.participants),
-        participant_previews=[user_response(p.user) for p in race.participants[:5]],
+        participant_previews=previews,
         casters=[caster_response(c) for c in race.casters] if "casters" in race.__dict__ else [],
     )
