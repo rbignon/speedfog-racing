@@ -101,9 +101,11 @@
 			session = await fetchTrainingSession(sessionId);
 			// Fetch ghosts in background for finished sessions
 			if (session.status === 'finished') {
-				fetchTrainingGhosts(sessionId).then((g) => {
-					ghosts = g;
-				});
+				fetchTrainingGhosts(sessionId)
+					.then((g) => {
+						ghosts = g;
+					})
+					.catch(() => {});
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load session.';

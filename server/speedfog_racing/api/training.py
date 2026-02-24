@@ -268,12 +268,14 @@ async def get_ghosts(
 
     # Find all other finished sessions on the same seed
     result = await db.execute(
-        select(TrainingSession).where(
+        select(TrainingSession)
+        .where(
             TrainingSession.seed_id == session.seed_id,
             TrainingSession.status == TrainingSessionStatus.FINISHED,
             TrainingSession.id != session_id,
             TrainingSession.progress_nodes.isnot(None),
         )
+        .limit(100)
     )
     ghosts = list(result.scalars().all())
 

@@ -28,9 +28,9 @@ Identical to race replay: play/pause, scrubable progress bar, speed selector (0.
 
 ## API
 
-### `GET /api/training/seeds/{seed_id}/ghosts`
+### `GET /api/training/{session_id}/ghosts`
 
-Returns zone history for all **finished** training sessions on the given seed, excluding the current session.
+Returns zone history for all **finished** training sessions on the same seed as the given session, excluding the session itself.
 
 **Response:**
 
