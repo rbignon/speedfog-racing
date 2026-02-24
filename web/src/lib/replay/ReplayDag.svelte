@@ -18,6 +18,8 @@
 		previousLeader: string | null;
 		/** Callback when leader changes */
 		onleaderchange: (newLeaderId: string | null) => void;
+		/** IDs of ghost participants (rendered with reduced opacity) */
+		ghostIds?: Set<string>;
 	}
 
 	let {
@@ -30,7 +32,8 @@
 		nodeInfo,
 		leaderId,
 		previousLeader,
-		onleaderchange
+		onleaderchange,
+		ghostIds
 	}: Props = $props();
 
 	// Compute player snapshots (single source of truth for positions)
@@ -126,19 +129,21 @@
 <!-- Player dots -->
 {#each snapshots as snap (snap.participantId)}
 	{@const rp = replayParticipants.find((r) => r.id === snap.participantId)}
+	{@const isGhost = ghostIds?.has(snap.participantId) ?? false}
 	{#if rp}
 		<circle
 			cx={snap.x}
 			cy={snap.y}
 			r={RACER_DOT_RADIUS}
 			fill={rp.color}
+			opacity={isGhost ? 0.5 : 1}
 			class="replay-dot"
-			filter="url(#replay-player-glow)"
+			filter={isGhost ? undefined : 'url(#replay-player-glow)'}
 		>
 			<title>{rp.displayName}</title>
 		</circle>
-		<!-- Leader star -->
-		{#if snap.participantId === leaderId}
+		<!-- Leader star (never on ghosts) -->
+		{#if snap.participantId === leaderId && !isGhost}
 			<text
 				x={snap.x}
 				y={snap.y - RACER_DOT_RADIUS - 5}
@@ -155,6 +160,7 @@
 <!-- Skull animations -->
 {#each activeSkulls as skull}
 	{@const pos = nodePositions.get(skull.nodeId)}
+	{@const isGhostSkull = ghostIds?.has(skull.participantId) ?? false}
 	{#if pos}
 		<text
 			x={pos.x}
@@ -162,7 +168,7 @@
 			text-anchor="middle"
 			dominant-baseline="central"
 			font-size={18 * skullScale(skull.progress)}
-			opacity={skullOpacity(skull.progress)}
+			opacity={(isGhostSkull ? 0.3 : 1) * skullOpacity(skull.progress)}
 			class="skull-anim"
 		>&#x1F480;</text>
 	{/if}
