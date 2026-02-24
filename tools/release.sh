@@ -73,6 +73,7 @@ git -C "$ROOT_DIR" add \
     mod/Cargo.toml \
     mod/Cargo.lock \
     web/package.json \
+    server/uv.lock \
     web/package-lock.json \
     CHANGELOG.md
 
