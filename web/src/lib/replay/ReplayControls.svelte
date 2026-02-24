@@ -11,9 +11,12 @@
 		onpause: () => void;
 		onseek: (progress: number) => void;
 		onspeed: (speed: number) => void;
+		/** Number of ghost players in the replay (optional, training mode) */
+		ghostCount?: number;
 	}
 
-	let { replayState, progress, speed, onplay, onpause, onseek, onspeed }: Props = $props();
+	let { replayState, progress, speed, onplay, onpause, onseek, onspeed, ghostCount }: Props =
+		$props();
 
 	let progressBar: HTMLDivElement | undefined = $state();
 	let isDragging = $state(false);
@@ -91,6 +94,10 @@
 			</button>
 		{/each}
 	</div>
+
+	{#if ghostCount != null && ghostCount > 0}
+		<span class="ghost-count">{ghostCount} ghost{ghostCount !== 1 ? 's' : ''}</span>
+	{/if}
 </div>
 
 <style>
@@ -192,5 +199,12 @@
 		background: var(--color-border);
 		color: var(--color-text);
 		font-weight: 600;
+	}
+
+	.ghost-count {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-disabled);
+		margin-left: auto;
+		white-space: nowrap;
 	}
 </style>
