@@ -74,6 +74,12 @@ class UserResponse(BaseModel):
     twitch_avatar_url: str | None
 
 
+class ParticipantPreview(UserResponse):
+    """User with optional placement for race previews."""
+
+    placement: int | None = None
+
+
 class UserStatsResponse(BaseModel):
     """Aggregated user statistics."""
 
@@ -216,7 +222,7 @@ class RaceResponse(BaseModel):
     started_at: datetime | None = None
     seeds_released_at: datetime | None = None
     participant_count: int
-    participant_previews: list[UserResponse] = []
+    participant_previews: list[ParticipantPreview] = []
     seed_total_layers: int | None = None
     casters: list[CasterResponse] = []
     my_current_layer: int | None = None
