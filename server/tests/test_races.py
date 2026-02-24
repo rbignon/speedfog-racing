@@ -296,6 +296,160 @@ async def test_list_races_filter_by_status(test_client, organizer, async_session
         assert races[0]["name"] == "Running Race"
 
 
+@pytest.mark.asyncio
+async def test_list_finished_races_includes_placement(test_client, organizer, async_session):
+    """Finished races include participant placement sorted by igt_ms."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_place",
+            pool_name="standard",
+            graph_json={},
+            total_layers=10,
+            folder_path="/test/place",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Finished Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            is_public=True,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        # Player who finished second (slower)
+        player2 = User(
+            twitch_id="p2",
+            twitch_username="player2",
+            twitch_display_name="Player Two",
+            api_token="token_p2",
+        )
+        # Player who finished first (faster)
+        player1 = User(
+            twitch_id="p1",
+            twitch_username="player1_fast",
+            twitch_display_name="Player One",
+            api_token="token_p1",
+        )
+        # Player who abandoned (no placement)
+        player3 = User(
+            twitch_id="p3",
+            twitch_username="player3",
+            twitch_display_name="Player Three",
+            api_token="token_p3",
+        )
+        db.add_all([player1, player2, player3])
+        await db.flush()
+
+        p1 = Participant(
+            race_id=race.id,
+            user_id=player1.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=100000,
+            death_count=2,
+        )
+        p2 = Participant(
+            race_id=race.id,
+            user_id=player2.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=200000,
+            death_count=5,
+        )
+        p3 = Participant(
+            race_id=race.id,
+            user_id=player3.id,
+            status=ParticipantStatus.ABANDONED,
+            igt_ms=50000,
+            death_count=1,
+        )
+        db.add_all([p1, p2, p3])
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/races?status=finished")
+        assert response.status_code == 200
+        races = response.json()["races"]
+        assert len(races) == 1
+
+        previews = races[0]["participant_previews"]
+        assert len(previews) == 3
+
+        # First: fastest finished player (placement 1)
+        assert previews[0]["twitch_username"] == "player1_fast"
+        assert previews[0]["placement"] == 1
+
+        # Second: slower finished player (placement 2)
+        assert previews[1]["twitch_username"] == "player2"
+        assert previews[1]["placement"] == 2
+
+        # Third: abandoned player (no placement)
+        assert previews[2]["twitch_username"] == "player3"
+        assert previews[2]["placement"] is None
+
+
+@pytest.mark.asyncio
+async def test_list_setup_races_no_placement(test_client, organizer, async_session):
+    """Setup races have participant previews without placement (capped at 5)."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_setup",
+            pool_name="standard",
+            graph_json={},
+            total_layers=10,
+            folder_path="/test/setup",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Setup Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            is_public=True,
+        )
+        db.add(race)
+        await db.flush()
+
+        for i in range(7):
+            user = User(
+                twitch_id=f"setup_p{i}",
+                twitch_username=f"setup_player{i}",
+                api_token=f"token_setup_{i}",
+            )
+            db.add(user)
+            await db.flush()
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    status=ParticipantStatus.REGISTERED,
+                    igt_ms=0,
+                    death_count=0,
+                )
+            )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/races?status=setup")
+        assert response.status_code == 200
+        races = response.json()["races"]
+        assert len(races) == 1
+
+        previews = races[0]["participant_previews"]
+        # Capped at 5 for non-finished races
+        assert len(previews) == 5
+        # No placement on setup races
+        for p in previews:
+            assert p["placement"] is None
+
+
 # =============================================================================
 # Race Details Tests
 # =============================================================================
