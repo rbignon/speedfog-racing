@@ -335,6 +335,8 @@
 		align-items: center;
 		gap: 0.4rem;
 		color: var(--color-gold);
+		min-width: 0;
+		overflow: hidden;
 	}
 
 	.trophy-icon {
@@ -347,6 +349,7 @@
 		width: 20px;
 		height: 20px;
 		border-radius: 50%;
+		object-fit: cover;
 	}
 
 	.winner-name {
