@@ -8,9 +8,12 @@
 		fetchTrainingSession,
 		abandonTrainingSession,
 		downloadTrainingPack,
-		type TrainingSessionDetail
+		fetchTrainingGhosts,
+		type TrainingSessionDetail,
+		type Ghost
 	} from '$lib/api';
 	import { MetroDag, MetroDagProgressive, MetroDagFull } from '$lib/dag';
+	import TrainingReplay from '$lib/replay/TrainingReplay.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
@@ -22,6 +25,8 @@
 	let abandoning = $state(false);
 	let downloading = $state(false);
 	let confirmAbandon = $state(false);
+	let ghosts = $state<Ghost[]>([]);
+	let dagView = $state<'map' | 'replay'>('map');
 
 	// Live data from WS
 	let liveParticipant = $derived(trainingStore.participant);
@@ -61,6 +66,22 @@
 		];
 	});
 
+	let ghostParticipants = $derived.by(() => {
+		return ghosts.map((g, i) => ({
+			id: `ghost-${i}`,
+			twitch_username: `Ghost ${i + 1}`,
+			twitch_display_name: null,
+			status: 'finished' as const,
+			current_zone: g.zone_history[g.zone_history.length - 1]?.node_id ?? null,
+			current_layer: 0,
+			igt_ms: g.igt_ms,
+			death_count: g.death_count,
+			color_index: 0,
+			mod_connected: false,
+			zone_history: g.zone_history
+		}));
+	});
+
 	$effect(() => {
 		if (!auth.initialized) return;
 
@@ -78,6 +99,12 @@
 	async function loadSession() {
 		try {
 			session = await fetchTrainingSession(sessionId);
+			// Fetch ghosts in background for finished sessions
+			if (session.status === 'finished') {
+				fetchTrainingGhosts(sessionId).then((g) => {
+					ghosts = g;
+				});
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load session.';
 		} finally {
@@ -175,7 +202,9 @@
 			</div>
 			<div class="stat">
 				<span class="stat-label">Progress</span>
-				<span class="stat-value mono">{Math.min(currentLayer + 1, totalLayers || Infinity)}/{totalLayers}</span>
+				<span class="stat-value mono"
+					>{Math.min(currentLayer + 1, totalLayers || Infinity)}/{totalLayers}</span
+				>
 			</div>
 			{#if liveParticipant?.mod_connected}
 				<div class="stat">
@@ -215,7 +244,29 @@
 		<!-- DAG section -->
 		{#if graphJson}
 			<section class="dag-section">
-				{#if (status === 'finished' || status === 'abandoned') && dagParticipants.length > 0}
+				{#if status === 'finished' && dagParticipants.length > 0}
+					<div class="dag-view-toggle">
+						<button
+							class="toggle-btn"
+							class:active={dagView === 'map'}
+							onclick={() => (dagView = 'map')}>Map</button
+						>
+						<button
+							class="toggle-btn"
+							class:active={dagView === 'replay'}
+							onclick={() => (dagView = 'replay')}>Replay</button
+						>
+					</div>
+					{#if dagView === 'map'}
+						<MetroDagFull {graphJson} participants={dagParticipants} />
+					{:else}
+						<TrainingReplay
+							{graphJson}
+							currentPlayer={dagParticipants[0]}
+							ghosts={ghostParticipants}
+						/>
+					{/if}
+				{:else if status === 'abandoned' && dagParticipants.length > 0}
 					<MetroDagFull {graphJson} participants={dagParticipants} />
 				{:else if status === 'active' && dagParticipants.length > 0}
 					<button class="btn btn-secondary btn-sm" onclick={() => (showFullDag = !showFullDag)}>
@@ -393,6 +444,39 @@
 
 	.connected-dot {
 		color: var(--color-success);
+	}
+
+	/* DAG view toggle */
+	.dag-view-toggle {
+		display: flex;
+		gap: 0.25rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		padding: 0.25rem;
+		width: fit-content;
+		margin-bottom: 0.75rem;
+	}
+
+	.toggle-btn {
+		all: unset;
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		color: var(--color-text-disabled);
+		padding: 0.35rem 0.9rem;
+		border-radius: var(--radius-md);
+		cursor: pointer;
+		transition: all var(--transition);
+	}
+
+	.toggle-btn:hover {
+		color: var(--color-text-secondary);
+	}
+
+	.toggle-btn.active {
+		background: var(--color-border);
+		color: var(--color-text);
+		font-weight: 600;
 	}
 
 	/* DAG section */
