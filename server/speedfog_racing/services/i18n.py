@@ -266,10 +266,12 @@ def _build_pattern_regex(en_template: str) -> re.Pattern[str]:
         escaped_marker = re.escape(marker)
         escaped = escaped.replace(escaped_marker, f"(?P<{ph}>.+?)")
 
-    # Handle possessive forms: {boss}'s and {boss}' in English.
+    # Handle possessive forms: {boss}'s, {boss}', or bare {boss} in English.
     # re.escape() in Python 3.7+ does NOT escape apostrophes, so the literal
     # pattern contains "'s" (not "\'s") after escaping.
-    escaped = escaped.replace("'s", "(?:'s|')")
+    # The possessive is optional to tolerate source data that omits it
+    # (e.g. "after Godskin Duo arena" instead of "after Godskin Duo's arena").
+    escaped = escaped.replace("'s", "(?:'s|')?")
 
     regex = re.compile(f"^{escaped}$", re.IGNORECASE)
     _pattern_regex_cache[en_template] = regex
