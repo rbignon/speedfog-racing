@@ -68,9 +68,10 @@ def race_response(race: Race) -> RaceResponse:
             key=lambda p: p.igt_ms,
         )
         non_finished = [p for p in race.participants if p.status != ParticipantStatus.FINISHED]
-        previews = [
+        all_previews = [
             participant_preview(p.user, placement=i + 1) for i, p in enumerate(finished)
         ] + [participant_preview(p.user) for p in non_finished]
+        previews = all_previews[:5]
     else:
         previews = [participant_preview(p.user) for p in race.participants[:5]]
 
