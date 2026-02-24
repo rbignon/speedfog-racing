@@ -77,7 +77,7 @@
 	</div>
 
 	{#if race.participant_previews.length > 0}
-		<div class="avatar-row">
+		<div class="avatar-row" class:has-winner={winner}>
 			<div class="avatar-stack">
 				{#each race.participant_previews as user}
 					{#if user.twitch_avatar_url}
@@ -96,6 +96,17 @@
 					<span class="avatar avatar-overflow">+{overflowCount}</span>
 				{/if}
 			</div>
+			{#if winner}
+				<div class="winner-info">
+					<svg class="trophy-icon" viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+						<path d="M12 2C9.24 2 7 4.24 7 7h-3c-1.1 0-2 .9-2 2v2c0 2.21 1.79 4 4 4h.68A7.01 7.01 0 0012 19.87V22H8v2h8v-2h-4v-2.13A7.01 7.01 0 0017.32 15H18c2.21 0 4-1.79 4-4V9c0-1.1-.9-2-2-2h-3c0-2.76-2.24-5-5-5zM4 11V9h3v4.83C5.17 13.1 4 11.65 4 11zm16 0c0 1.65-1.17 3.1-3 3.83V9h3v2z"/>
+					</svg>
+					{#if winner.twitch_avatar_url}
+						<img src={winner.twitch_avatar_url} alt="" class="winner-avatar" />
+					{/if}
+					<span class="winner-name">{winner.twitch_display_name || winner.twitch_username}</span>
+				</div>
+			{/if}
 			<span class="relative-time">{relativeTime}</span>
 		</div>
 	{:else}
@@ -121,18 +132,6 @@
 					}}
 				>{caster.user.twitch_display_name || caster.user.twitch_username}</button>
 			{/each}
-		</div>
-	{/if}
-
-	{#if winner}
-		<div class="winner-row">
-			<svg class="trophy-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-				<path d="M12 2C9.24 2 7 4.24 7 7h-3c-1.1 0-2 .9-2 2v2c0 2.21 1.79 4 4 4h.68A7.01 7.01 0 0012 19.87V22H8v2h8v-2h-4v-2.13A7.01 7.01 0 0017.32 15H18c2.21 0 4-1.79 4-4V9c0-1.1-.9-2-2-2h-3c0-2.76-2.24-5-5-5zM4 11V9h3v4.83C5.17 13.1 4 11.65 4 11zm16 0c0 1.65-1.17 3.1-3 3.83V9h3v2z"/>
-			</svg>
-			{#if winner.twitch_avatar_url}
-				<img src={winner.twitch_avatar_url} alt="" class="winner-avatar" />
-			{/if}
-			<span class="winner-name">{winner.twitch_display_name || winner.twitch_username}</span>
 		</div>
 	{/if}
 
@@ -330,30 +329,29 @@
 		text-decoration: underline;
 	}
 
-	/* Winner row */
-	.winner-row {
+	/* Winner info (inline in avatar row) */
+	.winner-info {
 		display: flex;
 		align-items: center;
-		gap: 0.35rem;
-		font-size: var(--font-size-sm);
-		color: var(--color-success);
-		margin-bottom: 0.5rem;
+		gap: 0.4rem;
+		color: var(--color-gold);
 	}
 
 	.trophy-icon {
 		flex-shrink: 0;
-		width: 14px;
-		height: 14px;
+		width: 16px;
+		height: 16px;
 	}
 
 	.winner-avatar {
-		width: 18px;
-		height: 18px;
+		width: 20px;
+		height: 20px;
 		border-radius: 50%;
 	}
 
 	.winner-name {
-		font-weight: 500;
+		font-weight: 600;
+		font-size: var(--font-size-sm);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -398,5 +396,17 @@
 	.organizer-link:hover {
 		color: var(--color-purple);
 		text-decoration: underline;
+	}
+
+	@media (max-width: 640px) {
+		.avatar-row.has-winner {
+			flex-wrap: wrap;
+		}
+
+		.avatar-row.has-winner .winner-info {
+			order: -1;
+			width: 100%;
+			margin-bottom: 0.35rem;
+		}
 	}
 </style>
