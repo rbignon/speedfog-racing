@@ -20,13 +20,13 @@ bosses = 5
 mini_dungeons = 3
 
 [structure]
-max_parallel_paths = 3
+max_parallel_paths = 4
 min_layers = 10
 max_layers = 15
 final_tier = 12
-split_probability = 0.2
-merge_probability = 0.2
-max_branches = 4
+split_probability = 0.9
+merge_probability = 0.5
+max_branches = 3
 major_boss_ratio = 0.1
 final_boss_candidates = ["all"]
 
