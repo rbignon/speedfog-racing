@@ -1337,3 +1337,133 @@ async def test_download_pack_requires_auth(test_client, training_user, training_
 
         resp = await client.get(f"/api/training/{session_id}/pack")
         assert resp.status_code == 401
+
+
+# =============================================================================
+# Ghost replay endpoint
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_ghost_endpoint_returns_finished_sessions(
+    async_session, training_user, training_seed, monkeypatch
+):
+    """GET /api/training/{id}/ghosts returns zone_history of other finished sessions."""
+    monkeypatch.setattr(
+        "speedfog_racing.api.training.get_pool_config",
+        lambda name: {"type": "training", "display": {"label": name}},
+    )
+
+    # Create the "current" session (finished)
+    async with async_session() as db:
+        current = TrainingSession(
+            user_id=training_user.id,
+            seed_id=training_seed.id,
+            status=TrainingSessionStatus.FINISHED,
+            igt_ms=300000,
+            death_count=5,
+            progress_nodes=[
+                {"node_id": "limgrave_start", "igt_ms": 0, "deaths": 0},
+                {"node_id": "stormveil_01", "igt_ms": 150000, "deaths": 5},
+            ],
+        )
+        db.add(current)
+        await db.commit()
+        await db.refresh(current)
+        current_id = current.id
+
+    # Create a second user with two finished sessions on same seed
+    async with async_session() as db:
+        ghost_user = User(
+            twitch_id="ghost_user_1",
+            twitch_username="ghostrunner",
+            api_token=generate_token(),
+            role=UserRole.USER,
+        )
+        db.add(ghost_user)
+        await db.commit()
+        await db.refresh(ghost_user)
+
+        ghost1 = TrainingSession(
+            user_id=ghost_user.id,
+            seed_id=training_seed.id,
+            status=TrainingSessionStatus.FINISHED,
+            igt_ms=250000,
+            death_count=3,
+            progress_nodes=[
+                {"node_id": "limgrave_start", "igt_ms": 0, "deaths": 1},
+                {"node_id": "stormveil_01", "igt_ms": 120000, "deaths": 2},
+            ],
+        )
+        # Also create an ACTIVE session — should NOT appear in ghosts
+        ghost2_active = TrainingSession(
+            user_id=ghost_user.id,
+            seed_id=training_seed.id,
+            status=TrainingSessionStatus.ACTIVE,
+            igt_ms=50000,
+            progress_nodes=[{"node_id": "limgrave_start", "igt_ms": 0}],
+        )
+        db.add_all([ghost1, ghost2_active])
+        await db.commit()
+
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get(f"/api/training/{current_id}/ghosts")
+
+    assert resp.status_code == 200
+    ghosts = resp.json()
+    assert len(ghosts) == 1  # Only the finished ghost, not the active one, not self
+    assert ghosts[0]["igt_ms"] == 250000
+    assert ghosts[0]["death_count"] == 3
+    assert len(ghosts[0]["zone_history"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_ghost_endpoint_excludes_self(
+    async_session, training_user, training_seed, monkeypatch
+):
+    """The current session should not appear in its own ghost list."""
+    monkeypatch.setattr(
+        "speedfog_racing.api.training.get_pool_config",
+        lambda name: {"type": "training", "display": {"label": name}},
+    )
+
+    async with async_session() as db:
+        session = TrainingSession(
+            user_id=training_user.id,
+            seed_id=training_seed.id,
+            status=TrainingSessionStatus.FINISHED,
+            igt_ms=300000,
+            progress_nodes=[{"node_id": "limgrave_start", "igt_ms": 0}],
+        )
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        session_id = session.id
+
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get(f"/api/training/{session_id}/ghosts")
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_ghost_endpoint_404_for_missing_session(async_session, monkeypatch):
+    """Returns 404 for non-existent session."""
+    monkeypatch.setattr(
+        "speedfog_racing.api.training.get_pool_config",
+        lambda name: {"type": "training", "display": {"label": name}},
+    )
+
+    import uuid
+
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get(f"/api/training/{uuid.uuid4()}/ghosts")
+
+    assert resp.status_code == 404

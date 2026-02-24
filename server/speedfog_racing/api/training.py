@@ -25,6 +25,7 @@ from speedfog_racing.models import (
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.schemas import (
     CreateTrainingRequest,
+    GhostResponse,
     PoolConfig,
     TrainingSessionDetailResponse,
     TrainingSessionResponse,
@@ -251,3 +252,36 @@ async def download_pack(
         media_type="application/zip",
         background=BackgroundTask(os.unlink, temp_path),
     )
+
+
+@router.get("/{session_id}/ghosts", response_model=list[GhostResponse])
+async def get_ghosts(
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[GhostResponse]:
+    """Get anonymous ghost data for all finished training sessions on the same seed."""
+    # Load the target session to get its seed_id
+    result = await db.execute(select(TrainingSession).where(TrainingSession.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solo session not found")
+
+    # Find all other finished sessions on the same seed
+    result = await db.execute(
+        select(TrainingSession).where(
+            TrainingSession.seed_id == session.seed_id,
+            TrainingSession.status == TrainingSessionStatus.FINISHED,
+            TrainingSession.id != session_id,
+            TrainingSession.progress_nodes.isnot(None),
+        )
+    )
+    ghosts = list(result.scalars().all())
+
+    return [
+        GhostResponse(
+            zone_history=g.progress_nodes or [],
+            igt_ms=g.igt_ms,
+            death_count=g.death_count,
+        )
+        for g in ghosts
+    ]

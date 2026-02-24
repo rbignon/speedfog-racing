@@ -380,3 +380,11 @@ class TrainingSessionDetailResponse(BaseModel):
     seed_total_paths: int | None = None
     graph_json: dict[str, Any] | None = None
     pool_config: PoolConfig | None = None
+
+
+class GhostResponse(BaseModel):
+    """Anonymous ghost data for replay."""
+
+    zone_history: list[dict[str, Any]]
+    igt_ms: int
+    death_count: int
