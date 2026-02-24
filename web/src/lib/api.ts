@@ -995,6 +995,18 @@ export async function abandonTrainingSession(
   return handleResponse<TrainingSessionDetail>(response);
 }
 
+export interface Ghost {
+  zone_history: Array<{ node_id: string; igt_ms: number; deaths?: number }>;
+  igt_ms: number;
+  death_count: number;
+}
+
+export async function fetchTrainingGhosts(sessionId: string): Promise<Ghost[]> {
+  const res = await fetch(`${API_BASE}/training/${sessionId}/ghosts`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export async function downloadTrainingPack(sessionId: string): Promise<void> {
   const response = await fetch(`${API_BASE}/training/${sessionId}/pack`, {
     headers: getAuthHeaders(),
