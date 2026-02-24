@@ -247,6 +247,7 @@
 	.avatar-stack {
 		display: flex;
 		align-items: center;
+		min-width: 126px;
 	}
 
 	.avatar {
