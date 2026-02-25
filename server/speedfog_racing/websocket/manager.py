@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import WebSocket
 
 from speedfog_racing.models import Participant
-from speedfog_racing.services.layer_service import get_tier_for_node
+from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
 from speedfog_racing.websocket.schemas import (
     LeaderboardUpdateMessage,
     ParticipantInfo,
@@ -257,6 +257,48 @@ class ConnectionManager:
 
         message = RaceStatusChangeMessage(status=status, started_at=started_at)
         await room.broadcast_to_all(message.model_dump_json())
+
+
+def build_leader_splits(
+    zone_history: list[dict[str, Any]] | None,
+    graph_json: dict[str, Any],
+) -> dict[int, int]:
+    """Build a map of layer -> first IGT at that layer from zone_history."""
+    if not zone_history:
+        return {}
+    splits: dict[int, int] = {}
+    for entry in zone_history:
+        node_id = entry.get("node_id")
+        igt = entry.get("igt_ms")
+        if node_id is None or igt is None:
+            continue
+        layer = get_layer_for_node(str(node_id), graph_json)
+        if layer not in splits:
+            splits[layer] = int(igt)
+    return splits
+
+
+def compute_gap_ms(
+    status: str,
+    *,
+    igt_ms: int,
+    current_layer: int,
+    leader_splits: dict[int, int],
+    leader_igt_ms: int,
+    is_leader: bool = False,
+) -> int | None:
+    """Compute gap_ms for a participant relative to the leader."""
+    if is_leader:
+        return None
+    if status not in ("playing", "finished"):
+        return None
+    if status == "finished":
+        return igt_ms - leader_igt_ms
+    # Playing: compare to leader's split at this layer
+    leader_split = leader_splits.get(current_layer)
+    if leader_split is None:
+        return None
+    return igt_ms - leader_split
 
 
 def participant_to_info(

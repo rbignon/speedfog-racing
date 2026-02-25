@@ -525,3 +525,136 @@ class TestParticipantToInfo:
         participant = MockParticipant(user=user, zone_history=history)
         info = participant_to_info(participant)
         assert info.zone_history == history
+
+
+class TestGapComputation:
+    """Test gap timing computation."""
+
+    def _graph(self):
+        """Helper graph: 4 nodes across 4 layers."""
+        return {
+            "nodes": {
+                "start": {"layer": 0, "tier": 1},
+                "zone_a": {"layer": 1, "tier": 2},
+                "zone_b": {"layer": 2, "tier": 3},
+                "boss": {"layer": 3, "tier": 4},
+            }
+        }
+
+    def test_build_leader_splits(self):
+        """Leader splits map each layer to the first IGT at that layer."""
+        from speedfog_racing.websocket.manager import build_leader_splits
+
+        history = [
+            {"node_id": "start", "igt_ms": 0},
+            {"node_id": "zone_a", "igt_ms": 30000},
+            {"node_id": "zone_b", "igt_ms": 75000},
+            {"node_id": "boss", "igt_ms": 120000},
+        ]
+        splits = build_leader_splits(history, self._graph())
+        assert splits == {0: 0, 1: 30000, 2: 75000, 3: 120000}
+
+    def test_build_leader_splits_keeps_first_igt_per_layer(self):
+        """If multiple nodes share a layer, keep the first IGT."""
+        from speedfog_racing.websocket.manager import build_leader_splits
+
+        graph = {
+            "nodes": {
+                "start": {"layer": 0, "tier": 1},
+                "zone_a": {"layer": 1, "tier": 2},
+                "zone_a2": {"layer": 1, "tier": 2},
+                "zone_b": {"layer": 2, "tier": 3},
+            }
+        }
+        history = [
+            {"node_id": "start", "igt_ms": 0},
+            {"node_id": "zone_a", "igt_ms": 30000},
+            {"node_id": "zone_a2", "igt_ms": 45000},
+            {"node_id": "zone_b", "igt_ms": 75000},
+        ]
+        splits = build_leader_splits(history, graph)
+        # Layer 1 should have 30000 (first), not 45000
+        assert splits[1] == 30000
+
+    def test_build_leader_splits_empty_history(self):
+        """Empty history returns empty splits."""
+        from speedfog_racing.websocket.manager import build_leader_splits
+
+        splits = build_leader_splits([], self._graph())
+        assert splits == {}
+
+    def test_build_leader_splits_none_history(self):
+        """None history returns empty splits."""
+        from speedfog_racing.websocket.manager import build_leader_splits
+
+        splits = build_leader_splits(None, self._graph())
+        assert splits == {}
+
+    def test_compute_gap_playing_with_splits(self):
+        """Playing participant gap = their IGT - leader split at their layer."""
+        from speedfog_racing.websocket.manager import compute_gap_ms
+
+        leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
+        # Player is at layer 2 with IGT 90000; leader was at layer 2 at 75000
+        gap = compute_gap_ms(
+            "playing",
+            igt_ms=90000,
+            current_layer=2,
+            leader_splits=leader_splits,
+            leader_igt_ms=0,
+        )
+        assert gap == 15000
+
+    def test_compute_gap_finished_non_leader(self):
+        """Finished non-leader gap = their IGT - leader IGT."""
+        from speedfog_racing.websocket.manager import compute_gap_ms
+
+        gap = compute_gap_ms(
+            "finished",
+            igt_ms=150000,
+            current_layer=3,
+            leader_splits={},
+            leader_igt_ms=120000,
+        )
+        assert gap == 30000
+
+    def test_compute_gap_leader_returns_none(self):
+        """Leader (is_leader=True) always has gap=None."""
+        from speedfog_racing.websocket.manager import compute_gap_ms
+
+        gap = compute_gap_ms(
+            "finished",
+            igt_ms=120000,
+            current_layer=3,
+            leader_splits={},
+            leader_igt_ms=120000,
+            is_leader=True,
+        )
+        assert gap is None
+
+    def test_compute_gap_ready_returns_none(self):
+        """Ready participants always have gap=None."""
+        from speedfog_racing.websocket.manager import compute_gap_ms
+
+        gap = compute_gap_ms(
+            "ready",
+            igt_ms=0,
+            current_layer=0,
+            leader_splits={},
+            leader_igt_ms=0,
+        )
+        assert gap is None
+
+    def test_compute_gap_no_split_for_layer(self):
+        """If leader has no split for player's layer, return None."""
+        from speedfog_racing.websocket.manager import compute_gap_ms
+
+        leader_splits = {0: 0, 1: 30000}
+        gap = compute_gap_ms(
+            "playing",
+            igt_ms=90000,
+            current_layer=2,
+            leader_splits=leader_splits,
+            leader_igt_ms=0,
+        )
+        assert gap is None
