@@ -387,7 +387,7 @@ def translate_graph_json(graph_json: dict[str, Any], locale: str) -> dict[str, A
 
 
 def _translate_graph_json_impl(graph_json: dict[str, Any], locale: str) -> dict[str, Any]:
-    """Deep-copy graph_json and translate node display_name, type, and exits."""
+    """Deep-copy graph_json and translate node display_name, type, exits, and entrances."""
     data = _translations.get(locale)
     if data is None:
         return graph_json
@@ -418,6 +418,18 @@ def _translate_graph_json_impl(graph_json: dict[str, Any], locale: str) -> dict[
             text = exit_data.get("text")
             if isinstance(text, str):
                 exit_data["text"] = _translate_exit_text(text, data)
+
+        # Translate entrances (text is side_text content, to_text is zone name)
+        entrances = node_data.get("entrances", [])
+        for entrance_data in entrances:
+            if not isinstance(entrance_data, dict):
+                continue
+            text = entrance_data.get("text")
+            if isinstance(text, str):
+                entrance_data["text"] = _translate_exit_text(text, data)
+            to_text = entrance_data.get("to_text")
+            if isinstance(to_text, str):
+                entrance_data["to_text"] = _translate_name(to_text, data)
 
     return translated
 

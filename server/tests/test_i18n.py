@@ -294,6 +294,28 @@ class TestTranslateGraphJson:
         # Translated type added as display_type
         assert result["nodes"]["a"]["display_type"] == "donjon majeur"
 
+    def test_translates_entrance_text(self, fr_data: TranslationData) -> None:
+        """Entrance text (side_text content) should be translated via patterns."""
+        graph = {
+            "nodes": {
+                "scadu_123": {
+                    "display_name": "Scadu Altus",
+                    "entrances": [
+                        {
+                            "text": "at the entrance from Scadu Altus",
+                            "from": "other_456",
+                            "to": "scadu_altus",
+                            "to_text": "Scadu Altus",
+                        },
+                    ],
+                }
+            }
+        }
+        result = translate_graph_json(graph, "fr")
+        entrance = result["nodes"]["scadu_123"]["entrances"][0]
+        assert entrance["text"] == "à l'entrée depuis Altus Occulte"
+        assert entrance["to_text"] == "Altus Occulte"
+
     def test_original_not_mutated_graph(self, fr_data: TranslationData) -> None:
         graph = {
             "nodes": {
