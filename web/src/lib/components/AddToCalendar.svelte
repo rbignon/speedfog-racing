@@ -36,11 +36,13 @@
 	function generateIcs(): string {
 		const start = new Date(scheduledAt);
 		const end = getEndDate(start);
+		const uid = `${toUtcString(start)}-${encodeURIComponent(raceUrl)}@speedfog.racing`;
 		return [
 			'BEGIN:VCALENDAR',
 			'VERSION:2.0',
 			'PRODID:-//SpeedFog Racing//EN',
 			'BEGIN:VEVENT',
+			`UID:${uid}`,
 			`DTSTART:${toUtcString(start)}`,
 			`DTEND:${toUtcString(end)}`,
 			`SUMMARY:${getTitle()}`,
@@ -48,7 +50,7 @@
 			`URL:${raceUrl}`,
 			'END:VEVENT',
 			'END:VCALENDAR'
-		].join('\r\n');
+		].join('\r\n') + '\r\n';
 	}
 
 	function downloadIcs() {
@@ -70,14 +72,22 @@
 			open = false;
 		}
 	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape' && open) {
+			open = false;
+		}
+	}
 </script>
 
-<svelte:document onclick={handleClickOutside} />
+<svelte:document onclick={handleClickOutside} onkeydown={handleKeydown} />
 
 <div class="calendar-wrapper">
 	<button
 		class="calendar-btn"
 		title="Add to calendar"
+		aria-expanded={open}
+		aria-haspopup="true"
 		onclick={() => (open = !open)}
 	>
 		<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
@@ -155,6 +165,7 @@
 		border: none;
 		background: transparent;
 		color: var(--color-text);
+		font-family: var(--font-family);
 		font-size: var(--font-size-sm);
 		border-radius: var(--radius-md);
 		cursor: pointer;
