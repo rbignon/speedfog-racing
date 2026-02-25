@@ -25,16 +25,17 @@ All features are optional and degrade gracefully — if a setting is missing, th
 Generate an invite URL with these permissions:
 
 - **Manage Roles** — assign/remove the Runner role
-- **Manage Events** — create/update/delete scheduled events
+- **Manage Events** — update/delete scheduled events
+- **Create Events** — create scheduled events
 - **Send Messages** — post the Runner button message
 
 Use this URL template (replace `APPLICATION_ID`):
 
 ```
-https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&permissions=268437504&scope=bot
+https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&permissions=17601044416512&scope=bot
 ```
 
-Permission integer `268437504` = Manage Roles + Manage Events + Send Messages.
+Permission integer `17601044416512` = Manage Roles (1<<28) + Manage Events (1<<33) + Create Events (1<<44) + Send Messages (1<<11).
 
 ## 4. Create the Runner Role
 
