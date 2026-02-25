@@ -191,6 +191,7 @@ See `docs/PROTOCOL.md` for complete reference.
 - `docs/specs/phase1.md` - Phase 1 MVP detailed spec
 - `docs/specs/phase2-ui-ux.md` - Phase 2 UI/UX specification
 - `docs/specs/emevd-zone-tracking.md` - EMEVD zone tracking spec (v1.0 critical)
+- `docs/DISCORD_BOT.md` - Discord bot setup and configuration
 
 ## Current State
 
