@@ -387,8 +387,7 @@ impl RaceTracker {
 
         // Find local player's index in the (pre-sorted) participants list
         let my_index = self
-            .my_participant_id
-            .as_ref()
+            .my_participant_id()
             .and_then(|my_id| participants.iter().position(|p| &p.id == my_id));
 
         // Determine how many top rows to show and whether to anchor self

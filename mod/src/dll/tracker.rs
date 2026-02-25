@@ -778,6 +778,10 @@ impl RaceTracker {
         self.race_state.current_zone.as_ref()
     }
 
+    pub fn my_participant_id(&self) -> Option<&String> {
+        self.my_participant_id.as_ref()
+    }
+
     pub fn my_participant(&self) -> Option<&ParticipantInfo> {
         let id = self.my_participant_id.as_ref()?;
         self.race_state.participants.iter().find(|p| &p.id == id)
