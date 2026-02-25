@@ -7,6 +7,7 @@ import pytest
 
 from speedfog_racing.discord import (
     _format_igt,
+    _send_webhook,
     build_podium,
     notify_race_created,
     notify_race_finished,
@@ -50,6 +51,63 @@ def finished_kwargs():
             {"name": "Player3", "igt": "18:22"},
         ],
     }
+
+
+# --- _send_webhook with content and allowed_mentions ---
+
+
+@pytest.mark.asyncio
+async def test_send_webhook_with_content_and_allowed_mentions():
+    """Should include content and allowed_mentions alongside embeds."""
+    mock_response = AsyncMock()
+    mock_response.status_code = 204
+
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        embed = {"title": "Test", "color": 0xF97316}
+        await _send_webhook(
+            embed,
+            content="<@&123>",
+            allowed_mentions={"roles": ["123"]},
+        )
+
+        payload = mock_client.post.call_args[1]["json"]
+        assert payload["content"] == "<@&123>"
+        assert payload["allowed_mentions"] == {"roles": ["123"]}
+        assert payload["embeds"] == [embed]
+
+
+@pytest.mark.asyncio
+async def test_send_webhook_without_content():
+    """Should omit content and allowed_mentions when not provided."""
+    mock_response = AsyncMock()
+    mock_response.status_code = 204
+
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        embed = {"title": "Test", "color": 0xF97316}
+        await _send_webhook(embed)
+
+        payload = mock_client.post.call_args[1]["json"]
+        assert "content" not in payload
+        assert "allowed_mentions" not in payload
+        assert payload["embeds"] == [embed]
 
 
 # --- _send_webhook / noop ---

@@ -18,13 +18,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def _send_webhook(embed: dict[str, object]) -> None:
+async def _send_webhook(
+    embed: dict[str, object],
+    *,
+    content: str | None = None,
+    allowed_mentions: dict[str, object] | None = None,
+) -> None:
     """Send an embed to the Discord webhook. No-op if webhook URL is not configured."""
     webhook_url = settings.discord_webhook_url
     if not webhook_url:
         return
 
-    payload = {"embeds": [embed]}
+    payload: dict[str, object] = {"embeds": [embed]}
+    if content:
+        payload["content"] = content
+    if allowed_mentions:
+        payload["allowed_mentions"] = allowed_mentions
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(webhook_url, json=payload)
