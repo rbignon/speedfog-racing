@@ -2,9 +2,14 @@
 
 import json
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
 from nacl.signing import SigningKey
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from speedfog_racing.database import Base, get_db
+from speedfog_racing.models import User, UserRole
 
 
 @pytest.fixture
@@ -228,3 +233,102 @@ async def test_remove_runner_button_removes_role(signing_key, public_key_hex):
             assert data["type"] == 4
             assert "removed" in data["data"]["content"].lower()
             mock_remove.assert_called_once_with("user-12345")
+
+
+# =============================================================================
+# Admin setup-runner-message endpoint
+# =============================================================================
+
+
+@pytest.fixture
+async def admin_async_engine():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+async def admin_async_session(admin_async_engine):
+    return async_sessionmaker(admin_async_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture
+async def admin_user(admin_async_session):
+    async with admin_async_session() as db:
+        user = User(
+            twitch_id=f"admin-{uuid4().hex[:8]}",
+            twitch_username="adminuser",
+            twitch_display_name="AdminUser",
+            api_token=f"admin-token-{uuid4().hex[:8]}",
+            role=UserRole.ADMIN,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+@pytest.fixture
+def admin_test_client(admin_async_session):
+    from httpx import ASGITransport, AsyncClient
+
+    from speedfog_racing.main import app
+
+    async def override_get_db():
+        async with admin_async_session() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    client = AsyncClient(transport=transport, base_url="http://test")
+    yield client
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_setup_runner_endpoint_requires_auth(admin_test_client):
+    """POST /api/discord/setup-runner-message without auth should return 401."""
+    async with admin_test_client as client:
+        resp = await client.post("/api/discord/setup-runner-message")
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_setup_runner_endpoint_requires_admin(admin_test_client, admin_async_session):
+    """POST /api/discord/setup-runner-message with non-admin should return 403."""
+    async with admin_async_session() as db:
+        user = User(
+            twitch_id=f"user-{uuid4().hex[:8]}",
+            twitch_username="regularuser",
+            twitch_display_name="RegularUser",
+            api_token="regular-user-token",
+            role=UserRole.USER,
+        )
+        db.add(user)
+        await db.commit()
+
+    async with admin_test_client as client:
+        resp = await client.post(
+            "/api/discord/setup-runner-message",
+            headers={"Authorization": "Bearer regular-user-token"},
+        )
+        assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_setup_runner_endpoint_success(admin_test_client, admin_user):
+    """Admin should be able to post runner message."""
+    with patch(
+        "speedfog_racing.api.discord.post_runner_message", new_callable=AsyncMock
+    ) as mock_post:
+        mock_post.return_value = True
+        async with admin_test_client as client:
+            resp = await client.post(
+                "/api/discord/setup-runner-message",
+                headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            )
+            assert resp.status_code == 200
+            assert resp.json() == {"status": "ok"}
+            mock_post.assert_called_once()

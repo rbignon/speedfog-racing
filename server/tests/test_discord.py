@@ -9,12 +9,15 @@ from speedfog_racing.discord import (
     _discord_api_request,
     _format_igt,
     _send_webhook,
+    assign_runner_role,
     build_podium,
     create_scheduled_event,
     delete_scheduled_event,
     notify_race_created,
     notify_race_finished,
     notify_race_started,
+    post_runner_message,
+    remove_runner_role,
     set_event_status,
     update_scheduled_event,
 )
@@ -684,6 +687,85 @@ async def test_set_event_status_completed():
 
             payload = mock_req.call_args[1]["json"]
             assert payload == {"status": 3}
+
+
+# --- Role management ---
+
+
+@pytest.mark.asyncio
+async def test_assign_runner_role():
+    """Should PUT to Discord roles endpoint."""
+    with patch("speedfog_racing.discord._discord_api_request", new_callable=AsyncMock) as mock_req:
+        mock_req.return_value = {}
+        with patch("speedfog_racing.discord.settings") as mock_settings:
+            mock_settings.discord_guild_id = "guild-456"
+            mock_settings.discord_runner_role_id = "role-789"
+
+            result = await assign_runner_role("user-123")
+
+            assert result is True
+            call_args = mock_req.call_args
+            assert call_args[0][0] == "PUT"
+            assert "/guilds/guild-456/members/user-123/roles/role-789" in call_args[0][1]
+
+
+@pytest.mark.asyncio
+async def test_remove_runner_role():
+    """Should DELETE from Discord roles endpoint."""
+    with patch("speedfog_racing.discord._discord_api_request", new_callable=AsyncMock) as mock_req:
+        mock_req.return_value = {}
+        with patch("speedfog_racing.discord.settings") as mock_settings:
+            mock_settings.discord_guild_id = "guild-456"
+            mock_settings.discord_runner_role_id = "role-789"
+
+            result = await remove_runner_role("user-123")
+
+            assert result is True
+            call_args = mock_req.call_args
+            assert call_args[0][0] == "DELETE"
+            assert "/guilds/guild-456/members/user-123/roles/role-789" in call_args[0][1]
+
+
+@pytest.mark.asyncio
+async def test_assign_runner_role_noop_without_config():
+    """Should return False when guild_id or role_id is not set."""
+    with patch("speedfog_racing.discord.settings") as mock_settings:
+        mock_settings.discord_guild_id = None
+        mock_settings.discord_runner_role_id = "role-789"
+        assert await assign_runner_role("user-123") is False
+
+
+# --- Runner message ---
+
+
+@pytest.mark.asyncio
+async def test_post_runner_message():
+    """Should POST message with buttons to the configured channel."""
+    with patch("speedfog_racing.discord._discord_api_request", new_callable=AsyncMock) as mock_req:
+        mock_req.return_value = {"id": "msg-123"}
+        with patch("speedfog_racing.discord.settings") as mock_settings:
+            mock_settings.discord_channel_id = "channel-456"
+
+            result = await post_runner_message()
+
+            assert result is True
+            call_args = mock_req.call_args
+            assert call_args[0][0] == "POST"
+            assert "/channels/channel-456/messages" in call_args[0][1]
+            payload = call_args[1]["json"]
+            assert "components" in payload
+            buttons = payload["components"][0]["components"]
+            assert len(buttons) == 2
+            assert buttons[0]["custom_id"] == "become_runner"
+            assert buttons[1]["custom_id"] == "remove_runner"
+
+
+@pytest.mark.asyncio
+async def test_post_runner_message_noop_without_channel():
+    """Should return False when channel_id is not set."""
+    with patch("speedfog_racing.discord.settings") as mock_settings:
+        mock_settings.discord_channel_id = None
+        assert await post_runner_message() is False
 
 
 # --- Helpers ---
