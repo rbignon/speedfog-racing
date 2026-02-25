@@ -62,7 +62,7 @@ async def discord_interaction(request: Request) -> dict | Response:  # type: ign
     if not _verify_signature(signature, timestamp, body):
         return Response(status_code=401, content="Invalid signature")
 
-    data: dict = await request.json()  # type: ignore[assignment]
+    data: dict[str, object] = await request.json()
 
     # PING
     if data.get("type") == 1:
