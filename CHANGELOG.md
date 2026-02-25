@@ -2,6 +2,47 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [Unreleased]
+
+### Logic
+
+- Zone weights recalibrated from production race data — run lengths are now more balanced and predictable
+- Traversal constraints prevent degenerate seeds where entry and exit fog gates are right next to each other (Stormveil, Academy, Haligtree, etc.)
+- Multi-zone boss areas where the boss can be skipped (e.g. Ashen Leyndell) are no longer treated as mandatory boss encounters
+- Boss zone weights now use a phase-based system (multi-phase bosses like Rennala, Messmer, Fire Giant count double) instead of timing data
+- Fix: zone tracking could resolve to an unexplored zone on death or fast travel
+- Fix: shared exit fog gates no longer silently drop event flag registrations, fixing ~40% of seed build failures
+- Fix: 3 DLC key items (Hole-Laden Necklace, Well Depths Key, Messmer's Kindling) excluded from randomization, fixing 60% of remaining seed build failures
+
+### Seeds
+
+- Boss zone names now consistently show the boss name (e.g. "Leyndell - Godfrey" instead of "Leyndell - Erdtree Sanctuary")
+- All minor boss types (Miniboss, Night Miniboss, Dragon Miniboss, Evergaol) now swap with each other in Boss Shuffle mode
+- Hostile NPCs now randomize among themselves instead of being left in their original positions
+- Training pools aligned with their race counterparts
+- Pool settings now display stonesword keys and gargoyle poison status
+- Maps can now branch into up to 4 parallel paths (previously 3), producing wider and more varied race maps
+- Split probability increased across all pools — race maps now branch much more frequently, reducing long linear stretches
+
+### Solo
+
+- Ghost replay: watch previous participants' runs on the training map as animated ghosts
+
+### Races
+
+- Players can now abandon a running race via a button on the race page
+- Inactive players (IGT unchanged for 5 minutes) are automatically abandoned
+
+### Website
+
+- Finished race cards now show the winner's name and avatar
+- Recent results section added to the homepage
+
+### Translations
+
+- 40+ new French translations for full coverage
+- Fix: possessive patterns now match zone names with or without "'s"
+
 ## [1.2.0] - 2026-02-23
 
 ### Logic

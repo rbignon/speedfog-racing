@@ -65,6 +65,7 @@ from speedfog_racing.services import (
     get_pool_config,
     reroll_seed_for_race,
 )
+from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.services.seed_pack_service import sanitize_filename
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 from speedfog_racing.websocket.manager import manager
@@ -1161,8 +1162,6 @@ async def abandon_race(
     await broadcast_race_state_update(race_id, race)
 
     # Check auto-finish
-    from speedfog_racing.services.race_lifecycle import check_race_auto_finish
-
     race_transitioned = await check_race_auto_finish(db, race)
     if race_transitioned:
         race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
