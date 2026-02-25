@@ -248,7 +248,12 @@ class ConnectionManager:
         *,
         graph_json: dict[str, Any] | None = None,
     ) -> None:
-        """Broadcast a single player update to spectators."""
+        """Broadcast a single player update to spectators.
+
+        Note: gap_ms is not included here because computing it requires the full
+        sorted participants list (for leader context). Spectators receive gap data
+        via leaderboard_update messages instead.
+        """
         room = self.get_room(race_id)
         if not room:
             return
@@ -288,11 +293,16 @@ def build_leader_splits(
     """Build a map of layer -> first IGT at that layer from zone_history."""
     if not zone_history:
         return {}
+    nodes = graph_json.get("nodes", {})
     splits: dict[int, int] = {}
     for entry in zone_history:
         node_id = entry.get("node_id")
         igt = entry.get("igt_ms")
         if node_id is None or igt is None:
+            continue
+        # Skip unknown nodes — get_layer_for_node defaults to 0 which would
+        # produce a bogus split for layer 0.
+        if str(node_id) not in nodes:
             continue
         layer = get_layer_for_node(str(node_id), graph_json)
         if layer not in splits:

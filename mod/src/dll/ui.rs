@@ -357,16 +357,7 @@ impl RaceTracker {
             }
         };
 
-        // Right column: time or progress
-        let right_text = match p.status.as_str() {
-            "finished" => format_time(p.igt_ms),
-            _ => {
-                let display = (p.current_layer + 1).min(total_layers);
-                format!("{}/{}", display, total_layers)
-            }
-        };
-
-        // Gap column
+        let right_text = right_text_for(p, total_layers);
         let gap_text = p.gap_ms.map(crate::core::format_gap);
 
         // Layout: [name]  [gap right-aligned in gap_col]  [right right-aligned]
@@ -413,15 +404,7 @@ impl RaceTracker {
         let mut max_gap_width: f32 = 0.0;
         let mut max_right_width: f32 = 0.0;
         for p in participants.iter() {
-            // Right column width
-            let right_text = match p.status.as_str() {
-                "finished" => format_time(p.igt_ms),
-                _ => {
-                    let display = (p.current_layer + 1).min(total_layers);
-                    format!("{}/{}", display, total_layers)
-                }
-            };
-            let rw = ui.calc_text_size(&right_text)[0];
+            let rw = ui.calc_text_size(&right_text_for(p, total_layers))[0];
             if rw > max_right_width {
                 max_right_width = rw;
             }
@@ -564,6 +547,17 @@ impl RaceTracker {
         ui.text_disabled("Recv:");
         ui.same_line();
         ui.text(debug.last_received.unwrap_or("\u{2013}"));
+    }
+}
+
+/// Right-column text for a participant row: finish time or layer progress.
+fn right_text_for(p: &crate::core::protocol::ParticipantInfo, total_layers: i32) -> String {
+    match p.status.as_str() {
+        "finished" => format_time(p.igt_ms),
+        _ => {
+            let display = (p.current_layer + 1).min(total_layers);
+            format!("{}/{}", display, total_layers)
+        }
     }
 }
 

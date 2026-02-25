@@ -590,6 +590,20 @@ class TestGapComputation:
         splits = build_leader_splits(None, self._graph())
         assert splits == {}
 
+    def test_build_leader_splits_skips_unknown_nodes(self):
+        """Unknown nodes in zone_history are skipped, not mapped to layer 0."""
+        from speedfog_racing.websocket.manager import build_leader_splits
+
+        history = [
+            {"node_id": "start", "igt_ms": 0},
+            {"node_id": "ghost_node", "igt_ms": 15000},  # not in graph
+            {"node_id": "zone_a", "igt_ms": 30000},
+        ]
+        splits = build_leader_splits(history, self._graph())
+        # ghost_node should not appear; layer 0 should be from "start"
+        assert splits == {0: 0, 1: 30000}
+        assert "ghost_node" not in str(splits)
+
     def test_compute_gap_playing_with_splits(self):
         """Playing participant gap = their IGT - leader split at their layer."""
         from speedfog_racing.websocket.manager import compute_gap_ms
@@ -656,6 +670,19 @@ class TestGapComputation:
             current_layer=2,
             leader_splits=leader_splits,
             leader_igt_ms=0,
+        )
+        assert gap is None
+
+    def test_compute_gap_abandoned_returns_none(self):
+        """Abandoned (DNF) participants always have gap=None."""
+        from speedfog_racing.websocket.manager import compute_gap_ms
+
+        gap = compute_gap_ms(
+            "abandoned",
+            igt_ms=90000,
+            current_layer=3,
+            leader_splits={0: 0, 1: 30000, 2: 75000, 3: 120000},
+            leader_igt_ms=120000,
         )
         assert gap is None
 
