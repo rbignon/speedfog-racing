@@ -33,6 +33,7 @@
 		updateRace,
 		joinRace,
 		leaveRace,
+		abandonRace,
 		type RaceDetail
 	} from '$lib/api';
 	import { formatScheduledTime } from '$lib/utils/time';
@@ -43,6 +44,9 @@
 	let joining = $state(false);
 	let leaving = $state(false);
 	let joinLeaveError = $state<string | null>(null);
+	let confirmAbandon = $state(false);
+	let abandoning = $state(false);
+	let abandonError = $state<string | null>(null);
 	let now = $state(Date.now());
 	let editingSchedule = $state(false);
 	let scheduleInput = $state('');
@@ -247,6 +251,10 @@
 	);
 
 	let canLeave = $derived(raceStatus === 'setup' && !!myParticipant && !isOrganizer);
+	let myLiveStatus = $derived(myWsParticipant?.status ?? myParticipant?.status);
+	let canAbandon = $derived(
+		raceStatus === 'running' && !!myParticipant && myLiveStatus === 'playing'
+	);
 
 	async function handleJoin() {
 		joining = true;
@@ -271,6 +279,24 @@
 			joinLeaveError = e instanceof Error ? e.message : 'Failed to leave';
 		} finally {
 			leaving = false;
+		}
+	}
+
+	async function handleAbandon() {
+		if (!confirmAbandon) {
+			confirmAbandon = true;
+			return;
+		}
+		abandoning = true;
+		abandonError = null;
+		try {
+			await abandonRace(initialRace.id);
+			initialRace = await fetchRace(initialRace.id);
+			confirmAbandon = false;
+		} catch (e) {
+			abandonError = e instanceof Error ? e.message : 'Failed to abandon';
+		} finally {
+			abandoning = false;
 		}
 	}
 
@@ -370,6 +396,31 @@
 					onClearSelection={clearSelection}
 				/>
 			</div>
+
+			{#if canAbandon}
+				<div class="abandon-section">
+					{#if confirmAbandon}
+						<p class="abandon-warning">Are you sure? This is irreversible.</p>
+						<div class="abandon-actions">
+							<button class="btn btn-danger" onclick={handleAbandon} disabled={abandoning}>
+								{abandoning ? 'Abandoning...' : 'Confirm Abandon'}
+							</button>
+							<button
+								class="btn-inline btn-inline-secondary"
+								onclick={() => (confirmAbandon = false)}
+								disabled={abandoning}
+							>
+								Cancel
+							</button>
+						</div>
+					{:else}
+						<button class="abandon-btn" onclick={handleAbandon}>Abandon Race</button>
+					{/if}
+					{#if abandonError}
+						<p class="abandon-error">{abandonError}</p>
+					{/if}
+				</div>
+			{/if}
 
 			{#if isOrganizer}
 				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
@@ -1198,5 +1249,47 @@
 	.visibility-icon {
 		width: 14px;
 		height: 14px;
+	}
+
+	.abandon-section {
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.abandon-btn {
+		width: 100%;
+		padding: 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--color-text-disabled);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		cursor: pointer;
+		transition: all var(--transition);
+	}
+
+	.abandon-btn:hover {
+		border-color: var(--color-danger, #ef4444);
+		color: var(--color-danger, #ef4444);
+	}
+
+	.abandon-warning {
+		margin: 0 0 0.5rem;
+		color: var(--color-danger, #ef4444);
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+	}
+
+	.abandon-actions {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.abandon-error {
+		margin: 0.5rem 0 0;
+		color: var(--color-danger, #ef4444);
+		font-size: var(--font-size-sm);
 	}
 </style>
