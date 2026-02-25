@@ -253,7 +253,9 @@
 	let canLeave = $derived(raceStatus === 'setup' && !!myParticipant && !isOrganizer);
 	let myLiveStatus = $derived(myWsParticipant?.status ?? myParticipant?.status);
 	let canAbandon = $derived(
-		raceStatus === 'running' && !!myParticipant && myLiveStatus === 'playing'
+		raceStatus === 'running' &&
+			!!myParticipant &&
+			(myLiveStatus === 'playing' || myLiveStatus === 'ready')
 	);
 
 	async function handleJoin() {
@@ -403,7 +405,7 @@
 						<p class="abandon-warning">Are you sure? This is irreversible.</p>
 						<div class="abandon-actions">
 							<button class="btn btn-danger" onclick={handleAbandon} disabled={abandoning}>
-								{abandoning ? 'Abandoning...' : 'Confirm Abandon'}
+								{abandoning ? 'Rage quitting...' : 'Confirm rage quit'}
 							</button>
 							<button
 								class="btn-inline btn-inline-secondary"
@@ -414,7 +416,7 @@
 							</button>
 						</div>
 					{:else}
-						<button class="abandon-btn" onclick={handleAbandon}>Abandon Race</button>
+						<button class="abandon-btn" onclick={handleAbandon}>Rage quit</button>
 					{/if}
 					{#if abandonError}
 						<p class="abandon-error">{abandonError}</p>

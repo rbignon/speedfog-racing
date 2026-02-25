@@ -1144,7 +1144,7 @@ async def abandon_race(
             detail="You are not a participant in this race",
         )
 
-    if participant.status != ParticipantStatus.PLAYING:
+    if participant.status not in (ParticipantStatus.PLAYING, ParticipantStatus.READY):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot abandon: current status is '{participant.status.value}'",
