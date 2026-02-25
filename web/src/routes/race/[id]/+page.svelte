@@ -550,7 +550,7 @@
 				{#if initialRace.scheduled_at}
 					<AddToCalendar
 						scheduledAt={initialRace.scheduled_at}
-						seedNumber={initialRace.seed_number}
+						raceName={raceName}
 						raceUrl={window.location.href}
 					/>
 				{/if}

@@ -1,7 +1,7 @@
 <script lang="ts">
-	let { scheduledAt, seedNumber = null, raceUrl }: {
+	let { scheduledAt, raceName, raceUrl }: {
 		scheduledAt: string;
-		seedNumber: string | null;
+		raceName: string;
 		raceUrl: string;
 	} = $props();
 
@@ -12,7 +12,7 @@
 	}
 
 	function getTitle(): string {
-		return seedNumber ? `SpeedFog Race #${seedNumber}` : 'SpeedFog Race';
+		return `SpeedFog \u2013 ${raceName}`;
 	}
 
 	function getEndDate(start: Date): Date {
