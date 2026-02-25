@@ -1510,3 +1510,48 @@ async def test_update_race_toggle_visibility(test_client, organizer, seed):
         )
         assert patch_resp.status_code == 200
         assert patch_resp.json()["is_public"] is True
+
+
+@pytest.mark.asyncio
+async def test_abandoned_participant_status_update_ignored(
+    async_session,
+    organizer,
+    player,
+):
+    """status_update from an ABANDONED participant is silently dropped."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_abandon_1",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": [], "event_map": {}},
+            total_layers=5,
+            folder_path="/test/abandon1",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Abandon Test",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.ABANDONED,
+            igt_ms=100000,
+            death_count=5,
+        )
+        db.add(participant)
+        await db.commit()
+        p_id = participant.id
+
+    # Verify the participant is still ABANDONED and IGT unchanged
+    async with async_session() as db:
+        p = await db.get(Participant, p_id)
+        assert p.status == ParticipantStatus.ABANDONED
+        assert p.igt_ms == 100000

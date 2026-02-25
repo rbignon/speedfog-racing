@@ -329,10 +329,12 @@ async def handle_status_update(
             await send_error(websocket, "Race not running")
             return
 
-        if participant.status == ParticipantStatus.FINISHED:
-            return  # Silently drop — IGT is frozen at finish time
+        if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
+            return  # Silently drop — IGT is frozen
 
         if isinstance(msg.get("igt_ms"), int):
+            if msg["igt_ms"] != participant.igt_ms:
+                participant.last_igt_change_at = datetime.now(UTC)
             participant.igt_ms = msg["igt_ms"]
 
         # Transition READY→PLAYING first so current_zone/zone_history are
@@ -422,8 +424,8 @@ async def handle_event_flag(
             await send_error(websocket, "Race not running")
             return
 
-        if participant.status == ParticipantStatus.FINISHED:
-            return  # Silently drop — player already finished
+        if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
+            return  # Silently drop — player finished or abandoned
 
         seed = participant.race.seed
         if not seed or not seed.graph_json:
@@ -438,6 +440,7 @@ async def handle_event_flag(
 
         # Check finish event first (not in event_map — it's a boss kill, not a fog gate)
         if flag_id == finish_event:
+            participant.last_igt_change_at = datetime.now(UTC)
             participant.igt_ms = igt
             participant.current_layer = seed.total_layers
             await db.commit()
@@ -460,11 +463,13 @@ async def handle_event_flag(
 
             if is_revisit:
                 # Already discovered — just update position (like zone_query)
+                participant.last_igt_change_at = datetime.now(UTC)
                 participant.current_zone = node_id
                 participant.igt_ms = igt
                 await db.commit()
             else:
                 # New discovery — record in history and update ranking
+                participant.last_igt_change_at = datetime.now(UTC)
                 participant.igt_ms = igt
                 participant.current_zone = node_id
                 new_entry = {"node_id": node_id, "igt_ms": igt}
