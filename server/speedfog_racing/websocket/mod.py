@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.discord import build_podium, notify_race_finished
+from speedfog_racing.discord import build_podium, notify_race_finished, set_event_status
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
 from speedfog_racing.services.grace_service import resolve_zone_query
 from speedfog_racing.services.layer_service import (
@@ -632,6 +632,11 @@ async def handle_finished(
                 )
             )
             task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+        # Fire-and-forget: set Discord event to COMPLETED
+        if race_obj.discord_event_id:
+            ev_task = asyncio.create_task(set_event_status(race_obj.discord_event_id, 3))
+            ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     await manager.broadcast_leaderboard(
         participant.race_id,

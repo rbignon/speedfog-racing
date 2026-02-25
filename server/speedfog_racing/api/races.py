@@ -25,12 +25,16 @@ from speedfog_racing.auth import (
     get_current_user_optional,
     get_user_by_twitch_username,
 )
-from speedfog_racing.database import get_db
+from speedfog_racing.database import async_session_maker, get_db
 from speedfog_racing.discord import (
     build_podium,
+    create_scheduled_event,
+    delete_scheduled_event,
     notify_race_created,
     notify_race_finished,
     notify_race_started,
+    set_event_status,
+    update_scheduled_event,
 )
 from speedfog_racing.models import (
     Caster,
@@ -300,6 +304,28 @@ async def create_race(
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
+    # Fire-and-forget Discord scheduled event (public races with scheduled_at)
+    if race.is_public and race.scheduled_at:
+        _race_id = race.id
+        _race_name = race.name
+        _scheduled_at = race.scheduled_at
+
+        async def _create_discord_event() -> None:
+            event_id = await create_scheduled_event(
+                race_name=_race_name,
+                race_id=str(_race_id),
+                scheduled_at=_scheduled_at,
+            )
+            if event_id:
+                async with async_session_maker() as s:
+                    r = await s.get(Race, _race_id)
+                    if r:
+                        r.discord_event_id = event_id
+                        await s.commit()
+
+        ev_task = asyncio.create_task(_create_discord_event())
+        ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
     return race_response(race)
 
 
@@ -401,6 +427,8 @@ async def update_race(
     race = await _get_race_or_404(db, race_id, load_participants=True)
     _require_organizer(race, user)
 
+    old_event_id = race.discord_event_id
+
     # is_public can be changed at any status
     if request.is_public is not None:
         race.is_public = request.is_public
@@ -423,6 +451,42 @@ async def update_race(
                 )
         race.scheduled_at = request.scheduled_at
     await db.commit()
+
+    # Sync Discord scheduled event
+    if old_event_id:
+        if not race.is_public or race.scheduled_at is None:
+            # Race no longer qualifies → delete event
+            race.discord_event_id = None
+            await db.commit()
+            task = asyncio.create_task(delete_scheduled_event(old_event_id))
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        elif "scheduled_at" in request.model_fields_set and race.scheduled_at:
+            # Time changed → update event
+            task = asyncio.create_task(
+                update_scheduled_event(old_event_id, scheduled_at=race.scheduled_at)
+            )
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    elif race.is_public and race.scheduled_at:
+        # Newly qualifies → create event
+        _race_id = race.id
+        _race_name = race.name
+        _scheduled_at = race.scheduled_at
+
+        async def _create_discord_event() -> None:
+            event_id = await create_scheduled_event(
+                race_name=_race_name,
+                race_id=str(_race_id),
+                scheduled_at=_scheduled_at,
+            )
+            if event_id:
+                async with async_session_maker() as s:
+                    r = await s.get(Race, _race_id)
+                    if r:
+                        r.discord_event_id = event_id
+                        await s.commit()
+
+        ev_task = asyncio.create_task(_create_discord_event())
+        ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     race = await _get_race_or_404(db, race_id, load_participants=True)
     return race_response(race)
@@ -923,6 +987,11 @@ async def start_race(
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
+    # Fire-and-forget: set Discord event to ACTIVE
+    if race.discord_event_id:
+        ev_task = asyncio.create_task(set_event_status(race.discord_event_id, 2))
+        ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
     return race_response(race)
 
 
@@ -1118,6 +1187,11 @@ async def finish_race(
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
+    # Fire-and-forget: set Discord event to COMPLETED
+    if race.discord_event_id:
+        ev_task = asyncio.create_task(set_event_status(race.discord_event_id, 3))
+        ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
     return race_response(race)
 
 
@@ -1199,8 +1273,15 @@ async def delete_race(
         if seed and seed.status != SeedStatus.DISCARDED:
             seed.status = SeedStatus.AVAILABLE
 
+    discord_event_id = race.discord_event_id
+
     await db.delete(race)
     await db.commit()
+
+    # Fire-and-forget: delete Discord scheduled event
+    if discord_event_id:
+        task = asyncio.create_task(delete_scheduled_event(discord_event_id))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
 
 # =============================================================================
