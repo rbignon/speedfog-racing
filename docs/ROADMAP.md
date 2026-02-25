@@ -55,6 +55,10 @@ Full security audit (28 findings) and hardening pass: HTTPS + security headers (
 
 **Audit:** `docs/security-audit-2026-02-10.md`
 
+### Gap Timing (F1-Style)
+
+Server-side gap computation in `broadcast_leaderboard`: leader splits from `zone_history` for playing participants, direct time delta for finished participants. `gap_ms` field flows through `ParticipantInfo` to the mod overlay, rendered as a right-aligned `+M:SS` / `+H:MM:SS` column.
+
 ---
 
 ## v1.0 — First Real Usage

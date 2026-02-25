@@ -30,6 +30,7 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ### Races
 
+- F1-style gap timing in the leaderboard overlay — each player sees their time gap to the leader, using split times for running players and final time delta for finished players
 - Players can now abandon a running race via a button on the race page
 - Inactive players (IGT unchanged for 5 minutes) are automatically abandoned
 

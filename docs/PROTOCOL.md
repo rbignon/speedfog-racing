@@ -602,10 +602,11 @@ Shared schema across all WebSocket messages:
 | `color_index`         | `int`     | Player color assignment (0-indexed)             |
 | `mod_connected`       | `bool`    | Whether the mod client is currently connected   |
 | `zone_history`        | `list?`   | Zone visit history (only when race is finished) |
+| `gap_ms`              | `int?`    | Gap to the leader in milliseconds (see below)   |
 
 `zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456 }`
 
-**Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`). Extra fields like `color_index`, `mod_connected`, and `zone_history` are present on the wire but silently ignored by serde.
+**Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`, `gap_ms`). Extra fields like `color_index`, `mod_connected`, and `zone_history` are present on the wire but silently ignored by serde.
 
 ### RaceInfo
 
@@ -645,6 +646,17 @@ Participants in `leaderboard_update` are pre-sorted by priority:
 3. **Ready**
 4. **Registered**
 5. **Abandoned**
+
+### Gap Timing
+
+The `gap_ms` field shows each participant's time gap relative to the leader (first participant after sorting). Computed server-side during `broadcast_leaderboard`:
+
+- **Leader:** `null` (no gap to show)
+- **Playing:** `igt_ms - leader_split_at_current_layer` — compared against the leader's split time when they reached the same layer. `null` if the leader hasn't reached that layer yet.
+- **Finished:** `igt_ms - leader_igt_ms` — direct time delta against the leader's finish time.
+- **Ready / Registered / Abandoned:** `null`
+
+Leader splits are built from the leader's `zone_history`, mapping each layer to the first IGT at which the leader entered that layer. The mod renders `gap_ms` as `+M:SS` or `+H:MM:SS` in a right-aligned column.
 
 ### DAG Access Rules
 
