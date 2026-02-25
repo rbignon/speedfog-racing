@@ -17,6 +17,17 @@
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
+	function formatDatetime(iso: string): string {
+		const d = new Date(iso);
+		return d.toLocaleDateString(undefined, {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
+	}
+
 	let sessionId = $derived(page.params.id!);
 	let session = $state<TrainingSessionDetail | null>(null);
 	let loading = $state(true);
@@ -208,6 +219,17 @@
 					>{Math.min(currentLayer + 1, totalLayers || Infinity)}/{totalLayers}</span
 				>
 			</div>
+			<div class="stat stat-right">
+				<span class="stat-label">Started</span>
+				<span class="stat-value stat-date">{formatDatetime(session.created_at)}</span>
+			</div>
+			{#if session.finished_at}
+				<div class="stat">
+					<span class="stat-label">{session.status === 'abandoned' ? 'Abandoned' : 'Finished'}</span
+					>
+					<span class="stat-value stat-date">{formatDatetime(session.finished_at)}</span>
+				</div>
+			{/if}
 			{#if liveParticipant?.mod_connected}
 				<div class="stat">
 					<span class="stat-label">Live</span>
@@ -441,6 +463,16 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-sm);
 		padding: 0.2rem 0.5rem;
+		color: var(--color-text-secondary);
+	}
+
+	.stat-right {
+		margin-left: auto;
+	}
+
+	.stat-date {
+		font-size: var(--font-size-sm);
+		font-weight: 500;
 		color: var(--color-text-secondary);
 	}
 
