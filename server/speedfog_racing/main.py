@@ -1,6 +1,7 @@
 """SpeedFog Racing - FastAPI Application."""
 
 import argparse
+import asyncio
 import logging
 import uuid
 from collections.abc import AsyncGenerator
@@ -20,6 +21,7 @@ from speedfog_racing.database import async_session_maker, get_db_context, init_d
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.services import scan_pool
 from speedfog_racing.services.i18n import load_translations
+from speedfog_racing.services.inactivity_monitor import inactivity_monitor_loop
 from speedfog_racing.websocket import (
     handle_mod_websocket,
     handle_spectator_websocket,
@@ -67,9 +69,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning(f"Seed pool scan failed: {e}")
 
+    # Start inactivity monitor
+    monitor_task = asyncio.create_task(inactivity_monitor_loop(async_session_maker))
+
     yield
 
     # Shutdown
+    monitor_task.cancel()
+    try:
+        await monitor_task
+    except asyncio.CancelledError:
+        pass
     logger.info("Shutting down SpeedFog Racing server...")
 
 
