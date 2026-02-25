@@ -498,10 +498,6 @@
 		min-height: 500px;
 	}
 
-	:global(.training-detail .dag-section .training-replay svg) {
-		min-height: 0;
-	}
-
 	/* Actions */
 	.actions {
 		display: flex;

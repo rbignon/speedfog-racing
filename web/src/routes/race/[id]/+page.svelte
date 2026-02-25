@@ -1149,11 +1149,6 @@
 		min-height: 400px;
 	}
 
-	:global(.race-page .race-replay .zoomable-container),
-	:global(.race-page .race-replay .zoomable-container svg) {
-		min-height: 200px;
-	}
-
 	@media (max-width: 768px) {
 		.race-page {
 			flex-direction: column;
