@@ -17,6 +17,40 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DISCORD_API_BASE = "https://discord.com/api/v10"
+
+
+async def _discord_api_request(
+    method: str,
+    path: str,
+    *,
+    json: dict[str, object] | None = None,
+) -> dict[str, object] | None:
+    """Make an authenticated Discord API request. Returns response JSON or None on failure."""
+    bot_token = settings.discord_bot_token
+    if not bot_token:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.request(
+                method,
+                f"{DISCORD_API_BASE}{path}",
+                json=json,
+                headers={"Authorization": f"Bot {bot_token}"},
+            )
+            if response.status_code == 429:
+                logger.warning("Discord API rate limited: %s", response.headers.get("Retry-After"))
+                return None
+            if response.status_code == 204:
+                return {}
+            if response.status_code >= 400:
+                logger.warning("Discord API error %d: %s", response.status_code, response.text)
+                return None
+            return response.json()  # type: ignore[no-any-return]
+    except Exception as e:
+        logger.warning("Discord API request error: %s", e)
+        return None
+
 
 async def _send_webhook(
     embed: dict[str, object],

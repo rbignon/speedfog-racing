@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from speedfog_racing.discord import (
+    _discord_api_request,
     _format_igt,
     _send_webhook,
     build_podium,
@@ -463,6 +464,112 @@ async def test_http_error_suppressed(race_kwargs):
 
         # Should not raise
         await notify_race_started(**race_kwargs)
+
+
+# --- Discord bot API helper ---
+
+
+@pytest.mark.asyncio
+async def test_discord_api_request_sends_with_bot_auth():
+    """Should send authenticated request to Discord API."""
+    from unittest.mock import MagicMock
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"id": "123"}
+
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_bot_token = "test-token"
+
+        mock_client = AsyncMock()
+        mock_client.request.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        result = await _discord_api_request(
+            "POST", "/guilds/456/scheduled-events", json={"name": "Test"}
+        )
+
+        assert result == {"id": "123"}
+        mock_client.request.assert_called_once_with(
+            "POST",
+            "https://discord.com/api/v10/guilds/456/scheduled-events",
+            json={"name": "Test"},
+            headers={"Authorization": "Bot test-token"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_discord_api_request_noop_without_token():
+    """Should return None when bot token is not configured."""
+    with patch("speedfog_racing.discord.settings") as mock_settings:
+        mock_settings.discord_bot_token = None
+        result = await _discord_api_request("GET", "/some/path")
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_discord_api_request_returns_none_on_error():
+    """Should log and return None on HTTP errors."""
+    mock_response = AsyncMock()
+    mock_response.status_code = 403
+    mock_response.text = "Forbidden"
+
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+        patch("speedfog_racing.discord.logger") as mock_logger,
+    ):
+        mock_settings.discord_bot_token = "test-token"
+
+        mock_client = AsyncMock()
+        mock_client.request.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        result = await _discord_api_request("POST", "/test")
+        assert result is None
+        mock_logger.warning.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_discord_api_request_returns_empty_on_204():
+    """Should return empty dict on 204 No Content."""
+    mock_response = AsyncMock()
+    mock_response.status_code = 204
+
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_bot_token = "test-token"
+
+        mock_client = AsyncMock()
+        mock_client.request.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        result = await _discord_api_request("DELETE", "/test")
+        assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_discord_api_request_handles_network_error():
+    """Should log and return None on network error."""
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+        patch("speedfog_racing.discord.logger") as mock_logger,
+    ):
+        mock_settings.discord_bot_token = "test-token"
+
+        mock_client = AsyncMock()
+        mock_client.request.side_effect = httpx.ConnectError("Connection refused")
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        result = await _discord_api_request("GET", "/test")
+        assert result is None
+        mock_logger.warning.assert_called_once()
 
 
 # --- Helpers ---
