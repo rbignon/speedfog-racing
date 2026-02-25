@@ -1,8 +1,9 @@
-"""Discord webhook notifications for race events."""
+"""Discord webhook notifications and bot API for race events."""
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import httpx
@@ -50,6 +51,155 @@ async def _discord_api_request(
     except Exception as e:
         logger.warning("Discord API request error: %s", e)
         return None
+
+
+# ---------------------------------------------------------------------------
+# Scheduled events
+# ---------------------------------------------------------------------------
+
+EVENT_DURATION = timedelta(hours=3)
+
+
+async def create_scheduled_event(
+    *,
+    race_name: str,
+    race_id: str,
+    scheduled_at: datetime,
+) -> str | None:
+    """Create a Discord scheduled event for a race. Returns event ID or None."""
+    guild_id = settings.discord_guild_id
+    if not guild_id:
+        return None
+    result = await _discord_api_request(
+        "POST",
+        f"/guilds/{guild_id}/scheduled-events",
+        json={
+            "name": race_name,
+            "entity_type": 3,  # EXTERNAL
+            "scheduled_start_time": scheduled_at.isoformat(),
+            "scheduled_end_time": (scheduled_at + EVENT_DURATION).isoformat(),
+            "entity_metadata": {"location": _race_url(race_id)},
+            "privacy_level": 2,  # GUILD_ONLY (required)
+        },
+    )
+    return result["id"] if result and "id" in result else None  # type: ignore[return-value]
+
+
+async def update_scheduled_event(
+    event_id: str,
+    *,
+    scheduled_at: datetime,
+) -> None:
+    """Update scheduled time of an existing Discord event."""
+    guild_id = settings.discord_guild_id
+    if not guild_id:
+        return
+    await _discord_api_request(
+        "PATCH",
+        f"/guilds/{guild_id}/scheduled-events/{event_id}",
+        json={
+            "scheduled_start_time": scheduled_at.isoformat(),
+            "scheduled_end_time": (scheduled_at + EVENT_DURATION).isoformat(),
+        },
+    )
+
+
+async def delete_scheduled_event(event_id: str) -> None:
+    """Delete a Discord scheduled event."""
+    guild_id = settings.discord_guild_id
+    if not guild_id:
+        return
+    await _discord_api_request(
+        "DELETE",
+        f"/guilds/{guild_id}/scheduled-events/{event_id}",
+    )
+
+
+async def set_event_status(event_id: str, status: int) -> None:
+    """Update a Discord scheduled event status (2=ACTIVE, 3=COMPLETED)."""
+    guild_id = settings.discord_guild_id
+    if not guild_id:
+        return
+    await _discord_api_request(
+        "PATCH",
+        f"/guilds/{guild_id}/scheduled-events/{event_id}",
+        json={"status": status},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Role management
+# ---------------------------------------------------------------------------
+
+
+async def assign_runner_role(user_id: str) -> bool:
+    """Assign the Runner role to a Discord user."""
+    guild_id = settings.discord_guild_id
+    role_id = settings.discord_runner_role_id
+    if not guild_id or not role_id:
+        return False
+    result = await _discord_api_request(
+        "PUT",
+        f"/guilds/{guild_id}/members/{user_id}/roles/{role_id}",
+    )
+    return result is not None
+
+
+async def remove_runner_role(user_id: str) -> bool:
+    """Remove the Runner role from a Discord user."""
+    guild_id = settings.discord_guild_id
+    role_id = settings.discord_runner_role_id
+    if not guild_id or not role_id:
+        return False
+    result = await _discord_api_request(
+        "DELETE",
+        f"/guilds/{guild_id}/members/{user_id}/roles/{role_id}",
+    )
+    return result is not None
+
+
+# ---------------------------------------------------------------------------
+# Channel messages
+# ---------------------------------------------------------------------------
+
+
+async def post_runner_message() -> bool:
+    """Post the Runner role toggle button message to the configured channel."""
+    channel_id = settings.discord_channel_id
+    if not channel_id:
+        return False
+    result = await _discord_api_request(
+        "POST",
+        f"/channels/{channel_id}/messages",
+        json={
+            "content": "## Runner Role\nClick below to get notified when races are organized!",
+            "components": [
+                {
+                    "type": 1,  # ACTION_ROW
+                    "components": [
+                        {
+                            "type": 2,  # BUTTON
+                            "style": 3,  # SUCCESS (green)
+                            "label": "Become a Runner",
+                            "custom_id": "become_runner",
+                        },
+                        {
+                            "type": 2,  # BUTTON
+                            "style": 4,  # DANGER (red)
+                            "label": "Remove Runner",
+                            "custom_id": "remove_runner",
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+    return result is not None
+
+
+# ---------------------------------------------------------------------------
+# Webhook helpers
+# ---------------------------------------------------------------------------
 
 
 async def _send_webhook(

@@ -10,9 +10,13 @@ from speedfog_racing.discord import (
     _format_igt,
     _send_webhook,
     build_podium,
+    create_scheduled_event,
+    delete_scheduled_event,
     notify_race_created,
     notify_race_finished,
     notify_race_started,
+    set_event_status,
+    update_scheduled_event,
 )
 
 
@@ -570,6 +574,116 @@ async def test_discord_api_request_handles_network_error():
         result = await _discord_api_request("GET", "/test")
         assert result is None
         mock_logger.warning.assert_called_once()
+
+
+# --- Scheduled event CRUD ---
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_event():
+    """Should POST to Discord scheduled events and return event ID."""
+    from datetime import UTC, datetime
+
+    with patch("speedfog_racing.discord._discord_api_request", new_callable=AsyncMock) as mock_req:
+        mock_req.return_value = {"id": "event-123"}
+
+        with patch("speedfog_racing.discord.settings") as mock_settings:
+            mock_settings.discord_guild_id = "guild-456"
+            mock_settings.base_url = "https://speedfog.malenia.win"
+
+            result = await create_scheduled_event(
+                race_name="Sunday Sprint",
+                race_id="race-789",
+                scheduled_at=datetime(2026, 3, 1, 14, 0, tzinfo=UTC),
+            )
+
+            assert result == "event-123"
+            mock_req.assert_called_once()
+            call_args = mock_req.call_args
+            assert call_args[0][0] == "POST"
+            assert "/guilds/guild-456/scheduled-events" in call_args[0][1]
+            payload = call_args[1]["json"]
+            assert payload["name"] == "Sunday Sprint"
+            assert payload["entity_type"] == 3
+            assert (
+                payload["entity_metadata"]["location"]
+                == "https://speedfog.malenia.win/race/race-789"
+            )
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_event_noop_without_guild_id():
+    """Should return None when guild_id is not configured."""
+    from datetime import UTC, datetime
+
+    with patch("speedfog_racing.discord.settings") as mock_settings:
+        mock_settings.discord_guild_id = None
+        result = await create_scheduled_event(
+            race_name="Test",
+            race_id="abc",
+            scheduled_at=datetime(2026, 3, 1, 14, 0, tzinfo=UTC),
+        )
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_update_scheduled_event():
+    """Should PATCH event with updated time."""
+    from datetime import UTC, datetime
+
+    with patch("speedfog_racing.discord._discord_api_request", new_callable=AsyncMock) as mock_req:
+        with patch("speedfog_racing.discord.settings") as mock_settings:
+            mock_settings.discord_guild_id = "guild-456"
+
+            await update_scheduled_event(
+                "event-123", scheduled_at=datetime(2026, 3, 2, 14, 0, tzinfo=UTC)
+            )
+
+            mock_req.assert_called_once()
+            call_args = mock_req.call_args
+            assert call_args[0][0] == "PATCH"
+            assert "/guilds/guild-456/scheduled-events/event-123" in call_args[0][1]
+
+
+@pytest.mark.asyncio
+async def test_delete_scheduled_event():
+    """Should DELETE event."""
+    with patch("speedfog_racing.discord._discord_api_request", new_callable=AsyncMock) as mock_req:
+        with patch("speedfog_racing.discord.settings") as mock_settings:
+            mock_settings.discord_guild_id = "guild-456"
+
+            await delete_scheduled_event("event-123")
+
+            mock_req.assert_called_once()
+            call_args = mock_req.call_args
+            assert call_args[0][0] == "DELETE"
+            assert "/guilds/guild-456/scheduled-events/event-123" in call_args[0][1]
+
+
+@pytest.mark.asyncio
+async def test_set_event_status_active():
+    """Should PATCH event status to ACTIVE (2)."""
+    with patch("speedfog_racing.discord._discord_api_request", new_callable=AsyncMock) as mock_req:
+        with patch("speedfog_racing.discord.settings") as mock_settings:
+            mock_settings.discord_guild_id = "guild-456"
+
+            await set_event_status("event-123", 2)
+
+            payload = mock_req.call_args[1]["json"]
+            assert payload == {"status": 2}
+
+
+@pytest.mark.asyncio
+async def test_set_event_status_completed():
+    """Should PATCH event status to COMPLETED (3)."""
+    with patch("speedfog_racing.discord._discord_api_request", new_callable=AsyncMock) as mock_req:
+        with patch("speedfog_racing.discord.settings") as mock_settings:
+            mock_settings.discord_guild_id = "guild-456"
+
+            await set_event_status("event-123", 3)
+
+            payload = mock_req.call_args[1]["json"]
+            assert payload == {"status": 3}
 
 
 # --- Helpers ---
