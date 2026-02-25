@@ -527,8 +527,8 @@ async def handle_zone_query(
         if participant.race.status != RaceStatus.RUNNING:
             return
 
-        if participant.status == ParticipantStatus.FINISHED:
-            return  # Silently drop — player already finished
+        if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
+            return  # Silently drop — player finished or abandoned
 
         seed = participant.race.seed
         if not seed or not seed.graph_json:

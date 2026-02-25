@@ -91,7 +91,7 @@ async def inactivity_monitor_loop(
                             select(Race)
                             .where(Race.id == race_id)
                             .options(
-                                selectinload(Race.participants),
+                                selectinload(Race.participants).selectinload(Participant.user),
                                 selectinload(Race.casters),
                                 selectinload(Race.seed),
                             )
