@@ -170,6 +170,9 @@ class Participant(Base):
     igt_ms: Mapped[int] = mapped_column(Integer, default=0)
     death_count: Mapped[int] = mapped_column(Integer, default=0)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_igt_change_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     status: Mapped[ParticipantStatus] = mapped_column(
         Enum(ParticipantStatus), default=ParticipantStatus.REGISTERED
     )
