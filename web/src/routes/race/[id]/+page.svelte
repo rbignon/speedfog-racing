@@ -255,7 +255,7 @@
 	let canAbandon = $derived(
 		raceStatus === 'running' &&
 			!!myParticipant &&
-			(myLiveStatus === 'playing' || myLiveStatus === 'ready')
+			(myLiveStatus === 'playing' || myLiveStatus === 'ready' || myLiveStatus === 'registered')
 	);
 
 	async function handleJoin() {
@@ -1260,20 +1260,20 @@
 
 	.abandon-btn {
 		width: 100%;
-		padding: 0.5rem;
-		border: 1px solid var(--color-border);
+		padding: 0.6rem;
+		border: none;
 		border-radius: var(--radius-sm);
-		background: none;
-		color: var(--color-text-disabled);
+		background: var(--color-danger-dark, #dc2626);
+		color: #fff;
 		font-family: var(--font-family);
 		font-size: var(--font-size-sm);
+		font-weight: 500;
 		cursor: pointer;
 		transition: all var(--transition);
 	}
 
 	.abandon-btn:hover {
-		border-color: var(--color-danger, #ef4444);
-		color: var(--color-danger, #ef4444);
+		background: var(--color-danger, #ef4444);
 	}
 
 	.abandon-warning {
