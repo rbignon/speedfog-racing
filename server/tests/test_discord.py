@@ -125,6 +125,59 @@ async def test_noop_when_no_webhook(race_kwargs):
         # No exception, no HTTP call
 
 
+# --- notify_race_created (runner role mention) ---
+
+
+@pytest.mark.asyncio
+async def test_race_created_mentions_runner_role(created_kwargs):
+    """Should include @Runner role mention when discord_runner_role_id is set."""
+    mock_response = AsyncMock()
+    mock_response.status_code = 204
+
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
+        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.discord_runner_role_id = "999"
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        await notify_race_created(**created_kwargs)
+
+        payload = mock_client.post.call_args[1]["json"]
+        assert payload["content"] == "<@&999>"
+        assert payload["allowed_mentions"] == {"roles": ["999"]}
+
+
+@pytest.mark.asyncio
+async def test_race_created_no_mention_without_role(created_kwargs):
+    """Should not include role mention when discord_runner_role_id is None."""
+    mock_response = AsyncMock()
+    mock_response.status_code = 204
+
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
+        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.discord_runner_role_id = None
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        await notify_race_created(**created_kwargs)
+
+        payload = mock_client.post.call_args[1]["json"]
+        assert "content" not in payload
+        assert "allowed_mentions" not in payload
+
+
 # --- notify_race_created ---
 
 

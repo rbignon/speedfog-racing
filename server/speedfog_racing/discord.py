@@ -91,7 +91,10 @@ async def notify_race_created(
     if organizer_avatar_url:
         embed["thumbnail"] = {"url": organizer_avatar_url}
 
-    await _send_webhook(embed)
+    role_id = settings.discord_runner_role_id
+    content = f"<@&{role_id}>" if role_id else None
+    allowed_mentions: dict[str, object] | None = {"roles": [role_id]} if role_id else None
+    await _send_webhook(embed, content=content, allowed_mentions=allowed_mentions)
 
 
 async def notify_race_started(
