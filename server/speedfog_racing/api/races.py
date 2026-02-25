@@ -1120,6 +1120,58 @@ async def finish_race(
     return race_response(race)
 
 
+@router.post("/{race_id}/abandon", response_model=RaceResponse)
+async def abandon_race(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RaceResponse:
+    """Abandon a running race as a participant."""
+    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+
+    if race.status != RaceStatus.RUNNING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only abandon a running race",
+        )
+
+    # Find current user's participation
+    participant = next((p for p in race.participants if p.user_id == user.id), None)
+    if not participant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You are not a participant in this race",
+        )
+
+    if participant.status != ParticipantStatus.PLAYING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot abandon: current status is '{participant.status.value}'",
+        )
+
+    participant.status = ParticipantStatus.ABANDONED
+    await db.commit()
+
+    # Re-query with eager-loaded relationships
+    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+
+    # Broadcast updates
+    graph_json = race.seed.graph_json if race.seed else None
+    await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
+    await broadcast_race_state_update(race_id, race)
+
+    # Check auto-finish
+    from speedfog_racing.services.race_lifecycle import check_race_auto_finish
+
+    race_transitioned = await check_race_auto_finish(db, race)
+    if race_transitioned:
+        race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+        await broadcast_race_state_update(race_id, race)
+        await manager.broadcast_race_status(race_id, "finished")
+
+    return race_response(race)
+
+
 @router.delete("/{race_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_race(
     race_id: UUID,

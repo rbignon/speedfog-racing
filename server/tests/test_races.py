@@ -1555,3 +1555,224 @@ async def test_abandoned_participant_status_update_ignored(
         p = await db.get(Participant, p_id)
         assert p.status == ParticipantStatus.ABANDONED
         assert p.igt_ms == 100000
+
+
+# =============================================================================
+# Abandon Race Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_abandon_race_success(test_client, organizer, player, async_session):
+    """Player can abandon a running race."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_abn1",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/abn1",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Abandon Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.PLAYING,
+            igt_ms=150000,
+        )
+        db.add(participant)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/abandon",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        # Single participant abandoned → auto-finish kicks in
+        assert data["status"] == "finished"
+
+
+@pytest.mark.asyncio
+async def test_abandon_race_not_participant(test_client, organizer, player, async_session):
+    """Non-participant cannot abandon a race."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_abn2",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/abn2",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="No Abandon",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/abandon",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_abandon_race_not_running(test_client, organizer, player, async_session):
+    """Cannot abandon a race that is not running."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_abn3",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/abn3",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Setup Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.REGISTERED,
+        )
+        db.add(participant)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/abandon",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_abandon_race_already_finished(test_client, organizer, player, async_session):
+    """Cannot abandon if already finished."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_abn4",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/abn4",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Finished Player",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=300000,
+            finished_at=datetime.now(UTC),
+        )
+        db.add(participant)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/abandon",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_abandon_race_auto_finishes_when_last(test_client, organizer, player, async_session):
+    """When last playing participant abandons, race auto-finishes."""
+    async with async_session() as db:
+        player2 = User(
+            twitch_id="p2_abn",
+            twitch_username="player2_abn",
+            api_token="player2_abn_token",
+            role=UserRole.USER,
+        )
+        db.add(player2)
+        await db.flush()
+        seed = Seed(
+            seed_number="s_abn5",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/abn5",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Auto Finish",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+        p1 = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.PLAYING,
+            igt_ms=150000,
+        )
+        p2 = Participant(
+            race_id=race.id,
+            user_id=player2.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=200000,
+            finished_at=datetime.now(UTC),
+        )
+        db.add_all([p1, p2])
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/abandon",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "finished"
