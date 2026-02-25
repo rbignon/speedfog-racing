@@ -127,7 +127,7 @@
 
 <style>
 	.app {
-		min-height: 100vh;
+		height: 100vh;
 		display: flex;
 		flex-direction: column;
 		overflow-x: hidden;
