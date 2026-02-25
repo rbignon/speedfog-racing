@@ -18,6 +18,7 @@
 	import RaceStats from '$lib/components/RaceStats.svelte';
 	import RaceHighlights from '$lib/components/RaceHighlights.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
+	import AddToCalendar from '$lib/components/AddToCalendar.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
 	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
@@ -546,6 +547,13 @@
 			</div>
 			<div class="header-right">
 				<ShareButtons />
+				{#if initialRace.scheduled_at}
+					<AddToCalendar
+						scheduledAt={initialRace.scheduled_at}
+						seedNumber={initialRace.seed_number}
+						raceUrl={window.location.href}
+					/>
+				{/if}
 				{#if !initialRace.is_public}
 					<span class="visibility-badge">Private</span>
 				{/if}
