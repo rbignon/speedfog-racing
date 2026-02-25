@@ -77,6 +77,7 @@ class ParticipantInfo(BaseModel):
     color_index: int = 0
     mod_connected: bool = False
     zone_history: list[dict[str, object]] | None = None
+    gap_ms: int | None = None
 
 
 class RaceInfo(BaseModel):
