@@ -1817,3 +1817,44 @@ async def test_abandon_race_ready_participant(test_client, organizer, player, as
             headers={"Authorization": f"Bearer {player.api_token}"},
         )
         assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_abandon_race_registered_participant(test_client, organizer, player, async_session):
+    """Registered participant (game not launched) can abandon a running race."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_abn7",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/abn7",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Registered Abandon",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.REGISTERED,
+            igt_ms=0,
+        )
+        db.add(participant)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/abandon",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 200
