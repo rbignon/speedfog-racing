@@ -326,7 +326,8 @@ impl RaceTracker {
         }
     }
 
-    /// Render a single leaderboard row: `{rank}. {name}   {progress_or_time}`
+    /// Render a single leaderboard row with optional gap column:
+    /// `{rank}. {name}   [+gap]   {progress_or_time}`
     /// If `is_self` is true, the name is highlighted in cyan.
     fn render_participant_row(
         &self,
@@ -335,8 +336,10 @@ impl RaceTracker {
         rank: usize,
         total_layers: i32,
         max_width: f32,
-        gap: f32,
+        spacing: f32,
         is_self: bool,
+        gap_col_width: f32,
+        right_col_width: f32,
     ) {
         let name = p
             .twitch_display_name
@@ -354,6 +357,7 @@ impl RaceTracker {
             }
         };
 
+        // Right column: time or progress
         let right_text = match p.status.as_str() {
             "finished" => format_time(p.igt_ms),
             _ => {
@@ -361,18 +365,38 @@ impl RaceTracker {
                 format!("{}/{}", display, total_layers)
             }
         };
-        let right_width = ui.calc_text_size(&right_text)[0];
 
+        // Gap column
+        let gap_text = p.gap_ms.map(crate::core::format_gap);
+
+        // Layout: [name]  [gap right-aligned in gap_col]  [right right-aligned]
+        let right_x = max_width - right_col_width;
+        let gap_x = if gap_col_width > 0.0 {
+            right_x - spacing - gap_col_width
+        } else {
+            right_x
+        };
+
+        // Left (name) — truncate to fit before gap column
         let left_text = format!("{:2}. {}", rank, name);
-        let left_max = max_width - right_width - gap;
+        let left_max = gap_x - spacing;
         let truncated = truncate_to_width(ui, &left_text, left_max);
         ui.text_colored(color, &truncated);
 
-        ui.same_line_with_pos(max_width - right_width);
+        // Gap (right-aligned within gap column)
+        if let Some(ref gt) = gap_text {
+            let gt_width = ui.calc_text_size(gt)[0];
+            ui.same_line_with_pos(gap_x + gap_col_width - gt_width);
+            ui.text_colored(color, gt);
+        }
+
+        // Right (right-aligned)
+        let rt_width = ui.calc_text_size(&right_text)[0];
+        ui.same_line_with_pos(max_width - rt_width);
         ui.text_colored(color, &right_text);
     }
 
-    /// Leaderboard with color-coded status and right-aligned values.
+    /// Leaderboard with color-coded status, gap timing, and right-aligned values.
     /// Always shows the local player: if ranked beyond top 10, anchors them
     /// at the bottom with a `···` separator and their real rank.
     fn render_leaderboard(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
@@ -383,7 +407,32 @@ impl RaceTracker {
         }
 
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
-        let gap = ui.calc_text_size(" ")[0];
+        let spacing = ui.calc_text_size(" ")[0];
+
+        // Pre-compute column widths across ALL visible participants
+        let mut max_gap_width: f32 = 0.0;
+        let mut max_right_width: f32 = 0.0;
+        for p in participants.iter() {
+            // Right column width
+            let right_text = match p.status.as_str() {
+                "finished" => format_time(p.igt_ms),
+                _ => {
+                    let display = (p.current_layer + 1).min(total_layers);
+                    format!("{}/{}", display, total_layers)
+                }
+            };
+            let rw = ui.calc_text_size(&right_text)[0];
+            if rw > max_right_width {
+                max_right_width = rw;
+            }
+            // Gap column width
+            if let Some(gap_ms) = p.gap_ms {
+                let gw = ui.calc_text_size(&crate::core::format_gap(gap_ms))[0];
+                if gw > max_gap_width {
+                    max_gap_width = gw;
+                }
+            }
+        }
 
         // Find local player's index in the (pre-sorted) participants list
         let my_index = self
@@ -401,7 +450,17 @@ impl RaceTracker {
         // Render top rows
         for (i, p) in participants.iter().take(top_count).enumerate() {
             let is_self = my_index == Some(i);
-            self.render_participant_row(ui, p, i + 1, total_layers, max_width, gap, is_self);
+            self.render_participant_row(
+                ui,
+                p,
+                i + 1,
+                total_layers,
+                max_width,
+                spacing,
+                is_self,
+                max_gap_width,
+                max_right_width,
+            );
         }
 
         // Anchor: separator + self row
@@ -409,7 +468,17 @@ impl RaceTracker {
             if let Some(idx) = my_index {
                 ui.text_disabled("  \u{00B7}\u{00B7}\u{00B7}");
                 let p = &participants[idx];
-                self.render_participant_row(ui, p, idx + 1, total_layers, max_width, gap, true);
+                self.render_participant_row(
+                    ui,
+                    p,
+                    idx + 1,
+                    total_layers,
+                    max_width,
+                    spacing,
+                    true,
+                    max_gap_width,
+                    max_right_width,
+                );
             }
         }
 
