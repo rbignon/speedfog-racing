@@ -207,13 +207,35 @@ class ConnectionManager:
 
         sorted_participants = sort_leaderboard(participants)
         connected_ids = set(room.mods.keys())
+
+        # Compute leader splits for gap timing
+        leader_splits: dict[int, int] = {}
+        leader_igt_ms = 0
+        has_leader = False
+        if graph_json and sorted_participants:
+            leader = sorted_participants[0]
+            if leader.status.value in ("playing", "finished"):
+                has_leader = True
+                leader_igt_ms = leader.igt_ms
+                leader_splits = build_leader_splits(leader.zone_history, graph_json)
+
         participant_infos = [
             participant_to_info(
                 p,
                 connected_ids=connected_ids,
                 graph_json=graph_json,
+                gap_ms=compute_gap_ms(
+                    p.status.value,
+                    igt_ms=p.igt_ms,
+                    current_layer=p.current_layer,
+                    leader_splits=leader_splits,
+                    leader_igt_ms=leader_igt_ms,
+                    is_leader=(has_leader and i == 0),
+                )
+                if has_leader
+                else None,
             )
-            for p in sorted_participants
+            for i, p in enumerate(sorted_participants)
         ]
 
         message = LeaderboardUpdateMessage(participants=participant_infos)
@@ -306,6 +328,7 @@ def participant_to_info(
     *,
     connected_ids: set[uuid.UUID] | None = None,
     graph_json: dict[str, Any] | None = None,
+    gap_ms: int | None = None,
 ) -> ParticipantInfo:
     """Convert a Participant model to ParticipantInfo schema."""
     # Compute tier on the fly from current_zone + graph_json
@@ -326,6 +349,7 @@ def participant_to_info(
         color_index=participant.color_index,
         mod_connected=participant.id in connected_ids if connected_ids else False,
         zone_history=participant.zone_history,
+        gap_ms=gap_ms,
     )
 
 

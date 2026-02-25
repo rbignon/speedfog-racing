@@ -658,3 +658,17 @@ class TestGapComputation:
             leader_igt_ms=0,
         )
         assert gap is None
+
+    def test_participant_to_info_with_gap(self):
+        """participant_to_info passes gap_ms through."""
+        user = MockUser(twitch_username="p1")
+        participant = MockParticipant(user=user, status=ParticipantStatus.PLAYING)
+        info = participant_to_info(participant, gap_ms=5000)
+        assert info.gap_ms == 5000
+
+    def test_participant_to_info_gap_defaults_none(self):
+        """participant_to_info gap_ms defaults to None."""
+        user = MockUser(twitch_username="p1")
+        participant = MockParticipant(user=user, status=ParticipantStatus.PLAYING)
+        info = participant_to_info(participant)
+        assert info.gap_ms is None
