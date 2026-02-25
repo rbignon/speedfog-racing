@@ -58,16 +58,16 @@ messmerskindling = true
 [care_package]
 enabled = true
 weapon_upgrade = 0
-weapons = 5
-shields = 2
+weapons = 0
+shields = 0
 catalysts = 2
-talismans = 4
-sorceries = 5
-incantations = 5
-head_armor = 2
-body_armor = 2
-arm_armor = 2
-leg_armor = 2
+talismans = 2
+sorceries = 2
+incantations = 2
+head_armor = 1
+body_armor = 1
+arm_armor = 1
+leg_armor = 1
 crystal_tears = 5
 ashes_of_war = 3
 
