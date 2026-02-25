@@ -45,8 +45,8 @@ class RaceStore {
         return a.igt_ms - b.igt_ms;
       }
 
-      // Playing: sort by layer (descending), then IGT (ascending)
-      if (a.status === "playing") {
+      // Playing/Abandoned: sort by layer (descending), then IGT (ascending)
+      if (a.status === "playing" || a.status === "abandoned") {
         if (a.current_layer !== b.current_layer) {
           return b.current_layer - a.current_layer;
         }

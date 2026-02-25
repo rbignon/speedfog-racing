@@ -295,7 +295,7 @@ def sort_leaderboard(participants: list[Participant]) -> list[Participant]:
     2. Playing players by layer (highest first), then IGT (lowest first)
     3. Ready players
     4. Registered players
-    5. Abandoned players last
+    5. Abandoned (DNF) players last, sorted by layer (highest first), then IGT (lowest first)
     """
     status_priority = {
         "finished": 0,
@@ -311,7 +311,7 @@ def sort_leaderboard(participants: list[Participant]) -> list[Participant]:
 
         if status == "finished":
             return (priority, p.igt_ms, 0)
-        elif status == "playing":
+        elif status in ("playing", "abandoned"):
             return (priority, -p.current_layer, p.igt_ms)
         else:
             return (priority, 0, 0)

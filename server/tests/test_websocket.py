@@ -468,6 +468,21 @@ class TestLeaderboard:
         assert sorted_list[1].status == ParticipantStatus.REGISTERED
         assert sorted_list[2].status == ParticipantStatus.ABANDONED
 
+    def test_sort_abandoned_by_layer_then_igt(self):
+        """Abandoned (DNF) players sorted by layer (highest first), then IGT."""
+        p1 = MockParticipant(status=ParticipantStatus.ABANDONED, current_layer=2, igt_ms=90000)
+        p2 = MockParticipant(status=ParticipantStatus.ABANDONED, current_layer=5, igt_ms=120000)
+        p3 = MockParticipant(status=ParticipantStatus.ABANDONED, current_layer=5, igt_ms=80000)
+
+        sorted_list = sort_leaderboard([p1, p2, p3])
+
+        # Layer 5 players first, sorted by IGT
+        assert sorted_list[0].current_layer == 5
+        assert sorted_list[0].igt_ms == 80000
+        assert sorted_list[1].current_layer == 5
+        assert sorted_list[1].igt_ms == 120000
+        assert sorted_list[2].current_layer == 2
+
 
 class TestParticipantToInfo:
     """Test participant to info conversion."""
