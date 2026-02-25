@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,7 @@ from speedfog_racing.services.layer_service import (
     get_layer_for_node,
     get_start_node,
 )
+from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.websocket.common import (
     MOD_AUTH_TIMEOUT,
     extract_event_ids,
@@ -569,7 +570,6 @@ async def handle_finished(
     msg: dict[str, Any],
 ) -> None:
     """Handle player finish event."""
-    all_finished = False
     race_transitioned = False
 
     async with session_maker() as db:
@@ -607,34 +607,9 @@ async def handle_finished(
         if not participant:
             return
 
-        all_finished = all(
-            p.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED)
-            for p in participant.race.participants
-        )
-
-        if all_finished:
-            # Optimistic locking: atomically transition RUNNING → FINISHED
-            race_obj = participant.race
-            result = await db.execute(
-                update(Race)
-                .where(
-                    Race.id == race_obj.id,
-                    Race.status == RaceStatus.RUNNING,
-                    Race.version == race_obj.version,
-                )
-                .values(status=RaceStatus.FINISHED, version=race_obj.version + 1)
-            )
-            if result.rowcount == 0:  # type: ignore[attr-defined]
-                logger.warning(
-                    f"Race {participant.race_id} already transitioned (concurrent update)"
-                )
-                await db.commit()
-            else:
-                race_obj.status = RaceStatus.FINISHED
-                race_obj.version += 1
-                await db.commit()
-                logger.info(f"Race finished: {participant.race_id}")
-                race_transitioned = True
+        race_transitioned = await check_race_auto_finish(db, participant.race)
+        if race_transitioned:
+            logger.info("Race finished: %s", participant.race_id)
 
     # Session closed — all broadcasts use detached objects
 

@@ -1,5 +1,6 @@
 """Business logic services."""
 
+from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.services.seed_pack_service import (
     generate_player_config,
     generate_seed_pack_on_demand,
@@ -21,6 +22,7 @@ from speedfog_racing.services.training_service import (
 )
 
 __all__ = [
+    "check_race_auto_finish",
     "assign_seed_to_race",
     "discard_pool",
     "generate_player_config",
