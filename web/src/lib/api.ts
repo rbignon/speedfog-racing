@@ -464,6 +464,17 @@ export async function finishRace(raceId: string): Promise<Race> {
 }
 
 /**
+ * Abandon a running race as a participant.
+ */
+export async function abandonRace(raceId: string): Promise<Race> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/abandon`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<Race>(response);
+}
+
+/**
  * Delete a race and all associated data.
  */
 export async function deleteRace(raceId: string): Promise<void> {
