@@ -52,6 +52,8 @@ pub struct ParticipantInfo {
     pub current_layer_tier: Option<i32>,
     pub igt_ms: i32,
     pub death_count: i32,
+    #[serde(default)]
+    pub gap_ms: Option<i32>,
 }
 
 /// Race info from server
