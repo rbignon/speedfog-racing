@@ -527,5 +527,41 @@ mod tests {
         }"#;
         let p: ParticipantInfo = serde_json::from_str(json).unwrap();
         assert_eq!(p.current_layer_tier, None);
+        // gap_ms also defaults to None when absent
+        assert_eq!(p.gap_ms, None);
+    }
+
+    #[test]
+    fn test_participant_info_with_gap_ms() {
+        let json = r#"{
+            "id": "1",
+            "twitch_username": "player1",
+            "twitch_display_name": null,
+            "status": "playing",
+            "current_zone": null,
+            "current_layer": 2,
+            "igt_ms": 90000,
+            "death_count": 1,
+            "gap_ms": 15000
+        }"#;
+        let p: ParticipantInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(p.gap_ms, Some(15000));
+    }
+
+    #[test]
+    fn test_participant_info_gap_ms_null() {
+        let json = r#"{
+            "id": "1",
+            "twitch_username": "player1",
+            "twitch_display_name": null,
+            "status": "playing",
+            "current_zone": null,
+            "current_layer": 0,
+            "igt_ms": 0,
+            "death_count": 0,
+            "gap_ms": null
+        }"#;
+        let p: ParticipantInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(p.gap_ms, None);
     }
 }
