@@ -29,7 +29,7 @@ merge_probability = 0.5
 max_branches = 3
 first_layer_type = "legacy_dungeon"
 major_boss_ratio = 0.5
-final_boss_candidates = ["all"]
+final_boss_candidates = ["leyndell_erdtree", "enirilim_radahn", "haligtree_malenia"]
 
 [starting_items]
 academy_key = true
