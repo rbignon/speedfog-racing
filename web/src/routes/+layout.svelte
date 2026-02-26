@@ -56,6 +56,7 @@
 					{#if auth.loading}
 						<span class="loading">Loading...</span>
 					{:else if auth.isLoggedIn}
+						<NavUserSearch />
 						{#if auth.isAdmin}
 							<a href="/admin" class="btn btn-secondary">Admin</a>
 						{/if}
@@ -64,7 +65,6 @@
 						{#if auth.canCreateRace}
 							<a href="/race/new" class="btn btn-primary">Create Race</a>
 						{/if}
-						<NavUserSearch />
 						<div class="user-menu" bind:this={userMenuEl}>
 							<button class="user-menu-trigger" onclick={toggleUserMenu}>
 								{#if auth.user?.twitch_avatar_url}
