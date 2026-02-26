@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getTwitchLoginUrl } from '$lib/api';
+	import NavUserSearch from '$lib/components/NavUserSearch.svelte';
 
 	let { children } = $props();
 
@@ -47,7 +48,9 @@
 	<div class="app" class:app-fixed={isRaceDetailPage}>
 		<header>
 			<div class="header-content">
-				<a href={auth.isLoggedIn ? '/dashboard' : '/'} class="logo">SpeedFog Racing<span class="beta-badge">Beta</span></a>
+				<a href={auth.isLoggedIn ? '/dashboard' : '/'} class="logo"
+					>SpeedFog Racing<span class="beta-badge">Beta</span></a
+				>
 				<nav>
 					<a href="/help" class="help-icon" aria-label="Help">?</a>
 					{#if auth.loading}
@@ -61,26 +64,42 @@
 						{#if auth.canCreateRace}
 							<a href="/race/new" class="btn btn-primary">Create Race</a>
 						{/if}
+						<NavUserSearch />
 						<div class="user-menu" bind:this={userMenuEl}>
 							<button class="user-menu-trigger" onclick={toggleUserMenu}>
 								{#if auth.user?.twitch_avatar_url}
 									<img src={auth.user.twitch_avatar_url} alt="" class="avatar" />
 								{/if}
-								<span class="user-menu-name">{auth.user?.twitch_display_name || auth.user?.twitch_username}</span>
+								<span class="user-menu-name"
+									>{auth.user?.twitch_display_name || auth.user?.twitch_username}</span
+								>
 								<span class="chevron">&#9662;</span>
 							</button>
 							{#if userMenuOpen}
 								<div class="user-dropdown">
 									<a href="/dashboard" class="dropdown-item" onclick={closeUserMenu}>Dashboard</a>
-									<a href="/user/{auth.user?.twitch_username}" class="dropdown-item" onclick={closeUserMenu}>Profile</a>
+									<a
+										href="/user/{auth.user?.twitch_username}"
+										class="dropdown-item"
+										onclick={closeUserMenu}>Profile</a
+									>
 									<a href="/settings" class="dropdown-item" onclick={closeUserMenu}>Settings</a>
 									<hr class="dropdown-divider" />
-									<button class="dropdown-item" onclick={() => { closeUserMenu(); auth.logout(); goto('/'); }}>Logout</button>
+									<button
+										class="dropdown-item"
+										onclick={() => {
+											closeUserMenu();
+											auth.logout();
+											goto('/');
+										}}>Logout</button
+									>
 								</div>
 							{/if}
 						</div>
 					{:else}
-						<a href={getTwitchLoginUrl()} class="btn btn-twitch" data-sveltekit-reload>Login with Twitch</a>
+						<a href={getTwitchLoginUrl()} class="btn btn-twitch" data-sveltekit-reload
+							>Login with Twitch</a
+						>
 					{/if}
 				</nav>
 			</div>
@@ -103,15 +122,11 @@
 					<nav class="footer-links" aria-label="Footer navigation">
 						<a href="/about">About</a>
 						<a href="/help">Help</a>
-						<a
-							href="https://discord.gg/Qmw67J3mR9"
-							target="_blank"
-							rel="noopener noreferrer">Discord</a
+						<a href="https://discord.gg/Qmw67J3mR9" target="_blank" rel="noopener noreferrer"
+							>Discord</a
 						>
-						<a
-							href="https://github.com/rbignon/speedfog"
-							target="_blank"
-							rel="noopener noreferrer">SpeedFog</a
+						<a href="https://github.com/rbignon/speedfog" target="_blank" rel="noopener noreferrer"
+							>SpeedFog</a
 						>
 						<a
 							href="https://github.com/rbignon/speedfog-racing"
