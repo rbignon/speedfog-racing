@@ -188,6 +188,10 @@ See `docs/PROTOCOL.md` for complete reference.
 - `docs/DESIGN.md` - Overall design
 - `docs/GRAPHIC_CHARTER.md` - Visual identity and color palette
 - `docs/PROTOCOL.md` - API and WebSocket protocol reference
+- `docs/RACE_LIFECYCLE.md` - State machines (race, participant, seed) and transition rules
+- `docs/WEBSOCKET_LIFECYCLE.md` - WebSocket connection management (mod reconnect, spectator auth, broadcast safety)
+- `docs/EVENT_FLAG_TRACKING.md` - Event flag polling, zone progression, gap timing
+- `docs/SEED_PIPELINE.md` - Seed generation, ingestion, on-demand pack assembly
 - `docs/specs/phase1.md` - Phase 1 MVP detailed spec
 - `docs/specs/phase2-ui-ux.md` - Phase 2 UI/UX specification
 - `docs/specs/emevd-zone-tracking.md` - EMEVD zone tracking spec (v1.0 critical)
