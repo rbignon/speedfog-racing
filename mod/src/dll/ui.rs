@@ -224,26 +224,37 @@ impl RaceTracker {
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let zone = self.current_zone_info();
 
-        let layer = me.map(|p| p.current_layer).unwrap_or(0);
-        let display_layer = (layer + 1).min(total_layers);
-        let current_str = format!("{}", display_layer);
-        let sep_str = format!("/{}", total_layers);
-        let progress_width = ui.calc_text_size(&current_str)[0] + ui.calc_text_size(&sep_str)[0];
-        let progress_color = if self.am_i_finished() { green } else { yellow };
+        let is_setup = self
+            .race_info()
+            .is_some_and(|r| r.status.as_str() == "setup");
+
+        // In setup phase, show participant status instead of layer progress
+        let (right_str, right_color) = if is_setup {
+            let status = me.map(|p| p.status.as_str()).unwrap_or("registered");
+            let color = match status {
+                "ready" => green,
+                _ => self.cached_colors.text_disabled,
+            };
+            (status.to_string(), color)
+        } else {
+            let layer = me.map(|p| p.current_layer).unwrap_or(0);
+            let display_layer = (layer + 1).min(total_layers);
+            let color = if self.am_i_finished() { green } else { yellow };
+            (format!("{}/{}", display_layer, total_layers), color)
+        };
+        let right_width = ui.calc_text_size(&right_str)[0];
 
         let zone_text = if let Some(z) = zone {
             format!("  {}", z.display_name)
         } else {
             String::new()
         };
-        let zone_max = max_width - progress_width - gap;
+        let zone_max = max_width - right_width - gap;
         let zone_truncated = truncate_to_width(ui, &zone_text, zone_max);
         ui.text(&zone_truncated);
 
-        ui.same_line_with_pos(max_width - progress_width);
-        ui.text_colored(progress_color, &current_str);
-        ui.same_line_with_spacing(0.0, 0.0);
-        ui.text_colored(self.cached_colors.text, &sep_str);
+        ui.same_line_with_pos(max_width - right_width);
+        ui.text_colored(right_color, &right_str);
 
         // --- Line 3: tier info (left, yellow), death icon + count (right, white) ---
         let deaths = self.read_deaths().unwrap_or(0);
@@ -340,6 +351,7 @@ impl RaceTracker {
         is_self: bool,
         gap_col_width: f32,
         right_col_width: f32,
+        is_setup: bool,
     ) {
         let name = p
             .twitch_display_name
@@ -357,7 +369,7 @@ impl RaceTracker {
             }
         };
 
-        let right_text = right_text_for(p, total_layers);
+        let right_text = right_text_for(p, total_layers, is_setup);
         let gap_text = p.gap_ms.map(crate::core::format_gap);
 
         // Layout: [name]  [gap right-aligned in gap_col]  [right right-aligned]
@@ -398,13 +410,16 @@ impl RaceTracker {
         }
 
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
+        let is_setup = self
+            .race_info()
+            .is_some_and(|r| r.status.as_str() == "setup");
         let spacing = ui.calc_text_size(" ")[0];
 
         // Pre-compute column widths across ALL visible participants
         let mut max_gap_width: f32 = 0.0;
         let mut max_right_width: f32 = 0.0;
         for p in participants.iter() {
-            let rw = ui.calc_text_size(&right_text_for(p, total_layers))[0];
+            let rw = ui.calc_text_size(&right_text_for(p, total_layers, is_setup))[0];
             if rw > max_right_width {
                 max_right_width = rw;
             }
@@ -443,6 +458,7 @@ impl RaceTracker {
                 is_self,
                 max_gap_width,
                 max_right_width,
+                is_setup,
             );
         }
 
@@ -461,6 +477,7 @@ impl RaceTracker {
                     true,
                     max_gap_width,
                     max_right_width,
+                    is_setup,
                 );
             }
         }
@@ -550,10 +567,17 @@ impl RaceTracker {
     }
 }
 
-/// Right-column text for a participant row: finish time or layer progress.
-fn right_text_for(p: &crate::core::protocol::ParticipantInfo, total_layers: i32) -> String {
+/// Right-column text for a participant row: finish time, layer progress, or status label.
+fn right_text_for(
+    p: &crate::core::protocol::ParticipantInfo,
+    total_layers: i32,
+    is_setup: bool,
+) -> String {
     match p.status.as_str() {
         "finished" => format_time(p.igt_ms),
+        "ready" if is_setup => "ready".to_string(),
+        "registered" if is_setup => "registered".to_string(),
+        _ if is_setup => p.status.clone(),
         _ => {
             let display = (p.current_layer + 1).min(total_layers);
             format!("{}/{}", display, total_layers)
