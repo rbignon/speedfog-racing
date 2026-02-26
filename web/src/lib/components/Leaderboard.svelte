@@ -101,12 +101,12 @@
 						{#if participant.status === 'playing'}
 							{@const zone = zoneName(participant.current_zone)}
 							<div class="name-row">
-								<span class="name" style="color: {color};">
+								<a href="/user/{participant.twitch_username}" class="name name-link" style="color: {color};" onclick={(e) => e.stopPropagation()}>
 									{#if mode === 'running'}
 										<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
 									{/if}
 									{participant.twitch_display_name || participant.twitch_username}
-								</span>
+								</a>
 								<span class="layer-fraction">{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers ? `/${totalLayers}` : ''}</span>
 							</div>
 							{#if zone}
@@ -119,12 +119,12 @@
 								{/if}
 							</span>
 						{:else}
-							<span class="name" style="color: {color};">
+							<a href="/user/{participant.twitch_username}" class="name name-link" style="color: {color};" onclick={(e) => e.stopPropagation()}>
 								{#if mode === 'running' && (participant.status === 'ready' || participant.status === 'registered')}
 									<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
 								{/if}
 								{participant.twitch_display_name || participant.twitch_username}
-							</span>
+							</a>
 							<span class="stats">
 								{#if mode === 'finished' && participant.status === 'finished'}
 									<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
@@ -255,6 +255,16 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.name-link {
+		display: inline;
+		text-decoration: none;
+		color: inherit;
+	}
+
+	.name-link:hover {
+		text-decoration: underline;
 	}
 
 	.stats {
