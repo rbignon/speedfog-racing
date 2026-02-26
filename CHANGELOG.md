@@ -2,7 +2,7 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
-## [Unreleased]
+## [1.3.0] - 2026-02-26
 
 ### Logic
 
@@ -13,6 +13,8 @@ All notable changes to SpeedFog Racing are documented in this file.
 - Fix: zone tracking could resolve to an unexplored zone on death or fast travel
 - Fix: shared exit fog gates no longer silently drop event flag registrations, fixing ~40% of seed build failures
 - Fix: 3 DLC key items (Hole-Laden Necklace, Well Depths Key, Messmer's Kindling) excluded from randomization, fixing 60% of remaining seed build failures
+- Fix: Sealing Tree zone tracking no longer breaks due to a vanilla event flag conflict
+- Fix: Fissure preboss zone excluded from clustering to prevent broken paths
 
 ### Seeds
 
@@ -27,21 +29,34 @@ All notable changes to SpeedFog Racing are documented in this file.
 ### Solo
 
 - Ghost replay: watch previous participants' runs on the training map as animated ghosts
+- Start and end datetimes now shown on training detail page
 
 ### Races
 
 - F1-style gap timing in the leaderboard overlay — each player sees their time gap to the leader, using split times for running players and final time delta for finished players
-- Players can now abandon a running race via a button on the race page
+- Players can now abandon a running race via a "Rage quit" button on the race page
 - Inactive players (IGT unchanged for 5 minutes) are automatically abandoned
+- Add to calendar button (Google, Apple, Outlook) on scheduled race pages
+- Discord bot integration: scheduled events are automatically created and synced with the race lifecycle, and @Runner is mentioned on race creation
+- DNF players are now sorted by progression (furthest first) instead of arbitrary order
+
+### In-game
+
+- Your own entry is always visible in the leaderboard overlay, even when the board is full
+- During setup phase, the overlay shows participant status (ready/not ready) instead of progress
+- Fix: ready status now uses orange to match the website leaderboard colors
 
 ### Website
 
 - Finished race cards now show the winner's name and avatar
 - Recent results section added to the homepage
+- Player search bar in the navigation bar
+- Fix: profile links on leaderboard player names now work correctly
 
 ### Translations
 
 - 40+ new French translations for full coverage
+- Entrance text and exit labels are now translated on the metro map
 - Fix: possessive patterns now match zone names with or without "'s"
 
 ## [1.2.0] - 2026-02-23
