@@ -2,17 +2,16 @@
 
 import asyncio
 import logging
-import os
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse
 from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from starlette.background import BackgroundTask
+from starlette.responses import StreamingResponse
 
 from speedfog_racing.api.helpers import (
     caster_response,
@@ -65,12 +64,15 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services import (
     assign_seed_to_race,
-    generate_seed_pack_on_demand,
+    generate_player_config,
     get_pool_config,
     reroll_seed_for_race,
 )
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
-from speedfog_racing.services.seed_pack_service import sanitize_filename
+from speedfog_racing.services.seed_pack_service import (
+    sanitize_filename,
+    stream_seed_pack_with_config,
+)
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 from speedfog_racing.websocket.manager import manager
 
@@ -1294,11 +1296,11 @@ async def download_my_seed_pack(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> FileResponse:
+) -> StreamingResponse:
     """Download the authenticated user's personalized seed pack for a race.
 
-    Generates the pack on-demand by copying the seed zip and injecting
-    per-participant config. The temp file is cleaned up after download.
+    Streams the original seed zip with an injected per-participant config.
+    No temp file or full-file copy — uses ~64 KB of RAM.
     """
     race = await _get_race_or_404(db, race_id)
 
@@ -1330,7 +1332,8 @@ async def download_my_seed_pack(
         )
 
     try:
-        temp_path = await asyncio.to_thread(generate_seed_pack_on_demand, participant, race)
+        config = generate_player_config(participant, race)
+        stream, content_length = stream_seed_pack_with_config(Path(race.seed.folder_path), config)
     except FileNotFoundError:
         logger.warning("Seed zip missing for race %s (cleaned up)", race_id)
         raise HTTPException(
@@ -1339,11 +1342,14 @@ async def download_my_seed_pack(
             " Seed files are removed after a race ends.",
         )
 
-    return FileResponse(
-        path=temp_path,
-        filename=f"speedfog_{sanitize_filename(user.twitch_username)}.zip",
+    filename = f"speedfog_{sanitize_filename(user.twitch_username)}.zip"
+    return StreamingResponse(
+        stream,
         media_type="application/zip",
-        background=BackgroundTask(os.unlink, temp_path),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(content_length),
+        },
     )
 
 
@@ -1353,10 +1359,10 @@ async def download_seed_pack(
     mod_token: str,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> FileResponse:
+) -> StreamingResponse:
     """Download personalized seed pack for a participant.
 
-    Generates the pack on-demand. Requires authentication.
+    Streams the pack on-demand. Requires authentication.
     Caller must be the participant, the race organizer, or a caster.
     """
     race = await _get_race_or_404(db, race_id)
@@ -1405,7 +1411,8 @@ async def download_seed_pack(
         )
 
     try:
-        temp_path = await asyncio.to_thread(generate_seed_pack_on_demand, participant, race)
+        config = generate_player_config(participant, race)
+        stream, content_length = stream_seed_pack_with_config(Path(race.seed.folder_path), config)
     except FileNotFoundError:
         logger.warning("Seed zip missing for race %s (cleaned up)", race_id)
         raise HTTPException(
@@ -1414,9 +1421,12 @@ async def download_seed_pack(
             " Seed files are removed after a race ends.",
         )
 
-    return FileResponse(
-        path=temp_path,
-        filename=f"speedfog_{sanitize_filename(participant.user.twitch_username)}.zip",
+    filename = f"speedfog_{sanitize_filename(participant.user.twitch_username)}.zip"
+    return StreamingResponse(
+        stream,
         media_type="application/zip",
-        background=BackgroundTask(os.unlink, temp_path),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(content_length),
+        },
     )

@@ -3,7 +3,7 @@
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.services.seed_pack_service import (
     generate_player_config,
-    generate_seed_pack_on_demand,
+    stream_seed_pack_with_config,
 )
 from speedfog_racing.services.seed_service import (
     assign_seed_to_race,
@@ -26,7 +26,7 @@ __all__ = [
     "assign_seed_to_race",
     "discard_pool",
     "generate_player_config",
-    "generate_seed_pack_on_demand",
+    "stream_seed_pack_with_config",
     "get_available_seed",
     "get_pool_config",
     "get_pool_metadata",

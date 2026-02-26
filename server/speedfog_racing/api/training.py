@@ -1,18 +1,16 @@
 """Training session API routes."""
 
-import asyncio
 import logging
-import os
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from starlette.background import BackgroundTask
+from starlette.responses import StreamingResponse
 
 from speedfog_racing.api.helpers import user_response
 from speedfog_racing.auth import get_current_user, get_current_user_optional
@@ -32,8 +30,9 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services import get_pool_config
 from speedfog_racing.services.seed_pack_service import (
-    generate_seed_pack_on_demand_training,
+    generate_training_config,
     sanitize_filename,
+    stream_seed_pack_with_config,
 )
 from speedfog_racing.services.training_service import create_training_session
 
@@ -227,7 +226,7 @@ async def download_pack(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> FileResponse:
+) -> StreamingResponse:
     """Download seed pack for a training session."""
     session = await _get_session_or_404(db, session_id, user.id)
     if session.status != TrainingSessionStatus.ACTIVE:
@@ -237,7 +236,10 @@ async def download_pack(
         )
 
     try:
-        temp_path = await asyncio.to_thread(generate_seed_pack_on_demand_training, session)
+        config = generate_training_config(session)
+        stream, content_length = stream_seed_pack_with_config(
+            Path(session.seed.folder_path), config
+        )
     except FileNotFoundError:
         logger.warning("Seed zip missing for training session %s", session_id)
         raise HTTPException(
@@ -246,11 +248,14 @@ async def download_pack(
             " Seed files are periodically removed after use.",
         )
 
-    return FileResponse(
-        path=temp_path,
-        filename=f"speedfog_training_{sanitize_filename(session.user.twitch_username)}.zip",
+    filename = f"speedfog_training_{sanitize_filename(session.user.twitch_username)}.zip"
+    return StreamingResponse(
+        stream,
         media_type="application/zip",
-        background=BackgroundTask(os.unlink, temp_path),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(content_length),
+        },
     )
 
 

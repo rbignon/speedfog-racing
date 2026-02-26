@@ -1,6 +1,8 @@
 """Test seed pack generation service."""
 
+import io
 import json
+import os
 import tempfile
 import uuid
 import zipfile
@@ -11,7 +13,7 @@ import pytest
 
 from speedfog_racing.services.seed_pack_service import (
     generate_player_config,
-    generate_seed_pack_on_demand,
+    stream_seed_pack_with_config,
 )
 
 # =============================================================================
@@ -152,74 +154,127 @@ def test_generate_player_config_uses_default_font_size(mock_participant, mock_ra
 
 
 # =============================================================================
-# On-Demand Generation Tests
+# Streaming Seed Pack Tests
 # =============================================================================
 
 
-def test_generate_seed_pack_on_demand_creates_zip(mock_participant, mock_race):
-    """Generates a temporary zip file."""
-    temp_path = generate_seed_pack_on_demand(mock_participant, mock_race)
-    try:
-        assert temp_path.exists()
-        assert temp_path.suffix == ".zip"
-    finally:
-        temp_path.unlink(missing_ok=True)
+def _collect_stream(seed_zip_path: Path, config: str) -> tuple[bytes, int]:
+    """Helper: collect streamed bytes and declared content length."""
+    stream, content_length = stream_seed_pack_with_config(seed_zip_path, config)
+    data = b"".join(stream)
+    return data, content_length
 
 
-def test_generate_seed_pack_on_demand_contains_config(mock_participant, mock_race):
-    """Generated zip should contain the injected config TOML."""
-    temp_path = generate_seed_pack_on_demand(mock_participant, mock_race)
-    try:
-        with zipfile.ZipFile(temp_path, "r") as zf:
-            names = zf.namelist()
-
-            # Original files should be present
-            assert "speedfog_abc123/lib/speedfog_race_mod.dll" in names
-            assert "speedfog_abc123/graph.json" in names
-            assert "speedfog_abc123/launch_speedfog.bat" in names
-
-            # Injected config should be present
-            assert "speedfog_abc123/lib/speedfog_race.toml" in names
-
-            # Check config content
-            config_content = zf.read("speedfog_abc123/lib/speedfog_race.toml").decode()
-            assert mock_participant.mod_token in config_content
-            assert str(mock_race.id) in config_content
-    finally:
-        temp_path.unlink(missing_ok=True)
+def test_stream_produces_valid_zip(seed_zip):
+    """Streamed output should be a valid ZIP file."""
+    data, _ = _collect_stream(seed_zip, "[server]\ntest = true\n")
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    assert zf.testzip() is None
+    zf.close()
 
 
-def test_generate_seed_pack_on_demand_no_seed_raises(mock_participant, mock_race):
-    """Raises ValueError if race has no seed."""
-    mock_race.seed = None
-
-    with pytest.raises(ValueError, match="no seed assigned"):
-        generate_seed_pack_on_demand(mock_participant, mock_race)
+def test_stream_content_length_matches(seed_zip):
+    """Declared content length should match actual bytes."""
+    data, content_length = _collect_stream(seed_zip, "[server]\ntest = true\n")
+    assert len(data) == content_length
 
 
-def test_generate_seed_pack_on_demand_missing_zip_raises(mock_participant, mock_race, mock_seed):
-    """Raises FileNotFoundError if seed zip doesn't exist."""
-    mock_seed.folder_path = "/nonexistent/path.zip"
-    mock_race.seed = mock_seed
+def test_stream_contains_original_files(seed_zip):
+    """Streamed zip should contain all original files."""
+    data, _ = _collect_stream(seed_zip, "[server]\ntest = true\n")
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        names = zf.namelist()
+        assert "speedfog_abc123/lib/speedfog_race_mod.dll" in names
+        assert "speedfog_abc123/ModEngine/config_eldenring.toml" in names
+        assert "speedfog_abc123/graph.json" in names
+        assert "speedfog_abc123/launch_speedfog.bat" in names
 
-    with pytest.raises(FileNotFoundError):
-        generate_seed_pack_on_demand(mock_participant, mock_race)
+
+def test_stream_contains_injected_config(seed_zip):
+    """Streamed zip should contain the injected config TOML."""
+    config = '[server]\nmod_token = "abc123"\n'
+    data, _ = _collect_stream(seed_zip, config)
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert "speedfog_abc123/lib/speedfog_race.toml" in zf.namelist()
+        content = zf.read("speedfog_abc123/lib/speedfog_race.toml").decode()
+        assert 'mod_token = "abc123"' in content
 
 
-def test_generate_seed_pack_on_demand_preserves_original(mock_participant, mock_race, seed_zip):
+def test_stream_original_file_contents_intact(seed_zip):
+    """Original file contents should be preserved byte-for-byte."""
+    data, _ = _collect_stream(seed_zip, "[server]\n")
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.read("speedfog_abc123/lib/speedfog_race_mod.dll") == b"mock dll"
+        graph = json.loads(zf.read("speedfog_abc123/graph.json"))
+        assert graph == {"total_layers": 10, "nodes": []}
+
+
+def test_stream_does_not_modify_original(seed_zip):
     """Original seed zip should not be modified."""
-    import os
-
     original_mtime = os.path.getmtime(seed_zip)
     original_size = os.path.getsize(seed_zip)
 
-    temp_path = generate_seed_pack_on_demand(mock_participant, mock_race)
-    try:
-        # Original should be untouched
-        assert os.path.getmtime(seed_zip) == original_mtime
-        assert os.path.getsize(seed_zip) == original_size
+    _collect_stream(seed_zip, "[server]\n")
 
-        # Temp file should be larger (has injected config)
-        assert os.path.getsize(temp_path) > original_size
-    finally:
-        temp_path.unlink(missing_ok=True)
+    assert os.path.getmtime(seed_zip) == original_mtime
+    assert os.path.getsize(seed_zip) == original_size
+
+
+def test_stream_missing_zip_raises():
+    """Should raise FileNotFoundError for non-existent zip."""
+    with pytest.raises(FileNotFoundError):
+        _collect_stream(Path("/nonexistent/path.zip"), "[server]\n")
+
+
+def test_stream_invalid_zip_raises():
+    """Should raise ValueError for non-ZIP file."""
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
+        f.write(b"not a zip file")
+        f.flush()
+        try:
+            with pytest.raises(ValueError, match="Not a valid ZIP"):
+                _collect_stream(Path(f.name), "[server]\n")
+        finally:
+            os.unlink(f.name)
+
+
+def test_stream_zip_without_top_dir():
+    """Config should be at lib/speedfog_race.toml when zip has no top dir."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = Path(tmpdir) / "flat.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("lib/mod.dll", "dll")
+            zf.writestr("graph.json", "{}")
+
+        data, _ = _collect_stream(zip_path, "[server]\n")
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            assert "lib/speedfog_race.toml" in zf.namelist()
+
+
+def test_stream_larger_config(seed_zip):
+    """Should handle configs of various sizes correctly."""
+    config = "[server]\n" + "# padding\n" * 500  # ~5 KB config
+    data, content_length = _collect_stream(seed_zip, config)
+    assert len(data) == content_length
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.testzip() is None
+        stored = zf.read("speedfog_abc123/lib/speedfog_race.toml").decode()
+        assert stored == config
+
+
+def test_stream_with_deflated_entries():
+    """Deflated entries in the original zip should survive the round-trip."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = Path(tmpdir) / "deflated.zip"
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("top/lib/mod.dll", "x" * 10000)
+            zf.writestr("top/graph.json", json.dumps({"nodes": list(range(100))}))
+
+        data, content_length = _collect_stream(zip_path, "[server]\n")
+        assert len(data) == content_length
+
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            assert zf.testzip() is None
+            assert zf.read("top/lib/mod.dll") == b"x" * 10000
+            assert "top/lib/speedfog_race.toml" in zf.namelist()
