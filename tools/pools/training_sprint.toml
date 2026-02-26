@@ -28,7 +28,7 @@ final_tier = 12
 split_probability = 0.9
 merge_probability = 0.5
 max_branches = 4
-major_boss_ratio = 0.1
+major_boss_ratio = 0.3
 final_boss_candidates = ["all"]
 
 [starting_items]
