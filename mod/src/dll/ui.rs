@@ -231,8 +231,9 @@ impl RaceTracker {
         // In setup phase, show participant status instead of layer progress
         let (right_str, right_color) = if is_setup {
             let status = me.map(|p| p.status.as_str()).unwrap_or("registered");
+            let orange = [1.0, 0.65, 0.0, 1.0];
             let color = match status {
-                "ready" => green,
+                "ready" => orange,
                 _ => self.cached_colors.text_disabled,
             };
             (status.to_string(), color)
