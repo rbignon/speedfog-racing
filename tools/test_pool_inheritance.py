@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from generate_pool import (
     POOLS_DIR,
     deep_merge,
@@ -38,6 +37,16 @@ class TestDeepMerge:
         override = {"t": {"x": 1}}
         assert deep_merge(base, override) == {"a": 1, "t": {"x": 1}}
 
+    def test_override_table_with_scalar(self):
+        base = {"t": {"a": 1}}
+        override = {"t": "replaced"}
+        assert deep_merge(base, override) == {"t": "replaced"}
+
+    def test_override_scalar_with_table(self):
+        base = {"t": "scalar"}
+        override = {"t": {"a": 1}}
+        assert deep_merge(base, override) == {"t": {"a": 1}}
+
     def test_does_not_mutate_base(self):
         base = {"t": {"a": 1}}
         override = {"t": {"b": 2}}
@@ -46,9 +55,8 @@ class TestDeepMerge:
 
 
 class TestResolvePoolConfig:
-    def test_no_extends_returns_self(self):
-        """A file without extends should resolve to itself."""
-        # standard.toml currently has no extends key
+    def test_resolves_with_extends(self):
+        """standard.toml extends _base — should resolve with all sections."""
         resolved = resolve_pool_config("standard")
         assert "extends" not in resolved
         assert "display" in resolved
@@ -111,6 +119,26 @@ class TestValidation:
         errors = validate_pool_config(config, "test")
         assert len(errors) > 0
         assert any("structure" in e for e in errors)
+
+    def test_wrong_section_type_reports_error(self):
+        config = {
+            s: {}
+            for s in (
+                "display",
+                "run",
+                "structure",
+                "starting_items",
+                "care_package",
+                "item_randomizer",
+                "enemy",
+                "requirements",
+                "budget",
+            )
+        }
+        config["structure"] = "oops"
+        errors = validate_pool_config(config, "test")
+        assert len(errors) == 1
+        assert "table" in errors[0]
 
     def test_all_pools_validate(self):
         """Every pool must pass validation after resolution."""

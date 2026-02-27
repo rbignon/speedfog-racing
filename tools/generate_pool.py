@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import uuid
 import zipfile
 from concurrent.futures import (
@@ -31,9 +32,6 @@ from concurrent.futures import (
 )
 from pathlib import Path
 from typing import NamedTuple
-
-
-import tomllib
 
 import tomli_w
 
@@ -118,6 +116,10 @@ def validate_pool_config(config: dict, pool_name: str) -> list[str]:
     for section in REQUIRED_SECTIONS:
         if section not in config:
             errors.append(f"{pool_name}: missing required section [{section}]")
+        elif not isinstance(config[section], dict):
+            errors.append(
+                f"{pool_name}: [{section}] should be a table, got {type(config[section]).__name__}"
+            )
     return errors
 
 
@@ -146,7 +148,8 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 Examples:
     python generate_pool.py --pool standard --count 10 --game-dir "/mnt/games/ELDEN RING/Game"
-    python generate_pool.py --pool sprint --count 5 --game-dir "C:/Games/ELDEN RING/Game" --output ./seeds
+    python generate_pool.py --pool sprint --count 5 --game-dir "C:/Games/ELDEN RING/Game" \\
+        --output ./seeds
         """,
     )
     parser.add_argument(
@@ -526,11 +529,6 @@ def main() -> int:
         print(f"Error: Speedfog path does not exist: {speedfog_path}")
         return 1
 
-    pool_config = SCRIPT_DIR / "pools" / f"{args.pool}.toml"
-    if not pool_config.exists():
-        print(f"Error: Pool config not found: {pool_config}")
-        return 1
-
     dll_source = SCRIPT_DIR / "assets" / DLL_NAME
     if not dll_source.exists():
         print(f"Error: DLL not found: {dll_source}")
@@ -549,13 +547,14 @@ def main() -> int:
     resolved = resolve_pool_config(args.pool)
     for err in validate_pool_config(resolved, args.pool):
         print(f"Warning: {err}")
-    with open(output_pool_dir / "config.toml", "wb") as f:
+    resolved_config = output_pool_dir / "config.toml"
+    with open(resolved_config, "wb") as f:
         tomli_w.dump(resolved, f)
 
     jobs = min(args.jobs, args.count)
     print(f"Generating {args.count} seeds for pool '{args.pool}' ({jobs} workers)")
     print(f"  Speedfog: {speedfog_path}")
-    print(f"  Config: {pool_config}")
+    print(f"  Config: {resolved_config}")
     print(f"  Game: {args.game_dir}")
     print(f"  Output: {output_pool_dir}")
     print()
@@ -566,7 +565,7 @@ def main() -> int:
     common_kwargs = dict(
         total=args.count,
         speedfog_path=speedfog_path,
-        pool_config=pool_config,
+        pool_config=resolved_config,
         game_dir=args.game_dir,
         dll_source=dll_source,
         output_pool_dir=output_pool_dir,
