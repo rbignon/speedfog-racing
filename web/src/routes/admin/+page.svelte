@@ -104,11 +104,18 @@
 	}
 
 	function formatFullDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('en-US', {
+		const d = new Date(dateStr);
+		const date = d.toLocaleDateString('en-US', {
 			month: 'short',
 			day: 'numeric',
 			year: 'numeric',
 		});
+		const time = d.toLocaleTimeString('en-US', {
+			hour: '2-digit',
+			minute: '2-digit',
+			hour12: false,
+		});
+		return `${date} ${time}`;
 	}
 
 	function formatIgt(ms: number): string {
