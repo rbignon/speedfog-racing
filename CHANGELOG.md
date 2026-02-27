@@ -2,11 +2,32 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
-## [Unreleased]
+## [1.3.1] - 2026-02-27
+
+### Logic
+
+- Cross-links between DAG branches — fog gates can now connect parallel paths, creating alternate routes and more interesting race decisions
+- Final boss candidates restricted to Remembrance bosses across all pools
+
+### Solo
+
+- Mark a solo session as a "slow run" to exclude it from your performance stats — useful for casual runs, testing, or practice sessions
 
 ### In-game
 
 - LiveSplit-style gap timing in the leaderboard overlay — gaps stay fixed while within the leader's pace, then grow in real-time when falling behind. Gaps ahead of the leader's pace are shown in green, gaps behind in red
+
+### Metro map
+
+- Zone click popup on the race replay — click any node during replay to see entrance/exit details and visitor stats
+- Fix: abandoned players no longer orbit endlessly on the race replay
+
+### Streaming
+
+- OBS overlay configuration panel: set max leaderboard lines and enable auto-follow for the DAG overlay
+- Live player dots on the DAG overlay during a running race
+- Follow mode for the DAG overlay — the camera automatically tracks player progression with trailing paths
+- During setup, the DAG overlay now shows the real map structure (labels hidden) so streamers can position their OBS overlay before the race starts
 
 ## [1.3.0] - 2026-02-26
 
