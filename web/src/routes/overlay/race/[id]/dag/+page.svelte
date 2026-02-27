@@ -27,6 +27,8 @@
 <div class="dag-overlay">
 	{#if liveSeed?.graph_json && (raceStatus === 'running' || raceStatus === 'finished')}
 		<MetroDagFull graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} {raceStatus} transparent />
+	{:else if liveSeed?.graph_json && raceStatus === 'setup'}
+		<MetroDagFull graphJson={liveSeed.graph_json} participants={[]} raceStatus="setup" transparent hideLabels />
 	{:else if totalNodes && totalPaths && totalLayers}
 		<MetroDagBlurred {totalLayers} {totalNodes} {totalPaths} transparent />
 	{/if}

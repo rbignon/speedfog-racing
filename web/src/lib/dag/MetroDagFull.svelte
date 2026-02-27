@@ -36,9 +36,10 @@
 		transparent?: boolean;
 		highlightIds?: Set<string>;
 		focusNodeId?: string | null;
+		hideLabels?: boolean;
 	}
 
-	let { graphJson, participants, raceStatus, transparent = false, highlightIds, focusNodeId = null }: Props = $props();
+	let { graphJson, participants, raceStatus, transparent = false, highlightIds, focusNodeId = null, hideLabels = false }: Props = $props();
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
 
@@ -442,7 +443,7 @@
 					</g>
 
 					<!-- Death icon (opposite side of label) -->
-					{#if nodesWithDeaths.has(node.id)}
+					{#if !hideLabels && nodesWithDeaths.has(node.id)}
 						<text
 							x={node.x}
 							y={labelAbove.has(node.id) ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2 : node.y - nodeRadius(node) - 6}
@@ -454,6 +455,7 @@
 					{/if}
 
 					<!-- Label -->
+					{#if !hideLabels}
 					<text
 						x={labelX(node)}
 						y={labelY(node)}
@@ -466,6 +468,7 @@
 					>
 						{truncateLabel(node.displayName)}
 					</text>
+					{/if}
 				</g>
 			{/each}
 
