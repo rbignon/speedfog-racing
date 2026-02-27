@@ -8,7 +8,7 @@ estimated_duration = "~1h"
 description = "Balanced race with legacy dungeons and bosses"
 
 [requirements]
-legacy_dungeons = 1
+legacy_dungeons = 2
 bosses = 10
 mini_dungeons = 5
 

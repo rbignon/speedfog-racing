@@ -14,6 +14,8 @@ max_parallel_paths = 4
 split_probability = 0.9
 merge_probability = 0.5
 max_branches = 4
+min_branch_age = 3
+crosslinks = true
 
 [starting_items]
 academy_key = true
