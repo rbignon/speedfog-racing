@@ -48,6 +48,8 @@ export interface ReplayParticipant {
   totalIgt: number;
   /** Did this participant finish the race? */
   finished: boolean;
+  /** Did this participant abandon the race? */
+  abandoned: boolean;
   /** The node_id of the final_boss, if they reached it */
   finalBossNodeId: string | null;
 }
@@ -64,6 +66,8 @@ export interface PlayerSnapshot {
   inTransit: boolean;
   /** Current layer (for leader computation) */
   layer: number;
+  /** Is this player frozen after abandoning? */
+  frozen?: boolean;
 }
 
 /** A skull animation event */

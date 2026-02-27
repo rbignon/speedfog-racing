@@ -87,6 +87,7 @@ export function buildReplayParticipants(
         zoneVisits,
         totalIgt: p.igt_ms,
         finished: p.status === "finished",
+        abandoned: p.status === "abandoned",
         finalBossNodeId,
       };
     });
@@ -147,6 +148,24 @@ export function computePlayerPosition(
   participantIndex: number = 0,
   participantCount: number = 1,
 ): PlayerSnapshot | null {
+  // Abandoned players: freeze on their last node (no orbit, static)
+  if (rp.abandoned && igtMs >= rp.totalIgt && rp.zoneVisits.length > 0) {
+    const lastVisit = rp.zoneVisits[rp.zoneVisits.length - 1];
+    const lastPos = nodePositions.get(lastVisit.nodeId);
+    if (lastPos) {
+      const layer = nodeInfo.get(lastVisit.nodeId)?.layer ?? 0;
+      return {
+        participantId: rp.id,
+        x: lastPos.x,
+        y: lastPos.y,
+        currentNodeId: lastVisit.nodeId,
+        inTransit: false,
+        layer,
+        frozen: true,
+      };
+    }
+  }
+
   // Finished players: park to the right of their last node, static
   if (rp.finished && igtMs >= rp.totalIgt && rp.zoneVisits.length > 0) {
     const lastVisit = rp.zoneVisits[rp.zoneVisits.length - 1];
@@ -226,11 +245,12 @@ export function computePlayerPosition(
  * Highest layer wins; ties broken by order in list (earlier = first to arrive).
  */
 export function computeLeader(snapshots: PlayerSnapshot[]): string | null {
-  if (snapshots.length === 0) return null;
-  let best = snapshots[0];
-  for (let i = 1; i < snapshots.length; i++) {
-    if (snapshots[i].layer > best.layer) {
-      best = snapshots[i];
+  const active = snapshots.filter((s) => !s.frozen);
+  if (active.length === 0) return null;
+  let best = active[0];
+  for (let i = 1; i < active.length; i++) {
+    if (active[i].layer > best.layer) {
+      best = active[i];
     }
   }
   return best.participantId;

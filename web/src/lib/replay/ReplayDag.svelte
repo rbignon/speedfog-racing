@@ -130,20 +130,21 @@
 {#each snapshots as snap (snap.participantId)}
 	{@const rp = replayParticipants.find((r) => r.id === snap.participantId)}
 	{@const isGhost = ghostIds?.has(snap.participantId) ?? false}
+	{@const isFrozen = snap.frozen ?? false}
 	{#if rp}
 		<circle
 			cx={snap.x}
 			cy={snap.y}
 			r={RACER_DOT_RADIUS}
 			fill={rp.color}
-			opacity={isGhost ? 0.5 : 1}
+			opacity={isFrozen ? 0.35 : isGhost ? 0.5 : 1}
 			class="replay-dot"
-			filter={isGhost ? undefined : 'url(#replay-player-glow)'}
+			filter={isGhost || isFrozen ? undefined : 'url(#replay-player-glow)'}
 		>
 			<title>{rp.displayName}</title>
 		</circle>
-		<!-- Leader star (never on ghosts) -->
-		{#if snap.participantId === leaderId && !isGhost}
+		<!-- Leader star (never on ghosts or frozen/abandoned players) -->
+		{#if snap.participantId === leaderId && !isGhost && !isFrozen}
 			<text
 				x={snap.x}
 				y={snap.y - RACER_DOT_RADIUS - 5}

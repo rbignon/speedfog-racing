@@ -31,6 +31,7 @@ function makeRP(
     })),
     totalIgt: visits.length > 0 ? visits[visits.length - 1].exitIgt : 0,
     finished: true,
+    abandoned: false,
     finalBossNodeId: null,
   };
 }
