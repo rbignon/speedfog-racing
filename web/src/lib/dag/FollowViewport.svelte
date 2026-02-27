@@ -35,9 +35,7 @@
 	});
 
 	let totalLayers = $derived(layerXPositions.size);
-	let minX = $derived(
-		nodeMap.size > 0 ? Math.min(...[...nodeMap.values()].map((n) => n.x)) : 0
-	);
+	let minX = $derived(nodeMap.size > 0 ? Math.min(...[...nodeMap.values()].map((n) => n.x)) : 0);
 	let maxX = $derived(
 		nodeMap.size > 0 ? Math.max(...[...nodeMap.values()].map((n) => n.x)) : width
 	);
@@ -56,7 +54,12 @@
 	let targetViewport: Viewport = $derived.by(() => {
 		if (raceStatus === 'finished') {
 			// Show full DAG
-			return { centerX: width / 2, centerY: height / 2, visibleWidth: width, visibleHeight: height };
+			return {
+				centerX: width / 2,
+				centerY: height / 2,
+				visibleWidth: width,
+				visibleHeight: height
+			};
 		}
 
 		const activePlayers = participants.filter((p) => p.status === 'playing');
@@ -111,10 +114,7 @@
 
 		// Clamp center so we don't go past first/last layer
 		const halfVisible = visibleWidth / 2;
-		const clampedCenterX = Math.max(
-			minX + halfVisible,
-			Math.min(maxX - halfVisible, centerX)
-		);
+		const clampedCenterX = Math.max(minX + halfVisible, Math.min(maxX - halfVisible, centerX));
 
 		return {
 			centerX: clampedCenterX,

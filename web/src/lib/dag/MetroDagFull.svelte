@@ -5,12 +5,7 @@
 	import LivePlayerDots from './LivePlayerDots.svelte';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
-	import {
-		expandNodePath,
-		buildPlayerWaypoints,
-		computeSlot,
-		canonicalEdgeKey
-	} from './parallel';
+	import { expandNodePath, buildPlayerWaypoints, computeSlot, canonicalEdgeKey } from './parallel';
 	import {
 		NODE_RADIUS,
 		NODE_COLORS,
@@ -28,7 +23,14 @@
 	} from './constants';
 	import type { DagNode, PositionedNode, RoutedEdge, DagLayout } from './types';
 	import NodePopup from './NodePopup.svelte';
-	import { computeConnections, computePlayersAtNode, computeVisitors, parseExitTexts, parseEntranceTexts, parseNodeLayers } from './popupData';
+	import {
+		computeConnections,
+		computePlayersAtNode,
+		computeVisitors,
+		parseExitTexts,
+		parseEntranceTexts,
+		parseNodeLayers
+	} from './popupData';
 	import type { NodePopupData } from './popupData';
 
 	interface Props {
@@ -43,7 +45,17 @@
 		follow?: boolean;
 	}
 
-	let { graphJson, participants, raceStatus, transparent = false, highlightIds, focusNodeId = null, hideLabels = false, showLiveDots = false, follow = false }: Props = $props();
+	let {
+		graphJson,
+		participants,
+		raceStatus,
+		transparent = false,
+		highlightIds,
+		focusNodeId = null,
+		hideLabels = false,
+		showLiveDots = false,
+		follow = false
+	}: Props = $props();
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
 
@@ -392,8 +404,7 @@
 
 				// Use edge routing for metro-style segments
 				const edgeKey = `${edges[i].from}->${edges[i].to}`;
-				const routedEdge =
-					edgeMap.get(edgeKey) ?? edgeMap.get(`${edges[i].to}->${edges[i].from}`);
+				const routedEdge = edgeMap.get(edgeKey) ?? edgeMap.get(`${edges[i].to}->${edges[i].from}`);
 				if (routedEdge) {
 					for (const seg of routedEdge.segments) {
 						result.push({
@@ -541,28 +552,30 @@
 			{#if !hideLabels && nodesWithDeaths.has(node.id)}
 				<text
 					x={node.x}
-					y={labelAbove.has(node.id) ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2 : node.y - nodeRadius(node) - 6}
+					y={labelAbove.has(node.id)
+						? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2
+						: node.y - nodeRadius(node) - 6}
 					text-anchor="middle"
 					font-size={LABEL_FONT_SIZE - 1}
 					class="death-icon"
-					class:transparent-label={transparent}
-				>💀</text>
+					class:transparent-label={transparent}>💀</text
+				>
 			{/if}
 
 			<!-- Label -->
 			{#if !hideLabels}
-			<text
-				x={labelX(node)}
-				y={labelY(node)}
-				text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
-				font-size={LABEL_FONT_SIZE}
-				fill={LABEL_COLOR}
-				class="dag-label"
-				class:transparent-label={transparent}
-				transform="rotate(-30, {labelX(node)}, {labelY(node)})"
-			>
-				{truncateLabel(node.displayName)}
-			</text>
+				<text
+					x={labelX(node)}
+					y={labelY(node)}
+					text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
+					font-size={LABEL_FONT_SIZE}
+					fill={LABEL_COLOR}
+					class="dag-label"
+					class:transparent-label={transparent}
+					transform="rotate(-30, {labelX(node)}, {labelY(node)})"
+				>
+					{truncateLabel(node.displayName)}
+				</text>
 			{/if}
 		</g>
 	{/each}
@@ -589,27 +602,33 @@
 {/snippet}
 
 {#if layout.nodes.length > 0}
-<div bind:this={dagContainer}>
-	{#if follow}
-		<FollowViewport
-			width={layout.width}
-			height={layout.height}
-			{participants}
-			{nodeMap}
-			{raceStatus}
-			{transparent}
-		>
-			{@render dagContent()}
-		</FollowViewport>
-	{:else}
-		<ZoomableSvg width={layout.width} height={layout.height} {transparent} onnodeclick={onNodeClick} onpanstart={closePopup}>
-			{@render dagContent()}
-		</ZoomableSvg>
-	{/if}
-	{#if popupData}
-		<NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
-	{/if}
-</div>
+	<div bind:this={dagContainer}>
+		{#if follow}
+			<FollowViewport
+				width={layout.width}
+				height={layout.height}
+				{participants}
+				{nodeMap}
+				{raceStatus}
+				{transparent}
+			>
+				{@render dagContent()}
+			</FollowViewport>
+		{:else}
+			<ZoomableSvg
+				width={layout.width}
+				height={layout.height}
+				{transparent}
+				onnodeclick={onNodeClick}
+				onpanstart={closePopup}
+			>
+				{@render dagContent()}
+			</ZoomableSvg>
+		{/if}
+		{#if popupData}
+			<NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
+		{/if}
+	</div>
 {/if}
 
 <style>

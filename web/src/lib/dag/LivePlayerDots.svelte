@@ -168,8 +168,7 @@
 					const countAtNode = playingAtNode.get(p.current_zone) ?? 0;
 					playingAtNode.set(p.current_zone, countAtNode + 1);
 
-					const phaseOffset =
-						(countAtNode / Math.max(participants.length, 1)) * Math.PI * 2;
+					const phaseOffset = (countAtNode / Math.max(participants.length, 1)) * Math.PI * 2;
 					const angle = phaseOffset + (elapsed / LIVE_ORBIT_PERIOD_MS) * Math.PI * 2;
 					result.push({
 						participantId: p.id,
@@ -228,8 +227,8 @@
 			dominant-baseline="central"
 			font-size={18 * skullScale(progress)}
 			opacity={skullOpacity(progress)}
-			class="skull-anim"
-		>&#x1F480;</text>
+			class="skull-anim">&#x1F480;</text
+		>
 	{/if}
 {/each}
 
