@@ -99,6 +99,28 @@ def resolve_pool_config(
     return deep_merge(parent, data)
 
 
+REQUIRED_SECTIONS = (
+    "display",
+    "run",
+    "structure",
+    "starting_items",
+    "care_package",
+    "item_randomizer",
+    "enemy",
+    "requirements",
+    "budget",
+)
+
+
+def validate_pool_config(config: dict, pool_name: str) -> list[str]:
+    """Validate a resolved pool config. Returns list of error messages."""
+    errors = []
+    for section in REQUIRED_SECTIONS:
+        if section not in config:
+            errors.append(f"{pool_name}: missing required section [{section}]")
+    return errors
+
+
 class SeedResult(NamedTuple):
     slug: str
     ok: bool
@@ -525,6 +547,8 @@ def main() -> int:
 
     # Resolve inheritance and write fully-merged config to output dir
     resolved = resolve_pool_config(args.pool)
+    for err in validate_pool_config(resolved, args.pool):
+        print(f"Warning: {err}")
     with open(output_pool_dir / "config.toml", "wb") as f:
         tomli_w.dump(resolved, f)
 

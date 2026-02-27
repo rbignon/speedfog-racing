@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from generate_pool import POOLS_DIR, deep_merge, resolve_pool_config
+from generate_pool import (
+    POOLS_DIR,
+    deep_merge,
+    resolve_pool_config,
+    validate_pool_config,
+)
 
 
 class TestDeepMerge:
@@ -93,3 +98,25 @@ class TestResolvePoolConfig:
             resolved = resolve_pool_config(toml_path.stem)
             assert "extends" not in resolved
             assert "display" in resolved
+
+
+class TestValidation:
+    def test_complete_config_passes(self):
+        resolved = resolve_pool_config("standard")
+        errors = validate_pool_config(resolved, "standard")
+        assert errors == []
+
+    def test_missing_section_reports_error(self):
+        config = {"display": {"sort_order": 1}}
+        errors = validate_pool_config(config, "test")
+        assert len(errors) > 0
+        assert any("structure" in e for e in errors)
+
+    def test_all_pools_validate(self):
+        """Every pool must pass validation after resolution."""
+        for toml_path in POOLS_DIR.glob("*.toml"):
+            if toml_path.stem.startswith("_"):
+                continue
+            resolved = resolve_pool_config(toml_path.stem)
+            errors = validate_pool_config(resolved, toml_path.stem)
+            assert errors == [], f"{toml_path.stem}: {errors}"
