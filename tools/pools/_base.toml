@@ -1,0 +1,35 @@
+# SpeedFog Racing - Base Pool Defaults
+# All pools inherit from this. Override any value in your pool file.
+
+[run]
+seed = 0
+run_complete_message = "RUN COMPLETE GG"
+chapel_grace = true
+
+[starting_items]
+academy_key = true
+pureblood_medal = false
+drawing_room_key = true
+lantern = true
+physick_flask = true
+great_runes = true
+
+# DLC key items (prevent softlocks in DLC areas)
+omother = true
+welldepthskey = true
+gaolupperlevelkey = true
+gaollowerlevelkey = true
+holeladennecklace = true
+messmerskindling = true
+
+[enemy]
+randomize_bosses = false
+
+[item_randomizer]
+enabled = true
+remove_requirements = true
+auto_upgrade_weapons = true
+auto_upgrade_dropped = true
+reduce_upgrade_cost = true
+dlc = true
+item_preset = true
