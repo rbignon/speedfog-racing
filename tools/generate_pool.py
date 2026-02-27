@@ -33,9 +33,69 @@ from pathlib import Path
 from typing import NamedTuple
 
 
+import tomllib
+
+
 SCRIPT_DIR = Path(__file__).parent.resolve()
 POOLS_DIR = SCRIPT_DIR / "pools"
 DLL_NAME = "speedfog_race_mod.dll"
+
+
+def deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge override into base. Override wins for scalars/arrays."""
+    result = {}
+    for key in base.keys() | override.keys():
+        if key in override and key in base:
+            if isinstance(base[key], dict) and isinstance(override[key], dict):
+                result[key] = deep_merge(base[key], override[key])
+            else:
+                result[key] = override[key]
+        elif key in override:
+            result[key] = override[key]
+        else:
+            result[key] = base[key]
+    return result
+
+
+def resolve_pool_config(
+    pool_name: str,
+    *,
+    _pools_dir: Path | None = None,
+    _seen: frozenset[str] | None = None,
+) -> dict:
+    """Resolve a pool config by following the extends chain.
+
+    Returns a fully-merged dict with no ``extends`` key.
+    """
+    pools_dir = _pools_dir or POOLS_DIR
+    seen = _seen or frozenset()
+
+    if pool_name in seen:
+        raise ValueError(
+            f"Circular extends detected: {' -> '.join(seen)} -> {pool_name}"
+        )
+    if len(seen) >= 3:
+        raise ValueError(
+            f"Extends chain too deep (max 3): {' -> '.join(seen)} -> {pool_name}"
+        )
+
+    toml_path = pools_dir / f"{pool_name}.toml"
+    if not toml_path.exists():
+        raise FileNotFoundError(f"Pool config not found: {toml_path}")
+
+    with open(toml_path, "rb") as f:
+        data = tomllib.load(f)
+
+    parent_name = data.pop("extends", None)
+    if parent_name is None:
+        return data
+
+    parent = resolve_pool_config(
+        parent_name,
+        _pools_dir=pools_dir,
+        _seen=seen | {pool_name},
+    )
+    return deep_merge(parent, data)
 
 
 class SeedResult(NamedTuple):
