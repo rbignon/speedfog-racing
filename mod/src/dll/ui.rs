@@ -339,8 +339,9 @@ impl RaceTracker {
     }
 
     /// Render a single leaderboard row with optional gap column:
-    /// `{rank}. {name}   [+gap]   {progress_or_time}`
-    /// If `is_self` is true, the name is highlighted in cyan.
+    /// `{rank}. {name}   [+/-gap]   {progress_or_time}`
+    /// Gap is color-coded: green (ahead), soft red (behind).
+    /// If `is_self` is true, the name color is brightened to stand out.
     fn render_participant_row(
         &self,
         ui: &hudhook::imgui::Ui,
@@ -353,25 +354,27 @@ impl RaceTracker {
         gap_col_width: f32,
         right_col_width: f32,
         is_setup: bool,
+        computed_gap_ms: Option<i32>,
     ) {
         let name = p
             .twitch_display_name
             .as_deref()
             .unwrap_or(&p.twitch_username);
 
+        let base_color = match p.status.as_str() {
+            "finished" => [0.0, 1.0, 0.0, 1.0],
+            "playing" => self.cached_colors.text,
+            "ready" => [1.0, 0.65, 0.0, 1.0],
+            _ => self.cached_colors.text_disabled,
+        };
         let color = if is_self {
-            [0.0, 1.0, 1.0, 1.0] // cyan
+            brighten(base_color, 0.35)
         } else {
-            match p.status.as_str() {
-                "finished" => [0.0, 1.0, 0.0, 1.0],
-                "playing" => self.cached_colors.text,
-                "ready" => [1.0, 0.65, 0.0, 1.0],
-                _ => self.cached_colors.text_disabled,
-            }
+            base_color
         };
 
         let right_text = right_text_for(p, total_layers, is_setup);
-        let gap_text = p.gap_ms.map(crate::core::format_gap);
+        let gap_text = computed_gap_ms.map(crate::core::format_gap);
 
         // Layout: [name]  [gap right-aligned in gap_col]  [right right-aligned]
         let right_x = max_width - right_col_width;
@@ -387,11 +390,16 @@ impl RaceTracker {
         let truncated = truncate_to_width(ui, &left_text, left_max);
         ui.text_colored(color, &truncated);
 
-        // Gap (right-aligned within gap column)
+        // Gap (right-aligned within gap column, color-coded)
         if let Some(ref gt) = gap_text {
+            let gap_color = match computed_gap_ms {
+                Some(ms) if ms < 0 => [0.3, 0.9, 0.3, 1.0], // green: ahead of pace
+                Some(ms) if ms > 0 => [0.9, 0.35, 0.35, 1.0], // soft red: behind
+                _ => color,
+            };
             let gt_width = ui.calc_text_size(gt)[0];
             ui.same_line_with_pos(gap_x + gap_col_width - gt_width);
-            ui.text_colored(color, gt);
+            ui.text_colored(gap_color, gt);
         }
 
         // Right (right-aligned)
@@ -401,6 +409,7 @@ impl RaceTracker {
     }
 
     /// Leaderboard with color-coded status, gap timing, and right-aligned values.
+    /// Gaps are computed client-side using leader_splits for real-time updates.
     /// Always shows the local player: if ranked beyond top 10, anchors them
     /// at the bottom with a `···` separator and their real rank.
     fn render_leaderboard(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
@@ -416,16 +425,60 @@ impl RaceTracker {
             .is_some_and(|r| r.status.as_str() == "setup");
         let spacing = ui.calc_text_size(" ")[0];
 
+        // Get leader_splits and leader IGT for gap computation
+        let empty_splits = std::collections::HashMap::new();
+        let leader_splits = self
+            .race_state
+            .leader_splits
+            .as_ref()
+            .unwrap_or(&empty_splits);
+        let leader_igt_ms = participants
+            .first()
+            .filter(|p| p.status == "playing" || p.status == "finished")
+            .map(|p| p.igt_ms)
+            .unwrap_or(0);
+        let has_leader = !leader_splits.is_empty()
+            || participants.first().is_some_and(|p| p.status == "finished");
+
+        // Local IGT for self (real-time updates)
+        let local_igt = self.read_igt().map(|v| v as i32);
+        let my_id = self.my_participant_id();
+
+        // Pre-compute gaps for all participants
+        let gaps: Vec<Option<i32>> = participants
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                if !has_leader {
+                    return None;
+                }
+                // For self: use local IGT if available
+                let igt = if my_id.is_some_and(|id| id == &p.id) {
+                    local_igt.unwrap_or(p.igt_ms)
+                } else {
+                    p.igt_ms
+                };
+                crate::core::compute_gap(
+                    igt,
+                    p.current_layer,
+                    p.layer_entry_igt,
+                    leader_splits,
+                    i == 0,
+                    &p.status,
+                    leader_igt_ms,
+                )
+            })
+            .collect();
+
         // Pre-compute column widths across ALL visible participants
         let mut max_gap_width: f32 = 0.0;
         let mut max_right_width: f32 = 0.0;
-        for p in participants.iter() {
+        for (i, p) in participants.iter().enumerate() {
             let rw = ui.calc_text_size(&right_text_for(p, total_layers, is_setup))[0];
             if rw > max_right_width {
                 max_right_width = rw;
             }
-            // Gap column width
-            if let Some(gap_ms) = p.gap_ms {
+            if let Some(gap_ms) = gaps[i] {
                 let gw = ui.calc_text_size(&crate::core::format_gap(gap_ms))[0];
                 if gw > max_gap_width {
                     max_gap_width = gw;
@@ -434,9 +487,7 @@ impl RaceTracker {
         }
 
         // Find local player's index in the (pre-sorted) participants list
-        let my_index = self
-            .my_participant_id()
-            .and_then(|my_id| participants.iter().position(|p| &p.id == my_id));
+        let my_index = my_id.and_then(|my_id| participants.iter().position(|p| &p.id == my_id));
 
         // Determine how many top rows to show and whether to anchor self
         let need_anchor = participants.len() > 10 && my_index.map_or(false, |idx| idx >= 10);
@@ -460,6 +511,7 @@ impl RaceTracker {
                 max_gap_width,
                 max_right_width,
                 is_setup,
+                gaps[i],
             );
         }
 
@@ -479,6 +531,7 @@ impl RaceTracker {
                     max_gap_width,
                     max_right_width,
                     is_setup,
+                    gaps[idx],
                 );
             }
         }
@@ -566,6 +619,16 @@ impl RaceTracker {
         ui.same_line();
         ui.text(debug.last_received.unwrap_or("\u{2013}"));
     }
+}
+
+/// Brighten a color by mixing it toward white.
+fn brighten(color: [f32; 4], factor: f32) -> [f32; 4] {
+    [
+        color[0] + (1.0 - color[0]) * factor,
+        color[1] + (1.0 - color[1]) * factor,
+        color[2] + (1.0 - color[2]) * factor,
+        color[3],
+    ]
 }
 
 /// Right-column text for a participant row: finish time, layer progress, or status label.
