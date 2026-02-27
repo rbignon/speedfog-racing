@@ -30,7 +30,33 @@ merge_probability = 0.5
 max_branches = 3
 first_layer_type = "legacy_dungeon"
 major_boss_ratio = 0.5
-final_boss_candidates = ["leyndell_erdtree", "enirilim_radahn", "haligtree_malenia"]
+final_boss_candidates = [
+    # Base game remembrance bosses
+    "stormveil_godrick",
+    "academy_library",
+    "caelid_radahn",
+    "ainsel_boss",
+    "leyndell_throne",
+    "volcano_rykard",
+    "flamepeak_firegiant",
+    "mohgwyn_boss",
+    "farumazula_maliketh",
+    "leyndell2_throne",
+    "haligtree_malenia",
+    "leyndell_erdtree",
+    # DLC remembrance bosses + Bayle
+    "belurat_boss",
+    "ensis_boss",
+    "fissure_boss",
+    "scaduview_gaius",
+    "midramanse_boss",
+    "scadutree_base",
+    "storehouse_messmer",
+    "rauhruins_romina",
+    "fingergrounds",
+    "jaggedpeak_bayle",
+    "enirilim_radahn",
+]
 
 [starting_items]
 academy_key = true
