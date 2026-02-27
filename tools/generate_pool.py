@@ -74,9 +74,9 @@ def resolve_pool_config(
         raise ValueError(
             f"Circular extends detected: {' -> '.join(seen)} -> {pool_name}"
         )
-    if len(seen) >= 3:
+    if len(seen) >= 4:
         raise ValueError(
-            f"Extends chain too deep (max 3): {' -> '.join(seen)} -> {pool_name}"
+            f"Extends chain too deep (max 4): {' -> '.join(seen)} -> {pool_name}"
         )
 
     toml_path = pools_dir / f"{pool_name}.toml"

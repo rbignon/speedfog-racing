@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from generate_pool import deep_merge, resolve_pool_config
+from generate_pool import POOLS_DIR, deep_merge, resolve_pool_config
 
 
 class TestDeepMerge:
@@ -56,11 +56,12 @@ class TestResolvePoolConfig:
             resolve_pool_config("a", _pools_dir=tmp_path)
 
     def test_chain_depth_limit(self, tmp_path):
-        """Chains deeper than 3 should raise ValueError."""
+        """Chains deeper than 4 should raise ValueError."""
         (tmp_path / "a.toml").write_text('extends = "b"\n[x]\na = 1\n')
         (tmp_path / "b.toml").write_text('extends = "c"\n[x]\nb = 1\n')
         (tmp_path / "c.toml").write_text('extends = "d"\n[x]\nc = 1\n')
-        (tmp_path / "d.toml").write_text("[x]\nd = 1\n")
+        (tmp_path / "d.toml").write_text('extends = "e"\n[x]\nd = 1\n')
+        (tmp_path / "e.toml").write_text("[x]\ne = 1\n")
         with pytest.raises(ValueError, match="too deep"):
             resolve_pool_config("a", _pools_dir=tmp_path)
 
@@ -83,3 +84,12 @@ class TestResolvePoolConfig:
         (tmp_path / "child.toml").write_text('extends = "nonexistent"\n[x]\na = 1\n')
         with pytest.raises(FileNotFoundError):
             resolve_pool_config("child", _pools_dir=tmp_path)
+
+    def test_all_pools_resolve(self):
+        """Every non-underscore pool must resolve without error."""
+        for toml_path in POOLS_DIR.glob("*.toml"):
+            if toml_path.stem.startswith("_"):
+                continue
+            resolved = resolve_pool_config(toml_path.stem)
+            assert "extends" not in resolved
+            assert "display" in resolved

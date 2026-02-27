@@ -1,15 +1,11 @@
 # SpeedFog Racing - Hardcore Pool Configuration
 # ~1 hour races, reduced resources and harder loot
+extends = "_base"
 
 [display]
 sort_order = 3
 estimated_duration = "~1h"
 description = "Punishing race with scarce resources and tougher encounters"
-
-[run]
-seed = 0
-run_complete_message = "RUN COMPLETE GG"
-chapel_grace = true
 
 [budget]
 tolerance = 5
@@ -58,12 +54,6 @@ final_boss_candidates = [
 ]
 
 [starting_items]
-academy_key = true
-pureblood_medal = false
-drawing_room_key = true
-lantern = true
-physick_flask = true
-great_runes = true
 whetblades = false
 talisman_pouches = 2
 golden_seeds = 3
@@ -71,14 +61,6 @@ sacred_tears = 2
 starting_runes = 50000
 larval_tears = 2
 stonesword_keys = 3
-
-# DLC key items (prevent softlocks in DLC areas)
-omother = true
-welldepthskey = true
-gaolupperlevelkey = true
-gaollowerlevelkey = true
-holeladennecklace = true
-messmerskindling = true
 
 [care_package]
 enabled = true
@@ -96,16 +78,6 @@ leg_armor = 1
 crystal_tears = 2
 ashes_of_war = 1
 
-[enemy]
-randomize_bosses = false
-
 [item_randomizer]
-enabled = true
 difficulty = 75
-remove_requirements = true
-auto_upgrade_weapons = true
-auto_upgrade_dropped = true
-reduce_upgrade_cost = true
-dlc = true
 nerf_gargoyles = false
-item_preset = true
