@@ -222,6 +222,7 @@ async def get_user_pool_stats(
         .where(
             TrainingSession.user_id == user_id,
             TrainingSession.status == TrainingSessionStatus.FINISHED,
+            TrainingSession.exclude_from_stats == False,  # noqa: E712
         )
         .group_by(Seed.pool_name)
     )
