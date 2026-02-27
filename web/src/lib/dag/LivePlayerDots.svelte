@@ -52,8 +52,8 @@
 		return null;
 	});
 
-	// Track previous death counts to detect new deaths
-	let prevDeaths = $state(new Map<string, number>());
+	// Track previous death counts to detect new deaths (plain Map, not reactive)
+	const prevDeaths = new Map<string, number>();
 	interface SkullAnim {
 		id: string;
 		participantId: string;
@@ -91,8 +91,12 @@
 	$effect(() => {
 		// Re-run when elapsed changes (every frame)
 		void elapsed;
+		if (skulls.length === 0) return;
 		skulls = skulls.filter((s) => performance.now() - s.startTime < LIVE_SKULL_ANIM_MS);
 	});
+
+	// Pre-compute finished players list (avoids re-filtering every frame)
+	let finishedPlayers = $derived(participants.filter((p) => p.status === 'finished'));
 
 	interface DotPosition {
 		participantId: string;
@@ -130,7 +134,6 @@
 
 			if (p.status === 'finished' && finalBossNode) {
 				// Finished: align right of final boss
-				const finishedPlayers = participants.filter((pp) => pp.status === 'finished');
 				const idx = finishedPlayers.indexOf(p);
 				const spacing = RACER_DOT_RADIUS * 2;
 				const totalSpread = (finishedPlayers.length - 1) * spacing;
