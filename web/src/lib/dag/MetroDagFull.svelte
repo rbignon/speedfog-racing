@@ -408,7 +408,7 @@
 				if (routedEdge) {
 					for (const seg of routedEdge.segments) {
 						result.push({
-							key: `${p.id}-${edgeKey}-${age}-${seg.x1}`,
+							key: `${p.id}-${edgeKey}-${age}-${seg.x1}-${seg.y1}`,
 							x1: seg.x1,
 							y1: seg.y1,
 							x2: seg.x2,
@@ -437,14 +437,7 @@
 
 {#snippet dagContent()}
 	<defs>
-		<filter id="results-player-glow" x="-50%" y="-50%" width="200%" height="200%">
-			<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-			<feMerge>
-				<feMergeNode in="blur" />
-				<feMergeNode in="SourceGraphic" />
-			</feMerge>
-		</filter>
-		<filter id="live-player-glow" x="-50%" y="-50%" width="200%" height="200%">
+		<filter id="player-glow" x="-50%" y="-50%" width="200%" height="200%">
 			<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
 			<feMerge>
 				<feMergeNode in="blur" />
@@ -590,7 +583,7 @@
 				cy={path.finalY}
 				r={RACER_DOT_RADIUS}
 				fill={path.color}
-				filter="url(#results-player-glow)"
+				filter="url(#player-glow)"
 				opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : 1}
 				class="player-dot"
 				data-node-id={path.finalNodeId}

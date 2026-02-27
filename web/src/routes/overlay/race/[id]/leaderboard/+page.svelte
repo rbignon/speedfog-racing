@@ -16,7 +16,8 @@
 	let lines = $derived(
 		(() => {
 			const raw = page.url.searchParams.get('lines');
-			if (raw === null || raw === '') return null;
+			if (raw === null) return 10; // default: show top 10
+			if (raw === '') return null; // explicit empty: no limit
 			const n = parseInt(raw, 10);
 			return isNaN(n) || n <= 0 ? null : n;
 		})()

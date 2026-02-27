@@ -90,12 +90,23 @@
 		const maxLayer = Math.max(...playerLayers);
 		const layerSpan = maxLayer - minLayer + 1;
 
-		// Convert layers to X positions
+		// Convert layers to X positions (interpolates between nearest known layers)
 		const sortedXs = [...layerXPositions.entries()].sort((a, b) => a[0] - b[0]);
 		const layerToX = (layer: number): number => {
-			const entry = sortedXs.find(([l]) => l === layer);
-			if (entry) return entry[1];
-			// Interpolate
+			const exact = sortedXs.find(([l]) => l === layer);
+			if (exact) return exact[1];
+			// Interpolate between nearest floor/ceil layers
+			const floor = Math.floor(layer);
+			const ceil = Math.ceil(layer);
+			const floorEntry = sortedXs.find(([l]) => l === floor);
+			const ceilEntry = sortedXs.find(([l]) => l === ceil);
+			if (floorEntry && ceilEntry) {
+				const frac = layer - floor;
+				return floorEntry[1] + (ceilEntry[1] - floorEntry[1]) * frac;
+			}
+			if (floorEntry) return floorEntry[1];
+			if (ceilEntry) return ceilEntry[1];
+			// Fallback for out-of-range layers
 			const layerWidth = totalLayers > 1 ? (maxX - minX) / (totalLayers - 1) : 100;
 			return minX + layer * layerWidth;
 		};
@@ -182,7 +193,7 @@
 	}
 
 	let offscreenIndicators = $derived.by(() => {
-		if (raceStatus !== 'running') return [];
+		if (raceStatus !== 'running' || currentVB.h <= 0) return [];
 
 		const vLeft = currentVB.x;
 		const vRight = currentVB.x + currentVB.w;

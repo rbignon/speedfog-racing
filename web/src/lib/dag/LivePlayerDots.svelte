@@ -211,7 +211,7 @@
 		r={RACER_DOT_RADIUS}
 		fill={dot.color}
 		opacity={dot.opacity}
-		filter={dot.opacity < 1 ? undefined : 'url(#live-player-glow)'}
+		filter={dot.opacity < 1 ? undefined : 'url(#player-glow)'}
 		class="live-dot"
 	>
 		<title>{dot.displayName}</title>
