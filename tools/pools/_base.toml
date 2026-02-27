@@ -6,6 +6,15 @@ seed = 0
 run_complete_message = "RUN COMPLETE GG"
 chapel_grace = true
 
+[budget]
+tolerance = 5
+
+[structure]
+max_parallel_paths = 4
+split_probability = 0.9
+merge_probability = 0.5
+max_branches = 4
+
 [starting_items]
 academy_key = true
 pureblood_medal = false
@@ -13,6 +22,7 @@ drawing_room_key = true
 lantern = true
 physick_flask = true
 great_runes = true
+stonesword_keys = 6
 
 # DLC key items (prevent softlocks in DLC areas)
 omother = true
@@ -26,6 +36,7 @@ messmerskindling = true
 randomize_bosses = false
 
 [item_randomizer]
+difficulty = 50
 enabled = true
 remove_requirements = true
 auto_upgrade_weapons = true

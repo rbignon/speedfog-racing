@@ -5,6 +5,3 @@ extends = "sprint"
 [display]
 type = "training"
 description = "Quick solo run — minimal exploration"
-
-[structure]
-max_branches = 4
