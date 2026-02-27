@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { page } from '$app/state';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { raceStore } from '$lib/stores/race.svelte';
 	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
@@ -11,6 +12,15 @@
 	let liveSeed = $derived(raceStore.seed);
 	let totalLayers = $derived(liveSeed?.total_layers ?? data.race.seed_total_layers);
 	let mode = $derived<'running' | 'finished'>(raceStatus === 'finished' ? 'finished' : 'running');
+
+	let lines = $derived(
+		(() => {
+			const raw = page.url.searchParams.get('lines');
+			if (raw === null || raw === '') return null;
+			const n = parseInt(raw, 10);
+			return isNaN(n) || n <= 0 ? null : n;
+		})()
+	);
 
 	$effect(() => {
 		if (!auth.initialized) return;
@@ -24,7 +34,7 @@
 </script>
 
 <div class="leaderboard-overlay">
-	<LeaderboardOverlay participants={raceStore.leaderboard} {totalLayers} {mode} />
+	<LeaderboardOverlay participants={raceStore.leaderboard} {totalLayers} {mode} {lines} />
 </div>
 
 <style>

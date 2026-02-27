@@ -6,9 +6,14 @@
 		participants: WsParticipant[];
 		totalLayers?: number | null;
 		mode?: 'running' | 'finished';
+		lines?: number | null;
 	}
 
-	let { participants, totalLayers = null, mode = 'running' }: Props = $props();
+	let { participants, totalLayers = null, mode = 'running', lines = null }: Props = $props();
+
+	let visibleParticipants = $derived(
+		lines != null && lines > 0 ? participants.slice(0, lines) : participants
+	);
 
 	function playerColor(p: WsParticipant): string {
 		return PLAYER_COLORS[p.color_index % PLAYER_COLORS.length];
@@ -31,7 +36,7 @@
 </script>
 
 <ol class="overlay-leaderboard">
-	{#each participants as participant, index (participant.id)}
+	{#each visibleParticipants as participant, index (participant.id)}
 		{@const color = playerColor(participant)}
 		<li class="row">
 			<span class="rank">{index + 1}</span>
