@@ -35,6 +35,7 @@ from typing import NamedTuple
 
 import tomllib
 
+import tomli_w
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 POOLS_DIR = SCRIPT_DIR / "pools"
@@ -108,7 +109,9 @@ def discover_pools() -> list[str]:
     """Discover available pool names from TOML files in the pools directory."""
     if not POOLS_DIR.is_dir():
         return []
-    return sorted(p.stem for p in POOLS_DIR.glob("*.toml"))
+    return sorted(
+        p.stem for p in POOLS_DIR.glob("*.toml") if not p.stem.startswith("_")
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -132,15 +135,18 @@ Examples:
     )
     parser.add_argument(
         "--count",
-        required=True,
         type=int,
-        help="Number of seeds to generate",
+        help="Number of seeds to generate (required unless --dump)",
     )
     parser.add_argument(
         "--game-dir",
-        required=True,
         type=Path,
-        help="Path to Elden Ring Game directory",
+        help="Path to Elden Ring Game directory (required unless --dump)",
+    )
+    parser.add_argument(
+        "--dump",
+        action="store_true",
+        help="Resolve and print the pool config TOML, then exit (no generation)",
     )
     parser.add_argument(
         "--output",
@@ -469,6 +475,20 @@ def main() -> int:
     """
     args = parse_args()
 
+    # --dump: resolve and print pool config, then exit
+    if args.dump:
+        resolved = resolve_pool_config(args.pool)
+        sys.stdout.buffer.write(tomli_w.dumps(resolved).encode())
+        return 0
+
+    # Validate required args for generation mode
+    if args.count is None:
+        print("Error: --count is required (unless using --dump)")
+        return 1
+    if args.game_dir is None:
+        print("Error: --game-dir is required (unless using --dump)")
+        return 1
+
     # Validate count
     if args.count <= 0:
         print("Error: --count must be a positive integer")
@@ -503,8 +523,10 @@ def main() -> int:
     output_pool_dir = args.output / args.pool
     output_pool_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy pool TOML to output dir so the server can read display metadata
-    shutil.copy2(pool_config, output_pool_dir / "config.toml")
+    # Resolve inheritance and write fully-merged config to output dir
+    resolved = resolve_pool_config(args.pool)
+    with open(output_pool_dir / "config.toml", "wb") as f:
+        tomli_w.dump(resolved, f)
 
     jobs = min(args.jobs, args.count)
     print(f"Generating {args.count} seeds for pool '{args.pool}' ({jobs} workers)")
