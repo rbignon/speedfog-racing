@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
 	import ZoomableSvg from './ZoomableSvg.svelte';
+	import FollowViewport from './FollowViewport.svelte';
 	import LivePlayerDots from './LivePlayerDots.svelte';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
@@ -39,9 +40,10 @@
 		focusNodeId?: string | null;
 		hideLabels?: boolean;
 		showLiveDots?: boolean;
+		follow?: boolean;
 	}
 
-	let { graphJson, participants, raceStatus, transparent = false, highlightIds, focusNodeId = null, hideLabels = false, showLiveDots = false }: Props = $props();
+	let { graphJson, participants, raceStatus, transparent = false, highlightIds, focusNodeId = null, hideLabels = false, showLiveDots = false, follow = false }: Props = $props();
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
 
@@ -349,159 +351,261 @@
 		}
 		return node.y + r + LABEL_OFFSET_Y - 6;
 	}
+
+	// Trailing path segments for follow mode
+	interface TrailingSegment {
+		key: string;
+		x1: number;
+		y1: number;
+		x2: number;
+		y2: number;
+		color: string;
+		opacity: number;
+	}
+
+	let trailingPaths: TrailingSegment[] = $derived.by(() => {
+		if (!follow) return [];
+		const TRAIL_LENGTH = 3;
+		const OPACITY_LEVELS = [0.8, 0.4, 0.15];
+		const result: TrailingSegment[] = [];
+
+		for (const p of participants) {
+			if (!p.zone_history || p.zone_history.length < 2) continue;
+			const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length];
+
+			// Take last TRAIL_LENGTH+1 zone entries to get TRAIL_LENGTH edges
+			const recent = p.zone_history.slice(-TRAIL_LENGTH - 1);
+			const edges: { from: string; to: string }[] = [];
+			for (let i = 0; i < recent.length - 1; i++) {
+				if (recent[i].node_id !== recent[i + 1].node_id) {
+					edges.push({ from: recent[i].node_id, to: recent[i + 1].node_id });
+				}
+			}
+
+			// Render most recent first
+			for (let i = edges.length - 1; i >= 0; i--) {
+				const age = edges.length - 1 - i;
+				if (age >= TRAIL_LENGTH) break;
+				const fromNode = nodeMap.get(edges[i].from);
+				const toNode = nodeMap.get(edges[i].to);
+				if (!fromNode || !toNode) continue;
+
+				// Use edge routing for metro-style segments
+				const edgeKey = `${edges[i].from}->${edges[i].to}`;
+				const routedEdge =
+					edgeMap.get(edgeKey) ?? edgeMap.get(`${edges[i].to}->${edges[i].from}`);
+				if (routedEdge) {
+					for (const seg of routedEdge.segments) {
+						result.push({
+							key: `${p.id}-${edgeKey}-${age}-${seg.x1}`,
+							x1: seg.x1,
+							y1: seg.y1,
+							x2: seg.x2,
+							y2: seg.y2,
+							color,
+							opacity: OPACITY_LEVELS[age] ?? 0
+						});
+					}
+				} else {
+					// Straight line fallback
+					result.push({
+						key: `${p.id}-${edgeKey}-${age}`,
+						x1: fromNode.x,
+						y1: fromNode.y,
+						x2: toNode.x,
+						y2: toNode.y,
+						color,
+						opacity: OPACITY_LEVELS[age] ?? 0
+					});
+				}
+			}
+		}
+		return result;
+	});
 </script>
+
+{#snippet dagContent()}
+	<defs>
+		<filter id="results-player-glow" x="-50%" y="-50%" width="200%" height="200%">
+			<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+			<feMerge>
+				<feMergeNode in="blur" />
+				<feMergeNode in="SourceGraphic" />
+			</feMerge>
+		</filter>
+		<filter id="live-player-glow" x="-50%" y="-50%" width="200%" height="200%">
+			<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+			<feMerge>
+				<feMergeNode in="blur" />
+				<feMergeNode in="SourceGraphic" />
+			</feMerge>
+		</filter>
+	</defs>
+
+	<!-- Base edges (dimmed) -->
+	{#each layout.edges as edge}
+		{#each edge.segments as seg}
+			<line
+				x1={seg.x1}
+				y1={seg.y1}
+				x2={seg.x2}
+				y2={seg.y2}
+				stroke={EDGE_COLOR}
+				stroke-width={EDGE_STROKE_WIDTH}
+				stroke-linecap="round"
+				opacity="0.25"
+			/>
+		{/each}
+	{/each}
+
+	<!-- Player path polylines or trailing segments -->
+	{#if !follow}
+		{#each playerPaths as path (path.id)}
+			<polyline
+				points={path.points}
+				fill="none"
+				stroke={path.color}
+				stroke-width="4"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : 0.8}
+				class="player-path"
+			>
+				<title>{path.displayName}</title>
+			</polyline>
+		{/each}
+	{:else}
+		{#each trailingPaths as segment (segment.key)}
+			<line
+				x1={segment.x1}
+				y1={segment.y1}
+				x2={segment.x2}
+				y2={segment.y2}
+				stroke={segment.color}
+				stroke-width="4"
+				stroke-linecap="round"
+				opacity={segment.opacity}
+			/>
+		{/each}
+	{/if}
+
+	<!-- Nodes -->
+	{#each layout.nodes as node}
+		<g class="dag-node" data-type={node.type} data-node-id={node.id}>
+			<title>{node.displayName}</title>
+
+			<g class="dag-node-shape">
+				{#if node.type === 'start'}
+					<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+					<polygon
+						points="{node.x - 3},{node.y - 5} {node.x - 3},{node.y + 5} {node.x + 5},{node.y}"
+						fill={BG_COLOR}
+					/>
+				{:else if node.type === 'final_boss'}
+					<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+					<rect x={node.x - 4} y={node.y - 4} width="8" height="8" fill={BG_COLOR} />
+				{:else if node.type === 'mini_dungeon'}
+					<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+				{:else if node.type === 'boss_arena'}
+					<circle
+						cx={node.x}
+						cy={node.y}
+						r={nodeRadius(node)}
+						fill={BG_COLOR}
+						stroke={nodeColor(node)}
+						stroke-width="3"
+					/>
+				{:else if node.type === 'major_boss'}
+					<rect
+						x={node.x - nodeRadius(node) * 0.7}
+						y={node.y - nodeRadius(node) * 0.7}
+						width={nodeRadius(node) * 1.4}
+						height={nodeRadius(node) * 1.4}
+						fill={nodeColor(node)}
+						transform="rotate(45 {node.x} {node.y})"
+					/>
+				{:else if node.type === 'legacy_dungeon'}
+					<circle
+						cx={node.x}
+						cy={node.y}
+						r={nodeRadius(node)}
+						fill="none"
+						stroke={nodeColor(node)}
+						stroke-width="3"
+					/>
+					<circle cx={node.x} cy={node.y} r={nodeRadius(node) * 0.5} fill={nodeColor(node)} />
+				{/if}
+			</g>
+
+			<!-- Death icon (opposite side of label) -->
+			{#if !hideLabels && nodesWithDeaths.has(node.id)}
+				<text
+					x={node.x}
+					y={labelAbove.has(node.id) ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2 : node.y - nodeRadius(node) - 6}
+					text-anchor="middle"
+					font-size={LABEL_FONT_SIZE - 1}
+					class="death-icon"
+					class:transparent-label={transparent}
+				>💀</text>
+			{/if}
+
+			<!-- Label -->
+			{#if !hideLabels}
+			<text
+				x={labelX(node)}
+				y={labelY(node)}
+				text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
+				font-size={LABEL_FONT_SIZE}
+				fill={LABEL_COLOR}
+				class="dag-label"
+				class:transparent-label={transparent}
+				transform="rotate(-30, {labelX(node)}, {labelY(node)})"
+			>
+				{truncateLabel(node.displayName)}
+			</text>
+			{/if}
+		</g>
+	{/each}
+
+	<!-- Live dots or static final dots -->
+	{#if showLiveDots}
+		<LivePlayerDots {participants} {nodeMap} {raceStatus} preRace={raceStatus === 'setup'} />
+	{:else}
+		{#each playerPaths as path (path.id)}
+			<circle
+				cx={path.finalX}
+				cy={path.finalY}
+				r={RACER_DOT_RADIUS}
+				fill={path.color}
+				filter="url(#results-player-glow)"
+				opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : 1}
+				class="player-dot"
+				data-node-id={path.finalNodeId}
+			>
+				<title>{path.displayName}</title>
+			</circle>
+		{/each}
+	{/if}
+{/snippet}
 
 {#if layout.nodes.length > 0}
 <div bind:this={dagContainer}>
-	<ZoomableSvg width={layout.width} height={layout.height} {transparent} onnodeclick={onNodeClick} onpanstart={closePopup}>
-			<defs>
-				<filter id="results-player-glow" x="-50%" y="-50%" width="200%" height="200%">
-					<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-					<feMerge>
-						<feMergeNode in="blur" />
-						<feMergeNode in="SourceGraphic" />
-					</feMerge>
-				</filter>
-				<filter id="live-player-glow" x="-50%" y="-50%" width="200%" height="200%">
-					<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-					<feMerge>
-						<feMergeNode in="blur" />
-						<feMergeNode in="SourceGraphic" />
-					</feMerge>
-				</filter>
-			</defs>
-
-			<!-- Base edges (dimmed) -->
-			{#each layout.edges as edge}
-				{#each edge.segments as seg}
-					<line
-						x1={seg.x1}
-						y1={seg.y1}
-						x2={seg.x2}
-						y2={seg.y2}
-						stroke={EDGE_COLOR}
-						stroke-width={EDGE_STROKE_WIDTH}
-						stroke-linecap="round"
-						opacity="0.25"
-					/>
-				{/each}
-			{/each}
-
-			<!-- Player path polylines -->
-			{#each playerPaths as path (path.id)}
-				<polyline
-					points={path.points}
-					fill="none"
-					stroke={path.color}
-					stroke-width="4"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : 0.8}
-					class="player-path"
-				>
-					<title>{path.displayName}</title>
-				</polyline>
-			{/each}
-
-			<!-- Nodes -->
-			{#each layout.nodes as node}
-				<g class="dag-node" data-type={node.type} data-node-id={node.id}>
-					<title>{node.displayName}</title>
-
-					<g class="dag-node-shape">
-						{#if node.type === 'start'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-							<polygon
-								points="{node.x - 3},{node.y - 5} {node.x - 3},{node.y + 5} {node.x + 5},{node.y}"
-								fill={BG_COLOR}
-							/>
-						{:else if node.type === 'final_boss'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-							<rect x={node.x - 4} y={node.y - 4} width="8" height="8" fill={BG_COLOR} />
-						{:else if node.type === 'mini_dungeon'}
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
-						{:else if node.type === 'boss_arena'}
-							<circle
-								cx={node.x}
-								cy={node.y}
-								r={nodeRadius(node)}
-								fill={BG_COLOR}
-								stroke={nodeColor(node)}
-								stroke-width="3"
-							/>
-						{:else if node.type === 'major_boss'}
-							<rect
-								x={node.x - nodeRadius(node) * 0.7}
-								y={node.y - nodeRadius(node) * 0.7}
-								width={nodeRadius(node) * 1.4}
-								height={nodeRadius(node) * 1.4}
-								fill={nodeColor(node)}
-								transform="rotate(45 {node.x} {node.y})"
-							/>
-						{:else if node.type === 'legacy_dungeon'}
-							<circle
-								cx={node.x}
-								cy={node.y}
-								r={nodeRadius(node)}
-								fill="none"
-								stroke={nodeColor(node)}
-								stroke-width="3"
-							/>
-							<circle cx={node.x} cy={node.y} r={nodeRadius(node) * 0.5} fill={nodeColor(node)} />
-						{/if}
-					</g>
-
-					<!-- Death icon (opposite side of label) -->
-					{#if !hideLabels && nodesWithDeaths.has(node.id)}
-						<text
-							x={node.x}
-							y={labelAbove.has(node.id) ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2 : node.y - nodeRadius(node) - 6}
-							text-anchor="middle"
-							font-size={LABEL_FONT_SIZE - 1}
-							class="death-icon"
-							class:transparent-label={transparent}
-						>💀</text>
-					{/if}
-
-					<!-- Label -->
-					{#if !hideLabels}
-					<text
-						x={labelX(node)}
-						y={labelY(node)}
-						text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
-						font-size={LABEL_FONT_SIZE}
-						fill={LABEL_COLOR}
-						class="dag-label"
-						class:transparent-label={transparent}
-						transform="rotate(-30, {labelX(node)}, {labelY(node)})"
-					>
-						{truncateLabel(node.displayName)}
-					</text>
-					{/if}
-				</g>
-			{/each}
-
-			<!-- Final position dots -->
-			{#each playerPaths as path (path.id)}
-				<circle
-					cx={path.finalX}
-					cy={path.finalY}
-					r={RACER_DOT_RADIUS}
-					fill={path.color}
-					filter="url(#results-player-glow)"
-					opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : 1}
-					class="player-dot"
-					data-node-id={path.finalNodeId}
-				>
-					<title>{path.displayName}</title>
-				</circle>
-			{/each}
-
-			<!-- Live player dots (overlay mode) -->
-			{#if showLiveDots}
-				<LivePlayerDots {participants} {nodeMap} {raceStatus} preRace={raceStatus === 'setup'} />
-			{/if}
-	</ZoomableSvg>
+	{#if follow}
+		<FollowViewport
+			width={layout.width}
+			height={layout.height}
+			{participants}
+			{nodeMap}
+			{raceStatus}
+			{transparent}
+		>
+			{@render dagContent()}
+		</FollowViewport>
+	{:else}
+		<ZoomableSvg width={layout.width} height={layout.height} {transparent} onnodeclick={onNodeClick} onpanstart={closePopup}>
+			{@render dagContent()}
+		</ZoomableSvg>
+	{/if}
 	{#if popupData}
 		<NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
 	{/if}
