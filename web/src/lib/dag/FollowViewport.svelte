@@ -10,6 +10,7 @@
 		nodeMap: Map<string, PositionedNode>;
 		raceStatus?: string;
 		transparent?: boolean;
+		maxLayers?: number;
 		children: import('svelte').Snippet;
 	}
 
@@ -20,6 +21,7 @@
 		nodeMap,
 		raceStatus,
 		transparent = false,
+		maxLayers = 5,
 		children
 	}: Props = $props();
 
@@ -40,8 +42,8 @@
 		nodeMap.size > 0 ? Math.max(...[...nodeMap.values()].map((n) => n.x)) : width
 	);
 
-	// Max visible layers: ~50% of total
-	let maxVisibleLayers = $derived(Math.max(3, Math.ceil(totalLayers / 2)));
+	// Max visible layers: from prop, clamped to at least 3
+	let maxVisibleLayers = $derived(Math.max(3, maxLayers));
 
 	// Compute target viewport based on race status
 	interface Viewport {
@@ -113,19 +115,26 @@
 
 		// Barycenter of active players
 		const avgLayer = playerLayers.reduce((s, l) => s + l, 0) / playerLayers.length;
-		const centerX = layerToX(avgLayer);
+		let centerX = layerToX(avgLayer);
 
-		// Visible width: at least maxVisibleLayers, or enough to show all players + margin
-		const visibleLayers = Math.max(layerSpan + 2, maxVisibleLayers);
+		// Visible width: at least maxVisibleLayers, clamped to full DAG width
 		const layerWidth = totalLayers > 1 ? (maxX - minX) / (totalLayers - 1) : 100;
-		let visibleWidth = layerWidth * visibleLayers;
+		const visibleWidth = Math.min(layerWidth * maxVisibleLayers, width);
+		const halfVisible = visibleWidth / 2;
 
-		// Clamp visible width to full DAG width (don't zoom out more than 1:1)
-		visibleWidth = Math.min(visibleWidth, width);
+		// Guarantee leader is always visible: if the leader's X is outside
+		// the right edge of the viewport, shift center right to include them
+		const leaderX = layerToX(maxLayer);
+		const viewRight = centerX + halfVisible;
+		if (leaderX > viewRight) {
+			centerX = leaderX - halfVisible + layerWidth * 0.5; // small margin
+		}
 
 		// Clamp center so we don't go past first/last layer
-		const halfVisible = visibleWidth / 2;
-		const clampedCenterX = Math.max(minX + halfVisible, Math.min(maxX - halfVisible, centerX));
+		const clampedCenterX = Math.max(
+			minX + halfVisible,
+			Math.min(maxX - halfVisible, centerX)
+		);
 
 		return {
 			centerX: clampedCenterX,

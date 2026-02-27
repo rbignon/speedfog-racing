@@ -14,6 +14,14 @@
 	let totalNodes = $derived(liveSeed?.total_nodes ?? data.race.seed_total_nodes);
 	let totalPaths = $derived(liveSeed?.total_paths ?? data.race.seed_total_paths);
 	let follow = $derived(page.url.searchParams.get('follow') === 'true');
+	let maxLayers = $derived(
+		(() => {
+			const raw = page.url.searchParams.get('maxLayers');
+			if (raw === null || raw === '') return 5;
+			const n = parseInt(raw, 10);
+			return isNaN(n) || n < 3 ? 5 : n;
+		})()
+	);
 
 	$effect(() => {
 		if (!auth.initialized) return;
@@ -34,6 +42,7 @@
 			{raceStatus}
 			transparent
 			{follow}
+			{maxLayers}
 			showLiveDots
 		/>
 	{:else if liveSeed?.graph_json && raceStatus === 'setup'}
@@ -44,6 +53,7 @@
 			transparent
 			hideLabels
 			{follow}
+			{maxLayers}
 			showLiveDots
 		/>
 	{:else if totalNodes && totalPaths && totalLayers}

@@ -10,10 +10,11 @@
 	let lbCopied = $state(false);
 	let lbLines = $state<number | null>(10);
 	let dagFollow = $state(false);
+	let dagMaxLayers = $state<number>(5);
 
 	let dagUrl = $derived(
 		typeof window !== 'undefined'
-			? `${window.location.origin}/overlay/race/${raceId}/dag${dagFollow ? '?follow=true' : ''}`
+			? `${window.location.origin}/overlay/race/${raceId}/dag${dagFollow ? `?follow=true&maxLayers=${dagMaxLayers}` : ''}`
 			: ''
 	);
 
@@ -62,6 +63,19 @@
 					Auto-follow
 				</label>
 			</div>
+			{#if dagFollow}
+				<div class="config-row">
+					<label for="dag-max-layers">Visible layers</label>
+					<input
+						id="dag-max-layers"
+						type="number"
+						min="3"
+						max="20"
+						bind:value={dagMaxLayers}
+						class="config-input"
+					/>
+				</div>
+			{/if}
 			<div class="url-row">
 				<input type="text" readonly value={dagUrl} class="url-input" />
 				<button class="copy-btn" onclick={() => copyUrl(dagUrl, 'dag')}>

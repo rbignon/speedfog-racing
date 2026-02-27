@@ -43,6 +43,7 @@
 		hideLabels?: boolean;
 		showLiveDots?: boolean;
 		follow?: boolean;
+		maxLayers?: number;
 	}
 
 	let {
@@ -54,7 +55,8 @@
 		focusNodeId = null,
 		hideLabels = false,
 		showLiveDots = false,
-		follow = false
+		follow = false,
+		maxLayers = 5
 	}: Props = $props();
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
@@ -604,6 +606,7 @@
 				{nodeMap}
 				{raceStatus}
 				{transparent}
+				{maxLayers}
 			>
 				{@render dagContent()}
 			</FollowViewport>
