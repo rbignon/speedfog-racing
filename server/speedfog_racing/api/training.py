@@ -97,6 +97,7 @@ def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
         pool_name=session.seed.pool_name,
         igt_ms=session.igt_ms,
         death_count=session.death_count,
+        exclude_from_stats=session.exclude_from_stats,
         created_at=session.created_at,
         finished_at=session.finished_at,
         seed_total_layers=session.seed.total_layers,
@@ -117,6 +118,7 @@ def _build_detail_response(session: TrainingSession) -> TrainingSessionDetailRes
         pool_name=seed.pool_name,
         igt_ms=session.igt_ms,
         death_count=session.death_count,
+        exclude_from_stats=session.exclude_from_stats,
         progress_nodes=session.progress_nodes,
         created_at=session.created_at,
         finished_at=session.finished_at,
@@ -163,7 +165,9 @@ async def create_session(
         )
 
     try:
-        session = await create_training_session(db, user.id, body.pool_name)
+        session = await create_training_session(
+            db, user.id, body.pool_name, exclude_from_stats=body.exclude_from_stats
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

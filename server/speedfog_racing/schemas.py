@@ -340,6 +340,7 @@ class CreateTrainingRequest(BaseModel):
     """Request to create a training session."""
 
     pool_name: str = "training_standard"
+    exclude_from_stats: bool = False
 
 
 class TrainingSessionResponse(BaseModel):
@@ -353,6 +354,7 @@ class TrainingSessionResponse(BaseModel):
     pool_name: str
     igt_ms: int
     death_count: int
+    exclude_from_stats: bool
     created_at: datetime
     finished_at: datetime | None = None
     seed_total_layers: int | None = None
@@ -371,6 +373,7 @@ class TrainingSessionDetailResponse(BaseModel):
     pool_name: str
     igt_ms: int
     death_count: int
+    exclude_from_stats: bool
     progress_nodes: list[dict[str, Any]] | None = None
     created_at: datetime
     finished_at: datetime | None = None
