@@ -223,6 +223,9 @@
 										<div class="badge-row">
 											<span class="activity-badge training">Solo</span>
 											<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+											{#if item.exclude_from_stats}
+												<span class="badge badge-slow">Slow</span>
+											{/if}
 										</div>
 										<a href="/training/{item.session_id}" class="activity-title">
 											{displayPoolName(item.pool_name)}

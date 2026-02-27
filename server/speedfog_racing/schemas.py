@@ -168,6 +168,7 @@ class TrainingActivity(ActivityItemBase):
     status: str
     igt_ms: int
     death_count: int
+    exclude_from_stats: bool = False
 
 
 ActivityItem = (

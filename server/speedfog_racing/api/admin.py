@@ -357,6 +357,7 @@ async def get_global_activity(
                 status=t.status.value,
                 igt_ms=t.igt_ms,
                 death_count=t.death_count,
+                exclude_from_stats=t.exclude_from_stats,
             )
         )
 

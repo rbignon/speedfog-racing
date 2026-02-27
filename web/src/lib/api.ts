@@ -824,6 +824,7 @@ export interface TrainingActivityItem extends ActivityItemBase {
   status: string;
   igt_ms: number;
   death_count: number;
+  exclude_from_stats: boolean;
 }
 
 export type ActivityItem =

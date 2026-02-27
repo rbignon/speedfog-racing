@@ -354,6 +354,9 @@
 									<span class="activity-badge training">Solo</span>
 								{/if}
 								<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+								{#if item.type === 'training' && item.exclude_from_stats}
+									<span class="badge badge-slow">Slow</span>
+								{/if}
 							</div>
 							<div class="activity-details">
 								{#if item.type === 'race_participant'}
