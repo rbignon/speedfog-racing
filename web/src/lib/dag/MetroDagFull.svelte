@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
 	import ZoomableSvg from './ZoomableSvg.svelte';
+	import LivePlayerDots from './LivePlayerDots.svelte';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
 	import {
@@ -37,9 +38,10 @@
 		highlightIds?: Set<string>;
 		focusNodeId?: string | null;
 		hideLabels?: boolean;
+		showLiveDots?: boolean;
 	}
 
-	let { graphJson, participants, raceStatus, transparent = false, highlightIds, focusNodeId = null, hideLabels = false }: Props = $props();
+	let { graphJson, participants, raceStatus, transparent = false, highlightIds, focusNodeId = null, hideLabels = false, showLiveDots = false }: Props = $props();
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
 
@@ -360,6 +362,13 @@
 						<feMergeNode in="SourceGraphic" />
 					</feMerge>
 				</filter>
+				<filter id="live-player-glow" x="-50%" y="-50%" width="200%" height="200%">
+					<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+					<feMerge>
+						<feMergeNode in="blur" />
+						<feMergeNode in="SourceGraphic" />
+					</feMerge>
+				</filter>
 			</defs>
 
 			<!-- Base edges (dimmed) -->
@@ -487,6 +496,11 @@
 					<title>{path.displayName}</title>
 				</circle>
 			{/each}
+
+			<!-- Live player dots (overlay mode) -->
+			{#if showLiveDots}
+				<LivePlayerDots {participants} {nodeMap} {raceStatus} preRace={raceStatus === 'setup'} />
+			{/if}
 	</ZoomableSvg>
 	{#if popupData}
 		<NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />

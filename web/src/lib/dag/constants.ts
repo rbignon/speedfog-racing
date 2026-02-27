@@ -143,3 +143,25 @@ export const ADJACENT_NODE_COLOR = "#444";
 export const ADJACENT_OPACITY = 0.25;
 export const ADJACENT_EDGE_OPACITY = 0.15;
 export const REVEAL_TRANSITION_MS = 300;
+
+// =============================================================================
+// Live overlay player dots
+// =============================================================================
+
+/** Orbit radius for live player dots (SVG px) */
+export const LIVE_ORBIT_RADIUS = 9;
+
+/** Orbit period for live dots (ms wall-clock) */
+export const LIVE_ORBIT_PERIOD_MS = 2000;
+
+/** Duration of skull pop-and-fade animation (ms) */
+export const LIVE_SKULL_ANIM_MS = 1500;
+
+/** Skull peak scale (overshoot) */
+export const LIVE_SKULL_PEAK_SCALE = 2.0;
+
+/** X offset for finished player dots right of final node (px) */
+export const LIVE_FINISHED_X_OFFSET = 20;
+
+/** X offset for setup player dots left of start node (px) */
+export const LIVE_START_X_OFFSET = -20;
