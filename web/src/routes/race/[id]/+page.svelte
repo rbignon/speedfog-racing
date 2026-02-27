@@ -58,8 +58,6 @@
 	let dagView = $state<'map' | 'replay'>('map');
 
 	function handleHighlightZoneClick(nodeId: string) {
-		// Switch to map view so the focused node is visible
-		dagView = 'map';
 		// Reset first so re-clicking the same zone re-triggers the $effect
 		highlightFocusNodeId = null;
 		requestAnimationFrame(() => {
@@ -654,7 +652,7 @@
 					focusNodeId={highlightFocusNodeId}
 				/>
 			{:else}
-				<RaceReplay graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} />
+				<RaceReplay graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} focusNodeId={highlightFocusNodeId} />
 			{/if}
 			<RaceStats participants={raceStore.leaderboard} />
 			<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} onzoneclick={handleHighlightZoneClick} />

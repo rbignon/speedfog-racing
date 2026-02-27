@@ -12,19 +12,29 @@
 	import { computeHighlights } from '$lib/highlights';
 	import { PLAYER_COLORS } from '$lib/dag/constants';
 	import { parseDagGraph } from '$lib/dag/types';
+	import type { DagNode, PositionedNode } from '$lib/dag/types';
 	import { computeLayout } from '$lib/dag/layout';
 	import ZoomableSvg from '$lib/dag/ZoomableSvg.svelte';
 	import DagBaseLayer from '$lib/dag/DagBaseLayer.svelte';
-	import type { PositionedNode } from '$lib/dag/types';
+	import NodePopup from '$lib/dag/NodePopup.svelte';
+	import {
+		computeConnections,
+		computeVisitors,
+		parseExitTexts,
+		parseEntranceTexts,
+		parseNodeLayers
+	} from '$lib/dag/popupData';
+	import type { NodePopupData } from '$lib/dag/popupData';
 	import ReplayDag from './ReplayDag.svelte';
 	import ReplayControls from './ReplayControls.svelte';
 
 	interface Props {
 		graphJson: Record<string, unknown>;
 		participants: WsParticipant[];
+		focusNodeId?: string | null;
 	}
 
-	let { graphJson, participants }: Props = $props();
+	let { graphJson, participants, focusNodeId = null }: Props = $props();
 
 	// Pre-compute all replay data (runs once, memoized via $derived)
 	let graph = $derived(parseDagGraph(graphJson));
@@ -72,6 +82,108 @@
 			above.add(top.id);
 		}
 		return above;
+	});
+
+	// Node lookup for popup
+	let nodeMap = $derived.by(() => {
+		const map = new Map<string, PositionedNode>();
+		for (const node of layout.nodes) {
+			map.set(node.id, node);
+		}
+		return map;
+	});
+
+	// Popup data helpers
+	let exitTexts = $derived(parseExitTexts(graphJson));
+	let entranceTexts = $derived(parseEntranceTexts(graphJson));
+	let nodeLayers = $derived(parseNodeLayers(graphJson));
+
+	// Popup state
+	let popupData: NodePopupData | null = $state(null);
+	let popupX = $state(0);
+	let popupY = $state(0);
+
+	function onNodeClick(nodeId: string, event: PointerEvent) {
+		const node = nodeMap.get(nodeId);
+		if (!node) return;
+
+		const { entrances, exits } = computeConnections(
+			nodeId,
+			graph.edges,
+			nodeMap as Map<string, DagNode>,
+			undefined,
+			exitTexts,
+			entranceTexts
+		);
+		const visitors = computeVisitors(nodeId, participants, nodeLayers);
+
+		popupData = {
+			nodeId,
+			displayName: node.displayName,
+			type: node.type,
+			displayType: node.displayType,
+			tier: node.tier,
+			randomizedBoss: node.randomizedBoss,
+			entrances,
+			exits,
+			visitors,
+			raceFinished: true
+		};
+		popupX = event.clientX;
+		popupY = event.clientY;
+	}
+
+	function closePopup() {
+		popupData = null;
+	}
+
+	let dagContainer: HTMLElement | undefined = $state();
+
+	function openPopupForNode(nodeId: string) {
+		const node = nodeMap.get(nodeId);
+		if (!node) return;
+
+		const { entrances, exits } = computeConnections(
+			nodeId,
+			graph.edges,
+			nodeMap as Map<string, DagNode>,
+			undefined,
+			exitTexts,
+			entranceTexts
+		);
+		const visitors = computeVisitors(nodeId, participants, nodeLayers);
+
+		popupData = {
+			nodeId,
+			displayName: node.displayName,
+			type: node.type,
+			displayType: node.displayType,
+			tier: node.tier,
+			randomizedBoss: node.randomizedBoss,
+			entrances,
+			exits,
+			visitors,
+			raceFinished: true
+		};
+
+		if (dagContainer) {
+			const el = dagContainer.querySelector(`[data-node-id="${CSS.escape(nodeId)}"]`);
+			if (el) {
+				const rect = el.getBoundingClientRect();
+				popupX = rect.left + rect.width / 2;
+				popupY = rect.top;
+				return;
+			}
+			const rect = dagContainer.getBoundingClientRect();
+			popupX = rect.left + rect.width / 2;
+			popupY = rect.top + rect.height / 2;
+		}
+	}
+
+	$effect(() => {
+		if (focusNodeId) {
+			openPopupForNode(focusNodeId);
+		}
 	});
 
 	// Animation state
@@ -122,6 +234,7 @@
 	}
 
 	function play() {
+		closePopup();
 		if (replayState === 'finished') {
 			// Restart
 			replayElapsedMs = 0;
@@ -190,9 +303,9 @@
 </script>
 
 {#if replayParticipants.length >= 2 && maxIgt > 0}
-	<div class="race-replay">
+	<div class="race-replay" bind:this={dagContainer}>
 		<div class="replay-dag-container">
-			<ZoomableSvg width={layout.width} height={layout.height}>
+			<ZoomableSvg width={layout.width} height={layout.height} onnodeclick={onNodeClick} onpanstart={closePopup}>
 				<defs>
 					<filter id="replay-player-glow" x="-50%" y="-50%" width="200%" height="200%">
 						<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
@@ -221,6 +334,9 @@
 					/>
 				{/if}
 			</ZoomableSvg>
+			{#if popupData}
+				<NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
+			{/if}
 
 			<!-- Commentary overlay (HTML, positioned over the SVG) -->
 			{#if activeCommentary}
