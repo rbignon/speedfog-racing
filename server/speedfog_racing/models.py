@@ -248,6 +248,7 @@ class TrainingSession(Base):
     current_zone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exclude_from_stats: Mapped[bool] = mapped_column(default=False)
 
     # Relationships
     user: Mapped["User"] = relationship()
