@@ -192,6 +192,9 @@
 				{#if session.seed_number}
 					<span class="seed-badge">Seed {session.seed_number}</span>
 				{/if}
+				{#if session.exclude_from_stats}
+					<span class="badge badge-slow">Slow</span>
+				{/if}
 				<span class="badge badge-{status}">{status}</span>
 			</div>
 		</div>

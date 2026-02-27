@@ -204,3 +204,9 @@ a:hover {
   background: rgba(200, 164, 78, 0.15);
   color: var(--color-warning);
 }
+
+.badge-slow {
+  background: rgba(107, 114, 128, 0.15);
+  color: var(--color-text-disabled);
+  font-weight: 500;
+}

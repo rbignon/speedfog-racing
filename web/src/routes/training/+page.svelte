@@ -217,6 +217,9 @@
 								</td>
 								<td>
 									<span class="badge badge-{session.status}">{session.status}</span>
+									{#if session.exclude_from_stats}
+										<span class="badge badge-slow">Slow</span>
+									{/if}
 								</td>
 								<td class="mono">{Math.min(session.current_layer + 1, session.seed_total_layers ?? Infinity)}/{session.seed_total_layers ?? '?'}</td>
 								<td class="mono">{formatIgt(session.igt_ms)}</td>
@@ -369,7 +372,7 @@
 	/* Slow run toggle */
 	.slow-run-toggle {
 		display: flex;
-		align-items: baseline;
+		align-items: center;
 		gap: 0.5rem;
 		margin-top: 0.75rem;
 		cursor: pointer;
