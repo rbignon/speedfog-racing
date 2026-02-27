@@ -2,7 +2,7 @@
 //!
 //! Tracks player progress via EMEVD event flags and communicates with the racing server.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread::JoinHandle;
@@ -43,6 +43,7 @@ pub struct RaceState {
     pub race: Option<RaceInfo>,
     pub seed: Option<SeedInfo>,
     pub participants: Vec<ParticipantInfo>,
+    pub leader_splits: Option<HashMap<String, i32>>,
     pub race_started_at: Option<Instant>,
     pub current_zone: Option<ZoneUpdateData>,
 }
@@ -685,13 +686,17 @@ impl RaceTracker {
                     race.status = "running".to_string();
                 }
             }
-            IncomingMessage::LeaderboardUpdate(participants) => {
+            IncomingMessage::LeaderboardUpdate {
+                participants,
+                leader_splits,
+            } => {
                 self.last_received_debug = Some(format!(
                     "leaderboard_update({} players)",
                     participants.len()
                 ));
                 debug!(count = participants.len(), "[WS] Leaderboard update");
                 self.race_state.participants = participants;
+                self.race_state.leader_splits = leader_splits;
             }
             IncomingMessage::RaceStatusChange(status) => {
                 self.last_received_debug = Some(format!("race_status_change({})", status));

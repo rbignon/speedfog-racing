@@ -3,6 +3,7 @@
 //! Handles connection, authentication, and race message exchange.
 
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
+use std::collections::HashMap;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -64,7 +65,10 @@ pub enum IncomingMessage {
     },
     AuthError(String),
     RaceStart,
-    LeaderboardUpdate(Vec<ParticipantInfo>),
+    LeaderboardUpdate {
+        participants: Vec<ParticipantInfo>,
+        leader_splits: Option<HashMap<String, i32>>,
+    },
     RaceStatusChange(String),
     PlayerUpdate(ParticipantInfo),
     ZoneUpdate {
@@ -493,9 +497,14 @@ fn message_loop(
                         ServerMessage::RaceStart => {
                             let _ = incoming_tx.send(IncomingMessage::RaceStart);
                         }
-                        ServerMessage::LeaderboardUpdate { participants } => {
-                            let _ =
-                                incoming_tx.send(IncomingMessage::LeaderboardUpdate(participants));
+                        ServerMessage::LeaderboardUpdate {
+                            participants,
+                            leader_splits,
+                        } => {
+                            let _ = incoming_tx.send(IncomingMessage::LeaderboardUpdate {
+                                participants,
+                                leader_splits,
+                            });
                         }
                         ServerMessage::RaceStatusChange { status } => {
                             let _ = incoming_tx.send(IncomingMessage::RaceStatusChange(status));

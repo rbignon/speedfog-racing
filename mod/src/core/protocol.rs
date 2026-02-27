@@ -2,6 +2,8 @@
 //!
 //! Messages exchanged between the mod and the racing server.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 // =============================================================================
@@ -54,6 +56,8 @@ pub struct ParticipantInfo {
     pub death_count: i32,
     #[serde(default)]
     pub gap_ms: Option<i32>,
+    #[serde(default)]
+    pub layer_entry_igt: Option<i32>,
 }
 
 /// Race info from server
@@ -116,7 +120,11 @@ pub enum ServerMessage {
     /// Race has started
     RaceStart,
     /// Leaderboard update
-    LeaderboardUpdate { participants: Vec<ParticipantInfo> },
+    LeaderboardUpdate {
+        participants: Vec<ParticipantInfo>,
+        #[serde(default)]
+        leader_splits: Option<HashMap<String, i32>>,
+    },
     /// Race status changed
     RaceStatusChange { status: String },
     /// Single player update
@@ -261,10 +269,14 @@ mod tests {
         }"#;
         let msg: ServerMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ServerMessage::LeaderboardUpdate { participants } => {
+            ServerMessage::LeaderboardUpdate {
+                participants,
+                leader_splits,
+            } => {
                 assert_eq!(participants.len(), 1);
                 assert_eq!(participants[0].twitch_username, "player1");
                 assert_eq!(participants[0].current_layer_tier, Some(3));
+                assert_eq!(leader_splits, None);
             }
             _ => panic!("Expected LeaderboardUpdate"),
         }
@@ -563,5 +575,62 @@ mod tests {
         }"#;
         let p: ParticipantInfo = serde_json::from_str(json).unwrap();
         assert_eq!(p.gap_ms, None);
+    }
+
+    #[test]
+    fn test_leaderboard_update_with_leader_splits() {
+        let json = r#"{
+            "type": "leaderboard_update",
+            "participants": [],
+            "leader_splits": {"0": 0, "1": 30000, "2": 75000}
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::LeaderboardUpdate {
+                participants,
+                leader_splits,
+            } => {
+                assert!(participants.is_empty());
+                let splits = leader_splits.unwrap();
+                assert_eq!(splits.get("0"), Some(&0));
+                assert_eq!(splits.get("1"), Some(&30000));
+                assert_eq!(splits.get("2"), Some(&75000));
+            }
+            _ => panic!("Expected LeaderboardUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_leaderboard_update_without_leader_splits() {
+        // Backward compat: old server sends no leader_splits
+        let json = r#"{
+            "type": "leaderboard_update",
+            "participants": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::LeaderboardUpdate { leader_splits, .. } => {
+                assert_eq!(leader_splits, None);
+            }
+            _ => panic!("Expected LeaderboardUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_participant_info_with_layer_entry_igt() {
+        let json = r#"{
+            "id": "1",
+            "twitch_username": "player1",
+            "twitch_display_name": null,
+            "status": "playing",
+            "current_zone": null,
+            "current_layer": 2,
+            "igt_ms": 90000,
+            "death_count": 1,
+            "gap_ms": 15000,
+            "layer_entry_igt": 80000
+        }"#;
+        let p: ParticipantInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(p.layer_entry_igt, Some(80000));
     }
 }
