@@ -944,6 +944,7 @@ export interface TrainingSession {
   pool_name: string;
   igt_ms: number;
   death_count: number;
+  exclude_from_stats: boolean;
   created_at: string;
   finished_at: string | null;
   seed_total_layers: number | null;
@@ -968,6 +969,7 @@ export async function fetchTrainingPools(): Promise<PoolStats> {
 
 export async function createTrainingSession(
   poolName: string,
+  excludeFromStats: boolean = false,
 ): Promise<TrainingSessionDetail> {
   const response = await fetch(`${API_BASE}/training`, {
     method: "POST",
@@ -975,7 +977,10 @@ export async function createTrainingSession(
       ...getAuthHeaders(),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ pool_name: poolName }),
+    body: JSON.stringify({
+      pool_name: poolName,
+      exclude_from_stats: excludeFromStats,
+    }),
   });
   return handleResponse<TrainingSessionDetail>(response);
 }
