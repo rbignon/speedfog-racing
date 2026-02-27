@@ -243,6 +243,8 @@ async def get_user_pool_stats(
     for pool_name in all_pools:
         race = race_stats.get(pool_name)
         training = training_stats.get(pool_name)
+        # Note: training.runs excludes slow runs (exclude_from_stats=True),
+        # so total_runs reflects "counted runs", not all sessions.
         total_runs = (race.runs if race else 0) + (training.runs if training else 0)
         entries.append(
             UserPoolStatsEntry(

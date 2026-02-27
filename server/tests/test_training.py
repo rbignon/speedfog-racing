@@ -502,6 +502,7 @@ async def test_create_training_session_api(test_client, training_user, training_
         assert data["status"] == "active"
         assert data["pool_name"] == "training_standard"
         assert data["seed_total_layers"] == 10
+        assert data["exclude_from_stats"] is False
 
 
 @pytest.mark.asyncio
