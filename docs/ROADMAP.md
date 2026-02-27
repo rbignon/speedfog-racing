@@ -55,9 +55,9 @@ Full security audit (28 findings) and hardening pass: HTTPS + security headers (
 
 **Audit:** `docs/security-audit-2026-02-10.md`
 
-### Gap Timing (F1-Style)
+### Gap Timing (LiveSplit-Style)
 
-Server-side gap computation in `broadcast_leaderboard`: leader splits from `zone_history` for playing participants, direct time delta for finished participants. `gap_ms` field flows through `ParticipantInfo` to the mod overlay, rendered as a right-aligned `+M:SS` / `+H:MM:SS` column.
+LiveSplit-style gap computation: entry delta is fixed while within the leader's time budget on a layer, then grows in real-time once exceeded. Server sends `leader_splits` and `layer_entry_igt` in `leaderboard_update`; the mod computes gaps client-side at frame rate using local IGT for the local player. Negative gaps (ahead of pace) displayed in green, positive in soft red.
 
 ---
 

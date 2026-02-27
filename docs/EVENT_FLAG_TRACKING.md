@@ -160,24 +160,39 @@ A warp hook (inline detour on `lua_warp`) captures the grace entity ID when the 
 
 ## Gap Timing
 
-Computed in `broadcast_leaderboard()` for every leaderboard update.
+LiveSplit-style gap computation. The gap is fixed (entry delta) while the player is within the leader's time budget on a layer, then grows in real-time once exceeded. Negative gaps (player ahead of leader's pace) are supported.
 
 ### Leader Splits
 
 `build_leader_splits(zone_history, graph_json)` walks the leader's `zone_history` and builds `{layer: first_igt_at_layer}`. Skips entries whose `node_id` is not in the graph. Deduplicates by taking the first IGT at each layer.
 
-### Gap Computation
+### Layer Entry IGT
 
-`compute_gap_ms(status, igt_ms, current_layer, leader_splits, leader_igt_ms, is_leader)`:
+`get_layer_entry_igt(zone_history, current_layer, graph_json)` finds the player's IGT when they first entered their current layer. Sent as `layer_entry_igt` in `ParticipantInfo`.
 
-| Condition           | Result                                          |
-| ------------------- | ----------------------------------------------- |
-| Is leader           | `None` (no gap for the leader)                  |
-| Status = `finished` | `igt_ms - leader_igt_ms` (direct delta)         |
-| Status = `playing`  | `igt_ms - leader_splits[current_layer]` or None |
-| Other statuses      | `None`                                          |
+### Server-Side Gap Computation
 
-The mod renders `gap_ms` as `+M:SS` or `+H:MM:SS` right-aligned in the leaderboard. `broadcast_player_update()` intentionally omits `gap_ms` (computing it requires the full sorted participant list).
+`compute_gap_ms(status, igt_ms, current_layer, player_layer_entry_igt, leader_splits, leader_igt_ms, is_leader)`:
+
+| Condition                                         | Result                                          |
+| ------------------------------------------------- | ----------------------------------------------- |
+| Is leader                                         | `None`                                          |
+| Status = `finished`                               | `igt_ms - leader_igt_ms` (direct delta)         |
+| Status = `playing`, within leader's time budget   | `player_layer_entry_igt - leader_splits[layer]` |
+| Status = `playing`, exceeded leader's time budget | `igt_ms - leader_splits[layer + 1]`             |
+| Status = `playing`, leader still on same layer    | `player_layer_entry_igt - leader_splits[layer]` |
+| Status = `playing`, no split for layer            | `None`                                          |
+| Other statuses                                    | `None`                                          |
+
+"Within budget" means `igt_ms <= leader_splits[current_layer + 1]` — the player hasn't used more time on this layer than the leader did.
+
+### Client-Side Gap Computation (Mod)
+
+The mod ignores `gap_ms` and recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update`. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`, producing frame-rate gap updates.
+
+Gaps are color-coded: green for negative (ahead), soft red for positive (behind).
+
+`broadcast_player_update()` intentionally omits `gap_ms` (computing it requires the full sorted participant list).
 
 ---
 

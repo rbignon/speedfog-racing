@@ -33,7 +33,7 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ### Races
 
-- F1-style gap timing in the leaderboard overlay — each player sees their time gap to the leader, using split times for running players and final time delta for finished players
+- LiveSplit-style gap timing in the leaderboard overlay — gaps stay fixed while within the leader's pace, then grow in real-time when falling behind. Gaps ahead of the leader's pace are shown in green, gaps behind in red
 - Players can now abandon a running race via a "Rage quit" button on the race page
 - Inactive players (IGT unchanged for 5 minutes) are automatically abandoned
 - Add to calendar button (Google, Apple, Outlook) on scheduled race pages

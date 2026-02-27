@@ -303,11 +303,17 @@ Broadcast to all mods and spectators when any player's state changes (ready, new
 ```json
 {
   "type": "leaderboard_update",
-  "participants": [...]
+  "participants": [...],
+  "leader_splits": { "0": 0, "1": 30000, "2": 75000 }
 }
 ```
 
-Participants are pre-sorted (see [Leaderboard Sorting](#leaderboard-sorting)).
+| Field           | Type             | Description                                                                   |
+| --------------- | ---------------- | ----------------------------------------------------------------------------- |
+| `participants`  | `list`           | Pre-sorted participant list (see [Leaderboard Sorting](#leaderboard-sorting)) |
+| `leader_splits` | `dict<int,int>?` | Leader's entry IGT per layer (`null` if no leader yet)                        |
+
+`leader_splits` maps layer index → IGT at which the leader first entered that layer. Used by the mod for client-side LiveSplit gap computation. Keys are serialized as strings in JSON.
 
 When the race finishes, `zone_history` is included on each participant (otherwise `null`).
 
@@ -483,12 +489,13 @@ Single player update. **Sent to spectators only** (mods receive `leaderboard_upd
 
 #### `leaderboard_update`
 
-Full leaderboard broadcast to all mods and spectators (on zone progress, ready, or finish events).
+Full leaderboard broadcast to all mods and spectators (on zone progress, ready, or finish events). Includes `leader_splits` for client-side gap computation (see [Gap Timing](#gap-timing)).
 
 ```json
 {
   "type": "leaderboard_update",
-  "participants": [...]
+  "participants": [...],
+  "leader_splits": { "0": 0, "1": 30000 }
 }
 ```
 
@@ -603,10 +610,11 @@ Shared schema across all WebSocket messages:
 | `mod_connected`       | `bool`    | Whether the mod client is currently connected   |
 | `zone_history`        | `list?`   | Zone visit history (only when race is finished) |
 | `gap_ms`              | `int?`    | Gap to the leader in milliseconds (see below)   |
+| `layer_entry_igt`     | `int?`    | Player's IGT when entering their current layer  |
 
 `zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456 }`
 
-**Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`, `gap_ms`). Extra fields like `color_index`, `mod_connected`, and `zone_history` are present on the wire but silently ignored by serde.
+**Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`, `gap_ms`, `layer_entry_igt`). Extra fields like `color_index`, `mod_connected`, and `zone_history` are present on the wire but silently ignored by serde.
 
 ### RaceInfo
 
@@ -649,14 +657,34 @@ Participants in `leaderboard_update` are pre-sorted by priority:
 
 ### Gap Timing
 
-The `gap_ms` field shows each participant's time gap relative to the leader (first participant after sorting). Computed server-side during `broadcast_leaderboard`:
+Gap timing uses a LiveSplit-style formula. The server computes `gap_ms` for web spectators and sends `leader_splits` + `layer_entry_igt` so the mod can compute gaps client-side at frame rate.
 
-- **Leader:** `null` (no gap to show)
-- **Playing:** `igt_ms - leader_split_at_current_layer` — compared against the leader's split time when they reached the same layer. `null` if the leader hasn't reached that layer yet.
-- **Finished:** `igt_ms - leader_igt_ms` — direct time delta against the leader's finish time.
+#### Server-side (`gap_ms`)
+
+Computed during `broadcast_leaderboard` for web spectators:
+
+- **Leader:** `null`
+- **Playing (within budget):** `player_layer_entry_igt - leader_splits[current_layer]` — fixed entry delta while the player's IGT is within the leader's time budget on the layer
+- **Playing (exceeded budget):** `igt_ms - leader_splits[current_layer + 1]` — gap grows once the player exceeds the leader's exit IGT for that layer
+- **Playing (leader on same layer):** entry delta only (no exit split available)
+- **Finished:** `igt_ms - leader_igt_ms` — direct time delta
 - **Ready / Registered / Abandoned:** `null`
 
-Leader splits are built from the leader's `zone_history`, mapping each layer to the first IGT at which the leader entered that layer. The mod renders `gap_ms` as `+M:SS` or `+H:MM:SS` in a right-aligned column.
+#### Client-side (mod)
+
+The mod ignores `gap_ms` and recomputes gaps locally each frame using `leader_splits` + `layer_entry_igt`. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's snapshot `igt_ms`, enabling frame-rate gap updates.
+
+#### Color coding
+
+- **Negative gap** (ahead of leader's pace): green (`-M:SS`)
+- **Positive gap** (behind leader's pace): soft red (`+M:SS`)
+- **Zero gap**: default text color
+
+#### Leader splits
+
+`build_leader_splits(zone_history, graph_json)` walks the leader's `zone_history` and builds `{layer: first_igt_at_layer}`. Skips entries whose `node_id` is not in the graph. Deduplicates by taking the first IGT at each layer. Sent as `leader_splits` in `leaderboard_update`.
+
+`broadcast_player_update()` intentionally omits `gap_ms` (computing it requires the full sorted participant list).
 
 ### DAG Access Rules
 
