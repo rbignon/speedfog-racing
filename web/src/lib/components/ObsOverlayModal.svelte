@@ -14,7 +14,7 @@
 
 	let dagUrl = $derived(
 		typeof window !== 'undefined'
-			? `${window.location.origin}/overlay/race/${raceId}/dag${dagFollow ? `?follow=true&maxLayers=${dagMaxLayers}` : ''}`
+			? `${window.location.origin}/overlay/race/${raceId}/dag${dagFollow ? `?follow=true${dagMaxLayers !== 5 ? `&maxLayers=${dagMaxLayers}` : ''}` : ''}`
 			: ''
 	);
 

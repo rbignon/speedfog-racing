@@ -88,9 +88,7 @@
 
 		// Running: compute from active player positions
 		const playerLayers = activePlayers.map((p) => p.current_layer);
-		const minLayer = Math.min(...playerLayers);
 		const maxLayer = Math.max(...playerLayers);
-		const layerSpan = maxLayer - minLayer + 1;
 
 		// Convert layers to X positions (interpolates between nearest known layers)
 		const sortedXs = [...layerXPositions.entries()].sort((a, b) => a[0] - b[0]);
