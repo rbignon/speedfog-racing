@@ -228,17 +228,27 @@ class ConnectionManager:
                     p.status.value,
                     igt_ms=p.igt_ms,
                     current_layer=p.current_layer,
+                    player_layer_entry_igt=get_layer_entry_igt(
+                        p.zone_history, p.current_layer, graph_json
+                    )
+                    or 0,
                     leader_splits=leader_splits,
                     leader_igt_ms=leader_igt_ms,
                     is_leader=(has_leader and i == 0),
                 )
-                if has_leader
+                if has_leader and graph_json
+                else None,
+                layer_entry_igt=get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
+                if graph_json
                 else None,
             )
             for i, p in enumerate(sorted_participants)
         ]
 
-        message = LeaderboardUpdateMessage(participants=participant_infos)
+        message = LeaderboardUpdateMessage(
+            participants=participant_infos,
+            leader_splits=leader_splits if leader_splits else None,
+        )
         await room.broadcast_to_all(message.model_dump_json())
 
     async def broadcast_player_update(
@@ -310,27 +320,64 @@ def build_leader_splits(
     return splits
 
 
+def get_layer_entry_igt(
+    zone_history: list[dict[str, Any]] | None,
+    current_layer: int,
+    graph_json: dict[str, Any],
+) -> int | None:
+    """Get the player's IGT when they first entered their current layer."""
+    if not zone_history:
+        return None
+    nodes = graph_json.get("nodes", {})
+    for entry in zone_history:
+        node_id = entry.get("node_id")
+        igt = entry.get("igt_ms")
+        if node_id is None or igt is None:
+            continue
+        if str(node_id) not in nodes:
+            continue
+        layer = get_layer_for_node(str(node_id), graph_json)
+        if layer == current_layer:
+            return int(igt)
+    return None
+
+
 def compute_gap_ms(
     status: str,
     *,
     igt_ms: int,
     current_layer: int,
+    player_layer_entry_igt: int,
     leader_splits: dict[int, int],
     leader_igt_ms: int,
     is_leader: bool = False,
 ) -> int | None:
-    """Compute gap_ms for a participant relative to the leader."""
+    """Compute gap_ms for a participant relative to the leader (LiveSplit-style).
+
+    - While player's IGT is within leader's time budget on the layer: gap = entry delta
+    - Once player exceeds leader's exit IGT: gap = player IGT - leader exit IGT
+    """
     if is_leader:
         return None
     if status not in ("playing", "finished"):
         return None
     if status == "finished":
         return igt_ms - leader_igt_ms
-    # Playing: compare to leader's split at this layer
-    leader_split = leader_splits.get(current_layer)
-    if leader_split is None:
+    # Playing: LiveSplit-style split comparison
+    leader_entry = leader_splits.get(current_layer)
+    if leader_entry is None:
         return None
-    return igt_ms - leader_split
+    entry_delta = player_layer_entry_igt - leader_entry
+    # Leader's exit = leader's entry on next layer
+    leader_exit = leader_splits.get(current_layer + 1)
+    if leader_exit is None:
+        # Leader hasn't left this layer yet — show entry delta only
+        return entry_delta
+    if igt_ms <= leader_exit:
+        # Within leader's time budget — fixed entry delta
+        return entry_delta
+    # Exceeded leader's time budget — gap grows
+    return igt_ms - leader_exit
 
 
 def participant_to_info(
@@ -339,6 +386,7 @@ def participant_to_info(
     connected_ids: set[uuid.UUID] | None = None,
     graph_json: dict[str, Any] | None = None,
     gap_ms: int | None = None,
+    layer_entry_igt: int | None = None,
 ) -> ParticipantInfo:
     """Convert a Participant model to ParticipantInfo schema."""
     # Compute tier on the fly from current_zone + graph_json
@@ -360,6 +408,7 @@ def participant_to_info(
         mod_connected=participant.id in connected_ids if connected_ids else False,
         zone_history=participant.zone_history,
         gap_ms=gap_ms,
+        layer_entry_igt=layer_entry_igt,
     )
 
 

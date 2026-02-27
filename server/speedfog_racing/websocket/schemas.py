@@ -78,6 +78,7 @@ class ParticipantInfo(BaseModel):
     mod_connected: bool = False
     zone_history: list[dict[str, object]] | None = None
     gap_ms: int | None = None
+    layer_entry_igt: int | None = None
 
 
 class RaceInfo(BaseModel):
@@ -138,6 +139,7 @@ class LeaderboardUpdateMessage(BaseModel):
 
     type: Literal["leaderboard_update"] = "leaderboard_update"
     participants: list[ParticipantInfo]
+    leader_splits: dict[int, int] | None = None
 
 
 class RaceStateMessage(BaseModel):
