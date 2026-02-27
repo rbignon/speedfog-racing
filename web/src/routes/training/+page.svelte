@@ -22,6 +22,7 @@
 	let startingPool = $state<string | null>(null);
 	let error = $state<string | null>(null);
 	let authChecked = $state(false);
+	let slowRun = $state(false);
 
 	let sortedPools = $derived(
 		Object.entries(pools)
@@ -71,7 +72,7 @@
 		error = null;
 
 		try {
-			const session = await createTrainingSession(poolName);
+			const session = await createTrainingSession(poolName, slowRun);
 			goto(`/training/${session.id}`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to start solo session.';
@@ -152,6 +153,11 @@
 				{#if selectedPool && selectedConfig}
 					<div class="pool-detail">
 						<PoolSettingsCard poolName={selectedPool.replace(/^training_/, '')} poolConfig={selectedConfig} compact />
+						<label class="slow-run-toggle">
+							<input type="checkbox" bind:checked={slowRun} />
+							<span class="slow-run-label">Slow run</span>
+							<span class="slow-run-desc">This session won't count in your performance stats</span>
+						</label>
 						<div class="pool-detail-footer">
 							<span class="seed-count" class:pool-exhausted={selectedInfo?.played_by_user != null && selectedInfo.played_by_user >= (selectedInfo?.available ?? 0)}>
 								{#if selectedInfo?.played_by_user != null && selectedInfo.played_by_user > 0}
@@ -358,6 +364,30 @@
 
 	.pool-exhausted {
 		color: var(--color-gold);
+	}
+
+	/* Slow run toggle */
+	.slow-run-toggle {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		margin-top: 0.75rem;
+		cursor: pointer;
+	}
+
+	.slow-run-toggle input[type='checkbox'] {
+		accent-color: var(--color-gold);
+	}
+
+	.slow-run-label {
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		color: var(--color-text);
+	}
+
+	.slow-run-desc {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-disabled);
 	}
 
 	/* Pool detail panel */
