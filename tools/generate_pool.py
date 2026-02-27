@@ -32,6 +32,7 @@ from concurrent.futures import (
 from pathlib import Path
 from typing import NamedTuple
 
+
 SCRIPT_DIR = Path(__file__).parent.resolve()
 POOLS_DIR = SCRIPT_DIR / "pools"
 DLL_NAME = "speedfog_race_mod.dll"
