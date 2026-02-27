@@ -8,16 +8,18 @@
 
 	let dagCopied = $state(false);
 	let lbCopied = $state(false);
+	let lbLines = $state<number | null>(10);
+	let dagFollow = $state(false);
 
 	let dagUrl = $derived(
 		typeof window !== 'undefined'
-			? `${window.location.origin}/overlay/race/${raceId}/dag`
+			? `${window.location.origin}/overlay/race/${raceId}/dag${dagFollow ? '?follow=true' : ''}`
 			: ''
 	);
 
 	let lbUrl = $derived(
 		typeof window !== 'undefined'
-			? `${window.location.origin}/overlay/race/${raceId}/leaderboard`
+			? `${window.location.origin}/overlay/race/${raceId}/leaderboard${lbLines != null ? `?lines=${lbLines}` : ''}`
 			: ''
 	);
 
@@ -58,6 +60,12 @@
 		<div class="overlay-section">
 			<h3>DAG</h3>
 			<p class="size-hint">Recommended size: 800 &times; 600</p>
+			<div class="config-row">
+				<label for="dag-follow">
+					<input id="dag-follow" type="checkbox" bind:checked={dagFollow} />
+					Auto-follow
+				</label>
+			</div>
 			<div class="url-row">
 				<input type="text" readonly value={dagUrl} class="url-input" />
 				<button class="copy-btn" onclick={() => copyUrl(dagUrl, 'dag')}>
@@ -69,6 +77,18 @@
 		<div class="overlay-section">
 			<h3>Leaderboard</h3>
 			<p class="size-hint">Recommended size: 400 &times; 800</p>
+			<div class="config-row">
+				<label for="lb-lines">Max lines</label>
+				<input
+					id="lb-lines"
+					type="number"
+					min="1"
+					max="50"
+					bind:value={lbLines}
+					placeholder="All"
+					class="config-input"
+				/>
+			</div>
 			<div class="url-row">
 				<input type="text" readonly value={lbUrl} class="url-input" />
 				<button class="copy-btn" onclick={() => copyUrl(lbUrl, 'lb')}>
@@ -184,5 +204,32 @@
 
 	.copy-btn:hover {
 		background: var(--color-purple-hover, #7c3aed);
+	}
+
+	.config-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 0.5rem;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+	}
+
+	.config-input {
+		width: 5rem;
+		padding: 0.25rem 0.5rem;
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text);
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-size: var(--font-size-sm);
+	}
+
+	.config-row label {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		cursor: pointer;
 	}
 </style>
