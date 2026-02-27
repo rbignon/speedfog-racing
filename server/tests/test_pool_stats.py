@@ -171,6 +171,18 @@ async def user_with_pool_data(async_session):
             )
         )
 
+        # 1 finished "slow" training on training_standard (should NOT count in stats)
+        db.add(
+            TrainingSession(
+                user_id=player.id,
+                seed_id=seed_training_std.id,
+                status=TrainingSessionStatus.FINISHED,
+                igt_ms=500000,
+                death_count=20,
+                exclude_from_stats=True,
+            )
+        )
+
         # 1 active training on training_standard (should NOT count)
         db.add(
             TrainingSession(
@@ -253,3 +265,20 @@ async def test_pool_stats_empty_user(test_client, async_session):
         assert response.status_code == 200
         data = response.json()
         assert data["pools"] == []
+
+
+@pytest.mark.asyncio
+async def test_pool_stats_excludes_slow_runs(test_client, user_with_pool_data):
+    """Slow runs (exclude_from_stats=True) are excluded from training stats."""
+    async with test_client as client:
+        response = await client.get("/api/users/pool_player/pool-stats")
+        assert response.status_code == 200
+        data = response.json()
+        pools = data["pools"]
+
+        std = next(p for p in pools if p["pool_name"] == "standard")
+        # Only the non-slow training session counts (igt_ms=100000, deaths=3)
+        assert std["training"]["runs"] == 1
+        assert std["training"]["avg_time_ms"] == 100000
+        assert std["training"]["best_time_ms"] == 100000
+        assert std["training"]["avg_deaths"] == pytest.approx(3.0)

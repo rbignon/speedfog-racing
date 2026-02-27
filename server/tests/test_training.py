@@ -505,6 +505,22 @@ async def test_create_training_session_api(test_client, training_user, training_
 
 
 @pytest.mark.asyncio
+async def test_create_training_session_api_exclude_from_stats(
+    test_client, training_user, training_seed
+):
+    """POST /api/training with exclude_from_stats=True persists the flag."""
+    async with test_client as client:
+        resp = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard", "exclude_from_stats": True},
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["exclude_from_stats"] is True
+
+
+@pytest.mark.asyncio
 async def test_create_training_session_api_conflict(test_client, training_user, training_seed):
     """POST /api/training returns 409 if user already has an active session."""
     async with test_client as client:
