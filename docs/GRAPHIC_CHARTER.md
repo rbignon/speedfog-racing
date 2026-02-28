@@ -108,6 +108,8 @@
 - Text: `#EF4444`
 - Hover: background `rgba(220, 38, 38, 0.1)`
 
+**Rage Quit** — intentional exception to the flat design rule. Skeuomorphic 3D "big red button" (radial gradient, multi-layer box-shadow, press-down animation) for dramatic effect. The only component that uses gradients.
+
 ### Cards (race cards)
 
 - Background: `#162032`

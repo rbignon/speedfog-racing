@@ -1366,22 +1366,68 @@
 		border-top: 1px solid var(--color-border);
 	}
 
+	/* Intentional departure from flat design charter —
+	   skeuomorphic "big red button" for dramatic effect */
 	.abandon-btn {
 		width: 100%;
-		padding: 0.6rem;
+		padding: 0.75rem 1rem;
 		border: none;
-		border-radius: var(--radius-sm);
-		background: var(--color-danger-dark, #dc2626);
+		border-radius: var(--radius-md);
+		background: radial-gradient(
+			ellipse at 50% 35%,
+			#f87171 0%,
+			var(--color-danger-dark, #dc2626) 50%,
+			#991b1b 100%
+		);
 		color: #fff;
 		font-family: var(--font-family);
 		font-size: var(--font-size-sm);
-		font-weight: 500;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 		cursor: pointer;
-		transition: all var(--transition);
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.15),
+			0 4px 0 #7f1d1d,
+			0 5px 8px rgba(0, 0, 0, 0.4),
+			0 0 20px rgba(239, 68, 68, 0.3);
+		/* Faster than --transition for snappy press-down feel */
+		transition: all 0.1s ease;
 	}
 
 	.abandon-btn:hover {
-		background: var(--color-danger, #ef4444);
+		background: radial-gradient(
+			ellipse at 50% 35%,
+			#fca5a5 0%,
+			var(--color-danger, #ef4444) 50%,
+			#b91c1c 100%
+		);
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.2),
+			0 4px 0 #7f1d1d,
+			0 5px 8px rgba(0, 0, 0, 0.4),
+			0 0 28px rgba(239, 68, 68, 0.45);
+	}
+
+	.abandon-btn:active {
+		background: radial-gradient(
+			ellipse at 50% 55%,
+			var(--color-danger-dark, #dc2626) 0%,
+			#b91c1c 50%,
+			#7f1d1d 100%
+		);
+		transform: translateY(3px);
+		box-shadow:
+			inset 0 2px 3px rgba(0, 0, 0, 0.3),
+			0 1px 0 #7f1d1d,
+			0 2px 4px rgba(0, 0, 0, 0.3),
+			0 0 15px rgba(239, 68, 68, 0.2);
+	}
+
+	.abandon-btn:focus-visible {
+		outline: 2px solid var(--color-danger, #ef4444);
+		outline-offset: 2px;
 	}
 
 	.abandon-error {
