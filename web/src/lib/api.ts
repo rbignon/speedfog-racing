@@ -273,8 +273,11 @@ export function getTwitchLoginUrl(): string {
 /**
  * Fetch a single race with full details.
  */
-export async function fetchRace(id: string): Promise<RaceDetail> {
-  const response = await fetch(`${API_BASE}/races/${id}`, {
+export async function fetchRace(
+  id: string,
+  customFetch: typeof fetch = fetch,
+): Promise<RaceDetail> {
+  const response = await customFetch(`${API_BASE}/races/${id}`, {
     headers: getAuthHeaders(),
   });
   return handleResponse<RaceDetail>(response);

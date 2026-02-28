@@ -77,6 +77,13 @@
 		panY = cy;
 	}
 
+	// Attach wheel listener with { passive: false } to allow preventDefault
+	$effect(() => {
+		if (!svgEl) return;
+		svgEl.addEventListener('wheel', onWheel, { passive: false });
+		return () => svgEl!.removeEventListener('wheel', onWheel);
+	});
+
 	// --- Pointer pan + pinch ---
 
 	let pointers = new Map<number, PointerEvent>();
@@ -198,7 +205,6 @@
 			class="zoomable-svg"
 			class:dragging={isDragging}
 			role="img"
-			onwheel={onWheel}
 			onpointerdown={onPointerDown}
 			onpointermove={onPointerMove}
 			onpointerup={onPointerUp}
