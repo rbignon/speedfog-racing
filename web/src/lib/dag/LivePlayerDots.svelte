@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { WsParticipant } from '$lib/websocket';
 	import type { PositionedNode } from './types';
 	import {
@@ -80,8 +81,9 @@
 			prevDeaths.set(p.id, p.death_count);
 		}
 		if (newSkulls.length > 0) {
+			const existing = untrack(() => skulls);
 			skulls = [
-				...skulls.filter((s) => performance.now() - s.startTime < LIVE_SKULL_ANIM_MS),
+				...existing.filter((s) => performance.now() - s.startTime < LIVE_SKULL_ANIM_MS),
 				...newSkulls
 			];
 		}
@@ -91,8 +93,9 @@
 	$effect(() => {
 		// Re-run when elapsed changes (every frame)
 		void elapsed;
-		if (skulls.length === 0) return;
-		skulls = skulls.filter((s) => performance.now() - s.startTime < LIVE_SKULL_ANIM_MS);
+		const current = untrack(() => skulls);
+		if (current.length === 0) return;
+		skulls = current.filter((s) => performance.now() - s.startTime < LIVE_SKULL_ANIM_MS);
 	});
 
 	// Pre-compute finished players list (avoids re-filtering every frame)
