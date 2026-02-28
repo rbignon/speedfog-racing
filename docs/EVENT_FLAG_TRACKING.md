@@ -125,7 +125,7 @@ receive event_flag { flag_id, igt_ms }
     │                  ├── node_id in zone_history? (revisit)
     │                  │       → update current_zone + igt_ms only
     │                  │       → unicast zone_update to mod
-    │                  │       → broadcast player_update to spectators
+    │                  │       → broadcast player_update to all
     │                  │
     │                  └── new discovery
     │                          → append to zone_history
@@ -150,7 +150,7 @@ Three-strategy cascade for resolving where the player is after a death/fast-trav
 
 **Strategy 3 — None**: Ambiguous or no data. No `zone_update` sent — overlay stays on previous zone.
 
-Zone queries do **not** modify `zone_history` (progression). They only update `current_zone` (overlay display pointer) and trigger `player_update` for spectators.
+Zone queries do **not** modify `zone_history` (progression). They only update `current_zone` (overlay display pointer) and trigger `player_update` for all connections (mods + spectators).
 
 ### Grace Entity ID Capture
 
@@ -188,11 +188,11 @@ LiveSplit-style gap computation. The gap is fixed (entry delta) while the player
 
 ### Client-Side Gap Computation (Mod)
 
-The mod ignores `gap_ms` and recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update`. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`, producing frame-rate gap updates.
+The mod ignores `gap_ms` and recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update` and `player_update` messages. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`. For other players, the mod interpolates their IGT by adding wall-clock elapsed time since the last update, capped at 10 seconds. This produces smooth, frame-rate gap updates for all players. The interpolation slightly over-estimates IGT during game pauses (quit-outs, loading screens), but errors are corrected at the next `player_update` (~1s).
 
 Gaps are color-coded: green for negative (ahead), soft red for positive (behind).
 
-`broadcast_player_update()` intentionally omits `gap_ms` (computing it requires the full sorted participant list).
+`broadcast_player_update()` omits `gap_ms` (computing it requires the full sorted participant list) but includes `layer_entry_igt` so mods can compute gaps client-side.
 
 ---
 

@@ -387,7 +387,7 @@ async def handle_status_update(
             graph_json=_get_graph_json(participant),
         )
     else:
-        # Broadcast player update to spectators (detached objects)
+        # Broadcast player update to all (mods + spectators, detached objects)
         await manager.broadcast_player_update(
             participant.race_id, participant, graph_json=_get_graph_json(participant)
         )
@@ -500,7 +500,7 @@ async def handle_event_flag(
     if node_id and seed_graph:
         await send_zone_update(websocket, node_id, seed_graph, participant.zone_history, locale)
 
-    # Broadcast player position to spectators (so DAG view updates)
+    # Broadcast player update to all (so mods get fresh IGT + DAG view updates)
     if is_revisit:
         await manager.broadcast_player_update(
             participant.race_id, participant, graph_json=seed_graph
@@ -559,7 +559,7 @@ async def handle_zone_query(
     # Unicast zone_update to originating mod
     await send_zone_update(websocket, node_id, graph_json, participant.zone_history, locale)
 
-    # Broadcast player update to spectators (so DAG view updates)
+    # Broadcast player update to all (so mods get fresh IGT + DAG view updates)
     await manager.broadcast_player_update(participant.race_id, participant, graph_json=graph_json)
 
 

@@ -432,10 +432,27 @@ impl RaceTracker {
             .leader_splits
             .as_ref()
             .unwrap_or(&empty_splits);
+
+        // Elapsed wall-clock ms since last leaderboard update, for IGT interpolation
+        let elapsed_ms = self
+            .race_state
+            .leaderboard_received_at
+            .map(|t| t.elapsed().as_millis().min(10_000) as i32)
+            .unwrap_or(0);
+
+        // Estimate a "playing" participant's current IGT by interpolating
+        let interpolate_igt = |p: &crate::core::protocol::ParticipantInfo| -> i32 {
+            if p.status == "playing" {
+                p.igt_ms.saturating_add(elapsed_ms)
+            } else {
+                p.igt_ms
+            }
+        };
+
         let leader_igt_ms = participants
             .first()
             .filter(|p| p.status == "playing" || p.status == "finished")
-            .map(|p| p.igt_ms)
+            .map(|p| interpolate_igt(p))
             .unwrap_or(0);
         let has_leader = !leader_splits.is_empty()
             || participants.first().is_some_and(|p| p.status == "finished");
@@ -452,11 +469,12 @@ impl RaceTracker {
                 if !has_leader {
                     return None;
                 }
-                // For self: use local IGT if available
+                // For self: use real-time local IGT
+                // For others: interpolate from last broadcast
                 let igt = if my_id.is_some_and(|id| id == &p.id) {
                     local_igt.unwrap_or(p.igt_ms)
                 } else {
-                    p.igt_ms
+                    interpolate_igt(p)
                 };
                 crate::core::compute_gap(
                     igt,

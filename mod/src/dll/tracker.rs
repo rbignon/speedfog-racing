@@ -46,6 +46,9 @@ pub struct RaceState {
     pub leader_splits: Option<HashMap<String, i32>>,
     pub race_started_at: Option<Instant>,
     pub current_zone: Option<ZoneUpdateData>,
+    /// Wall-clock time when the last leaderboard update was received,
+    /// used to interpolate other players' IGT between broadcasts.
+    pub leaderboard_received_at: Option<Instant>,
 }
 
 /// Result of reading a single flag for debug display
@@ -697,6 +700,7 @@ impl RaceTracker {
                 debug!(count = participants.len(), "[WS] Leaderboard update");
                 self.race_state.participants = participants;
                 self.race_state.leader_splits = leader_splits;
+                self.race_state.leaderboard_received_at = Some(Instant::now());
             }
             IncomingMessage::RaceStatusChange(status) => {
                 self.last_received_debug = Some(format!("race_status_change({})", status));
@@ -722,6 +726,9 @@ impl RaceTracker {
                 {
                     *p = player;
                 }
+                // Reset interpolation baseline so we don't add stale elapsed
+                // time on top of the freshly received igt_ms.
+                self.race_state.leaderboard_received_at = Some(Instant::now());
             }
             IncomingMessage::ZoneUpdate {
                 node_id,

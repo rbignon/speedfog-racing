@@ -258,11 +258,11 @@ class ConnectionManager:
         *,
         graph_json: dict[str, Any] | None = None,
     ) -> None:
-        """Broadcast a single player update to spectators.
+        """Broadcast a single player update to all connections (mods + spectators).
 
         Note: gap_ms is not included here because computing it requires the full
-        sorted participants list (for leader context). Spectators receive gap data
-        via leaderboard_update messages instead.
+        sorted participants list (for leader context). Clients receive gap data
+        via leaderboard_update messages instead; mods recompute gaps client-side.
         """
         room = self.get_room(race_id)
         if not room:
@@ -271,10 +271,17 @@ class ConnectionManager:
         connected_ids = set(room.mods.keys())
         message = PlayerUpdateMessage(
             player=participant_to_info(
-                participant, connected_ids=connected_ids, graph_json=graph_json
+                participant,
+                connected_ids=connected_ids,
+                graph_json=graph_json,
+                layer_entry_igt=get_layer_entry_igt(
+                    participant.zone_history, participant.current_layer, graph_json
+                )
+                if graph_json
+                else None,
             )
         )
-        await room.broadcast_to_spectators(message.model_dump_json())
+        await room.broadcast_to_all(message.model_dump_json())
 
     async def _broadcast_spectator_count(self, room: RaceRoom) -> None:
         """Broadcast spectator count to all spectators in a room."""

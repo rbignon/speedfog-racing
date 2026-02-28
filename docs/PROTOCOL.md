@@ -375,7 +375,7 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
 
 #### `player_update`
 
-**Spectators only.** Single player update — not sent to mod connections. See the [Spectator Connection](#websocket-spectator-connection) section.
+Single player update — broadcast to all connections (mods + spectators). See also the [Spectator Connection](#websocket-spectator-connection) section.
 
 #### `ping`
 
@@ -478,7 +478,7 @@ Sent immediately on connection (after optional auth). Full race state. Also re-s
 
 #### `player_update`
 
-Single player update. **Sent to spectators only** (mods receive `leaderboard_update` instead). Triggered by periodic `status_update` from mod, revisited nodes, or `zone_query` resolution.
+Single player update. **Broadcast to all connections** (mods + spectators). Triggered by periodic `status_update` from mod, revisited nodes, or `zone_query` resolution. Includes `layer_entry_igt` so mods can recompute gaps client-side.
 
 ```json
 {
@@ -672,7 +672,7 @@ Computed during `broadcast_leaderboard` for web spectators:
 
 #### Client-side (mod)
 
-The mod ignores `gap_ms` and recomputes gaps locally each frame using `leader_splits` + `layer_entry_igt`. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's snapshot `igt_ms`, enabling frame-rate gap updates.
+The mod ignores `gap_ms` and recomputes gaps locally each frame using `leader_splits` + `layer_entry_igt`. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's snapshot `igt_ms`. For other players, the mod interpolates their IGT by adding wall-clock elapsed time since the last `player_update` or `leaderboard_update`, capped at 10 seconds. This produces smooth, frame-rate gap updates for all players.
 
 #### Color coding
 
@@ -684,7 +684,7 @@ The mod ignores `gap_ms` and recomputes gaps locally each frame using `leader_sp
 
 `build_leader_splits(zone_history, graph_json)` walks the leader's `zone_history` and builds `{layer: first_igt_at_layer}`. Skips entries whose `node_id` is not in the graph. Deduplicates by taking the first IGT at each layer. Sent as `leader_splits` in `leaderboard_update`.
 
-`broadcast_player_update()` intentionally omits `gap_ms` (computing it requires the full sorted participant list).
+`broadcast_player_update()` omits `gap_ms` (computing it requires the full sorted participant list) but includes `layer_entry_igt` so mods can compute gaps client-side.
 
 ### DAG Access Rules
 
@@ -743,12 +743,12 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 | ------------------------------ | --------------------------------------------------- | ----------------------------------- |
 | Mod connects/disconnects       | `leaderboard_update`                                | `leaderboard_update`                |
 | `ready`                        | `leaderboard_update`                                | `leaderboard_update`                |
-| `status_update` (periodic)     | —                                                   | `player_update`                     |
+| `status_update` (periodic)     | `player_update`                                     | `player_update`                     |
 | `status_update` (READY→PLAY)   | `leaderboard_update`                                | `leaderboard_update`                |
 | `event_flag` (new node)        | `leaderboard_update`                                | `leaderboard_update`                |
-| `event_flag` (revisit)         | `zone_update` (unicast)                             | `player_update`                     |
+| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`           | `player_update`                     |
 | `event_flag` (finish)          | `leaderboard_update`                                | `race_state` + status change        |
-| `zone_query`                   | `zone_update` (unicast)                             | `player_update`                     |
+| `zone_query`                   | `zone_update` (unicast) + `player_update`           | `player_update`                     |
 | Race starts                    | `race_start` + `zone_update` + `race_status_change` | `race_state` + `race_status_change` |
 | Race finishes                  | `race_status_change`                                | `race_state` + `race_status_change` |
 | Seeds released                 | —                                                   | `race_state`                        |
