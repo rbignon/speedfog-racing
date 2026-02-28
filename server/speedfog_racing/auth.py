@@ -1,6 +1,7 @@
 """Twitch OAuth authentication and user management."""
 
 import secrets
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -134,6 +135,44 @@ async def get_user_by_twitch_username(db: AsyncSession, username: str) -> User |
     """Get user by Twitch username (case-insensitive)."""
     result = await db.execute(select(User).where(User.twitch_username.ilike(username)))
     return result.scalar_one_or_none()
+
+
+@dataclass
+class AppAccessToken:
+    """Cached Twitch app access token."""
+
+    token: str
+    expires_at: float  # time.monotonic() timestamp
+
+
+async def get_app_access_token() -> str:
+    """Get a Twitch app access token (client credentials flow).
+
+    Cached in memory; refreshes 60s before expiry.
+    """
+    cache: AppAccessToken | None = getattr(get_app_access_token, "_cache", None)
+    if cache and time.monotonic() < cache.expires_at - 60:
+        return cache.token
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            "https://id.twitch.tv/oauth2/token",
+            data={
+                "client_id": settings.twitch_client_id,
+                "client_secret": settings.twitch_client_secret,
+                "grant_type": "client_credentials",
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        token = data["access_token"]
+        expires_in = data.get("expires_in", 3600)
+
+        get_app_access_token._cache = AppAccessToken(  # type: ignore[attr-defined]
+            token=token,
+            expires_at=time.monotonic() + expires_in,
+        )
+        return token
 
 
 # =============================================================================
