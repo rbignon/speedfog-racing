@@ -142,13 +142,18 @@
 
 	// Merge REST participants with WS live status
 	let mergedParticipants = $derived.by(() => {
-		const wsStatusMap = new Map(
-			raceStore.participants.map((wp) => [wp.twitch_username, wp.status])
+		const wsMap = new Map(
+			raceStore.participants.map((wp) => [wp.twitch_username, wp])
 		);
-		return initialRace.participants.map((p) => ({
-			...p,
-			liveStatus: wsStatusMap.get(p.user.twitch_username)
-		}));
+		return initialRace.participants.map((p) => {
+			const ws = wsMap.get(p.user.twitch_username);
+			return {
+				...p,
+				liveStatus: ws?.status,
+				isLive: ws?.is_live ?? false,
+				streamUrl: ws?.stream_url ?? null
+			};
+		});
 	});
 
 	$effect(() => {
@@ -473,6 +478,8 @@
 							liveStatus={mp.liveStatus}
 							isOrganizer={mp.user.id === initialRace.organizer.id}
 							isCurrentUser={auth.user?.id === mp.user.id}
+							isLive={mp.isLive}
+							streamUrl={mp.streamUrl}
 							canRemove={isOrganizer && mp.user.id !== initialRace.organizer.id}
 							onRemove={() => handleRemoveParticipant(mp.id, mp.user.twitch_username)}
 						/>

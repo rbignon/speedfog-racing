@@ -20,6 +20,8 @@ export interface WsParticipant {
   color_index: number;
   mod_connected: boolean;
   zone_history: { node_id: string; igt_ms: number; deaths?: number }[] | null;
+  is_live?: boolean;
+  stream_url?: string | null;
 }
 
 export interface WsRaceInfo {

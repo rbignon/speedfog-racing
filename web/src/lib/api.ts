@@ -75,6 +75,8 @@ export interface Participant {
 export interface Caster {
   id: string;
   user: User;
+  is_live: boolean;
+  stream_url: string | null;
 }
 
 export interface PoolConfig {

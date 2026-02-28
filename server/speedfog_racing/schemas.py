@@ -203,6 +203,8 @@ class CasterResponse(BaseModel):
 
     id: UUID
     user: UserResponse
+    is_live: bool = False
+    stream_url: str | None = None
 
 
 class RaceResponse(BaseModel):

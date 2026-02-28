@@ -8,6 +8,7 @@ from speedfog_racing.schemas import (
     RaceResponse,
     UserResponse,
 )
+from speedfog_racing.services.twitch_live import twitch_live_service
 
 
 def format_pool_display_name(pool_name: str | None) -> str:
@@ -54,9 +55,12 @@ def participant_response(participant: Participant) -> ParticipantResponse:
 
 def caster_response(caster: Caster) -> CasterResponse:
     """Convert Caster model to CasterResponse."""
+    username = caster.user.twitch_username
     return CasterResponse(
         id=caster.id,
         user=user_response(caster.user),
+        is_live=twitch_live_service.is_live(username),
+        stream_url=twitch_live_service.stream_url(username),
     )
 
 
