@@ -26,8 +26,9 @@
 			unpredictable maze.
 		</p>
 		<p>
-			SpeedFog adds structure on top of this chaos: it generates balanced route maps where
-			every path is equally long and challenging. No lucky shortcut — only execution matters.
+			SpeedFog adds structure on top of this chaos: it generates
+			<strong>balanced route maps</strong> where every path is equally long and challenging.
+			No lucky shortcut — only execution matters.
 		</p>
 	</section>
 
@@ -47,10 +48,10 @@
 			<div class="step">
 				<span class="step-number">2</span>
 				<div>
-					<strong>Download your seed pack</strong>
+					<strong>Download and launch</strong>
 					<p>
-						Each participant receives a personalized mod pack — the same randomized
-						world for everyone. Nobody sees the layout in advance.
+						Each participant downloads a seed pack — just run the executable,
+						no setup required. Everyone gets the same randomized world.
 					</p>
 				</div>
 			</div>
@@ -81,20 +82,49 @@
 		<h2>The Route Map</h2>
 		<p>
 			Every seed generates a unique route map — a network of fog gates connecting zones
-			across the Lands Between. SpeedFog Racing displays it as a metro-style map so
-			spectators and casters can follow each player's progression in real time.
+			across the Lands Between. SpeedFog Racing displays it as a
+			<strong>metro-style map</strong> so spectators and casters can follow each player's
+			progression in real time.
 		</p>
 		<p>
-			The map is structured in layers of increasing difficulty: mini dungeons, legacy
-			dungeons, boss arenas, and major bosses. Every parallel path is balanced — same
-			length, same challenge. The final destination is always a random major boss.
+			The map is structured in <strong>layers of increasing difficulty</strong>: mini
+			dungeons, legacy dungeons, boss arenas, and major bosses. Every parallel path is
+			balanced — same length, same challenge. The final destination is always a random
+			major boss.
 		</p>
 		<div class="dag-demo">
 			<MetroDag graphJson={heroSeed} />
 		</div>
 		<p class="dag-caption">
-			An example route map. During a race, the map is blurred for participants to prevent
-			spoilers — it only reveals fully once the race ends.
+			An example route map. During a race, participants don't see the map — it is revealed
+			to everyone once the race ends.
+		</p>
+	</section>
+
+	<section class="section">
+		<h2>In-Game</h2>
+		<p>
+			During a race, a compact <strong>overlay</strong> sits in the corner of your screen —
+			no need to alt-tab. It shows your race name, in-game time, current zone, progression,
+			tier, and death count at a glance. The overlay also lists your available exits so you
+			always know where you can go next. Below it, a <strong>live leaderboard</strong>
+			tracks every participant's position in real time.
+		</p>
+		<p>
+			Zone progression is <strong>tracked automatically</strong> through fog gates — walk
+			through one and the server knows exactly where you are. Spectators and casters see
+			<strong>time gaps</strong> between players, zone by zone.
+		</p>
+		<div class="screenshot-container">
+			<img
+				src="/screenshots/ingame.png"
+				alt="SpeedFog Racing in-game overlay showing leaderboard and progression"
+				class="screenshot"
+			/>
+		</div>
+		<p class="screenshot-caption">
+			The in-game overlay during a race. Leaderboard, progression, exits, and IGT — all
+			visible without leaving the game.
 		</p>
 	</section>
 
@@ -111,22 +141,22 @@
 			<div class="feature-card">
 				<strong>Live Spectating</strong>
 				<p>
-					Spectators and casters follow the race in real time, watching each
-					player's position on the route map as they progress through the fog.
+					Spectators follow the race in real time on the route map. Casters get
+					full visibility for streaming, with dedicated OBS overlays.
 				</p>
 			</div>
 			<div class="feature-card">
-				<strong>In-Game Overlay</strong>
+				<strong>Zone Tracking</strong>
 				<p>
-					Players see a live leaderboard, their current progression tier,
-					death count, and in-game time directly on screen.
+					Every fog gate traversal is detected automatically. Spectators
+					see real-time zone progression and time gaps between players.
 				</p>
 			</div>
 			<div class="feature-card">
 				<strong>Solo Mode</strong>
 				<p>
-					Play on fresh seeds at your own pace — no account required.
-					Perfect to learn the format before joining a race.
+					Play on fresh seeds at your own pace — no account required. Your
+					sessions are saved with times, deaths, and route maps.
 				</p>
 			</div>
 			<div class="feature-card">
@@ -253,6 +283,28 @@
 		font-style: italic;
 		color: var(--color-text-disabled);
 		text-align: center;
+	}
+
+	/* Screenshots */
+	.screenshot-container {
+		background: var(--color-surface);
+		border-radius: var(--radius-lg);
+		overflow: hidden;
+		margin: 1rem 0 0.5rem;
+	}
+
+	.screenshot {
+		width: 100%;
+		height: auto;
+		display: block;
+	}
+
+	.screenshot-caption {
+		font-size: var(--font-size-sm);
+		font-style: italic;
+		color: var(--color-text-disabled);
+		text-align: center;
+		margin-top: 0.25rem;
 	}
 
 	/* Feature cards */

@@ -146,15 +146,26 @@
 
 		<h3>During the Race</h3>
 		<p>
-			Once the organizer starts the race, create a new character and begin. The
-			<strong>in-game overlay</strong> shows:
+			Once the organizer starts the race, create a new character and begin. A compact
+			<strong>in-game overlay</strong> sits in the corner of your screen:
 		</p>
 		<ul>
-			<li>Race name and your <strong>in-game time (IGT)</strong></li>
-			<li>Your current <strong>zone name</strong> and <strong>available exits</strong></li>
-			<li>Your <strong>progression tier</strong> and <strong>death count</strong></li>
-			<li>A <strong>live leaderboard</strong> with all participants</li>
+			<li><strong>Line 1</strong>: race name and in-game time (IGT)</li>
+			<li><strong>Line 2</strong>: current zone name and progression (e.g. 3/16)</li>
+			<li><strong>Line 3</strong>: zone tier and death count</li>
+			<li><strong>Exits</strong>: available fog gate exits with destination hints</li>
+			<li><strong>Leaderboard</strong>: live standings of all participants</li>
 		</ul>
+		<div class="screenshot-container">
+			<img
+				src="/screenshots/overlay-ingame.png"
+				alt="SpeedFog Racing in-game overlay"
+				class="screenshot"
+			/>
+		</div>
+		<p class="screenshot-caption">
+			The in-game overlay — race info, progression, exits, and leaderboard at a glance.
+		</p>
 		<p>
 			Your progress is tracked <strong>automatically</strong> as you walk through fog gates —
 			no manual action needed, just play.
@@ -233,8 +244,9 @@
 		<h3>Spectators</h3>
 		<p>
 			Anyone can open a race page and watch live. During setup, the route map is
-			<strong>blurred</strong> to avoid spoilers. Once the race is running, spectators see the
-			<strong>full route map</strong> with real-time player positions and progression.
+			<strong>hidden</strong> to avoid spoilers. Once the race is running, spectators see the
+			<strong>full route map</strong> with real-time player positions, zone progression, and
+			<strong>time gaps</strong> between players.
 		</p>
 
 		<h3>Casters</h3>
@@ -242,6 +254,7 @@
 			Casters are a special role assigned by the organizer. Unlike spectators, casters have
 			<strong>full visibility of the route map at all times</strong> — including during setup.
 			This is designed for streamers who want to prepare and commentate the race live.
+			Casters also see gap timing data to call out leads and close battles.
 		</p>
 		<p>
 			If you're casting, ask the organizer to add you as a caster before the race starts.
@@ -249,10 +262,34 @@
 
 		<h3>OBS Overlays</h3>
 		<p>
-			The race page provides <strong>Browser Source URLs</strong> for OBS Studio — a
-			<strong>route map overlay</strong> and a <strong>leaderboard overlay</strong>. Click
-			"OBS Overlays" on the race page to get the URLs and recommended sizes.
+			The race page provides <strong>Browser Source URLs</strong> for OBS Studio. Click
+			"OBS Overlays" on the race page to access them. Two overlays are available:
 		</p>
+		<ul>
+			<li><strong>Route map</strong> — the live DAG with player positions
+				(recommended: <strong>800 &times; 600</strong>). Supports auto-follow mode
+				to keep the camera on the leader.</li>
+			<li><strong>Leaderboard</strong> — ranked standings with progression and IGT
+				(recommended: <strong>400 &times; 800</strong>). Configurable number of
+				visible lines.</li>
+		</ul>
+		<p>
+			Both overlays use a <strong>transparent background</strong> — add them as Browser
+			Sources in OBS and they'll blend directly into your stream layout.
+		</p>
+		<!-- TODO: add screenshot at /screenshots/stream-overlay.png (recommended: 1280x720) -->
+		<!--
+		<div class="screenshot-container">
+			<img
+				src="/screenshots/stream-overlay.png"
+				alt="SpeedFog Racing OBS overlays on a stream layout"
+				class="screenshot"
+			/>
+		</div>
+		<p class="screenshot-caption">
+			Example stream layout with the route map and leaderboard overlays.
+		</p>
+		-->
 	</section>
 </main>
 
@@ -371,6 +408,28 @@
 
 	.section li {
 		margin-bottom: 0.25rem;
+	}
+
+	/* Screenshots */
+	.screenshot-container {
+		background: var(--color-surface);
+		border-radius: var(--radius-lg);
+		overflow: hidden;
+		margin: 1rem 0 0.5rem;
+	}
+
+	.screenshot {
+		width: 100%;
+		height: auto;
+		display: block;
+	}
+
+	.screenshot-caption {
+		font-size: var(--font-size-sm);
+		font-style: italic;
+		color: var(--color-text-disabled);
+		text-align: center;
+		margin-top: 0.25rem;
 	}
 
 	/* Lifecycle */
