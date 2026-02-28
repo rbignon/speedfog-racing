@@ -1,11 +1,11 @@
-"""Background task to auto-abandon participants with stale IGT."""
+"""Background task to auto-abandon inactive or no-show participants."""
 
 import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -15,14 +15,18 @@ from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 
 logger = logging.getLogger(__name__)
 
-INACTIVITY_TIMEOUT = timedelta(minutes=5)
+INACTIVITY_TIMEOUT = timedelta(minutes=15)
 POLL_INTERVAL = 60  # seconds
 
 
 async def abandon_inactive_participants(
     session_maker: async_sessionmaker[AsyncSession],
 ) -> list[uuid.UUID]:
-    """Find and abandon participants whose IGT hasn't changed in INACTIVITY_TIMEOUT.
+    """Find and abandon inactive participants in running races.
+
+    Covers two cases:
+    - PLAYING participants whose IGT hasn't changed in INACTIVITY_TIMEOUT
+    - REGISTERED/READY participants who never connected after race started
 
     Returns list of race IDs that had abandonments (for broadcasting).
     """
@@ -34,21 +38,29 @@ async def abandon_inactive_participants(
             select(Participant)
             .join(Race)
             .where(
-                Participant.status == ParticipantStatus.PLAYING,
                 Race.status == RaceStatus.RUNNING,
-                Participant.last_igt_change_at.isnot(None),
-                Participant.last_igt_change_at < cutoff,
+                or_(
+                    # PLAYING with stale IGT
+                    (Participant.status == ParticipantStatus.PLAYING)
+                    & Participant.last_igt_change_at.isnot(None)
+                    & (Participant.last_igt_change_at < cutoff),
+                    # Never connected (still REGISTERED/READY after race started)
+                    Participant.status.in_([ParticipantStatus.REGISTERED, ParticipantStatus.READY])
+                    & Race.started_at.isnot(None)
+                    & (Race.started_at < cutoff),
+                ),
             )
             .options(selectinload(Participant.race).selectinload(Race.participants))
         )
         stale_participants = result.scalars().unique().all()
 
         for p in stale_participants:
-            logger.info(
-                "Auto-abandoning participant %s (last IGT change: %s)",
-                p.id,
-                p.last_igt_change_at,
+            reason = (
+                f"last IGT change: {p.last_igt_change_at}"
+                if p.status == ParticipantStatus.PLAYING
+                else f"no-show after race start (status: {p.status.value})"
             )
+            logger.info("Auto-abandoning participant %s (%s)", p.id, reason)
             p.status = ParticipantStatus.ABANDONED
             if p.race_id not in affected_race_ids:
                 affected_race_ids.append(p.race_id)
