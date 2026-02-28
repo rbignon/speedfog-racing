@@ -2,9 +2,9 @@ import { getInvite } from "$lib/api";
 import { error } from "@sveltejs/kit";
 import type { PageLoad } from "./$types";
 
-export const load: PageLoad = async ({ params }) => {
+export const load: PageLoad = async ({ params, fetch }) => {
   try {
-    const invite = await getInvite(params.token);
+    const invite = await getInvite(params.token, fetch);
     return { invite };
   } catch {
     throw error(404, "Invite not found");

@@ -513,8 +513,11 @@ export interface AcceptInviteResponse {
 /**
  * Get public information about an invite.
  */
-export async function getInvite(token: string): Promise<InviteInfo> {
-  const response = await fetch(`${API_BASE}/invite/${token}`);
+export async function getInvite(
+  token: string,
+  customFetch: typeof fetch = fetch,
+): Promise<InviteInfo> {
+  const response = await customFetch(`${API_BASE}/invite/${token}`);
   return handleResponse<InviteInfo>(response);
 }
 
