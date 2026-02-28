@@ -4,15 +4,12 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { raceStore } from '$lib/stores/race.svelte';
 	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
-	import { MetroDagBlurred, MetroDagFull } from '$lib/dag';
+	import { MetroDagFull } from '$lib/dag';
 
 	let { data } = $props();
 
 	let raceStatus = $derived(raceStore.race?.status ?? data.race.status);
 	let liveSeed = $derived(raceStore.seed);
-	let totalLayers = $derived(liveSeed?.total_layers ?? data.race.seed_total_layers);
-	let totalNodes = $derived(liveSeed?.total_nodes ?? data.race.seed_total_nodes);
-	let totalPaths = $derived(liveSeed?.total_paths ?? data.race.seed_total_paths);
 	let follow = $derived(page.url.searchParams.get('follow') === 'true');
 	let maxLayers = $derived(
 		(() => {
@@ -56,8 +53,6 @@
 			{maxLayers}
 			showLiveDots
 		/>
-	{:else if totalNodes && totalPaths && totalLayers}
-		<MetroDagBlurred {totalLayers} {totalNodes} {totalPaths} transparent />
 	{/if}
 </div>
 
