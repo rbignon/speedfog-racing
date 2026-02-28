@@ -205,7 +205,7 @@ class ConnectionManager:
         if not room:
             return
 
-        sorted_participants = sort_leaderboard(participants)
+        sorted_participants = sort_leaderboard(participants, graph_json=graph_json)
         connected_ids = set(room.mods.keys())
 
         # Compute leader splits for gap timing
@@ -419,12 +419,16 @@ def participant_to_info(
     )
 
 
-def sort_leaderboard(participants: list[Participant]) -> list[Participant]:
+def sort_leaderboard(
+    participants: list[Participant],
+    *,
+    graph_json: dict[str, Any] | None = None,
+) -> list[Participant]:
     """Sort participants for leaderboard display.
 
     Priority:
     1. Finished players first, sorted by IGT (lowest first)
-    2. Playing players by layer (highest first), then IGT (lowest first)
+    2. Playing players by layer (highest first), then layer entry IGT (lowest first)
     3. Ready players
     4. Registered players
     5. Abandoned (DNF) players last, sorted by layer (highest first), then IGT (lowest first)
@@ -437,13 +441,24 @@ def sort_leaderboard(participants: list[Participant]) -> list[Participant]:
         "abandoned": 4,
     }
 
+    # Pre-compute layer entry IGTs for playing participants
+    entry_igts: dict[Any, int] = {}
+    if graph_json:
+        for p in participants:
+            if p.status.value == "playing":
+                entry = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
+                entry_igts[p.id] = entry if entry is not None else p.igt_ms
+
     def sort_key(p: Participant) -> tuple[int, int, int]:
         status = p.status.value
         priority = status_priority.get(status, 99)
 
         if status == "finished":
             return (priority, p.igt_ms, 0)
-        elif status in ("playing", "abandoned"):
+        elif status == "playing":
+            entry_igt = entry_igts.get(p.id, p.igt_ms)
+            return (priority, -p.current_layer, entry_igt)
+        elif status == "abandoned":
             return (priority, -p.current_layer, p.igt_ms)
         else:
             return (priority, 0, 0)

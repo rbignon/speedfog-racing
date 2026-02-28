@@ -468,6 +468,44 @@ class TestLeaderboard:
         assert sorted_list[1].status == ParticipantStatus.REGISTERED
         assert sorted_list[2].status == ParticipantStatus.ABANDONED
 
+    def test_sort_playing_same_layer_by_entry_igt(self):
+        """On same layer, player who entered first should be ranked higher."""
+        graph = {
+            "nodes": {
+                "start": {"layer": 0, "tier": 1},
+                "zone_a": {"layer": 1, "tier": 2},
+                "zone_b": {"layer": 2, "tier": 3},
+            }
+        }
+        # Player A entered layer 2 first (at IGT 100s) but has higher total IGT now
+        p1 = MockParticipant(
+            status=ParticipantStatus.PLAYING,
+            current_layer=2,
+            igt_ms=120000,
+            zone_history=[
+                {"node_id": "start", "igt_ms": 0},
+                {"node_id": "zone_a", "igt_ms": 30000},
+                {"node_id": "zone_b", "igt_ms": 100000},
+            ],
+        )
+        # Player B entered layer 2 later (at IGT 110s) but has lower total IGT
+        p2 = MockParticipant(
+            status=ParticipantStatus.PLAYING,
+            current_layer=2,
+            igt_ms=115000,
+            zone_history=[
+                {"node_id": "start", "igt_ms": 0},
+                {"node_id": "zone_a", "igt_ms": 40000},
+                {"node_id": "zone_b", "igt_ms": 110000},
+            ],
+        )
+
+        sorted_list = sort_leaderboard([p2, p1], graph_json=graph)
+
+        # Player A should be first (entered layer 2 at 100000 < 110000)
+        assert sorted_list[0].igt_ms == 120000  # p1
+        assert sorted_list[1].igt_ms == 115000  # p2
+
     def test_sort_abandoned_by_layer_then_igt(self):
         """Abandoned (DNF) players sorted by layer (highest first), then IGT."""
         p1 = MockParticipant(status=ParticipantStatus.ABANDONED, current_layer=2, igt_ms=90000)
