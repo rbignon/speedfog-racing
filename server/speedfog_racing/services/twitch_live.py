@@ -38,7 +38,7 @@ class TwitchLiveService:
         async with httpx.AsyncClient() as client:
             for i in range(0, len(usernames), BATCH_SIZE):
                 batch = usernames[i : i + BATCH_SIZE]
-                params = [("user_login", name) for name in batch]
+                params = tuple(("user_login", name) for name in batch)
                 try:
                     resp = await client.get(
                         "https://api.twitch.tv/helix/streams",

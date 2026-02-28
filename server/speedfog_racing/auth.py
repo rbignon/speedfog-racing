@@ -165,8 +165,8 @@ async def get_app_access_token() -> str:
         )
         resp.raise_for_status()
         data = resp.json()
-        token = data["access_token"]
-        expires_in = data.get("expires_in", 3600)
+        token: str = data["access_token"]
+        expires_in: int = data.get("expires_in", 3600)
 
         get_app_access_token._cache = AppAccessToken(  # type: ignore[attr-defined]
             token=token,
