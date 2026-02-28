@@ -45,8 +45,8 @@
 
 <style>
 	.watch-live {
-		background: rgba(145, 70, 255, 0.08);
-		border: 1px solid rgba(145, 70, 255, 0.2);
+		background: rgba(233, 25, 22, 0.1);
+		border: 1px solid rgba(233, 25, 22, 0.25);
 		border-radius: var(--radius-sm);
 		padding: 0.75rem;
 		margin-bottom: 0.75rem;
@@ -59,7 +59,7 @@
 		margin: 0 0 0.5rem 0;
 		font-size: var(--font-size-sm);
 		font-weight: 600;
-		color: var(--color-twitch, #9146ff);
+		color: #f87171;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -88,7 +88,7 @@
 	}
 
 	.caster-card:hover {
-		background: rgba(145, 70, 255, 0.1);
+		background: rgba(233, 25, 22, 0.15);
 	}
 
 	.caster-avatar {
@@ -103,8 +103,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: rgba(145, 70, 255, 0.15);
-		color: var(--color-twitch, #9146ff);
+		background: rgba(233, 25, 22, 0.12);
+		color: #f87171;
 		font-size: var(--font-size-sm);
 		font-weight: 600;
 	}
@@ -125,7 +125,6 @@
 
 	.caster-sub {
 		font-size: var(--font-size-xs);
-		color: var(--color-twitch, #9146ff);
-		opacity: 0.8;
+		color: var(--color-text-secondary);
 	}
 </style>

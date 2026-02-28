@@ -243,14 +243,14 @@
 	}
 
 	.twitch-link {
-		color: var(--color-twitch);
+		color: var(--color-text-secondary);
 		display: flex;
 		align-items: center;
 		flex-shrink: 0;
 	}
 
 	.twitch-link:hover {
-		color: var(--color-twitch-hover);
+		color: var(--color-text-primary);
 	}
 
 	.live-badge {
