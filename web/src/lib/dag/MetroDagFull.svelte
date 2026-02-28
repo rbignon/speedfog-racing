@@ -40,7 +40,7 @@
 		transparent?: boolean;
 		highlightIds?: Set<string>;
 		focusNodeId?: string | null;
-		hideLabels?: boolean;
+		anonymous?: boolean;
 		showLiveDots?: boolean;
 		follow?: boolean;
 		maxLayers?: number;
@@ -53,7 +53,7 @@
 		transparent = false,
 		highlightIds,
 		focusNodeId = null,
-		hideLabels = false,
+		anonymous = false,
 		showLiveDots = false,
 		follow = false,
 		maxLayers = 5
@@ -249,6 +249,7 @@
 	let popupY = $state(0);
 
 	function onNodeClick(nodeId: string, event: PointerEvent) {
+		if (anonymous) return;
 		const node = nodeMap.get(nodeId);
 		if (!node) return;
 
@@ -345,12 +346,15 @@
 		return short.slice(0, LABEL_MAX_CHARS - 1) + '\u2026';
 	}
 
+	const ANON_RADIUS = 7;
+	const ANON_COLOR = '#A0A0A0';
+
 	function nodeRadius(node: PositionedNode): number {
-		return NODE_RADIUS[node.type];
+		return anonymous ? ANON_RADIUS : NODE_RADIUS[node.type];
 	}
 
 	function nodeColor(node: PositionedNode): string {
-		return NODE_COLORS[node.type];
+		return anonymous ? ANON_COLOR : NODE_COLORS[node.type];
 	}
 
 	function labelX(node: PositionedNode): number {
@@ -497,11 +501,13 @@
 
 	<!-- Nodes -->
 	{#each layout.nodes as node}
-		<g class="dag-node" data-type={node.type} data-node-id={node.id}>
-			<title>{node.displayName}</title>
+		<g class="dag-node" data-type={anonymous ? undefined : node.type} data-node-id={node.id}>
+			{#if !anonymous}<title>{node.displayName}</title>{/if}
 
 			<g class="dag-node-shape">
-				{#if node.type === 'start'}
+				{#if anonymous}
+					<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
+				{:else if node.type === 'start'}
 					<circle cx={node.x} cy={node.y} r={nodeRadius(node)} fill={nodeColor(node)} />
 					<polygon
 						points="{node.x - 3},{node.y - 5} {node.x - 3},{node.y + 5} {node.x + 5},{node.y}"
@@ -544,7 +550,7 @@
 			</g>
 
 			<!-- Death icon (opposite side of label) -->
-			{#if !hideLabels && nodesWithDeaths.has(node.id)}
+			{#if !anonymous && nodesWithDeaths.has(node.id)}
 				<text
 					x={node.x}
 					y={labelAbove.has(node.id)
@@ -558,7 +564,7 @@
 			{/if}
 
 			<!-- Label -->
-			{#if !hideLabels}
+			{#if !anonymous}
 				<text
 					x={labelX(node)}
 					y={labelY(node)}

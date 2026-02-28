@@ -48,7 +48,7 @@
 			participants={raceStore.leaderboard}
 			raceStatus="setup"
 			transparent
-			hideLabels
+			anonymous
 			{follow}
 			{maxLayers}
 			showLiveDots
