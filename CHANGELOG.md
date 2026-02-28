@@ -2,11 +2,33 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
-## [Unreleased]
+## [1.3.2] - 2026-02-28
 
 ### Logic
 
 - Zone history now tracks backtracking — when a player returns to a previously visited zone, time and deaths are correctly attributed to each visit instead of being lumped with the wrong zone
+- Players who don't connect within 15 minutes of race start are automatically abandoned, and the race auto-finishes if all remaining players are done
+
+### Seeds
+
+- Cross-links enabled on all pools — fog gates can now connect distant branches, creating shortcuts and more route variety
+- Standard pool now requires at least 2 legacy dungeons per seed
+
+### Streaming
+
+- Casters can self-join a race with a "Cast this race" button — no need for the organizer to add them manually
+- LIVE badge on the leaderboard and caster list for participants and casters currently streaming on Twitch
+
+### In-game
+
+- Gap timer now freezes when you finish or when the race ends, instead of continuing to tick
+- Fix: players on the same zone are now sorted by who arrived first instead of total IGT
+- Fix: gap timing for other players updates smoothly in real-time instead of jumping on each server update
+
+### Website
+
+- Fix: time spent now shows correctly for abandoned players in the zone popup
+- Fix: Discord notifications are now sent when a race auto-finishes due to all players abandoning
 
 ## [1.3.1] - 2026-02-27
 
