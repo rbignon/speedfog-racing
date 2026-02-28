@@ -25,7 +25,7 @@
 	import { goto } from '$app/navigation';
 	import { deleteRace } from '$lib/api';
 	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
-	import { MetroDag, MetroDagBlurred, MetroDagProgressive, MetroDagFull } from '$lib/dag';
+	import { MetroDag, MetroDagProgressive, MetroDagFull } from '$lib/dag';
 	import { parseDagGraph } from '$lib/dag/types';
 	import { RaceReplay } from '$lib/replay';
 	import {
@@ -702,13 +702,11 @@
 				participants={raceStore.participants}
 				myParticipantId={myWsParticipantId}
 			/>
-		{:else if liveSeed?.graph_json}
+		{:else if liveSeed?.graph_json && isOrganizer}
 			<MetroDag graphJson={liveSeed.graph_json} />
-		{:else if totalNodes && totalPaths && totalLayers}
-			<MetroDagBlurred {totalLayers} {totalNodes} {totalPaths} />
 		{:else if totalLayers}
 			<div class="dag-placeholder">
-				<p class="dag-note">DAG hidden until race starts</p>
+				<p class="dag-note">Map revealed at race start</p>
 			</div>
 		{/if}
 
@@ -1056,6 +1054,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		min-height: 400px;
 	}
 
 	.dag-note {
