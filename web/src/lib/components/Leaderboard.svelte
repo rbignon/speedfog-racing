@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
 	import { PLAYER_COLORS } from '$lib/dag/constants';
+	import LiveBadge from './LiveBadge.svelte';
 
 	interface Props {
 		participants: WsParticipant[];
@@ -150,14 +151,11 @@
 						{/if}
 					</div>
 					{#if participant.is_live}
-						<a
+						<LiveBadge
 							href={participant.stream_url ?? `https://twitch.tv/${participant.twitch_username}`}
-							target="_blank"
-							rel="noopener noreferrer"
-							class="live-badge"
-							title="Watch live on Twitch"
+							small
 							onclick={(e) => e.stopPropagation()}
-						>LIVE</a>
+						/>
 					{/if}
 					{#if mode === 'running' && participant.status === 'finished'}
 						<span class="finish-icon">✓</span>
@@ -292,31 +290,6 @@
 
 	.status-text {
 		text-transform: capitalize;
-	}
-
-	.live-badge {
-		font-size: 0.55rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: #fff;
-		background: #e91916;
-		padding: 0.05rem 0.3rem;
-		border-radius: 2px;
-		text-decoration: none;
-		flex-shrink: 0;
-		align-self: center;
-		animation: pulse-live 2s ease-in-out infinite;
-	}
-
-	@keyframes pulse-live {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.7;
-		}
 	}
 
 	.finish-icon {

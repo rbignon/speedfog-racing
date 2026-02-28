@@ -117,3 +117,83 @@ async def test_check_live_status_batches_over_100():
 
     # Should have been called twice: 100 + 50
     assert mock_client.get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_poll_once_broadcasts_on_change():
+    """poll_once broadcasts leaderboard_update when live status changes."""
+    import uuid
+
+    service = TwitchLiveService()
+    service.live_usernames = set()  # start with nobody live
+
+    race_id = uuid.uuid4()
+
+    # Mock session_maker that returns race data
+    mock_session = AsyncMock()
+    mock_result = MagicMock()
+
+    mock_user = MagicMock()
+    mock_user.twitch_username = "streamer1"
+
+    mock_participant = MagicMock()
+    mock_participant.user = mock_user
+
+    mock_race = MagicMock()
+    mock_race.id = race_id
+    mock_race.participants = [mock_participant]
+    mock_race.casters = []
+    mock_race.seed = None
+
+    mock_result.scalars.return_value.all.return_value = [mock_race]
+    mock_session.execute = AsyncMock(return_value=mock_result)
+
+    mock_session_maker = MagicMock()
+    mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    # Mock ws_manager
+    mock_ws_manager = AsyncMock()
+
+    # Mock check_live_status to return streamer1 as live
+    with patch.object(service, "check_live_status", return_value={"streamer1"}):
+        await service.poll_once(mock_session_maker, ws_manager=mock_ws_manager)
+
+    # Should have broadcast because streamer1 went from offline to live
+    assert mock_ws_manager.broadcast_leaderboard.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_poll_once_no_broadcast_when_unchanged():
+    """poll_once does not broadcast when live status is unchanged."""
+    service = TwitchLiveService()
+    service.live_usernames = {"streamer1"}  # already live
+
+    mock_session = AsyncMock()
+    mock_result = MagicMock()
+
+    mock_user = MagicMock()
+    mock_user.twitch_username = "streamer1"
+
+    mock_participant = MagicMock()
+    mock_participant.user = mock_user
+
+    mock_race = MagicMock()
+    mock_race.id = __import__("uuid").uuid4()
+    mock_race.participants = [mock_participant]
+    mock_race.casters = []
+
+    mock_result.scalars.return_value.all.return_value = [mock_race]
+    mock_session.execute = AsyncMock(return_value=mock_result)
+
+    mock_session_maker = MagicMock()
+    mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_ws_manager = AsyncMock()
+
+    with patch.object(service, "check_live_status", return_value={"streamer1"}):
+        await service.poll_once(mock_session_maker, ws_manager=mock_ws_manager)
+
+    # No change, so no broadcast
+    mock_ws_manager.broadcast_leaderboard.assert_not_called()

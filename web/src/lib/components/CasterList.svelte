@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { removeCaster, fetchRace, castJoin, castLeave, type Caster, type RaceDetail } from '$lib/api';
+	import LiveBadge from './LiveBadge.svelte';
 	import ParticipantSearch from './ParticipantSearch.svelte';
 
 	interface Props {
@@ -123,13 +124,9 @@
 							</svg>
 						</a>
 						{#if caster.is_live}
-							<a
-								href={caster.stream_url ?? `https://twitch.tv/{caster.user.twitch_username}`}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="live-badge"
-								title="Watch live on Twitch"
-							>LIVE</a>
+							<LiveBadge
+								href={caster.stream_url ?? `https://twitch.tv/${caster.user.twitch_username}`}
+							/>
 						{/if}
 						{#if currentUserId && caster.user.id === currentUserId}
 							<span class="you-badge">You</span>
@@ -239,7 +236,6 @@
 
 	.name-link:hover {
 		color: var(--color-purple);
-		text-decoration: underline;
 	}
 
 	.twitch-link {
@@ -251,30 +247,6 @@
 
 	.twitch-link:hover {
 		color: var(--color-text-primary);
-	}
-
-	.live-badge {
-		font-size: 0.6rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: #fff;
-		background: #e91916;
-		padding: 0.1rem 0.35rem;
-		border-radius: 3px;
-		text-decoration: none;
-		flex-shrink: 0;
-		animation: pulse-live 2s ease-in-out infinite;
-	}
-
-	@keyframes pulse-live {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.7;
-		}
 	}
 
 	.you-badge {

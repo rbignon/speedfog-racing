@@ -565,7 +565,7 @@
 			<CasterList
 				casters={initialRace.casters}
 				editable={isOrganizer}
-				canCast={auth.isLoggedIn && !myParticipant && !isCaster && !isOrganizer}
+				canCast={auth.isLoggedIn && !myParticipant && !isCaster}
 				{isCaster}
 				currentUserId={auth.user?.id ?? null}
 				raceId={initialRace.id}

@@ -1,7 +1,11 @@
 """Twitch live status polling service."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
+import uuid
+from typing import TYPE_CHECKING
 
 import httpx
 from sqlalchemy import select
@@ -11,6 +15,9 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.auth import get_app_access_token
 from speedfog_racing.config import settings
 from speedfog_racing.models import Caster, Participant, Race, RaceStatus
+
+if TYPE_CHECKING:
+    from speedfog_racing.websocket.manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +66,13 @@ class TwitchLiveService:
 
         return live
 
-    async def _collect_usernames(self, session: AsyncSession) -> list[str]:
-        """Collect all unique twitch_usernames from active races."""
+    async def _collect_race_usernames(
+        self, session: AsyncSession
+    ) -> tuple[list[str], dict[uuid.UUID, set[str]]]:
+        """Collect twitch_usernames from active races.
+
+        Returns (all_usernames, {race_id: {usernames}}) for broadcast targeting.
+        """
         result = await session.execute(
             select(Race)
             .where(Race.status.in_([RaceStatus.SETUP, RaceStatus.RUNNING]))
@@ -71,26 +83,78 @@ class TwitchLiveService:
         )
         races = result.scalars().all()
 
-        usernames: set[str] = set()
+        all_usernames: set[str] = set()
+        race_usernames: dict[uuid.UUID, set[str]] = {}
         for race in races:
+            names: set[str] = set()
             for p in race.participants:
-                usernames.add(p.user.twitch_username.lower())
+                name = p.user.twitch_username.lower()
+                names.add(name)
+                all_usernames.add(name)
             for c in race.casters:
-                usernames.add(c.user.twitch_username.lower())
+                name = c.user.twitch_username.lower()
+                names.add(name)
+                all_usernames.add(name)
+            race_usernames[race.id] = names
 
-        return sorted(usernames)
+        return sorted(all_usernames), race_usernames
 
-    async def poll_once(self, session_maker: async_sessionmaker[AsyncSession]) -> None:
-        """Run one polling cycle: collect usernames, check Twitch, update state."""
+    async def poll_once(
+        self,
+        session_maker: async_sessionmaker[AsyncSession],
+        ws_manager: ConnectionManager | None = None,
+    ) -> None:
+        """Run one polling cycle: collect usernames, check Twitch, update state.
+
+        If ws_manager is provided and live statuses changed, broadcasts
+        leaderboard_update to affected races.
+        """
         async with session_maker() as session:
-            usernames = await self._collect_usernames(session)
+            all_usernames, race_usernames = await self._collect_race_usernames(session)
 
-        if not usernames:
+        if not all_usernames:
             self.live_usernames = set()
             return
 
-        new_live = await self.check_live_status(usernames)
+        new_live = await self.check_live_status(all_usernames)
+        old_live = self.live_usernames
         self.live_usernames = new_live
+
+        # Broadcast to affected races if live status changed
+        changed = (new_live - old_live) | (old_live - new_live)
+        if changed and ws_manager:
+            affected_race_ids = [
+                race_id for race_id, names in race_usernames.items() if names & changed
+            ]
+            if affected_race_ids:
+                await self._broadcast_live_changes(session_maker, ws_manager, affected_race_ids)
+
+    async def _broadcast_live_changes(
+        self,
+        session_maker: async_sessionmaker[AsyncSession],
+        ws_manager: ConnectionManager,
+        race_ids: list[uuid.UUID],
+    ) -> None:
+        """Broadcast leaderboard_update to races affected by live status changes."""
+        async with session_maker() as session:
+            result = await session.execute(
+                select(Race)
+                .where(Race.id.in_(race_ids))
+                .options(
+                    selectinload(Race.participants).selectinload(Participant.user),
+                    selectinload(Race.seed),
+                )
+            )
+            races = list(result.scalars().all())
+
+        for race in races:
+            graph = race.seed.graph_json if race.seed else None
+            try:
+                await ws_manager.broadcast_leaderboard(
+                    race.id, list(race.participants), graph_json=graph
+                )
+            except Exception:
+                logger.exception("Failed to broadcast live change for race %s", race.id)
 
     def is_live(self, twitch_username: str) -> bool:
         """Check if a username is currently live."""
@@ -107,12 +171,15 @@ class TwitchLiveService:
 twitch_live_service = TwitchLiveService()
 
 
-async def twitch_live_poll_loop(session_maker: async_sessionmaker[AsyncSession]) -> None:
+async def twitch_live_poll_loop(
+    session_maker: async_sessionmaker[AsyncSession],
+    ws_manager: ConnectionManager | None = None,
+) -> None:
     """Background loop that polls Twitch every POLL_INTERVAL seconds."""
     logger.info("Twitch live polling started (interval=%ds)", POLL_INTERVAL)
     while True:
         try:
-            await twitch_live_service.poll_once(session_maker)
+            await twitch_live_service.poll_once(session_maker, ws_manager=ws_manager)
             live_count = len(twitch_live_service.live_usernames)
             if live_count > 0:
                 logger.debug("Twitch live: %d users online", live_count)

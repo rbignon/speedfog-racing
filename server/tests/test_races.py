@@ -1970,6 +1970,43 @@ async def test_cast_join_finished_race(test_client, organizer, player, seed):
 
 
 @pytest.mark.asyncio
+async def test_cast_join_running_race(test_client, organizer, player, seed):
+    """Can cast-join a running race."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Cast Test"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        # Add participant so we can start
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "player1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        await client.post(
+            f"/api/races/{race_id}/start",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        # Organizer (non-participant) can cast-join during running
+        resp = await client.post(
+            f"/api/races/{race_id}/cast-join",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        caster_names = [c["user"]["twitch_username"] for c in data["casters"]]
+        assert organizer.twitch_username in caster_names
+
+
+@pytest.mark.asyncio
 async def test_cast_leave_success(test_client, organizer, player, seed):
     """Caster can self-remove."""
     async with test_client as client:

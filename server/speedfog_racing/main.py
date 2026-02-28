@@ -29,6 +29,7 @@ from speedfog_racing.websocket import (
     handle_training_mod_websocket,
     handle_training_spectator_websocket,
 )
+from speedfog_racing.websocket.manager import manager as ws_manager
 
 # Configure logging
 logging.basicConfig(
@@ -76,7 +77,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start Twitch live polling (only if Twitch credentials are configured)
     twitch_live_task = None
     if settings.twitch_client_id and settings.twitch_client_secret:
-        twitch_live_task = asyncio.create_task(twitch_live_poll_loop(async_session_maker))
+        twitch_live_task = asyncio.create_task(
+            twitch_live_poll_loop(async_session_maker, ws_manager=ws_manager)
+        )
 
     yield
 

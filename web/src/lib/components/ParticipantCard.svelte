@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Participant } from '$lib/api';
+	import LiveBadge from './LiveBadge.svelte';
 
 	interface Props {
 		participant: Participant;
@@ -45,14 +46,10 @@
 		<span class="status-text">{effectiveStatus}</span>
 	</div>
 	{#if isLive}
-		<a
+		<LiveBadge
 			href={streamUrl ?? `https://twitch.tv/${participant.user.twitch_username}`}
-			target="_blank"
-			rel="noopener noreferrer"
-			class="live-badge"
-			title="Watch live on Twitch"
 			onclick={(e) => e.stopPropagation()}
-		>LIVE</a>
+		/>
 	{/if}
 	{#if isOrganizer}
 		<span class="organizer-badge">Org</span>
@@ -133,7 +130,6 @@
 
 	.name-link:hover {
 		color: var(--color-purple);
-		text-decoration: underline;
 	}
 
 	.you-badge {
@@ -153,30 +149,6 @@
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
 		text-transform: capitalize;
-	}
-
-	.live-badge {
-		font-size: 0.6rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: #fff;
-		background: #e91916;
-		padding: 0.1rem 0.35rem;
-		border-radius: 3px;
-		text-decoration: none;
-		flex-shrink: 0;
-		animation: pulse-live 2s ease-in-out infinite;
-	}
-
-	@keyframes pulse-live {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.7;
-		}
 	}
 
 	.organizer-badge {
