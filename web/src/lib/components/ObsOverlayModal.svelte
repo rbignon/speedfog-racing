@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { copyToClipboard } from '$lib/utils/clipboard';
+
 	interface Props {
 		raceId: string;
 		onClose: () => void;
@@ -25,11 +27,8 @@
 	);
 
 	async function copyUrl(url: string, which: 'dag' | 'lb') {
-		try {
-			await navigator.clipboard.writeText(url);
-		} catch {
-			return;
-		}
+		const ok = await copyToClipboard(url);
+		if (!ok) return;
 		if (which === 'dag') {
 			dagCopied = true;
 			setTimeout(() => (dagCopied = false), 2000);

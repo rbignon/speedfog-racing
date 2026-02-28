@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PendingInvite } from '$lib/api';
+	import { copyToClipboard } from '$lib/utils/clipboard';
 
 	interface Props {
 		invite: PendingInvite;
@@ -14,7 +15,8 @@
 	async function copyInviteLink() {
 		if (!invite.token) return;
 		const url = `${window.location.origin}/invite/${invite.token}`;
-		await navigator.clipboard.writeText(url);
+		const ok = await copyToClipboard(url);
+		if (!ok) return;
 		copied = true;
 		setTimeout(() => (copied = false), 2000);
 	}

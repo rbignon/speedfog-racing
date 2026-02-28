@@ -1,21 +1,13 @@
 <script lang="ts">
+	import { copyToClipboard } from '$lib/utils/clipboard';
+
 	let copied = $state(false);
 
 	async function copyLink() {
-		try {
-			await navigator.clipboard.writeText(window.location.href);
-			copied = true;
-			setTimeout(() => (copied = false), 2000);
-		} catch {
-			const input = document.createElement('input');
-			input.value = window.location.href;
-			document.body.appendChild(input);
-			input.select();
-			document.execCommand('copy');
-			document.body.removeChild(input);
-			copied = true;
-			setTimeout(() => (copied = false), 2000);
-		}
+		const ok = await copyToClipboard(window.location.href);
+		if (!ok) return;
+		copied = true;
+		setTimeout(() => (copied = false), 2000);
 	}
 
 	async function handleClick() {
