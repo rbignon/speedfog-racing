@@ -22,6 +22,7 @@ from speedfog_racing.rate_limit import limiter
 from speedfog_racing.services import scan_pool
 from speedfog_racing.services.i18n import load_translations
 from speedfog_racing.services.inactivity_monitor import inactivity_monitor_loop
+from speedfog_racing.services.twitch_live import twitch_live_poll_loop
 from speedfog_racing.websocket import (
     handle_mod_websocket,
     handle_spectator_websocket,
@@ -72,9 +73,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start inactivity monitor
     monitor_task = asyncio.create_task(inactivity_monitor_loop(async_session_maker))
 
+    # Start Twitch live polling (only if Twitch credentials are configured)
+    twitch_live_task = None
+    if settings.twitch_client_id and settings.twitch_client_secret:
+        twitch_live_task = asyncio.create_task(twitch_live_poll_loop(async_session_maker))
+
     yield
 
     # Shutdown
+    if twitch_live_task:
+        twitch_live_task.cancel()
+        try:
+            await twitch_live_task
+        except asyncio.CancelledError:
+            pass
     monitor_task.cancel()
     try:
         await monitor_task

@@ -79,6 +79,8 @@ class ParticipantInfo(BaseModel):
     zone_history: list[dict[str, object]] | None = None
     gap_ms: int | None = None
     layer_entry_igt: int | None = None
+    is_live: bool = False
+    stream_url: str | None = None
 
 
 class RaceInfo(BaseModel):

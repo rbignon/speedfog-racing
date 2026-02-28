@@ -10,6 +10,7 @@ from fastapi import WebSocket
 
 from speedfog_racing.models import Participant
 from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
+from speedfog_racing.services.twitch_live import twitch_live_service
 from speedfog_racing.websocket.schemas import (
     LeaderboardUpdateMessage,
     ParticipantInfo,
@@ -416,6 +417,8 @@ def participant_to_info(
         zone_history=participant.zone_history,
         gap_ms=gap_ms,
         layer_entry_igt=layer_entry_igt,
+        is_live=twitch_live_service.is_live(participant.user.twitch_username),
+        stream_url=twitch_live_service.stream_url(participant.user.twitch_username),
     )
 
 
