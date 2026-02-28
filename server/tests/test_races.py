@@ -1858,3 +1858,158 @@ async def test_abandon_race_registered_participant(test_client, organizer, playe
             headers={"Authorization": f"Bearer {player.api_token}"},
         )
         assert response.status_code == 200
+
+
+# --- cast-join / cast-leave ---
+
+
+@pytest.mark.asyncio
+async def test_cast_join_success(test_client, organizer, player, seed):
+    """Authenticated user can self-join as caster."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Cast Test"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/races/{race_id}/cast-join",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        caster_names = [c["user"]["twitch_username"] for c in data["casters"]]
+        assert "player1" in caster_names
+
+
+@pytest.mark.asyncio
+async def test_cast_join_already_participant(test_client, organizer, player, seed):
+    """Cannot cast-join if already a participant."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Cast Test"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        # Add as participant first
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "player1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        resp = await client.post(
+            f"/api/races/{race_id}/cast-join",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_cast_join_already_caster(test_client, organizer, player, seed):
+    """Cannot cast-join twice."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Cast Test"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        await client.post(
+            f"/api/races/{race_id}/cast-join",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        resp = await client.post(
+            f"/api/races/{race_id}/cast-join",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_cast_join_finished_race(test_client, organizer, player, seed):
+    """Cannot cast-join a finished race."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Cast Test"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        # Add participant so we can start
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "player1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        await client.post(
+            f"/api/races/{race_id}/start",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        await client.post(
+            f"/api/races/{race_id}/finish",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        # Use organizer since player is a participant
+        resp = await client.post(
+            f"/api/races/{race_id}/cast-join",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_cast_leave_success(test_client, organizer, player, seed):
+    """Caster can self-remove."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Cast Test"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        # Join as caster
+        await client.post(
+            f"/api/races/{race_id}/cast-join",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+
+        # Leave
+        resp = await client.post(
+            f"/api/races/{race_id}/cast-leave",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        caster_names = [c["user"]["twitch_username"] for c in data["casters"]]
+        assert "player1" not in caster_names
+
+
+@pytest.mark.asyncio
+async def test_cast_leave_not_caster(test_client, organizer, player, seed):
+    """Cannot leave if not a caster."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Cast Test"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/races/{race_id}/cast-leave",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert resp.status_code == 404

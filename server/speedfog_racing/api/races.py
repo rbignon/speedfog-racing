@@ -932,6 +932,89 @@ async def leave_race(
     await db.commit()
 
 
+@router.post("/{race_id}/cast-join", response_model=RaceDetailResponse)
+async def cast_join(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RaceDetailResponse:
+    """Self-register as a caster for a race."""
+    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+
+    if race.status not in (RaceStatus.SETUP, RaceStatus.RUNNING):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only join as caster during setup or running",
+        )
+
+    # Mutual exclusion: cannot be both participant and caster
+    for p in race.participants:
+        if p.user_id == user.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You are a participant in this race",
+            )
+
+    # Check not already a caster
+    for c in race.casters:
+        if c.user_id == user.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You are already a caster for this race",
+            )
+
+    caster = Caster(race_id=race.id, user_id=user.id)
+    db.add(caster)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You are already a caster for this race",
+        )
+
+    # Expire cached race so reload fetches fresh casters
+    db.expire(race)
+    race = await _get_race_or_404(
+        db, race_id, load_participants=True, load_casters=True, load_invites=True
+    )
+    return _race_detail_response(race, user=user)
+
+
+@router.post("/{race_id}/cast-leave", response_model=RaceDetailResponse)
+async def cast_leave(
+    race_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RaceDetailResponse:
+    """Self-remove as a caster from a race."""
+    race = await _get_race_or_404(db, race_id)
+
+    result = await db.execute(
+        select(Caster).where(
+            Caster.race_id == race.id,
+            Caster.user_id == user.id,
+        )
+    )
+    caster = result.scalar_one_or_none()
+
+    if not caster:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You are not a caster for this race",
+        )
+
+    await db.delete(caster)
+    await db.commit()
+
+    db.expire(race)
+    race = await _get_race_or_404(
+        db, race_id, load_participants=True, load_casters=True, load_invites=True
+    )
+    return _race_detail_response(race, user=user)
+
+
 @router.post("/{race_id}/start", response_model=RaceResponse)
 async def start_race(
     race_id: UUID,
