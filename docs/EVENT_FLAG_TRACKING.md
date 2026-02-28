@@ -198,14 +198,14 @@ Gaps are color-coded: green for negative (ahead), soft red for positive (behind)
 
 ## Constants Summary
 
-| Constant               | Value      | Location                | Purpose                                 |
-| ---------------------- | ---------- | ----------------------- | --------------------------------------- |
-| Poll interval          | 100ms      | `tracker.rs`            | Event flag read frequency               |
-| `ZONE_REVEAL_DELAY`    | 2s         | `tracker.rs`            | Delay before showing zone after loading |
-| `EVENT_FLAG_BASE`      | 1040292800 | `output.py`             | First SpeedFog event flag ID            |
-| Flag range             | 800-999    | category 1040292        | Our offset range within FogRando's cat  |
-| Divisor                | 1000       | game memory             | Flags per category page                 |
-| Max tree iterations    | 64         | `event_flags.rs`        | Guard against infinite tree traversal   |
-| Status update interval | 1s         | `tracker.rs`            | Throttle for IGT/death broadcasts       |
-| Inactivity timeout     | 5min       | `inactivity_monitor.py` | Auto-abandon threshold                  |
-| Inactivity poll        | 60s        | `inactivity_monitor.py` | Monitor check frequency                 |
+| Constant               | Value      | Location                | Purpose                                      |
+| ---------------------- | ---------- | ----------------------- | -------------------------------------------- |
+| Poll interval          | 100ms      | `tracker.rs`            | Event flag read frequency                    |
+| `ZONE_REVEAL_DELAY`    | 2s         | `tracker.rs`            | Delay before showing zone after loading      |
+| `EVENT_FLAG_BASE`      | 1040292800 | `output.py`             | First SpeedFog event flag ID                 |
+| Flag range             | 800-999    | category 1040292        | Our offset range within FogRando's cat       |
+| Divisor                | 1000       | game memory             | Flags per category page                      |
+| Max tree iterations    | 64         | `event_flags.rs`        | Guard against infinite tree traversal        |
+| Status update interval | 1s         | `tracker.rs`            | Throttle for IGT/death broadcasts            |
+| Inactivity timeout     | 15min      | `inactivity_monitor.py` | Auto-abandon threshold (stale IGT + no-show) |
+| Inactivity poll        | 60s        | `inactivity_monitor.py` | Monitor check frequency                      |

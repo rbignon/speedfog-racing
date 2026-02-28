@@ -28,7 +28,7 @@ SETUP ──→ RUNNING ──→ FINISHED
 
 1. **Auto-finish**: when all participants reach `FINISHED` or `ABANDONED`, `check_race_auto_finish()` transitions the race. Uses optimistic locking (see below).
 2. **Force-finish**: `POST /races/{id}/finish` (organizer). Same optimistic lock mechanism.
-3. **Inactivity monitor**: when the last active participant is auto-abandoned (5 min no IGT change), the monitor calls `check_race_auto_finish()`.
+3. **Inactivity monitor**: when the last active participant is auto-abandoned (15 min stale IGT or no-show), the monitor calls `check_race_auto_finish()`.
 
 **RUNNING or FINISHED → SETUP** (`POST /races/{id}/reset`, organizer only)
 
@@ -55,17 +55,17 @@ If `rowcount == 0`, the transition was lost to a concurrent update → HTTP 409 
 
 ```
 REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
-                            │
-                            └──→ ABANDONED
+     │           │          │
+     └───────────┴──────────┴──→ ABANDONED
 ```
 
-| Status     | Description                              |
-| ---------- | ---------------------------------------- |
-| REGISTERED | Signed up for the race                   |
-| READY      | Mod connected and ready signal sent      |
-| PLAYING    | Currently racing (IGT ticking)           |
-| FINISHED   | Completed the race (boss kill)           |
-| ABANDONED  | Left the race (inactivity or disconnect) |
+| Status     | Description                                               |
+| ---------- | --------------------------------------------------------- |
+| REGISTERED | Signed up for the race                                    |
+| READY      | Mod connected and ready signal sent                       |
+| PLAYING    | Currently racing (IGT ticking)                            |
+| FINISHED   | Completed the race (boss kill)                            |
+| ABANDONED  | Left the race (inactivity, no-show, or voluntary abandon) |
 
 ### Transitions
 
@@ -85,10 +85,11 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 - Calls `check_race_auto_finish()` for the race.
 - Implementation note: the finish handler uses two separate DB sessions to avoid nested-session deadlocks in SQLite tests. The `event_flag` handler commits progress, exits its session, then calls `handle_finished()` in a new session.
 
-**PLAYING → ABANDONED** — two paths:
+**REGISTERED / READY / PLAYING → ABANDONED** — three paths:
 
-1. **Inactivity monitor**: background loop checks every 60s for participants with `last_igt_change_at < now - 5min`. Marks them `ABANDONED` and triggers auto-finish check.
-2. No explicit "abandon" API for race participants (training sessions have `POST /training/{id}/abandon`).
+1. **Inactivity monitor** (PLAYING): background loop checks every 60s for participants with `last_igt_change_at < now - 15min`. Marks them `ABANDONED` and triggers auto-finish check.
+2. **No-show monitor** (REGISTERED/READY): same loop also catches participants who never started playing when `race.started_at < now - 15min`. Marks them `ABANDONED`.
+3. **Voluntary abandon**: `POST /races/{id}/abandon` (participant). Accepts REGISTERED, READY, or PLAYING status. Triggers auto-finish check.
 
 ### Terminal States
 
@@ -169,12 +170,14 @@ Participants are sorted for display using a stable sort with composite key:
 3. `race_status_change(running)` → all (mods + spectators)
 4. `race_state` → each spectator (unicast, per-connection graph gating)
 
-### Race Finish (auto or force)
+### Race Finish (auto-finish, force-finish, abandon, or inactivity)
 
 1. `race_state` → each spectator (with `status: finished` + full zone_history)
 2. `race_status_change(finished)` → all
 3. `leaderboard_update` → all
-4. Discord notification (fire-and-forget)
+4. `fire_race_finished_notifications(race)` — fires on **all** finish paths:
+   - Discord webhook (public races only, with podium)
+   - Discord scheduled event → COMPLETED (if event exists)
 
 The ordering ensures spectators have full graph data before the status change UI update triggers.
 
