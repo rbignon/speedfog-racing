@@ -476,6 +476,96 @@ describe("computeVisitors with nodeLayers (outcome)", () => {
   });
 });
 
+describe("computeVisitors with backtracking", () => {
+  const nodeLayers = new Map([
+    ["start", 0],
+    ["zone_a", 1],
+    ["zone_b", 2],
+    ["zone_c", 3],
+  ]);
+
+  it("aggregates time across multiple visits to the same zone", () => {
+    const participants = [
+      {
+        id: "p1",
+        twitch_display_name: "Alice",
+        twitch_username: "alice",
+        status: "finished" as const,
+        current_zone: "zone_c",
+        color_index: 0,
+        igt_ms: 500000,
+        death_count: 5,
+        current_layer: 3,
+        mod_connected: false,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 60000 }, // visit 1: 60s
+          { node_id: "zone_b", igt_ms: 120000 },
+          { node_id: "zone_a", igt_ms: 200000 }, // visit 2 (backtrack): 50s
+          { node_id: "zone_b", igt_ms: 250000 },
+          { node_id: "zone_c", igt_ms: 350000 },
+        ],
+      },
+    ];
+    const visitors = computeVisitors("zone_a", participants, nodeLayers);
+    expect(visitors).toHaveLength(1);
+    expect(visitors[0].arrivedAtMs).toBe(60000); // first visit
+    expect(visitors[0].timeSpentMs).toBe(110000); // 60000 + 50000
+  });
+
+  it("aggregates deaths across multiple visits", () => {
+    const participants = [
+      {
+        id: "p1",
+        twitch_display_name: "Alice",
+        twitch_username: "alice",
+        status: "finished" as const,
+        current_zone: "zone_c",
+        color_index: 0,
+        igt_ms: 500000,
+        death_count: 8,
+        current_layer: 3,
+        mod_connected: false,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 60000, deaths: 3 },
+          { node_id: "zone_b", igt_ms: 120000 },
+          { node_id: "zone_a", igt_ms: 200000, deaths: 2 },
+          { node_id: "zone_b", igt_ms: 250000 },
+          { node_id: "zone_c", igt_ms: 350000 },
+        ],
+      },
+    ];
+    const visitors = computeVisitors("zone_a", participants, nodeLayers);
+    expect(visitors[0].deaths).toBe(5); // 3 + 2
+  });
+
+  it("uses last visit outcome for backtracked zone", () => {
+    const participants = [
+      {
+        id: "p1",
+        twitch_display_name: "Alice",
+        twitch_username: "alice",
+        status: "abandoned" as const,
+        current_zone: "zone_a",
+        color_index: 0,
+        igt_ms: 300000,
+        death_count: 10,
+        current_layer: 2,
+        mod_connected: false,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 60000 }, // first: cleared (→ zone_b)
+          { node_id: "zone_b", igt_ms: 120000 },
+          { node_id: "zone_a", igt_ms: 200000 }, // last: abandoned
+        ],
+      },
+    ];
+    const visitors = computeVisitors("zone_a", participants, nodeLayers);
+    expect(visitors[0].outcome).toBe("abandoned"); // last visit outcome
+  });
+});
+
 describe("formatIgt", () => {
   it("formats minutes and seconds", () => {
     expect(formatIgt(65000)).toBe("1:05");

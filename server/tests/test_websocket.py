@@ -783,3 +783,83 @@ class TestGapComputation:
         participant = MockParticipant(user=user, status=ParticipantStatus.PLAYING)
         info = participant_to_info(participant)
         assert info.gap_ms is None
+
+    def test_leader_splits_ignore_backtrack_entries(self):
+        """Backtrack entries in zone_history should not affect leader splits."""
+        from speedfog_racing.websocket.manager import build_leader_splits
+
+        history = [
+            {"node_id": "start", "igt_ms": 0},
+            {"node_id": "zone_a", "igt_ms": 60000},
+            {"node_id": "zone_b", "igt_ms": 120000},
+            {"node_id": "zone_a", "igt_ms": 200000},  # backtrack
+            {"node_id": "zone_b", "igt_ms": 250000},  # revisit
+            {"node_id": "zone_c", "igt_ms": 350000},
+        ]
+        graph_json = {
+            "nodes": {
+                "start": {"layer": 0},
+                "zone_a": {"layer": 1},
+                "zone_b": {"layer": 2},
+                "zone_c": {"layer": 3},
+            }
+        }
+        splits = build_leader_splits(history, graph_json)
+        # Should use FIRST entry per layer, ignoring backtracks
+        assert splits == {0: 0, 1: 60000, 2: 120000, 3: 350000}
+
+
+class TestEventFlagBacktracking:
+    """Test event flag handling with zone backtracking."""
+
+    def test_event_flag_revisit_appends_to_zone_history(self):
+        """Revisiting a node should append a new entry to zone_history."""
+        # Simulate the logic from handle_event_flag with the new always-append behavior
+        # We test the data mutation logic directly since the handler requires full WS setup
+        old_history = [
+            {"node_id": "start", "igt_ms": 0},
+            {"node_id": "zone_a", "igt_ms": 60000},
+            {"node_id": "zone_b", "igt_ms": 120000},
+        ]
+        node_id = "zone_a"  # revisit
+        igt = 200000
+        node_layer = 1  # same as before
+        current_layer = 2  # high watermark
+
+        is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
+        assert not is_first_visit  # confirm it's a revisit
+
+        # Always append (new behavior)
+        new_entry = {"node_id": node_id, "igt_ms": igt}
+        new_history = [*old_history, new_entry]
+
+        # current_layer should NOT regress
+        new_layer = current_layer
+        if node_layer > current_layer:
+            new_layer = node_layer
+
+        assert len(new_history) == 4  # was 3, now 4
+        assert new_history[-1] == {"node_id": "zone_a", "igt_ms": 200000}
+        assert new_layer == 2  # unchanged (high watermark)
+
+    def test_deaths_attributed_to_last_visit_of_backtracked_zone(self):
+        """When player backtracks, deaths go to the most recent zone_history entry."""
+        zone_history = [
+            {"node_id": "start", "igt_ms": 0},
+            {"node_id": "zone_a", "igt_ms": 60000},
+            {"node_id": "zone_b", "igt_ms": 120000},
+            {"node_id": "zone_a", "igt_ms": 200000},  # backtrack
+        ]
+        current_zone = "zone_a"
+        delta = 3
+
+        # New behavior: iterate in reverse to find last matching entry
+        history = [dict(e) for e in zone_history]
+        for entry in reversed(history):
+            if entry.get("node_id") == current_zone:
+                entry["deaths"] = entry.get("deaths", 0) + delta
+                break
+
+        # Deaths should be on the LAST zone_a entry (index 3), NOT the first (index 1)
+        assert history[1].get("deaths") is None  # first visit untouched
+        assert history[3]["deaths"] == 3  # last visit gets deaths

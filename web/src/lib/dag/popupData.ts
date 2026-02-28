@@ -214,22 +214,51 @@ export function computeVisitors(
   const visitors: PopupVisitor[] = [];
   for (const p of participants) {
     if (!p.zone_history) continue;
-    const idx = p.zone_history.findIndex((e) => e.node_id === nodeId);
-    if (idx === -1) continue;
-    const entry = p.zone_history[idx];
-    const isLast = idx >= p.zone_history.length - 1;
 
-    let timeSpentMs: number | undefined;
-    if (!isLast) {
-      timeSpentMs = p.zone_history[idx + 1].igt_ms - entry.igt_ms;
-    } else if (p.status === "finished" || p.status === "playing") {
-      timeSpentMs = p.igt_ms - entry.igt_ms;
+    // Collect all visits to this node
+    const visitIndices: number[] = [];
+    for (let i = 0; i < p.zone_history.length; i++) {
+      if (p.zone_history[i].node_id === nodeId) {
+        visitIndices.push(i);
+      }
+    }
+    if (visitIndices.length === 0) continue;
+
+    // First visit: arrival time
+    const firstIdx = visitIndices[0];
+    const arrivedAtMs = p.zone_history[firstIdx].igt_ms;
+
+    // Aggregate time and deaths across all visits
+    let totalTime = 0;
+    let totalDeaths = 0;
+    let hasTime = false;
+    for (const idx of visitIndices) {
+      const entry = p.zone_history[idx];
+      const isLast = idx >= p.zone_history.length - 1;
+      let segmentTime: number;
+      if (!isLast) {
+        segmentTime = p.zone_history[idx + 1].igt_ms - entry.igt_ms;
+        hasTime = true;
+      } else if (p.status === "finished" || p.status === "playing") {
+        segmentTime = p.igt_ms - entry.igt_ms;
+        hasTime = true;
+      } else {
+        segmentTime = 0;
+      }
+      totalTime += Math.max(0, segmentTime);
+      totalDeaths += entry.deaths ?? 0;
     }
 
-    const nextNodeId = isLast ? undefined : p.zone_history[idx + 1].node_id;
+    // Outcome from last visit
+    const lastIdx = visitIndices[visitIndices.length - 1];
+    const lastEntry = p.zone_history[lastIdx];
+    const isLastOverall = lastIdx >= p.zone_history.length - 1;
+    const nextNodeId = isLastOverall
+      ? undefined
+      : p.zone_history[lastIdx + 1].node_id;
     const outcome = computeOutcome(
-      isLast,
-      entry.node_id,
+      isLastOverall,
+      lastEntry.node_id,
       nextNodeId,
       p.status,
       nodeLayers,
@@ -238,10 +267,9 @@ export function computeVisitors(
     visitors.push({
       displayName: p.twitch_display_name || p.twitch_username,
       color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
-      arrivedAtMs: entry.igt_ms,
-      timeSpentMs:
-        timeSpentMs != null && timeSpentMs > 0 ? timeSpentMs : undefined,
-      deaths: entry.deaths && entry.deaths > 0 ? entry.deaths : undefined,
+      arrivedAtMs,
+      timeSpentMs: hasTime && totalTime > 0 ? totalTime : undefined,
+      deaths: totalDeaths > 0 ? totalDeaths : undefined,
       outcome,
     });
   }

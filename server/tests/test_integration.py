@@ -971,8 +971,10 @@ def test_event_flag_unknown_ignored(integration_client, race_with_participants, 
     assert history is None
 
 
-def test_event_flag_duplicate_ignored(integration_client, race_with_participants, integration_db):
-    """Sending the same event flag twice doesn't duplicate zone_history entries."""
+def test_event_flag_revisit_appends_to_zone_history(
+    integration_client, race_with_participants, integration_db
+):
+    """Sending the same event flag twice appends both visits to zone_history."""
     import asyncio
 
     race_id = race_with_participants["race_id"]
@@ -988,15 +990,14 @@ def test_event_flag_duplicate_ignored(integration_client, race_with_participants
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
 
-        # Send same flag twice
+        # Send same flag twice (first visit + revisit)
         mod0.send_event_flag(9000000, igt_ms=10000)
-        mod0.receive_until_type("leaderboard_update")  # leaderboard_update (skip zone_update)
+        mod0.receive_until_type("leaderboard_update")  # first visit: leaderboard_update
 
         mod0.send_event_flag(9000000, igt_ms=11000)
-        # No leaderboard_update for duplicate -- verify with a ready
-        mod0.send_ready()
-        msg = mod0.receive_until_type("leaderboard_update")
-        assert msg["type"] == "leaderboard_update"
+        # Revisit: player_update (not leaderboard_update)
+        msg = mod0.receive_until_type("player_update")
+        assert msg["type"] == "player_update"
 
     async def check_history():
         async with integration_db() as db:
@@ -1011,8 +1012,11 @@ def test_event_flag_duplicate_ignored(integration_client, race_with_participants
 
     history = asyncio.run(check_history())
     assert history is not None
-    assert len(history) == 1  # Not duplicated
+    assert len(history) == 2  # Both visits recorded
     assert history[0]["node_id"] == "node_a"
+    assert history[0]["igt_ms"] == 10000
+    assert history[1]["node_id"] == "node_a"
+    assert history[1]["igt_ms"] == 11000
 
 
 def test_event_flag_lower_layer_recorded_without_regressing(
