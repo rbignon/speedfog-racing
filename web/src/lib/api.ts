@@ -412,6 +412,28 @@ export async function leaveRace(raceId: string): Promise<void> {
 }
 
 /**
+ * Self-register as a caster for a race.
+ */
+export async function castJoin(raceId: string): Promise<RaceDetail> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/cast-join`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<RaceDetail>(response);
+}
+
+/**
+ * Self-remove as a caster from a race.
+ */
+export async function castLeave(raceId: string): Promise<RaceDetail> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/cast-leave`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<RaceDetail>(response);
+}
+
+/**
  * Start a race immediately.
  */
 export async function startRace(raceId: string): Promise<Race> {

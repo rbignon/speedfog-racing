@@ -1,18 +1,30 @@
 <script lang="ts">
-	import { removeCaster, fetchRace, type Caster, type RaceDetail } from '$lib/api';
+	import { removeCaster, fetchRace, castJoin, castLeave, type Caster, type RaceDetail } from '$lib/api';
 	import ParticipantSearch from './ParticipantSearch.svelte';
 
 	interface Props {
 		casters: Caster[];
 		editable?: boolean;
+		canCast?: boolean;
+		isCaster?: boolean;
+		currentUserId?: string | null;
 		raceId?: string;
 		onRaceUpdated?: (race: RaceDetail) => void;
 	}
 
-	let { casters, editable = false, raceId, onRaceUpdated }: Props = $props();
+	let {
+		casters,
+		editable = false,
+		canCast = false,
+		isCaster = false,
+		currentUserId = null,
+		raceId,
+		onRaceUpdated
+	}: Props = $props();
 
 	let showSearch = $state(false);
 	let error = $state<string | null>(null);
+	let casting = $state(false);
 
 	async function handleRemove(caster: Caster) {
 		if (!raceId) return;
@@ -35,9 +47,37 @@
 			onRaceUpdated(updated);
 		}
 	}
+
+	async function handleCastJoin() {
+		if (!raceId) return;
+		casting = true;
+		error = null;
+		try {
+			const updated = await castJoin(raceId);
+			onRaceUpdated?.(updated);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to join as caster';
+		} finally {
+			casting = false;
+		}
+	}
+
+	async function handleCastLeave() {
+		if (!raceId) return;
+		casting = true;
+		error = null;
+		try {
+			const updated = await castLeave(raceId);
+			onRaceUpdated?.(updated);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to leave as caster';
+		} finally {
+			casting = false;
+		}
+	}
 </script>
 
-{#if casters.length > 0 || editable}
+{#if casters.length > 0 || editable || canCast}
 	<div class="caster-section">
 		<h3>
 			Casters{#if casters.length > 0}
@@ -82,14 +122,34 @@
 								<line x1="10" y1="14" x2="21" y2="3" />
 							</svg>
 						</a>
-						{#if editable}
-							<button class="remove-btn" onclick={() => handleRemove(caster)} title="Remove caster">
+						{#if currentUserId && caster.user.id === currentUserId}
+							<span class="you-badge">You</span>
+							<button
+								class="remove-btn"
+								onclick={handleCastLeave}
+								disabled={casting}
+								title="Leave casting"
+							>
+								&times;
+							</button>
+						{:else if editable}
+							<button
+								class="remove-btn"
+								onclick={() => handleRemove(caster)}
+								title="Remove caster"
+							>
 								&times;
 							</button>
 						{/if}
 					</li>
 				{/each}
 			</ul>
+		{/if}
+
+		{#if canCast}
+			<button class="add-btn" onclick={handleCastJoin} disabled={casting}>
+				{casting ? 'Joining...' : 'Cast this race'}
+			</button>
 		{/if}
 
 		{#if editable}
@@ -184,6 +244,18 @@
 		color: var(--color-twitch-hover);
 	}
 
+	.you-badge {
+		font-size: 0.65rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-purple);
+		background: rgba(168, 85, 247, 0.15);
+		padding: 0.1rem 0.35rem;
+		border-radius: 3px;
+		font-weight: 600;
+		flex-shrink: 0;
+	}
+
 	.remove-btn {
 		background: none;
 		border: none;
@@ -222,6 +294,11 @@
 	.add-btn:hover {
 		border-color: var(--color-purple);
 		color: var(--color-purple);
+	}
+
+	.add-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.search-row {

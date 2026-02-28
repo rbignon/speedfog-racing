@@ -413,7 +413,12 @@
 				/>
 			</div>
 
-			<CasterList casters={initialRace.casters} />
+			<CasterList
+				casters={initialRace.casters}
+				currentUserId={auth.user?.id ?? null}
+				raceId={initialRace.id}
+				onRaceUpdated={handleRaceUpdated}
+			/>
 
 			{#if isOrganizer}
 				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
@@ -442,6 +447,15 @@
 					{/if}
 				</div>
 			{/if}
+
+			<CasterList
+				casters={initialRace.casters}
+				canCast={auth.isLoggedIn && !myParticipant && !isCaster}
+				{isCaster}
+				currentUserId={auth.user?.id ?? null}
+				raceId={initialRace.id}
+				onRaceUpdated={handleRaceUpdated}
+			/>
 
 			{#if isOrganizer}
 				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
@@ -544,6 +558,9 @@
 			<CasterList
 				casters={initialRace.casters}
 				editable={isOrganizer}
+				canCast={auth.isLoggedIn && !myParticipant && !isCaster && !isOrganizer}
+				{isCaster}
+				currentUserId={auth.user?.id ?? null}
 				raceId={initialRace.id}
 				onRaceUpdated={handleRaceUpdated}
 			/>
