@@ -188,9 +188,15 @@ LiveSplit-style gap computation. The gap is fixed (entry delta) while the player
 
 "Within budget" means `igt_ms <= leader_splits[current_layer + 1]` — the player hasn't used more time on this layer than the leader did.
 
+### Leaderboard Sorting
+
+Players on the same layer are sorted by layer entry IGT (who arrived first), not total IGT. This ensures the true leader on a layer is the one who reached it first, regardless of their current total IGT. When `graph_json` is not available, the sort falls back to total IGT.
+
 ### Client-Side Gap Computation (Mod)
 
-The mod ignores `gap_ms` and recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update` and `player_update` messages. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`. For other players, the mod interpolates their IGT by adding wall-clock elapsed time since the last update, capped at 10 seconds. This produces smooth, frame-rate gap updates for all players. The interpolation slightly over-estimates IGT during game pauses (quit-outs, loading screens), but errors are corrected at the next `player_update` (~1s).
+For playing players during a running race, the mod recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update` and `player_update` messages. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`. For other players, the mod interpolates their IGT by adding wall-clock elapsed time since the last update, capped at 10 seconds. This produces smooth, frame-rate gap updates for all players. The interpolation slightly over-estimates IGT during game pauses (quit-outs, loading screens), but errors are corrected at the next `player_update` (~1s).
+
+When a player finishes or the race ends, the mod uses the server-computed `gap_ms` (frozen at the time of the last leaderboard update) instead of recomputing client-side. This prevents gap drift from game memory IGT continuing to tick after finish.
 
 Gaps are color-coded: green for negative (ahead), soft red for positive (behind).
 
