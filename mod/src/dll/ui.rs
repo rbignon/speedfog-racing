@@ -462,6 +462,10 @@ impl RaceTracker {
         let my_id = self.my_participant_id();
 
         // Pre-compute gaps for all participants
+        let race_finished = self
+            .race_info()
+            .is_some_and(|r| r.status.as_str() == "finished");
+
         let gaps: Vec<Option<i32>> = participants
             .iter()
             .enumerate()
@@ -469,8 +473,11 @@ impl RaceTracker {
                 if !has_leader {
                     return None;
                 }
-                // For self: use real-time local IGT
-                // For others: interpolate from last broadcast
+                // Finished players or race ended: use server-computed gap (frozen)
+                if p.status == "finished" || race_finished {
+                    return p.gap_ms;
+                }
+                // Playing, race running: recompute client-side for real-time updates
                 let igt = if my_id.is_some_and(|id| id == &p.id) {
                     local_igt.unwrap_or(p.igt_ms)
                 } else {
