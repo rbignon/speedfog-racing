@@ -21,6 +21,9 @@
 	import AddToCalendar from '$lib/components/AddToCalendar.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+	import { goto } from '$app/navigation';
+	import { deleteRace } from '$lib/api';
 	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
 	import { MetroDag, MetroDagBlurred, MetroDagProgressive, MetroDagFull } from '$lib/dag';
 	import { parseDagGraph } from '$lib/dag/types';
@@ -44,7 +47,7 @@
 	let joining = $state(false);
 	let leaving = $state(false);
 	let joinLeaveError = $state<string | null>(null);
-	let confirmAbandon = $state(false);
+	let showAbandonConfirm = $state(false);
 	let abandoning = $state(false);
 	let abandonError = $state<string | null>(null);
 	let now = $state(Date.now());
@@ -54,6 +57,16 @@
 	let scheduleSaving = $state(false);
 	let selectedParticipantIds = $state<Set<string>>(new Set());
 	let showDownloadModal = $state(false);
+	let showDeleteConfirm = $state(false);
+	let deleting = $state(false);
+	let deleteError = $state<string | null>(null);
+	let pendingConfirm = $state<{
+		title: string;
+		message: string;
+		confirmLabel: string;
+		danger?: boolean;
+		action: () => Promise<void>;
+	} | null>(null);
 	let highlightFocusNodeId = $state<string | null>(null);
 	let dagView = $state<'map' | 'replay'>('map');
 
@@ -75,6 +88,18 @@
 			downloadError = e instanceof Error ? e.message : 'Download failed';
 		} finally {
 			downloading = false;
+		}
+	}
+
+	async function handleDeleteRace() {
+		deleting = true;
+		deleteError = null;
+		try {
+			await deleteRace(initialRace.id);
+			goto('/');
+		} catch (e) {
+			deleteError = e instanceof Error ? e.message : 'Failed to delete race';
+			deleting = false;
 		}
 	}
 
@@ -211,24 +236,38 @@
 		initialRace = await fetchRace(initialRace.id);
 	}
 
-	async function handleRemoveParticipant(participantId: string, username: string) {
-		if (!confirm(`Remove ${username} from this race?`)) return;
-		try {
-			await removeParticipant(initialRace.id, participantId);
-			initialRace = await fetchRace(initialRace.id);
-		} catch (e) {
-			console.error('Failed to remove participant:', e);
-		}
+	function handleRemoveParticipant(participantId: string, username: string) {
+		pendingConfirm = {
+			title: 'Remove Participant',
+			message: `Remove ${username} from this race?`,
+			confirmLabel: 'Remove',
+			danger: true,
+			async action() {
+				try {
+					await removeParticipant(initialRace.id, participantId);
+					initialRace = await fetchRace(initialRace.id);
+				} catch (e) {
+					console.error('Failed to remove participant:', e);
+				}
+			}
+		};
 	}
 
-	async function handleRevokeInvite(inviteId: string, username: string) {
-		if (!confirm(`Revoke invite for ${username}?`)) return;
-		try {
-			await deleteInvite(initialRace.id, inviteId);
-			initialRace = await fetchRace(initialRace.id);
-		} catch (e) {
-			console.error('Failed to revoke invite:', e);
-		}
+	function handleRevokeInvite(inviteId: string, username: string) {
+		pendingConfirm = {
+			title: 'Revoke Invite',
+			message: `Revoke invite for ${username}?`,
+			confirmLabel: 'Revoke',
+			danger: true,
+			async action() {
+				try {
+					await deleteInvite(initialRace.id, inviteId);
+					initialRace = await fetchRace(initialRace.id);
+				} catch (e) {
+					console.error('Failed to revoke invite:', e);
+				}
+			}
+		};
 	}
 
 	let canJoin = $derived(
@@ -283,16 +322,12 @@
 	}
 
 	async function handleAbandon() {
-		if (!confirmAbandon) {
-			confirmAbandon = true;
-			return;
-		}
 		abandoning = true;
 		abandonError = null;
 		try {
 			await abandonRace(initialRace.id);
 			initialRace = await fetchRace(initialRace.id);
-			confirmAbandon = false;
+			showAbandonConfirm = false;
 		} catch (e) {
 			abandonError = e instanceof Error ? e.message : 'Failed to abandon';
 		} finally {
@@ -399,23 +434,9 @@
 
 			{#if canAbandon}
 				<div class="abandon-section">
-					{#if confirmAbandon}
-						<p class="abandon-warning">Are you sure? This is irreversible.</p>
-						<div class="abandon-actions">
-							<button class="btn btn-danger" onclick={handleAbandon} disabled={abandoning}>
-								{abandoning ? 'Rage quitting...' : 'Confirm rage quit'}
-							</button>
-							<button
-								class="btn-inline btn-inline-secondary"
-								onclick={() => (confirmAbandon = false)}
-								disabled={abandoning}
-							>
-								Cancel
-							</button>
-						</div>
-					{:else}
-						<button class="abandon-btn" onclick={handleAbandon}>Rage quit</button>
-					{/if}
+					<button class="abandon-btn" onclick={() => (showAbandonConfirm = true)}>
+						Rage quit
+					</button>
 					{#if abandonError}
 						<p class="abandon-error">{abandonError}</p>
 					{/if}
@@ -527,13 +548,17 @@
 				onRaceUpdated={handleRaceUpdated}
 			/>
 
+			{#if isOrganizer || isCaster || myParticipant}
+				<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}> OBS Overlays </button>
+			{/if}
+
 			{#if isOrganizer}
 				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
 			{/if}
 		{/if}
 
 		{#if isOrganizer}
-			<div class="visibility-toggle">
+			<div class="visibility-row">
 				<button
 					class="btn-toggle-visibility"
 					onclick={handleToggleVisibility}
@@ -575,11 +600,26 @@
 						Private
 					{/if}
 				</button>
+				<button
+					class="btn-toggle-visibility btn-delete"
+					onclick={() => (showDeleteConfirm = true)}
+				>
+					<svg
+						class="visibility-icon"
+						viewBox="0 0 20 20"
+						fill="currentColor"
+						width="14"
+						height="14"
+					>
+						<path
+							fill-rule="evenodd"
+							d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+							clip-rule="evenodd"
+						/>
+					</svg>
+					Delete
+				</button>
 			</div>
-		{/if}
-
-		{#if isOrganizer || isCaster || myParticipant}
-			<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}> OBS Overlays </button>
 		{/if}
 
 		<div class="sidebar-footer">
@@ -749,6 +789,46 @@
 			error={downloadError}
 			onClose={() => (showDownloadModal = false)}
 			onDownload={handleDownload}
+		/>
+	{/if}
+
+	{#if showDeleteConfirm}
+		<ConfirmModal
+			title="Delete Race"
+			message="This will permanently delete the race and all data. This cannot be undone."
+			confirmLabel="Delete"
+			danger
+			loading={deleting}
+			error={deleteError}
+			onConfirm={handleDeleteRace}
+			onCancel={() => (showDeleteConfirm = false)}
+		/>
+	{/if}
+
+	{#if pendingConfirm}
+		<ConfirmModal
+			title={pendingConfirm.title}
+			message={pendingConfirm.message}
+			confirmLabel={pendingConfirm.confirmLabel}
+			danger={pendingConfirm.danger ?? false}
+			onConfirm={async () => {
+				const action = pendingConfirm?.action;
+				pendingConfirm = null;
+				if (action) await action();
+			}}
+			onCancel={() => (pendingConfirm = null)}
+		/>
+	{/if}
+
+	{#if showAbandonConfirm}
+		<ConfirmModal
+			title="Rage Quit"
+			message="Are you sure? This is irreversible."
+			confirmLabel="Rage quit"
+			danger
+			loading={abandoning}
+			onConfirm={handleAbandon}
+			onCancel={() => (showAbandonConfirm = false)}
 		/>
 	{/if}
 </div>
@@ -1123,7 +1203,7 @@
 	.obs-overlay-btn {
 		width: 100%;
 		padding: 0.5rem;
-		margin-top: 0.75rem;
+		margin-top: 0.5rem;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-sm);
 		background: none;
@@ -1214,7 +1294,9 @@
 		color: var(--color-text-disabled);
 	}
 
-	.visibility-toggle {
+	.visibility-row {
+		display: flex;
+		gap: 0.5rem;
 		padding-top: 0.75rem;
 		border-top: 1px solid var(--color-border);
 	}
@@ -1251,6 +1333,11 @@
 		height: 14px;
 	}
 
+	.btn-delete:hover {
+		border-color: var(--color-danger);
+		color: var(--color-danger);
+	}
+
 	.abandon-section {
 		padding-top: 0.75rem;
 		border-top: 1px solid var(--color-border);
@@ -1272,19 +1359,6 @@
 
 	.abandon-btn:hover {
 		background: var(--color-danger, #ef4444);
-	}
-
-	.abandon-warning {
-		margin: 0 0 0.5rem;
-		color: var(--color-danger, #ef4444);
-		font-size: var(--font-size-sm);
-		font-weight: 500;
-	}
-
-	.abandon-actions {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
 	}
 
 	.abandon-error {

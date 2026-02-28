@@ -15,6 +15,7 @@
 	import { MetroDag, MetroDagProgressive, MetroDagFull } from '$lib/dag';
 	import TrainingReplay from '$lib/replay/TrainingReplay.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
 	function formatDatetime(iso: string): string {
@@ -35,7 +36,7 @@
 	let showFullDag = $state(false);
 	let abandoning = $state(false);
 	let downloading = $state(false);
-	let confirmAbandon = $state(false);
+	let showAbandonConfirm = $state(false);
 	let ghosts = $state<Ghost[]>([]);
 	let dagView = $state<'map' | 'replay'>('map');
 
@@ -126,17 +127,14 @@
 	}
 
 	async function handleAbandon() {
-		if (!confirmAbandon) {
-			confirmAbandon = true;
-			return;
-		}
 		abandoning = true;
 		error = null;
 		try {
 			session = await abandonTrainingSession(sessionId);
-			confirmAbandon = false;
+			showAbandonConfirm = false;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to abandon session.';
+			showAbandonConfirm = false;
 		} finally {
 			abandoning = false;
 		}
@@ -251,19 +249,9 @@
 				{/if}
 
 				{#if status === 'active'}
-					{#if confirmAbandon}
-						<div class="confirm-group">
-							<span class="confirm-text">Abandon this run?</span>
-							<button class="btn btn-danger" disabled={abandoning} onclick={handleAbandon}>
-								{abandoning ? 'Abandoning...' : 'Confirm'}
-							</button>
-							<button class="btn btn-secondary" onclick={() => (confirmAbandon = false)}>
-								Cancel
-							</button>
-						</div>
-					{:else}
-						<button class="btn btn-danger-outline" onclick={handleAbandon}> Abandon </button>
-					{/if}
+					<button class="btn btn-danger-outline" onclick={() => (showAbandonConfirm = true)}>
+						Abandon
+					</button>
 				{/if}
 			</div>
 		{/if}
@@ -317,6 +305,18 @@
 		{/if}
 	{/if}
 </main>
+
+{#if showAbandonConfirm}
+	<ConfirmModal
+		title="Abandon Run"
+		message="Abandon this training run? Your current progress will be saved."
+		confirmLabel="Abandon"
+		danger
+		loading={abandoning}
+		onConfirm={handleAbandon}
+		onCancel={() => (showAbandonConfirm = false)}
+	/>
+{/if}
 
 <style>
 	.training-detail {
@@ -542,17 +542,6 @@
 		margin-bottom: 1rem;
 	}
 
-	.confirm-group {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.confirm-text {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
-	}
-
 	/* Danger outline button */
 	:global(.btn-danger-outline) {
 		background: transparent;
@@ -562,11 +551,6 @@
 
 	:global(.btn-danger-outline:hover) {
 		background: rgba(220, 38, 38, 0.1);
-	}
-
-	:global(.btn-danger) {
-		background: var(--color-danger);
-		color: white;
 	}
 
 	:global(.btn-sm) {

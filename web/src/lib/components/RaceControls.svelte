@@ -1,15 +1,14 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import {
 		releaseSeeds,
 		rerollSeed,
 		startRace,
 		resetRace,
 		finishRace,
-		deleteRace,
 		fetchRace,
 		type RaceDetail
 	} from '$lib/api';
+	import ConfirmModal from './ConfirmModal.svelte';
 
 	interface Props {
 		race: RaceDetail;
@@ -21,8 +20,26 @@
 
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let showDeleteConfirm = $state(false);
 	let seedsReleased = $derived(race.seeds_released_at !== null);
+
+	let pendingConfirm = $state<{
+		title: string;
+		message: string;
+		confirmLabel: string;
+		danger?: boolean;
+		action: () => Promise<void>;
+	} | null>(null);
+
+	function requestConfirm(opts: NonNullable<typeof pendingConfirm>) {
+		pendingConfirm = opts;
+	}
+
+	async function executeConfirm() {
+		if (!pendingConfirm) return;
+		const action = pendingConfirm.action;
+		pendingConfirm = null;
+		await action();
+	}
 
 	async function handleRelease() {
 		loading = true;
@@ -37,84 +54,91 @@
 		}
 	}
 
-	async function handleReroll() {
-		const msg = seedsReleased
-			? 'Participants may have already downloaded. Re-rolling will require everyone to re-download. Continue?'
-			: 'Re-roll the seed? Participants will need to download a new seed pack.';
-		if (!confirm(msg)) return;
-		loading = true;
-		error = null;
-		try {
-			const updated = await rerollSeed(race.id);
-			onRaceUpdated(updated);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to re-roll seed';
-		} finally {
-			loading = false;
-		}
+	function handleReroll() {
+		requestConfirm({
+			title: 'Re-roll Seed',
+			message: seedsReleased
+				? 'Participants may have already downloaded. Re-rolling will require everyone to re-download. Continue?'
+				: 'Re-roll the seed? Participants will need to download a new seed pack.',
+			confirmLabel: 'Re-roll',
+			async action() {
+				loading = true;
+				error = null;
+				try {
+					const updated = await rerollSeed(race.id);
+					onRaceUpdated(updated);
+				} catch (e) {
+					error = e instanceof Error ? e.message : 'Failed to re-roll seed';
+				} finally {
+					loading = false;
+				}
+			}
+		});
 	}
 
-	async function handleStart() {
-		loading = true;
-		error = null;
-		try {
-			await startRace(race.id);
-			const updated = await fetchRace(race.id);
-			onRaceUpdated(updated);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to start race';
-		} finally {
-			loading = false;
-		}
+	function handleStart() {
+		requestConfirm({
+			title: 'Start Race',
+			message: 'Start the race? All participants will be notified.',
+			confirmLabel: 'Start',
+			async action() {
+				loading = true;
+				error = null;
+				try {
+					await startRace(race.id);
+					const updated = await fetchRace(race.id);
+					onRaceUpdated(updated);
+				} catch (e) {
+					error = e instanceof Error ? e.message : 'Failed to start race';
+				} finally {
+					loading = false;
+				}
+			}
+		});
 	}
 
-	async function handleReset() {
-		if (!confirm('Reset this race? All participant progress will be cleared.')) return;
-		loading = true;
-		error = null;
-		try {
-			await resetRace(race.id);
-			const updated = await fetchRace(race.id);
-			onRaceUpdated(updated);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to reset race';
-		} finally {
-			loading = false;
-		}
+	function handleReset() {
+		requestConfirm({
+			title: 'Reset Race',
+			message: 'Reset this race? All participant progress will be cleared.',
+			confirmLabel: 'Reset',
+			danger: true,
+			async action() {
+				loading = true;
+				error = null;
+				try {
+					await resetRace(race.id);
+					const updated = await fetchRace(race.id);
+					onRaceUpdated(updated);
+				} catch (e) {
+					error = e instanceof Error ? e.message : 'Failed to reset race';
+				} finally {
+					loading = false;
+				}
+			}
+		});
 	}
 
-	async function handleForceFinish() {
-		if (
-			!confirm(
-				'Force finish this race? Non-finished participants will keep their current progress.'
-			)
-		)
-			return;
-		loading = true;
-		error = null;
-		try {
-			await finishRace(race.id);
-			const updated = await fetchRace(race.id);
-			onRaceUpdated(updated);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to finish race';
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function handleDelete() {
-		loading = true;
-		error = null;
-		try {
-			await deleteRace(race.id);
-			goto('/');
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to delete race';
-			showDeleteConfirm = false;
-		} finally {
-			loading = false;
-		}
+	function handleForceFinish() {
+		requestConfirm({
+			title: 'Force Finish',
+			message:
+				'Force finish this race? Non-finished participants will keep their current progress.',
+			confirmLabel: 'Force Finish',
+			async action() {
+				loading = true;
+				error = null;
+				try {
+					await finishRace(race.id);
+					const updated = await fetchRace(race.id);
+					onRaceUpdated(updated);
+				} catch (e) {
+					error = e instanceof Error ? e.message : 'Failed to finish race';
+				} finally {
+					loading = false;
+				}
+			}
+		});
 	}
 </script>
 
@@ -165,35 +189,18 @@
 		</button>
 		<p class="hint">Clear all progress and return to setup for a re-run.</p>
 	{/if}
-
-	<div class="danger-zone">
-		{#if showDeleteConfirm}
-			<p class="delete-warning">
-				This will permanently delete the race and all data. This cannot be undone.
-			</p>
-			<div class="delete-actions">
-				<button class="btn btn-danger" onclick={handleDelete} disabled={loading}>
-					{loading ? 'Deleting...' : 'Confirm Delete'}
-				</button>
-				<button
-					class="btn btn-secondary"
-					onclick={() => (showDeleteConfirm = false)}
-					disabled={loading}
-				>
-					Cancel
-				</button>
-			</div>
-		{:else}
-			<button
-				class="btn-delete-link"
-				onclick={() => (showDeleteConfirm = true)}
-				disabled={loading}
-			>
-				Delete Race
-			</button>
-		{/if}
-	</div>
 </div>
+
+{#if pendingConfirm}
+	<ConfirmModal
+		title={pendingConfirm.title}
+		message={pendingConfirm.message}
+		confirmLabel={pendingConfirm.confirmLabel}
+		danger={pendingConfirm.danger ?? false}
+		onConfirm={executeConfirm}
+		onCancel={() => (pendingConfirm = null)}
+	/>
+{/if}
 
 <style>
 	.race-controls {
@@ -233,49 +240,5 @@
 		color: var(--color-danger);
 		font-size: var(--font-size-sm);
 		margin: 0 0 0.5rem 0;
-	}
-
-	.danger-zone {
-		margin-top: 0.5rem;
-		padding-top: 0.5rem;
-		padding-bottom: 0.75rem;
-		border-top: 1px solid var(--color-border);
-	}
-
-	.delete-warning {
-		color: var(--color-danger);
-		font-size: var(--font-size-xs);
-		margin: 0 0 0.5rem 0;
-		line-height: 1.4;
-	}
-
-	.delete-actions {
-		display: flex;
-		gap: 0.5rem;
-	}
-
-	.delete-actions .btn {
-		flex: 1;
-	}
-
-	.btn-delete-link {
-		background: none;
-		border: none;
-		color: var(--color-text-disabled);
-		font-family: var(--font-family);
-		font-size: var(--font-size-xs);
-		cursor: pointer;
-		padding: 0;
-		text-decoration: underline;
-		transition: color var(--transition);
-	}
-
-	.btn-delete-link:hover {
-		color: var(--color-danger);
-	}
-
-	.btn-delete-link:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
 	}
 </style>
