@@ -144,6 +144,23 @@ describe("buildReplayParticipants", () => {
     const result = buildReplayParticipants([p], simpleGraphJson);
     expect(result[0].finalBossNodeId).toBe("boss_c");
   });
+
+  it("includes backtrack visits as separate zone visits", () => {
+    const p = makeParticipant({
+      zone_history: [
+        { node_id: "start_a", igt_ms: 0 },
+        { node_id: "zone_b", igt_ms: 30000 },
+        { node_id: "start_a", igt_ms: 60000 }, // backtrack
+        { node_id: "zone_b", igt_ms: 90000 },
+      ],
+      igt_ms: 120000,
+    });
+    const result = buildReplayParticipants([p], simpleGraphJson);
+    expect(result).toHaveLength(1);
+    expect(result[0].zoneVisits).toHaveLength(4);
+    expect(result[0].zoneVisits[2].nodeId).toBe("start_a"); // backtrack preserved
+    expect(result[0].zoneVisits[2].enterIgt).toBe(60000);
+  });
 });
 
 describe("igtToReplayMs", () => {

@@ -163,6 +163,61 @@ describe("computeZoneTimes", () => {
   });
 });
 
+describe("computeZoneTimes with backtracking", () => {
+  it("aggregates time and deaths for backtracked zones", () => {
+    const p = participant("alice", {
+      igt_ms: 500000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "zone_a", igt_ms: 60000, deaths: 3 },
+        { node_id: "zone_b", igt_ms: 120000 },
+        { node_id: "zone_a", igt_ms: 200000, deaths: 2 }, // backtrack
+        { node_id: "zone_b", igt_ms: 250000 },
+        { node_id: "zone_c", igt_ms: 350000 },
+      ],
+    });
+    const info = nodeInfoMap({
+      start: { layer: 0 },
+      zone_a: { layer: 1 },
+      zone_b: { layer: 2 },
+      zone_c: { layer: 3 },
+    });
+    const result = computeZoneTimes(p, info);
+    // Should have 4 unique nodes, not 6 raw entries
+    expect(result).toHaveLength(4);
+    const zoneA = result.find((r) => r.nodeId === "zone_a");
+    expect(zoneA?.timeMs).toBe(110000); // 60000 + 50000
+    expect(zoneA?.deaths).toBe(5); // 3 + 2
+    expect(zoneA?.outcome).toBe("cleared"); // last visit → zone_b (higher layer)
+  });
+
+  it("preserves first-visit order for aggregated zones", () => {
+    const p = participant("alice", {
+      igt_ms: 400000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "zone_a", igt_ms: 60000 },
+        { node_id: "zone_b", igt_ms: 120000 },
+        { node_id: "zone_a", igt_ms: 200000 }, // backtrack
+        { node_id: "zone_c", igt_ms: 300000 },
+      ],
+    });
+    const info = nodeInfoMap({
+      start: { layer: 0 },
+      zone_a: { layer: 1 },
+      zone_b: { layer: 2 },
+      zone_c: { layer: 3 },
+    });
+    const result = computeZoneTimes(p, info);
+    expect(result.map((r) => r.nodeId)).toEqual([
+      "start",
+      "zone_a",
+      "zone_b",
+      "zone_c",
+    ]);
+  });
+});
+
 describe("speed highlights", () => {
   const graph = graphJson({
     start: { tier: 1, layer: 0, type: "start" },

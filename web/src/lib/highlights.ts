@@ -67,23 +67,46 @@ export function computeZoneTimes(
     ? new Map([...nodeInfo.entries()].map(([id, info]) => [id, info.layer]))
     : undefined;
 
-  return p.zone_history.map((entry, i) => {
-    const isLast = i >= p.zone_history!.length - 1;
-    const nextIgt = isLast ? p.igt_ms : p.zone_history![i + 1].igt_ms;
-    const nextNodeId = isLast ? undefined : p.zone_history![i + 1].node_id;
+  // Aggregate per unique node: sum time + deaths, keep last outcome
+  const aggregated = new Map<
+    string,
+    { timeMs: number; deaths: number; outcome: ZoneOutcome }
+  >();
+  // Track insertion order for stable output
+  const order: string[] = [];
 
-    return {
-      nodeId: entry.node_id,
-      timeMs: Math.max(0, nextIgt - entry.igt_ms),
-      deaths: entry.deaths ?? 0,
-      outcome: computeOutcome(
-        isLast,
-        entry.node_id,
-        nextNodeId,
-        p.status,
-        nodeLayers,
-      ),
-    };
+  for (let i = 0; i < p.zone_history.length; i++) {
+    const entry = p.zone_history[i];
+    const isLast = i >= p.zone_history.length - 1;
+    const nextIgt = isLast ? p.igt_ms : p.zone_history[i + 1].igt_ms;
+    const nextNodeId = isLast ? undefined : p.zone_history[i + 1].node_id;
+    const segmentTime = Math.max(0, nextIgt - entry.igt_ms);
+    const outcome = computeOutcome(
+      isLast,
+      entry.node_id,
+      nextNodeId,
+      p.status,
+      nodeLayers,
+    );
+
+    const existing = aggregated.get(entry.node_id);
+    if (existing) {
+      existing.timeMs += segmentTime;
+      existing.deaths += entry.deaths ?? 0;
+      existing.outcome = outcome; // last visit wins
+    } else {
+      order.push(entry.node_id);
+      aggregated.set(entry.node_id, {
+        timeMs: segmentTime,
+        deaths: entry.deaths ?? 0,
+        outcome,
+      });
+    }
+  }
+
+  return order.map((nodeId) => {
+    const data = aggregated.get(nodeId)!;
+    return { nodeId, ...data };
   });
 }
 
@@ -153,6 +176,19 @@ function formatTime(ms: number): string {
     return `${hr}:${String(rm).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   }
   return `${min}:${String(sec).padStart(2, "0")}`;
+}
+
+/** Extract unique node IDs from zone_history in first-visit order. */
+function uniqueNodePath(history: { node_id: string }[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of history) {
+    if (!seen.has(entry.node_id)) {
+      seen.add(entry.node_id);
+      result.push(entry.node_id);
+    }
+  }
+  return result;
 }
 
 /** Flatten segments into a plain description string (for tests / fallback). */
@@ -617,7 +653,7 @@ function detectRoadLessTraveled(
 
   const paths = participants.map((p) => ({
     player: p,
-    nodes: new Set(p.zone_history?.map((z) => z.node_id) ?? []),
+    nodes: new Set(uniqueNodePath(p.zone_history ?? [])),
   }));
 
   let bestUniqueness = 0;
@@ -659,13 +695,14 @@ function detectRoadLessTraveled(
 
 function detectSameBrain(participants: WsParticipant[]): Highlight | null {
   for (let i = 0; i < participants.length; i++) {
-    const pathA = participants[i].zone_history?.map((z) => z.node_id);
-    if (!pathA || pathA.length < 2) continue;
+    if (!participants[i].zone_history) continue;
+    const pathA = uniqueNodePath(participants[i].zone_history!);
+    if (pathA.length < 2) continue;
     const keyA = pathA.join(",");
 
     for (let j = i + 1; j < participants.length; j++) {
-      const pathB = participants[j].zone_history?.map((z) => z.node_id);
-      if (!pathB) continue;
+      if (!participants[j].zone_history) continue;
+      const pathB = uniqueNodePath(participants[j].zone_history!);
       if (pathB.join(",") === keyA) {
         // Longer matching paths are more impressive
         const score = Math.min(100, 40 + pathA.length * 8);
@@ -695,7 +732,7 @@ function detectDetour(participants: WsParticipant[]): Highlight | null {
   let avgNodes = 0;
 
   for (const p of participants) {
-    const count = p.zone_history?.length ?? 0;
+    const count = p.zone_history ? uniqueNodePath(p.zone_history).length : 0;
     avgNodes += count;
     if (count > maxNodes) {
       maxNodes = count;
