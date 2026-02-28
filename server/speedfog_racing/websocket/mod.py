@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.discord import build_podium, notify_race_finished, set_event_status
+from speedfog_racing.discord import fire_race_finished_notifications
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
 from speedfog_racing.services.grace_service import resolve_zone_query
 from speedfog_racing.services.layer_service import (
@@ -618,25 +618,7 @@ async def handle_finished(
         # receives status=finished + zone_history atomically in one message.
         await broadcast_race_state_update(participant.race_id, participant.race)
         await manager.broadcast_race_status(participant.race_id, "finished")
-
-        # Fire-and-forget Discord notification (public races only)
-        race_obj = participant.race
-        if race_obj.is_public:
-            task = asyncio.create_task(
-                notify_race_finished(
-                    race_name=race_obj.name,
-                    race_id=str(race_obj.id),
-                    pool_name=race_obj.seed.pool_name if race_obj.seed else None,
-                    participant_count=len(race_obj.participants),
-                    podium=build_podium(race_obj.participants),
-                )
-            )
-            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-
-        # Fire-and-forget: set Discord event to COMPLETED
-        if race_obj.discord_event_id:
-            ev_task = asyncio.create_task(set_event_status(race_obj.discord_event_id, 3))
-            ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        fire_race_finished_notifications(participant.race)
 
     await manager.broadcast_leaderboard(
         participant.race_id,

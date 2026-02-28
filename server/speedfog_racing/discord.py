@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -14,7 +15,7 @@ from speedfog_racing.config import settings
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from speedfog_racing.models import Participant
+    from speedfog_racing.models import Participant, Race
 
 logger = logging.getLogger(__name__)
 
@@ -368,3 +369,26 @@ async def notify_race_finished(
     }
 
     await _send_webhook(embed)
+
+
+def fire_race_finished_notifications(race: Race) -> None:
+    """Fire-and-forget Discord notifications for a finished race.
+
+    Creates background tasks for the webhook notification (public races)
+    and the scheduled event status update (if a Discord event exists).
+    """
+    if race.is_public:
+        task = asyncio.create_task(
+            notify_race_finished(
+                race_name=race.name,
+                race_id=str(race.id),
+                pool_name=race.seed.pool_name if race.seed else None,
+                participant_count=len(race.participants),
+                podium=build_podium(race.participants),
+            )
+        )
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+    if race.discord_event_id:
+        ev_task = asyncio.create_task(set_event_status(race.discord_event_id, 3))
+        ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

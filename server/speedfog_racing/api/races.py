@@ -26,11 +26,10 @@ from speedfog_racing.auth import (
 )
 from speedfog_racing.database import async_session_maker, get_db
 from speedfog_racing.discord import (
-    build_podium,
     create_scheduled_event,
     delete_scheduled_event,
+    fire_race_finished_notifications,
     notify_race_created,
-    notify_race_finished,
     notify_race_started,
     set_event_status,
     update_scheduled_event,
@@ -1176,23 +1175,7 @@ async def finish_race(
     await broadcast_race_state_update(race_id, race)
     await manager.broadcast_race_status(race_id, "finished")
 
-    # Fire-and-forget Discord notification (public races only)
-    if race.is_public:
-        task = asyncio.create_task(
-            notify_race_finished(
-                race_name=race.name,
-                race_id=str(race.id),
-                pool_name=race.seed.pool_name if race.seed else None,
-                participant_count=len(race.participants),
-                podium=build_podium(race.participants),
-            )
-        )
-        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-
-    # Fire-and-forget: set Discord event to COMPLETED
-    if race.discord_event_id:
-        ev_task = asyncio.create_task(set_event_status(race.discord_event_id, 3))
-        ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    fire_race_finished_notifications(race)
 
     return race_response(race)
 
@@ -1247,6 +1230,7 @@ async def abandon_race(
         race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
         await broadcast_race_state_update(race_id, race)
         await manager.broadcast_race_status(race_id, "finished")
+        fire_race_finished_notifications(race)
 
     return race_response(race)
 

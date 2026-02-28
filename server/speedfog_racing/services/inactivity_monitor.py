@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.discord import fire_race_finished_notifications
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 
@@ -105,6 +106,7 @@ async def inactivity_monitor_loop(
                             await broadcast_race_state_update(race_id, race)
                             if race.status == RaceStatus.FINISHED:
                                 await manager.broadcast_race_status(race_id, "finished")
+                                fire_race_finished_notifications(race)
         except Exception:
             logger.exception("Inactivity monitor error")
 

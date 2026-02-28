@@ -277,7 +277,7 @@ async def test_finish_race_completes_discord_event(test_client, organizer, seed,
         await db.commit()
         race_id = str(race.id)
 
-    with patch("speedfog_racing.api.races.set_event_status", new_callable=AsyncMock) as mock_status:
+    with patch("speedfog_racing.discord.set_event_status", new_callable=AsyncMock) as mock_status:
         async with test_client as client:
             resp = await client.post(
                 f"/api/races/{race_id}/finish",
