@@ -239,11 +239,10 @@ export function computeVisitors(
       if (!isLast) {
         segmentTime = p.zone_history[idx + 1].igt_ms - entry.igt_ms;
         hasTime = true;
-      } else if (p.status === "finished" || p.status === "playing") {
+      } else {
+        // Last entry overall: use final IGT (works for finished, playing, and abandoned)
         segmentTime = p.igt_ms - entry.igt_ms;
         hasTime = true;
-      } else {
-        segmentTime = 0;
       }
       totalTime += Math.max(0, segmentTime);
       totalDeaths += entry.deaths ?? 0;

@@ -231,15 +231,32 @@ describe("computeVisitors", () => {
     expect(visitors[0].timeSpentMs).toBe(50000); // 250000 - 200000
   });
 
-  it("returns undefined timeSpentMs for last zone of non-playing/non-finished participant", () => {
+  it("returns undefined timeSpentMs for last zone when igt equals entry time", () => {
     const readyParticipant = {
       ...participants[0],
       status: "ready",
+      igt_ms: 0,
       zone_history: [{ node_id: "start", igt_ms: 0 }],
     };
     const visitors = computeVisitors("start", [readyParticipant]);
     expect(visitors).toHaveLength(1);
     expect(visitors[0].timeSpentMs).toBeUndefined();
+  });
+
+  it("computes time spent for last zone of abandoned participant", () => {
+    const abandonedParticipant = {
+      ...participants[0],
+      status: "abandoned",
+      igt_ms: 150000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "stormveil", igt_ms: 60000 },
+      ],
+    };
+    const visitors = computeVisitors("stormveil", [abandonedParticipant]);
+    expect(visitors).toHaveLength(1);
+    expect(visitors[0].timeSpentMs).toBe(90000); // 150000 - 60000
+    expect(visitors[0].outcome).toBe("abandoned");
   });
 
   it("returns empty for unvisited node", () => {
