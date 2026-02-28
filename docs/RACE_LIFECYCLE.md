@@ -102,7 +102,7 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 
 **`current_layer`** is a **high watermark** — it tracks the furthest layer reached and never regresses, even if the player backtracks to an earlier zone. This ensures leaderboard stability.
 
-**`zone_history`** is a JSON array of `{"node_id": str, "igt_ms": int, "deaths"?: int}` entries, appended on each new zone discovery. The `deaths` key is added/incremented by `status_update` when the death count increases — deaths are attributed to the player's current zone. Revisits do not modify `zone_history` (only `current_zone` is updated).
+**`zone_history`** is a JSON array of `{"node_id": str, "igt_ms": int, "deaths"?: int}` entries. A new entry is appended on every zone transition, including backtracks (the same `node_id` may appear multiple times). The `deaths` key is added/incremented by `status_update` when the death count increases — deaths are attributed to the **most recent** entry matching the player's current zone. Frontend consumers (popup, highlights, replay) aggregate time and deaths across all visits to the same node.
 
 **`last_igt_change_at`** is updated on every `status_update` where `igt_ms` differs from the stored value. Used by the inactivity monitor. A quit-out (IGT=0) does not reset it since IGT doesn't change — it just becomes 0.
 

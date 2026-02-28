@@ -2,6 +2,12 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [Unreleased]
+
+### Logic
+
+- Zone history now tracks backtracking — when a player returns to a previously visited zone, time and deaths are correctly attributed to each visit instead of being lumped with the wrong zone
+
 ## [1.3.1] - 2026-02-27
 
 ### Logic

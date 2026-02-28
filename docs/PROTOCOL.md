@@ -147,7 +147,7 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 
 Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)).
 
-**Revisited nodes:** Multiple flags can map to the same DAG node (e.g., shared entrance merges where several branches connect to a single cluster). If the resolved node is already in `zone_history`, the server updates `current_zone` and sends a `zone_update` (same as `zone_query`) but does **not** add a duplicate entry to `zone_history` or broadcast a `leaderboard_update`.
+**Revisited nodes:** Multiple flags can map to the same DAG node (e.g., shared entrance merges where several branches connect to a single cluster). When a player backtracks and re-enters a previously visited node, a new entry is appended to `zone_history` with the current `igt_ms`. This enables accurate per-visit time and death attribution. Only first visits trigger a `leaderboard_update` broadcast; revisits trigger a `player_update` instead.
 
 **Timing:** Regular event flags (fog gate traversals) are detected immediately by polling but deferred until loading screen exit. This ensures spectators see progress updates in sync with the player's arrival, and prevents zone name spoilers during loading screens. The `finish_event` (boss kill) is an exception — it is sent immediately since boss kills don't trigger a loading screen.
 
@@ -612,7 +612,7 @@ Shared schema across all WebSocket messages:
 | `gap_ms`              | `int?`    | Gap to the leader in milliseconds (see below)   |
 | `layer_entry_igt`     | `int?`    | Player's IGT when entering their current layer  |
 
-`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456 }`
+`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3 }`. A node may appear multiple times if the player backtracks — each visit is a separate entry with its own `igt_ms` and optional `deaths` count.
 
 **Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`, `gap_ms`, `layer_entry_igt`). Extra fields like `color_index`, `mod_connected`, and `zone_history` are present on the wire but silently ignored by serde.
 

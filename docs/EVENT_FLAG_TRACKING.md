@@ -123,11 +123,13 @@ receive event_flag { flag_id, igt_ms }
     │                  ├── not found → warn + return
     │                  │
     │                  ├── node_id in zone_history? (revisit)
-    │                  │       → update current_zone + igt_ms only
+    │                  │       → append to zone_history (with current igt_ms)
+    │                  │       → update current_zone + igt_ms
+    │                  │       → current_layer unchanged (high watermark)
     │                  │       → unicast zone_update to mod
     │                  │       → broadcast player_update to all
     │                  │
-    │                  └── new discovery
+    │                  └── new discovery (first visit)
     │                          → append to zone_history
     │                          → update current_layer (high watermark, never regress)
     │                          → broadcast leaderboard_update to all
