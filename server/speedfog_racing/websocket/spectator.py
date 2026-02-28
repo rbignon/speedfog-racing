@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.auth import get_user_by_token
-from speedfog_racing.models import Caster, Participant, Race, RaceStatus
+from speedfog_racing.models import Caster, Participant, Race
 from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.websocket.common import heartbeat_loop
 from speedfog_racing.websocket.manager import (
@@ -41,13 +41,13 @@ AUTH_GRACE_PERIOD = 2.0
 
 def build_seed_info(
     race: Race,
-    user_id: uuid.UUID | None = None,
     locale: str = "en",
 ) -> SeedInfo:
-    """Build SeedInfo with conditional graph_json access.
+    """Build SeedInfo with graph_json for all spectators.
 
-    RUNNING/FINISHED: graph_json always included (progressive reveal / results).
-    SETUP: graph_json for participants and organizer; hidden from anonymous/unrelated users.
+    Graph structure is always included — participants already receive it
+    in SETUP (for the race detail DAG), so hiding it from anonymous
+    spectators provides no real benefit and breaks the OBS overlay.
     """
     seed = race.seed
     if not seed:
@@ -62,17 +62,7 @@ def build_seed_info(
 
     total_paths = graph_json.get("total_paths", 0)
 
-    # SETUP: participants and organizer see graph; anonymous spectators don't
-    include_graph = True
-    if race.status in (RaceStatus.SETUP,):
-        include_graph = False
-        if user_id:
-            is_participant = any(p.user_id == user_id for p in race.participants)
-            is_organizer = race.organizer_id == user_id
-            if is_participant or is_organizer:
-                include_graph = True
-
-    graph = seed.graph_json if include_graph else None
+    graph = seed.graph_json
     if graph is not None and locale != "en":
         graph = translate_graph_json(graph, locale)
 
@@ -117,7 +107,7 @@ async def handle_spectator_websocket(
                     conn.locale = user_obj.locale
 
             # Send initial race state (session still open for lazy access)
-            await send_race_state(websocket, race, user_id=conn.user_id, locale=conn.locale)
+            await send_race_state(websocket, race, locale=conn.locale)
         # Session closed — released back to pool within ~2s of connect
 
         # Register connection
@@ -184,10 +174,9 @@ async def send_race_state(
     websocket: WebSocket,
     race: Race,
     *,
-    user_id: uuid.UUID | None = None,
     locale: str = "en",
 ) -> None:
-    """Send race state to spectator with graph visibility based on role."""
+    """Send current race state to a spectator."""
     room = manager.get_room(race.id)
     connected_ids = set(room.mods.keys()) if room else set()
     graph = race.seed.graph_json if race.seed else None
@@ -207,14 +196,14 @@ async def send_race_state(
                 race.seeds_released_at.isoformat() if race.seeds_released_at else None
             ),
         ),
-        seed=build_seed_info(race, user_id=user_id, locale=locale),
+        seed=build_seed_info(race, locale=locale),
         participants=participant_infos,
     )
     await websocket.send_text(message.model_dump_json())
 
 
 async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
-    """Send race_state to each spectator with per-connection graph visibility and locale."""
+    """Send race_state to each spectator with per-connection locale."""
     room = manager.get_room(race_id)
     if not room:
         return
@@ -225,7 +214,7 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
     async def _send_to(conn: SpectatorConnection) -> SpectatorConnection | None:
         try:
             await asyncio.wait_for(
-                send_race_state(conn.websocket, race, user_id=conn.user_id, locale=conn.locale),
+                send_race_state(conn.websocket, race, locale=conn.locale),
                 timeout=SEND_TIMEOUT,
             )
         except Exception:
