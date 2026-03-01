@@ -41,23 +41,27 @@ echo "Updating version to $VERSION..."
 echo "  - server/pyproject.toml"
 sed -i "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT_DIR/server/pyproject.toml"
 
-# 2. Update server/speedfog_racing/__init__.py
+# 2. Regenerate server/uv.lock to match updated pyproject.toml
+echo "  - server/uv.lock"
+uv lock --project "$ROOT_DIR/server"
+
+# 3. Update server/speedfog_racing/__init__.py
 echo "  - server/speedfog_racing/__init__.py"
 sed -i "s/^__version__ = \".*\"/__version__ = \"$VERSION\"/" "$ROOT_DIR/server/speedfog_racing/__init__.py"
 
-# 3. Update mod/Cargo.toml (first occurrence only = package version)
+# 4. Update mod/Cargo.toml (first occurrence only = package version)
 echo "  - mod/Cargo.toml"
 sed -i "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" "$ROOT_DIR/mod/Cargo.toml"
 
-# 4. Regenerate mod/Cargo.lock to match updated Cargo.toml
+# 5. Regenerate mod/Cargo.lock to match updated Cargo.toml
 echo "  - mod/Cargo.lock"
 cargo update --manifest-path "$ROOT_DIR/mod/Cargo.toml" --workspace
 
-# 5. Update web/package.json (first occurrence only)
+# 6. Update web/package.json (first occurrence only)
 echo "  - web/package.json"
 sed -i "0,/\"version\"/s/\"version\": \".*\"/\"version\": \"$VERSION\"/" "$ROOT_DIR/web/package.json"
 
-# 6. Regenerate web/package-lock.json to match updated package.json
+# 7. Regenerate web/package-lock.json to match updated package.json
 echo "  - web/package-lock.json"
 npm --prefix "$ROOT_DIR/web" install --package-lock-only
 
@@ -65,7 +69,7 @@ echo ""
 echo "Version updated to $VERSION in all files."
 echo ""
 
-# 7. Git commit and tag
+# 8. Git commit and tag
 echo "Creating git commit and tag..."
 git -C "$ROOT_DIR" add \
     server/pyproject.toml \
