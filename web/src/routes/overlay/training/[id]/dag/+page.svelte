@@ -67,6 +67,7 @@
 			{follow}
 			{maxLayers}
 			showLiveDots
+			fullPathOpacity
 		/>
 	{/if}
 </div>

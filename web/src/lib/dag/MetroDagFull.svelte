@@ -44,6 +44,7 @@
 		showLiveDots?: boolean;
 		follow?: boolean;
 		maxLayers?: number;
+		fullPathOpacity?: boolean;
 	}
 
 	let {
@@ -56,7 +57,8 @@
 		anonymous = false,
 		showLiveDots = false,
 		follow = false,
-		maxLayers = 5
+		maxLayers = 5,
+		fullPathOpacity = false
 	}: Props = $props();
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
@@ -384,7 +386,7 @@
 	let trailingPaths: TrailingSegment[] = $derived.by(() => {
 		if (!follow) return [];
 		const TRAIL_LENGTH = 3;
-		const OPACITY_LEVELS = [0.8, 0.4, 0.15];
+		const OPACITY_LEVELS = fullPathOpacity ? [1, 0.5, 0.2] : [0.8, 0.4, 0.15];
 		const result: TrailingSegment[] = [];
 
 		for (const p of participants) {
@@ -478,7 +480,7 @@
 				stroke-width="4"
 				stroke-linecap="round"
 				stroke-linejoin="round"
-				opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : 0.8}
+				opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : (fullPathOpacity ? 1 : 0.8)}
 				class="player-path"
 			>
 				<title>{path.displayName}</title>
