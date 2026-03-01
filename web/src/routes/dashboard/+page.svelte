@@ -32,6 +32,17 @@
 	let activeRaces = $derived(myRaces.filter((r) => r.status !== 'finished'));
 	let activeTraining = $derived(trainingSessions.filter((s) => s.status === 'active'));
 
+	// One-time settings banner
+	const SETTINGS_BANNER_KEY = 'speedfog_settings_banner_dismissed';
+	let bannerDismissed = $state(
+		typeof localStorage !== 'undefined' && localStorage.getItem(SETTINGS_BANNER_KEY) === '1',
+	);
+
+	function dismissBanner() {
+		bannerDismissed = true;
+		localStorage.setItem(SETTINGS_BANNER_KEY, '1');
+	}
+
 	// Auth guard + fetch data once auth is ready
 	$effect(() => {
 		if (!auth.initialized) return;
@@ -123,6 +134,22 @@
 			<button class="btn btn-secondary" onclick={() => location.reload()}>Retry</button>
 		</div>
 	{:else}
+		<!-- Settings banner (one-time) -->
+		{#if !bannerDismissed}
+			<div class="settings-banner">
+				<div class="settings-banner-content">
+					<span class="settings-banner-icon">&#9881;</span>
+					<p>
+						You can customize your experience in
+						<a href="/settings">Settings</a>: choose your
+						<strong>language</strong> for zone names and adjust the in-game
+						<strong>overlay font size</strong>.
+					</p>
+				</div>
+				<button class="settings-banner-close" onclick={dismissBanner} aria-label="Dismiss">&times;</button>
+			</div>
+		{/if}
+
 		<!-- Stats Section -->
 		{#if profile}
 			<section class="stats-section">
@@ -326,6 +353,62 @@
 		gap: 1rem;
 		padding: 3rem 2rem;
 		color: var(--color-text-secondary);
+	}
+
+	/* Settings banner */
+	.settings-banner {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding: 0.875rem 1.25rem;
+		margin-bottom: 1.5rem;
+		background: rgba(59, 130, 246, 0.1);
+		border: 1px solid rgba(59, 130, 246, 0.25);
+		border-radius: var(--radius-lg);
+	}
+
+	.settings-banner-content {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		flex: 1;
+	}
+
+	.settings-banner-icon {
+		font-size: 1.1rem;
+		flex-shrink: 0;
+	}
+
+	.settings-banner-content p {
+		margin: 0;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		line-height: 1.5;
+	}
+
+	.settings-banner-content a {
+		color: var(--color-info);
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.settings-banner-content a:hover {
+		text-decoration: underline;
+	}
+
+	.settings-banner-close {
+		background: none;
+		border: none;
+		color: var(--color-text-secondary);
+		font-size: 1.25rem;
+		cursor: pointer;
+		padding: 0;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+
+	.settings-banner-close:hover {
+		color: var(--color-text);
 	}
 
 	/* Stats */

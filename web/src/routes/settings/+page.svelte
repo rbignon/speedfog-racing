@@ -52,33 +52,30 @@
 	<h1>Settings</h1>
 
 	<section class="setting-group">
-		<h2>Language</h2>
-		<p class="description">
-			Choose the language for zone names and fog gate descriptions during races.
-		</p>
-
-		<div class="locale-select">
-			{#each locales as locale}
-				<label>
-					<input
-						type="radio"
-						name="locale"
-						value={locale.code}
-						checked={selectedLocale === locale.code}
-						onchange={() => (selectedLocale = locale.code)}
-					/>
-					{locale.name}
-					{#if locale.code !== 'en'}
-						<span class="locale-code">({locale.code})</span>
-					{/if}
-				</label>
-			{/each}
-		</div>
-	</section>
-
-	<section class="setting-group">
 		<h2>Overlay</h2>
 		<p class="description">Customize the in-game overlay that displays race information.</p>
+
+		<div class="setting-field">
+			<span class="field-label">Language</span>
+			<p class="field-description">Zone names and fog gate descriptions displayed in-game.</p>
+			<div class="locale-select">
+				{#each locales as locale}
+					<label>
+						<input
+							type="radio"
+							name="locale"
+							value={locale.code}
+							checked={selectedLocale === locale.code}
+							onchange={() => (selectedLocale = locale.code)}
+						/>
+						{locale.name}
+						{#if locale.code !== 'en'}
+							<span class="locale-code">({locale.code})</span>
+						{/if}
+					</label>
+				{/each}
+			</div>
+		</div>
 
 		<div class="setting-row">
 			<label for="font-size">Font size</label>
@@ -151,6 +148,25 @@
 	.locale-code {
 		color: var(--color-text-disabled);
 		font-size: var(--font-size-sm);
+	}
+
+	.setting-field {
+		margin-bottom: 1.25rem;
+		padding-bottom: 1.25rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.field-label {
+		font-size: var(--font-size-base);
+		font-weight: 500;
+		display: block;
+		margin-bottom: 0.25rem;
+	}
+
+	.field-description {
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-xs);
+		margin-bottom: 0.75rem;
 	}
 
 	.setting-row {
