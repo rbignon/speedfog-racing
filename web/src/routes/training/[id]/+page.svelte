@@ -16,6 +16,7 @@
 	import TrainingReplay from '$lib/replay/TrainingReplay.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 
 	function formatDatetime(iso: string): string {
@@ -37,6 +38,7 @@
 	let abandoning = $state(false);
 	let downloading = $state(false);
 	let showAbandonConfirm = $state(false);
+	let showObsModal = $state(false);
 	let ghosts = $state<Ghost[]>([]);
 	let dagView = $state<'map' | 'replay'>('map');
 
@@ -242,6 +244,9 @@
 		<!-- Actions (owner only) -->
 		{#if isOwner}
 			<div class="actions">
+				<button class="btn btn-secondary" onclick={() => (showObsModal = true)}>
+					OBS Overlay
+				</button>
 				{#if status === 'active'}
 					<button class="btn btn-secondary" disabled={downloading} onclick={handleDownload}>
 						{downloading ? 'Preparing...' : 'Download Pack'}
@@ -316,6 +321,10 @@
 		onConfirm={handleAbandon}
 		onCancel={() => (showAbandonConfirm = false)}
 	/>
+{/if}
+
+{#if showObsModal}
+	<ObsOverlayModal mode="training" {sessionId} onClose={() => (showObsModal = false)} />
 {/if}
 
 <style>

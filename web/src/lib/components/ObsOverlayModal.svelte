@@ -2,11 +2,15 @@
 	import { copyToClipboard } from '$lib/utils/clipboard';
 
 	interface Props {
-		raceId: string;
+		mode?: 'race' | 'training';
+		raceId?: string;
+		sessionId?: string;
 		onClose: () => void;
 	}
 
-	let { raceId, onClose }: Props = $props();
+	let { mode = 'race', raceId, sessionId, onClose }: Props = $props();
+
+	let entityId = $derived(mode === 'training' ? sessionId! : raceId!);
 
 	let dagCopied = $state(false);
 	let lbCopied = $state(false);
@@ -16,13 +20,13 @@
 
 	let dagUrl = $derived(
 		typeof window !== 'undefined'
-			? `${window.location.origin}/overlay/race/${raceId}/dag${dagFollow ? `?follow=true${dagMaxLayers !== 5 ? `&maxLayers=${dagMaxLayers}` : ''}` : ''}`
+			? `${window.location.origin}/overlay/${mode === 'training' ? 'training' : 'race'}/${entityId}/dag${dagFollow ? `?follow=true${dagMaxLayers !== 5 ? `&maxLayers=${dagMaxLayers}` : ''}` : ''}`
 			: ''
 	);
 
 	let lbUrl = $derived(
 		typeof window !== 'undefined'
-			? `${window.location.origin}/overlay/race/${raceId}/leaderboard${lbLines != null ? `?lines=${lbLines}` : ''}`
+			? `${window.location.origin}/overlay/race/${entityId}/leaderboard${lbLines != null ? `?lines=${lbLines}` : ''}`
 			: ''
 	);
 
@@ -83,28 +87,30 @@
 			</div>
 		</div>
 
-		<div class="overlay-section">
-			<h3>Leaderboard</h3>
-			<p class="size-hint">Recommended size: 400 &times; 800</p>
-			<div class="config-row">
-				<label for="lb-lines">Max lines</label>
-				<input
-					id="lb-lines"
-					type="number"
-					min="1"
-					max="50"
-					bind:value={lbLines}
-					placeholder="All"
-					class="config-input"
-				/>
+		{#if mode !== 'training'}
+			<div class="overlay-section">
+				<h3>Leaderboard</h3>
+				<p class="size-hint">Recommended size: 400 &times; 800</p>
+				<div class="config-row">
+					<label for="lb-lines">Max lines</label>
+					<input
+						id="lb-lines"
+						type="number"
+						min="1"
+						max="50"
+						bind:value={lbLines}
+						placeholder="All"
+						class="config-input"
+					/>
+				</div>
+				<div class="url-row">
+					<input type="text" readonly value={lbUrl} class="url-input" />
+					<button class="copy-btn" onclick={() => copyUrl(lbUrl, 'lb')}>
+						{lbCopied ? 'Copied!' : 'Copy'}
+					</button>
+				</div>
 			</div>
-			<div class="url-row">
-				<input type="text" readonly value={lbUrl} class="url-input" />
-				<button class="copy-btn" onclick={() => copyUrl(lbUrl, 'lb')}>
-					{lbCopied ? 'Copied!' : 'Copy'}
-				</button>
-			</div>
-		</div>
+		{/if}
 	</div>
 </div>
 
