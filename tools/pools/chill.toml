@@ -1,0 +1,50 @@
+# SpeedFog Racing - Chill Pool Configuration
+# ~1 hour races, generous resources for a relaxed experience
+extends = "_base"
+
+[display]
+sort_order = 0
+estimated_duration = "~1h"
+description = "Relaxed race with generous resources and loot"
+
+[requirements]
+legacy_dungeons = 2
+bosses = 10
+mini_dungeons = 10
+
+[structure]
+min_layers = 25
+max_layers = 30
+final_tier = 15
+first_layer_type = "legacy_dungeon"
+major_boss_ratio = 0.3
+final_boss_candidates = ["all"]
+
+[starting_items]
+whetblades = true
+talisman_pouches = 3
+golden_seeds = 10
+sacred_tears = 6
+starting_runes = 150000
+larval_tears = 6
+stonesword_keys = 6
+
+[care_package]
+enabled = true
+weapon_upgrade = 0
+weapons = 4
+shields = 2
+catalysts = 2
+talismans = 4
+sorceries = 5
+incantations = 5
+head_armor = 2
+body_armor = 2
+arm_armor = 2
+leg_armor = 2
+crystal_tears = 5
+ashes_of_war = 5
+
+[item_randomizer]
+difficulty = 35
+nerf_gargoyles = true

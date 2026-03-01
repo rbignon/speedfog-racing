@@ -1,0 +1,7 @@
+# SpeedFog Racing - Training Chill Pool Configuration
+# ~1 hour solo runs, generous resources
+extends = "chill"
+
+[display]
+type = "training"
+description = "Relaxed solo run with generous resources and loot"
