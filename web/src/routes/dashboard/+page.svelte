@@ -142,7 +142,7 @@
 					<p>
 						You can customize your experience in
 						<a href="/settings">Settings</a>: choose your
-						<strong>language</strong> for zone names and adjust the in-game
+						<strong>language</strong> for zone names and exit descriptions, and adjust the in-game
 						<strong>overlay font size</strong>.
 					</p>
 				</div>
