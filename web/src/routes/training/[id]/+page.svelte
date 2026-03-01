@@ -244,9 +244,6 @@
 		<!-- Actions (owner only) -->
 		{#if isOwner}
 			<div class="actions">
-				<button class="btn btn-secondary" onclick={() => (showObsModal = true)}>
-					OBS Overlay
-				</button>
 				{#if status === 'active'}
 					<button class="btn btn-secondary" disabled={downloading} onclick={handleDownload}>
 						{downloading ? 'Preparing...' : 'Download Pack'}
@@ -289,9 +286,16 @@
 				{:else if status === 'abandoned' && dagParticipants.length > 0}
 					<MetroDagFull {graphJson} participants={dagParticipants} />
 				{:else if status === 'active' && dagParticipants.length > 0}
-					<button class="btn btn-secondary btn-sm" onclick={() => (showFullDag = !showFullDag)}>
-						{showFullDag ? 'Hide Spoiler' : 'Show Spoiler'}
-					</button>
+					<div class="dag-toolbar">
+						<button class="btn btn-secondary btn-sm" onclick={() => (showFullDag = !showFullDag)}>
+							{showFullDag ? 'Hide Spoiler' : 'Show Spoiler'}
+						</button>
+						{#if isOwner}
+							<button class="btn btn-secondary btn-sm" onclick={() => (showObsModal = true)}>
+								OBS Overlay
+							</button>
+						{/if}
+					</div>
 					<div class="dag-wrapper">
 						{#if showFullDag}
 							<MetroDagFull {graphJson} participants={dagParticipants} />
@@ -528,6 +532,12 @@
 	/* DAG section */
 	.dag-section {
 		margin-bottom: 1.5rem;
+	}
+
+	.dag-toolbar {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
 	}
 
 	.dag-wrapper {
