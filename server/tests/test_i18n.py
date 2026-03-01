@@ -6,8 +6,9 @@ import pytest
 
 from speedfog_racing.services.i18n import (
     TranslationData,
-    _apply_french_contractions,
+    _apply_postprocess,
     _format_display_name,
+    _translate_exit_text,
     _translate_name,
     _translate_text,
     load_translations,
@@ -88,30 +89,49 @@ class TestTranslateName:
 
 
 # ---------------------------------------------------------------------------
-# French contractions
+# Postprocess rules (contractions + elision)
 # ---------------------------------------------------------------------------
 
 
-class TestFrenchContractions:
-    def test_de_le(self) -> None:
-        assert _apply_french_contractions("devant l'arène de le Géant de feu") == (
+class TestPostprocess:
+    def test_de_le(self, fr_data: TranslationData) -> None:
+        assert _apply_postprocess("devant l'arène de le Géant de feu", fr_data) == (
             "devant l'arène du Géant de feu"
         )
 
-    def test_de_les(self) -> None:
-        assert _apply_french_contractions("après de les Champions de Fia") == (
+    def test_de_les(self, fr_data: TranslationData) -> None:
+        assert _apply_postprocess("après de les Champions de Fia", fr_data) == (
             "après des Champions de Fia"
         )
 
-    def test_a_le(self) -> None:
-        assert _apply_french_contractions("à le Plateau Altus") == "au Plateau Altus"
+    def test_a_le(self, fr_data: TranslationData) -> None:
+        assert _apply_postprocess("à le Plateau Altus", fr_data) == "au Plateau Altus"
 
-    def test_a_les(self) -> None:
-        assert _apply_french_contractions("à les Cimes des Géants") == "aux Cimes des Géants"
+    def test_a_les(self, fr_data: TranslationData) -> None:
+        assert _apply_postprocess("à les Cimes des Géants", fr_data) == "aux Cimes des Géants"
 
-    def test_no_contraction_needed(self) -> None:
-        assert _apply_french_contractions("de la Péninsule") == "de la Péninsule"
-        assert _apply_french_contractions("de l'Ainsel") == "de l'Ainsel"
+    def test_no_contraction_needed(self, fr_data: TranslationData) -> None:
+        assert _apply_postprocess("de la Péninsule", fr_data) == "de la Péninsule"
+        assert _apply_postprocess("de l'Ainsel", fr_data) == "de l'Ainsel"
+
+    def test_de_vowel_elision(self, fr_data: TranslationData) -> None:
+        assert _apply_postprocess("de Astel", fr_data) == "d'Astel"
+
+    def test_de_accented_vowel(self, fr_data: TranslationData) -> None:
+        assert _apply_postprocess("de Élphael", fr_data) == "d'Élphael"
+
+    def test_no_elision_consonant(self, fr_data: TranslationData) -> None:
+        assert _apply_postprocess("de Margit", fr_data) == "de Margit"
+
+    def test_elision_after_contraction(self, fr_data: TranslationData) -> None:
+        """Contractions run before elision: 'de le Géant' → 'du Géant', not 'd'le'."""
+        assert _apply_postprocess("de le Géant", fr_data) == "du Géant"
+
+    def test_de_lowercase_vowel(self, fr_data: TranslationData) -> None:
+        assert _apply_postprocess("Frontière de Ainsel", fr_data) == "Frontière d'Ainsel"
+
+    def test_De_uppercase_vowel(self, fr_data: TranslationData) -> None:
+        assert _apply_postprocess("De Astel", fr_data) == "D'Astel"
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +191,34 @@ class TestTranslateText:
     def test_pattern_zone_exit(self, fr_data: TranslationData) -> None:
         result = _translate_text("Limgrave exit", "text", fr_data)
         assert result == "Sortie de Nécrolimbe"
+
+
+# ---------------------------------------------------------------------------
+# Exit text translation (override priority)
+# ---------------------------------------------------------------------------
+
+
+class TestTranslateExitText:
+    def test_side_text_override_beats_text_pattern(self, fr_data: TranslationData) -> None:
+        """Side_text override should win over a greedy text pattern match."""
+        text = "outside of Godfrey's arena at the center back exit"
+        result = _translate_exit_text(text, fr_data)
+        # Should use the side_text override, not a text pattern like "{zone} entrance"
+        assert "Sortie de" not in result
+        assert "Entrée de" not in result
+        assert "Godfrey" in result
+
+    def test_text_override_still_wins(self, fr_data: TranslationData) -> None:
+        result = _translate_exit_text("Warp after Maliketh", fr_data)
+        assert result == "Téléportation après Maliketh"
+
+    def test_text_pattern_works(self, fr_data: TranslationData) -> None:
+        result = _translate_exit_text("Margit front", fr_data)
+        assert result == "Margit (devant)"
+
+    def test_side_text_pattern_works(self, fr_data: TranslationData) -> None:
+        result = _translate_exit_text("at the front of Margit's arena", fr_data)
+        assert result == "devant l'arène de Margit"
 
 
 # ---------------------------------------------------------------------------

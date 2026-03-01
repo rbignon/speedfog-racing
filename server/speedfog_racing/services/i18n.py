@@ -27,6 +27,14 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class PostprocessRule:
+    """A compiled regex substitution rule loaded from TOML."""
+
+    pattern: re.Pattern[str]
+    replacement: str
+
+
+@dataclass
 class TranslationData:
     """Parsed translation data for a single locale."""
 
@@ -41,6 +49,7 @@ class TranslationData:
     patterns_display_name: dict[str, str] = field(default_factory=dict)
     overrides_text: dict[str, str] = field(default_factory=dict)
     overrides_side_text: dict[str, str] = field(default_factory=dict)
+    postprocess_rules: list[PostprocessRule] = field(default_factory=list)
 
 
 # Module-level state – populated by ``load_translations()``.
@@ -75,6 +84,19 @@ def load_translations(i18n_dir: Path) -> dict[str, TranslationData]:
 
         meta = data.get("meta", {})
         locale = meta.get("locale", path.stem)
+        # Parse postprocess rules
+        pp_rules: list[PostprocessRule] = []
+        for rule_data in data.get("postprocess", {}).get("rules", []):
+            try:
+                pp_rules.append(
+                    PostprocessRule(
+                        pattern=re.compile(rule_data["pattern"]),
+                        replacement=rule_data["replacement"],
+                    )
+                )
+            except (KeyError, re.error) as exc:
+                logger.warning("Skipping invalid postprocess rule in %s: %s", path, exc)
+
         td = TranslationData(
             locale=locale,
             language=meta.get("language", locale),
@@ -87,6 +109,7 @@ def load_translations(i18n_dir: Path) -> dict[str, TranslationData]:
             patterns_display_name=data.get("patterns", {}).get("display_name", {}),
             overrides_text=data.get("overrides", {}).get("text", {}),
             overrides_side_text=data.get("overrides", {}).get("side_text", {}),
+            postprocess_rules=pp_rules,
         )
         loaded[locale] = td
         logger.info("Loaded i18n: %s (%s) from %s", locale, td.language, path.name)
@@ -150,7 +173,7 @@ def _match_display_name_pattern(name: str, data: TranslationData) -> str | None:
                     continue
                 if value is not None:
                     result = result.replace("{" + ph + "}", _translate_name(value, data))
-            return _apply_french_contractions(result)
+            return _apply_postprocess(result, data)
 
     return None
 
@@ -206,26 +229,14 @@ def _format_display_name(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# French grammar contractions
+# Postprocess rules (data-driven from TOML)
 # ---------------------------------------------------------------------------
 
-# Contraction rules applied after pattern substitution.
-_CONTRACTIONS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\bde le\b"), "du"),
-    (re.compile(r"\bde les\b"), "des"),
-    (re.compile(r"\bDe le\b"), "Du"),
-    (re.compile(r"\bDe les\b"), "Des"),
-    (re.compile(r"\bà le\b"), "au"),
-    (re.compile(r"\bà les\b"), "aux"),
-    (re.compile(r"\bÀ le\b"), "Au"),
-    (re.compile(r"\bÀ les\b"), "Aux"),
-]
 
-
-def _apply_french_contractions(text: str) -> str:
-    """Apply mandatory French contractions (de le → du, etc.)."""
-    for pattern, replacement in _CONTRACTIONS:
-        text = pattern.sub(replacement, text)
+def _apply_postprocess(text: str, data: TranslationData) -> str:
+    """Apply postprocess regex rules (contractions, elision, etc.)."""
+    for rule in data.postprocess_rules:
+        text = rule.pattern.sub(rule.replacement, text)
     return text
 
 
@@ -317,8 +328,8 @@ def _translate_text(
             for ph, translated_value in translated_parts.items():
                 result = result.replace("{" + ph + "}", translated_value)
 
-            # Apply French grammar contractions
-            result = _apply_french_contractions(result)
+            # Apply postprocess rules (contractions, elision, etc.)
+            result = _apply_postprocess(result, data)
             return result
 
     # 3. Fallback: return original English text
@@ -329,13 +340,24 @@ def _translate_exit_text(text: str, data: TranslationData) -> str:
     """Translate exit text, falling back to side_text patterns.
 
     ``output.py`` puts side_text content into the ``"text"`` field of
-    graph.json exits (there is no separate side_text field), so we try
-    text overrides/patterns first, then side_text ones.
+    graph.json exits (there is no separate side_text field).
+
+    Priority order:
+      1. Exact overrides (text, then side_text) — most specific
+      2. Pattern matching (text patterns, then side_text patterns)
     """
+    if not text:
+        return text
+    # 1. Exact overrides first (both sets) — most specific
+    if text in data.overrides_text:
+        return data.overrides_text[text]
+    if text in data.overrides_side_text:
+        return data.overrides_side_text[text]
+    # 2. Pattern matching — text patterns, then side_text patterns
     result = _translate_text(text, "text", data)
-    if result == text:
-        result = _translate_text(text, "side_text", data)
-    return result
+    if result != text:
+        return result
+    return _translate_text(text, "side_text", data)
 
 
 # ---------------------------------------------------------------------------
