@@ -13,7 +13,7 @@ tolerance = 3
 [requirements]
 legacy_dungeons = 1
 bosses = 5
-mini_dungeons = 3
+mini_dungeons = 5
 
 [structure]
 min_layers = 10
