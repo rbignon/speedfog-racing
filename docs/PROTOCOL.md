@@ -672,7 +672,7 @@ Computed during `broadcast_leaderboard` for web spectators:
 
 #### Client-side (mod)
 
-The mod ignores `gap_ms` and recomputes gaps locally each frame using `leader_splits` + `layer_entry_igt`. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's snapshot `igt_ms`. For other players, the mod interpolates their IGT by adding wall-clock elapsed time since the last `player_update` or `leaderboard_update`, capped at 10 seconds. This produces smooth, frame-rate gap updates for all players.
+The mod ignores `gap_ms` and recomputes gaps locally each frame using `leader_splits` + `layer_entry_igt`. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's snapshot `igt_ms`. For other players, the mod uses their server-provided `igt_ms` directly; gaps step in discrete increments aligned with the server's `player_update` cadence (~1s).
 
 #### Color coding
 

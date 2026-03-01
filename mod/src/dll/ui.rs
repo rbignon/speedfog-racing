@@ -409,7 +409,8 @@ impl RaceTracker {
     }
 
     /// Leaderboard with color-coded status, gap timing, and right-aligned values.
-    /// Gaps are computed client-side using leader_splits for real-time updates.
+    /// Gaps are computed client-side using leader_splits. The local player uses
+    /// real-time game memory IGT; other players use the server's latest snapshot.
     /// Always shows the local player: if ranked beyond top 10, anchors them
     /// at the bottom with a `···` separator and their real rank.
     fn render_leaderboard(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
@@ -433,33 +434,24 @@ impl RaceTracker {
             .as_ref()
             .unwrap_or(&empty_splits);
 
-        // Elapsed wall-clock ms since last leaderboard update, for IGT interpolation
-        let elapsed_ms = self
-            .race_state
-            .leaderboard_received_at
-            .map(|t| t.elapsed().as_millis().min(10_000) as i32)
-            .unwrap_or(0);
-
-        // Estimate a "playing" participant's current IGT by interpolating
-        let interpolate_igt = |p: &crate::core::protocol::ParticipantInfo| -> i32 {
-            if p.status == "playing" {
-                p.igt_ms.saturating_add(elapsed_ms)
-            } else {
-                p.igt_ms
-            }
-        };
+        // Local IGT for self (real-time updates from game memory)
+        let local_igt = self.read_igt().map(|v| v as i32);
+        let my_id = self.my_participant_id();
 
         let leader_igt_ms = participants
             .first()
             .filter(|p| p.status == "playing" || p.status == "finished")
-            .map(|p| interpolate_igt(p))
+            .map(|p| {
+                // Use real-time game IGT if we are the leader
+                if my_id.is_some_and(|id| id == &p.id) {
+                    local_igt.unwrap_or(p.igt_ms)
+                } else {
+                    p.igt_ms
+                }
+            })
             .unwrap_or(0);
         let has_leader = !leader_splits.is_empty()
             || participants.first().is_some_and(|p| p.status == "finished");
-
-        // Local IGT for self (real-time updates)
-        let local_igt = self.read_igt().map(|v| v as i32);
-        let my_id = self.my_participant_id();
 
         // Pre-compute gaps for all participants
         let race_finished = self
@@ -477,11 +469,11 @@ impl RaceTracker {
                 if p.status == "finished" || race_finished {
                     return p.gap_ms;
                 }
-                // Playing, race running: recompute client-side for real-time updates
+                // Use real-time game IGT for self, server snapshot for others
                 let igt = if my_id.is_some_and(|id| id == &p.id) {
                     local_igt.unwrap_or(p.igt_ms)
                 } else {
-                    interpolate_igt(p)
+                    p.igt_ms
                 };
                 crate::core::compute_gap(
                     igt,

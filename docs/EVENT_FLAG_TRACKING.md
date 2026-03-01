@@ -194,7 +194,7 @@ Players on the same layer are sorted by layer entry IGT (who arrived first), not
 
 ### Client-Side Gap Computation (Mod)
 
-For playing players during a running race, the mod recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update` and `player_update` messages. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`. For other players, the mod interpolates their IGT by adding wall-clock elapsed time since the last update, capped at 10 seconds. This produces smooth, frame-rate gap updates for all players. The interpolation slightly over-estimates IGT during game pauses (quit-outs, loading screens), but errors are corrected at the next `player_update` (~1s).
+For playing players during a running race, the mod recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update` and `player_update` messages. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`. For other players, the mod uses their server-provided `igt_ms` directly; gaps step in discrete increments aligned with the server's `player_update` cadence (~1s).
 
 When a player finishes or the race ends, the mod uses the server-computed `gap_ms` (frozen at the time of the last leaderboard update) instead of recomputing client-side. This prevents gap drift from game memory IGT continuing to tick after finish.
 
