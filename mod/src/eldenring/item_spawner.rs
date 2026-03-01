@@ -6,7 +6,7 @@
 //!
 //! Re-spawn prevention has two layers:
 //! 1. In-process `items_spawned` bool in RaceTracker (primary; covers reconnects)
-//! 2. Event flag 1040292900 in VirtualMemoryFlag tree (secondary; covers game restarts)
+//! 2. Event flag 1040292052 in VirtualMemoryFlag tree (secondary; covers game restarts)
 //!
 //! The event flag persists in the save file but is unreliable across WebSocket
 //! reconnects — the game may silently clear it via internal flag sync.
@@ -24,8 +24,11 @@ use crate::eldenring::EventFlagReader;
 const GEM_TYPE_FLAG: u32 = 0x8000_0000;
 
 /// Event flag used to prevent re-spawning items (persists in save file).
-/// Category 1040292, offset 900 — in the FogRando-created category.
-const ITEMS_SPAWNED_FLAG: u32 = 1040292900;
+/// Category 1040292, offset 52 — next to FINGER_PICKUP_FLAG (offset 51)
+/// used by SpeedFog's EMEVD injectors. Must stay below offset 100
+/// (FogRando's num10 allocation) and well below offset 800
+/// (SpeedFog zone tracking connection flags: 1040292800+).
+const ITEMS_SPAWNED_FLAG: u32 = 1040292052;
 
 /// Spawn request struct matching Elden Ring's internal MapItemMan format.
 #[repr(C)]

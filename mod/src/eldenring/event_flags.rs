@@ -121,9 +121,9 @@ impl EventFlagReader {
         };
 
         if new_val != current {
-            // SAFETY: Single-byte write is atomic on x86. Flag 1040292900 (category 1040292,
-            // offset 900) is exclusively ours — FogRando uses offsets 100-299, so no
-            // concurrent modification of this byte is possible.
+            // SAFETY: Single-byte write is atomic on x86. Our flags use category 1040292,
+            // offsets 51-52 — FogRando uses offsets 100-299 and zone tracking uses
+            // 800+, so no concurrent modification of this byte is possible.
             unsafe {
                 std::ptr::write(addr as *mut u8, new_val);
             }
