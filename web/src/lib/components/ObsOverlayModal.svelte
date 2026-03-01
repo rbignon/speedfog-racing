@@ -10,7 +10,7 @@
 
 	let { mode = 'race', raceId, sessionId, onClose }: Props = $props();
 
-	let entityId = $derived(mode === 'training' ? sessionId! : raceId!);
+	let entityId = $derived(mode === 'training' ? (sessionId ?? '') : (raceId ?? ''));
 
 	let dagCopied = $state(false);
 	let lbCopied = $state(false);
@@ -25,7 +25,7 @@
 	);
 
 	let lbUrl = $derived(
-		typeof window !== 'undefined'
+		typeof window !== 'undefined' && mode !== 'training'
 			? `${window.location.origin}/overlay/race/${entityId}/leaderboard${lbLines != null ? `?lines=${lbLines}` : ''}`
 			: ''
 	);

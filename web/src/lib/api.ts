@@ -1025,8 +1025,9 @@ export async function fetchTrainingSessions(): Promise<TrainingSession[]> {
 
 export async function fetchTrainingSession(
   id: string,
+  customFetch: typeof fetch = fetch,
 ): Promise<TrainingSessionDetail> {
-  const response = await fetch(`${API_BASE}/training/${id}`, {
+  const response = await customFetch(`${API_BASE}/training/${id}`, {
     headers: getAuthHeaders(),
   });
   return handleResponse<TrainingSessionDetail>(response);
