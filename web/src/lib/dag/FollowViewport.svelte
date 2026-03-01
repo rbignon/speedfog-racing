@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
 	import type { PositionedNode } from './types';
-	import { PLAYER_COLORS } from './constants';
+	import { PADDING, PLAYER_COLORS } from './constants';
 
 	interface Props {
 		width: number;
@@ -128,10 +128,11 @@
 			centerX = leaderX - halfVisible + layerWidth * 0.5; // small margin
 		}
 
-		// Clamp center so we don't go past first/last layer
+		// Clamp center so we don't go past first/last layer (with padding so
+		// edge nodes aren't flush against the viewport border)
 		const clampedCenterX = Math.max(
-			minX + halfVisible,
-			Math.min(maxX - halfVisible, centerX)
+			minX - PADDING + halfVisible,
+			Math.min(maxX + PADDING - halfVisible, centerX)
 		);
 
 		return {
