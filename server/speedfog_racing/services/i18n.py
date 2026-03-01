@@ -337,14 +337,19 @@ def _translate_text(
 
 
 def _translate_exit_text(text: str, data: TranslationData) -> str:
-    """Translate exit text, falling back to side_text patterns.
+    """Translate exit text, falling back across text/side_text.
 
     ``output.py`` puts side_text content into the ``"text"`` field of
     graph.json exits (there is no separate side_text field).
 
     Priority order:
       1. Exact overrides (text, then side_text) — most specific
-      2. Pattern matching (text patterns, then side_text patterns)
+      2. Side_text patterns (longer, more constrained phrases)
+      3. Text patterns (short, greedy — e.g. ``"{zone} entrance"``)
+
+    Side_text patterns are tried before text patterns because text
+    patterns like ``"Before {boss}"`` are greedy enough to incorrectly
+    match side_text content like ``"before Godskin Noble's arena"``.
     """
     if not text:
         return text
@@ -353,11 +358,12 @@ def _translate_exit_text(text: str, data: TranslationData) -> str:
         return data.overrides_text[text]
     if text in data.overrides_side_text:
         return data.overrides_side_text[text]
-    # 2. Pattern matching — text patterns, then side_text patterns
-    result = _translate_text(text, "text", data)
+    # 2. Side_text patterns first (more specific, longer phrases)
+    result = _translate_text(text, "side_text", data)
     if result != text:
         return result
-    return _translate_text(text, "side_text", data)
+    # 3. Text patterns last (short, greedy)
+    return _translate_text(text, "text", data)
 
 
 # ---------------------------------------------------------------------------

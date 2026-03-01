@@ -220,6 +220,16 @@ class TestTranslateExitText:
         result = _translate_exit_text("at the front of Margit's arena", fr_data)
         assert result == "devant l'arène de Margit"
 
+    def test_side_text_pattern_beats_greedy_text_pattern(self, fr_data: TranslationData) -> None:
+        """Side_text pattern 'before {boss}'s arena' should win over text 'Before {boss}'."""
+        result = _translate_exit_text("before Godskin Noble's arena", fr_data)
+        assert result == "avant l'arène du Noble sanctechair"
+
+    def test_after_boss_arena_uses_side_text(self, fr_data: TranslationData) -> None:
+        """Side_text pattern 'after {boss}'s arena' should win over text patterns."""
+        result = _translate_exit_text("after Margit's arena", fr_data)
+        assert result == "après l'arène de Margit"
+
 
 # ---------------------------------------------------------------------------
 # Display name formatting (article stripping)
