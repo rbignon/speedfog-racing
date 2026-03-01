@@ -107,14 +107,22 @@ if [[ -n "$POOL" ]] && [[ ! "$POOL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     exit 1
 fi
 
+# Reject _-prefixed names (templates, not pools)
+if [[ -n "$POOL" ]] && [[ "$POOL" == _* ]]; then
+    echo "Error: '$POOL' is a template, not a pool (names starting with _ are excluded)"
+    exit 1
+fi
+
 # Determine pools to process
 if [[ -n "$POOL" ]]; then
     POOLS=("$POOL")
 else
-    # Discover from pool configs
+    # Discover from pool configs (skip _base.toml and other _-prefixed templates)
     POOLS=()
     for toml in "$TOOLS_DIR"/pools/*.toml; do
-        POOLS+=("$(basename "$toml" .toml)")
+        name="$(basename "$toml" .toml)"
+        [[ "$name" == _* ]] && continue
+        POOLS+=("$name")
     done
     if [[ ${#POOLS[@]} -eq 0 ]]; then
         echo "Error: No pool configs found in $TOOLS_DIR/pools/"
