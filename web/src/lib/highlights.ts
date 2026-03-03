@@ -1001,14 +1001,12 @@ export function computeHighlights(
   push(detectRageInducer(allZoneTimes, nodeInfo));
   push(detectEarlyExit(eligible));
 
-  candidates.sort((a, b) => {
-    const diff = b.score - a.score;
-    if (diff !== 0) return diff;
-    // Prefer community highlights (empty playerIds) over individual ones
-    const aCommunity = a.playerIds.length === 0 ? 1 : 0;
-    const bCommunity = b.playerIds.length === 0 ? 1 : 0;
-    return bCommunity - aCommunity;
-  });
+  // Community highlights (empty playerIds) get a 1.5x scoring boost —
+  // shared moments (Graveyard, Hard Pass, etc.) are more interesting than
+  // individual exploits when scores are in the same ballpark.
+  const sortScore = (h: Highlight) =>
+    h.playerIds.length === 0 ? h.score * 1.5 : h.score;
+  candidates.sort((a, b) => sortScore(b) - sortScore(a));
 
   const categoryCounts = new Map<string, number>();
   const usedZones = new Set<string>();

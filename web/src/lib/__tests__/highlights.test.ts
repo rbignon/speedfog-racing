@@ -676,16 +676,13 @@ describe("outcome-based highlights", () => {
   });
 });
 
-describe("community tiebreaker", () => {
-  it("prefers community highlights over individual ones at equal scores", () => {
-    // Craft data so Speed Demon and Graveyard produce exactly the same score
-    // for zone_a, then verify the community tiebreaker picks Graveyard.
-    //
+describe("community highlight boost", () => {
+  it("community highlights beat individual ones with 1.5x scoring boost", () => {
     // Speed Demon: ratio = avg/fastest = 60s/30s = 2.0, tierMult = 1
-    //   → bestRatio = 2.0, score = 2.0 * 20 = 40
-    // Graveyard: 5 total deaths in zone_a
-    //   → score = 5 * 8 = 40
-    // Both score 40 → tiebreaker should pick Graveyard (empty playerIds).
+    //   → raw score = 2.0 * 20 = 40
+    // Graveyard: 4 total deaths in zone_a
+    //   → raw score = 4 * 8 = 32, boosted = 32 * 1.5 = 48
+    // Graveyard wins (48 > 40) despite lower raw score.
     const graph = graphJson({
       start: { tier: 1, layer: 0, type: "start" },
       zone_a: { tier: 1, layer: 1 },
@@ -695,10 +692,10 @@ describe("community tiebreaker", () => {
       participant("alice", {
         color_index: 0,
         igt_ms: 200000,
-        death_count: 3,
+        death_count: 2,
         zone_history: [
           { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_a", igt_ms: 10000, deaths: 3 },
+          { node_id: "zone_a", igt_ms: 10000, deaths: 2 },
           { node_id: "zone_b", igt_ms: 40000 }, // 30s in zone_a (fast)
         ],
       }),
@@ -715,14 +712,54 @@ describe("community tiebreaker", () => {
     ];
     const highlights = computeHighlights(players, graph);
 
-    // Both Graveyard and Speed Demon fire on zone_a with score 40.
-    // Zone dedup picks one — the community tiebreaker should pick Graveyard.
+    // Both fire on zone_a. Graveyard's 1.5x boost should win zone dedup.
     const zoneAHighlights = highlights.filter((h) =>
       h.segments.some((s) => s.type === "zone" && s.nodeId === "zone_a"),
     );
     expect(zoneAHighlights).toHaveLength(1);
     expect(zoneAHighlights[0].type).toBe("graveyard");
     expect(zoneAHighlights[0].playerIds).toEqual([]);
+  });
+
+  it("individual highlight still wins when score difference is large", () => {
+    // Speed Demon: ratio = avg/fastest = 55s/10s = 5.5, tierMult = 3
+    //   → raw score = 5.5 * 3 * 20 = 330
+    // Graveyard: 3 deaths → raw = 24, boosted = 36
+    // Speed Demon wins (330 >> 36) — extreme exploits beat weak community.
+    const graph = graphJson({
+      start: { tier: 1, layer: 0, type: "start" },
+      zone_a: { tier: 3, layer: 1 },
+      zone_b: { tier: 3, layer: 2, type: "final_boss" },
+    });
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 200000,
+        death_count: 2,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 5000, deaths: 2 },
+          { node_id: "zone_b", igt_ms: 15000 }, // 10s in zone_a (blazing)
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 300000,
+        death_count: 1,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 5000, deaths: 1 },
+          { node_id: "zone_b", igt_ms: 105000 }, // 100s in zone_a (slow)
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+
+    const zoneAHighlights = highlights.filter((h) =>
+      h.segments.some((s) => s.type === "zone" && s.nodeId === "zone_a"),
+    );
+    expect(zoneAHighlights).toHaveLength(1);
+    expect(zoneAHighlights[0].type).toBe("speed_demon");
   });
 });
 
