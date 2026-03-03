@@ -971,7 +971,7 @@ export async function fetchAdminActivity(
 export interface TrainingSession {
   id: string;
   user: User;
-  status: "active" | "finished" | "abandoned";
+  status: "active" | "finished" | "abandoned" | "cancelled";
   pool_name: string;
   igt_ms: number;
   death_count: number;

@@ -351,10 +351,13 @@ async def get_user_activity(
             )
         )
 
-    # 4. Training sessions
+    # 4. Training sessions (exclude cancelled — player never started)
     training_q = await db.execute(
         select(TrainingSession)
-        .where(TrainingSession.user_id == user_id)
+        .where(
+            TrainingSession.user_id == user_id,
+            TrainingSession.status != TrainingSessionStatus.CANCELLED,
+        )
         .options(selectinload(TrainingSession.seed))
     )
     trainings = training_q.scalars().all()

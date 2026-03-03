@@ -18,6 +18,7 @@
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
+	import { statusLabel } from '$lib/format';
 
 	function formatDatetime(iso: string): string {
 		const d = new Date(iso);
@@ -228,7 +229,7 @@
 			</div>
 			{#if session.finished_at}
 				<div class="stat">
-					<span class="stat-label">{session.status === 'abandoned' ? 'Abandoned' : 'Finished'}</span
+					<span class="stat-label">{statusLabel(session.status)}</span
 					>
 					<span class="stat-value stat-date">{formatDatetime(session.finished_at)}</span>
 				</div>
@@ -283,7 +284,7 @@
 							ghosts={ghostParticipants}
 						/>
 					{/if}
-				{:else if status === 'abandoned' && dagParticipants.length > 0}
+				{:else if (status === 'abandoned' || status === 'cancelled') && dagParticipants.length > 0}
 					<MetroDagFull {graphJson} participants={dagParticipants} />
 				{:else if status === 'active' && dagParticipants.length > 0}
 					<div class="dag-toolbar">

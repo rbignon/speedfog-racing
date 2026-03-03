@@ -3,6 +3,7 @@
 import asyncio
 import os
 import tempfile
+import uuid
 
 import pytest
 from sqlalchemy import select
@@ -614,8 +615,10 @@ async def test_get_training_session_detail_api(test_client, training_user, train
 
 
 @pytest.mark.asyncio
-async def test_abandon_training_session_api(test_client, training_user, training_seed):
-    """POST /api/training/{id}/abandon transitions to ABANDONED."""
+async def test_abandon_training_session_no_progress_is_cancelled(
+    test_client, training_user, training_seed
+):
+    """POST /api/training/{id}/abandon → CANCELLED when no progress recorded."""
     async with test_client as client:
         create_resp = await client.post(
             "/api/training",
@@ -623,6 +626,38 @@ async def test_abandon_training_session_api(test_client, training_user, training
             headers={"Authorization": f"Bearer {training_user.api_token}"},
         )
         session_id = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/training/{session_id}/abandon",
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "cancelled"
+        assert resp.json()["finished_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_abandon_training_session_with_progress_is_abandoned(
+    test_client, training_user, training_seed, async_session
+):
+    """POST /api/training/{id}/abandon → ABANDONED when progress exists."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        session_id = create_resp.json()["id"]
+
+        # Simulate progress by writing directly to DB
+        async with async_session() as db:
+            result = await db.execute(
+                select(TrainingSession).where(TrainingSession.id == uuid.UUID(session_id))
+            )
+            session = result.scalar_one()
+            session.progress_nodes = [{"node_id": "limgrave_start", "igt_ms": 0}]
+            session.igt_ms = 5000
+            await db.commit()
 
         resp = await client.post(
             f"/api/training/{session_id}/abandon",

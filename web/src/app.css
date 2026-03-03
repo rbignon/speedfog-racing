@@ -200,6 +200,11 @@ a:hover {
   color: var(--color-text-disabled);
 }
 
+.badge-cancelled {
+  background: rgba(107, 114, 128, 0.15);
+  color: var(--color-text-disabled);
+}
+
 /* Training status badges */
 .badge-active {
   background: rgba(200, 164, 78, 0.15);

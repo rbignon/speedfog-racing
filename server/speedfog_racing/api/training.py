@@ -216,7 +216,10 @@ async def abandon_session(
             detail=f"Cannot abandon session in status '{session.status.value}'",
         )
 
-    session.status = TrainingSessionStatus.ABANDONED
+    has_progress = bool(session.progress_nodes)
+    session.status = (
+        TrainingSessionStatus.ABANDONED if has_progress else TrainingSessionStatus.CANCELLED
+    )
     session.finished_at = datetime.now(UTC)
     await db.commit()
 

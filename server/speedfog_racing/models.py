@@ -53,6 +53,7 @@ class TrainingSessionStatus(enum.Enum):
     ACTIVE = "active"
     FINISHED = "finished"
     ABANDONED = "abandoned"
+    CANCELLED = "cancelled"
 
 
 def generate_token() -> str:

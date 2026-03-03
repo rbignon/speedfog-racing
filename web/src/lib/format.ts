@@ -11,6 +11,8 @@ export function statusLabel(s: string): string {
       return "Active";
     case "abandoned":
       return "Abandoned";
+    case "cancelled":
+      return "Cancelled";
     default:
       return s;
   }
