@@ -13,6 +13,7 @@ SERVER="${DEPLOY_HOST:?Set DEPLOY_HOST (e.g. export DEPLOY_HOST=user@host)}"
 
 # Defaults
 POOL=""
+OLDER_THAN=""
 DRY_RUN=true
 SEEDS_DIR="${SEEDS_DIR:-/opt/speedfog-racing/seeds}"
 
@@ -27,6 +28,7 @@ By default runs in dry-run mode (shows what would be deleted).
 
 Options:
   --pool POOL        Only clean seeds from this pool (e.g. standard, sprint)
+  --older-than DAYS  Only clean seeds older than DAYS days
   --seeds-dir PATH   Remote seed directory on VPS (default: $SEEDS_DIR or /opt/speedfog-racing/seeds)
   --execute          Actually delete files (default: dry-run)
   -h, --help         Show this help
@@ -44,6 +46,9 @@ Examples:
 
   # Delete discarded seeds from sprint pool only
   deploy/cleanup-seeds.sh --execute --pool sprint
+
+  # Delete discarded seeds older than 30 days
+  deploy/cleanup-seeds.sh --execute --older-than 30
 EOF
     exit 0
 }
@@ -51,6 +56,7 @@ EOF
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --pool) POOL="$2"; shift 2 ;;
+        --older-than) OLDER_THAN="$2"; shift 2 ;;
         --seeds-dir) SEEDS_DIR="$2"; shift 2 ;;
         --execute) DRY_RUN=false; shift ;;
         -h|--help) usage ;;
@@ -69,20 +75,31 @@ if [[ -n "$POOL" ]] && [[ ! "$POOL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     exit 1
 fi
 
-ssh "$SERVER" bash -s "${POOL:-__ALL__}" "$DRY_RUN" "$SEEDS_DIR" <<'ENDSSH'
+# Validate --older-than is a positive integer
+if [[ -n "$OLDER_THAN" ]] && [[ ! "$OLDER_THAN" =~ ^[0-9]+$ ]]; then
+    echo "Error: --older-than must be a positive integer (number of days)"
+    exit 1
+fi
+
+ssh "$SERVER" bash -s "${POOL:-__ALL__}" "$DRY_RUN" "$SEEDS_DIR" "${OLDER_THAN:-0}" <<'ENDSSH'
     set -e
     cd /tmp  # avoid "could not change directory" errors from sudo
     POOL="$1"
     DRY_RUN="$2"
     SEEDS_DIR="$3"
+    OLDER_THAN="$4"
 
-    # Decode sentinel (SSH drops empty string args)
+    # Decode sentinels (SSH drops empty string args)
     [[ "$POOL" == "__ALL__" ]] && POOL=""
+    [[ "$OLDER_THAN" == "0" ]] && OLDER_THAN=""
 
     # Build SQL query for discarded seed file paths
     WHERE="status = 'DISCARDED' AND folder_path IS NOT NULL"
     if [[ -n "$POOL" ]]; then
         WHERE="$WHERE AND pool_name = '$POOL'"
+    fi
+    if [[ -n "$OLDER_THAN" ]]; then
+        WHERE="$WHERE AND created_at < NOW() - INTERVAL '$OLDER_THAN days'"
     fi
 
     # Query discarded seeds from database
