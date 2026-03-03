@@ -266,7 +266,7 @@
 			"OBS Overlays" on the race page to access them. Two overlays are available:
 		</p>
 		<ul>
-			<li><strong>Route map</strong> — the live DAG with player positions
+			<li><strong>Route map</strong> — the live metro map with player positions
 				(recommended: <strong>800 &times; 600</strong>). Supports auto-follow mode
 				to keep the camera on the leader.</li>
 			<li><strong>Leaderboard</strong> — ranked standings with progression and IGT

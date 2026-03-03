@@ -204,7 +204,7 @@
 					</label>
 				</div>
 				<p class="hint">
-					If you choose "organize only", you will see the DAG and cannot join as a player
+					If you choose "organize only", you will see the metro map and cannot join as a player
 					later.
 				</p>
 			</div>
