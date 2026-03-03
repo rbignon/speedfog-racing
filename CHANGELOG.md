@@ -2,6 +2,43 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.3.3] - 2026-03-03
+
+### Seeds
+
+- New "Chill" pool for relaxed races — generous starting resources, gentler difficulty curve, and more legacy dungeons
+- Difficulty scaling tuned per pool: Chill eases you in with a gentle plateau, Hardcore ramps up sharply in the endgame
+- Boss and mini dungeon proportions adjusted, zones limited to 2 entrances max
+- Fix: legacy dungeon zones now show location names instead of boss names (e.g. "Academy of Raya Lucaria after Red Wolf" instead of "Red Wolf of Radagon")
+- Maps can now split and merge independently — wider splits no longer force faster convergence
+
+### Solo
+
+- OBS metro map overlay for solo training sessions — streamers can now show their training runs in OBS
+- Cancelled and abandoned sessions are now distinct — sessions where you never connected are marked as cancelled and excluded from your solo run counter
+
+### Streaming
+
+- OBS metro map overlay font size can be set via URL parameter for easier readability tuning
+
+### In-game
+
+- Fix: gap timing for other players no longer jumps every second in the overlay
+- Fix: zone tracking no longer conflicts with item spawn flags on seeds with 100+ connections
+- Fix: backtracking via death or teleport now correctly records zone history
+
+### Website
+
+- Settings onboarding banner for new users pointing to language and overlay options
+- Highlight selection improved with more varied results and community highlights prioritized over individual ones
+- Fix: nodes no longer clipped at edges in follow mode
+- Fix: duplicate zones no longer appear across highlight cards
+
+### Translations
+
+- Improved French translations with proper contractions and elision rules (e.g. "de Astel" → "d'Astel")
+- Fix: exit fog gate descriptions now use the correct text variant
+
 ## [1.3.2] - 2026-02-28
 
 ### Logic
