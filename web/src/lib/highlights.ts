@@ -320,7 +320,7 @@ function detectSpeedDemon(
       tSeg(` in ${formatTime(bestTime)}`),
     ],
     playerIds: [bestPlayerId],
-    score: Math.min(100, bestRatio * 20),
+    score: bestRatio * 20,
   };
 }
 
@@ -373,7 +373,7 @@ function detectZoneWall(
       tSeg(`'s nemesis — stuck for ${formatTime(bestTime)}`),
     ],
     playerIds: [bestPlayerId],
-    score: Math.min(100, bestRatio * 15),
+    score: bestRatio * 15,
   };
 }
 
@@ -402,7 +402,7 @@ function detectFastStarter(
   const secondTime = times.length > 1 ? times[1].time : fastest.time * 2;
   const gap = secondTime - fastest.time;
   const gapRatio = gap / Math.max(fastest.time, 1);
-  const score = Math.min(100, Math.max(20, 30 + gapRatio * 40));
+  const score = Math.max(20, 30 + gapRatio * 40);
 
   return {
     type: "fast_starter",
@@ -475,7 +475,7 @@ function detectSprintFinal(
   const avgFinalTier =
     countFinalTier > 1 ? totalFinalTier / countFinalTier : bestTime * 2;
   const ratio = avgFinalTier / Math.max(bestTime, 1);
-  const score = Math.min(100, Math.max(20, ratio * 25));
+  const score = Math.max(20, ratio * 25);
 
   return {
     type: "sprint_final",
@@ -522,7 +522,7 @@ function detectGraveyard(
       tSeg(` claimed ${maxDeaths} deaths across all racers`),
     ],
     playerIds: [],
-    score: Math.min(100, maxDeaths * 8),
+    score: maxDeaths * 8,
   };
 }
 
@@ -560,7 +560,7 @@ function detectDeathZone(
       zSeg(maxZone, nodeInfo),
     ],
     playerIds: [maxPlayerId],
-    score: Math.min(100, maxDeaths * 10),
+    score: maxDeaths * 10,
   };
 }
 
@@ -605,7 +605,7 @@ function detectDeathless(
       ),
     ],
     playerIds: [bestPlayer.id],
-    score: Math.min(100, 50 + bestCount * 10),
+    score: 50 + bestCount * 10,
   };
 }
 
@@ -642,7 +642,7 @@ function detectComebackKid(participants: WsParticipant[]): Highlight | null {
       tSeg(` died ${maxDeaths} times but still finished ${rank}${suffix}`),
     ],
     playerIds: [maxPlayer.id],
-    score: Math.min(100, maxDeaths * 5 + (finishers.length - rank) * 10),
+    score: maxDeaths * 5 + (finishers.length - rank) * 10,
   };
 }
 
@@ -689,7 +689,7 @@ function detectRoadLessTraveled(
     title: "Road Less Traveled",
     segments: [pSeg(bestPlayer), tSeg(" forged a unique path through the fog")],
     playerIds: [bestPlayer.id],
-    score: Math.min(100, bestUniqueness * 80),
+    score: bestUniqueness * 80,
   };
 }
 
@@ -705,7 +705,7 @@ function detectSameBrain(participants: WsParticipant[]): Highlight | null {
       const pathB = uniqueNodePath(participants[j].zone_history!);
       if (pathB.join(",") === keyA) {
         // Longer matching paths are more impressive
-        const score = Math.min(100, 40 + pathA.length * 8);
+        const score = 40 + pathA.length * 8;
         return {
           type: "same_brain",
           category: "path",
@@ -753,7 +753,7 @@ function detectDetour(participants: WsParticipant[]): Highlight | null {
       tSeg(` explored ${maxNodes} zones — more than anyone else`),
     ],
     playerIds: [maxPlayer.id],
-    score: Math.min(100, (maxNodes / avgNodes) * 30),
+    score: (maxNodes / avgNodes) * 30,
   };
 }
 
@@ -790,7 +790,7 @@ function detectPhotoFinish(participants: WsParticipant[]): Highlight | null {
       tSeg(` finished just ${formatTime(minGap)} apart`),
     ],
     playerIds: [player1.id, player2.id],
-    score: Math.min(100, (30000 / Math.max(minGap, 1000)) * 20),
+    score: (30000 / Math.max(minGap, 1000)) * 20,
   };
 }
 
@@ -814,7 +814,7 @@ function detectLeadChanges(
     title: "Back and Forth",
     segments: [tSeg(`The lead changed ${changes} times throughout the race`)],
     playerIds: [...new Set(leaders)],
-    score: Math.min(100, changes * 25),
+    score: changes * 25,
   };
 }
 
@@ -832,7 +832,7 @@ function detectDominant(
   if (!p) return null;
 
   // More layers dominated = more impressive
-  const score = Math.min(100, 40 + leaders.length * 8);
+  const score = 40 + leaders.length * 8;
 
   return {
     type: "dominant",
@@ -879,7 +879,7 @@ function detectHardPass(
       zSeg(maxZone, nodeInfo),
     ],
     playerIds: [],
-    score: Math.min(100, maxBacks * tier * 15),
+    score: maxBacks * tier * 15,
   };
 }
 
@@ -918,7 +918,7 @@ function detectRageInducer(
       ),
     ],
     playerIds: [],
-    score: Math.min(100, maxAbandons * 40),
+    score: maxAbandons * 40,
   };
 }
 
@@ -945,7 +945,7 @@ function detectEarlyExit(participants: WsParticipant[]): Highlight | null {
 
   const ratio = earliest.igt_ms / medianIgt;
   if (ratio > 0.8) return null;
-  const score = Math.min(100, Math.max(20, 90 - ratio * 100));
+  const score = Math.max(20, 90 - ratio * 100);
 
   return {
     type: "early_exit",
@@ -1001,7 +1001,14 @@ export function computeHighlights(
   push(detectRageInducer(allZoneTimes, nodeInfo));
   push(detectEarlyExit(eligible));
 
-  candidates.sort((a, b) => b.score - a.score);
+  candidates.sort((a, b) => {
+    const diff = b.score - a.score;
+    if (diff !== 0) return diff;
+    // Prefer community highlights (empty playerIds) over individual ones
+    const aCommunity = a.playerIds.length === 0 ? 1 : 0;
+    const bCommunity = b.playerIds.length === 0 ? 1 : 0;
+    return bCommunity - aCommunity;
+  });
 
   const categoryCounts = new Map<string, number>();
   const usedZones = new Set<string>();
