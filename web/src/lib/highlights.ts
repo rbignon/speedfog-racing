@@ -1004,11 +1004,20 @@ export function computeHighlights(
   candidates.sort((a, b) => b.score - a.score);
 
   const categoryCounts = new Map<string, number>();
+  const usedZones = new Set<string>();
   const selected: Highlight[] = [];
   for (const h of candidates) {
     const count = categoryCounts.get(h.category) ?? 0;
     if (count >= 2) continue;
+    const zones = h.segments
+      .filter(
+        (s): s is Extract<DescriptionSegment, { type: "zone" }> =>
+          s.type === "zone",
+      )
+      .map((s) => s.nodeId);
+    if (zones.length > 0 && zones.some((z) => usedZones.has(z))) continue;
     categoryCounts.set(h.category, count + 1);
+    zones.forEach((z) => usedZones.add(z));
     selected.push(h);
     if (selected.length >= 6) break;
   }

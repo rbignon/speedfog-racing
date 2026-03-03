@@ -295,8 +295,8 @@ describe("speed highlights", () => {
   });
 
   it("Zone Wall: detects player who spent disproportionately long in a zone", () => {
-    // Both players reach each layer at similar times to minimize fast_starter score,
-    // but Alice spends much longer in zone_b specifically.
+    // Alice is very slow in zone_b (wall). Charlie is very fast in zone_a
+    // so Speed Demon fires on zone_a instead, leaving zone_b free for Zone Wall.
     const wallGraph = graphJson({
       start: { tier: 1, layer: 0, type: "start" },
       zone_a: { tier: 2, layer: 1 },
@@ -319,16 +319,26 @@ describe("speed highlights", () => {
         igt_ms: 200000,
         zone_history: [
           { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_a", igt_ms: 12000 }, // 12s in start (similar to alice)
-          { node_id: "zone_b", igt_ms: 35000 }, // 23s in zone_a (similar to alice)
+          { node_id: "zone_a", igt_ms: 12000 }, // 12s in start
+          { node_id: "zone_b", igt_ms: 35000 }, // 23s in zone_a
           { node_id: "zone_c", igt_ms: 100000 }, // 65s in zone_b
+        ],
+      }),
+      participant("charlie", {
+        color_index: 2,
+        igt_ms: 280000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 28000 }, // 28s in start
+          { node_id: "zone_b", igt_ms: 30000 }, // 2s in zone_a (very fast → Speed Demon here)
+          { node_id: "zone_c", igt_ms: 200000 }, // 170s in zone_b (normal)
         ],
       }),
     ];
     const highlights = computeHighlights(players, wallGraph);
     const wall = highlights.find((h) => h.type === "zone_wall");
     expect(wall).toBeDefined();
-    // Alice spent 320s in zone_b vs Bob's 65s — extreme zone wall
+    // Alice spent 320s in zone_b vs Bob 65s + Charlie 175s — extreme zone wall
     expect(wall!.playerIds).toContain("alice");
   });
 
@@ -548,15 +558,17 @@ describe("outcome-based highlights", () => {
   });
 
   it("Hard Pass: detects zone with multiple backs", () => {
+    // All three spend similar time in zone_a (~45-50s) so Speed Demon/Zone Wall
+    // don't fire there, leaving zone_a free for Hard Pass.
     const players = [
       participant("alice", {
         color_index: 0,
         igt_ms: 300000,
         zone_history: [
           { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_a", igt_ms: 30000 },
-          { node_id: "zone_b", igt_ms: 40000 }, // backed from zone_a (same layer)
-          { node_id: "zone_c", igt_ms: 100000 },
+          { node_id: "zone_a", igt_ms: 50000 },
+          { node_id: "zone_b", igt_ms: 95000 }, // backed from zone_a (same layer)
+          { node_id: "zone_c", igt_ms: 155000 },
           { node_id: "final", igt_ms: 300000 },
         ],
       }),
@@ -565,9 +577,9 @@ describe("outcome-based highlights", () => {
         igt_ms: 350000,
         zone_history: [
           { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_a", igt_ms: 40000 },
-          { node_id: "zone_b", igt_ms: 50000 }, // also backed from zone_a
-          { node_id: "zone_c", igt_ms: 120000 },
+          { node_id: "zone_a", igt_ms: 55000 },
+          { node_id: "zone_b", igt_ms: 100000 }, // also backed from zone_a
+          { node_id: "zone_c", igt_ms: 175000 },
           { node_id: "final", igt_ms: 350000 },
         ],
       }),
@@ -576,7 +588,7 @@ describe("outcome-based highlights", () => {
         igt_ms: 280000,
         zone_history: [
           { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_a", igt_ms: 35000 },
+          { node_id: "zone_a", igt_ms: 50000 },
           { node_id: "zone_c", igt_ms: 100000 }, // cleared zone_a normally
           { node_id: "final", igt_ms: 280000 },
         ],
@@ -626,6 +638,8 @@ describe("outcome-based highlights", () => {
   });
 
   it("Rage Inducer: detects zone that caused multiple abandonments", () => {
+    // Bob and Charlie enter zone_c early and spend time there before abandoning,
+    // so Zone Wall ratio stays moderate and doesn't steal zone_c.
     const players = [
       participant("alice", {
         color_index: 0,
@@ -638,20 +652,20 @@ describe("outcome-based highlights", () => {
       }),
       participant("bob", {
         color_index: 1,
-        igt_ms: 150000,
+        igt_ms: 200000,
         status: "abandoned",
         zone_history: [
           { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_c", igt_ms: 150000 },
+          { node_id: "zone_c", igt_ms: 100000 }, // 100s in zone_c before quitting
         ],
       }),
       participant("charlie", {
         color_index: 2,
-        igt_ms: 180000,
+        igt_ms: 230000,
         status: "abandoned",
         zone_history: [
           { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_c", igt_ms: 180000 },
+          { node_id: "zone_c", igt_ms: 100000 }, // 130s in zone_c before quitting
         ],
       }),
     ];
@@ -659,5 +673,50 @@ describe("outcome-based highlights", () => {
     const rageInducer = highlights.find((h) => h.type === "rage_inducer");
     expect(rageInducer).toBeDefined();
     expect(descriptionText(rageInducer!)).toContain("zone_c");
+  });
+});
+
+describe("zone deduplication", () => {
+  it("does not show the same zone in multiple highlights", () => {
+    // Both Speed Demon and Zone Wall would fire on zone_a (Alice fast, Bob slow).
+    // Graveyard and Death Zone would fire on zone_a too (high deaths).
+    // Only the highest-scoring zone_a highlight should be selected.
+    const graph = graphJson({
+      start: { tier: 1, layer: 0, type: "start" },
+      zone_a: { tier: 3, layer: 1 },
+      zone_b: { tier: 3, layer: 2, type: "final_boss" },
+    });
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 400000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 }, // 50s in start
+          { node_id: "zone_b", igt_ms: 60000 }, // 10s in zone_a (fast!)
+        ],
+        death_count: 0,
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 500000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 }, // 50s in start
+          {
+            node_id: "zone_b",
+            igt_ms: 350000,
+            deaths: 15,
+          }, // 300s in zone_a (slow! + deaths)
+        ],
+        death_count: 15,
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    // Count how many highlights reference zone_a
+    const zoneAHighlights = highlights.filter((h) =>
+      h.segments.some((s) => s.type === "zone" && s.nodeId === "zone_a"),
+    );
+    expect(zoneAHighlights.length).toBe(1);
   });
 });
