@@ -507,10 +507,16 @@ async def handle_zone_query(
     msg: dict[str, Any],
     locale: str = "en",
 ) -> None:
-    """Handle zone_query from mod (loading screen exit overlay update)."""
+    """Handle zone_query from mod (loading screen exit overlay update).
+
+    When the resolved node differs from current_zone, this records a
+    zone_history entry (backtrack via death/teleport/quit-out).
+    """
     zq = parse_zone_query_input(msg)
     if zq is None:
         return
+
+    is_first_visit = False
 
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
@@ -546,14 +552,46 @@ async def handle_zone_query(
             )
             return
 
+        # Record zone_history entry when the player moved to a different node
+        # (backtrack via death/teleport/quit-out — no event flag fired)
+        if node_id != participant.current_zone:
+            logger.info(
+                "zone_query backtrack: %s -> %s for participant %s",
+                participant.current_zone,
+                node_id,
+                participant_id,
+            )
+            igt = zq.igt_ms if zq.igt_ms is not None else participant.igt_ms
+            old_history = participant.zone_history or []
+            is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
+
+            participant.last_igt_change_at = datetime.now(UTC)
+            participant.igt_ms = igt
+            new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt}
+            participant.zone_history = [*old_history, new_entry]
+
+            # current_layer is a high watermark — never regress
+            node_layer = get_layer_for_node(node_id, graph_json)
+            if node_layer > participant.current_layer:
+                participant.current_layer = node_layer
+
         participant.current_zone = node_id
         await db.commit()
 
     # Unicast zone_update to originating mod
     await send_zone_update(websocket, node_id, graph_json, participant.zone_history, locale)
 
-    # Broadcast player update to all (so mods get fresh IGT + DAG view updates)
-    await manager.broadcast_player_update(participant.race_id, participant, graph_json=graph_json)
+    # Broadcast based on whether this was a first visit or revisit
+    if is_first_visit:
+        await manager.broadcast_leaderboard(
+            participant.race_id,
+            participant.race.participants,
+            graph_json=graph_json,
+        )
+    else:
+        await manager.broadcast_player_update(
+            participant.race_id, participant, graph_json=graph_json
+        )
 
 
 async def handle_finished(

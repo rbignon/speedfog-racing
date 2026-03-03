@@ -166,6 +166,7 @@ Sent at loading screen exit when no event_flag was detected (death, respawn, fas
 ```json
 {
   "type": "zone_query",
+  "igt_ms": 60000,
   "grace_entity_id": 10002950,
   "map_id": "m10_00_00_00",
   "position": [100.0, 50.0, 200.0],
@@ -175,6 +176,7 @@ Sent at loading screen exit when no event_flag was detected (death, respawn, fas
 
 | Field             | Type                        | Description                                                  |
 | ----------------- | --------------------------- | ------------------------------------------------------------ |
+| `igt_ms`          | `integer`                   | In-game time in milliseconds at the moment of the query      |
 | `grace_entity_id` | `integer \| null`           | Grace entity ID captured by the warp hook during fast travel |
 | `map_id`          | `string \| null`            | Map ID string (e.g. `m10_00_00_00`) for map-based fallback   |
 | `position`        | `[number, number, number]?` | Player position `[x, y, z]` (reserved for future use)        |
@@ -182,7 +184,7 @@ Sent at loading screen exit when no event_flag was detected (death, respawn, fas
 
 **Response:** The server sends a `zone_update` (unicast) if the query resolves to a node in the current seed's graph. No response if unresolvable or ambiguous.
 
-**Note:** This message does NOT modify `zone_history` (progression). It only updates `current_zone` (overlay pointer) and triggers a spectator `player_update`.
+**Backtrack recording:** When the resolved node differs from `current_zone`, the server appends a new `zone_history` entry (recording the backtrack via death/teleport/quit-out). First visits trigger `leaderboard_update`; revisits trigger `player_update`. If the resolved node matches `current_zone`, only `current_zone` is refreshed (no history append).
 
 #### `finished`
 
@@ -739,17 +741,18 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 
 ### Broadcasting Strategy
 
-| Event                          | Mods                                                | Spectators                          |
-| ------------------------------ | --------------------------------------------------- | ----------------------------------- |
-| Mod connects/disconnects       | `leaderboard_update`                                | `leaderboard_update`                |
-| `ready`                        | `leaderboard_update`                                | `leaderboard_update`                |
-| `status_update` (periodic)     | `player_update`                                     | `player_update`                     |
-| `status_update` (READY→PLAY)   | `leaderboard_update`                                | `leaderboard_update`                |
-| `event_flag` (new node)        | `leaderboard_update`                                | `leaderboard_update`                |
-| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`           | `player_update`                     |
-| `event_flag` (finish)          | `leaderboard_update`                                | `race_state` + status change        |
-| `zone_query`                   | `zone_update` (unicast) + `player_update`           | `player_update`                     |
-| Race starts                    | `race_start` + `zone_update` + `race_status_change` | `race_state` + `race_status_change` |
-| Race finishes                  | `race_status_change`                                | `race_state` + `race_status_change` |
-| Seeds released                 | —                                                   | `race_state`                        |
-| Spectator connects/disconnects | —                                                   | `spectator_count`                   |
+| Event                          | Mods                                                              | Spectators                              |
+| ------------------------------ | ----------------------------------------------------------------- | --------------------------------------- |
+| Mod connects/disconnects       | `leaderboard_update`                                              | `leaderboard_update`                    |
+| `ready`                        | `leaderboard_update`                                              | `leaderboard_update`                    |
+| `status_update` (periodic)     | `player_update`                                                   | `player_update`                         |
+| `status_update` (READY→PLAY)   | `leaderboard_update`                                              | `leaderboard_update`                    |
+| `event_flag` (new node)        | `leaderboard_update`                                              | `leaderboard_update`                    |
+| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                         | `player_update`                         |
+| `event_flag` (finish)          | `leaderboard_update`                                              | `race_state` + status change            |
+| `zone_query` (same zone)       | `zone_update` (unicast) + `player_update`                         | `player_update`                         |
+| `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update` | `leaderboard_update` or `player_update` |
+| Race starts                    | `race_start` + `zone_update` + `race_status_change`               | `race_state` + `race_status_change`     |
+| Race finishes                  | `race_status_change`                                              | `race_state` + `race_status_change`     |
+| Seeds released                 | —                                                                 | `race_state`                            |
+| Spectator connects/disconnects | —                                                                 | `spectator_count`                       |

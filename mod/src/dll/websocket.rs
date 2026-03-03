@@ -45,6 +45,7 @@ pub enum OutgoingMessage {
         igt_ms: u32,
     },
     ZoneQuery {
+        igt_ms: u32,
         grace_entity_id: Option<u32>,
         map_id: Option<String>,
         position: Option<[f32; 3]>,
@@ -202,6 +203,7 @@ impl RaceWebSocketClient {
 
     pub fn send_zone_query(
         &self,
+        igt_ms: u32,
         grace_entity_id: Option<u32>,
         map_id: Option<String>,
         position: Option<[f32; 3]>,
@@ -209,6 +211,7 @@ impl RaceWebSocketClient {
     ) {
         if let Some(tx) = &self.tx {
             if let Err(e) = tx.try_send(OutgoingMessage::ZoneQuery {
+                igt_ms,
                 grace_entity_id,
                 map_id,
                 position,
@@ -460,12 +463,14 @@ fn message_loop(
                     .map_err(|e| e.to_string())?;
             }
             Ok(OutgoingMessage::ZoneQuery {
+                igt_ms,
                 grace_entity_id,
                 map_id,
                 position,
                 play_region_id,
             }) => {
                 let msg = ClientMessage::ZoneQuery {
+                    igt_ms,
                     grace_entity_id,
                     map_id,
                     position,

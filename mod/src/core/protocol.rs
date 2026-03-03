@@ -24,6 +24,7 @@ pub enum ClientMessage {
     EventFlag { flag_id: u32, igt_ms: u32 },
     /// Zone query at loading screen exit (server resolves to graph node)
     ZoneQuery {
+        igt_ms: u32,
         #[serde(skip_serializing_if = "Option::is_none")]
         grace_entity_id: Option<u32>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -451,6 +452,7 @@ mod tests {
     #[test]
     fn test_client_zone_query_grace_only() {
         let msg = ClientMessage::ZoneQuery {
+            igt_ms: 60000,
             grace_entity_id: Some(10002950),
             map_id: None,
             position: None,
@@ -458,6 +460,7 @@ mod tests {
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"zone_query""#));
+        assert!(json.contains(r#""igt_ms":60000"#));
         assert!(json.contains(r#""grace_entity_id":10002950"#));
         assert!(!json.contains("map_id"));
     }
@@ -465,6 +468,7 @@ mod tests {
     #[test]
     fn test_client_zone_query_map_only() {
         let msg = ClientMessage::ZoneQuery {
+            igt_ms: 120000,
             grace_entity_id: None,
             map_id: Some("m10_00_00_00".into()),
             position: Some([100.0, 50.0, 200.0]),
@@ -472,6 +476,7 @@ mod tests {
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"zone_query""#));
+        assert!(json.contains(r#""igt_ms":120000"#));
         assert!(json.contains(r#""map_id":"m10_00_00_00""#));
         assert!(!json.contains("grace_entity_id"));
     }

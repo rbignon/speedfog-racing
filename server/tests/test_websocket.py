@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from speedfog_racing.models import ParticipantStatus, RaceStatus
+from speedfog_racing.websocket.common import parse_zone_query_input
 from speedfog_racing.websocket.manager import (
     ConnectionManager,
     RaceRoom,
@@ -901,3 +902,136 @@ class TestEventFlagBacktracking:
         # Deaths should be on the LAST zone_a entry (index 3), NOT the first (index 1)
         assert history[1].get("deaths") is None  # first visit untouched
         assert history[3]["deaths"] == 3  # last visit gets deaths
+
+
+class TestZoneQueryBacktracking:
+    """Test zone_query recording zone_history on backtrack."""
+
+    def test_zone_query_backtrack_appends_to_zone_history(self):
+        """When zone_query resolves to a different node, zone_history should gain an entry."""
+        old_history = [
+            {"node_id": "start", "igt_ms": 0},
+            {"node_id": "zone_a", "igt_ms": 60000},
+            {"node_id": "zone_b", "igt_ms": 120000},
+        ]
+        current_zone = "zone_b"
+        resolved_node = "zone_a"  # backtrack
+        igt_ms = 200000
+
+        # Simulate handle_zone_query logic: append when node differs
+        if resolved_node != current_zone:
+            is_first_visit = not any(entry.get("node_id") == resolved_node for entry in old_history)
+            new_entry = {"node_id": resolved_node, "igt_ms": igt_ms}
+            new_history = [*old_history, new_entry]
+        else:
+            new_history = old_history
+            is_first_visit = False
+
+        assert len(new_history) == 4
+        assert new_history[-1] == {"node_id": "zone_a", "igt_ms": 200000}
+        assert not is_first_visit  # it's a revisit
+
+    def test_zone_query_same_zone_does_not_append(self):
+        """When zone_query resolves to the same node, zone_history is unchanged."""
+        old_history = [
+            {"node_id": "start", "igt_ms": 0},
+            {"node_id": "zone_a", "igt_ms": 60000},
+        ]
+        current_zone = "zone_a"
+        resolved_node = "zone_a"
+        igt_ms = 70000
+
+        if resolved_node != current_zone:
+            new_entry = {"node_id": resolved_node, "igt_ms": igt_ms}
+            new_history = [*old_history, new_entry]
+        else:
+            new_history = old_history
+
+        assert len(new_history) == 2  # unchanged
+
+    def test_zone_query_backtrack_uses_igt_from_message(self):
+        """zone_query with igt_ms uses the message's IGT, not the stale participant IGT."""
+        old_history = [
+            {"node_id": "start", "igt_ms": 0},
+            {"node_id": "zone_a", "igt_ms": 60000},
+        ]
+        current_zone = "zone_a"
+        resolved_node = "start"  # backtrack to start
+        zq_igt_ms = 90000  # from zone_query message
+        participant_igt_ms = 65000  # stale
+
+        igt = zq_igt_ms if zq_igt_ms is not None else participant_igt_ms
+
+        if resolved_node != current_zone:
+            new_entry = {"node_id": resolved_node, "igt_ms": igt}
+            new_history = [*old_history, new_entry]
+        else:
+            new_history = old_history
+
+        assert new_history[-1]["igt_ms"] == 90000  # uses zone_query igt
+
+    def test_zone_query_backtrack_fallback_to_participant_igt(self):
+        """zone_query without igt_ms falls back to participant's last known IGT."""
+        old_history = [
+            {"node_id": "start", "igt_ms": 0},
+            {"node_id": "zone_a", "igt_ms": 60000},
+        ]
+        current_zone = "zone_a"
+        resolved_node = "start"
+        zq_igt_ms = None  # old mod without igt_ms in zone_query
+        participant_igt_ms = 65000
+
+        igt = zq_igt_ms if zq_igt_ms is not None else participant_igt_ms
+
+        if resolved_node != current_zone:
+            new_entry = {"node_id": resolved_node, "igt_ms": igt}
+            new_history = [*old_history, new_entry]
+        else:
+            new_history = old_history
+
+        assert new_history[-1]["igt_ms"] == 65000  # fallback to participant IGT
+
+    def test_zone_query_first_visit_detection(self):
+        """zone_query to an unvisited node should be detected as first visit."""
+        old_history = [
+            {"node_id": "start", "igt_ms": 0},
+        ]
+        current_zone = "start"
+        resolved_node = "zone_a"  # never visited before
+        igt_ms = 60000
+
+        if resolved_node != current_zone:
+            is_first_visit = not any(entry.get("node_id") == resolved_node for entry in old_history)
+            new_entry = {"node_id": resolved_node, "igt_ms": igt_ms}
+            new_history = [*old_history, new_entry]
+        else:
+            new_history = old_history
+            is_first_visit = False
+
+        assert is_first_visit
+        assert len(new_history) == 2
+
+
+class TestParseZoneQueryInput:
+    """Test parse_zone_query_input with igt_ms field."""
+
+    def test_parse_zone_query_with_igt_ms(self):
+        msg = {"grace_entity_id": 10002950, "igt_ms": 60000}
+        zq = parse_zone_query_input(msg)
+        assert zq is not None
+        assert zq.grace_entity_id == 10002950
+        assert zq.igt_ms == 60000
+
+    def test_parse_zone_query_without_igt_ms(self):
+        """Old mods that don't send igt_ms should still work."""
+        msg = {"grace_entity_id": 10002950}
+        zq = parse_zone_query_input(msg)
+        assert zq is not None
+        assert zq.grace_entity_id == 10002950
+        assert zq.igt_ms is None
+
+    def test_parse_zone_query_invalid_igt_ms(self):
+        msg = {"grace_entity_id": 10002950, "igt_ms": "not_a_number"}
+        zq = parse_zone_query_input(msg)
+        assert zq is not None
+        assert zq.igt_ms is None

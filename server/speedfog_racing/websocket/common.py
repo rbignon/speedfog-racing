@@ -118,6 +118,7 @@ class ZoneQueryInput:
     map_id: str | None
     position: tuple[Any, ...] | None
     play_region_id: int | None
+    igt_ms: int | None
 
 
 def parse_zone_query_input(msg: dict[str, Any]) -> ZoneQueryInput | None:
@@ -137,10 +138,13 @@ def parse_zone_query_input(msg: dict[str, Any]) -> ZoneQueryInput | None:
     position = tuple(raw_pos) if isinstance(raw_pos, list) and len(raw_pos) == 3 else None
     raw_pr = msg.get("play_region_id")
     play_region_id = raw_pr if isinstance(raw_pr, int) else None
+    raw_igt = msg.get("igt_ms")
+    igt_ms = raw_igt if isinstance(raw_igt, int) else None
 
     return ZoneQueryInput(
         grace_entity_id=grace_entity_id,
         map_id=map_id_str,
         position=position,
         play_region_id=play_region_id,
+        igt_ms=igt_ms,
     )

@@ -385,6 +385,7 @@ impl RaceTracker {
                     }
                 } else {
                     // No fog gate — death/respawn/quit-out/fast-travel
+                    let igt_ms = self.game_state.read_igt().unwrap_or(0);
                     let pos = self.game_state.read_position();
                     let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
                     let grace_opt = if grace_id > 0 { Some(grace_id) } else { None };
@@ -394,6 +395,7 @@ impl RaceTracker {
 
                     if grace_opt.is_some() || map_id.is_some() {
                         self.ws_client.send_zone_query(
+                            igt_ms,
                             grace_opt,
                             map_id.clone(),
                             position,
