@@ -2,7 +2,7 @@
 	import type { WsParticipant } from '$lib/websocket';
 	import ZoomableSvg from './ZoomableSvg.svelte';
 	import NodePopup from './NodePopup.svelte';
-	import { computeConnections, computeVisitors, parseExitTexts, parseEntranceTexts } from './popupData';
+	import { computeConnections, computeVisitors, parseExitTexts, parseEntranceTexts, parseNodeLayers } from './popupData';
 	import type { NodePopupData } from './popupData';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
@@ -198,6 +198,7 @@
 
 	let exitTexts = $derived(parseExitTexts(graphJson));
 	let entranceTexts = $derived(parseEntranceTexts(graphJson));
+	let nodeLayers = $derived(parseNodeLayers(graphJson));
 
 	let popupData: NodePopupData | null = $state(null);
 	let popupX = $state(0);
@@ -214,7 +215,7 @@
 
 		// Only show own stats (anti-spoiler: no other players' data)
 		const me = participants.find((p) => p.id === myParticipantId);
-		const visitors = me ? computeVisitors(nodeId, [me]) : [];
+		const visitors = me ? computeVisitors(nodeId, [me], nodeLayers) : [];
 
 		popupData = {
 			nodeId,
