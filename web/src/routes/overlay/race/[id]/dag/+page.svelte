@@ -19,6 +19,14 @@
 			return isNaN(n) || n < 3 ? 5 : n;
 		})()
 	);
+	let labelFontSize = $derived(
+		(() => {
+			const raw = page.url.searchParams.get('fontSize');
+			if (raw === null || raw === '') return undefined;
+			const n = parseInt(raw, 10);
+			return isNaN(n) || n < 6 || n > 32 ? undefined : n;
+		})()
+	);
 
 	$effect(() => {
 		if (!auth.initialized) return;
@@ -40,6 +48,7 @@
 			transparent
 			{follow}
 			{maxLayers}
+			{labelFontSize}
 			showLiveDots
 		/>
 	{:else if liveSeed?.graph_json && raceStatus === 'setup'}
@@ -51,6 +60,7 @@
 			anonymous
 			{follow}
 			{maxLayers}
+			{labelFontSize}
 			showLiveDots
 		/>
 	{/if}

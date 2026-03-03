@@ -15,12 +15,20 @@
 	let dagCopied = $state(false);
 	let lbCopied = $state(false);
 	let lbLines = $state<number | null>(10);
-	let dagFollow = $state(false);
+	let dagFollow = $state(true);
 	let dagMaxLayers = $state<number>(5);
+	let dagFontSize = $state<number>(11);
 
 	let dagUrl = $derived(
 		typeof window !== 'undefined'
-			? `${window.location.origin}/overlay/${mode === 'training' ? 'training' : 'race'}/${entityId}/dag${dagFollow ? `?follow=true${dagMaxLayers !== 5 ? `&maxLayers=${dagMaxLayers}` : ''}` : ''}`
+			? (() => {
+					const base = `${window.location.origin}/overlay/${mode === 'training' ? 'training' : 'race'}/${entityId}/dag`;
+					const params: string[] = [];
+					params.push(`follow=${dagFollow}`);
+					params.push(`maxLayers=${dagMaxLayers}`);
+					params.push(`fontSize=${dagFontSize}`);
+					return `${base}?${params.join('&')}`;
+				})()
 			: ''
 	);
 
@@ -58,7 +66,7 @@
 		</p>
 
 		<div class="overlay-section">
-			<h3>DAG</h3>
+			<h3>Metro map</h3>
 			<p class="size-hint">Recommended size: 800 &times; 600</p>
 			<div class="config-row">
 				<label for="dag-follow">
@@ -66,19 +74,29 @@
 					Auto-follow
 				</label>
 			</div>
-			{#if dagFollow}
-				<div class="config-row">
-					<label for="dag-max-layers">Visible layers</label>
-					<input
-						id="dag-max-layers"
-						type="number"
-						min="3"
-						max="20"
-						bind:value={dagMaxLayers}
-						class="config-input"
-					/>
-				</div>
-			{/if}
+			<p class="config-hint">Scrolls the metro map to keep active players in view.</p>
+			<div class="config-row">
+				<label for="dag-max-layers">Visible layers</label>
+				<input
+					id="dag-max-layers"
+					type="number"
+					min="3"
+					max="20"
+					bind:value={dagMaxLayers}
+					class="config-input"
+				/>
+			</div>
+			<div class="config-row">
+				<label for="dag-font-size">Label font size</label>
+				<input
+					id="dag-font-size"
+					type="number"
+					min="6"
+					max="32"
+					bind:value={dagFontSize}
+					class="config-input"
+				/>
+			</div>
 			<div class="url-row">
 				<input type="text" readonly value={dagUrl} class="url-input" />
 				<button class="copy-btn" onclick={() => copyUrl(dagUrl, 'dag')}>
@@ -246,5 +264,11 @@
 		align-items: center;
 		gap: 0.4rem;
 		cursor: pointer;
+	}
+
+	.config-hint {
+		margin: -0.25rem 0 0.5rem 0;
+		font-size: var(--font-size-xs, 0.75rem);
+		color: var(--color-text-disabled);
 	}
 </style>

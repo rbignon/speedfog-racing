@@ -45,6 +45,7 @@
 		follow?: boolean;
 		maxLayers?: number;
 		fullPathOpacity?: boolean;
+		labelFontSize?: number;
 	}
 
 	let {
@@ -58,7 +59,8 @@
 		showLiveDots = false,
 		follow = false,
 		maxLayers = 5,
-		fullPathOpacity = false
+		fullPathOpacity = false,
+		labelFontSize = LABEL_FONT_SIZE
 	}: Props = $props();
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
@@ -559,7 +561,7 @@
 						? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2
 						: node.y - nodeRadius(node) - 6}
 					text-anchor="middle"
-					font-size={LABEL_FONT_SIZE - 1}
+					font-size={labelFontSize - 1}
 					class="death-icon"
 					class:transparent-label={transparent}>💀</text
 				>
@@ -571,7 +573,7 @@
 					x={labelX(node)}
 					y={labelY(node)}
 					text-anchor={labelAbove.has(node.id) ? 'start' : 'end'}
-					font-size={LABEL_FONT_SIZE}
+					font-size={labelFontSize}
 					fill={LABEL_COLOR}
 					class="dag-label"
 					class:transparent-label={transparent}
