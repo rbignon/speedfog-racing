@@ -3,21 +3,23 @@
 extends = "_base"
 
 [display]
-sort_order = 0
+sort_order = 2
 estimated_duration = "~1h"
 description = "Relaxed race with generous resources and loot"
 
 [requirements]
-legacy_dungeons = 2
-bosses = 10
+legacy_dungeons = 3
+bosses = 7
 mini_dungeons = 10
 
 [structure]
 min_layers = 25
 max_layers = 30
-final_tier = 15
+final_tier = 12
+tier_curve = "power"
+tier_curve_exponent = 0.5
 first_layer_type = "legacy_dungeon"
-major_boss_ratio = 0.3
+major_boss_ratio = 0.2
 final_boss_candidates = ["all"]
 
 [starting_items]

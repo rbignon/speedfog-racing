@@ -3,7 +3,7 @@
 extends = "_base"
 
 [display]
-sort_order = 3
+sort_order = 4
 estimated_duration = "~1h"
 description = "Punishing race with scarce resources and tougher encounters"
 
@@ -16,6 +16,8 @@ mini_dungeons = 5
 min_layers = 25
 max_layers = 30
 final_tier = 28
+tier_curve = "power"
+tier_curve_exponent = 1.8
 first_layer_type = "legacy_dungeon"
 major_boss_ratio = 0.5
 final_boss_candidates = [
