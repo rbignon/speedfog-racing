@@ -65,7 +65,7 @@ pub enum IncomingMessage {
         participants: Vec<ParticipantInfo>,
     },
     AuthError(String),
-    RaceStart,
+    RaceStart(u32),
     LeaderboardUpdate {
         participants: Vec<ParticipantInfo>,
         leader_splits: Option<HashMap<String, i32>>,
@@ -499,8 +499,8 @@ fn message_loop(
                                 .send(Message::Text(json))
                                 .map_err(|e| e.to_string())?;
                         }
-                        ServerMessage::RaceStart => {
-                            let _ = incoming_tx.send(IncomingMessage::RaceStart);
+                        ServerMessage::RaceStart { countdown_seconds } => {
+                            let _ = incoming_tx.send(IncomingMessage::RaceStart(countdown_seconds));
                         }
                         ServerMessage::LeaderboardUpdate {
                             participants,

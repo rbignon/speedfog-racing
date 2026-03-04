@@ -30,6 +30,7 @@ export interface WsRaceInfo {
   status: string;
   started_at: string | null;
   seeds_released_at: string | null;
+  countdown_seconds?: number;
 }
 
 export interface WsSeedInfo {
@@ -61,6 +62,7 @@ export interface RaceStatusChangeMessage {
   type: "race_status_change";
   status: string;
   started_at: string | null;
+  countdown_seconds?: number;
 }
 
 export interface SpectatorCountMessage {

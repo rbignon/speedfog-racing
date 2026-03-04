@@ -294,13 +294,16 @@ class ConnectionManager:
         race_id: uuid.UUID,
         status: str,
         started_at: str | None = None,
+        countdown_seconds: int | None = None,
     ) -> None:
         """Broadcast race status change to all connections."""
         room = self.get_room(race_id)
         if not room:
             return
 
-        message = RaceStatusChangeMessage(status=status, started_at=started_at)
+        message = RaceStatusChangeMessage(
+            status=status, started_at=started_at, countdown_seconds=countdown_seconds
+        )
         await room.broadcast_to_all(message.model_dump_json())
 
 

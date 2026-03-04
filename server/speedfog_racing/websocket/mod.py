@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.config import settings
 from speedfog_racing.discord import fire_race_finished_notifications
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
 from speedfog_racing.services.grace_service import resolve_zone_query
@@ -46,6 +47,17 @@ from speedfog_racing.websocket.schemas import (
 from speedfog_racing.websocket.spectator import broadcast_race_state_update
 
 logger = logging.getLogger(__name__)
+
+
+def _is_countdown_active(race: Race) -> bool:
+    """Check if the race is still in the countdown period after starting."""
+    if not race.started_at or settings.countdown_seconds <= 0:
+        return False
+    started = race.started_at
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    effective_start = started + timedelta(seconds=settings.countdown_seconds)
+    return datetime.now(UTC) < effective_start
 
 
 def _get_graph_json(participant: Participant) -> dict[str, Any] | None:
@@ -271,6 +283,7 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
             seeds_released_at=(
                 race.seeds_released_at.isoformat() if race.seeds_released_at else None
             ),
+            countdown_seconds=settings.countdown_seconds,
         ),
         seed=SeedInfo(
             seed_id=str(seed.id) if seed else None,
@@ -332,6 +345,10 @@ async def handle_status_update(
 
         if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
             return  # Silently drop — IGT is frozen
+
+        # Silently drop status updates during countdown period
+        if _is_countdown_active(participant.race):
+            return
 
         if isinstance(msg.get("igt_ms"), int):
             if msg["igt_ms"] != participant.igt_ms:
@@ -425,6 +442,15 @@ async def handle_event_flag(
                 participant.race.status.value,
             )
             await send_error(websocket, "Race not running")
+            return
+
+        # Guard: reject event flags received during countdown period
+        if _is_countdown_active(participant.race):
+            logger.warning(
+                "Rejected event_flag during countdown: race=%s",
+                participant.race_id,
+            )
+            await send_error(websocket, "Race countdown in progress")
             return
 
         if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
@@ -524,6 +550,9 @@ async def handle_zone_query(
             return
 
         if participant.race.status != RaceStatus.RUNNING:
+            return
+
+        if _is_countdown_active(participant.race):
             return
 
         if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
@@ -662,12 +691,13 @@ async def broadcast_race_start(
     race_id: uuid.UUID,
     started_at: str | None = None,
     graph_json: dict[str, Any] | None = None,
+    countdown_seconds: int = 0,
 ) -> None:
     """Broadcast race start to all connections (mods + spectators)."""
     room = manager.get_room(race_id)
     if room:
         # Send race_start to mods
-        message = RaceStartMessage()
+        message = RaceStartMessage(countdown_seconds=countdown_seconds)
         await room.broadcast_to_mods(message.model_dump_json())
 
         # Send zone_update for start node to each connected mod
@@ -680,5 +710,7 @@ async def broadcast_race_start(
                     )
 
         # Also notify spectators of status change
-        await manager.broadcast_race_status(race_id, "running", started_at=started_at)
+        await manager.broadcast_race_status(
+            race_id, "running", started_at=started_at, countdown_seconds=countdown_seconds
+        )
         logger.info(f"Race start broadcast: race={race_id}")

@@ -170,9 +170,12 @@
 	// Wall-clock elapsed timer based on server's started_at timestamp
 	let startedAt = $derived(liveRace?.started_at ?? initialRace.started_at);
 
+	let countdownSeconds = $derived(liveRace?.countdown_seconds ?? 0);
+
 	let elapsedSeconds = $derived.by(() => {
 		if (raceStatus !== 'running' || !startedAt) return 0;
-		return Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
+		const raw = Math.floor((now - new Date(startedAt).getTime()) / 1000);
+		return Math.max(0, raw - countdownSeconds);
 	});
 
 	$effect(() => {
@@ -185,6 +188,7 @@
 		return () => clearInterval(interval);
 	});
 
+	let countdownRemaining = $state<number | null>(null);
 	let showGo = $state(false);
 	let previousRaceStatus: string | null = null;
 
@@ -193,12 +197,38 @@
 		previousRaceStatus = raceStatus;
 		clearSelection();
 		if (raceStatus === 'running' && wasNotRunning) {
-			showGo = true;
-			const timer = setTimeout(() => {
-				showGo = false;
-			}, 3000);
-			return () => clearTimeout(timer);
+			const cd = liveRace?.countdown_seconds ?? 0;
+			if (cd > 0) {
+				// Start countdown
+				countdownRemaining = cd;
+				const interval = setInterval(() => {
+					if (countdownRemaining !== null && countdownRemaining > 1) {
+						countdownRemaining = countdownRemaining - 1;
+					} else {
+						clearInterval(interval);
+						countdownRemaining = null;
+						showGo = true;
+						setTimeout(() => {
+							showGo = false;
+						}, 3000);
+					}
+				}, 1000);
+				return () => {
+					clearInterval(interval);
+					countdownRemaining = null;
+					showGo = false;
+				};
+			} else {
+				// No countdown — show GO! immediately
+				countdownRemaining = null;
+				showGo = true;
+				const timer = setTimeout(() => {
+					showGo = false;
+				}, 3000);
+				return () => clearTimeout(timer);
+			}
 		} else {
+			countdownRemaining = null;
 			showGo = false;
 		}
 	});
@@ -683,7 +713,11 @@
 		</header>
 
 		<div class="dag-wrapper">
-			{#if showGo}
+			{#if countdownRemaining !== null}
+				<div class="go-overlay countdown-overlay">
+					<span class="countdown-text">{countdownRemaining}</span>
+				</div>
+			{:else if showGo}
 				<div class="go-overlay">
 					<span class="go-text">GO!</span>
 				</div>
@@ -1338,6 +1372,36 @@
 		}
 		100% {
 			transform: scale(0.9);
+		}
+	}
+
+	.countdown-overlay {
+		animation: none;
+	}
+
+	.countdown-text {
+		font-size: 6rem;
+		font-weight: 800;
+		color: var(--color-warning, #f59e0b);
+		text-shadow:
+			0 0 20px rgba(245, 158, 11, 0.5),
+			0 2px 4px rgba(0, 0, 0, 0.8);
+		animation: countdown-pulse 1s ease-out infinite;
+		font-variant-numeric: tabular-nums;
+	}
+
+	@keyframes countdown-pulse {
+		0% {
+			transform: scale(1.2);
+			opacity: 1;
+		}
+		50% {
+			transform: scale(1);
+			opacity: 0.9;
+		}
+		100% {
+			transform: scale(0.95);
+			opacity: 0.8;
 		}
 	}
 

@@ -290,11 +290,12 @@ Generic error during the message loop (not auth phase). Sent when a gameplay mes
 
 #### `race_start`
 
-Race has started. Followed immediately by a `zone_update` unicast for the start node.
+Race has started. Followed immediately by a `zone_update` unicast for the start node. Includes `countdown_seconds` for a cosmetic countdown before the race effectively begins. During the countdown period, the server rejects `event_flag` messages. Clients should display a countdown (N→1→GO!) and delay event flag / status update sending. When `countdown_seconds` is `0`, there is no countdown (backward compatible).
 
 ```json
 {
-  "type": "race_start"
+  "type": "race_start",
+  "countdown_seconds": 10
 }
 ```
 
@@ -321,20 +322,22 @@ When the race finishes, `zone_history` is included on each participant (otherwis
 
 #### `race_status_change`
 
-Race status changed. Broadcast to all mods and spectators. Includes `started_at` when transitioning to `running`.
+Race status changed. Broadcast to all mods and spectators. Includes `started_at` and `countdown_seconds` when transitioning to `running`.
 
 ```json
 {
   "type": "race_status_change",
   "status": "running",
-  "started_at": "2026-02-19T14:00:00Z"
+  "started_at": "2026-02-19T14:00:00Z",
+  "countdown_seconds": 10
 }
 ```
 
-| Field        | Type      | Description                                           |
-| ------------ | --------- | ----------------------------------------------------- |
-| `status`     | `string`  | New race status (`running`, `finished`)               |
-| `started_at` | `string?` | ISO 8601 timestamp, included when status is `running` |
+| Field               | Type      | Description                                                    |
+| ------------------- | --------- | -------------------------------------------------------------- |
+| `status`            | `string`  | New race status (`running`, `finished`)                        |
+| `started_at`        | `string?` | ISO 8601 timestamp, included when status is `running`          |
+| `countdown_seconds` | `int?`    | Cosmetic countdown duration in seconds, included for `running` |
 
 **Note:** The mod does not currently consume `started_at` from this message — the field is silently ignored by serde.
 

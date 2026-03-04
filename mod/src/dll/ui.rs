@@ -126,11 +126,13 @@ impl ImguiRenderLoop for RaceTracker {
 impl RaceTracker {
     /// Render state banner above player status.
     /// - SETUP: orange "WAITING FOR START"
-    /// - RUNNING (first 3s): green "GO!"
+    /// - RUNNING (countdown active): yellow countdown number
+    /// - RUNNING (first 3s after countdown): green "GO!"
     /// - FINISHED: green "RACE FINISHED"
-    /// - RUNNING (after 3s): nothing
+    /// - RUNNING (after GO!): nothing
     fn render_state_banner(&self, ui: &hudhook::imgui::Ui) {
         let orange = [1.0, 0.75, 0.0, 1.0];
+        let yellow = [1.0, 1.0, 0.0, 1.0];
         let green = [0.0, 1.0, 0.0, 1.0];
 
         if let Some(race) = self.race_info() {
@@ -139,10 +141,23 @@ impl RaceTracker {
                     ui.text_colored(orange, "WAITING FOR START");
                 }
                 "running" => {
-                    if let Some(started_at) = self.race_state.race_started_at {
-                        if started_at.elapsed() < Duration::from_secs(3) {
-                            ui.text_colored(green, "GO!");
+                    if let Some(countdown_end) = self.race_state.countdown_end {
+                        if let Some(remaining) =
+                            countdown_end.checked_duration_since(std::time::Instant::now())
+                        {
+                            let secs = remaining.as_secs() + 1; // ceiling
+                            ui.text_colored(yellow, format!("{}", secs));
+                            return;
                         }
+                    }
+                    // After countdown (or no countdown): show GO! for 3s
+                    let go_start = self.race_state.countdown_end.unwrap_or_else(|| {
+                        self.race_state
+                            .race_started_at
+                            .unwrap_or_else(std::time::Instant::now)
+                    });
+                    if go_start.elapsed() < Duration::from_secs(3) {
+                        ui.text_colored(green, "GO!");
                     }
                 }
                 "finished" => {

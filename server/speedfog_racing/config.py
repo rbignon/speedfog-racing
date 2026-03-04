@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     discord_public_key: str | None = None
     discord_channel_id: str | None = None
 
+    # Race
+    countdown_seconds: int = 10
+
     # Server
     log_level: str = "INFO"
     log_json: bool = False

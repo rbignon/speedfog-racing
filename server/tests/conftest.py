@@ -7,6 +7,7 @@ from pathlib import Path
 # Set test environment variables BEFORE importing app modules
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
 os.environ["SECRET_KEY"] = "test-secret-key"
+os.environ.setdefault("COUNTDOWN_SECONDS", "0")
 
 import pytest
 from fastapi.testclient import TestClient

@@ -143,6 +143,8 @@ class RaceStore {
               ...this.race,
               status: msg.status,
               started_at: msg.started_at ?? this.race.started_at,
+              countdown_seconds:
+                msg.countdown_seconds ?? this.race.countdown_seconds,
             };
           }
           // Safety net: if status changed to "finished" but zone_history is

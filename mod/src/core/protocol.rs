@@ -67,6 +67,8 @@ pub struct RaceInfo {
     pub id: String,
     pub name: String,
     pub status: String,
+    #[serde(default)]
+    pub countdown_seconds: u32,
 }
 
 /// Item to be spawned at runtime by the mod (e.g., Gem/Ash of War).
@@ -118,8 +120,11 @@ pub enum ServerMessage {
     },
     /// Authentication failed
     AuthError { message: String },
-    /// Race has started
-    RaceStart,
+    /// Race has started (with optional countdown)
+    RaceStart {
+        #[serde(default)]
+        countdown_seconds: u32,
+    },
     /// Leaderboard update
     LeaderboardUpdate {
         participants: Vec<ParticipantInfo>,
@@ -247,9 +252,27 @@ mod tests {
 
     #[test]
     fn test_server_race_start_deserialize() {
+        // Backward compat: no countdown_seconds field → defaults to 0
         let json = r#"{"type": "race_start"}"#;
         let msg: ServerMessage = serde_json::from_str(json).unwrap();
-        assert!(matches!(msg, ServerMessage::RaceStart));
+        match msg {
+            ServerMessage::RaceStart { countdown_seconds } => {
+                assert_eq!(countdown_seconds, 0);
+            }
+            _ => panic!("Expected RaceStart"),
+        }
+    }
+
+    #[test]
+    fn test_server_race_start_with_countdown() {
+        let json = r#"{"type": "race_start", "countdown_seconds": 10}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::RaceStart { countdown_seconds } => {
+                assert_eq!(countdown_seconds, 10);
+            }
+            _ => panic!("Expected RaceStart"),
+        }
     }
 
     #[test]
@@ -429,6 +452,21 @@ mod tests {
         let json = r#"{"total_layers":5}"#;
         let seed: SeedInfo = serde_json::from_str(json).unwrap();
         assert_eq!(seed.finish_event, None);
+    }
+
+    #[test]
+    fn test_race_info_countdown_seconds_default() {
+        // Backward compat: old server sends no countdown_seconds
+        let json = r#"{"id": "123", "name": "Test", "status": "running"}"#;
+        let info: RaceInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.countdown_seconds, 0);
+    }
+
+    #[test]
+    fn test_race_info_with_countdown_seconds() {
+        let json = r#"{"id": "123", "name": "Test", "status": "running", "countdown_seconds": 10}"#;
+        let info: RaceInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.countdown_seconds, 10);
     }
 
     #[test]

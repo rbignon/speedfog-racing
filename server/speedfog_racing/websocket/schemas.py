@@ -91,6 +91,7 @@ class RaceInfo(BaseModel):
     status: str
     started_at: str | None = None
     seeds_released_at: str | None = None
+    countdown_seconds: int = 0
 
 
 class SeedInfo(BaseModel):
@@ -134,6 +135,7 @@ class RaceStartMessage(BaseModel):
     """Race start broadcast."""
 
     type: Literal["race_start"] = "race_start"
+    countdown_seconds: int = 0
 
 
 class LeaderboardUpdateMessage(BaseModel):
@@ -166,6 +168,7 @@ class RaceStatusChangeMessage(BaseModel):
     type: Literal["race_status_change"] = "race_status_change"
     status: str
     started_at: str | None = None
+    countdown_seconds: int | None = None
 
 
 class SpectatorCountMessage(BaseModel):

@@ -24,6 +24,7 @@ from speedfog_racing.auth import (
     get_current_user_optional,
     get_user_by_twitch_username,
 )
+from speedfog_racing.config import settings
 from speedfog_racing.database import async_session_maker, get_db
 from speedfog_racing.discord import (
     create_scheduled_event,
@@ -1054,6 +1055,7 @@ async def start_race(
         race_id,
         started_at=started_iso,
         graph_json=race.seed.graph_json if race.seed else None,
+        countdown_seconds=settings.countdown_seconds,
     )
     await broadcast_race_state_update(race_id, race)
 

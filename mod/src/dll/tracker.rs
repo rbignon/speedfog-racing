@@ -45,6 +45,7 @@ pub struct RaceState {
     pub participants: Vec<ParticipantInfo>,
     pub leader_splits: Option<HashMap<String, i32>>,
     pub race_started_at: Option<Instant>,
+    pub countdown_end: Option<Instant>,
     pub current_zone: Option<ZoneUpdateData>,
 }
 
@@ -270,6 +271,14 @@ impl RaceTracker {
         })
     }
 
+    /// Returns true if we're in the countdown period before the race effectively starts.
+    pub fn is_countdown_active(&self) -> bool {
+        self.race_state
+            .countdown_end
+            .map(|end| Instant::now() < end)
+            .unwrap_or(false)
+    }
+
     pub fn is_race_running(&self) -> bool {
         self.race_state
             .race
@@ -353,6 +362,7 @@ impl RaceTracker {
                                 if self.ws_client.is_connected()
                                     && self.is_race_running()
                                     && !self.am_i_finished()
+                                    && !self.is_countdown_active()
                                 {
                                     self.ws_client.send_event_flag(flag_id, igt_ms);
                                     self.last_sent_debug = Some(format!(
@@ -372,7 +382,11 @@ impl RaceTracker {
                 }
             }
 
-            if self.ws_client.is_connected() && self.is_race_running() && !self.am_i_finished() {
+            if self.ws_client.is_connected()
+                && self.is_race_running()
+                && !self.am_i_finished()
+                && !self.is_countdown_active()
+            {
                 if !self.deferred_event_flags.is_empty() {
                     // Fog gate traversal — send deferred flags now that loading is done
                     for (flag_id, igt_ms) in self.deferred_event_flags.drain(..) {
@@ -440,6 +454,7 @@ impl RaceTracker {
                             if self.ws_client.is_connected()
                                 && self.is_race_running()
                                 && !self.am_i_finished()
+                                && !self.is_countdown_active()
                             {
                                 self.ws_client.send_event_flag(flag_id, igt_ms);
                                 self.last_sent_debug = Some(format!(
@@ -478,7 +493,7 @@ impl RaceTracker {
             }
             self.ready_sent = true;
 
-            if self.is_race_running() && !self.am_i_finished() {
+            if self.is_race_running() && !self.am_i_finished() && !self.is_countdown_active() {
                 // Drain event flags buffered during disconnection
                 for (flag_id, flag_igt) in self.pending_event_flags.drain(..) {
                     self.ws_client.send_event_flag(flag_id, flag_igt);
@@ -557,6 +572,7 @@ impl RaceTracker {
             && igt_ms > 0
             && self.is_race_running()
             && !self.am_i_finished()
+            && !self.is_countdown_active()
         {
             self.ws_client.send_status_update(igt_ms, deaths);
             self.last_status_update = Instant::now();
@@ -678,10 +694,17 @@ impl RaceTracker {
                 error!(message = %msg, "[WS] Auth failed");
                 self.last_auth_error = Some(msg);
             }
-            IncomingMessage::RaceStart => {
-                self.last_received_debug = Some("race_start".to_string());
-                info!("[WS] Race started!");
-                self.race_state.race_started_at = Some(Instant::now());
+            IncomingMessage::RaceStart(countdown_seconds) => {
+                self.last_received_debug = Some(format!("race_start(cd={})", countdown_seconds));
+                info!(countdown_seconds, "[WS] Race started!");
+                let now = Instant::now();
+                self.race_state.race_started_at = Some(now);
+                if countdown_seconds > 0 {
+                    self.race_state.countdown_end =
+                        Some(now + Duration::from_secs(countdown_seconds as u64));
+                } else {
+                    self.race_state.countdown_end = None;
+                }
                 // Immediately reflect running status so is_race_running() gates open
                 // without waiting for the race_status_change message that follows.
                 if let Some(ref mut race) = self.race_state.race {

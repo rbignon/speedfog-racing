@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.auth import get_user_by_token
+from speedfog_racing.config import settings
 from speedfog_racing.models import Caster, Participant, Race
 from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.websocket.common import heartbeat_loop
@@ -195,6 +196,7 @@ async def send_race_state(
             seeds_released_at=(
                 race.seeds_released_at.isoformat() if race.seeds_released_at else None
             ),
+            countdown_seconds=settings.countdown_seconds,
         ),
         seed=build_seed_info(race, locale=locale),
         participants=participant_infos,
