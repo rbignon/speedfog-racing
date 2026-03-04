@@ -12,14 +12,14 @@ tolerance = 3
 
 [requirements]
 legacy_dungeons = 1
-bosses = 5
-mini_dungeons = 5
+bosses = 3
+mini_dungeons = 3
+major_bosses = 3
 
 [structure]
 min_layers = 10
 max_layers = 15
 final_tier = 12
-major_boss_ratio = 0.3
 final_boss_candidates = ["all"]
 
 [starting_items]

@@ -9,8 +9,9 @@ description = "Relaxed race with generous resources and loot"
 
 [requirements]
 legacy_dungeons = 3
-bosses = 7
-mini_dungeons = 10
+bosses = 5
+mini_dungeons = 8
+major_bosses = 5
 
 [structure]
 min_layers = 25
@@ -19,7 +20,6 @@ final_tier = 12
 tier_curve = "power"
 tier_curve_exponent = 0.5
 first_layer_type = "legacy_dungeon"
-major_boss_ratio = 0.2
 final_boss_candidates = ["all"]
 
 [starting_items]

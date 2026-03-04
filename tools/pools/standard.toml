@@ -9,15 +9,15 @@ description = "Balanced race with legacy dungeons and bosses"
 
 [requirements]
 legacy_dungeons = 2
-bosses = 10
-mini_dungeons = 10
+bosses = 7
+mini_dungeons = 8
+major_bosses = 8
 
 [structure]
 min_layers = 25
 max_layers = 30
 final_tier = 20
 first_layer_type = "legacy_dungeon"
-major_boss_ratio = 0.3
 final_boss_candidates = [
     # Base game remembrance bosses
     "stormveil_godrick",
