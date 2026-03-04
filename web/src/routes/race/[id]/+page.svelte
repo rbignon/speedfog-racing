@@ -197,7 +197,7 @@
 		previousRaceStatus = raceStatus;
 		clearSelection();
 		if (raceStatus === 'running' && wasNotRunning) {
-			const cd = liveRace?.countdown_seconds ?? 0;
+			const cd = untrack(() => liveRace?.countdown_seconds ?? 0);
 			if (cd > 0) {
 				// Start countdown
 				countdownRemaining = cd;
