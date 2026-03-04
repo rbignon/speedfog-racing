@@ -682,57 +682,61 @@
 			</div>
 		</header>
 
-		{#if showGo}
-			<div class="go-banner">GO!</div>
-		{/if}
+		<div class="dag-wrapper">
+			{#if showGo}
+				<div class="go-overlay">
+					<span class="go-text">GO!</span>
+				</div>
+			{/if}
 
-		{#if liveSeed?.graph_json && raceStatus === 'running'}
-			{#if myWsParticipantId && !myParticipantFinished}
+			{#if liveSeed?.graph_json && raceStatus === 'running'}
+				{#if myWsParticipantId && !myParticipantFinished}
+					<MetroDagProgressive
+						graphJson={liveSeed.graph_json}
+						participants={raceStore.participants}
+						myParticipantId={myWsParticipantId}
+					/>
+				{:else}
+					<MetroDagFull
+						graphJson={liveSeed.graph_json}
+						participants={raceStore.leaderboard}
+						{raceStatus}
+						highlightIds={selectedParticipantIds}
+					/>
+				{/if}
+			{:else if liveSeed?.graph_json && raceStatus === 'finished'}
+				<Podium participants={raceStore.leaderboard} />
+				<div class="dag-view-toggle">
+					<button class="toggle-btn" class:active={dagView === 'map'} onclick={() => (dagView = 'map')}>Map</button>
+					<button class="toggle-btn" class:active={dagView === 'replay'} onclick={() => (dagView = 'replay')}>Replay</button>
+				</div>
+				{#if dagView === 'map'}
+					<MetroDagFull
+						graphJson={liveSeed.graph_json}
+						participants={raceStore.leaderboard}
+						{raceStatus}
+						highlightIds={selectedParticipantIds}
+						focusNodeId={highlightFocusNodeId}
+					/>
+				{:else}
+					<RaceReplay graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} focusNodeId={highlightFocusNodeId} />
+				{/if}
+				<RaceStats participants={raceStore.leaderboard} />
+				<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} onzoneclick={handleHighlightZoneClick} />
+			{:else if liveSeed?.graph_json && myWsParticipantId}
 				<MetroDagProgressive
 					graphJson={liveSeed.graph_json}
 					participants={raceStore.participants}
 					myParticipantId={myWsParticipantId}
 				/>
-			{:else}
-				<MetroDagFull
-					graphJson={liveSeed.graph_json}
-					participants={raceStore.leaderboard}
-					{raceStatus}
-					highlightIds={selectedParticipantIds}
-				/>
+			{:else if liveSeed?.graph_json && isOrganizer}
+				<MetroDag graphJson={liveSeed.graph_json} />
+			{:else if totalLayers}
+				<div class="dag-placeholder">
+					<p class="dag-note">Map revealed at race start</p>
+				</div>
 			{/if}
-		{:else if liveSeed?.graph_json && raceStatus === 'finished'}
-			<Podium participants={raceStore.leaderboard} />
-			<div class="dag-view-toggle">
-				<button class="toggle-btn" class:active={dagView === 'map'} onclick={() => (dagView = 'map')}>Map</button>
-				<button class="toggle-btn" class:active={dagView === 'replay'} onclick={() => (dagView = 'replay')}>Replay</button>
-			</div>
-			{#if dagView === 'map'}
-				<MetroDagFull
-					graphJson={liveSeed.graph_json}
-					participants={raceStore.leaderboard}
-					{raceStatus}
-					highlightIds={selectedParticipantIds}
-					focusNodeId={highlightFocusNodeId}
-				/>
-			{:else}
-				<RaceReplay graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} focusNodeId={highlightFocusNodeId} />
-			{/if}
-			<RaceStats participants={raceStore.leaderboard} />
-			<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} onzoneclick={handleHighlightZoneClick} />
-		{:else if liveSeed?.graph_json && myWsParticipantId}
-			<MetroDagProgressive
-				graphJson={liveSeed.graph_json}
-				participants={raceStore.participants}
-				myParticipantId={myWsParticipantId}
-			/>
-		{:else if liveSeed?.graph_json && isOrganizer}
-			<MetroDag graphJson={liveSeed.graph_json} />
-		{:else if totalLayers}
-			<div class="dag-placeholder">
-				<p class="dag-note">Map revealed at race start</p>
-			</div>
-		{/if}
+		</div>
 
 		<div class="race-info">
 			<div class="info-grid">
@@ -1282,27 +1286,58 @@
 		}
 	}
 
-	.go-banner {
-		text-align: center;
-		font-size: 3rem;
+	.dag-wrapper {
+		position: relative;
+		min-height: 400px;
+	}
+
+	.go-overlay {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.6);
+		backdrop-filter: blur(3px);
+		z-index: 10;
+		animation: go-fade 3s ease-out forwards;
+		pointer-events: none;
+	}
+
+	.go-text {
+		font-size: 5rem;
 		font-weight: 800;
 		color: var(--color-success, #10b981);
-		padding: 1rem 0;
-		animation: go-fade 3s ease-out forwards;
+		text-shadow:
+			0 0 20px rgba(16, 185, 129, 0.5),
+			0 2px 4px rgba(0, 0, 0, 0.8);
+		animation: go-scale 3s ease-out forwards;
 	}
 
 	@keyframes go-fade {
 		0% {
 			opacity: 1;
-			transform: scale(1.2);
 		}
 		70% {
 			opacity: 1;
-			transform: scale(1);
 		}
 		100% {
 			opacity: 0;
+		}
+	}
+
+	@keyframes go-scale {
+		0% {
+			transform: scale(1.4);
+		}
+		15% {
 			transform: scale(1);
+		}
+		70% {
+			transform: scale(1);
+		}
+		100% {
+			transform: scale(0.9);
 		}
 	}
 
