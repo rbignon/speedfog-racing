@@ -712,6 +712,14 @@
 			</div>
 		</header>
 
+		{#if liveSeed?.graph_json && raceStatus === 'finished'}
+			<Podium participants={raceStore.leaderboard} />
+			<div class="dag-view-toggle">
+				<button class="toggle-btn" class:active={dagView === 'map'} onclick={() => (dagView = 'map')}>Map</button>
+				<button class="toggle-btn" class:active={dagView === 'replay'} onclick={() => (dagView = 'replay')}>Replay</button>
+			</div>
+		{/if}
+
 		<div class="dag-wrapper">
 			{#if countdownRemaining !== null}
 				<div class="go-overlay countdown-overlay">
@@ -739,11 +747,6 @@
 					/>
 				{/if}
 			{:else if liveSeed?.graph_json && raceStatus === 'finished'}
-				<Podium participants={raceStore.leaderboard} />
-				<div class="dag-view-toggle">
-					<button class="toggle-btn" class:active={dagView === 'map'} onclick={() => (dagView = 'map')}>Map</button>
-					<button class="toggle-btn" class:active={dagView === 'replay'} onclick={() => (dagView = 'replay')}>Replay</button>
-				</div>
 				{#if dagView === 'map'}
 					<MetroDagFull
 						graphJson={liveSeed.graph_json}
@@ -755,8 +758,6 @@
 				{:else}
 					<RaceReplay graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} focusNodeId={highlightFocusNodeId} />
 				{/if}
-				<RaceStats participants={raceStore.leaderboard} />
-				<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} onzoneclick={handleHighlightZoneClick} />
 			{:else if liveSeed?.graph_json && myWsParticipantId}
 				<MetroDagProgressive
 					graphJson={liveSeed.graph_json}
@@ -771,6 +772,11 @@
 				</div>
 			{/if}
 		</div>
+
+		{#if liveSeed?.graph_json && raceStatus === 'finished'}
+			<RaceStats participants={raceStore.leaderboard} />
+			<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} onzoneclick={handleHighlightZoneClick} />
+		{/if}
 
 		<div class="race-info">
 			<div class="info-grid">
