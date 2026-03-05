@@ -394,9 +394,11 @@
 
 <style>
 	main {
-		max-width: 900px;
+		width: 100%;
+		max-width: 1200px;
 		margin: 0 auto;
 		padding: 2rem;
+		box-sizing: border-box;
 	}
 
 	h1 {

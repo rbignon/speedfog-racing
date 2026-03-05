@@ -102,7 +102,7 @@
 
 <style>
 	.settings {
-		max-width: 640px;
+		max-width: 600px;
 		margin: 0 auto;
 		padding: 2rem 1.5rem;
 	}

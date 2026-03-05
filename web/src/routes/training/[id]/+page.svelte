@@ -335,7 +335,7 @@
 <style>
 	.training-detail {
 		width: 100%;
-		max-width: 1000px;
+		max-width: 800px;
 		margin: 0 auto;
 		padding: 2rem;
 		box-sizing: border-box;
