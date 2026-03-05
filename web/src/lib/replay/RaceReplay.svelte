@@ -307,68 +307,69 @@
 {#if replayParticipants.length >= 2 && maxIgt > 0}
 	<div class="race-replay" bind:this={dagContainer}>
 		<div class="replay-dag-container">
-			<ZoomableSvg width={layout.width} height={layout.height} onnodeclick={onNodeClick} onpanstart={closePopup}>
-				<defs>
-					<filter id="replay-player-glow" x="-50%" y="-50%" width="200%" height="200%">
-						<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-						<feMerge>
-							<feMergeNode in="blur" />
-							<feMergeNode in="SourceGraphic" />
-						</feMerge>
-					</filter>
-				</defs>
+			<div class="replay-svg-area">
+				<ZoomableSvg width={layout.width} height={layout.height} onnodeclick={onNodeClick} onpanstart={closePopup}>
+					<defs>
+						<filter id="replay-player-glow" x="-50%" y="-50%" width="200%" height="200%">
+							<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+							<feMerge>
+								<feMergeNode in="blur" />
+								<feMergeNode in="SourceGraphic" />
+							</feMerge>
+						</filter>
+					</defs>
 
-				<DagBaseLayer {layout} {labelAbove} />
+					<DagBaseLayer {layout} {labelAbove} />
 
-				<!-- Animated overlay -->
-				{#if replayState !== 'idle'}
-					<ReplayDag
-						{currentIgt}
-						{replayElapsedMs}
-						{maxIgt}
-						{replayParticipants}
-						{skullEvents}
-						{nodePositions}
-						{nodeInfo}
-						{leaderId}
-						{previousLeader}
-						onleaderchange={handleLeaderChange}
-					/>
+					<!-- Animated overlay -->
+					{#if replayState !== 'idle'}
+						<ReplayDag
+							{currentIgt}
+							{replayElapsedMs}
+							{maxIgt}
+							{replayParticipants}
+							{skullEvents}
+							{nodePositions}
+							{nodeInfo}
+							{leaderId}
+							{previousLeader}
+							onleaderchange={handleLeaderChange}
+						/>
+					{/if}
+				</ZoomableSvg>
+
+				<!-- Commentary overlay (HTML, positioned over the SVG) -->
+				{#if activeCommentary}
+					<div class="commentary" style="opacity: {activeCommentary.opacity}">
+						<span class="commentary-title">{activeCommentary.title}</span>
+						<span class="commentary-text">
+							{#each activeCommentary.segments as seg}
+								{#if seg.type === 'text'}
+									{seg.value}
+								{:else if seg.type === 'player'}
+									<span class="commentary-player" style="color: {playerColor(seg.playerId)}">{seg.name}</span>
+								{:else if seg.type === 'zone'}
+									<span class="commentary-zone">{seg.name}</span>
+								{/if}
+							{/each}
+						</span>
+					</div>
 				{/if}
-			</ZoomableSvg>
+			</div>
 			{#if popupData}
 				<NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
 			{/if}
 
-			<!-- Commentary overlay (HTML, positioned over the SVG) -->
-			{#if activeCommentary}
-				<div class="commentary" style="opacity: {activeCommentary.opacity}">
-					<span class="commentary-title">{activeCommentary.title}</span>
-					<span class="commentary-text">
-						{#each activeCommentary.segments as seg}
-							{#if seg.type === 'text'}
-								{seg.value}
-							{:else if seg.type === 'player'}
-								<span class="commentary-player" style="color: {playerColor(seg.playerId)}">{seg.name}</span>
-							{:else if seg.type === 'zone'}
-								<span class="commentary-zone">{seg.name}</span>
-							{/if}
-						{/each}
-					</span>
-				</div>
-			{/if}
-
+			<ReplayControls
+				{replayState}
+				{progress}
+				{speed}
+				onplay={play}
+				onpause={pause}
+				onseek={seek}
+				onspeed={setSpeed}
+			/>
 		</div>
-
-		<ReplayControls
-			{replayState}
-			{progress}
-			{speed}
-			onplay={play}
-			onpause={pause}
-			onseek={seek}
-			onspeed={setSpeed}
-		/>
 	</div>
 {/if}
 
@@ -380,8 +381,16 @@
 
 	.replay-dag-container {
 		position: relative;
+		display: flex;
+		flex-direction: column;
 		background: var(--color-surface);
-		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+		border-radius: var(--radius-lg);
+	}
+
+	.replay-svg-area {
+		position: relative;
+		flex: 1;
+		min-height: 0;
 		overflow: hidden;
 	}
 

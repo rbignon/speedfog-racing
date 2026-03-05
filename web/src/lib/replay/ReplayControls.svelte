@@ -107,8 +107,8 @@
 		gap: 0.75rem;
 		padding: 0.75rem 1rem;
 		background: var(--color-surface);
-		border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 		border-top: 1px solid var(--color-border);
+		flex-shrink: 0;
 	}
 
 	.play-btn {

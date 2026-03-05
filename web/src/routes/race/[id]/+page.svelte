@@ -1328,7 +1328,6 @@
 
 	.dag-wrapper {
 		position: relative;
-		min-height: 400px;
 	}
 
 	.go-overlay {
