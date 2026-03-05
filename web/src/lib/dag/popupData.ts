@@ -49,6 +49,7 @@ export interface NodePopupData {
   type: DagNodeType;
   displayType?: string;
   tier: number;
+  layer: number;
   randomizedBoss?: string;
   entrances: PopupConnection[];
   exits: PopupConnection[];

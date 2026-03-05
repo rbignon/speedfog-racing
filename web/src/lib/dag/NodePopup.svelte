@@ -88,6 +88,7 @@
 			{#if data.tier > 0}
 				<span class="tier-badge">Tier {data.tier}</span>
 			{/if}
+			<span class="layer-badge">Layer {data.layer + 1}</span>
 		</div>
 		{#if data.randomizedBoss}
 			<div class="popup-boss">
@@ -239,6 +240,12 @@
 	.tier-badge {
 		font-size: 0.75rem;
 		color: var(--color-gold, #c8a44e);
+	}
+
+	.layer-badge {
+		font-size: 0.75rem;
+		color: var(--color-text-secondary, #9ca3af);
+		margin-left: auto;
 	}
 
 	.popup-boss {

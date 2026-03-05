@@ -223,6 +223,7 @@
 			type: node.type,
 			displayType: node.displayType,
 			tier: node.tier,
+			layer: node.layer,
 			randomizedBoss: node.randomizedBoss,
 			entrances,
 			exits,
