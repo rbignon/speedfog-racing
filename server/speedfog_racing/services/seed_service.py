@@ -341,10 +341,13 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         if armor_count:
             care_package_items.append(f"{armor_count} Armor pieces")
 
-    # Convert major_boss_ratio to human label
-    mbr = structure.get("major_boss_ratio")
-    if mbr is not None:
-        major_boss_label = "High" if mbr >= 0.35 else ("Medium" if mbr >= 0.15 else "Low")
+    # Compute major boss density from fixed count + layer range
+    major_bosses = requirements.get("major_bosses")
+    min_layers = structure.get("min_layers")
+    max_layers = structure.get("max_layers")
+    if major_bosses and min_layers and max_layers:
+        mbr = major_bosses / ((min_layers + max_layers) / 2)
+        major_boss_label = "High" if mbr >= 0.35 else ("Medium" if mbr >= 0.20 else "Low")
     else:
         major_boss_label = None
 

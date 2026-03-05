@@ -56,8 +56,8 @@ python tools/generate_pool.py \
 Pool configs live at `tools/pools/<pool>.toml`. Each TOML file contains:
 
 - `[display]`: metadata shown in the web UI (estimated_duration, description, type, sort_order)
-- `[structure]`: seed generation parameters (final_tier, min/max_layers, major_boss_ratio)
-- `[requirements]`: legacy dungeon constraints
+- `[structure]`: seed generation parameters (final_tier, min/max_layers)
+- `[requirements]`: zone constraints (legacy_dungeons, bosses, mini_dungeons, major_bosses)
 - `[care_package]`: items granted at each tier (weapons, shields, spells, etc.)
 - `[item_randomizer]`: item rando settings (difficulty, nerf_gargoyles, etc.)
 - `[starting_items]`: items given at start (keys, runes, tears, etc.)
