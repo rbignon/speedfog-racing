@@ -130,8 +130,14 @@
 							<path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
 						</svg>
 					</a>
-					{#if profile.role !== 'user'}
-						<span class="role-badge {profile.role}">{profile.role}</span>
+					{#if profile.role === 'admin'}
+						<span class="role-badge admin">admin</span>
+					{/if}
+					{#if profile.stats.organized_count > 0}
+						<span class="role-badge organizer">organizer</span>
+					{/if}
+					{#if profile.stats.casted_count > 0}
+						<span class="role-badge caster">caster</span>
 					{/if}
 				</div>
 				<p class="profile-joined">Joined {formatDate(profile.created_at)}</p>
@@ -332,6 +338,11 @@
 	.role-badge.organizer {
 		background: rgba(168, 85, 247, 0.15);
 		color: var(--color-purple);
+	}
+
+	.role-badge.caster {
+		background: rgba(59, 130, 246, 0.15);
+		color: var(--color-info);
 	}
 
 	.role-badge.admin {
