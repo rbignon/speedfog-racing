@@ -89,10 +89,10 @@
 				<span class="value">{poolConfig.major_boss_ratio}</span>
 			</div>
 		{/if}
-		{#if poolConfig.randomize_bosses}
+		{#if poolConfig.randomize_bosses && poolConfig.randomize_bosses !== 'none'}
 			<div class="info-item">
 				<span class="label">Boss Shuffle</span>
-				<span class="value">Yes</span>
+				<span class="value">{poolConfig.randomize_bosses === 'minor' ? 'Minor only' : 'All'}</span>
 			</div>
 		{/if}
 	</div>

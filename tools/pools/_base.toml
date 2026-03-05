@@ -36,7 +36,7 @@ holeladennecklace = true
 messmerskindling = true
 
 [enemy]
-randomize_bosses = false
+randomize_bosses = "none"
 
 [item_randomizer]
 difficulty = 50

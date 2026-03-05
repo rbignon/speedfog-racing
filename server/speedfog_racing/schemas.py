@@ -250,7 +250,7 @@ class PoolConfig(BaseModel):
     auto_upgrade_weapons: bool | None = None
     remove_requirements: bool | None = None
     major_boss_ratio: str | None = None
-    randomize_bosses: bool | None = None
+    randomize_bosses: str | None = None
     item_difficulty: str | None = None
     nerf_gargoyles: bool | None = None
 

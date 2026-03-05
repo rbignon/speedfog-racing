@@ -249,6 +249,22 @@ async def discard_pool(db: AsyncSession, pool_name: str) -> int:
     return count
 
 
+_VALID_BOSS_MODES = {"none", "minor", "all"}
+
+
+def _normalize_randomize_bosses(value: Any) -> str | None:
+    """Normalize randomize_bosses from bool (legacy) or str to enum string."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "all" if value else "none"
+    result = str(value)
+    if result not in _VALID_BOSS_MODES:
+        logger.warning(f"Invalid randomize_bosses value: {result!r}, defaulting to 'none'")
+        return "none"
+    return result
+
+
 def get_pool_config(pool_name: str) -> dict[str, Any] | None:
     """Read curated settings from a pool's config.toml."""
     config_file = Path(settings.seeds_pool_dir) / pool_name / "config.toml"
@@ -356,7 +372,7 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "auto_upgrade_weapons": item_randomizer.get("auto_upgrade_weapons"),
         "remove_requirements": item_randomizer.get("remove_requirements"),
         "major_boss_ratio": major_boss_label,
-        "randomize_bosses": enemy.get("randomize_bosses"),
+        "randomize_bosses": _normalize_randomize_bosses(enemy.get("randomize_bosses")),
         "item_difficulty": item_diff_label,
         "nerf_gargoyles": item_randomizer.get("nerf_gargoyles"),
     }
