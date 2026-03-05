@@ -237,7 +237,7 @@
 <style>
 	.training-page {
 		width: 100%;
-		max-width: 800px;
+		max-width: 1200px;
 		margin: 0 auto;
 		padding: 2rem;
 		box-sizing: border-box;
