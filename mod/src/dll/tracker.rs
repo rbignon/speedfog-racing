@@ -22,7 +22,7 @@ use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 
 /// Delay after a loading screen before revealing the zone name on the overlay.
 /// Covers fade-in / spawn animation so the overlay doesn't update while the screen is still black.
-const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(2);
+const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(4);
 
 // =============================================================================
 // RACE STATE
