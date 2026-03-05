@@ -1419,7 +1419,7 @@
 	.visibility-row {
 		display: flex;
 		gap: 0.5rem;
-		padding-top: 0.75rem;
+		padding: 0.75rem 0;
 		border-top: 1px solid var(--color-border);
 	}
 
