@@ -373,15 +373,22 @@ async def test_start_blocked_before_release(test_client, organizer, seed):
 
 
 @pytest.mark.asyncio
-async def test_start_allowed_after_release(test_client, organizer, seed):
+async def test_start_allowed_after_release(test_client, organizer, player, seed):
     """Can start race after seeds are released."""
     async with test_client as client:
         create_resp = await client.post(
             "/api/races",
-            json={"name": "Start Gate Test"},
+            json={"name": "Start Gate Test", "organizer_participates": True},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         race_id = create_resp.json()["id"]
+
+        # Add second participant (need at least 2 to start)
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": player.twitch_username},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
 
         await client.post(
             f"/api/races/{race_id}/release-seeds",

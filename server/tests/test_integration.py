@@ -1401,6 +1401,13 @@ def test_zone_query_updates_overlay(integration_db, integration_client, seed_fol
                 api_token="zq_player_token",
                 role=UserRole.USER,
             )
+            player2 = User(
+                twitch_id="zq_player2",
+                twitch_username="zq_player2",
+                twitch_display_name="ZQ Player2",
+                api_token="zq_player2_token",
+                role=UserRole.USER,
+            )
             seed = Seed(
                 seed_number="szq_001",
                 pool_name="standard",
@@ -1409,13 +1416,14 @@ def test_zone_query_updates_overlay(integration_db, integration_client, seed_fol
                 folder_path=str(seed_folder),
                 status=SeedStatus.AVAILABLE,
             )
-            db.add_all([organizer, player, seed])
+            db.add_all([organizer, player, player2, seed])
             await db.commit()
             await db.refresh(organizer)
             await db.refresh(player)
-            return organizer, player
+            await db.refresh(player2)
+            return organizer, player, player2
 
-    organizer, player = asyncio.run(setup())
+    organizer, player, player2 = asyncio.run(setup())
     org_headers = {"Authorization": f"Bearer {organizer.api_token}"}
 
     # Create race
@@ -1443,19 +1451,28 @@ def test_zone_query_updates_overlay(integration_db, integration_client, seed_fol
 
     asyncio.run(set_graph())
 
-    # Add participant
+    # Add participants (need at least 2 to start)
     resp = integration_client.post(
         f"/api/races/{race_id}/participants",
         json={"twitch_username": player.twitch_username},
         headers=org_headers,
     )
     assert resp.status_code == 200
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants",
+        json={"twitch_username": player2.twitch_username},
+        headers=org_headers,
+    )
+    assert resp.status_code == 200
 
-    # Get mod token
+    # Get mod token for player
     async def get_token():
         async with integration_db() as db:
             result = await db.execute(
-                select(Participant).where(Participant.race_id == uuid.UUID(race_id))
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == player.id,
+                )
             )
             p = result.scalar_one()
             return p.mod_token, str(p.id)
@@ -1499,7 +1516,10 @@ def test_zone_query_updates_overlay(integration_db, integration_client, seed_fol
     async def verify_db():
         async with integration_db() as db:
             result = await db.execute(
-                select(Participant).where(Participant.race_id == uuid.UUID(race_id))
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == player.id,
+                )
             )
             p = result.scalar_one()
             return p.current_zone
@@ -1552,6 +1572,13 @@ def test_zone_query_map_id_death_respawn(integration_db, integration_client, see
                 api_token="zqmap_player_token",
                 role=UserRole.USER,
             )
+            player2 = User(
+                twitch_id="zqmap_player2",
+                twitch_username="zqmap_player2",
+                twitch_display_name="ZQMap Player2",
+                api_token="zqmap_player2_token",
+                role=UserRole.USER,
+            )
             seed = Seed(
                 seed_number="szqmap_001",
                 pool_name="standard",
@@ -1560,13 +1587,14 @@ def test_zone_query_map_id_death_respawn(integration_db, integration_client, see
                 folder_path=str(seed_folder),
                 status=SeedStatus.AVAILABLE,
             )
-            db.add_all([organizer, player, seed])
+            db.add_all([organizer, player, player2, seed])
             await db.commit()
             await db.refresh(organizer)
             await db.refresh(player)
-            return organizer, player
+            await db.refresh(player2)
+            return organizer, player, player2
 
-    organizer, player = asyncio.run(setup())
+    organizer, player, player2 = asyncio.run(setup())
     org_headers = {"Authorization": f"Bearer {organizer.api_token}"}
 
     # Create race
@@ -1594,19 +1622,28 @@ def test_zone_query_map_id_death_respawn(integration_db, integration_client, see
 
     asyncio.run(set_graph())
 
-    # Add participant
+    # Add participants (need at least 2 to start)
     resp = integration_client.post(
         f"/api/races/{race_id}/participants",
         json={"twitch_username": player.twitch_username},
         headers=org_headers,
     )
     assert resp.status_code == 200
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants",
+        json={"twitch_username": player2.twitch_username},
+        headers=org_headers,
+    )
+    assert resp.status_code == 200
 
-    # Get mod token
+    # Get mod token for player
     async def get_token():
         async with integration_db() as db:
             result = await db.execute(
-                select(Participant).where(Participant.race_id == uuid.UUID(race_id))
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == player.id,
+                )
             )
             p = result.scalar_one()
             return p.mod_token
@@ -1672,6 +1709,13 @@ def test_zone_query_no_data_ignored(integration_db, integration_client, seed_fol
                 api_token="zqno_player_token",
                 role=UserRole.USER,
             )
+            player2 = User(
+                twitch_id="zqno_player2",
+                twitch_username="zqno_player2",
+                twitch_display_name="ZQNo Player2",
+                api_token="zqno_player2_token",
+                role=UserRole.USER,
+            )
             seed = Seed(
                 seed_number="szqno_001",
                 pool_name="standard",
@@ -1680,13 +1724,14 @@ def test_zone_query_no_data_ignored(integration_db, integration_client, seed_fol
                 folder_path=str(seed_folder),
                 status=SeedStatus.AVAILABLE,
             )
-            db.add_all([organizer, player, seed])
+            db.add_all([organizer, player, player2, seed])
             await db.commit()
             await db.refresh(organizer)
             await db.refresh(player)
-            return organizer, player
+            await db.refresh(player2)
+            return organizer, player, player2
 
-    organizer, player = asyncio.run(setup())
+    organizer, player, player2 = asyncio.run(setup())
     org_headers = {"Authorization": f"Bearer {organizer.api_token}"}
 
     # Create race
@@ -1714,19 +1759,28 @@ def test_zone_query_no_data_ignored(integration_db, integration_client, seed_fol
 
     asyncio.run(set_graph())
 
-    # Add participant
+    # Add participants (need at least 2 to start)
     resp = integration_client.post(
         f"/api/races/{race_id}/participants",
         json={"twitch_username": player.twitch_username},
         headers=org_headers,
     )
     assert resp.status_code == 200
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants",
+        json={"twitch_username": player2.twitch_username},
+        headers=org_headers,
+    )
+    assert resp.status_code == 200
 
-    # Get mod token
+    # Get mod token for player
     async def get_token():
         async with integration_db() as db:
             result = await db.execute(
-                select(Participant).where(Participant.race_id == uuid.UUID(race_id))
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == player.id,
+                )
             )
             p = result.scalar_one()
             return p.mod_token

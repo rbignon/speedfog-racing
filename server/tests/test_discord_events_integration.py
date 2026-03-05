@@ -211,8 +211,17 @@ async def test_start_race_activates_discord_event(test_client, organizer, seed, 
     """Starting a race with discord_event_id should set event status to ACTIVE."""
     from speedfog_racing.models import Participant
 
-    # Create race with participant directly in DB
+    # Create race with 2 participants directly in DB
     async with async_session() as db:
+        second_user = User(
+            twitch_id="discord-start-user2",
+            twitch_username="discord_start_user2",
+            twitch_display_name="User2",
+            api_token="discord-start-token2",
+        )
+        db.add(second_user)
+        await db.flush()
+
         race = Race(
             name="Start Event Test",
             organizer_id=organizer.id,
@@ -224,12 +233,8 @@ async def test_start_race_activates_discord_event(test_client, organizer, seed, 
         )
         db.add(race)
         await db.flush()
-        participant = Participant(
-            race_id=race.id,
-            user_id=organizer.id,
-            color_index=0,
-        )
-        db.add(participant)
+        db.add(Participant(race_id=race.id, user_id=organizer.id, color_index=0))
+        db.add(Participant(race_id=race.id, user_id=second_user.id, color_index=1))
         await db.commit()
         race_id = str(race.id)
 

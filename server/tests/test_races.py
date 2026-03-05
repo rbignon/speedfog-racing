@@ -646,16 +646,23 @@ async def test_remove_participant(test_client, organizer, player, seed):
 
 
 @pytest.mark.asyncio
-async def test_start_race(test_client, organizer, seed):
+async def test_start_race(test_client, organizer, player, seed):
     """Organizer can start a race."""
     async with test_client as client:
-        # Create race
+        # Create race with organizer as participant
         create_response = await client.post(
             "/api/races",
-            json={"name": "Test Race"},
+            json={"name": "Test Race", "organizer_participates": True},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         race_id = create_response.json()["id"]
+
+        # Add second participant (need at least 2 to start)
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": player.twitch_username},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
 
         # Verify started_at is null before start
         get_response = await client.get(
@@ -682,17 +689,84 @@ async def test_start_race(test_client, organizer, seed):
 
 
 @pytest.mark.asyncio
-async def test_cannot_start_already_started_race(test_client, organizer, seed):
+async def test_cannot_start_race_with_fewer_than_2_participants(test_client, organizer, seed):
+    """Cannot start a race with fewer than 2 participants."""
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Test Race", "organizer_participates": True},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        response = await client.post(
+            f"/api/races/{race_id}/start",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "2 participants" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_admin_can_start_race_with_fewer_than_2_participants(
+    test_client, async_session, seed
+):
+    """Admin can bypass minimum participant check."""
+    async with async_session() as db:
+        admin = User(
+            twitch_id="admin_start",
+            twitch_username="admin_start",
+            twitch_display_name="Admin",
+            api_token="admin_start_token",
+            role=UserRole.ADMIN,
+        )
+        db.add(admin)
+        await db.commit()
+        await db.refresh(admin)
+
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Admin Solo Race", "organizer_participates": True},
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+
+        response = await client.post(
+            f"/api/races/{race_id}/start",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_cannot_start_already_started_race(test_client, organizer, player, seed):
     """Cannot start a race that's already started."""
     async with test_client as client:
         # Create and start race
         create_response = await client.post(
             "/api/races",
-            json={"name": "Test Race"},
+            json={"name": "Test Race", "organizer_participates": True},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         race_id = create_response.json()["id"]
 
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": player.twitch_username},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
         await client.post(
             f"/api/races/{race_id}/release-seeds",
             headers={"Authorization": f"Bearer {organizer.api_token}"},
@@ -1937,12 +2011,12 @@ async def test_cast_join_finished_race(test_client, organizer, player, seed):
     async with test_client as client:
         create_resp = await client.post(
             "/api/races",
-            json={"name": "Cast Test"},
+            json={"name": "Cast Test", "organizer_participates": True},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         race_id = create_resp.json()["id"]
 
-        # Add participant so we can start
+        # Add participant so we have at least 2
         await client.post(
             f"/api/races/{race_id}/participants",
             json={"twitch_username": "player1"},

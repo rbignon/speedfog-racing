@@ -1038,6 +1038,12 @@ async def start_race(
             detail="Seeds must be released before starting the race",
         )
 
+    if len(race.participants) < 2 and user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least 2 participants are required to start a race",
+        )
+
     await _transition_status(
         db,
         race,

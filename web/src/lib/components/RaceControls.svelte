@@ -8,6 +8,7 @@
 		fetchRace,
 		type RaceDetail
 	} from '$lib/api';
+	import { auth } from '$lib/stores/auth.svelte';
 	import ConfirmModal from './ConfirmModal.svelte';
 
 	interface Props {
@@ -21,6 +22,7 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let seedsReleased = $derived(race.seeds_released_at !== null);
+	let canStart = $derived(race.participants.length >= 2 || auth.isAdmin);
 
 	let pendingConfirm = $state<{
 		title: string;
@@ -151,9 +153,16 @@
 
 	{#if raceStatus === 'setup'}
 		{#if seedsReleased}
-			<button class="btn btn-primary btn-full" onclick={handleStart} disabled={loading}>
+			<button
+				class="btn btn-primary btn-full"
+				onclick={handleStart}
+				disabled={loading || !canStart}
+			>
 				{loading ? 'Starting...' : 'Start Race'}
 			</button>
+			{#if !canStart}
+				<p class="hint">At least 2 participants are required to start.</p>
+			{/if}
 		{:else}
 			<button class="btn btn-primary btn-full" onclick={handleRelease} disabled={loading}>
 				{loading ? 'Releasing...' : 'Release Seeds'}

@@ -268,15 +268,22 @@ async def test_patch_non_organizer_rejected(test_client, organizer, player, seed
 
 
 @pytest.mark.asyncio
-async def test_patch_running_race_rejected(test_client, organizer, seed):
+async def test_patch_running_race_rejected(test_client, organizer, player, seed):
     """Cannot PATCH a running race."""
     async with test_client as client:
         create_resp = await client.post(
             "/api/races",
-            json={"name": "Running Patch", "pool_name": "standard"},
+            json={"name": "Running Patch", "pool_name": "standard", "organizer_participates": True},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         race_id = create_resp.json()["id"]
+
+        # Add second participant (need at least 2 to start)
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": player.twitch_username},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
 
         # Release seeds and start the race
         await client.post(
