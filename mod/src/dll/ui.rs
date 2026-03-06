@@ -173,7 +173,7 @@ impl RaceTracker {
         let orange = [1.0, 0.75, 0.0, 1.0];
         let status_str = self.race_info().map(|r| r.status.as_str()).unwrap_or("");
 
-        let (right_text, right_color) = match status_str.as_str() {
+        let (right_text, right_color) = match status_str {
             "setup" => ("WAITING".to_string(), orange),
             "running" => {
                 // Countdown → "3", "2", "1" in yellow; then "GO!" in green for 3s
