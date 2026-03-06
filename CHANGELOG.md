@@ -2,6 +2,34 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.3.4] - 2026-03-06
+
+### Seeds
+
+- Boss randomization now supports 3 levels: none, minor bosses only, or all bosses (previously just on/off)
+- Minor boss randomization enabled on all pools except Chill; Boss Shuffle pool now randomizes all bosses including major ones
+- Rusty Key added to starting items — no more Gostoc detour at Stormveil
+- All crafting recipes unlocked from the start
+- Smithing stones, gloveworts, and crafting materials are now randomized
+- Talismans, notable weapons, and crystal tears now appear at seedtree, church, and cross locations
+- Fix: somber smithing stone shop prices now match normal weapon upgrade costs
+- Fix: cross-links no longer connect zones that are too close together geographically
+- Fix: multi-zone boss clusters no longer leave broken exits
+
+### Races
+
+- Countdown (10→1→GO!) at race start
+- At least 2 participants required to start a race
+
+### In-game
+
+- Fix: phantom path lines no longer appear on the overlay after fast-travel or teleport
+- Fix: zone detection after loading screens is now more reliable
+
+### Metro map
+
+- Layer number displayed in the node popup
+
 ## [1.3.3] - 2026-03-03
 
 ### Seeds
