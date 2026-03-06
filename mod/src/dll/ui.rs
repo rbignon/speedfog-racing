@@ -106,7 +106,6 @@ impl ImguiRenderLoop for RaceTracker {
             )
             .flags(flags)
             .build(|| {
-                self.render_state_banner(ui);
                 self.render_seed_mismatch_warning(ui);
                 self.render_player_status(ui, max_width);
                 self.render_exits(ui, max_width);
@@ -124,47 +123,22 @@ impl ImguiRenderLoop for RaceTracker {
 }
 
 impl RaceTracker {
-    /// Render state banner above player status.
-    /// - SETUP: orange "WAITING FOR START"
-    /// - RUNNING (countdown active): yellow countdown number
-    /// - RUNNING (first 3s after countdown): green "GO!"
-    /// - FINISHED: green "RACE FINISHED"
-    /// - RUNNING (after GO!): nothing
-    fn render_state_banner(&self, ui: &hudhook::imgui::Ui) {
-        let orange = [1.0, 0.75, 0.0, 1.0];
-        let yellow = [1.0, 1.0, 0.0, 1.0];
-        let green = [0.0, 1.0, 0.0, 1.0];
-
-        if let Some(race) = self.race_info() {
-            match race.status.as_str() {
-                "setup" => {
-                    ui.text_colored(orange, "WAITING FOR START");
-                }
-                "running" => {
-                    if let Some(countdown_end) = self.race_state.countdown_end {
-                        if let Some(remaining) =
-                            countdown_end.checked_duration_since(std::time::Instant::now())
-                        {
-                            let secs = remaining.as_secs() + 1; // ceiling
-                            ui.text_colored(yellow, format!("{}", secs));
-                            return;
-                        }
-                    }
-                    // After countdown (or no countdown): show GO! for 3s
-                    let go_start = self.race_state.countdown_end.unwrap_or_else(|| {
-                        self.race_state
-                            .race_started_at
-                            .unwrap_or_else(std::time::Instant::now)
-                    });
-                    if go_start.elapsed() < Duration::from_secs(3) {
-                        ui.text_colored(green, "GO!");
-                    }
-                }
-                "finished" => {
-                    ui.text_colored(green, "RACE FINISHED");
-                }
-                _ => {}
+    /// Format the IGT string for display.
+    fn format_igt_str(&self) -> String {
+        if self.am_i_finished() {
+            if let Some(me) = self.my_participant().filter(|p| p.igt_ms > 0) {
+                format_time_u32(me.igt_ms as u32)
+            } else {
+                "--:--:--".to_string()
             }
+        } else if let Some(frozen) = self.frozen_igt_ms {
+            format_time_u32(frozen)
+        } else if !self.is_race_running() {
+            "--:--:--".to_string()
+        } else if let Some(igt_ms) = self.read_igt() {
+            format_time_u32(igt_ms)
+        } else {
+            "--:--:--".to_string()
         }
     }
 
@@ -179,7 +153,8 @@ impl RaceTracker {
     }
 
     /// 3-line player status:
-    /// Line 1: `● RaceName               HH:MM:SS` (name dimmed, IGT in blue)
+    /// Line 1: `● RaceName               HH:MM:SS` (name dimmed, right side in blue)
+    ///         Right side shows: WAITING (setup), countdown/GO! (start), IGT (running)
     /// Line 2: `  ZoneName                    X/Y` (X yellow→green on finish, /Y white)
     /// Line 3: `  tier X, previously Y   [☠]N`     (tier yellow, deaths white)
     fn render_player_status(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
@@ -194,26 +169,38 @@ impl RaceTracker {
             _ => [1.0, 0.0, 0.0, 1.0],
         };
 
-        // When player has finished, show server-frozen IGT (accurate finish time).
-        // When race ended but player didn't finish, show locally captured game IGT
-        // (the mod's participant igt_ms from leaderboard_update is stale).
-        let igt_str = if self.am_i_finished() {
-            if let Some(me) = self.my_participant().filter(|p| p.igt_ms > 0) {
-                format_time_u32(me.igt_ms as u32)
-            } else {
-                "--:--:--".to_string()
+        // Right side of line 1: state banner during setup/countdown/go, IGT otherwise.
+        let orange = [1.0, 0.75, 0.0, 1.0];
+        let status_str = self.race_info().map(|r| r.status.as_str()).unwrap_or("");
+
+        let (right_text, right_color) = match status_str.as_str() {
+            "setup" => ("WAITING".to_string(), orange),
+            "running" => {
+                // Countdown → "3", "2", "1" in yellow; then "GO!" in green for 3s
+                let countdown_text = self.race_state.countdown_end.and_then(|end| {
+                    end.checked_duration_since(std::time::Instant::now())
+                        .map(|remaining| format!("{}", remaining.as_secs() + 1))
+                });
+                if let Some(text) = countdown_text {
+                    (text, yellow)
+                } else {
+                    let go_start = self.race_state.countdown_end.unwrap_or_else(|| {
+                        self.race_state
+                            .race_started_at
+                            .unwrap_or_else(std::time::Instant::now)
+                    });
+                    if go_start.elapsed() < Duration::from_secs(3) {
+                        ("GO!".to_string(), green)
+                    } else {
+                        // Normal IGT display
+                        (self.format_igt_str(), blue)
+                    }
+                }
             }
-        } else if let Some(frozen) = self.frozen_igt_ms {
-            format_time_u32(frozen)
-        } else if !self.is_race_running() {
-            // Race finished but no frozen IGT captured (shouldn't happen normally)
-            "--:--:--".to_string()
-        } else if let Some(igt_ms) = self.read_igt() {
-            format_time_u32(igt_ms)
-        } else {
-            "--:--:--".to_string()
+            "finished" => (self.format_igt_str(), green),
+            _ => (self.format_igt_str(), blue),
         };
-        let igt_width = ui.calc_text_size(&igt_str)[0];
+        let igt_width = ui.calc_text_size(&right_text)[0];
 
         let dot_str = "\u{25CF} "; // "● "
         let dot_width = ui.calc_text_size(dot_str)[0];
@@ -232,7 +219,7 @@ impl RaceTracker {
         ui.text_colored(self.cached_colors.text_disabled, &truncated);
 
         ui.same_line_with_pos(max_width - igt_width);
-        ui.text_colored(blue, &igt_str);
+        ui.text_colored(right_color, &right_text);
 
         // --- Line 2: zone name (left, white), progress X/Y (right, X=yellow/green Y=white) ---
         let me = self.my_participant();
