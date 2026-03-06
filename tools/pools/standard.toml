@@ -74,3 +74,8 @@ ashes_of_war = 3
 [item_randomizer]
 difficulty = 50
 nerf_gargoyles = true
+
+[enemy]
+randomize_bosses = "minor"
+lock_final_boss = true
+ignore_arena_size = true

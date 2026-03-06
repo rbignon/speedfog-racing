@@ -10,6 +10,6 @@ description = "Standard race with randomized boss encounters"
 final_boss_candidates = ["all"]
 
 [enemy]
-randomize_bosses = "minor"
+randomize_bosses = "all"
 lock_final_boss = true
 ignore_arena_size = true
