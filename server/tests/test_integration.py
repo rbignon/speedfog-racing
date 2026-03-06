@@ -1126,6 +1126,186 @@ def test_zone_history_entry_types(integration_client, race_with_participants, in
     assert history[1]["type"] == "fog"
 
 
+def test_zone_history_backtrack_type(integration_db, integration_client, seed_folder):
+    """zone_query that resolves to a different node produces a 'backtrack' type entry."""
+    import asyncio
+
+    # Graph: chapel_start → stormveil_godrick (event_flag 1040292800)
+    # Grace 10012952 → chapel_start, grace 10002950 → stormveil_godrick
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 2,
+        "nodes": {
+            "chapel_start_4f96": {
+                "type": "start",
+                "display_name": "Chapel of Anticipation",
+                "zones": ["chapel_start"],
+                "layer": 0,
+                "exits": [],
+            },
+            "stormveil_godrick_48fd": {
+                "display_name": "Godrick the Grafted",
+                "zones": ["stormveil_godrick"],
+                "layer": 1,
+                "tier": 5,
+                "exits": [
+                    {"text": "Before boss", "fog_id": 200, "to": "chapel_start_4f96"},
+                ],
+            },
+        },
+        "event_map": {"1040292800": "stormveil_godrick_48fd"},
+        "finish_event": 1040292801,
+    }
+
+    async def setup():
+        async with integration_db() as db:
+            organizer = User(
+                twitch_id="bt_organizer",
+                twitch_username="bt_organizer",
+                twitch_display_name="BT Org",
+                api_token="bt_organizer_token",
+                role=UserRole.ORGANIZER,
+            )
+            player = User(
+                twitch_id="bt_player",
+                twitch_username="bt_player",
+                twitch_display_name="BT Player",
+                api_token="bt_player_token",
+                role=UserRole.USER,
+            )
+            player2 = User(
+                twitch_id="bt_player2",
+                twitch_username="bt_player2",
+                twitch_display_name="BT Player2",
+                api_token="bt_player2_token",
+                role=UserRole.USER,
+            )
+            seed = Seed(
+                seed_number="sbt_001",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=2,
+                folder_path=str(seed_folder),
+                status=SeedStatus.AVAILABLE,
+            )
+            db.add_all([organizer, player, player2, seed])
+            await db.commit()
+            await db.refresh(organizer)
+            await db.refresh(player)
+            await db.refresh(player2)
+            return organizer, player, player2
+
+    organizer, player, player2 = asyncio.run(setup())
+    org_headers = {"Authorization": f"Bearer {organizer.api_token}"}
+
+    # Create race
+    resp = integration_client.post(
+        "/api/races",
+        json={"name": "Backtrack Type Test", "pool_name": "standard"},
+        headers=org_headers,
+    )
+    assert resp.status_code == 201
+    race_id = resp.json()["id"]
+
+    # Override seed graph
+    async def set_graph():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            if race.seed:
+                race.seed.graph_json = graph_json
+                race.seed.total_layers = 2
+                await db.commit()
+
+    asyncio.run(set_graph())
+
+    # Add participants (need at least 2 to start)
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants",
+        json={"twitch_username": player.twitch_username},
+        headers=org_headers,
+    )
+    assert resp.status_code == 200
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants",
+        json={"twitch_username": player2.twitch_username},
+        headers=org_headers,
+    )
+    assert resp.status_code == 200
+
+    # Get mod token
+    async def get_token():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == player.id,
+                )
+            )
+            p = result.scalar_one()
+            return p.mod_token
+
+    mod_token = asyncio.run(get_token())
+
+    # Ready + start
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, mod_token)
+        assert mod.auth()["type"] == "auth_ok"
+        mod.send_ready()
+        mod.receive_until_type("leaderboard_update")
+
+    integration_client.post(f"/api/races/{race_id}/release-seeds", headers=org_headers)
+    resp = integration_client.post(f"/api/races/{race_id}/start", headers=org_headers)
+    assert resp.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, mod_token)
+        assert mod.auth()["type"] == "auth_ok"
+
+        # 1) status_update → spawn at start node (READY→PLAYING broadcasts leaderboard)
+        mod.send_status_update(igt_ms=1000, death_count=0)
+        mod.receive_until_type("leaderboard_update")
+
+        # 2) event_flag → fog traversal to stormveil_godrick
+        #    Server sends: leaderboard_update (broadcast) + zone_update (unicast)
+        mod.send_event_flag(1040292800, igt_ms=5000)
+        mod.receive_until_type("leaderboard_update")
+        fog_zone_update = mod.receive_until_type("zone_update")
+        assert fog_zone_update["node_id"] == "stormveil_godrick_48fd"
+
+        # 3) zone_query grace 10012952 → chapel_start (backtrack via fast-travel)
+        #    Server sends: zone_update (unicast) + player_update (broadcast, revisit)
+        mod.send_zone_query(10012952)
+        backtrack_zone_update = mod.receive_until_type("zone_update")
+        assert backtrack_zone_update["node_id"] == "chapel_start_4f96"
+
+    async def check_history():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == player.id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is not None
+    assert len(history) == 3
+
+    assert history[0]["type"] == "spawn"
+    assert history[0]["node_id"] == "chapel_start_4f96"
+    assert history[1]["type"] == "fog"
+    assert history[1]["node_id"] == "stormveil_godrick_48fd"
+    assert history[2]["type"] == "backtrack"
+    assert history[2]["node_id"] == "chapel_start_4f96"
+
+
 def test_event_flag_same_layer_accepted(integration_client, race_with_participants, integration_db):
     """Event flags for zones at the same layer as current_layer are accepted."""
     import asyncio
