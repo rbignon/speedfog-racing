@@ -1044,7 +1044,12 @@ export async function abandonTrainingSession(
 }
 
 export interface Ghost {
-  zone_history: Array<{ node_id: string; igt_ms: number; deaths?: number }>;
+  zone_history: Array<{
+    node_id: string;
+    igt_ms: number;
+    deaths?: number;
+    type?: string;
+  }>;
   igt_ms: number;
   death_count: number;
 }

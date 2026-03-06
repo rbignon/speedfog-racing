@@ -1074,6 +1074,58 @@ def test_event_flag_lower_layer_recorded_without_regressing(
     assert "node_b" in node_ids
 
 
+def test_zone_history_entry_types(integration_client, race_with_participants, integration_db):
+    """zone_history entries should have type field: spawn for start, fog for event_flag."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive_until_type("leaderboard_update")
+
+    # Start the race after ready
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # First status_update triggers spawn entry (READY→PLAYING)
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+
+        # Fog gate traversal
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        time.sleep(0.5)  # let server process both messages
+
+    async def check_history():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is not None
+    assert len(history) == 2
+
+    # First entry: spawn (from status_update READY→PLAYING)
+    assert history[0]["type"] == "spawn"
+    # Second entry: fog (from event_flag)
+    assert history[1]["type"] == "fog"
+
+
 def test_event_flag_same_layer_accepted(integration_client, race_with_participants, integration_db):
     """Event flags for zones at the same layer as current_layer are accepted."""
     import asyncio

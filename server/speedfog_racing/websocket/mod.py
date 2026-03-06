@@ -369,7 +369,7 @@ async def handle_status_update(
                     participant.current_zone = start_node
                     participant.current_layer = 0
                     history = participant.zone_history or []
-                    history.append({"node_id": start_node, "igt_ms": 0})
+                    history.append({"node_id": start_node, "igt_ms": 0, "type": "spawn"})
                     participant.zone_history = history
 
         new_death_count = msg.get("death_count")
@@ -493,7 +493,7 @@ async def handle_event_flag(
             participant.last_igt_change_at = datetime.now(UTC)
             participant.igt_ms = igt
             participant.current_zone = node_id
-            new_entry = {"node_id": node_id, "igt_ms": igt}
+            new_entry = {"node_id": node_id, "igt_ms": igt, "type": "fog"}
             participant.zone_history = [*old_history, new_entry]
 
             # current_layer is a high watermark (used for ranking) — never regress
@@ -596,7 +596,7 @@ async def handle_zone_query(
 
             participant.last_igt_change_at = datetime.now(UTC)
             participant.igt_ms = igt
-            new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt}
+            new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt, "type": "backtrack"}
             participant.zone_history = [*old_history, new_entry]
 
             # current_layer is a high watermark — never regress

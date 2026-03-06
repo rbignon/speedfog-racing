@@ -109,18 +109,20 @@
 		const me = participants.find((p) => p.id === myParticipantId);
 		if (!me || !me.zone_history || me.zone_history.length === 0) return null;
 
-		const rawNodeIds = me.zone_history.map((e: { node_id: string }) => e.node_id);
 		const deduped: string[] = [];
-		for (const nid of rawNodeIds) {
+		const dedupedTypes: (string | undefined)[] = [];
+		for (const entry of me.zone_history) {
+			const nid = entry.node_id;
 			if (deduped.length === 0 || deduped[deduped.length - 1] !== nid) {
 				if (nodeById.has(nid)) {
 					deduped.push(nid);
+					dedupedTypes.push(entry.type);
 				}
 			}
 		}
 		if (deduped.length < 2) return null;
 
-		const expanded = expandNodePath(deduped, edgeMap, adjacency);
+		const expanded = expandNodePath(deduped, edgeMap, adjacency, dedupedTypes);
 		// Single player — slot is always 0, count always 1
 		const points = buildPlayerWaypoints(
 			expanded,

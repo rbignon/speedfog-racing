@@ -35,15 +35,20 @@ export function expandNodePath(
   nodeIds: string[],
   edgeMap: Map<string, RoutedEdge>,
   adjacency: Map<string, string[]>,
+  entryTypes?: (string | undefined)[],
 ): string[] {
   if (nodeIds.length === 0) return [];
   const expanded: string[] = [nodeIds[0]];
   for (let i = 0; i < nodeIds.length - 1; i++) {
     const from = nodeIds[i];
     const to = nodeIds[i + 1];
+    // Entry type of the destination node — undefined treated as "fog" (backward compat)
+    const toType = entryTypes?.[i + 1];
+    const isFog = toType === undefined || toType === "fog";
+
     if (edgeMap.has(`${from}->${to}`) || edgeMap.has(`${to}->${from}`)) {
       expanded.push(to);
-    } else {
+    } else if (isFog) {
       const bridge = bfsShortestPath(from, to, adjacency);
       if (bridge) {
         for (let j = 1; j < bridge.length; j++) {
@@ -52,6 +57,9 @@ export function expandNodePath(
       } else {
         expanded.push(to);
       }
+    } else {
+      // Non-fog entry (backtrack/spawn) with no direct edge = teleport, skip BFS
+      expanded.push(to);
     }
   }
   return expanded;

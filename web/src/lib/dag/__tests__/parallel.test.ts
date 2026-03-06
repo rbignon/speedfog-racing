@@ -141,6 +141,86 @@ describe("expandNodePath", () => {
     expect(expandNodePath(["b", "a"], edgeMap, adjacency)).toEqual(["b", "a"]);
   });
 
+  it("skips BFS for backtrack entry type (fast-travel)", () => {
+    // Graph: a→b→c→d→e, a is also connected nowhere near e
+    // Player at e fast-travels to a (backtrack), then fog-traverses to b
+    const nodes = [
+      makeNode("a", 0, 0),
+      makeNode("b", 100, 0),
+      makeNode("c", 200, 0),
+      makeNode("d", 300, 0),
+      makeNode("e", 400, 0),
+    ];
+    const edges = [
+      makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }]),
+      makeEdge("b", "c", [{ x1: 100, y1: 0, x2: 200, y2: 0 }]),
+      makeEdge("c", "d", [{ x1: 200, y1: 0, x2: 300, y2: 0 }]),
+      makeEdge("d", "e", [{ x1: 300, y1: 0, x2: 400, y2: 0 }]),
+    ];
+    const { edgeMap } = buildMaps(nodes, edges);
+
+    // Build bidirectional adjacency
+    const biAdj = new Map<string, string[]>();
+    for (const e of edges) {
+      const fwd = biAdj.get(e.fromId);
+      if (fwd) fwd.push(e.toId);
+      else biAdj.set(e.fromId, [e.toId]);
+      const rev = biAdj.get(e.toId);
+      if (rev) rev.push(e.fromId);
+      else biAdj.set(e.toId, [e.fromId]);
+    }
+
+    // Without entry types (backward compat): BFS fills e→d→c→b→a then a→b
+    const withBfs = expandNodePath(["e", "a", "b"], edgeMap, biAdj);
+    expect(withBfs).toEqual(["e", "d", "c", "b", "a", "b"]);
+
+    // With entry types: "a" is a backtrack (fast-travel), "b" is fog traversal
+    // e→a should NOT BFS (backtrack), a→b should use direct edge (fog)
+    const withTypes = expandNodePath(["e", "a", "b"], edgeMap, biAdj, [
+      undefined,
+      "backtrack",
+      "fog",
+    ]);
+    expect(withTypes).toEqual(["e", "a", "b"]);
+  });
+
+  it("still BFS-fills gaps between fog entries", () => {
+    // Tracking missed node b: player fog-traversed a→c but b was skipped
+    const nodes = [
+      makeNode("a", 0, 0),
+      makeNode("b", 100, 0),
+      makeNode("c", 200, 0),
+    ];
+    const edges = [
+      makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }]),
+      makeEdge("b", "c", [{ x1: 100, y1: 0, x2: 200, y2: 0 }]),
+    ];
+    const { edgeMap, adjacency } = buildMaps(nodes, edges);
+
+    const result = expandNodePath(["a", "c"], edgeMap, adjacency, [
+      "spawn",
+      "fog",
+    ]);
+    expect(result).toEqual(["a", "b", "c"]);
+  });
+
+  it("treats undefined entry types as fog for backward compatibility", () => {
+    const nodes = [
+      makeNode("a", 0, 0),
+      makeNode("b", 100, 0),
+      makeNode("c", 200, 0),
+    ];
+    const edges = [
+      makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }]),
+      makeEdge("b", "c", [{ x1: 100, y1: 0, x2: 200, y2: 0 }]),
+    ];
+    const { edgeMap, adjacency } = buildMaps(nodes, edges);
+
+    // No entryTypes param at all — same as today, BFS fills gaps
+    const result = expandNodePath(["a", "c"], edgeMap, adjacency);
+    expect(result).toEqual(["a", "b", "c"]);
+  });
+
   it("fills backtracking path with bidirectional adjacency", () => {
     // Graph: a→b→c, a→d. Player goes a→b→c then backtracks to a→d
     // With bidirectional adjacency, BFS from c to d finds c→b→a→d

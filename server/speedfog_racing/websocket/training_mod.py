@@ -299,7 +299,7 @@ async def _handle_status_update(
             if seed and seed.graph_json:
                 start_node = get_start_node(seed.graph_json)
                 if start_node:
-                    session.progress_nodes = [{"node_id": start_node, "igt_ms": 0}]
+                    session.progress_nodes = [{"node_id": start_node, "igt_ms": 0, "type": "spawn"}]
                     session.current_zone = start_node
 
         new_death_count = msg.get("death_count")
@@ -394,7 +394,10 @@ async def _handle_event_flag(
             # New discovery — record in history
             session.igt_ms = igt
             session.current_zone = node_id
-            session.progress_nodes = [*old_history, {"node_id": node_id, "igt_ms": igt}]
+            session.progress_nodes = [
+                *old_history,
+                {"node_id": node_id, "igt_ms": igt, "type": "fog"},
+            ]
             await db.commit()
 
     # Broadcast to spectators (session is detached; expire_on_commit=False keeps attrs)

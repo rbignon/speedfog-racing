@@ -124,18 +124,20 @@
 		for (const p of participants) {
 			if (!p.zone_history || p.zone_history.length === 0) continue;
 
-			const rawNodeIds = p.zone_history.map((e: { node_id: string }) => e.node_id);
 			const deduped: string[] = [];
-			for (const nid of rawNodeIds) {
+			const dedupedTypes: (string | undefined)[] = [];
+			for (const entry of p.zone_history) {
+				const nid = entry.node_id;
 				if (deduped.length === 0 || deduped[deduped.length - 1] !== nid) {
 					if (nodeMap.has(nid)) {
 						deduped.push(nid);
+						dedupedTypes.push(entry.type);
 					}
 				}
 			}
 
 			if (deduped.length === 0) continue;
-			expandedMap.set(p.id, expandNodePath(deduped, edgeMap, adjacency));
+			expandedMap.set(p.id, expandNodePath(deduped, edgeMap, adjacency, dedupedTypes));
 		}
 
 		// Step 2: Build edge usage map — which participants traverse each edge

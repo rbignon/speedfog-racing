@@ -617,7 +617,7 @@ Shared schema across all WebSocket messages:
 | `gap_ms`              | `int?`    | Gap to the leader in milliseconds (see below)   |
 | `layer_entry_igt`     | `int?`    | Player's IGT when entering their current layer  |
 
-`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3 }`. A node may appear multiple times if the player backtracks — each visit is a separate entry with its own `igt_ms` and optional `deaths` count.
+`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack" }`. A node may appear multiple times if the player backtracks — each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). Entries without `type` are treated as `"fog"` for backward compatibility.
 
 **Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`, `gap_ms`, `layer_entry_igt`). Extra fields like `color_index`, `mod_connected`, and `zone_history` are present on the wire but silently ignored by serde.
 
