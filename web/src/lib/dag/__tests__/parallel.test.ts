@@ -259,12 +259,19 @@ describe("expandNodePath", () => {
 // =============================================================================
 
 describe("buildPlayerWaypoints", () => {
+  // Helper: flatten segments to flat points array (for tests with no gaps)
+  function flat(
+    segments: { x: number; y: number }[][],
+  ): { x: number; y: number }[] {
+    return segments.flat();
+  }
+
   it("returns node centers with no offset for single player", () => {
     const nodes = [makeNode("a", 0, 0), makeNode("b", 100, 0)];
     const edges = [makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }])];
     const { nodeMap, edgeMap } = buildMaps(nodes, edges);
 
-    const points = buildPlayerWaypoints(
+    const segments = buildPlayerWaypoints(
       ["a", "b"],
       nodeMap,
       edgeMap,
@@ -273,6 +280,8 @@ describe("buildPlayerWaypoints", () => {
       5,
     );
 
+    expect(segments).toHaveLength(1);
+    const points = flat(segments);
     expect(points).toHaveLength(2);
     expect(points[0]).toEqual({ x: 0, y: 0 });
     expect(points[1]).toEqual({ x: 100, y: 0 }); // pinch at node
@@ -297,13 +306,15 @@ describe("buildPlayerWaypoints", () => {
     const spacing = 5;
 
     // Player with slot +0.5 on edge a->b (2 players sharing it)
-    const points = buildPlayerWaypoints(
-      ["a", "b", "c"],
-      nodeMap,
-      edgeMap,
-      (key) => (key === "a->b" ? 0.5 : 0),
-      (key) => (key === "a->b" ? 2 : 1),
-      spacing,
+    const points = flat(
+      buildPlayerWaypoints(
+        ["a", "b", "c"],
+        nodeMap,
+        edgeMap,
+        (key) => (key === "a->b" ? 0.5 : 0),
+        (key) => (key === "a->b" ? 2 : 1),
+        spacing,
+      ),
     );
 
     expect(points).toHaveLength(4); // a, mid(offset), b(pinch), c
@@ -337,13 +348,15 @@ describe("buildPlayerWaypoints", () => {
     const { nodeMap, edgeMap } = buildMaps(nodes, edges);
 
     // Player with slot +1 (3 players, index 2)
-    const points = buildPlayerWaypoints(
-      ["a", "b"],
-      nodeMap,
-      edgeMap,
-      () => 1,
-      () => 3,
-      5,
+    const points = flat(
+      buildPlayerWaypoints(
+        ["a", "b"],
+        nodeMap,
+        edgeMap,
+        () => 1,
+        () => 3,
+        5,
+      ),
     );
 
     expect(points).toHaveLength(3); // a, mid(offset), b(pinch)
@@ -360,7 +373,7 @@ describe("buildPlayerWaypoints", () => {
 
   it("returns empty for empty node list", () => {
     const { nodeMap, edgeMap } = buildMaps([], []);
-    const points = buildPlayerWaypoints(
+    const segments = buildPlayerWaypoints(
       [],
       nodeMap,
       edgeMap,
@@ -368,12 +381,12 @@ describe("buildPlayerWaypoints", () => {
       () => 1,
       5,
     );
-    expect(points).toEqual([]);
+    expect(segments).toEqual([]);
   });
 
   it("returns empty when first node not in nodeMap", () => {
     const { nodeMap, edgeMap } = buildMaps([], []);
-    const points = buildPlayerWaypoints(
+    const segments = buildPlayerWaypoints(
       ["missing"],
       nodeMap,
       edgeMap,
@@ -381,7 +394,7 @@ describe("buildPlayerWaypoints", () => {
       () => 1,
       5,
     );
-    expect(points).toEqual([]);
+    expect(segments).toEqual([]);
   });
 
   it("skips offset on very short segments", () => {
@@ -390,13 +403,15 @@ describe("buildPlayerWaypoints", () => {
     const { nodeMap, edgeMap } = buildMaps(nodes, edges);
 
     // Even with multiple players, short segment (len < 0.5) should not offset
-    const points = buildPlayerWaypoints(
-      ["a", "b"],
-      nodeMap,
-      edgeMap,
-      () => 1,
-      () => 3,
-      5,
+    const points = flat(
+      buildPlayerWaypoints(
+        ["a", "b"],
+        nodeMap,
+        edgeMap,
+        () => 1,
+        () => 3,
+        5,
+      ),
     );
 
     expect(points).toHaveLength(2);
@@ -415,13 +430,15 @@ describe("buildPlayerWaypoints", () => {
     ];
     const { nodeMap, edgeMap } = buildMaps(nodes, edges);
 
-    const points = buildPlayerWaypoints(
-      ["a", "b"],
-      nodeMap,
-      edgeMap,
-      () => 1,
-      () => 2,
-      10,
+    const points = flat(
+      buildPlayerWaypoints(
+        ["a", "b"],
+        nodeMap,
+        edgeMap,
+        () => 1,
+        () => 2,
+        10,
+      ),
     );
 
     // Direction (15,20), len=25, perp = (-20,15)/25 = (-0.8, 0.6)
@@ -440,13 +457,15 @@ describe("buildPlayerWaypoints", () => {
     const edges = [makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }])];
     const { nodeMap, edgeMap } = buildMaps(nodes, edges);
 
-    const points = buildPlayerWaypoints(
-      ["b", "a"],
-      nodeMap,
-      edgeMap,
-      () => 0,
-      () => 1,
-      5,
+    const points = flat(
+      buildPlayerWaypoints(
+        ["b", "a"],
+        nodeMap,
+        edgeMap,
+        () => 0,
+        () => 1,
+        5,
+      ),
     );
 
     expect(points).toHaveLength(2);
@@ -466,13 +485,15 @@ describe("buildPlayerWaypoints", () => {
     ];
     const { nodeMap, edgeMap } = buildMaps(nodes, edges);
 
-    const points = buildPlayerWaypoints(
-      ["b", "a"],
-      nodeMap,
-      edgeMap,
-      () => 0,
-      () => 1,
-      5,
+    const points = flat(
+      buildPlayerWaypoints(
+        ["b", "a"],
+        nodeMap,
+        edgeMap,
+        () => 0,
+        () => 1,
+        5,
+      ),
     );
 
     // Start at b(200,50), then reversed segments:
@@ -499,13 +520,15 @@ describe("buildPlayerWaypoints", () => {
     ];
     const { nodeMap, edgeMap } = buildMaps(nodes, edges);
 
-    const points = buildPlayerWaypoints(
-      ["a", "b", "c", "b", "a"],
-      nodeMap,
-      edgeMap,
-      () => 0,
-      () => 1,
-      5,
+    const points = flat(
+      buildPlayerWaypoints(
+        ["a", "b", "c", "b", "a"],
+        nodeMap,
+        edgeMap,
+        () => 0,
+        () => 1,
+        5,
+      ),
     );
 
     expect(points).toHaveLength(5);
@@ -514,5 +537,38 @@ describe("buildPlayerWaypoints", () => {
     expect(points[2]).toEqual({ x: 200, y: 0 }); // c (forward b→c)
     expect(points[3]).toEqual({ x: 100, y: 0 }); // b (reverse c→b)
     expect(points[4]).toEqual({ x: 0, y: 0 }); // a (reverse b→a)
+  });
+
+  it("splits into separate segments at teleport gaps", () => {
+    // Graph: a→b, c→d (no edge between b and c — teleport gap)
+    const nodes = [
+      makeNode("a", 0, 0),
+      makeNode("b", 100, 0),
+      makeNode("c", 300, 0),
+      makeNode("d", 400, 0),
+    ];
+    const edges = [
+      makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }]),
+      makeEdge("c", "d", [{ x1: 300, y1: 0, x2: 400, y2: 0 }]),
+    ];
+    const { nodeMap, edgeMap } = buildMaps(nodes, edges);
+
+    const segments = buildPlayerWaypoints(
+      ["a", "b", "c", "d"],
+      nodeMap,
+      edgeMap,
+      () => 0,
+      () => 1,
+      5,
+    );
+
+    // Should produce 2 segments: [a,b] and [c,d]
+    expect(segments).toHaveLength(2);
+    expect(segments[0]).toHaveLength(2);
+    expect(segments[0][0]).toEqual({ x: 0, y: 0 }); // a
+    expect(segments[0][1]).toEqual({ x: 100, y: 0 }); // b
+    expect(segments[1]).toHaveLength(2);
+    expect(segments[1][0]).toEqual({ x: 300, y: 0 }); // c
+    expect(segments[1][1]).toEqual({ x: 400, y: 0 }); // d
   });
 });

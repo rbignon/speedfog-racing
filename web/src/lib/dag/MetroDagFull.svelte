@@ -111,7 +111,7 @@
 		id: string;
 		color: string;
 		displayName: string;
-		points: string;
+		segments: string[];
 		finalNodeId: string;
 		finalX: number;
 		finalY: number;
@@ -183,7 +183,7 @@
 			if (!expanded) continue;
 
 			const pSlots = playerSlots.get(p.id);
-			const points = buildPlayerWaypoints(
+			const waypointSegments = buildPlayerWaypoints(
 				expanded,
 				nodeMap,
 				edgeMap,
@@ -192,16 +192,19 @@
 				PARALLEL_PATH_SPACING
 			);
 
-			if (points.length === 0) continue;
+			if (waypointSegments.length === 0) continue;
 
-			const pointStr = points.map((w) => `${w.x},${w.y}`).join(' ');
-			const last = points[points.length - 1];
+			const segments = waypointSegments.map(
+				(seg) => seg.map((w) => `${w.x},${w.y}`).join(' ')
+			);
+			const lastSeg = waypointSegments[waypointSegments.length - 1];
+			const last = lastSeg[lastSeg.length - 1];
 
 			paths.push({
 				id: p.id,
 				color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
 				displayName: p.twitch_display_name || p.twitch_username,
-				points: pointStr,
+				segments,
 				finalNodeId: expanded[expanded.length - 1],
 				finalX: last.x,
 				finalY: last.y
@@ -479,18 +482,20 @@
 	<!-- Player path polylines or trailing segments -->
 	{#if !follow}
 		{#each playerPaths as path (path.id)}
-			<polyline
-				points={path.points}
-				fill="none"
-				stroke={path.color}
-				stroke-width="4"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : (fullPathOpacity ? 1 : 0.8)}
-				class="player-path"
-			>
-				<title>{path.displayName}</title>
-			</polyline>
+			{#each path.segments as seg}
+				<polyline
+					points={seg}
+					fill="none"
+					stroke={path.color}
+					stroke-width="4"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					opacity={hasHighlight && !highlightIds!.has(path.id) ? 0 : (fullPathOpacity ? 1 : 0.8)}
+					class="player-path"
+				>
+					<title>{path.displayName}</title>
+				</polyline>
+			{/each}
 		{/each}
 	{:else}
 		{#each trailingPaths as segment (segment.key)}

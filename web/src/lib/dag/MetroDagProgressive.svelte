@@ -124,7 +124,7 @@
 
 		const expanded = expandNodePath(deduped, edgeMap, adjacency, dedupedTypes);
 		// Single player — slot is always 0, count always 1
-		const points = buildPlayerWaypoints(
+		const waypointSegments = buildPlayerWaypoints(
 			expanded,
 			nodeById,
 			edgeMap,
@@ -132,10 +132,12 @@
 			() => 1,
 			PARALLEL_PATH_SPACING
 		);
-		if (points.length < 2) return null;
+		if (waypointSegments.length === 0) return null;
 
 		return {
-			points: points.map((w) => `${w.x},${w.y}`).join(' '),
+			segments: waypointSegments.map(
+				(seg) => seg.map((w) => `${w.x},${w.y}`).join(' ')
+			),
 			color: PLAYER_COLORS[me.color_index % PLAYER_COLORS.length]
 		};
 	});
@@ -309,18 +311,20 @@
 
 		<!-- Progression path -->
 		{#if playerPath}
-			<polyline
-				points={playerPath.points}
-				fill="none"
-				stroke={playerPath.color}
-				stroke-width="4"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				opacity="0.8"
-				class="player-path"
-			>
-				<title>{playerDot?.displayName ?? 'Your path'}</title>
-			</polyline>
+			{#each playerPath.segments as seg}
+				<polyline
+					points={seg}
+					fill="none"
+					stroke={playerPath.color}
+					stroke-width="4"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					opacity="0.8"
+					class="player-path"
+				>
+					<title>{playerDot?.displayName ?? 'Your path'}</title>
+				</polyline>
+			{/each}
 		{/if}
 
 		<!-- Nodes -->

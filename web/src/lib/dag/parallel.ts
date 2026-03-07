@@ -84,14 +84,16 @@ export function buildPlayerWaypoints(
   getSlot: (edgeKey: string) => number,
   getCount: (edgeKey: string) => number,
   spacing: number,
-): { x: number; y: number }[] {
+): { x: number; y: number }[][] {
   if (expandedNodeIds.length === 0) return [];
-
-  const points: { x: number; y: number }[] = [];
 
   const firstNode = nodeMap.get(expandedNodeIds[0]);
   if (!firstNode) return [];
-  points.push({ x: firstNode.x, y: firstNode.y });
+
+  const segments: { x: number; y: number }[][] = [];
+  let current: { x: number; y: number }[] = [
+    { x: firstNode.x, y: firstNode.y },
+  ];
 
   for (let i = 0; i < expandedNodeIds.length - 1; i++) {
     const fromId = expandedNodeIds[i];
@@ -100,7 +102,13 @@ export function buildPlayerWaypoints(
     const revEdge = !fwdEdge ? edgeMap.get(`${toId}->${fromId}`) : undefined;
     const edge = fwdEdge ?? revEdge;
 
-    if (!edge) continue;
+    if (!edge) {
+      // No edge = teleport gap — end current segment and start a new one
+      if (current.length > 0) segments.push(current);
+      const gapNode = nodeMap.get(toId);
+      current = gapNode ? [{ x: gapNode.x, y: gapNode.y }] : [];
+      continue;
+    }
 
     const cKey = canonicalEdgeKey(fromId, toId, edgeMap);
     const count = getCount(cKey);
@@ -113,13 +121,13 @@ export function buildPlayerWaypoints(
         const len = Math.sqrt(dx * dx + dy * dy);
 
         if (count <= 1 || len < 0.5) {
-          points.push({ x: seg.x2, y: seg.y2 });
+          current.push({ x: seg.x2, y: seg.y2 });
         } else {
           // Perpendicular normal: (-dy, dx) / len
           const nx = -dy / len;
           const ny = dx / len;
           const offset = slot * spacing;
-          points.push({
+          current.push({
             x: seg.x2 + offset * nx,
             y: seg.y2 + offset * ny,
           });
@@ -134,12 +142,12 @@ export function buildPlayerWaypoints(
         const len = Math.sqrt(dx * dx + dy * dy);
 
         if (count <= 1 || len < 0.5) {
-          points.push({ x: seg.x1, y: seg.y1 });
+          current.push({ x: seg.x1, y: seg.y1 });
         } else {
           const nx = -dy / len;
           const ny = dx / len;
           const offset = slot * spacing;
-          points.push({
+          current.push({
             x: seg.x1 + offset * nx,
             y: seg.y1 + offset * ny,
           });
@@ -150,11 +158,12 @@ export function buildPlayerWaypoints(
     // Pinch at destination node center
     const destNode = nodeMap.get(toId);
     if (destNode) {
-      points[points.length - 1] = { x: destNode.x, y: destNode.y };
+      current[current.length - 1] = { x: destNode.x, y: destNode.y };
     }
   }
 
-  return points;
+  if (current.length > 0) segments.push(current);
+  return segments;
 }
 
 /**
