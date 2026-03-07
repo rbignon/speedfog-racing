@@ -260,7 +260,9 @@
 	});
 
 	let myWsParticipantId = $derived(myWsParticipant?.id ?? null);
-	let myParticipantFinished = $derived(myWsParticipant?.status === 'finished');
+	let myParticipantFinished = $derived(
+		myWsParticipant?.status === 'finished' || myWsParticipant?.status === 'abandoned'
+	);
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleString();
