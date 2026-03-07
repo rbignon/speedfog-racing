@@ -23,6 +23,7 @@ from speedfog_racing.services.layer_service import (
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.websocket.common import (
     MOD_AUTH_TIMEOUT,
+    attribute_deaths,
     extract_event_ids,
     get_graces_mapping,
     heartbeat_loop,
@@ -384,16 +385,9 @@ async def handle_status_update(
                     new_death_count,
                 )
             if delta > 0 and participant.current_zone and participant.zone_history:
-                # Deep-copy entries so mutations don't affect the committed
-                # state — SQLAlchemy compares new vs committed to detect dirt.
-                history = [dict(e) for e in participant.zone_history]
-                # Iterate in reverse to attribute deaths to the most recent
-                # visit (correct when player has backtracked to this zone).
-                for entry in reversed(history):
-                    if entry.get("node_id") == participant.current_zone:
-                        entry["deaths"] = entry.get("deaths", 0) + delta
-                        break
-                participant.zone_history = history
+                participant.zone_history = attribute_deaths(
+                    participant.zone_history, participant.current_zone, delta
+                )
             participant.death_count = new_death_count
 
         await db.commit()

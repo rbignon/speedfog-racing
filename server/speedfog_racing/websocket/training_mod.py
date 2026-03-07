@@ -22,6 +22,7 @@ from speedfog_racing.services.layer_service import (
 )
 from speedfog_racing.websocket.common import (
     MOD_AUTH_TIMEOUT,
+    attribute_deaths,
     extract_event_ids,
     get_graces_mapping,
     heartbeat_loop,
@@ -314,16 +315,9 @@ async def _handle_status_update(
                     new_death_count,
                 )
             if delta > 0 and session.current_zone and session.progress_nodes:
-                # Deep-copy entries so mutations don't affect the committed
-                # state — SQLAlchemy compares new vs committed to detect dirt.
-                history = [dict(e) for e in session.progress_nodes]
-                # Iterate in reverse to attribute deaths to the most recent
-                # visit (correct when player has backtracked to this zone).
-                for entry in reversed(history):
-                    if entry.get("node_id") == session.current_zone:
-                        entry["deaths"] = entry.get("deaths", 0) + delta
-                        break
-                session.progress_nodes = history
+                session.progress_nodes = attribute_deaths(
+                    session.progress_nodes, session.current_zone, delta
+                )
             session.death_count = new_death_count
 
         await db.commit()
@@ -383,28 +377,15 @@ async def _handle_event_flag(
             logger.warning(f"Unknown event flag {flag_id} in training session {session_id}")
             return
 
-        # Check not duplicate
+        # Always append to progress_nodes (including revisits/backtracks)
         old_history = session.progress_nodes or []
-        is_revisit = any(e.get("node_id") == node_id for e in old_history)
-
-        if is_revisit:
-            # Already discovered — record revisit in history for zone tracking
-            session.current_zone = node_id
-            session.igt_ms = igt
-            session.progress_nodes = [
-                *old_history,
-                {"node_id": node_id, "igt_ms": igt, "type": "fog"},
-            ]
-            await db.commit()
-        else:
-            # New discovery — record in history
-            session.igt_ms = igt
-            session.current_zone = node_id
-            session.progress_nodes = [
-                *old_history,
-                {"node_id": node_id, "igt_ms": igt, "type": "fog"},
-            ]
-            await db.commit()
+        session.igt_ms = igt
+        session.current_zone = node_id
+        session.progress_nodes = [
+            *old_history,
+            {"node_id": node_id, "igt_ms": igt, "type": "fog"},
+        ]
+        await db.commit()
 
     # Broadcast to spectators (session is detached; expire_on_commit=False keeps attrs)
     if session:

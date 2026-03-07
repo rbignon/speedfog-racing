@@ -110,6 +110,25 @@ def extract_event_ids(graph_json: dict[str, Any]) -> tuple[list[int], int | None
     return event_ids, finish_event_id
 
 
+def attribute_deaths(
+    zone_history: list[dict[str, Any]],
+    current_zone: str,
+    delta: int,
+) -> list[dict[str, Any]]:
+    """Attribute death delta to the most recent visit of current_zone.
+
+    Deep-copies entries so mutations don't affect the committed state —
+    SQLAlchemy compares new vs committed to detect dirt.
+    Returns a new list suitable for JSON column assignment.
+    """
+    history = [dict(e) for e in zone_history]
+    for entry in reversed(history):
+        if entry.get("node_id") == current_zone:
+            entry["deaths"] = entry.get("deaths", 0) + delta
+            break
+    return history
+
+
 @dataclass
 class ZoneQueryInput:
     """Parsed zone_query message fields."""
