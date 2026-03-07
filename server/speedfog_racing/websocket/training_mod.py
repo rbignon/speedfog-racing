@@ -317,7 +317,9 @@ async def _handle_status_update(
                 # Deep-copy entries so mutations don't affect the committed
                 # state — SQLAlchemy compares new vs committed to detect dirt.
                 history = [dict(e) for e in session.progress_nodes]
-                for entry in history:
+                # Iterate in reverse to attribute deaths to the most recent
+                # visit (correct when player has backtracked to this zone).
+                for entry in reversed(history):
                     if entry.get("node_id") == session.current_zone:
                         entry["deaths"] = entry.get("deaths", 0) + delta
                         break
@@ -386,9 +388,13 @@ async def _handle_event_flag(
         is_revisit = any(e.get("node_id") == node_id for e in old_history)
 
         if is_revisit:
-            # Already discovered — just update position (like zone_query)
+            # Already discovered — record revisit in history for zone tracking
             session.current_zone = node_id
             session.igt_ms = igt
+            session.progress_nodes = [
+                *old_history,
+                {"node_id": node_id, "igt_ms": igt, "type": "fog"},
+            ]
             await db.commit()
         else:
             # New discovery — record in history
@@ -450,13 +456,28 @@ async def _handle_zone_query(
             )
             return
 
+        # Record backtrack entry when the player moved to a different node
+        # (death/teleport/quit-out — no event flag fired)
+        if node_id != session.current_zone:
+            logger.info(
+                "zone_query backtrack: %s -> %s for training session %s",
+                session.current_zone,
+                node_id,
+                session_id,
+            )
+            igt = zq.igt_ms if zq.igt_ms is not None else session.igt_ms
+            old_history = session.progress_nodes or []
+            session.igt_ms = igt
+            session.progress_nodes = [
+                *old_history,
+                {"node_id": node_id, "igt_ms": igt, "type": "backtrack"},
+            ]
+
         session.current_zone = node_id
         await db.commit()
 
-        progress = session.progress_nodes or []
-
     # Unicast zone_update to mod
-    await send_zone_update(websocket, node_id, graph_json, progress, locale)
+    await send_zone_update(websocket, node_id, graph_json, session.progress_nodes or [], locale)
 
     # Broadcast to spectators so DAG view reflects current zone
     # (mod already got the unicast zone_update above)
