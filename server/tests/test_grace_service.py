@@ -167,7 +167,8 @@ def test_resolve_zone_query_ambiguous_narrowed_by_history():
 
 
 def test_resolve_zone_query_ambiguous_both_explored():
-    """Ambiguous map_id stays ambiguous when both candidates are in history."""
+    """Ambiguous map_id with both candidates explored:
+    picks most recently visited (death/remembrance heuristic)."""
     graph = {
         "nodes": {
             "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
@@ -180,7 +181,58 @@ def test_resolve_zone_query_ambiguous_both_explored():
         {"node_id": "node_b", "igt_ms": 5000},
     ]
     node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
+    assert node_id == "node_b"
+
+
+def test_resolve_zone_query_fast_travel_failed_grace_no_fallback():
+    """Fast travel with unmapped grace_entity_id: do NOT fall back to most recent.
+
+    grace_entity_id being present signals fast travel — guessing would pollute the DAG.
+    """
+    graph = {
+        "nodes": {
+            "node_a": {"zones": ["stormveil_godrick"], "layer": 1},
+            "node_b": {"zones": ["stormhill"], "layer": 0},
+        }
+    }
+    mapping = load_graces_mapping()
+    history = [
+        {"node_id": "node_a", "igt_ms": 0},
+        {"node_id": "node_b", "igt_ms": 5000},
+    ]
+    # grace_entity_id=99999999 won't resolve, but its presence means fast travel
+    node_id = resolve_zone_query(
+        graph,
+        mapping,
+        grace_entity_id=99999999,
+        map_id="m10_00_00_00",
+        zone_history=history,
+    )
     assert node_id is None
+
+
+def test_resolve_zone_query_death_most_recent_fallback():
+    """Death/remembrance (no grace_entity_id): picks most recent visited node among candidates."""
+    graph = {
+        "nodes": {
+            "leyndell_1259": {"zones": ["leyndell"], "layer": 5},
+            "leyndell_sanctuary_d3e5": {"zones": ["leyndell_sanctuary"], "layer": 8},
+        }
+    }
+    mapping = load_graces_mapping()
+    history = [
+        {"node_id": "leyndell_1259", "igt_ms": 120000},
+        {"node_id": "leyndell_sanctuary_d3e5", "igt_ms": 300000},
+        {"node_id": "leyndell_1259", "igt_ms": 400000},  # backtracked
+    ]
+    # No grace → death context. Most recent matching = leyndell_1259
+    node_id = resolve_zone_query(
+        graph,
+        mapping,
+        map_id="m11_00_00_00",
+        zone_history=history,
+    )
+    assert node_id == "leyndell_1259"
 
 
 def test_resolve_zone_query_ambiguous_empty_history():

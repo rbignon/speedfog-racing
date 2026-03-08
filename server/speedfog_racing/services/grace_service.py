@@ -86,6 +86,7 @@ def resolve_zone_query(
        b. If position available, use submaps.txt to narrow to one zone_id
        c. Find graph nodes whose zones intersect candidates
        d. If still ambiguous, narrow by zone_history (visited nodes only)
+       e. If still ambiguous and no grace (death/remembrance), pick most recently visited
     3. None (ambiguous or no data)
     """
     # Strategy 1: grace lookup (highest confidence)
@@ -122,5 +123,15 @@ def resolve_zone_query(
 
         if len(matching) == 1:
             return matching[0]
+
+        # Death/remembrance fallback: pick most recently visited among candidates.
+        # Only when grace_entity_id is absent — fast travel with failed grace lookup
+        # should NOT guess (wrong entries pollute the MetroDag).
+        if len(matching) > 1 and zone_history and (grace_entity_id is None or grace_entity_id == 0):
+            matching_set = set(matching)
+            for entry in reversed(zone_history):
+                nid = entry.get("node_id")
+                if nid in matching_set:
+                    return nid
 
     return None
