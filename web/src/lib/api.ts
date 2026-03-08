@@ -986,7 +986,7 @@ export interface TrainingSession {
 export interface TrainingSessionDetail extends TrainingSession {
   seed_number: string | null;
   seed_total_paths: number | null;
-  progress_nodes: Array<{ node_id: string; igt_ms: number }> | null;
+  zone_history: Array<{ node_id: string; igt_ms: number }> | null;
   graph_json: Record<string, unknown> | null;
   pool_config: PoolConfig | null;
 }

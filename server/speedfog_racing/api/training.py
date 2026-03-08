@@ -80,9 +80,9 @@ async def _get_session_or_404_public(db: AsyncSession, session_id: uuid.UUID) ->
 
 def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
     current_layer = 0
-    if session.progress_nodes and session.seed.graph_json:
+    if session.zone_history and session.seed.graph_json:
         nodes = session.seed.graph_json.get("nodes", {})
-        for entry in session.progress_nodes:
+        for entry in session.zone_history:
             node_data = nodes.get(entry.get("node_id"), {})
             tier = node_data.get("tier")
             if isinstance(tier, int | float) and int(tier) > current_layer:
@@ -119,7 +119,7 @@ def _build_detail_response(session: TrainingSession) -> TrainingSessionDetailRes
         igt_ms=session.igt_ms,
         death_count=session.death_count,
         exclude_from_stats=session.exclude_from_stats,
-        progress_nodes=session.progress_nodes,
+        zone_history=session.zone_history,
         created_at=session.created_at,
         finished_at=session.finished_at,
         seed_number=seed.seed_number,
@@ -216,7 +216,7 @@ async def abandon_session(
             detail=f"Cannot abandon session in status '{session.status.value}'",
         )
 
-    has_progress = bool(session.progress_nodes)
+    has_progress = bool(session.zone_history)
     session.status = (
         TrainingSessionStatus.ABANDONED if has_progress else TrainingSessionStatus.CANCELLED
     )
@@ -285,7 +285,7 @@ async def get_ghosts(
             TrainingSession.seed_id == session.seed_id,
             TrainingSession.status == TrainingSessionStatus.FINISHED,
             TrainingSession.id != session_id,
-            TrainingSession.progress_nodes.isnot(None),
+            TrainingSession.zone_history.isnot(None),
         )
         .limit(100)
     )
@@ -293,7 +293,7 @@ async def get_ghosts(
 
     return [
         GhostResponse(
-            zone_history=g.progress_nodes or [],
+            zone_history=g.zone_history or [],
             igt_ms=g.igt_ms,
             death_count=g.death_count,
         )

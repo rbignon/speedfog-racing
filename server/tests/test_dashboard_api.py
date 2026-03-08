@@ -80,7 +80,7 @@ async def dashboard_user(async_session):
             user_id=user.id,
             seed_id=seed.id,
             status=TrainingSessionStatus.ACTIVE,
-            progress_nodes=[
+            zone_history=[
                 {"node_id": "start", "igt_ms": 0},
                 {"node_id": "limgrave_a", "igt_ms": 60000},
                 {"node_id": "liurnia_b", "igt_ms": 120000},
@@ -129,7 +129,7 @@ def test_client(async_session):
 
 @pytest.mark.asyncio
 async def test_training_list_includes_current_layer(test_client, dashboard_user):
-    """GET /training includes current_layer computed from progress_nodes."""
+    """GET /training includes current_layer computed from zone_history."""
     async with test_client as client:
         response = await client.get(
             "/api/training",

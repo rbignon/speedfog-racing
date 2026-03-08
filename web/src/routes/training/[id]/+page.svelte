@@ -63,20 +63,20 @@
 	// Prefer live WS data; fall back to static session data (abandoned/finished without WS).
 	let dagParticipants = $derived.by(() => {
 		if (liveParticipant) return [liveParticipant];
-		if (!session || !session.progress_nodes || session.progress_nodes.length === 0) return [];
+		if (!session || !session.zone_history || session.zone_history.length === 0) return [];
 		return [
 			{
 				id: session.id,
 				twitch_username: session.user?.twitch_username ?? '',
 				twitch_display_name: session.user?.twitch_display_name ?? null,
 				status: session.status === 'active' ? 'playing' : session.status,
-				current_zone: session.progress_nodes[session.progress_nodes.length - 1]?.node_id ?? null,
+				current_zone: session.zone_history[session.zone_history.length - 1]?.node_id ?? null,
 				current_layer: session.current_layer ?? 0,
 				igt_ms: session.igt_ms,
 				death_count: session.death_count,
 				color_index: 0,
 				mod_connected: false,
-				zone_history: session.progress_nodes
+				zone_history: session.zone_history
 			}
 		];
 	});

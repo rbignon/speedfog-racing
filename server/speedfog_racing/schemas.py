@@ -377,7 +377,7 @@ class TrainingSessionDetailResponse(BaseModel):
     igt_ms: int
     death_count: int
     exclude_from_stats: bool
-    progress_nodes: list[dict[str, Any]] | None = None
+    zone_history: list[dict[str, Any]] | None = None
     created_at: datetime
     finished_at: datetime | None = None
     seed_number: str | None = None

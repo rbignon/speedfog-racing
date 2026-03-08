@@ -17,7 +17,7 @@
 
 	let dagParticipants = $derived.by(() => {
 		if (liveParticipant) return [liveParticipant];
-		if (!data.session.progress_nodes || data.session.progress_nodes.length === 0) return [];
+		if (!data.session.zone_history || data.session.zone_history.length === 0) return [];
 		return [
 			{
 				id: data.session.id,
@@ -25,13 +25,13 @@
 				twitch_display_name: data.session.user?.twitch_display_name ?? null,
 				status: data.session.status === 'active' ? ('playing' as const) : data.session.status,
 				current_zone:
-					data.session.progress_nodes[data.session.progress_nodes.length - 1]?.node_id ?? null,
+					data.session.zone_history[data.session.zone_history.length - 1]?.node_id ?? null,
 				current_layer: data.session.current_layer ?? 0,
 				igt_ms: data.session.igt_ms,
 				death_count: data.session.death_count,
 				color_index: 0,
 				mod_connected: false,
-				zone_history: data.session.progress_nodes
+				zone_history: data.session.zone_history
 			}
 		];
 	});

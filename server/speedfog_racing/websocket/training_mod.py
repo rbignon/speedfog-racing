@@ -128,8 +128,8 @@ async def handle_training_mod_websocket(
             seed = session.seed
             if seed and seed.graph_json:
                 last_node = None
-                if session.progress_nodes:
-                    last_node = session.progress_nodes[-1].get("node_id")
+                if session.zone_history:
+                    last_node = session.zone_history[-1].get("node_id")
                 if not last_node:
                     last_node = get_start_node(seed.graph_json)
                 if last_node:
@@ -137,7 +137,7 @@ async def handle_training_mod_websocket(
                         websocket,
                         last_node,
                         seed.graph_json,
-                        session.progress_nodes or [],
+                        session.zone_history or [],
                         mod_locale,
                     )
 
@@ -207,15 +207,15 @@ def build_training_participant_info(
     current_layer = 0
     current_layer_tier: int | None = None
     current_zone = session.current_zone
-    if session.progress_nodes and seed and seed.graph_json:
-        for entry in session.progress_nodes:
+    if session.zone_history and seed and seed.graph_json:
+        for entry in session.zone_history:
             nid = entry.get("node_id")
             if nid:
                 layer = get_layer_for_node(nid, seed.graph_json)
                 if layer > current_layer:
                     current_layer = layer
         if not current_zone:
-            current_zone = session.progress_nodes[-1].get("node_id")
+            current_zone = session.zone_history[-1].get("node_id")
         if current_zone:
             current_layer_tier = get_tier_for_node(current_zone, seed.graph_json)
 
@@ -239,7 +239,7 @@ def build_training_participant_info(
         death_count=session.death_count,
         color_index=0,
         mod_connected=mod_connected,
-        zone_history=session.progress_nodes,
+        zone_history=session.zone_history,
     )
 
 
@@ -294,13 +294,13 @@ async def _handle_status_update(
             session.igt_ms = msg["igt_ms"]
 
         # Record start node on first status_update (mirrors race mode READY→PLAYING).
-        # Must happen BEFORE death attribution so current_zone/progress_nodes exist.
-        if not session.progress_nodes:
+        # Must happen BEFORE death attribution so current_zone/zone_history exist.
+        if not session.zone_history:
             seed = session.seed
             if seed and seed.graph_json:
                 start_node = get_start_node(seed.graph_json)
                 if start_node:
-                    session.progress_nodes = [{"node_id": start_node, "igt_ms": 0, "type": "spawn"}]
+                    session.zone_history = [{"node_id": start_node, "igt_ms": 0, "type": "spawn"}]
                     session.current_zone = start_node
 
         new_death_count = msg.get("death_count")
@@ -314,9 +314,9 @@ async def _handle_status_update(
                     session.death_count,
                     new_death_count,
                 )
-            if delta > 0 and session.current_zone and session.progress_nodes:
-                session.progress_nodes = attribute_deaths(
-                    session.progress_nodes, session.current_zone, delta
+            if delta > 0 and session.current_zone and session.zone_history:
+                session.zone_history = attribute_deaths(
+                    session.zone_history, session.current_zone, delta
                 )
             session.death_count = new_death_count
 
@@ -377,11 +377,11 @@ async def _handle_event_flag(
             logger.warning(f"Unknown event flag {flag_id} in training session {session_id}")
             return
 
-        # Always append to progress_nodes (including revisits/backtracks)
-        old_history = session.progress_nodes or []
+        # Always append to zone_history (including revisits/backtracks)
+        old_history = session.zone_history or []
         session.igt_ms = igt
         session.current_zone = node_id
-        session.progress_nodes = [
+        session.zone_history = [
             *old_history,
             {"node_id": node_id, "igt_ms": igt, "type": "fog"},
         ]
@@ -393,7 +393,7 @@ async def _handle_event_flag(
 
     # Send zone_update to mod
     if node_id and seed_graph:
-        await send_zone_update(websocket, node_id, seed_graph, session.progress_nodes or [], locale)
+        await send_zone_update(websocket, node_id, seed_graph, session.zone_history or [], locale)
 
 
 async def _handle_zone_query(
@@ -426,7 +426,7 @@ async def _handle_zone_query(
             map_id=zq.map_id,
             position=zq.position,
             play_region_id=zq.play_region_id,
-            zone_history=session.progress_nodes,
+            zone_history=session.zone_history,
         )
         if node_id is None:
             logger.debug(
@@ -447,9 +447,9 @@ async def _handle_zone_query(
                 session_id,
             )
             igt = zq.igt_ms if zq.igt_ms is not None else session.igt_ms
-            old_history = session.progress_nodes or []
+            old_history = session.zone_history or []
             session.igt_ms = igt
-            session.progress_nodes = [
+            session.zone_history = [
                 *old_history,
                 {"node_id": node_id, "igt_ms": igt, "type": "backtrack"},
             ]
@@ -458,7 +458,7 @@ async def _handle_zone_query(
         await db.commit()
 
     # Unicast zone_update to mod
-    await send_zone_update(websocket, node_id, graph_json, session.progress_nodes or [], locale)
+    await send_zone_update(websocket, node_id, graph_json, session.zone_history or [], locale)
 
     # Broadcast to spectators so DAG view reflects current zone
     # (mod already got the unicast zone_update above)
