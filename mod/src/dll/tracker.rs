@@ -355,10 +355,10 @@ impl RaceTracker {
             if !self.event_ids.is_empty() {
                 let igt_ms = self.game_state.read_igt().unwrap_or(0);
                 for &flag_id in &self.event_ids {
-                    if !self.triggered_flags.contains(&flag_id) {
-                        if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
-                            self.triggered_flags.insert(flag_id);
-                            if self.finish_event == Some(flag_id) {
+                    if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                        if self.finish_event == Some(flag_id) {
+                            if !self.triggered_flags.contains(&flag_id) {
+                                self.triggered_flags.insert(flag_id);
                                 if self.ws_client.is_connected()
                                     && self.is_race_running()
                                     && !self.am_i_finished()
@@ -373,10 +373,11 @@ impl RaceTracker {
                                 } else if !self.am_i_finished() {
                                     self.pending_event_flags.push((flag_id, igt_ms));
                                 }
-                            } else {
-                                self.deferred_event_flags.push((flag_id, igt_ms));
-                                info!(flag_id, "[RACE] Event flag caught at loading exit");
                             }
+                        } else {
+                            self.event_flag_reader.set_flag(flag_id, false);
+                            self.deferred_event_flags.push((flag_id, igt_ms));
+                            info!(flag_id, "[RACE] Event flag caught at loading exit");
                         }
                     }
                 }
@@ -445,12 +446,11 @@ impl RaceTracker {
             self.last_flag_poll = Instant::now();
             let igt_ms = self.game_state.read_igt().unwrap_or(0);
             for &flag_id in &self.event_ids {
-                if !self.triggered_flags.contains(&flag_id) {
-                    if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
-                        self.triggered_flags.insert(flag_id);
-
-                        if self.finish_event == Some(flag_id) {
-                            // finish_event: no loading screen → send immediately
+                if self.finish_event == Some(flag_id) {
+                    // finish_event: one-shot — use triggered_flags guard
+                    if !self.triggered_flags.contains(&flag_id) {
+                        if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                            self.triggered_flags.insert(flag_id);
                             if self.ws_client.is_connected()
                                 && self.is_race_running()
                                 && !self.am_i_finished()
@@ -465,11 +465,14 @@ impl RaceTracker {
                             } else if !self.am_i_finished() {
                                 self.pending_event_flags.push((flag_id, igt_ms));
                             }
-                        } else {
-                            // Regular fog gate → defer until loading exit
-                            self.deferred_event_flags.push((flag_id, igt_ms));
-                            info!(flag_id, "[RACE] Event flag deferred until loading exit");
                         }
+                    }
+                } else {
+                    // Regular fog gate — clear after capture so re-traversals are detected
+                    if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                        self.event_flag_reader.set_flag(flag_id, false);
+                        self.deferred_event_flags.push((flag_id, igt_ms));
+                        info!(flag_id, "[RACE] Event flag deferred until loading exit");
                     }
                 }
             }
@@ -504,14 +507,22 @@ impl RaceTracker {
 
                 // Safety-net rescan: catch any flags still set in memory that polling missed
                 for &flag_id in &self.event_ids {
-                    if !self.triggered_flags.contains(&flag_id) {
-                        if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
-                            self.triggered_flags.insert(flag_id);
-                            self.ws_client.send_event_flag(flag_id, igt_ms);
-                            self.last_sent_debug =
-                                Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
-                            info!(flag_id, "[RACE] Event flag re-sent after reconnect");
+                    if self.finish_event == Some(flag_id) {
+                        if !self.triggered_flags.contains(&flag_id) {
+                            if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                                self.triggered_flags.insert(flag_id);
+                                self.ws_client.send_event_flag(flag_id, igt_ms);
+                                self.last_sent_debug =
+                                    Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
+                                info!(flag_id, "[RACE] Finish event re-sent after reconnect");
+                            }
                         }
+                    } else if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                        self.event_flag_reader.set_flag(flag_id, false);
+                        self.ws_client.send_event_flag(flag_id, igt_ms);
+                        self.last_sent_debug =
+                            Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
+                        info!(flag_id, "[RACE] Event flag re-sent after reconnect");
                     }
                 }
             }
@@ -623,8 +634,9 @@ impl RaceTracker {
                 self.my_participant_id = Some(participant_id);
                 self.event_ids = seed.event_ids.clone();
                 self.finish_event = seed.finish_event;
-                // Don't clear triggered_flags on reconnect: they track which flags
-                // have already been detected. Pending flags are in pending_event_flags.
+                // Don't clear triggered_flags on reconnect: finish_event is one-shot.
+                // Regular fog gate flags are no longer tracked in triggered_flags —
+                // they're cleared in game memory after capture for re-traversal detection.
                 // After (re)auth, the server sends the player's current zone — reveal
                 // it immediately without requiring a loading cycle.
                 self.loading_exit_time = Some(Instant::now() - ZONE_REVEAL_DELAY);
