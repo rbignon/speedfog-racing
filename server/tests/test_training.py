@@ -1137,8 +1137,8 @@ def test_training_zone_query_fast_travel(training_ws_client, async_session):
         assert zu2["tier"] == 5
 
 
-def test_training_zone_query_backtrack_appends_to_zone_history(training_ws_client, async_session):
-    """Zone_query to a different node records a backtrack entry in zone_history."""
+def test_training_zone_query_same_zone_does_not_backtrack(training_ws_client, async_session):
+    """Zone_query to the current zone does not record a backtrack entry."""
     import uuid as _uuid
 
     # Graph with two zones: chapel_start and godrick_node
@@ -1212,15 +1212,6 @@ def test_training_zone_query_backtrack_appends_to_zone_history(training_ws_clien
         ws.send_json({"type": "event_flag", "flag_id": 1040292800, "igt_ms": 5000})
         ws.receive_json()  # leaderboard_update
         ws.receive_json()  # zone_update
-
-        # Teleport back to start via zone_query (no matching grace for chapel,
-        # but godrick grace resolves → godrick_node; we need a grace that resolves
-        # to chapel_start). Use map_id strategy instead — send a zone_query with
-        # grace_entity_id that won't resolve, forcing the server to skip.
-        # Actually: just send zone_query for godrick_node (grace 10002950) which
-        # resolves to godrick_node. But current_zone IS godrick_node, so no backtrack.
-        # Instead, traverse back to godrick via event_flag (revisit), then zone_query
-        # to a different node... Let's just check the DB directly.
 
         import time
 
