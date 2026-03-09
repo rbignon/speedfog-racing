@@ -16,7 +16,7 @@ major_bosses = 8
 [structure]
 min_layers = 25
 max_layers = 30
-final_tier = 20
+final_tier = 18
 first_layer_type = "legacy_dungeon"
 final_boss_candidates = [
     # Base game remembrance bosses

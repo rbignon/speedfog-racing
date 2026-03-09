@@ -19,7 +19,7 @@ major_bosses = 3
 [structure]
 min_layers = 10
 max_layers = 15
-final_tier = 12
+final_tier = 10
 final_boss_candidates = ["all"]
 
 [starting_items]
