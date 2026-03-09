@@ -2,6 +2,33 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.3.5] - 2026-03-09
+
+### Seeds
+
+- Care package expanded — weapon pool grows from 18 to 43 weapons covering all categories, armor pool from 6 to 15 pieces per slot with light/medium/heavy options
+- Final tier rebalanced across pools — Chill and Sprint lowered from 12 to 10, Standard from 20 to 18
+- Fix: generated maps no longer exceed the configured maximum layer count
+- Fix: seed discard now processes all pools instead of only the first one
+
+### Races
+
+- Seed pack can now be downloaded while the race is running, not just during setup
+- Fix: scheduled time now shows "To be defined" instead of being hidden when no time is set
+
+### In-game
+
+- Fix: backtracking through fog gates is now properly detected — event flags are cleared after capture so the game can re-trigger them on revisit
+- Fix: ambiguous zone detection after death or remembrance now picks the most recently visited zone instead of an arbitrary candidate
+
+### Metro map
+
+- Fix: player path lines no longer draw straight lines across the map after a teleport — paths now break at teleport gaps
+
+### Website
+
+- Fix: abandoned players now see the full metro map instead of the fog-of-war view
+
 ## [1.3.4] - 2026-03-06
 
 ### Seeds
