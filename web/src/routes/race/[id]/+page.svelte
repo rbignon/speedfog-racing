@@ -485,6 +485,29 @@
 				</div>
 			{/if}
 
+			{#if myParticipant && seedsReleased}
+				<button
+					class="sidebar-download-btn"
+					onclick={() => {
+						downloadError = null;
+						showDownloadModal = true;
+					}}
+					disabled={downloading}
+				>
+					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+						<path
+							d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							fill="none"
+						/>
+					</svg>
+					{downloading ? 'Preparing...' : 'Download Race Package'}
+				</button>
+			{/if}
+
 			<CasterList
 				casters={initialRace.casters}
 				canCast={auth.isLoggedIn && !myParticipant && !isCaster}
