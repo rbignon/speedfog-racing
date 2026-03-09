@@ -18,7 +18,7 @@ min_layers = 25
 max_layers = 30
 final_tier = 12
 tier_curve = "power"
-tier_curve_exponent = 0.5
+tier_curve_exponent = 1.5
 first_layer_type = "legacy_dungeon"
 final_boss_candidates = ["all"]
 
