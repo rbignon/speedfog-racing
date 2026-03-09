@@ -134,10 +134,10 @@ echo "Pools: ${POOLS[*]}"
 
 # Helper: mark AVAILABLE/CONSUMED seeds as DISCARDED via psql over SSH
 discard_seeds() {
-    ssh "$SERVER" bash -s "${POOLS[*]}" <<'ENDSSH'
+    ssh "$SERVER" bash -s "${POOLS[@]}" <<'ENDSSH'
         set -eo pipefail
         cd /tmp
-        for pool in $1; do
+        for pool in "$@"; do
             result=$(sudo -u speedfog psql -t -A speedfog_racing -c \
                 "UPDATE seeds SET status = 'DISCARDED' WHERE status IN ('AVAILABLE', 'CONSUMED') AND pool_name = '$pool'" </dev/null) || {
                 echo "  ERROR: psql failed for pool $pool"
