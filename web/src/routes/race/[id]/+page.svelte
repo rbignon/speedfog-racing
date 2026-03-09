@@ -791,45 +791,48 @@
 					<span class="label">Created</span>
 					<span class="value">{formatDate(initialRace.created_at)}</span>
 				</div>
-				{#if initialRace.scheduled_at || (isOrganizer && raceStatus === 'setup')}
-					<div class="info-item">
-						<span class="label">Scheduled</span>
-						{#if editingSchedule}
-							<div class="schedule-edit">
-								<DateTimePicker
-									value={scheduleInput}
-									onchange={(iso) => (scheduleInput = iso)}
-									min={new Date()}
+				<div class="info-item">
+					<span class="label">Scheduled</span>
+					{#if editingSchedule}
+						<div class="schedule-edit">
+							<DateTimePicker
+								value={scheduleInput}
+								onchange={(iso) => (scheduleInput = iso)}
+								min={new Date()}
+								disabled={scheduleSaving}
+							/>
+							<div class="schedule-edit-actions">
+								<button class="btn-inline" onclick={saveSchedule} disabled={scheduleSaving}>
+									{scheduleSaving ? '...' : 'Save'}
+								</button>
+								<button
+									class="btn-inline btn-inline-secondary"
+									onclick={() => (editingSchedule = false)}
 									disabled={scheduleSaving}
-								/>
-								<div class="schedule-edit-actions">
-									<button class="btn-inline" onclick={saveSchedule} disabled={scheduleSaving}>
-										{scheduleSaving ? '...' : 'Save'}
-									</button>
-									<button
-										class="btn-inline btn-inline-secondary"
-										onclick={() => (editingSchedule = false)}
-										disabled={scheduleSaving}
-									>
-										Cancel
-									</button>
-								</div>
-								{#if scheduleError}
-									<span class="schedule-error">{scheduleError}</span>
-								{/if}
+								>
+									Cancel
+								</button>
 							</div>
-						{:else if initialRace.scheduled_at}
-							<span class="value">
-								{formatDate(initialRace.scheduled_at)}
-								{#if isOrganizer && raceStatus === 'setup'}
-									<button class="btn-edit" onclick={startEditSchedule}>Edit</button>
-								{/if}
-							</span>
-						{:else if isOrganizer}
+							{#if scheduleError}
+								<span class="schedule-error">{scheduleError}</span>
+							{/if}
+						</div>
+					{:else if initialRace.scheduled_at}
+						<span class="value">
+							{formatDate(initialRace.scheduled_at)}
+							{#if isOrganizer && raceStatus === 'setup'}
+								<button class="btn-edit" onclick={startEditSchedule}>Edit</button>
+							{/if}
+						</span>
+					{:else if isOrganizer && raceStatus === 'setup'}
+						<span class="value">
+							To be defined
 							<button class="btn-edit" onclick={startEditSchedule}>Set time</button>
-						{/if}
-					</div>
-				{/if}
+						</span>
+					{:else}
+						<span class="value">To be defined</span>
+					{/if}
+				</div>
 				{#if initialRace.started_at}
 					<div class="info-item">
 						<span class="label">Started</span>
