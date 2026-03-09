@@ -49,16 +49,20 @@ Every 100ms (`POLL_INTERVAL = 100ms`), the tracker iterates all `event_ids` rece
 
 ```
 for each flag_id in event_ids:
-    if flag_id in triggered_flags: skip
-    if is_flag_set(flag_id) == Some(true):
-        triggered_flags.insert(flag_id)
-        if flag_id == finish_event:
+    if flag_id == finish_event:
+        if flag_id in triggered_flags: skip
+        if is_flag_set(flag_id) == Some(true):
+            triggered_flags.insert(flag_id)
             → send immediately (or buffer if disconnected)
-        else:
+    else:
+        if is_flag_set(flag_id) == Some(true):
+            set_flag(flag_id, false)   // clear for re-traversal detection
             → push to deferred_event_flags
 ```
 
-**`triggered_flags` (HashSet)**: Ensures each flag is detected and sent exactly once per session. Never cleared — even on reconnect. Pending retransmission uses `pending_event_flags` instead.
+**`finish_event` is one-shot**: Uses `triggered_flags` (HashSet) — the player can only finish once. Never cleared, even on reconnect.
+
+**Regular fog gate flags are repeatable**: After capture, the flag is cleared in game memory (`set_flag(false)`) so the EMEVD script can re-set it on the next fog gate traversal. This enables backtrack detection — re-traversing an already-visited fog gate produces a new `event_flag` message.
 
 **Polling runs always**: Even when disconnected or race not running. Flags are transient in game memory (~seconds), so detection must be immediate.
 
@@ -84,7 +88,7 @@ The loading screen exit is detected by `position_readable && !was_position_reada
 
 At the `position_readable` rising edge:
 
-1. **Forced rescan**: Immediately re-reads all `event_ids` to catch flags set during loading (e.g., Erdtree burn, Maliketh warp cutscene). Newly detected regular flags go to `deferred_event_flags`. A `finish_event` caught here is sent **immediately** if connected (no deferral — boss kills have no loading screen, but edge cases like Maliketh's cutscene can trigger both a flag and a loading screen).
+1. **Forced rescan**: Immediately re-reads all `event_ids` to catch flags set during loading (e.g., Erdtree burn, Maliketh warp cutscene). Newly detected regular flags are cleared in game memory and added to `deferred_event_flags`. A `finish_event` caught here is sent **immediately** if connected (no deferral — boss kills have no loading screen, but edge cases like Maliketh's cutscene can trigger both a flag and a loading screen).
 
 2. **Deferred flags exist** → send all deferred `event_flag` messages to server.
 
@@ -148,9 +152,10 @@ Three-strategy cascade for resolving where the player is after a death/fast-trav
 1. `map_id` → `fog.txt` (complete map→zone mapping) → candidate `zone_ids`.
 2. If position available, `submaps.txt` narrows to one zone_id.
 3. Find graph nodes whose `zones` array intersects candidates.
-4. If still ambiguous, filter by `zone_history` (player can only be in an already-explored node — zone_query is never sent on fog gate traversal).
+4. If still ambiguous, filter by `zone_history` (player can only be in an already-explored node).
+5. If still ambiguous and no `grace_entity_id` (death/remembrance context), pick the most recently visited node from `zone_history`. This works because death/remembrance always returns to the last grace, which is in the most recently visited zone.
 
-**Strategy 3 — None**: Ambiguous or no data. No `zone_update` sent — overlay stays on previous zone.
+**Strategy 3 — None**: Ambiguous or no data (including fast travel with failed grace lookup — guessing would pollute the MetroDag). No `zone_update` sent — overlay stays on previous zone.
 
 Zone queries do **not** modify `zone_history` (progression). They only update `current_zone` (overlay display pointer) and trigger `player_update` for all connections (mods + spectators).
 
