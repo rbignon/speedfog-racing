@@ -23,7 +23,7 @@
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import { goto } from '$app/navigation';
-	import { deleteRace } from '$lib/api';
+	import { deleteRace, getTwitchLoginUrl } from '$lib/api';
 	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
 	import { MetroDag, MetroDagProgressive, MetroDagFull } from '$lib/dag';
 	import { parseDagGraph } from '$lib/dag/types';
@@ -581,7 +581,14 @@
 					{/if}
 					{#if !auth.isLoggedIn}
 						<p class="login-hint">
-							<a href="/auth/login">Log in</a> to join this race
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<a
+								href={getTwitchLoginUrl()}
+								data-sveltekit-reload
+								onclick={() => sessionStorage.setItem('redirect_after_login', window.location.pathname)}
+								>Log in</a
+							> to join this race
 						</p>
 					{/if}
 					{#if joinLeaveError}
