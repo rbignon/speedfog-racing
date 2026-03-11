@@ -49,7 +49,7 @@ pub fn compute_gap(
             match leader_exit {
                 None => Some(entry_delta),
                 Some(&exit_igt) if igt_ms <= exit_igt => Some(entry_delta),
-                Some(&exit_igt) => Some(igt_ms - exit_igt),
+                Some(&exit_igt) => Some(entry_delta + (igt_ms - exit_igt)),
             }
         }
         _ => None,
@@ -112,9 +112,26 @@ mod tests {
             ("2".into(), 75000),
             ("3".into(), 120000),
         ]);
-        // Current IGT 130000 > leader exit 120000
+        // Player entered layer 2 at 80000, leader at 75000 -> entry_delta = 5000
+        // Leader exited at 120000, player IGT 130000 -> overshoot = 10000
+        // gap = entry_delta + overshoot = 15000
         let gap = compute_gap(130000, 2, Some(80000), &splits, false, "playing", 0);
-        assert_eq!(gap, Some(10000));
+        assert_eq!(gap, Some(15000));
+    }
+
+    #[test]
+    fn test_compute_gap_exceeded_budget_ahead_player() {
+        let splits = HashMap::from([
+            ("0".into(), 0),
+            ("1".into(), 30000),
+            ("2".into(), 75000),
+            ("3".into(), 120000),
+        ]);
+        // Player entered layer 2 at 70000, leader at 75000 -> entry_delta = -5000
+        // Leader exited at 120000, player IGT 125000 -> overshoot = 5000
+        // gap = -5000 + 5000 = 0
+        let gap = compute_gap(125000, 2, Some(70000), &splits, false, "playing", 0);
+        assert_eq!(gap, Some(0));
     }
 
     #[test]

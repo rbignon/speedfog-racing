@@ -231,8 +231,7 @@ class ConnectionManager:
                     current_layer=p.current_layer,
                     player_layer_entry_igt=get_layer_entry_igt(
                         p.zone_history, p.current_layer, graph_json
-                    )
-                    or 0,
+                    ),
                     leader_splits=leader_splits,
                     leader_igt_ms=leader_igt_ms,
                     is_leader=(has_leader and i == 0),
@@ -358,7 +357,7 @@ def compute_gap_ms(
     *,
     igt_ms: int,
     current_layer: int,
-    player_layer_entry_igt: int,
+    player_layer_entry_igt: int | None,
     leader_splits: dict[int, int],
     leader_igt_ms: int,
     is_leader: bool = False,
@@ -366,7 +365,7 @@ def compute_gap_ms(
     """Compute gap_ms for a participant relative to the leader (LiveSplit-style).
 
     - While player's IGT is within leader's time budget on the layer: gap = entry delta
-    - Once player exceeds leader's exit IGT: gap = player IGT - leader exit IGT
+    - Once player exceeds leader's exit IGT: gap = entry delta + overshoot
     """
     if is_leader:
         return None
@@ -376,7 +375,7 @@ def compute_gap_ms(
         return igt_ms - leader_igt_ms
     # Playing: LiveSplit-style split comparison
     leader_entry = leader_splits.get(current_layer)
-    if leader_entry is None:
+    if leader_entry is None or player_layer_entry_igt is None:
         return None
     entry_delta = player_layer_entry_igt - leader_entry
     # Leader's exit = leader's entry on next layer
@@ -387,8 +386,8 @@ def compute_gap_ms(
     if igt_ms <= leader_exit:
         # Within leader's time budget — fixed entry delta
         return entry_delta
-    # Exceeded leader's time budget — gap grows
-    return igt_ms - leader_exit
+    # Exceeded leader's time budget — gap = entry delta + overshoot
+    return entry_delta + (igt_ms - leader_exit)
 
 
 def participant_to_info(
