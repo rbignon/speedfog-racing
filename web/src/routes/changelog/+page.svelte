@@ -1,16 +1,21 @@
 <script lang="ts">
 	import changelogRaw from '../../../../CHANGELOG.md?raw';
 
+	interface ChangelogItem {
+		text: string;
+		children: string[];
+	}
+
 	interface ChangelogEntry {
 		version: string;
 		date: string;
-		sections: { title: string; items: string[] }[];
+		sections: { title: string; items: ChangelogItem[] }[];
 	}
 
 	function parseChangelog(raw: string): ChangelogEntry[] {
 		const entries: ChangelogEntry[] = [];
 		let current: ChangelogEntry | null = null;
-		let currentSection: { title: string; items: string[] } | null = null;
+		let currentSection: { title: string; items: ChangelogItem[] } | null = null;
 
 		for (const line of raw.split('\n')) {
 			const versionMatch = line.match(/^## \[(.+?)\] - (.+)$/);
@@ -32,13 +37,15 @@
 
 			const itemMatch = line.match(/^- (.+)$/);
 			if (itemMatch && currentSection) {
-				currentSection.items.push(itemMatch[1]);
+				currentSection.items.push({ text: itemMatch[1], children: [] });
 				continue;
 			}
 
 			const continuationMatch = line.match(/^ {2}- (.+)$/);
 			if (continuationMatch && currentSection && currentSection.items.length > 0) {
-				currentSection.items[currentSection.items.length - 1] += '\n  - ' + continuationMatch[1];
+				currentSection.items[currentSection.items.length - 1].children.push(
+					continuationMatch[1]
+				);
 			}
 		}
 		if (current) entries.push(current);
@@ -52,7 +59,10 @@
 		return text
 			.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 			.replace(/`(.+?)`/g, '<code>$1</code>')
-			.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+			.replace(
+				/\[(.+?)\]\(((https?:\/\/|\/)[^\)]+)\)/g,
+				'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+			);
 	}
 </script>
 
@@ -75,14 +85,23 @@
 						<span class="latest-badge">Latest</span>
 					{/if}
 				</h2>
-				<time>{entry.date}</time>
+				<time datetime={entry.date}>{entry.date}</time>
 			</div>
 
 			{#each entry.sections as section}
 				<h3>{section.title}</h3>
 				<ul>
 					{#each section.items as item}
-						<li>{@html formatItem(item)}</li>
+						<li>
+							{@html formatItem(item.text)}
+							{#if item.children.length > 0}
+								<ul>
+									{#each item.children as child}
+										<li>{@html formatItem(child)}</li>
+									{/each}
+								</ul>
+							{/if}
+						</li>
 					{/each}
 				</ul>
 			{/each}
