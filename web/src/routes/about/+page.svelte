@@ -278,6 +278,10 @@
 		-webkit-overflow-scrolling: touch;
 	}
 
+	.dag-demo :global(.zoomable-container) {
+		min-height: 0;
+	}
+
 	.dag-caption {
 		font-size: var(--font-size-sm);
 		font-style: italic;
