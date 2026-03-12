@@ -110,12 +110,12 @@
 </script>
 
 <svelte:head>
-	<title>Help – SpeedFog Racing</title>
+	<title>How to Play – SpeedFog Racing</title>
 </svelte:head>
 
 <main class="help">
 	<header class="help-hero">
-		<h1>Help</h1>
+		<h1>How to Play</h1>
 		<p>Everything you need to play, organize, or cast a SpeedFog race.</p>
 	</header>
 
@@ -189,7 +189,8 @@
 					</li>
 					<li>Pick a <strong>game mode</strong> (pool) and start a session.</li>
 					<li><strong>Download</strong> the seed pack.</li>
-					<li>Unzip and run <code>launch_speedfog.bat</code> — you're in.</li>
+					<li>Unzip and run <code>launch_speedfog.bat</code>.</li>
+					<li>Enjoy!</li>
 				</ol>
 			</div>
 		</div>
@@ -514,24 +515,6 @@
 
 		<button
 			class="accordion"
-			class:open={isOpen('faq-fog-direction')}
-			aria-expanded={isOpen('faq-fog-direction')}
-			onclick={() => toggleDetail('faq-fog-direction')}
-		>
-			<span>Are fog gates one-way?</span>
-			<span class="chevron"></span>
-		</button>
-		{#if isOpen('faq-fog-direction')}
-			<div class="panel">
-				<p>
-					Yes. Fog gates only work in one direction. To go back, fast travel to a grace
-					you've already activated in a previous zone.
-				</p>
-			</div>
-		{/if}
-
-		<button
-			class="accordion"
 			class:open={isOpen('faq-respec')}
 			aria-expanded={isOpen('faq-respec')}
 			onclick={() => toggleDetail('faq-respec')}
@@ -563,24 +546,6 @@
 					All smithing stones are available at the Roundtable Hold shop in unlimited stock
 					from the start. Weapons found in the world are automatically upgraded to match
 					your progression.
-				</p>
-			</div>
-		{/if}
-
-		<button
-			class="accordion"
-			class:open={isOpen('faq-final-boss')}
-			aria-expanded={isOpen('faq-final-boss')}
-			onclick={() => toggleDetail('faq-final-boss')}
-		>
-			<span>What's the final boss?</span>
-			<span class="chevron"></span>
-		</button>
-		{#if isOpen('faq-final-boss')}
-			<div class="panel">
-				<p>
-					It changes with every seed — any major boss can be the final encounter (Radagon,
-					Malenia, Mohg, Radahn, etc.). You don't know until you get there.
 				</p>
 			</div>
 		{/if}
@@ -631,6 +596,25 @@
 		{/if}
 
 		<h3>Troubleshooting</h3>
+
+		<button
+			class="accordion"
+			class:open={isOpen('faq-antivirus')}
+			aria-expanded={isOpen('faq-antivirus')}
+			onclick={() => toggleDetail('faq-antivirus')}
+		>
+			<span>Windows Defender blocks the mod</span>
+			<span class="chevron"></span>
+		</button>
+		{#if isOpen('faq-antivirus')}
+			<div class="panel">
+				<p>
+					The mod injects into Elden Ring's process, which antivirus software can flag as
+					suspicious. This is expected behavior for game mods. Allow the file in Windows
+					Defender (or your antivirus) and re-run <code>launch_speedfog.bat</code>.
+				</p>
+			</div>
+		{/if}
 
 		<button
 			class="accordion"
@@ -1120,14 +1104,14 @@
 		font-weight: 500;
 	}
 
-	.pool-notes {
+	ul.pool-notes {
 		margin: 0.85rem 0 0;
 		padding-left: 1.25rem;
 		font-size: var(--font-size-xs);
 		color: var(--color-text-disabled);
 	}
 
-	.pool-notes li {
+	ul.pool-notes li {
 		margin-bottom: 0.1rem;
 	}
 
