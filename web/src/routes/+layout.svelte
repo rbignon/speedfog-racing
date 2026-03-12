@@ -135,6 +135,7 @@
 					<nav class="footer-links" aria-label="Footer navigation">
 						<a href="/about">About</a>
 						<a href="/help">Help</a>
+						<a href="/changelog">Changelog</a>
 						<a href="https://discord.gg/Qmw67J3mR9" target="_blank" rel="noopener noreferrer"
 							>Discord</a
 						>

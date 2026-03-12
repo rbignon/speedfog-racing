@@ -1,0 +1,224 @@
+<script lang="ts">
+	import changelogRaw from '../../../../CHANGELOG.md?raw';
+
+	interface ChangelogEntry {
+		version: string;
+		date: string;
+		sections: { title: string; items: string[] }[];
+	}
+
+	function parseChangelog(raw: string): ChangelogEntry[] {
+		const entries: ChangelogEntry[] = [];
+		let current: ChangelogEntry | null = null;
+		let currentSection: { title: string; items: string[] } | null = null;
+
+		for (const line of raw.split('\n')) {
+			const versionMatch = line.match(/^## \[(.+?)\] - (.+)$/);
+			if (versionMatch) {
+				if (current) entries.push(current);
+				current = { version: versionMatch[1], date: versionMatch[2], sections: [] };
+				currentSection = null;
+				continue;
+			}
+
+			if (!current) continue;
+
+			const sectionMatch = line.match(/^### (.+)$/);
+			if (sectionMatch) {
+				currentSection = { title: sectionMatch[1], items: [] };
+				current.sections.push(currentSection);
+				continue;
+			}
+
+			const itemMatch = line.match(/^- (.+)$/);
+			if (itemMatch && currentSection) {
+				currentSection.items.push(itemMatch[1]);
+				continue;
+			}
+
+			const continuationMatch = line.match(/^ {2}- (.+)$/);
+			if (continuationMatch && currentSection && currentSection.items.length > 0) {
+				currentSection.items[currentSection.items.length - 1] += '\n  - ' + continuationMatch[1];
+			}
+		}
+		if (current) entries.push(current);
+
+		return entries;
+	}
+
+	const entries = parseChangelog(changelogRaw);
+
+	function formatItem(text: string): string {
+		return text
+			.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+			.replace(/`(.+?)`/g, '<code>$1</code>')
+			.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+	}
+</script>
+
+<svelte:head>
+	<title>Changelog – SpeedFog Racing</title>
+</svelte:head>
+
+<main class="changelog">
+	<header class="changelog-hero">
+		<h1>Changelog</h1>
+		<p>What's new in SpeedFog Racing.</p>
+	</header>
+
+	{#each entries as entry, i}
+		<section class="version" class:latest={i === 0}>
+			<div class="version-header">
+				<h2>
+					{entry.version}
+					{#if i === 0}
+						<span class="latest-badge">Latest</span>
+					{/if}
+				</h2>
+				<time>{entry.date}</time>
+			</div>
+
+			{#each entry.sections as section}
+				<h3>{section.title}</h3>
+				<ul>
+					{#each section.items as item}
+						<li>{@html formatItem(item)}</li>
+					{/each}
+				</ul>
+			{/each}
+		</section>
+	{/each}
+</main>
+
+<style>
+	.changelog {
+		max-width: 760px;
+		width: 100%;
+		box-sizing: border-box;
+		margin: 0 auto;
+		padding: 2rem;
+	}
+
+	.changelog-hero {
+		text-align: center;
+		padding: 1.5rem 0 0.5rem;
+	}
+
+	.changelog-hero h1 {
+		font-size: clamp(1.5rem, 4vw, 2.25rem);
+		font-weight: 700;
+		color: var(--color-gold);
+		margin: 0 0 0.5rem;
+	}
+
+	.changelog-hero p {
+		color: var(--color-text-secondary);
+		font-size: clamp(0.9rem, 2vw, 1.1rem);
+		margin: 0;
+	}
+
+	.version {
+		margin-top: 2.5rem;
+		padding-bottom: 2rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.version:last-child {
+		border-bottom: none;
+	}
+
+	.version-header {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.version-header h2 {
+		font-size: var(--font-size-xl);
+		font-weight: 600;
+		color: var(--color-gold);
+		margin: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.version-header time {
+		color: var(--color-text-disabled);
+		font-size: var(--font-size-sm);
+		white-space: nowrap;
+	}
+
+	.latest-badge {
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		background: var(--color-gold);
+		color: var(--color-bg);
+		padding: 0.1em 0.45em;
+		border-radius: 4px;
+	}
+
+	.version h3 {
+		font-size: var(--font-size-base);
+		font-weight: 600;
+		color: var(--color-text);
+		margin: 1.25rem 0 0.4rem;
+	}
+
+	.version h3:first-of-type {
+		margin-top: 0;
+	}
+
+	.version ul {
+		margin: 0 0 0.5rem;
+		padding-left: 1.5rem;
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+		line-height: 1.7;
+	}
+
+	.version li {
+		margin-bottom: 0.25rem;
+	}
+
+	.version li :global(strong) {
+		color: var(--color-text);
+	}
+
+	.version li :global(code) {
+		background: var(--color-surface-elevated);
+		padding: 0.1rem 0.35rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.85em;
+		color: var(--color-gold);
+	}
+
+	.version li :global(a) {
+		color: var(--color-purple);
+		text-decoration: none;
+	}
+
+	.version li :global(a:hover) {
+		text-decoration: underline;
+	}
+
+	.version.latest {
+		border-left: 3px solid var(--color-gold);
+		padding-left: 1.25rem;
+	}
+
+	@media (max-width: 640px) {
+		.changelog {
+			padding: 1rem;
+		}
+
+		.version-header {
+			flex-direction: column;
+			gap: 0.25rem;
+		}
+	}
+</style>
