@@ -45,7 +45,7 @@
 			bossRandomization: 'Minor bosses only',
 			curve: 'Linear',
 			carePackage: 'Catalysts, talismans, spells',
-			notes: []
+			notes: ['Gargoyles nerfed']
 		},
 		sprint: {
 			label: 'Sprint',
@@ -58,8 +58,8 @@
 			startingRunes: '100k',
 			bossRandomization: 'Minor bosses only',
 			curve: 'Linear',
-			carePackage: 'Catalysts, talismans, spells',
-			notes: []
+			carePackage: 'Weapons, shields, catalysts, talismans, spells',
+			notes: ['Gargoyles nerfed']
 		},
 		chill: {
 			label: 'Chill',
@@ -74,7 +74,7 @@
 			bossRandomization: 'All bosses shuffled',
 			curve: 'Late spike',
 			carePackage: 'Weapons, shields, catalysts, talismans, spells',
-			notes: ['Extra Golden Seeds and Sacred Tears']
+			notes: ['Extra Golden Seeds and Sacred Tears', 'Gargoyles nerfed']
 		},
 		hardcore: {
 			label: 'Hardcore',
@@ -88,8 +88,8 @@
 			startingRunes: '50k',
 			bossRandomization: 'Minor bosses only',
 			curve: 'Early spike',
-			carePackage: 'Minimal (catalysts only)',
-			notes: ['No whetblades', 'Gargoyles not nerfed']
+			carePackage: 'Minimal',
+			notes: ['No whetblades']
 		},
 		boss_shuffle: {
 			label: 'Boss Shuffle',
@@ -104,7 +104,7 @@
 			bossRandomization: 'All bosses shuffled',
 			curve: 'Linear',
 			carePackage: 'Catalysts, talismans, spells',
-			notes: []
+			notes: ['Gargoyles nerfed']
 		}
 	};
 </script>
