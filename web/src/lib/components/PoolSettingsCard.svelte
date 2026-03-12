@@ -77,6 +77,12 @@
 				<span class="value">Yes</span>
 			</div>
 		{/if}
+		{#if poolConfig.difficulty_curve}
+			<div class="info-item">
+				<span class="label">Difficulty Curve</span>
+				<span class="value">{poolConfig.difficulty_curve}</span>
+			</div>
+		{/if}
 		{#if poolConfig.item_difficulty}
 			<div class="info-item">
 				<span class="label">Item Difficulty</span>

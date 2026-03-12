@@ -98,6 +98,7 @@ export interface PoolConfig {
   major_boss_ratio: string | null;
   randomize_bosses: string | null;
   item_difficulty: string | null;
+  difficulty_curve: string | null;
   nerf_gargoyles: boolean | null;
 }
 

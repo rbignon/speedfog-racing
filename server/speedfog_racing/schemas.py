@@ -252,6 +252,7 @@ class PoolConfig(BaseModel):
     major_boss_ratio: str | None = None
     randomize_bosses: str | None = None
     item_difficulty: str | None = None
+    difficulty_curve: str | None = None
     nerf_gargoyles: bool | None = None
 
 

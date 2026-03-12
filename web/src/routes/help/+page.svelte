@@ -25,7 +25,7 @@
 			layers: string;
 			legacyDungeons: number;
 			majorBosses: number;
-			itemDifficulty: string;
+			finalTier: number;
 			startingRunes: string;
 			bossRandomization: string;
 			curve: string;
@@ -40,7 +40,7 @@
 			layers: '25–30',
 			legacyDungeons: 2,
 			majorBosses: 8,
-			itemDifficulty: 'Normal',
+			finalTier: 18,
 			startingRunes: '100k',
 			bossRandomization: 'Minor bosses only',
 			curve: 'Linear',
@@ -54,7 +54,7 @@
 			layers: '10–15',
 			legacyDungeons: 1,
 			majorBosses: 3,
-			itemDifficulty: 'Easy',
+			finalTier: 10,
 			startingRunes: '100k',
 			bossRandomization: 'Minor bosses only',
 			curve: 'Linear',
@@ -69,7 +69,7 @@
 			layers: '25–30',
 			legacyDungeons: 3,
 			majorBosses: 5,
-			itemDifficulty: 'Easy',
+			finalTier: 10,
 			startingRunes: '150k',
 			bossRandomization: 'All bosses shuffled',
 			curve: 'Late spike',
@@ -84,7 +84,7 @@
 			layers: '25–30',
 			legacyDungeons: 1,
 			majorBosses: 12,
-			itemDifficulty: 'Hard',
+			finalTier: 28,
 			startingRunes: '50k',
 			bossRandomization: 'Minor bosses only',
 			curve: 'Early spike',
@@ -99,7 +99,7 @@
 			layers: '25–30',
 			legacyDungeons: 2,
 			majorBosses: 8,
-			itemDifficulty: 'Normal',
+			finalTier: 18,
 			startingRunes: '100k',
 			bossRandomization: 'All bosses shuffled',
 			curve: 'Linear',
@@ -359,8 +359,8 @@
 								<span class="pool-stat-value">{pool.majorBosses}</span>
 							</div>
 							<div class="pool-stat">
-								<span class="pool-stat-label">Item Difficulty</span>
-								<span class="pool-stat-value">{pool.itemDifficulty}</span>
+								<span class="pool-stat-label">Final Tier</span>
+								<span class="pool-stat-value">{pool.finalTier}</span>
 							</div>
 							<div class="pool-stat">
 								<span class="pool-stat-label">Starting Runes</span>

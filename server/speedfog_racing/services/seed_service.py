@@ -358,6 +358,19 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
     else:
         item_diff_label = None
 
+    # Derive difficulty curve label from tier_curve + tier_curve_exponent
+    tier_curve = structure.get("tier_curve", "linear")
+    tier_curve_exponent = structure.get("tier_curve_exponent", 1.0)
+    if tier_curve == "power":
+        if tier_curve_exponent > 1.0:
+            difficulty_curve_label = "Late spike"
+        elif tier_curve_exponent < 1.0:
+            difficulty_curve_label = "Early spike"
+        else:
+            difficulty_curve_label = "Linear"
+    else:
+        difficulty_curve_label = "Linear"
+
     return {
         "type": display.get("type", "race"),
         "sort_order": display.get("sort_order", 99),
@@ -377,6 +390,7 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "major_boss_ratio": major_boss_label,
         "randomize_bosses": _normalize_randomize_bosses(enemy.get("randomize_bosses")),
         "item_difficulty": item_diff_label,
+        "difficulty_curve": difficulty_curve_label,
         "nerf_gargoyles": item_randomizer.get("nerf_gargoyles"),
     }
 
