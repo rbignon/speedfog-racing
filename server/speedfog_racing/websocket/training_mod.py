@@ -31,6 +31,7 @@ from speedfog_racing.websocket.common import (
     send_error,
     send_zone_update,
 )
+from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
 from speedfog_racing.websocket.schemas import (
     AuthOkMessage,
     LeaderboardUpdateMessage,
@@ -379,6 +380,10 @@ async def _handle_event_flag(
 
         # Always append to zone_history (including revisits/backtracks)
         old_history = session.zone_history or []
+
+        if is_shared_entrance_duplicate(old_history, node_id, igt):
+            return
+
         session.igt_ms = igt
         session.current_zone = node_id
         session.zone_history = [
