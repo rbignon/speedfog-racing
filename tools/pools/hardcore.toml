@@ -79,5 +79,4 @@ nerf_gargoyles = false
 
 [enemy]
 randomize_bosses = "minor"
-lock_final_boss = true
 ignore_arena_size = true

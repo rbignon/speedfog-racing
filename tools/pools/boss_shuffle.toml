@@ -11,5 +11,4 @@ final_boss_candidates = ["all"]
 
 [enemy]
 randomize_bosses = "all"
-lock_final_boss = true
 ignore_arena_size = true
