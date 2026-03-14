@@ -823,6 +823,7 @@ class TestGapComputation:
         assert gap == 90000  # entry_delta only (within budget)
         assert gap <= 105000  # gap must not exceed player IGT
 
+    def test_compute_gap_none_when_no_layer_entry_igt(self):
         """P1: Return None when player_layer_entry_igt is None."""
         from speedfog_racing.websocket.manager import compute_gap_ms
 
