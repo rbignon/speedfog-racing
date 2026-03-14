@@ -93,13 +93,21 @@ def sample_graph_json():
         "total_paths": 3,
         "start_node": "limgrave_start",
         "final_boss": "erdtree_boss",
-        "event_map": {"1040292800": "limgrave_start", "1040292801": "stormveil_01"},
+        "event_map": {
+            "1040292800": "limgrave_start",
+            "1040292801": "stormveil_01",
+            "1040292802": "liurnia_01",
+        },
         "finish_event": 1040292899,
         "nodes": {
             "limgrave_start": {"type": "start", "layer": 0, "tier": 1, "name": "Limgrave Start"},
             "stormveil_01": {"layer": 1, "tier": 2, "name": "Stormveil"},
+            "liurnia_01": {"layer": 2, "tier": 3, "name": "Liurnia"},
         },
-        "edges": [{"from": "limgrave_start", "to": "stormveil_01"}],
+        "edges": [
+            {"from": "limgrave_start", "to": "stormveil_01"},
+            {"from": "stormveil_01", "to": "liurnia_01"},
+        ],
     }
 
 
@@ -1275,25 +1283,28 @@ def test_training_event_flag_revisit_appends_to_zone_history(
         ws.receive_json()  # initial zone_update
 
         event_ids = auth_ok["seed"]["event_ids"]
+        finish_event = auth_ok["seed"].get("finish_event")
+        # Only use fog gate events (exclude finish_event which would end the session)
+        fog_event_ids = [e for e in event_ids if e != finish_event]
 
         # Init start node
         ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
         ws.receive_json()  # leaderboard_update
         # Discover first zone
-        ws.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 5000})
+        ws.send_json({"type": "event_flag", "flag_id": fog_event_ids[1], "igt_ms": 5000})
         lb = ws.receive_json()
         assert lb["type"] == "leaderboard_update"
         first_node_id = lb["participants"][0]["zone_history"][-1]["node_id"]
         ws.receive_json()  # zone_update
 
-        # Discover second zone
-        if len(event_ids) > 2:
-            ws.send_json({"type": "event_flag", "flag_id": event_ids[2], "igt_ms": 10000})
+        # Discover second zone (if available)
+        if len(fog_event_ids) > 2:
+            ws.send_json({"type": "event_flag", "flag_id": fog_event_ids[2], "igt_ms": 10000})
             ws.receive_json()  # leaderboard_update
             ws.receive_json()  # zone_update
 
         # Re-traverse first zone's fog gate (revisit)
-        ws.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 15000})
+        ws.send_json({"type": "event_flag", "flag_id": fog_event_ids[1], "igt_ms": 15000})
         lb2 = ws.receive_json()
         assert lb2["type"] == "leaderboard_update"
         ws.receive_json()  # zone_update
@@ -1334,25 +1345,27 @@ def test_training_deaths_attributed_to_last_visit_after_backtrack(
         ws.receive_json()  # initial zone_update
 
         event_ids = auth_ok["seed"]["event_ids"]
+        finish_event = auth_ok["seed"].get("finish_event")
+        fog_event_ids = [e for e in event_ids if e != finish_event]
 
         # Init start node
         ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
         ws.receive_json()  # leaderboard_update
 
         # Discover zone A
-        ws.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 5000})
+        ws.send_json({"type": "event_flag", "flag_id": fog_event_ids[1], "igt_ms": 5000})
         lb = ws.receive_json()
         assert lb["type"] == "leaderboard_update"
         zone_a_id = lb["participants"][0]["zone_history"][-1]["node_id"]
         ws.receive_json()  # zone_update
 
         # Discover zone B
-        ws.send_json({"type": "event_flag", "flag_id": event_ids[2], "igt_ms": 8000})
+        ws.send_json({"type": "event_flag", "flag_id": fog_event_ids[2], "igt_ms": 8000})
         ws.receive_json()  # leaderboard_update
         ws.receive_json()  # zone_update
 
         # Re-traverse zone A fog gate (revisit → second entry for zone_a_id)
-        ws.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 10000})
+        ws.send_json({"type": "event_flag", "flag_id": fog_event_ids[1], "igt_ms": 10000})
         ws.receive_json()  # leaderboard_update
         ws.receive_json()  # zone_update
 
