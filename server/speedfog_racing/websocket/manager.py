@@ -383,11 +383,14 @@ def compute_gap_ms(
     if leader_exit is None:
         # Leader hasn't left this layer yet — show entry delta only
         return entry_delta
-    if igt_ms <= leader_exit:
+    # Compare time spent in layer, not absolute IGTs
+    time_in_layer = igt_ms - player_layer_entry_igt
+    leader_time_in_layer = leader_exit - leader_entry
+    if time_in_layer <= leader_time_in_layer:
         # Within leader's time budget — fixed entry delta
         return entry_delta
-    # Exceeded leader's time budget — gap = entry delta + overshoot
-    return entry_delta + (igt_ms - leader_exit)
+    # Exceeded leader's time budget — entry delay + layer overshoot
+    return entry_delta + (time_in_layer - leader_time_in_layer)
 
 
 def participant_to_info(

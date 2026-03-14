@@ -662,14 +662,14 @@ class TestGapComputation:
         assert gap == 5000  # 80000 - 75000 = entry delta
 
     def test_compute_gap_exceeded_budget(self):
-        """Player exceeded leader's time budget on layer -> gap = entry_delta + overshoot."""
+        """Player exceeded leader's time budget on layer -> gap = entry_delta + layer overshoot."""
         from speedfog_racing.websocket.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
-        # Player entered layer 2 at 80000, leader entered layer 2 at 75000
-        # Leader exited layer 2 at 120000 (= leader_splits[3])
-        # Player current IGT 130000 > 120000 -> exceeded budget
-        # entry_delta = 80000 - 75000 = 5000, overshoot = 130000 - 120000 = 10000
+        # Player entered layer 2 at 80000, leader at 75000 -> entry_delta = 5000
+        # Leader spent 45000 in layer (120000-75000), player spent 50000 (130000-80000)
+        # Layer overshoot = 50000 - 45000 = 5000
+        # gap = entry_delta + layer_overshoot = 5000 + 5000 = 10000
         gap = compute_gap_ms(
             "playing",
             igt_ms=130000,
@@ -678,7 +678,7 @@ class TestGapComputation:
             leader_splits=leader_splits,
             leader_igt_ms=0,
         )
-        assert gap == 15000  # 5000 + 10000
+        assert gap == 10000
 
     def test_compute_gap_negative_entry_delta(self):
         """Player entered layer faster than leader -> negative gap (ahead)."""
@@ -791,8 +791,9 @@ class TestGapComputation:
 
         leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
         # Player entered layer 2 at 70000, leader at 75000 -> entry_delta = -5000
-        # Leader exited at 120000, player IGT 125000 -> overshoot = 5000
-        # Expected gap = -5000 + 5000 = 0 (player was ahead but lost it)
+        # Leader spent 45000 in layer, player spent 55000 (125000-70000)
+        # Layer overshoot = 55000 - 45000 = 10000
+        # gap = -5000 + 10000 = 5000 (player was ahead but lost more than the lead)
         gap = compute_gap_ms(
             "playing",
             igt_ms=125000,
@@ -801,9 +802,27 @@ class TestGapComputation:
             leader_splits=leader_splits,
             leader_igt_ms=0,
         )
-        assert gap == 0
+        assert gap == 5000
 
-    def test_compute_gap_none_when_no_layer_entry_igt(self):
+    def test_compute_gap_never_exceeds_igt(self):
+        """Gap must never exceed the player's own IGT (regression test)."""
+        from speedfog_racing.websocket.manager import compute_gap_ms
+
+        leader_splits = {0: 0, 1: 10000, 2: 20000}
+        # Player enters layer 1 very late (IGT 100000), leader entered at 10000
+        # Player has only spent 5000ms in the layer, leader spent 10000ms
+        # entry_delta = 90000, but player is within leader's time budget
+        gap = compute_gap_ms(
+            "playing",
+            igt_ms=105000,
+            current_layer=1,
+            player_layer_entry_igt=100000,
+            leader_splits=leader_splits,
+            leader_igt_ms=0,
+        )
+        assert gap == 90000  # entry_delta only (within budget)
+        assert gap <= 105000  # gap must not exceed player IGT
+
         """P1: Return None when player_layer_entry_igt is None."""
         from speedfog_racing.websocket.manager import compute_gap_ms
 

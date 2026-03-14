@@ -48,8 +48,16 @@ pub fn compute_gap(
             let leader_exit = leader_splits.get(&next_key);
             match leader_exit {
                 None => Some(entry_delta),
-                Some(&exit_igt) if igt_ms <= exit_igt => Some(entry_delta),
-                Some(&exit_igt) => Some(entry_delta + (igt_ms - exit_igt)),
+                Some(&exit_igt) => {
+                    // Compare time spent in layer, not absolute IGTs
+                    let time_in_layer = igt_ms - player_entry;
+                    let leader_time_in_layer = exit_igt - leader_entry;
+                    if time_in_layer <= leader_time_in_layer {
+                        Some(entry_delta)
+                    } else {
+                        Some(entry_delta + (time_in_layer - leader_time_in_layer))
+                    }
+                }
             }
         }
         _ => None,
@@ -113,10 +121,11 @@ mod tests {
             ("3".into(), 120000),
         ]);
         // Player entered layer 2 at 80000, leader at 75000 -> entry_delta = 5000
-        // Leader exited at 120000, player IGT 130000 -> overshoot = 10000
-        // gap = entry_delta + overshoot = 15000
+        // Leader spent 45000 in layer (120000-75000), player spent 50000 (130000-80000)
+        // Layer overshoot = 50000 - 45000 = 5000
+        // gap = 5000 + 5000 = 10000
         let gap = compute_gap(130000, 2, Some(80000), &splits, false, "playing", 0);
-        assert_eq!(gap, Some(15000));
+        assert_eq!(gap, Some(10000));
     }
 
     #[test]
@@ -128,10 +137,11 @@ mod tests {
             ("3".into(), 120000),
         ]);
         // Player entered layer 2 at 70000, leader at 75000 -> entry_delta = -5000
-        // Leader exited at 120000, player IGT 125000 -> overshoot = 5000
-        // gap = -5000 + 5000 = 0
+        // Leader spent 45000 in layer, player spent 55000 (125000-70000)
+        // Layer overshoot = 55000 - 45000 = 10000
+        // gap = -5000 + 10000 = 5000
         let gap = compute_gap(125000, 2, Some(70000), &splits, false, "playing", 0);
-        assert_eq!(gap, Some(0));
+        assert_eq!(gap, Some(5000));
     }
 
     #[test]
