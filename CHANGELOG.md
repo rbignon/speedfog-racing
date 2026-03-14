@@ -2,6 +2,31 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.4.0] - 2026-03-14
+
+### Seeds
+
+- Starting tier raised from 1 to 3 on Standard and Chill
+- Maximum parallel paths reduced from 4 to 3
+- Sprint pool expanded with more bosses and a higher final tier
+- Maps have fewer long linear stretches: branches are now more evenly spaced with automatic rebalancing
+- 5 new zones added to the generation pool: Castle Morne, Dragon's Pit, Scadu Altus Catacombs, and Shadow Keep West Rampart
+- Cross-links can now reuse entry fog gates, creating more shortcut opportunities
+- Boss Shuffle: the final boss is now also randomized (a bug causing instant deaths on multi-phase bosses has been fixed)
+- Fix: zone detection completely reworked: fog gate tracking is now significantly more reliable
+
+### In-game
+
+- Fix: gap timing no longer shows gaps larger than your own play time when entering a zone late
+- Fix: gap timing no longer jumps to +0:00 when falling behind the leader's pace
+
+### Website
+
+- New changelog page: view all updates directly on the website
+- Help page redesigned as "How to Play"
+- Difficulty curve now shown in pool settings
+- Fix: login link on the race detail page now works correctly
+
 ## [1.3.5] - 2026-03-09
 
 ### Seeds
