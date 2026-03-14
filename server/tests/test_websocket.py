@@ -958,6 +958,44 @@ class TestEventFlagBacktracking:
         assert history[3]["deaths"] == 3  # last visit gets deaths
 
 
+class TestSharedEntranceDedup:
+    """Test deduplication of multi-flag shared entrance events."""
+
+    def test_same_node_same_igt_is_deduped(self):
+        """Two flags resolving to the same node at the same IGT should be deduped."""
+        from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+
+        history = [{"node_id": "zone_a", "igt_ms": 10000, "type": "fog"}]
+        assert is_shared_entrance_duplicate(history, "zone_a", 10000)
+
+    def test_same_node_within_tolerance_is_deduped(self):
+        """Two flags within the tolerance window should be deduped."""
+        from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+
+        history = [{"node_id": "zone_a", "igt_ms": 10000, "type": "fog"}]
+        assert is_shared_entrance_duplicate(history, "zone_a", 10500)
+
+    def test_same_node_beyond_tolerance_not_deduped(self):
+        """A revisit beyond the tolerance window should NOT be deduped."""
+        from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+
+        history = [{"node_id": "zone_a", "igt_ms": 10000, "type": "fog"}]
+        assert not is_shared_entrance_duplicate(history, "zone_a", 15000)
+
+    def test_different_node_same_igt_not_deduped(self):
+        """Two flags resolving to different nodes should NOT be deduped."""
+        from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+
+        history = [{"node_id": "zone_a", "igt_ms": 10000, "type": "fog"}]
+        assert not is_shared_entrance_duplicate(history, "zone_b", 10000)
+
+    def test_empty_history_not_deduped(self):
+        """First flag ever should never be deduped."""
+        from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+
+        assert not is_shared_entrance_duplicate([], "zone_a", 10000)
+
+
 class TestZoneQueryBacktracking:
     """Test zone_query recording zone_history on backtrack."""
 

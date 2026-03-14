@@ -49,6 +49,21 @@ from speedfog_racing.websocket.spectator import broadcast_race_state_update
 
 logger = logging.getLogger(__name__)
 
+# Shared entrances (DuplicateEntrance in FogMod) inject multiple SetEventFlag
+# instructions for the same warp, all resolving to the same node_id via event_map.
+# The mod sends each flag as a separate WebSocket message within a single frame,
+# so they arrive with near-identical IGT. This tolerance window deduplicates them.
+SHARED_ENTRANCE_DEDUP_MS = 1000
+
+
+def is_shared_entrance_duplicate(history: list[dict[str, Any]], node_id: str, igt: int) -> bool:
+    """Check if this event flag is a duplicate from shared entrance multi-flag injection."""
+    return bool(
+        history
+        and history[-1].get("node_id") == node_id
+        and abs(history[-1].get("igt_ms", 0) - igt) <= SHARED_ENTRANCE_DEDUP_MS
+    )
+
 
 def _is_countdown_active(race: Race) -> bool:
     """Check if the race is still in the countdown period after starting."""
@@ -481,6 +496,10 @@ async def handle_event_flag(
             node_layer = get_layer_for_node(node_id, seed_graph)
 
             old_history = participant.zone_history or []
+
+            if is_shared_entrance_duplicate(old_history, node_id, igt):
+                return
+
             is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
 
             # Always append to zone_history (including revisits/backtracks)

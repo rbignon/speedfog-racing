@@ -994,7 +994,7 @@ def test_event_flag_revisit_appends_to_zone_history(
         mod0.send_event_flag(9000000, igt_ms=10000)
         mod0.receive_until_type("leaderboard_update")  # first visit: leaderboard_update
 
-        mod0.send_event_flag(9000000, igt_ms=11000)
+        mod0.send_event_flag(9000000, igt_ms=15000)
         # Revisit: player_update (not leaderboard_update)
         msg = mod0.receive_until_type("player_update")
         assert msg["type"] == "player_update"
@@ -1016,7 +1016,118 @@ def test_event_flag_revisit_appends_to_zone_history(
     assert history[0]["node_id"] == "node_a"
     assert history[0]["igt_ms"] == 10000
     assert history[1]["node_id"] == "node_a"
-    assert history[1]["igt_ms"] == 11000
+    assert history[1]["igt_ms"] == 15000
+
+
+def test_shared_entrance_multi_flag_dedup(
+    integration_client, race_with_participants, integration_db
+):
+    """Two flags resolving to the same node with near-identical IGT are deduplicated.
+
+    Shared entrances (DuplicateEntrance in FogMod) cause multiple SetEventFlag
+    instructions for the same warp, producing multiple event_flag messages that
+    resolve to the same node_id within the same EMEVD frame.
+    """
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Add a second flag mapping to node_a (simulates shared entrance)
+    async def add_shared_entrance_flag():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            graph = json.loads(json.dumps(race.seed.graph_json))
+            graph["event_map"]["9000020"] = "node_a"  # second flag → same node
+            race.seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(add_shared_entrance_flag())
+
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # Send two flags that resolve to the same node with near-identical IGT
+        # (simulates shared entrance: both fire in same EMEVD frame)
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        mod0.receive_until_type("leaderboard_update")  # first visit
+
+        mod0.send_event_flag(9000020, igt_ms=10000)  # same node, same IGT
+        time.sleep(0.5)  # give server time to process (should be silently dropped)
+
+    async def check_history():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is not None
+    assert len(history) == 1  # Only one entry, duplicate was deduped
+    assert history[0]["node_id"] == "node_a"
+    assert history[0]["igt_ms"] == 10000
+
+
+def test_shared_entrance_dedup_allows_legitimate_revisit(
+    integration_client, race_with_participants, integration_db
+):
+    """A revisit to the same node with IGT > tolerance window is NOT deduped."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # First visit to node_a
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        mod0.receive_until_type("leaderboard_update")
+
+        # Legitimate revisit 5 seconds later (well beyond 1s tolerance)
+        mod0.send_event_flag(9000000, igt_ms=15000)
+        mod0.receive_until_type("player_update")
+
+    async def check_history():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is not None
+    assert len(history) == 2  # Both visits recorded
+    assert history[0]["igt_ms"] == 10000
+    assert history[1]["igt_ms"] == 15000
 
 
 def test_event_flag_lower_layer_recorded_without_regressing(
