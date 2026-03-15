@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # Discord integration (optional)
     discord_webhook_url: str | None = None
+    discord_training_webhook_url: str | None = None
     base_url: str = "https://speedfog.malenia.win"
 
     # Discord bot (optional — enables scheduled events + runner role)
