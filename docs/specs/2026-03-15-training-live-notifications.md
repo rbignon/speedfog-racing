@@ -24,7 +24,7 @@ Add to `config.py` as an optional field (`str | None = None`).
 ## Discord Embed
 
 - **Color**: blue (`0x3B82F6`, matching the training/solo color in `discord.py`)
-- **Title**: `{twitch_username} is training on SpeedFog!`
+- **Title**: `{twitch_username} started a solo SpeedFog run!`
 - **Fields**: Pool name
 - **Links**: Twitch stream URL + spectator page URL (`{BASE_URL}/training/{session_id}`)
 - **Thumbnail**: player's Twitch avatar (if available from `User.twitch_avatar_url`)
