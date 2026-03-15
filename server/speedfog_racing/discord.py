@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+import uuid
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -11,11 +13,12 @@ import httpx
 
 from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.config import settings
+from speedfog_racing.services.twitch_live import twitch_live_service
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from speedfog_racing.models import Participant, Race
+    from speedfog_racing.models import Participant, Race, User
 
 logger = logging.getLogger(__name__)
 
@@ -392,3 +395,108 @@ def fire_race_finished_notifications(race: Race) -> None:
     if race.discord_event_id:
         ev_task = asyncio.create_task(set_event_status(race.discord_event_id, 3))
         ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+
+# ---------------------------------------------------------------------------
+# Training live notifications
+# ---------------------------------------------------------------------------
+
+TRAINING_NOTIF_COOLDOWN_SECONDS = 1800  # 30 minutes
+
+# {user_id: monotonic timestamp of last notification}
+_training_notif_cooldowns: dict[uuid.UUID, float] = {}
+
+
+async def _send_training_webhook(embed: dict[str, object]) -> None:
+    """Send an embed to the training Discord webhook. No-op if not configured."""
+    webhook_url = settings.discord_training_webhook_url
+    if not webhook_url:
+        return
+
+    payload: dict[str, object] = {"embeds": [embed]}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(webhook_url, json=payload)
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After", "unknown")
+                logger.warning(
+                    "Discord training webhook rate limited, retry after %s seconds",
+                    retry_after,
+                )
+            elif response.status_code >= 400:
+                logger.warning(
+                    "Discord training webhook failed with status %d", response.status_code
+                )
+    except Exception as e:
+        logger.warning("Discord training webhook error: %s", e)
+
+
+def _check_training_cooldown(user_id: uuid.UUID) -> bool:
+    """Check if a training notification can be sent for this user.
+
+    Returns True if allowed (no active cooldown). Prunes expired entries.
+    """
+    now = time.monotonic()
+    # Prune expired entries
+    expired = [
+        uid
+        for uid, ts in _training_notif_cooldowns.items()
+        if now - ts >= TRAINING_NOTIF_COOLDOWN_SECONDS
+    ]
+    for uid in expired:
+        del _training_notif_cooldowns[uid]
+
+    last = _training_notif_cooldowns.get(user_id)
+    if last is not None and now - last < TRAINING_NOTIF_COOLDOWN_SECONDS:
+        logger.debug("Training notification cooldown active for user %d", user_id)
+        return False
+    return True
+
+
+async def send_training_live_notification(
+    *,
+    session_id: str,
+    user: User,
+    pool_name: str,
+) -> None:
+    """Send Discord notification for a live training session.
+
+    Checks webhook config, cooldown, and Twitch live status before sending.
+    Designed to be called via fire-and-forget asyncio.create_task().
+    """
+    if not settings.discord_training_webhook_url:
+        return
+
+    if not _check_training_cooldown(user.id):
+        return
+
+    # Direct Twitch API check (not from polling cache which only covers races)
+    live_usernames = await twitch_live_service.check_live_status([user.twitch_username])
+    if user.twitch_username.lower() not in live_usernames:
+        return
+
+    display_name = user.twitch_display_name or user.twitch_username
+    display_pool = format_pool_display_name(pool_name)
+    stream_url = f"https://twitch.tv/{user.twitch_username}"
+    base_url = settings.base_url.rstrip("/")
+
+    embed: dict[str, object] = {
+        "title": f"🎮 {display_name} started a solo SpeedFog run!",
+        "url": f"{base_url}/training/{session_id}",
+        "color": 0x3B82F6,  # blue (training/solo)
+        "fields": [
+            {"name": "Pool", "value": display_pool, "inline": True},
+            {
+                "name": "Stream",
+                "value": f"[twitch.tv/{user.twitch_username}]({stream_url})",
+                "inline": True,
+            },
+        ],
+    }
+    if user.twitch_avatar_url:
+        embed["thumbnail"] = {"url": user.twitch_avatar_url}
+
+    await _send_training_webhook(embed)
+
+    # Record cooldown on success
+    _training_notif_cooldowns[user.id] = time.monotonic()
