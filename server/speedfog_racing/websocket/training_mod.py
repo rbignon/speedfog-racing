@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.api.helpers import format_pool_display_name
+from speedfog_racing.discord import send_training_live_notification
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.grace_service import resolve_zone_query
 from speedfog_racing.services.layer_service import (
@@ -146,6 +147,16 @@ async def handle_training_mod_websocket(
         await training_manager.connect_mod(session_id, user_id, websocket)
         authenticated = True
         await _broadcast_participant_update(session, spectator_only=True)
+
+        # Fire-and-forget: notify Discord if player is live on Twitch
+        notif_task = asyncio.create_task(
+            send_training_live_notification(
+                session_id=str(session.id),
+                user=session.user,
+                pool_name=session.seed.pool_name if session.seed else "training_standard",
+            )
+        )
+        notif_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
         # Start heartbeat
         heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
