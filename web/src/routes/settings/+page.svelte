@@ -53,7 +53,7 @@
 
 	<section class="setting-group">
 		<h2>Overlay</h2>
-		<p class="description">Customize the in-game overlay that displays race information.</p>
+		<p class="description">Customize the in-game overlay that displays race information. It automatically applies when you download seeds</p>
 
 		<div class="setting-field">
 			<span class="field-label">Language</span>
@@ -69,21 +69,21 @@
 							onchange={() => (selectedLocale = locale.code)}
 						/>
 						{locale.name}
-						{#if locale.code !== 'en'}
-							<span class="locale-code">({locale.code})</span>
-						{/if}
 					</label>
 				{/each}
 			</div>
 		</div>
 
-		<div class="setting-row">
-			<label for="font-size">Font size</label>
-			<div class="input-with-unit">
-				<input id="font-size" type="number" min="8" max="72" step="1" bind:value={fontSize} />
-				<span class="unit">px</span>
+		<div class="setting-field">
+			<label class="field-label" for="font-size">Font size</label>
+			<p class="field-description">Size of the text displayed on the overlay.</p>
+			<div class="setting-row">
+				<div class="input-with-unit">
+					<input id="font-size" type="number" min="8" max="72" step="1" bind:value={fontSize} />
+					<span class="unit">px</span>
+				</div>
+				<span class="hint">8–72 px (default: 18)</span>
 			</div>
-			<span class="hint">8–72 px (default: 18)</span>
 		</div>
 	</section>
 
@@ -121,8 +121,7 @@
 	}
 
 	.setting-group h2 {
-		font-size: var(--font-size-lg);
-		margin-bottom: 0.5rem;
+		margin-top: 0;
 	}
 
 	.description {
@@ -145,15 +144,10 @@
 		font-size: var(--font-size-base);
 	}
 
-	.locale-code {
-		color: var(--color-text-disabled);
-		font-size: var(--font-size-sm);
-	}
-
 	.setting-field {
-		margin-bottom: 1.25rem;
-		padding-bottom: 1.25rem;
-		border-bottom: 1px solid var(--color-border);
+		margin-top: 1.25rem;
+		padding-top: 1.25rem;
+		border-top: 1px solid var(--color-border);
 	}
 
 	.field-label {
@@ -173,11 +167,6 @@
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
-	}
-
-	.setting-row label {
-		font-size: var(--font-size-base);
-		min-width: 5rem;
 	}
 
 	.input-with-unit {
