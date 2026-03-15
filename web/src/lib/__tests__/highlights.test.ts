@@ -342,6 +342,103 @@ describe("speed highlights", () => {
     expect(wall!.playerIds).toContain("alice");
   });
 
+  it("Sprint Final: detects fastest final boss kill", () => {
+    // Both players have similar zone_a/zone_b times (no Speed Demon/Zone Wall),
+    // similar layer-2 arrival (low Fast Starter score), but different boss times.
+    const sprintGraph = graphJson({
+      start: { tier: 1, layer: 0, type: "start" },
+      zone_a: { tier: 2, layer: 1 },
+      zone_b: { tier: 2, layer: 2 },
+      boss: { tier: 3, layer: 3, type: "final_boss" },
+    });
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 160000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 10000 },
+          { node_id: "zone_b", igt_ms: 30000 },
+          { node_id: "boss", igt_ms: 60000 }, // 100s in boss
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 460000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 10000 },
+          { node_id: "zone_b", igt_ms: 30000 },
+          { node_id: "boss", igt_ms: 60000 }, // 400s in boss
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, sprintGraph);
+    const sprint = highlights.find((h) => h.type === "sprint_final");
+    expect(sprint).toBeDefined();
+    expect(sprint!.playerIds).toContain("alice");
+    expect(descriptionText(sprint!)).toContain("boss");
+  });
+
+  it("Sprint Final: does not fire when no player cleared the final boss", () => {
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        status: "playing",
+        igt_ms: 100000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 10000 },
+          { node_id: "zone_b", igt_ms: 30000 },
+          // still in zone_b, never reached zone_c
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        status: "playing",
+        igt_ms: 120000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 15000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    const sprint = highlights.find((h) => h.type === "sprint_final");
+    expect(sprint).toBeUndefined();
+  });
+
+  it("Sprint Final: does not fire when graph has no final_boss node", () => {
+    const noFinalGraph = graphJson({
+      start: { tier: 1, layer: 0, type: "start" },
+      zone_a: { tier: 2, layer: 1 },
+      zone_b: { tier: 3, layer: 2 },
+    });
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 10000 },
+          { node_id: "zone_b", igt_ms: 30000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 350000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 15000 },
+          { node_id: "zone_b", igt_ms: 90000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, noFinalGraph);
+    const sprint = highlights.find((h) => h.type === "sprint_final");
+    expect(sprint).toBeUndefined();
+  });
+
   it("Photo Finish: detects close finish between two players", () => {
     const players = [
       participant("alice", {

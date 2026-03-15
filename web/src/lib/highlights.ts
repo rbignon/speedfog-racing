@@ -285,7 +285,7 @@ function detectSpeedDemon(
   for (const [zoneId, times] of zonePlayerTimes) {
     if (times.length < 2) continue;
     const info = nodeInfo.get(zoneId);
-    if (info?.type === "start") continue;
+    if (info?.type === "start" || info?.type === "final_boss") continue;
 
     const avg = times.reduce((s, t) => s + t.timeMs, 0) / times.length;
     if (avg <= 0) continue;
@@ -339,7 +339,7 @@ function detectZoneWall(
   for (const [zoneId, times] of zonePlayerTimes) {
     if (times.length < 2) continue;
     const info = nodeInfo.get(zoneId);
-    if (info?.type === "start") continue;
+    if (info?.type === "start" || info?.type === "final_boss") continue;
 
     const avg = times.reduce((s, t) => s + t.timeMs, 0) / times.length;
     if (avg <= 0) continue;
@@ -422,8 +422,11 @@ function detectSprintFinal(
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  const maxTier = Math.max(...[...nodeInfo.values()].map((n) => n.tier), 0);
-  if (maxTier <= 1) return null;
+  // Find the final boss zone
+  const finalBossId = [...nodeInfo.entries()].find(
+    ([, info]) => info.type === "final_boss",
+  )?.[0];
+  if (!finalBossId) return null;
 
   let bestTime = Infinity;
   let bestPlayer: WsParticipant | null = null;
@@ -432,49 +435,34 @@ function detectSprintFinal(
     const zones = allZoneTimes.get(p.id);
     if (!zones) continue;
 
-    let totalLastTier = 0;
-    let hasLastTier = false;
-    for (const zt of zones) {
-      if (zt.outcome !== "cleared") continue;
-      const info = nodeInfo.get(zt.nodeId);
-      if (info && info.tier >= maxTier) {
-        totalLastTier += zt.timeMs;
-        hasLastTier = true;
-      }
-    }
-
-    if (hasLastTier && totalLastTier < bestTime) {
-      bestTime = totalLastTier;
+    const finalBossZone = zones.find(
+      (zt) => zt.nodeId === finalBossId && zt.outcome === "cleared",
+    );
+    if (finalBossZone && finalBossZone.timeMs < bestTime) {
+      bestTime = finalBossZone.timeMs;
       bestPlayer = p;
     }
   }
 
   if (!bestPlayer) return null;
 
-  // Compute average final-tier time across all players for dynamic score
-  let totalFinalTier = 0;
-  let countFinalTier = 0;
+  // Compute average final boss time across all players for dynamic score
+  let totalFinalBoss = 0;
+  let countFinalBoss = 0;
   for (const p of participants) {
     const zones = allZoneTimes.get(p.id);
     if (!zones) continue;
-    let pTotal = 0;
-    let pHas = false;
-    for (const zt of zones) {
-      if (zt.outcome !== "cleared") continue;
-      const info = nodeInfo.get(zt.nodeId);
-      if (info && info.tier >= maxTier) {
-        pTotal += zt.timeMs;
-        pHas = true;
-      }
-    }
-    if (pHas) {
-      totalFinalTier += pTotal;
-      countFinalTier++;
+    const finalBossZone = zones.find(
+      (zt) => zt.nodeId === finalBossId && zt.outcome === "cleared",
+    );
+    if (finalBossZone) {
+      totalFinalBoss += finalBossZone.timeMs;
+      countFinalBoss++;
     }
   }
-  const avgFinalTier =
-    countFinalTier > 1 ? totalFinalTier / countFinalTier : bestTime * 2;
-  const ratio = avgFinalTier / Math.max(bestTime, 1);
+  const avgFinalBoss =
+    countFinalBoss > 1 ? totalFinalBoss / countFinalBoss : bestTime * 2;
+  const ratio = avgFinalBoss / Math.max(bestTime, 1);
   const score = Math.max(20, ratio * 25);
 
   return {
@@ -483,7 +471,9 @@ function detectSprintFinal(
     title: "Sprint Final",
     segments: [
       pSeg(bestPlayer),
-      tSeg(` raced through the final tier in just ${formatTime(bestTime)}`),
+      tSeg(" beat "),
+      zSeg(finalBossId, nodeInfo),
+      tSeg(` in just ${formatTime(bestTime)}`),
     ],
     playerIds: [bestPlayer.id],
     score,
