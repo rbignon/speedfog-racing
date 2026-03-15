@@ -44,7 +44,7 @@ Options:
   --upload-only     Skip generation, upload existing tools/output/
   --output DIR      Local output directory (default: tools/output)
   --no-restart      Upload without restarting the service
-  --discard         Mark AVAILABLE/CONSUMED seeds as DISCARDED on server
+  --discard         Mark old AVAILABLE/CONSUMED seeds as DISCARDED (after extract, before restart)
   -j, --jobs N      Parallel workers per pool (default: 1, sequential)
   -v, --verbose     Pass -v to generate_pool.py
   -h, --help        Show this help
@@ -64,7 +64,7 @@ Examples:
   # Just upload what's already in tools/output/
   deploy/deploy-seeds.sh --upload-only
 
-  # Discard old seeds on server before uploading new ones
+  # Upload new seeds and discard old ones just before restart (minimal downtime)
   deploy/deploy-seeds.sh --discard --pool standard --count 10 --game-dir "/path/to/game"
 EOF
     exit 0
@@ -217,13 +217,6 @@ if [[ "$UPLOAD_ONLY" == false ]]; then
     fi
 fi
 
-# --- Discard phase (before upload, marks old AVAILABLE seeds) ---
-
-if [[ "$DISCARD" == true ]]; then
-    echo "==> Discarding old AVAILABLE/CONSUMED seeds on server..."
-    discard_seeds
-fi
-
 # --- Upload phase ---
 
 echo "==> Preparing upload..."
@@ -273,6 +266,13 @@ ssh "$SERVER" bash -s "$SEEDS_DIR" <<'ENDSSH'
         echo "    $pool_name: $seed_count seeds"
     done
 ENDSSH
+
+# --- Discard phase (after extract, just before restart to minimize downtime) ---
+
+if [[ "$DISCARD" == true ]]; then
+    echo "==> Discarding old AVAILABLE/CONSUMED seeds on server..."
+    discard_seeds
+fi
 
 # --- Restart phase ---
 
