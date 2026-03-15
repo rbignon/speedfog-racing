@@ -81,15 +81,16 @@ DISCORD_CHANNEL_ID=123456789012345678
 BASE_URL=https://your-domain.com
 ```
 
-| Variable                 | Required for    | Description                                                       |
-| ------------------------ | --------------- | ----------------------------------------------------------------- |
-| `DISCORD_WEBHOOK_URL`    | Notifications   | Webhook URL for race create/start/finish embeds                   |
-| `DISCORD_BOT_TOKEN`      | Bot API calls   | Bot token from Developer Portal                                   |
-| `DISCORD_GUILD_ID`       | Events + roles  | Your Discord server ID                                            |
-| `DISCORD_RUNNER_ROLE_ID` | Role management | The Runner role ID to assign/remove                               |
-| `DISCORD_PUBLIC_KEY`     | Interactions    | Ed25519 public key for signature verification                     |
-| `DISCORD_CHANNEL_ID`     | Runner message  | Channel for the Runner button message                             |
-| `BASE_URL`               | URLs            | Base URL for race links (default: `https://speedfog.malenia.win`) |
+| Variable                       | Required for    | Description                                                         |
+| ------------------------------ | --------------- | ------------------------------------------------------------------- |
+| `DISCORD_WEBHOOK_URL`          | Notifications   | Webhook URL for race create/start/finish embeds                     |
+| `DISCORD_TRAINING_WEBHOOK_URL` | Notifications   | Webhook URL for solo/training live notifications (separate channel) |
+| `DISCORD_BOT_TOKEN`            | Bot API calls   | Bot token from Developer Portal                                     |
+| `DISCORD_GUILD_ID`             | Events + roles  | Your Discord server ID                                              |
+| `DISCORD_RUNNER_ROLE_ID`       | Role management | The Runner role ID to assign/remove                                 |
+| `DISCORD_PUBLIC_KEY`           | Interactions    | Ed25519 public key for signature verification                       |
+| `DISCORD_CHANNEL_ID`           | Runner message  | Channel for the Runner button message                               |
+| `BASE_URL`                     | URLs            | Base URL for race links (default: `https://speedfog.malenia.win`)   |
 
 ## 8. Post the Runner Button Message
 
@@ -111,6 +112,10 @@ When `DISCORD_WEBHOOK_URL` is set, race lifecycle events post embeds:
 - **Race created** — with pool, organizer, schedule info. Mentions `@Runner` if `DISCORD_RUNNER_ROLE_ID` is set.
 - **Race started** — with participant count
 - **Race finished** — with podium (top 3 times)
+
+### Solo/Training Live Notifications (Webhook)
+
+When `DISCORD_TRAINING_WEBHOOK_URL` is set, a notification is posted when a player starts a solo training session while **live on Twitch**. The embed includes the player name, pool, Twitch stream link, and spectator page link. A 30-minute per-user cooldown prevents spam.
 
 ### Scheduled Events (Bot)
 
