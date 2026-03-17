@@ -15,7 +15,7 @@ from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 
 logger = logging.getLogger(__name__)
 
-INACTIVITY_TIMEOUT = timedelta(minutes=15)
+INACTIVITY_TIMEOUT = timedelta(minutes=30)
 POLL_INTERVAL = 60  # seconds
 
 

@@ -35,7 +35,7 @@ def async_session(async_engine):
 
 @pytest.mark.asyncio
 async def test_abandons_stale_participant(async_session):
-    """Participant with stale IGT (>15min) is marked ABANDONED."""
+    """Participant with stale IGT (>30min) is marked ABANDONED."""
     async with async_session() as db:
         user = User(
             twitch_id="stale1",
@@ -68,7 +68,7 @@ async def test_abandons_stale_participant(async_session):
             organizer_id=organizer.id,
             seed_id=seed.id,
             status=RaceStatus.RUNNING,
-            started_at=datetime.now(UTC) - timedelta(minutes=30),
+            started_at=datetime.now(UTC) - timedelta(minutes=45),
         )
         db.add(race)
         await db.flush()
@@ -78,7 +78,7 @@ async def test_abandons_stale_participant(async_session):
             user_id=user.id,
             status=ParticipantStatus.PLAYING,
             igt_ms=100000,
-            last_igt_change_at=datetime.now(UTC) - timedelta(minutes=16),
+            last_igt_change_at=datetime.now(UTC) - timedelta(minutes=36),
         )
         db.add(p)
         await db.commit()
@@ -128,7 +128,7 @@ async def test_abandons_noshow_participant(async_session, noshow_status):
             organizer_id=organizer.id,
             seed_id=seed.id,
             status=RaceStatus.RUNNING,
-            started_at=datetime.now(UTC) - timedelta(minutes=20),
+            started_at=datetime.now(UTC) - timedelta(minutes=35),
         )
         db.add(race)
         await db.flush()
@@ -187,7 +187,7 @@ async def test_does_not_abandon_recent_noshow(async_session):
             organizer_id=organizer.id,
             seed_id=seed.id,
             status=RaceStatus.RUNNING,
-            started_at=datetime.now(UTC) - timedelta(minutes=5),
+            started_at=datetime.now(UTC) - timedelta(minutes=20),
         )
         db.add(race)
         await db.flush()
