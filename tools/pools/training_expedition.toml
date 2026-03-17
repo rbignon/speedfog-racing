@@ -1,0 +1,36 @@
+# SpeedFog Racing - Solo Expedition Pool Configuration
+# ~5 hour solo runs through most of the Lands Between
+extends = "standard"
+
+[display]
+type = "training"
+sort_order = 6
+estimated_duration = "~5h"
+description = "Solo expedition through most of the Lands Between"
+
+[requirements]
+legacy_dungeons = 8
+bosses = 15
+mini_dungeons = 15
+major_bosses = 15
+
+[structure]
+min_layers = 90
+max_layers = 100
+max_parallel_paths = 2
+max_exits = 2
+max_entrances = 2
+split_probability = 0.8
+merge_probability = 0.2
+min_branch_age = 3
+start_tier = 3
+final_tier = 28
+tier_curve = "power"
+tier_curve_exponent = 0.8
+first_layer_type = "legacy_dungeon"
+final_boss_candidates = [
+    "haligtree_malenia",
+    "leyndell_erdtree",
+    "jaggedpeak_bayle",
+    "enirilim_radahn",
+]
