@@ -40,7 +40,7 @@ def _make_seed(graph_json: dict, total_layers: int) -> Seed:
 
 
 class TestBuildSeedInfo:
-    """Test SeedInfo construction — graph_json always included."""
+    """Test SeedInfo construction: graph_json always included."""
 
     def test_no_seed(self):
         """No seed returns minimal SeedInfo."""

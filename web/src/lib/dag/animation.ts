@@ -1,6 +1,6 @@
 /**
  * Pure animation utilities for the metro DAG hero visualization.
- * No DOM, no Svelte — fully testable.
+ * No DOM, no Svelte. Fully testable.
  */
 
 import type {

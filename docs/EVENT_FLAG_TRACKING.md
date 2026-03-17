@@ -39,7 +39,7 @@ The game stores EMEVD event flags in a sparse `std::map<category, page>` (MSVC r
 
 ### Category 1040292
 
-FogRando pre-allocates category 1040292 at runtime. SpeedFog Racing uses offsets 800-999 within this category; FogRando uses ~100-299. Category 9000 (originally planned) does NOT exist in a typical game — `SetEventFlag` to category 9000 is a silent no-op.
+FogRando pre-allocates category 1040292 at runtime. SpeedFog Racing uses offsets 800-999 within this category; FogRando uses ~100-299. Category 9000 (originally planned) does NOT exist in a typical game. `SetEventFlag` to category 9000 is a silent no-op.
 
 The `EVENT_FLAG_BASE` in `../speedfog/speedfog/output.py` is `1040292800`, giving flag IDs `1040292800` through `1040292999`.
 
@@ -60,9 +60,9 @@ for each flag_id in event_ids:
             → push to deferred_event_flags
 ```
 
-**`finish_event` is one-shot**: Uses `triggered_flags` (HashSet) — the player can only finish once. Never cleared, even on reconnect.
+**`finish_event` is one-shot**: Uses `triggered_flags` (HashSet), so the player can only finish once. Never cleared, even on reconnect.
 
-**Regular fog gate flags are repeatable**: After capture, the flag is cleared in game memory (`set_flag(false)`) so the EMEVD script can re-set it on the next fog gate traversal. This enables backtrack detection — re-traversing an already-visited fog gate produces a new `event_flag` message.
+**Regular fog gate flags are repeatable**: After capture, the flag is cleared in game memory (`set_flag(false)`) so the EMEVD script can re-set it on the next fog gate traversal. This enables backtrack detection: re-traversing an already-visited fog gate produces a new `event_flag` message.
 
 **Polling runs always**: Even when disconnected or race not running. Flags are transient in game memory (~seconds), so detection must be immediate.
 
@@ -88,7 +88,7 @@ The loading screen exit is detected by `position_readable && !was_position_reada
 
 At the `position_readable` rising edge:
 
-1. **Forced rescan**: Immediately re-reads all `event_ids` to catch flags set during loading (e.g., Erdtree burn, Maliketh warp cutscene). Newly detected regular flags are cleared in game memory and added to `deferred_event_flags`. A `finish_event` caught here is sent **immediately** if connected (no deferral — boss kills have no loading screen, but edge cases like Maliketh's cutscene can trigger both a flag and a loading screen).
+1. **Forced rescan**: Immediately re-reads all `event_ids` to catch flags set during loading (e.g., Erdtree burn, Maliketh warp cutscene). Newly detected regular flags are cleared in game memory and added to `deferred_event_flags`. A `finish_event` caught here is sent **immediately** if connected (no deferral, since boss kills have no loading screen, but edge cases like Maliketh's cutscene can trigger both a flag and a loading screen).
 
 2. **Deferred flags exist** → send all deferred `event_flag` messages to server.
 
@@ -144,10 +144,10 @@ receive event_flag { flag_id, igt_ms }
 
 Three-strategy cascade for resolving where the player is after a death/fast-travel:
 
-**Strategy 1 — Grace lookup** (highest confidence):
+**Strategy 1, Grace lookup** (highest confidence):
 `grace_entity_id` → `graces.json` mapping → `zone_id` → find graph node with matching `zones` array.
 
-**Strategy 2 — Map-based lookup** (fallback):
+**Strategy 2, Map-based lookup** (fallback):
 
 1. `map_id` → `fog.txt` (complete map→zone mapping) → candidate `zone_ids`.
 2. If position available, `submaps.txt` narrows to one zone_id.
@@ -155,13 +155,13 @@ Three-strategy cascade for resolving where the player is after a death/fast-trav
 4. If still ambiguous, filter by `zone_history` (player can only be in an already-explored node).
 5. If still ambiguous and no `grace_entity_id` (death/remembrance context), pick the most recently visited node from `zone_history`. This works because death/remembrance always returns to the last grace, which is in the most recently visited zone.
 
-**Strategy 3 — None**: Ambiguous or no data (including fast travel with failed grace lookup — guessing would pollute the MetroDag). No `zone_update` sent — overlay stays on previous zone.
+**Strategy 3, None**: Ambiguous or no data (including fast travel with failed grace lookup, as guessing would pollute the MetroDag). No `zone_update` sent; overlay stays on previous zone.
 
 Zone queries do **not** modify `zone_history` (progression). They only update `current_zone` (overlay display pointer) and trigger `player_update` for all connections (mods + spectators).
 
 ### Grace Entity ID Capture
 
-A warp hook (inline detour on `lua_warp`) captures the grace entity ID when the player fast-travels. The entity ID is stored in a global atomic and consumed at loading exit. This is needed because the entity ID is only available at the moment of the warp call — by the time the loading screen exits, the game has already moved past the warp context.
+A warp hook (inline detour on `lua_warp`) captures the grace entity ID when the player fast-travels. The entity ID is stored in a global atomic and consumed at loading exit. This is needed because the entity ID is only available at the moment of the warp call. By the time the loading screen exits, the game has already moved past the warp context.
 
 ---
 
@@ -191,7 +191,7 @@ LiveSplit-style gap computation. The gap is fixed (entry delta) while the player
 | Status = `playing`, no split for layer            | `None`                                          |
 | Other statuses                                    | `None`                                          |
 
-"Within budget" means `igt_ms <= leader_splits[current_layer + 1]` — the player hasn't used more time on this layer than the leader did.
+"Within budget" means `igt_ms <= leader_splits[current_layer + 1]`, i.e. the player hasn't used more time on this layer than the leader did.
 
 ### Leaderboard Sorting
 

@@ -131,7 +131,7 @@ class TrainingStore {
       this.reconnectAttempt = 0;
       this.connected = true;
 
-      // Send auth (token optional — anonymous spectators send without token)
+      // Send auth (token optional, anonymous spectators send without token)
       const token = getStoredToken();
       if (token) {
         ws.send(JSON.stringify({ type: "auth", token }));

@@ -17,7 +17,7 @@ use tracing::{debug, info, warn};
 
 /// Diagnostic status of the event flag reader.
 pub enum FlagReaderStatus {
-    /// base_ptr.read() returned None — memory not readable
+    /// base_ptr.read() returned None (memory not readable)
     NoPtrRead,
     /// Manager pointer is null (game not fully loaded?)
     ManagerNull,
@@ -122,7 +122,7 @@ impl EventFlagReader {
 
         if new_val != current {
             // SAFETY: Single-byte write is atomic on x86. Our flags use category 1040292,
-            // offsets 51-52 — FogRando uses offsets 100-300 and zone tracking uses
+            // offsets 51-52. FogRando uses offsets 100-300 and zone tracking uses
             // 400+, so no concurrent modification of this byte is possible.
             unsafe {
                 std::ptr::write(addr as *mut u8, new_val);
@@ -188,7 +188,7 @@ impl EventFlagReader {
             if current != 0 {
                 let sentinel: u8 = PointerChain::<u8>::new(&[current + 0x19]).read()?;
                 if sentinel != 0 {
-                    // Sentinel node — treat as null
+                    // Sentinel node, treat as null
                     if let Some(parent) = stack.pop() {
                         let key: u32 = PointerChain::<u32>::new(&[parent + 0x20]).read()?;
                         categories.push(key);
@@ -278,7 +278,7 @@ impl EventFlagReader {
         let addr_mode: i32 = PointerChain::<i32>::new(&[candidate + 0x28]).read()?;
         match addr_mode - 1 {
             0 => {
-                // Mode 1: formula — (manager[0x20] * node[0x30]) + manager[0x28]
+                // Mode 1: formula, (manager[0x20] * node[0x30]) + manager[0x28]
                 let multiplier: i32 = PointerChain::<i32>::new(&[candidate + 0x30]).read()?;
                 let factor: i32 = PointerChain::<i32>::new(&[manager + 0x20]).read()?;
                 let base_addr: usize = PointerChain::<usize>::new(&[manager + 0x28]).read()?;

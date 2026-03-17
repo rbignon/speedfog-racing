@@ -1,4 +1,4 @@
-# Phase 2 — UI/UX Specification
+# Phase 2: UI/UX Specification
 
 **Date:** 2026-02-06
 **Status:** Complete (2026-02-07)
@@ -118,9 +118,9 @@ Key rules:
 
 To prevent spoilers, anyone without DAG access sees a **fake DAG** with CSS blur.
 
-- Generated **client-side** from the meta-stats sent by the server (`total_layers`, `total_nodes`, `total_paths`) — not from the actual seed, to avoid leaking information
+- Generated **client-side** from the meta-stats sent by the server (`total_layers`, `total_nodes`, `total_paths`), not from the actual seed, to avoid leaking information
 - The server does NOT send `graph_json` to unauthorized clients
-- The algorithm creates a plausible layered graph with random splits and merges calibrated to the meta-stats. It does not need to be deterministic or persistent across renders — it's only a blurred silhouette
+- The algorithm creates a plausible layered graph with random splits and merges calibrated to the meta-stats. It does not need to be deterministic or persistent across renders, it's only a blurred silhouette
 - The fake DAG only needs to have a plausible shape when blurred
 - Displayed with `filter: blur(8px)` and `pointer-events: none`
 
@@ -179,7 +179,7 @@ class RaceDetailResponse(BaseModel):
 
 The server determines whether the organizer is participating by checking for a Participant record matching `race.organizer_id`. This derived check is used for DAG visibility (Section 2.5): the organizer sees the real DAG only if they are NOT a participant.
 
-**Irreversibility rule:** a non-participating organizer has seen the real DAG from the moment of race creation. Therefore, they cannot later add themselves as a participant — this would let them race with foreknowledge of the graph. Enforcement: the server rejects `POST /api/races/{id}/participants` when the target user is the organizer and no Participant record already exists for them (i.e., they chose "organize only" at creation).
+**Irreversibility rule:** a non-participating organizer has seen the real DAG from the moment of race creation. Therefore, they cannot later add themselves as a participant, as this would let them race with foreknowledge of the graph. Enforcement: the server rejects `POST /api/races/{id}/participants` when the target user is the organizer and no Participant record already exists for them (i.e., they chose "organize only" at creation).
 
 ### 3.3 Relationships Update
 
@@ -419,7 +419,7 @@ PARTICIPANTS (3)
 
 **Main area:**
 
-- **DAG**: blurred fake (players, spectators) or real (organizer non-player, casters). Meta-stats (layers, nodes, paths) are used internally for fake DAG generation but not displayed as text — they are not public information.
+- **DAG**: blurred fake (players, spectators) or real (organizer non-player, casters). Meta-stats (layers, nodes, paths) are used internally for fake DAG generation but not displayed as text (they are not public information).
 - **Casters** section: list of caster Twitch channels with links
 - **Race info**: pool, created date
 - **Actions** (contextual):
@@ -496,7 +496,7 @@ RESULTS
 **Main area:**
 
 - **Podium**: visual top-3 display (first place elevated)
-- **DAG complete**: real metro DAG visible to everyone, with each player's path overlaid in their color. This is the "replay" — players see for the first time the world they just traversed.
+- **DAG complete**: real metro DAG visible to everyone, with each player's path overlaid in their color. This is the "replay", where players see for the first time the world they just traversed.
 - **Race stats**: total duration, average deaths
 
 ---
@@ -616,7 +616,7 @@ The `race_state` message's `seed` field becomes role-dependent:
 }
 ```
 
-`total_nodes` and `total_paths` are read directly from the `graph_json` dict stored on the `Seed` model (alongside the existing `total_layers` field). No additional columns are needed — `graph_json` is a Python dict in memory, so accessing `seed.graph_json["total_nodes"]` is a simple dict lookup, not a JSON parse.
+`total_nodes` and `total_paths` are read directly from the `graph_json` dict stored on the `Seed` model (alongside the existing `total_layers` field). No additional columns are needed. `graph_json` is a Python dict in memory, so accessing `seed.graph_json["total_nodes"]` is a simple dict lookup, not a JSON parse.
 
 When `graph_json` is `null` in the response, the frontend renders the fake blurred DAG using the meta-stats to generate a plausible silhouette (see Section 2.6).
 
@@ -682,7 +682,7 @@ Suggested sequencing to deliver incrementally:
 - Connected user dashboard (my races, active race spotlight)
 - Race list improvements (live indicator, pool info)
 
-### Step 4: Race Detail — Lobby State
+### Step 4: Race Detail, Lobby State
 
 - Unified sidebar layout
 - Participant cards with live ready states
@@ -691,7 +691,7 @@ Suggested sequencing to deliver incrementally:
 - Caster display
 - Spectator count
 
-### Step 5: Race Detail — Running State
+### Step 5: Race Detail, Running State
 
 - `MetroDagLive.svelte` with real-time player dots
 - Player colors (assigned at join, consistent across leaderboard and DAG)
@@ -699,7 +699,7 @@ Suggested sequencing to deliver incrementally:
 - Elapsed time clock
 - Caster "live" indicators
 
-### Step 6: Race Detail — Finished State
+### Step 6: Race Detail, Finished State
 
 - Podium component
 - `MetroDagResults.svelte` with player paths overlaid
@@ -763,7 +763,7 @@ Desktop-first design. Mobile adaptations:
 
 ### 12.4 OBS Overlays (Deferred)
 
-Existing overlay routes from Phase 1 design (`/overlay/{id}/dag`, `/overlay/{id}/leaderboard`) are not implemented yet. **Deferred to post-Phase 2** — the core DAG components and leaderboard must be stable first.
+Existing overlay routes from Phase 1 design (`/overlay/{id}/dag`, `/overlay/{id}/leaderboard`) are not implemented yet. **Deferred to post-Phase 2**, the core DAG components and leaderboard must be stable first.
 
 Target implementation:
 

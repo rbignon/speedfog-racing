@@ -94,7 +94,7 @@
 
 <main class="training-page">
 	<h1>Solo</h1>
-	<p class="subtitle">Run fresh seeds at your own pace — no race, no pressure.</p>
+	<p class="subtitle">Run fresh seeds at your own pace. No race, no pressure.</p>
 
 	{#if error}
 		<div class="error-banner">
@@ -141,7 +141,7 @@
 								{#if info.played_by_user != null && info.played_by_user > 0}
 									{info.played_by_user}/{info.available} seed{info.available !== 1 ? 's' : ''} played
 									{#if info.played_by_user >= info.available}
-										— seeds will repeat
+										(seeds will repeat)
 									{/if}
 								{:else}
 									{info.available} seed{info.available !== 1 ? 's' : ''} available
@@ -163,7 +163,7 @@
 								{#if selectedInfo?.played_by_user != null && selectedInfo.played_by_user > 0}
 									{selectedInfo.played_by_user}/{selectedInfo.available} seed{selectedInfo.available !== 1 ? 's' : ''} played
 									{#if selectedInfo.played_by_user >= selectedInfo.available}
-										— seeds will repeat
+										(seeds will repeat)
 									{/if}
 								{:else}
 									{selectedInfo?.available ?? 0} seed{(selectedInfo?.available ?? 0) !== 1 ? 's' : ''} available

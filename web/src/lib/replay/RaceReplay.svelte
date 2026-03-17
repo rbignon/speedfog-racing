@@ -201,7 +201,7 @@
 		return p ? PLAYER_COLORS[p.color_index % PLAYER_COLORS.length] : '#9CA3AF';
 	}
 
-	// Leader tracking — updated by ReplayDag via callback to avoid double computation
+	// Leader tracking: updated by ReplayDag via callback to avoid double computation
 	let leaderId: string | null = $state(null);
 	let previousLeader: string | null = $state(null);
 

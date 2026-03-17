@@ -358,7 +358,7 @@ async def notify_race_finished(
     medals = ["🥇", "🥈", "🥉"]
     for i, entry in enumerate(podium[:3]):
         medal = medals[i] if i < len(medals) else f"{i + 1}."
-        podium_lines.append(f"{medal} **{entry['name']}** — {entry['igt']}")
+        podium_lines.append(f"{medal} **{entry['name']}** - {entry['igt']}")
     podium_text = "\n".join(podium_lines) if podium_lines else "No finishers"
 
     embed: dict[str, object] = {

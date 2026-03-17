@@ -219,7 +219,7 @@
 					showGo = false;
 				};
 			} else {
-				// No countdown — show GO! immediately
+				// No countdown, show GO! immediately
 				countdownRemaining = null;
 				showGo = true;
 				const timer = setTimeout(() => {
@@ -1505,7 +1505,7 @@
 		border-top: 1px solid var(--color-border);
 	}
 
-	/* Intentional departure from flat design charter —
+	/* Intentional departure from flat design charter:
 	   skeuomorphic "big red button" for dramatic effect */
 	.abandon-btn {
 		width: 100%;

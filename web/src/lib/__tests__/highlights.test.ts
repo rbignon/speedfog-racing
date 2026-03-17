@@ -252,12 +252,12 @@ describe("speed highlights", () => {
     const highlights = computeHighlights(players, graph);
     const speedDemon = highlights.find((h) => h.type === "speed_demon");
     expect(speedDemon).toBeDefined();
-    // Alice cleared zone_a in 20s vs Bob's 75s — Alice is the speed demon
+    // Alice cleared zone_a in 20s vs Bob's 75s, so Alice is the speed demon
     expect(speedDemon!.playerIds).toContain("alice");
   });
 
   it("Speed Demon: ignores backed zones", () => {
-    // Alice "blitzes" zone_a but actually backed out — should not count
+    // Alice "blitzes" zone_a but actually backed out, should not count
     const graph2 = graphJson({
       start: { tier: 1, layer: 0, type: "start" },
       zone_a: { tier: 2, layer: 1 },
@@ -338,7 +338,7 @@ describe("speed highlights", () => {
     const highlights = computeHighlights(players, wallGraph);
     const wall = highlights.find((h) => h.type === "zone_wall");
     expect(wall).toBeDefined();
-    // Alice spent 320s in zone_b vs Bob 65s + Charlie 175s — extreme zone wall
+    // Alice spent 320s in zone_b vs Bob 65s + Charlie 175s (extreme zone wall)
     expect(wall!.playerIds).toContain("alice");
   });
 
@@ -822,7 +822,7 @@ describe("community highlight boost", () => {
     // Speed Demon: ratio = avg/fastest = 55s/10s = 5.5, tierMult = 3
     //   → raw score = 5.5 * 3 * 20 = 330
     // Graveyard: 3 deaths → raw = 24, boosted = 36
-    // Speed Demon wins (330 >> 36) — extreme exploits beat weak community.
+    // Speed Demon wins (330 >> 36): extreme exploits beat weak community.
     const graph = graphJson({
       start: { tier: 1, layer: 0, type: "start" },
       zone_a: { tier: 3, layer: 1 },

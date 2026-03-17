@@ -10,11 +10,11 @@ chapel_grace = true
 tolerance = 5
 
 [structure]
-max_parallel_paths = 3
+max_parallel_paths = 4
 split_probability = 0.9
 merge_probability = 0.5
 max_entrances = 2
-max_exits = 3
+max_exits = 4
 min_branch_age = 3
 crosslinks = true
 

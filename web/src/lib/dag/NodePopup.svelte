@@ -56,7 +56,7 @@
 		adjustedY = ny;
 	});
 
-	// Close on pointerdown outside (not click — avoids race with onnodeclick which fires on pointerup)
+	// Close on pointerdown outside (not click, to avoid race with onnodeclick which fires on pointerup)
 	function onWindowPointerDown(e: PointerEvent) {
 		if (popupEl && !popupEl.contains(e.target as Node)) {
 			onclose();

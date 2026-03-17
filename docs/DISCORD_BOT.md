@@ -6,7 +6,7 @@ This guide covers configuring the Discord bot integration for SpeedFog Racing. T
 - **Scheduled events** synced with the race lifecycle
 - **Self-service Runner role** via button interactions
 
-All features are optional and degrade gracefully — if a setting is missing, the corresponding feature is silently skipped.
+All features are optional and degrade gracefully. If a setting is missing, the corresponding feature is silently skipped.
 
 ## 1. Create a Discord Application
 
@@ -17,17 +17,17 @@ All features are optional and degrade gracefully — if a setting is missing, th
 ## 2. Create a Bot
 
 1. Go to the **Bot** tab
-2. Click **Reset Token** and copy the token — this is your `DISCORD_BOT_TOKEN`
+2. Click **Reset Token** and copy the token, this is your `DISCORD_BOT_TOKEN`
 3. Under **Privileged Gateway Intents**, no special intents are required
 
 ## 3. Invite the Bot to Your Server
 
 Generate an invite URL with these permissions:
 
-- **Manage Roles** — assign/remove the Runner role
-- **Manage Events** — update/delete scheduled events
-- **Create Events** — create scheduled events
-- **Send Messages** — post the Runner button message
+- **Manage Roles**: assign/remove the Runner role
+- **Manage Events**: update/delete scheduled events
+- **Create Events**: create scheduled events
+- **Send Messages**: post the Runner button message
 
 Use this URL template (replace `APPLICATION_ID`):
 
@@ -42,7 +42,7 @@ Permission integer `17601044416512` = Manage Roles (1<<28) + Manage Events (1<<3
 1. In your Discord server, go to **Server Settings > Roles**
 2. Create a role named **Runner** (or whatever you prefer)
 3. Move the role **below** the bot's role in the hierarchy (the bot can only assign roles below its own)
-4. Copy the role ID — this is your `DISCORD_RUNNER_ROLE_ID`
+4. Copy the role ID, this is your `DISCORD_RUNNER_ROLE_ID`
 
 To copy a role ID: enable Developer Mode in Discord settings (App Settings > Advanced), then right-click the role and select "Copy Role ID".
 
@@ -60,7 +60,7 @@ To copy a role ID: enable Developer Mode in Discord settings (App Settings > Adv
    https://your-domain.com/api/discord/interactions
    ```
 
-3. Discord will send a PING to verify the endpoint — the server must be running and reachable
+3. Discord will send a PING to verify the endpoint, so the server must be running and reachable
 
 ## 7. Environment Variables
 
@@ -109,9 +109,9 @@ This posts a message with two buttons ("Become a Runner" / "Remove Runner") in t
 
 When `DISCORD_WEBHOOK_URL` is set, race lifecycle events post embeds:
 
-- **Race created** — with pool, organizer, schedule info. Mentions `@Runner` if `DISCORD_RUNNER_ROLE_ID` is set.
-- **Race started** — with participant count
-- **Race finished** — with podium (top 3 times)
+- **Race created**: with pool, organizer, schedule info. Mentions `@Runner` if `DISCORD_RUNNER_ROLE_ID` is set.
+- **Race started**: with participant count
+- **Race finished**: with podium (top 3 times)
 
 ### Solo/Training Live Notifications (Webhook)
 

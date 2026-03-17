@@ -1,4 +1,4 @@
-# Deployment — VPS with nginx/systemd
+# Deployment: VPS with nginx/systemd
 
 The frontend is built locally and uploaded to the server. The server only needs Python and system packages.
 
@@ -107,12 +107,12 @@ The script:
 
 ## Files
 
-| File                         | Purpose                                                    |
-| ---------------------------- | ---------------------------------------------------------- |
-| `speedfog-racing.service`    | systemd unit — runs uvicorn on `127.0.0.1:8000`            |
-| `speedfog-racing.nginx.conf` | nginx site config — static frontend + API/WS reverse proxy |
-| `.env.example`               | Production environment variable template                   |
-| `deploy.sh`                  | One-command deploy script (run from dev machine)           |
+| File                         | Purpose                                                   |
+| ---------------------------- | --------------------------------------------------------- |
+| `speedfog-racing.service`    | systemd unit, runs uvicorn on `127.0.0.1:8000`            |
+| `speedfog-racing.nginx.conf` | nginx site config, static frontend + API/WS reverse proxy |
+| `.env.example`               | Production environment variable template                  |
+| `deploy.sh`                  | One-command deploy script (run from dev machine)          |
 
 ## Secrets Rotation
 
@@ -133,7 +133,7 @@ sudo systemctl restart speedfog-racing
 
 ### Rotating user API tokens
 
-Individual user tokens can be rotated via the logout endpoint (`POST /api/auth/logout`), which regenerates the user's `api_token`. There is currently no bulk rotation mechanism — if the database is compromised, manually update tokens:
+Individual user tokens can be rotated via the logout endpoint (`POST /api/auth/logout`), which regenerates the user's `api_token`. There is currently no bulk rotation mechanism. If the database is compromised, manually update tokens:
 
 ```bash
 sudo -u postgres psql speedfog_racing -c "

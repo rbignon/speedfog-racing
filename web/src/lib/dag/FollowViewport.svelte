@@ -67,7 +67,7 @@
 		const activePlayers = participants.filter((p) => p.status === 'playing');
 
 		if (raceStatus === 'setup' || activePlayers.length === 0) {
-			// Zoom on start area — find start node
+			// Zoom on start area: find start node
 			let startX = minX;
 			for (const node of nodeMap.values()) {
 				if (node.type === 'start') {

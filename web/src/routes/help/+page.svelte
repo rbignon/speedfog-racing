@@ -95,7 +95,7 @@
 			label: 'Boss Shuffle',
 			duration: '~1h',
 			pitch:
-				'Same structure as Standard, but every boss is randomized — majors included. You never know what awaits behind the fog.',
+				'Same structure as Standard, but every boss is randomized, majors included. You never know what awaits behind the fog.',
 			layers: '25–30',
 			legacyDungeons: 2,
 			majorBosses: 8,
@@ -171,7 +171,7 @@
 				<h3>Race</h3>
 				<p class="path-subtitle">Compete against other players</p>
 				<ol>
-					<li>An organizer sends you an <strong>invite link</strong> — click it to join.</li>
+					<li>An organizer sends you an <strong>invite link</strong>. Click it to join.</li>
 					<li>
 						<strong>Download your seed pack</strong> from the race page once seeds are
 						released.
@@ -196,7 +196,7 @@
 		</div>
 
 		<p class="path-note">
-			Solo is the best way to discover SpeedFog. No invite needed, no waiting — just pick a
+			Solo is the best way to discover SpeedFog. No invite needed, no waiting, just pick a
 			mode and go. Your times, deaths, and route maps are saved so you can track your
 			progress. You can mark a session as a <em>slow run</em> to exclude it from your stats.
 		</p>
@@ -210,7 +210,7 @@
 		<p>
 			You spawn at the <strong>Chapel of Anticipation</strong>. Your first two exits are the fog
 			gate in front of the <strong>Grafted Scion</strong> and the fog on the
-			<strong>Roundtable Hold balcony</strong>. The Roundtable Hold is unlocked immediately — you
+			<strong>Roundtable Hold balcony</strong>. The Roundtable Hold is unlocked immediately, so you
 			can teleport there from the start.
 		</p>
 
@@ -226,10 +226,10 @@
 			The route map is organized in <strong>layers of increasing difficulty</strong>. Paths can
 			<strong>split and merge</strong>, and occasional <strong>cross-links</strong> create
 			shortcuts between distant branches. Within a layer, parallel paths have the
-			<strong>same difficulty</strong> — only the specific zones differ.
+			<strong>same difficulty</strong>, only the specific zones differ.
 		</p>
 		<p>
-			Fog gates are <strong>one-way</strong> — you can only walk through them in one direction.
+			Fog gates are <strong>one-way</strong>: you can only walk through them in one direction.
 			You can always <strong>fast travel back</strong> to a previous grace if you need to return
 			to an earlier zone.
 		</p>
@@ -237,7 +237,7 @@
 			<MetroDag graphJson={heroSeed} />
 		</div>
 		<p class="dag-caption">
-			An example route map. During a race, participants don't see the map — it is revealed once
+			An example route map. During a race, participants don't see the map. It is revealed once
 			the race ends.
 		</p>
 
@@ -245,7 +245,7 @@
 		<p>
 			Zones include mini dungeons, legacy dungeons, and boss arenas. Enemy difficulty
 			<strong>scales with zone depth</strong>. Item and enemy locations are
-			<strong>randomized</strong> — stat requirements are removed, so you can use
+			<strong>randomized</strong>, and stat requirements are removed, so you can use
 			<strong>any weapon regardless of stats</strong>. Weapons found in the world are
 			automatically upgraded to match your progression.
 		</p>
@@ -258,7 +258,7 @@
 		</p>
 		<h3>Victory</h3>
 		<p>
-			All paths converge toward a single <strong>final boss</strong> — a random major boss
+			All paths converge toward a single <strong>final boss</strong>, a random major boss
 			(Radagon, Malenia, Mohg, Radahn...) that changes with every seed. Defeat it to finish.
 			Your time is recorded via <strong>in-game timer (IGT)</strong>, which pauses during
 			loading screens, death animations, and menus.
@@ -277,17 +277,17 @@
 		{#if isOpen('rules')}
 			<div class="panel">
 				<ul>
-					<li><strong>Glitchless</strong> — no glitch exploits allowed</li>
+					<li><strong>Glitchless</strong>: no glitch exploits allowed</li>
 					<li>
-						<strong>No quit-outs</strong> — don't close the game to manipulate state
+						<strong>No quit-outs</strong>: don't close the game to manipulate state
 					</li>
 					<li>
-						<strong>No LiveSplit</strong> — IGT is tracked automatically by the mod
+						<strong>No LiveSplit</strong>: IGT is tracked automatically by the mod
 					</li>
 					<li>
-						<strong>No other mods</strong> — only SpeedFog, no additional modifications
+						<strong>No other mods</strong>: only SpeedFog, no additional modifications
 					</li>
-					<li><strong>Skips are allowed</strong> — creative routing is fair game</li>
+					<li><strong>Skips are allowed</strong>: creative routing is fair game</li>
 				</ul>
 			</div>
 		{/if}
@@ -308,7 +308,7 @@
 					<li><strong>Kalé</strong> has moved to the Roundtable Hold.</li>
 					<li>
 						<strong>Merchants</strong> from the open world are relocated inside the
-						zones — keep an eye out, they can have useful gear.
+						zones. Keep an eye out, they can have useful gear.
 					</li>
 					<li>
 						After defeating <strong>Radahn</strong>, make sure to activate the grace or
@@ -324,7 +324,7 @@
 		<h2>Game Modes</h2>
 		<p>
 			Each mode uses a different seed pool with its own balance of duration, difficulty, and
-			resources. <strong>Standard</strong> is the default — other modes twist the formula.
+			resources. <strong>Standard</strong> is the default; other modes twist the formula.
 		</p>
 
 		<div class="pool-container">
@@ -400,7 +400,7 @@
 			<div class="overlay-text">
 				<h3>In-Game Overlay</h3>
 				<p>
-					A compact overlay sits in the corner of your screen — no need to alt-tab. It
+					A compact overlay sits in the corner of your screen, so there's no need to alt-tab. It
 					shows your current zone, in-game time, tier, death count, progression, and a
 					live leaderboard with all participants.
 				</p>
@@ -408,7 +408,7 @@
 				<h3>Zone Tracking</h3>
 				<p>
 					Your progress is tracked <strong>automatically</strong> as you walk through fog
-					gates — no manual action needed. The mod detects fog gate traversals and reports
+					gates, no manual action needed. The mod detects fog gate traversals and reports
 					them to the server, which updates the leaderboard in real time.
 				</p>
 			</div>
@@ -440,7 +440,7 @@
 			<div class="panel">
 				<p>
 					The leaderboard shows <strong>time gaps</strong> relative to the leader's pace
-					on each layer — similar to LiveSplit splits.
+					on each layer, similar to LiveSplit splits.
 				</p>
 				<ul>
 					<li>
@@ -473,8 +473,8 @@
 		{#if isOpen('shortcuts')}
 			<div class="panel">
 				<ul>
-					<li><kbd>F9</kbd> — Toggle the overlay on/off</li>
-					<li><kbd>F10</kbd> — Toggle the leaderboard on/off</li>
+					<li><kbd>F9</kbd>: Toggle the overlay on/off</li>
+					<li><kbd>F10</kbd>: Toggle the leaderboard on/off</li>
 				</ul>
 			</div>
 		{/if}
@@ -496,12 +496,12 @@
 					in-game overlay before downloading your seed pack:
 				</p>
 				<ul>
-					<li><strong>Overlay size</strong> — adjust the scale to fit your resolution</li>
-					<li><strong>Zone language</strong> — display zone names in your language</li>
-					<li><strong>Tips language</strong> — in-game tips in your language</li>
+					<li><strong>Overlay size</strong>: adjust the scale to fit your resolution</li>
+					<li><strong>Zone language</strong>: display zone names in your language</li>
+					<li><strong>Tips language</strong>: in-game tips in your language</li>
 				</ul>
 				<p>
-					These settings are baked into your seed pack — change them before downloading.
+					These settings are baked into your seed pack, so change them before downloading.
 				</p>
 			</div>
 		{/if}
@@ -583,12 +583,12 @@
 				<p>Same game, different context:</p>
 				<ul>
 					<li>
-						<strong>Solo</strong> — you play alone, at your own pace. No opponents, no
+						<strong>Solo</strong>: you play alone, at your own pace. No opponents, no
 						waiting. The route map is visible from the start. Seeds aren't consumed, so
 						you can practice as much as you want.
 					</li>
 					<li>
-						<strong>Racing</strong> — synchronized start, live leaderboard, route map
+						<strong>Racing</strong>: synchronized start, live leaderboard, route map
 						hidden until the race ends. Competitive results recorded.
 					</li>
 				</ul>
@@ -664,7 +664,7 @@
 		{#if isOpen('faq-disconnect')}
 			<div class="panel">
 				<p>
-					The mod reconnects automatically. Your progress is not lost — the server replays
+					The mod reconnects automatically. Your progress is not lost: the server replays
 					any missed zone events on reconnect.
 				</p>
 			</div>
@@ -676,7 +676,7 @@
 			aria-expanded={isOpen('faq-abandon')}
 			onclick={() => toggleDetail('faq-abandon')}
 		>
-			<span>I got auto-abandoned — why?</span>
+			<span>I got auto-abandoned. Why?</span>
 			<span class="chevron"></span>
 		</button>
 		{#if isOpen('faq-abandon')}
@@ -705,10 +705,10 @@
 				visibility.
 			</li>
 			<li>
-				<strong>Invite players</strong> — send them an invite link from the race page.
+				<strong>Invite players</strong>: send them an invite link from the race page.
 			</li>
 			<li>
-				<strong>Release seed packs</strong> — typically ~10 minutes before start. Players
+				<strong>Release seed packs</strong>, typically ~10 minutes before start. Players
 				can then download and install.
 			</li>
 			<li>
@@ -753,7 +753,7 @@
 				</p>
 				<p>
 					If you reroll after someone downloaded, their mod will show a
-					<strong>"SEED OUTDATED"</strong> banner — they'll need to re-download.
+					<strong>"SEED OUTDATED"</strong> banner, and they'll need to re-download.
 				</p>
 			</div>
 		{/if}
@@ -774,7 +774,7 @@
 
 		<h3>Casters</h3>
 		<p>
-			Casters have <strong>full route map visibility at all times</strong> — including during
+			Casters have <strong>full route map visibility at all times</strong>, including during
 			setup. This lets streamers prepare and commentate the race live. Anyone can request
 			the caster role from the race page, or the organizer can add them.
 		</p>
@@ -797,11 +797,11 @@
 				</p>
 				<ul>
 					<li>
-						<strong>Route map</strong> — live metro map with player positions
+						<strong>Route map</strong>: live metro map with player positions
 						(recommended: 800 x 600). Supports auto-follow mode.
 					</li>
 					<li>
-						<strong>Leaderboard</strong> — ranked standings with progression and IGT
+						<strong>Leaderboard</strong>: ranked standings with progression and IGT
 						(recommended: 400 x 800).
 					</li>
 				</ul>
@@ -1011,7 +1011,7 @@
 		text-align: center;
 	}
 
-	/* Pool container — tabs + card as one unit */
+	/* Pool container: tabs + card as one unit */
 	.pool-container {
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-lg);

@@ -123,7 +123,7 @@ describe("parseDagGraph", () => {
 // Linear path
 // =============================================================================
 
-describe("computeLayout — linear path", () => {
+describe("computeLayout, linear path", () => {
   it("positions 3 nodes with uniform X spacing, Y centered", () => {
     const graph: DagGraph = {
       totalLayers: 3,
@@ -165,7 +165,7 @@ describe("computeLayout — linear path", () => {
 // Split/merge
 // =============================================================================
 
-describe("computeLayout — split and merge", () => {
+describe("computeLayout, split and merge", () => {
   it("separates nodes vertically at split and converges at merge", () => {
     const graph: DagGraph = {
       totalLayers: 3,
@@ -265,7 +265,7 @@ describe("edge routing", () => {
 // Full sample graph
 // =============================================================================
 
-describe("computeLayout — full sample_graph.json", () => {
+describe("computeLayout, full sample_graph.json", () => {
   let layout: ReturnType<typeof computeLayout>;
 
   it("loads and lays out the full 16-node graph", () => {
@@ -356,7 +356,7 @@ describe("computeLayout — full sample_graph.json", () => {
 // Edge cases
 // =============================================================================
 
-describe("computeLayout — edge cases", () => {
+describe("computeLayout, edge cases", () => {
   it("handles empty graph", () => {
     const layout = computeLayout({
       nodes: [],

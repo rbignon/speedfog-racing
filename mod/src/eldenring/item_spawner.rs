@@ -9,7 +9,7 @@
 //! 2. Event flag 1040292052 in VirtualMemoryFlag tree (secondary; covers game restarts)
 //!
 //! The event flag persists in the save file but is unreliable across WebSocket
-//! reconnects — the game may silently clear it via internal flag sync.
+//! reconnects; the game may silently clear it via internal flag sync.
 
 use std::ffi::c_void;
 use std::time::Duration;
@@ -24,7 +24,7 @@ use crate::eldenring::EventFlagReader;
 const GEM_TYPE_FLAG: u32 = 0x8000_0000;
 
 /// Event flag used to prevent re-spawning items (persists in save file).
-/// Category 1040292, offset 52 — next to FINGER_PICKUP_FLAG (offset 51)
+/// Category 1040292, offset 52, next to FINGER_PICKUP_FLAG (offset 51)
 /// used by SpeedFog's EMEVD injectors. Must stay below offset 100
 /// (FogRando's num10 allocation) and well below offset 400
 /// (SpeedFog zone tracking connection flags: 1040292400+).
@@ -45,7 +45,7 @@ type SpawnItemFn = unsafe extern "system" fn(*const c_void, *mut SpawnRequest, *
 
 /// Spawn items received from auth_ok. **Blocks** until the game is fully loaded.
 ///
-/// Call this from a dedicated thread — it polls MapItemMan every 500ms until
+/// Call this from a dedicated thread. It polls MapItemMan every 500ms until
 /// the player has loaded into the game world, then calls func_item_inject
 /// for each item.
 ///
@@ -68,7 +68,7 @@ pub fn spawn_items_blocking(items: Vec<SpawnItem>, flag_reader: &EventFlagReader
     }
 
     // Wait for MapItemMan to be initialized (player loaded into game world).
-    // No timeout — the player may stay on the title screen or character creation
+    // No timeout: the player may stay on the title screen or character creation
     // for an arbitrarily long time before loading in (e.g. race lobby).
     // The thread is lightweight (sleeps 500ms) and bounded by the game process.
     let pp = base.map_item_man as *const *const c_void;

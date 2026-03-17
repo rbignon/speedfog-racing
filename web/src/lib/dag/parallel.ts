@@ -1,6 +1,6 @@
 /**
  * Utilities for computing parallel player path offsets on shared DAG edges.
- * Pure functions — no DOM or Svelte dependencies.
+ * Pure functions. No DOM or Svelte dependencies.
  */
 
 import { bfsShortestPath } from "./animation";
@@ -42,7 +42,7 @@ export function expandNodePath(
   for (let i = 0; i < nodeIds.length - 1; i++) {
     const from = nodeIds[i];
     const to = nodeIds[i + 1];
-    // Entry type of the destination node — undefined treated as "fog" (backward compat)
+    // Entry type of the destination node (undefined treated as "fog" for backward compat)
     const toType = entryTypes?.[i + 1];
     const isFog = toType === undefined || toType === "fog";
 
@@ -103,7 +103,7 @@ export function buildPlayerWaypoints(
     const edge = fwdEdge ?? revEdge;
 
     if (!edge) {
-      // No edge = teleport gap — end current segment and start a new one
+      // No edge = teleport gap. End current segment and start a new one
       if (current.length > 0) segments.push(current);
       const gapNode = nodeMap.get(toId);
       current = gapNode ? [{ x: gapNode.x, y: gapNode.y }] : [];

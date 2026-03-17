@@ -8,7 +8,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text);
       return true;
     } catch {
-      // Secure context required — fall through to fallback
+      // Secure context required, fall through to fallback
     }
   }
   const textarea = document.createElement("textarea");

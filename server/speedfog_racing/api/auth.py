@@ -48,7 +48,7 @@ def _cleanup_expired_states() -> None:
 
 
 class UserPublicResponse(BaseModel):
-    """User info response (public — no api_token)."""
+    """User info response (public, no api_token)."""
 
     id: uuid.UUID
     twitch_username: str
@@ -62,7 +62,7 @@ class UserPublicResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
-    """User info response (internal — includes api_token)."""
+    """User info response (internal, includes api_token)."""
 
     id: uuid.UUID
     twitch_username: str

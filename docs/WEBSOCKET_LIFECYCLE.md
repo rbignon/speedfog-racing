@@ -74,7 +74,7 @@ Client connects
 
 **Duplicate connection guard**: `manager.is_mod_connected(race_id, participant_id)` is checked during auth. A second connection for the same participant is rejected with code 4003. This prevents split-brain when the mod reconnects before the server detects the old connection's disconnect.
 
-**Per-message DB sessions**: Each message handler (`handle_ready`, `handle_status_update`, `handle_event_flag`, `handle_zone_query`, `handle_finished`) opens its own `async with session_maker() as db:` block. Objects are loaded with `selectinload` for eager access. After commit, detached objects remain readable thanks to `expire_on_commit=False`. Broadcasts use these detached objects — no additional DB round-trip needed.
+**Per-message DB sessions**: Each message handler (`handle_ready`, `handle_status_update`, `handle_event_flag`, `handle_zone_query`, `handle_finished`) opens its own `async with session_maker() as db:` block. Objects are loaded with `selectinload` for eager access. After commit, detached objects remain readable thanks to `expire_on_commit=False`. Broadcasts use these detached objects, no additional DB round-trip needed.
 
 **Heartbeat**: A background asyncio task sends `ping` every 30s with a 5s send timeout. If the send fails (client dead), the heartbeat closes the WebSocket, which causes `receive_text()` in the main loop to raise `WebSocketDisconnect`.
 

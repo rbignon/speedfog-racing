@@ -199,7 +199,7 @@ async def test_existing_user_keeps_explicit_locale(async_db: AsyncSession) -> No
     user = await get_or_create_user(async_db, _FAKE_TWITCH_USER, browser_locale="en")
     await async_db.commit()
 
-    # Re-login from a French browser — should NOT change the stored "en"
+    # Re-login from a French browser, should NOT change the stored "en"
     user = await get_or_create_user(async_db, _FAKE_TWITCH_USER, browser_locale="fr")
     await async_db.commit()
     assert user.locale == "en"

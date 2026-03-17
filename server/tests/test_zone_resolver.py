@@ -41,7 +41,7 @@ def test_get_zones_for_map_ainsel_boss():
 
 def test_resolve_zone_by_position_leyndell_main_city():
     """Low Y position in m11_00_00_00 resolves to leyndell (main city, default)."""
-    # Main city is the default (lowest level) — Y below all conditional thresholds
+    # Main city is the default (lowest level), Y below all conditional thresholds
     zone = resolve_zone_by_position("m11_00_00_00", 0.0, -50.0, 0.0)
     assert zone == "leyndell"
 

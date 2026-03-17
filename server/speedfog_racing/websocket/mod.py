@@ -178,7 +178,7 @@ async def handle_mod_websocket(
                     await send_zone_update(
                         websocket, zone, seed.graph_json, participant.zone_history, mod_locale
                     )
-        # Session closed — released back to pool
+        # Session closed, released back to pool
 
         # Register connection (includes locale)
         await manager.connect_mod(race_id, participant_id, user_id, websocket, mod_locale)
@@ -360,7 +360,7 @@ async def handle_status_update(
             return
 
         if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
-            return  # Silently drop — IGT is frozen
+            return  # Silently drop: IGT is frozen
 
         # Silently drop status updates during countdown period
         if _is_countdown_active(participant.race):
@@ -463,7 +463,7 @@ async def handle_event_flag(
             return
 
         if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
-            return  # Silently drop — player finished or abandoned
+            return  # Silently drop: player finished or abandoned
 
         seed = participant.race.seed
         if not seed or not seed.graph_json:
@@ -476,7 +476,7 @@ async def handle_event_flag(
         # Update IGT
         igt = msg.get("igt_ms", 0) if isinstance(msg.get("igt_ms"), int) else 0
 
-        # Check finish event first (not in event_map — it's a boss kill, not a fog gate)
+        # Check finish event first (not in event_map, it's a boss kill, not a fog gate)
         if flag_id == finish_event:
             participant.last_igt_change_at = datetime.now(UTC)
             participant.igt_ms = igt
@@ -509,13 +509,13 @@ async def handle_event_flag(
             new_entry = {"node_id": node_id, "igt_ms": igt, "type": "fog"}
             participant.zone_history = [*old_history, new_entry]
 
-            # current_layer is a high watermark (used for ranking) — never regress
+            # current_layer is a high watermark (used for ranking), never regress
             if node_layer > participant.current_layer:
                 participant.current_layer = node_layer
 
             await db.commit()
 
-    # Session closed — safe to open new sessions or broadcast
+    # Session closed. Safe to open new sessions or broadcast.
 
     if is_finish:
         await handle_finished(websocket, session_maker, participant_id, {"igt_ms": igt})
@@ -569,7 +569,7 @@ async def handle_zone_query(
             return
 
         if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
-            return  # Silently drop — player finished or abandoned
+            return  # Silently drop: player finished or abandoned
 
         seed = participant.race.seed
         if not seed or not seed.graph_json:
@@ -595,7 +595,7 @@ async def handle_zone_query(
             return
 
         # Record zone_history entry when the player moved to a different node
-        # (backtrack via death/teleport/quit-out — no event flag fired)
+        # (backtrack via death/teleport/quit-out, no event flag fired)
         if node_id != participant.current_zone:
             logger.info(
                 "zone_query backtrack: %s -> %s for participant %s",
@@ -612,7 +612,7 @@ async def handle_zone_query(
             new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt, "type": "backtrack"}
             participant.zone_history = [*old_history, new_entry]
 
-            # current_layer is a high watermark — never regress
+            # current_layer is a high watermark, never regress
             node_layer = get_layer_for_node(node_id, graph_json)
             if node_layer > participant.current_layer:
                 participant.current_layer = node_layer
@@ -660,7 +660,7 @@ async def handle_finished(
             return
 
         if participant.status == ParticipantStatus.FINISHED:
-            return  # Already finished — idempotency guard
+            return  # Already finished (idempotency guard)
 
         participant.status = ParticipantStatus.FINISHED
         if isinstance(msg.get("igt_ms"), int):
@@ -684,7 +684,7 @@ async def handle_finished(
         if race_transitioned:
             logger.info("Race finished: %s", participant.race_id)
 
-    # Session closed — all broadcasts use detached objects
+    # Session closed. All broadcasts use detached objects.
 
     if race_transitioned:
         # Push race_state to spectators BEFORE status change so the client

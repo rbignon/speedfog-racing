@@ -1255,7 +1255,7 @@ def test_training_zone_query_same_zone_does_not_backtrack(training_ws_client, as
 
         time.sleep(0.1)
 
-    # Still 2 entries — same zone, no backtrack recorded
+    # Still 2 entries (same zone, no backtrack recorded)
     async def _check_no_backtrack():
         async with async_session() as db:
             result = await db.execute(
@@ -1369,7 +1369,7 @@ def test_training_deaths_attributed_to_last_visit_after_backtrack(
         ws.receive_json()  # leaderboard_update
         ws.receive_json()  # zone_update
 
-        # Die twice — should go to the SECOND entry for zone_a_id (the revisit)
+        # Die twice, should go to the SECOND entry for zone_a_id (the revisit)
         ws.send_json({"type": "status_update", "igt_ms": 12000, "death_count": 2})
 
         import time
@@ -1548,7 +1548,7 @@ def test_training_multiple_spectators_coexist(training_ws_client, training_sessi
             msg2 = ws2.receive_json()
             assert msg2["type"] == "race_state"
 
-            # First spectator is still alive — connect mod to trigger a broadcast
+            # First spectator is still alive, connect mod to trigger a broadcast
             with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws_mod:
                 ws_mod.send_json(
                     {
@@ -1597,7 +1597,7 @@ async def test_get_training_session_anonymous(test_client, training_user, traini
         )
         session_id = create_resp.json()["id"]
 
-        # Fetch without auth — should succeed
+        # Fetch without auth, should succeed
         resp = await client.get(f"/api/training/{session_id}")
         assert resp.status_code == 200
         data = resp.json()
@@ -1626,7 +1626,7 @@ async def test_abandon_training_session_requires_auth(test_client, training_user
         )
         session_id = create_resp.json()["id"]
 
-        # Abandon without auth — should fail
+        # Abandon without auth, should fail
         resp = await client.post(f"/api/training/{session_id}/abandon")
         assert resp.status_code == 401
 
@@ -1702,7 +1702,7 @@ async def test_ghost_endpoint_returns_finished_sessions(
                 {"node_id": "stormveil_01", "igt_ms": 120000, "deaths": 2},
             ],
         )
-        # Also create an ACTIVE session — should NOT appear in ghosts
+        # Also create an ACTIVE session, should NOT appear in ghosts
         ghost2_active = TrainingSession(
             user_id=ghost_user.id,
             seed_id=training_seed.id,

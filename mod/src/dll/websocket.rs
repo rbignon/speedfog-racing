@@ -79,7 +79,7 @@ pub enum IncomingMessage {
         original_tier: Option<i32>,
         exits: Vec<ExitInfo>,
     },
-    /// Event flag drained from outgoing channel on reconnect — must be re-buffered
+    /// Event flag drained from outgoing channel on reconnect, must be re-buffered
     RequeueEventFlag {
         flag_id: u32,
         igt_ms: u32,

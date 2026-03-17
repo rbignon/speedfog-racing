@@ -154,7 +154,7 @@ def integration_db():
         os.remove(INTEGRATION_TEST_DB)
 
     # Create new engine and session maker for tests
-    # NullPool: each session creates/closes its own connection — no pool
+    # NullPool: each session creates/closes its own connection, no pool
     # cleanup issues when the TestClient's event loop shuts down.
     test_engine = create_async_engine(
         f"sqlite+aiosqlite:///{INTEGRATION_TEST_DB}",
@@ -729,7 +729,7 @@ def test_status_update_transitions_to_playing_with_start_zone(
     )
     assert response.status_code == 200
 
-    # Send first status_update — should transition READY → PLAYING + start zone
+    # Send first status_update, should transition READY -> PLAYING + start zone
     # (player_update only goes to spectators, so verify via DB)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
@@ -1152,17 +1152,17 @@ def test_event_flag_lower_layer_recorded_without_regressing(
         # Transition to PLAYING via status_update (places in start_node, layer 0).
         mod0.send_status_update(igt_ms=1000, death_count=0)
 
-        # Progress to node_b (layer 2) — skipping node_a (layer 1) is fine
+        # Progress to node_b (layer 2), skipping node_a (layer 1) is fine
         mod0.send_event_flag(9000001, igt_ms=20000)
         lb = mod0.receive_until_type("leaderboard_update")
         p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
         assert p0["current_layer"] == 2
 
-        # Now send flag for node_a (layer 1) — recorded but current_layer stays at 2
+        # Now send flag for node_a (layer 1), recorded but current_layer stays at 2
         mod0.send_event_flag(9000000, igt_ms=25000)
         lb2 = mod0.receive_until_type("leaderboard_update")
         p0 = next(p for p in lb2["participants"] if p["twitch_username"] == "player0")
-        assert p0["current_layer"] == 2  # high watermark — not regressed
+        assert p0["current_layer"] == 2  # high watermark, not regressed
 
     # Verify DB state
     async def check_state():
@@ -1452,7 +1452,7 @@ def test_event_flag_same_layer_accepted(integration_client, race_with_participan
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
 
-        # Transition to PLAYING (no response to mod — sequential processing)
+        # Transition to PLAYING (no response to mod, sequential processing)
         mod0.send_status_update(igt_ms=1000, death_count=0)
 
         # Progress to node_a (layer 1)
@@ -1461,7 +1461,7 @@ def test_event_flag_same_layer_accepted(integration_client, race_with_participan
         p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
         assert p0["current_layer"] == 1
 
-        # Send flag for node_a2 (also layer 1) — same layer, should be accepted
+        # Send flag for node_a2 (also layer 1), same layer, should be accepted
         mod0.send_event_flag(9000010, igt_ms=15000)
         lb = mod0.receive_until_type("leaderboard_update")
 
@@ -1500,7 +1500,7 @@ def test_zone_update_content(integration_client, race_with_participants):
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth(drain=False)["type"] == "auth_ok"
 
-        # Reconnect to running race sends zone_update for start node — consume it
+        # Reconnect to running race sends zone_update for start node, consume it
         zu_start = mod0.receive_until_type("zone_update")
         assert zu_start["node_id"] == "start_node"
         assert zu_start["display_name"] == "Chapel of Anticipation"
@@ -2009,7 +2009,7 @@ def test_zone_query_map_id_death_respawn(integration_db, integration_client, see
         mod = ModTestClient(ws, mod_token)
         assert mod.auth()["type"] == "auth_ok"
 
-        # Send zone_query with map_id only — simulates death/respawn
+        # Send zone_query with map_id only (simulates death/respawn)
         mod.send_zone_query(map_id="m12_04_00_00")
         zone_update = mod.receive_until_type("zone_update")
         assert zone_update["node_id"] == "ainsel_boss_node"
@@ -2141,13 +2141,13 @@ def test_zone_query_no_data_ignored(integration_db, integration_client, seed_fol
     resp = integration_client.post(f"/api/races/{race_id}/start", headers=org_headers)
     assert resp.status_code == 200
 
-    # Connect and send zone_query with no data — should be silently ignored
+    # Connect and send zone_query with no data, should be silently ignored
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
         mod = ModTestClient(ws, mod_token)
         assert mod.auth()["type"] == "auth_ok"
 
         mod.send_zone_query()  # No grace, no map_id
-        # Should not receive zone_update — next message should time out
+        # Should not receive zone_update; next message should time out
         with pytest.raises(TimeoutError):
             mod.receive(timeout=1)
 
@@ -2183,7 +2183,7 @@ def test_finished_participant_status_update_ignored(
         assert p0["status"] == "finished"
         assert p0["igt_ms"] == 50000
 
-    # Player 0 reconnects and sends status_update with higher IGT — should be dropped
+    # Player 0 reconnects and sends status_update with higher IGT, should be dropped
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
@@ -2230,7 +2230,7 @@ def test_finished_participant_event_flag_ignored(
         mod0.send_event_flag(9000003, igt_ms=50000)
         mod0.receive_until_type("leaderboard_update")
 
-    # Player 0 sends an event_flag after finishing — should be dropped
+    # Player 0 sends an event_flag after finishing, should be dropped
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"

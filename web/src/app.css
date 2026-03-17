@@ -42,9 +42,9 @@
   --radius-md: 6px;
   --radius-lg: 8px;
 
-  /* Breakpoints (for reference — CSS custom properties cannot be used in @media)
-   * --breakpoint-sm: 640px   — content pages (about, new, manage, invite, homepage)
-   * --breakpoint-md: 768px   — multi-column layouts (race detail with sidebar)
+  /* Breakpoints (for reference, CSS custom properties cannot be used in @media)
+   * --breakpoint-sm: 640px   content pages (about, new, manage, invite, homepage)
+   * --breakpoint-md: 768px   multi-column layouts (race detail with sidebar)
    */
 
   /* Effects */

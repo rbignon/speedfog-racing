@@ -269,14 +269,14 @@ async def test_join_full_race_at_capacity(
         assert response.status_code == 201
         race = response.json()
 
-        # Player 1 joins — fills the race (organizer + player1 = 2)
+        # Player 1 joins, fills the race (organizer + player1 = 2)
         response = await client.post(
             f"/api/races/{race['id']}/join",
             headers={"Authorization": f"Bearer {player.api_token}"},
         )
         assert response.status_code == 200
 
-        # Player 2 tries to join — should fail (full)
+        # Player 2 tries to join, should fail (full)
         response = await client.post(
             f"/api/races/{race['id']}/join",
             headers={"Authorization": f"Bearer {player2.api_token}"},

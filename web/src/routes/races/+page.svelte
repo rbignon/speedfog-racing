@@ -60,7 +60,7 @@
 </script>
 
 <svelte:head>
-	<title>Races — SpeedFog Racing</title>
+	<title>Races - SpeedFog Racing</title>
 </svelte:head>
 
 <main class="races-page">

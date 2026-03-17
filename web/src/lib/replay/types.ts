@@ -6,7 +6,7 @@ export const REPLAY_DEFAULTS = {
   DURATION_MS: 60_000,
   /** Orbit radius in SVG px when player is in a zone */
   ORBIT_RADIUS: 9,
-  /** Orbit period in ms (wall-clock) — one full circle */
+  /** Orbit period in ms (wall-clock), one full circle */
   ORBIT_PERIOD_MS: 2000,
   /** Duration of a skull pop-and-fade animation (ms) */
   SKULL_ANIM_MS: 800,

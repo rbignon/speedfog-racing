@@ -301,7 +301,7 @@ async def test_discard_pool(async_db, seed_pool_dir):
         await async_db.flush()
         await async_db.commit()
 
-        # Discard the pool — affects both AVAILABLE and CONSUMED
+        # Discard the pool (affects both AVAILABLE and CONSUMED)
         count = await discard_pool(async_db, "standard")
         assert count == 2
 

@@ -7,7 +7,7 @@ Discord notifications when a player starts a training session while live on Twit
 When the mod authenticates on the training WebSocket (`/ws/training/{session_id}/mod`), after sending `auth_ok`:
 
 1. Fire-and-forget a background task that:
-   a. Checks the per-user cooldown (30 min default) — bail early if throttled
+   a. Checks the per-user cooldown (30 min default), bail early if throttled
    b. Calls the Twitch Helix API directly to check if the player is live
    c. If live, sends the Discord webhook notification
 
@@ -17,7 +17,7 @@ The Twitch live check is done inside the background task (not via `TwitchLiveSer
 
 New environment variable:
 
-- `DISCORD_TRAINING_WEBHOOK_URL` — separate webhook URL for training notifications. If absent, no training notifications are sent.
+- `DISCORD_TRAINING_WEBHOOK_URL`: separate webhook URL for training notifications. If absent, no training notifications are sent.
 
 Add to `config.py` as an optional field (`str | None = None`).
 
@@ -50,13 +50,13 @@ async def send_training_live_notification(
 
 1. Check `DISCORD_TRAINING_WEBHOOK_URL` is configured, else return
 2. Check cooldown for `user.id`, else return (prune expired entries, log at DEBUG)
-3. Call `twitch_live_service.check_live_status([user.twitch_username])` — this is an instance method on the module-level singleton from `services/twitch_live.py`. It makes a direct Helix API call and returns a `set[str]` of live usernames (stateless, no side effects on the singleton's cache).
+3. Call `twitch_live_service.check_live_status([user.twitch_username])`. This is an instance method on the module-level singleton from `services/twitch_live.py`. It makes a direct Helix API call and returns a `set[str]` of live usernames (stateless, no side effects on the singleton's cache).
 4. If username not in returned set, return
 5. Build embed with stream URL as `https://twitch.tv/{user.twitch_username}`
 6. POST to webhook
 7. Update cooldown timestamp on success
 
-Assumes Twitch credentials (`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`) are configured — any deployed instance with Discord webhooks will have these. Errors are caught by the `add_done_callback` on the task.
+Assumes Twitch credentials (`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`) are configured; any deployed instance with Discord webhooks will have these. Errors are caught by the `add_done_callback` on the task.
 
 ### Call site in `training_mod.py`
 
@@ -81,11 +81,11 @@ Fire-and-forget with `add_done_callback` for exception logging, same pattern as 
 
 No changes to:
 
-- **Frontend** — no UI additions
-- **Mod** — no protocol changes
-- **Database** — no model changes
-- **Training WebSocket protocol** — no new messages
-- **TwitchLiveService** — polling scope unchanged
+- **Frontend**: no UI additions
+- **Mod**: no protocol changes
+- **Database**: no model changes
+- **Training WebSocket protocol**: no new messages
+- **TwitchLiveService**: polling scope unchanged
 
 ## Testing
 

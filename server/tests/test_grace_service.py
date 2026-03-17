@@ -66,7 +66,7 @@ def test_resolve_grace_to_node_multi_zone():
 def test_resolve_grace_to_node_not_in_graph():
     """Grace that maps to a zone_id not present in any graph node returns None."""
     mapping = load_graces_mapping()
-    # 10002951 → zone_id "stormveil_margit" — not in SAMPLE_GRAPH
+    # 10002951 -> zone_id "stormveil_margit", not in SAMPLE_GRAPH
     node_id = resolve_grace_to_node(10002951, SAMPLE_GRAPH, mapping)
     assert node_id is None
 
@@ -187,7 +187,7 @@ def test_resolve_zone_query_ambiguous_both_explored():
 def test_resolve_zone_query_fast_travel_failed_grace_no_fallback():
     """Fast travel with unmapped grace_entity_id: do NOT fall back to most recent.
 
-    grace_entity_id being present signals fast travel — guessing would pollute the DAG.
+    grace_entity_id being present signals fast travel. Guessing would pollute the DAG.
     """
     graph = {
         "nodes": {
@@ -356,7 +356,7 @@ def test_resolve_zone_query_single_match_unexplored():
         }
     }
     mapping = load_graces_mapping()
-    # Player has explored a different node — ainsel_boss_node is not in history
+    # Player has explored a different node; ainsel_boss_node is not in history
     history = [{"node_id": "some_other_node", "igt_ms": 60000}]
     node_id = resolve_zone_query(graph, mapping, map_id="m12_04_00_00", zone_history=history)
     assert node_id is None

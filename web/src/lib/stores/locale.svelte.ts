@@ -1,5 +1,5 @@
 /**
- * Locale store — resolves effective locale from user preference.
+ * Locale store: resolves effective locale from user preference.
  *
  * User.locale is always set (initialized from browser language on first login),
  * so this is a simple accessor with a fallback for unauthenticated contexts.

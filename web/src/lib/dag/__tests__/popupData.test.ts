@@ -733,7 +733,7 @@ describe("computeConnections with exitTexts", () => {
   });
 
   it("hides entrance text when source node is undiscovered", () => {
-    // Only stormveil and caelid discovered — start is NOT (except via visibility)
+    // Only stormveil and caelid discovered, start is NOT (except via visibility)
     const discovered = new Set(["stormveil", "caelid"]);
     const conns = computeConnections(
       "stormveil",

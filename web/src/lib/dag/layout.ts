@@ -1,6 +1,6 @@
 /**
  * Pure layout algorithm for the metro DAG visualization.
- * No DOM, no Svelte — fully testable.
+ * No DOM, no Svelte. Fully testable.
  */
 
 import {
@@ -208,7 +208,7 @@ function assignEvenSpacing(nodes: DagNode[], yPos: Map<string, number>): void {
 /**
  * Route an edge from (x1,y1) to (x2,y2) using metro-style segments.
  * - If dy == 0: single horizontal segment
- * - Else: 3 segments — horizontal departure, 45-degree diagonal, horizontal arrival
+ * - Else: 3 segments: horizontal departure, 45-degree diagonal, horizontal arrival
  */
 function routeEdge(
   x1: number,
@@ -268,7 +268,7 @@ function routeEdge(
 
 /**
  * Compute the full metro DAG layout.
- * Pure function — no DOM, no side effects.
+ * Pure function. No DOM, no side effects.
  */
 export function computeLayout(graph: DagGraph): DagLayout {
   if (graph.nodes.length === 0) {

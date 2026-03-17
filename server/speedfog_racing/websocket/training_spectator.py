@@ -62,7 +62,7 @@ async def handle_training_spectator_websocket(
             await websocket.close(code=4003, reason="Invalid auth")
             return
 
-        # Token is optional — anonymous spectators don't send one
+        # Token is optional; anonymous spectators don't send one
         token = auth_msg.get("token")
         user_id = None
 
@@ -75,7 +75,7 @@ async def handle_training_spectator_websocket(
                     if user.locale:
                         locale = user.locale
 
-            # Load session (no ownership check — public read-only)
+            # Load session (no ownership check, public read-only)
             result = await db.execute(
                 select(TrainingSession)
                 .options(
@@ -93,7 +93,7 @@ async def handle_training_spectator_websocket(
             # Send initial state
             await _send_initial_state(websocket, session, locale=locale)
 
-        # Register connection — use user_id if authenticated, else random UUID
+        # Register connection: use user_id if authenticated, else random UUID
         spectator_id = user_id or uuid.uuid4()
         await training_manager.connect_spectator(session_id, spectator_id, websocket)
 

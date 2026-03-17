@@ -89,12 +89,12 @@ pub struct SeedInfo {
     pub total_layers: i32,
     #[serde(default)]
     pub event_ids: Vec<u32>,
-    /// Flag ID for the final boss kill — sent immediately (no loading screen).
+    /// Flag ID for the final boss kill, sent immediately (no loading screen).
     #[serde(default)]
     pub finish_event: Option<u32>,
     #[serde(default)]
     pub spawn_items: Vec<SpawnItem>,
-    /// Seed ID — compared against config to detect stale seed packs after re-roll
+    /// Seed ID, compared against config to detect stale seed packs after re-roll
     #[serde(default)]
     pub seed_id: Option<String>,
 }

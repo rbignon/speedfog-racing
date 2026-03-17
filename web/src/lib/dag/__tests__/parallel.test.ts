@@ -216,7 +216,7 @@ describe("expandNodePath", () => {
     ];
     const { edgeMap, adjacency } = buildMaps(nodes, edges);
 
-    // No entryTypes param at all — same as today, BFS fills gaps
+    // No entryTypes param at all, same as today (BFS fills gaps)
     const result = expandNodePath(["a", "c"], edgeMap, adjacency);
     expect(result).toEqual(["a", "b", "c"]);
   });
@@ -248,7 +248,7 @@ describe("expandNodePath", () => {
       else biAdj.set(e.toId, [e.fromId]);
     }
 
-    // Zone history: a, b, c, d — player explored c then backtracked to d
+    // Zone history: a, b, c, d. Player explored c then backtracked to d
     const result = expandNodePath(["a", "b", "c", "d"], edgeMap, biAdj);
     expect(result).toEqual(["a", "b", "c", "b", "a", "d"]);
   });
@@ -540,7 +540,7 @@ describe("buildPlayerWaypoints", () => {
   });
 
   it("splits into separate segments at teleport gaps", () => {
-    // Graph: a→b, c→d (no edge between b and c — teleport gap)
+    // Graph: a->b, c->d (no edge between b and c, teleport gap)
     const nodes = [
       makeNode("a", 0, 0),
       makeNode("b", 100, 0),

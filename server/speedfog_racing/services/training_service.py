@@ -56,7 +56,7 @@ async def get_training_seed(
     if not allow_reset:
         return None
 
-    # Pool exhausted for this user — reset: pick from all available seeds
+    # Pool exhausted for this user. Reset: pick from all available seeds.
     logger.info(f"User {user_id} exhausted training pool '{pool_name}', resetting")
     result = await db.execute(
         select(Seed).where(

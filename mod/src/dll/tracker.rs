@@ -125,7 +125,7 @@ pub struct RaceTracker {
     pending_event_flags: Vec<(u32, u32)>,
     /// Event flags detected this loading cycle, sent at loading exit
     deferred_event_flags: Vec<(u32, u32)>,
-    /// finish_event from server — sent immediately (no loading screen on boss kill)
+    /// finish_event from server, sent immediately (no loading screen on boss kill)
     finish_event: Option<u32>,
 
     // Status update throttle
@@ -147,7 +147,7 @@ pub struct RaceTracker {
     spawner_thread: Option<JoinHandle<()>>,
 
     // Items already spawned this session (in-process guard for reconnects).
-    // The event flag in game memory is unreliable across reconnects — the game
+    // The event flag in game memory is unreliable across reconnects: the game
     // may silently clear our flag via internal sync. This bool is the primary guard.
     items_spawned: bool,
 
@@ -349,7 +349,7 @@ impl RaceTracker {
 
         // Loading screen exit: send deferred event_flags (certain) or zone_query (probabilistic)
         if position_readable && !self.was_position_readable {
-            // Force one immediate flag scan — catches flags set during loading
+            // Force one immediate flag scan to catch flags set during loading
             // (e.g. Erdtree burn, Maliketh warp) that the 10Hz poll couldn't read
             // because is_flag_set() returns None while position is unreadable.
             if !self.event_ids.is_empty() {
@@ -389,7 +389,7 @@ impl RaceTracker {
                 && !self.is_countdown_active()
             {
                 if !self.deferred_event_flags.is_empty() {
-                    // Fog gate traversal — send deferred flags now that loading is done
+                    // Fog gate traversal: send deferred flags now that loading is done
                     for (flag_id, igt_ms) in self.deferred_event_flags.drain(..) {
                         self.ws_client.send_event_flag(flag_id, igt_ms);
                         self.last_sent_debug = Some(format!(
@@ -399,7 +399,7 @@ impl RaceTracker {
                         info!(flag_id, "[RACE] Deferred event flag sent at loading exit");
                     }
                 } else {
-                    // No fog gate — death/respawn/quit-out/fast-travel
+                    // No fog gate (death/respawn/quit-out/fast-travel)
                     let igt_ms = self.game_state.read_igt().unwrap_or(0);
                     let pos = self.game_state.read_position();
                     let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
@@ -428,7 +428,7 @@ impl RaceTracker {
                     }
                 }
             } else {
-                // Not connected or race not running — clean up
+                // Not connected or race not running, clean up
                 self.deferred_event_flags.clear();
                 let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
                 if grace_id > 0 {
@@ -447,7 +447,7 @@ impl RaceTracker {
             let igt_ms = self.game_state.read_igt().unwrap_or(0);
             for &flag_id in &self.event_ids {
                 if self.finish_event == Some(flag_id) {
-                    // finish_event: one-shot — use triggered_flags guard
+                    // finish_event: one-shot, use triggered_flags guard
                     if !self.triggered_flags.contains(&flag_id) {
                         if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
                             self.triggered_flags.insert(flag_id);
@@ -468,7 +468,7 @@ impl RaceTracker {
                         }
                     }
                 } else {
-                    // Regular fog gate — clear after capture so re-traversals are detected
+                    // Regular fog gate: clear after capture so re-traversals are detected
                     if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
                         self.event_flag_reader.set_flag(flag_id, false);
                         self.deferred_event_flags.push((flag_id, igt_ms));
@@ -487,7 +487,7 @@ impl RaceTracker {
         let igt_ms = self.game_state.read_igt().unwrap_or(0);
         let deaths = self.game_state.read_deaths().unwrap_or(0);
 
-        // Send ready on (re)connection (skip in training mode — server auto-starts)
+        // Send ready on (re)connection (skip in training mode since server auto-starts)
         if !self.ready_sent {
             if !self.config.server.training {
                 self.ws_client.send_ready();
@@ -577,8 +577,8 @@ impl RaceTracker {
         }
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
-        // During quit-outs IGT is 0 — skip to avoid erroneous data
-        // Stop once finished — IGT is frozen at finish time
+        // During quit-outs IGT is 0, skip to avoid erroneous data.
+        // Stop once finished since IGT is frozen at finish time.
         if self.last_status_update.elapsed() >= Duration::from_secs(1)
             && igt_ms > 0
             && self.is_race_running()
@@ -615,7 +615,7 @@ impl RaceTracker {
                         self.set_status("Disconnected".to_string());
                     }
                     ConnectionStatus::Connecting => {
-                        // Silent — the dot indicator handles initial connection
+                        // Silent: the dot indicator handles initial connection
                     }
                 }
             }
@@ -635,9 +635,9 @@ impl RaceTracker {
                 self.event_ids = seed.event_ids.clone();
                 self.finish_event = seed.finish_event;
                 // Don't clear triggered_flags on reconnect: finish_event is one-shot.
-                // Regular fog gate flags are no longer tracked in triggered_flags —
+                // Regular fog gate flags are no longer tracked in triggered_flags;
                 // they're cleared in game memory after capture for re-traversal detection.
-                // After (re)auth, the server sends the player's current zone — reveal
+                // After (re)auth, the server sends the player's current zone. Reveal
                 // it immediately without requiring a loading cycle.
                 self.loading_exit_time = Some(Instant::now() - ZONE_REVEAL_DELAY);
                 self.race_state.race = Some(race);
@@ -651,7 +651,7 @@ impl RaceTracker {
                             warn!(
                                 config = %config_seed_id,
                                 server = %server_seed_id,
-                                "Seed mismatch — seed pack is outdated"
+                                "Seed mismatch: seed pack is outdated"
                             );
                             self.seed_mismatch = true;
                         } else {

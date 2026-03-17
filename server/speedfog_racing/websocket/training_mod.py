@@ -454,7 +454,7 @@ async def _handle_zone_query(
             return
 
         # Record backtrack entry when the player moved to a different node
-        # (death/teleport/quit-out — no event flag fired)
+        # (death/teleport/quit-out, no event flag fired)
         if node_id != session.current_zone:
             logger.info(
                 "zone_query backtrack: %s -> %s for training session %s",

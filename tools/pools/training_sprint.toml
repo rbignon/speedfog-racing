@@ -4,4 +4,4 @@ extends = "sprint"
 
 [display]
 type = "training"
-description = "Quick solo run — minimal exploration"
+description = "Quick solo run, minimal exploration"

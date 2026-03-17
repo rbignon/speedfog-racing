@@ -149,7 +149,7 @@ Sent when the mod detects an event flag transition (0 → 1). The server resolve
 
 **Revisited nodes:** Multiple flags can map to the same DAG node (e.g., shared entrance merges where several branches connect to a single cluster). When a player backtracks and re-enters a previously visited node, a new entry is appended to `zone_history` with the current `igt_ms`. This enables accurate per-visit time and death attribution. Only first visits trigger a `leaderboard_update` broadcast; revisits trigger a `player_update` instead.
 
-**Timing:** Regular event flags (fog gate traversals) are detected immediately by polling but deferred until loading screen exit. This ensures spectators see progress updates in sync with the player's arrival, and prevents zone name spoilers during loading screens. The `finish_event` (boss kill) is an exception — it is sent immediately since boss kills don't trigger a loading screen.
+**Timing:** Regular event flags (fog gate traversals) are detected immediately by polling but deferred until loading screen exit. This ensures spectators see progress updates in sync with the player's arrival, and prevents zone name spoilers during loading screens. The `finish_event` (boss kill) is an exception: it is sent immediately since boss kills don't trigger a loading screen.
 
 ```json
 {
@@ -161,7 +161,7 @@ Sent when the mod detects an event flag transition (0 → 1). The server resolve
 
 #### `zone_query`
 
-Sent at loading screen exit when no event_flag was detected (death, respawn, fast travel, quit-out). All fields are optional — the server tries grace lookup first, then falls back to map_id-based resolution.
+Sent at loading screen exit when no event_flag was detected (death, respawn, fast travel, quit-out). All fields are optional. The server tries grace lookup first, then falls back to map_id-based resolution.
 
 ```json
 {
@@ -188,7 +188,7 @@ Sent at loading screen exit when no event_flag was detected (death, respawn, fas
 
 #### `finished`
 
-Player finished the race. Server-side schema only — the mod does not send this directly. Instead, finishing is handled automatically when the server receives an `event_flag` matching the seed's `finish_event`. The server does accept `finished` if sent directly, but this path is not used by the mod in practice.
+Player finished the race. Server-side schema only; the mod does not send this directly. Instead, finishing is handled automatically when the server receives an `event_flag` matching the seed's `finish_event`. The server does accept `finished` if sent directly, but this path is not used by the mod in practice.
 
 ```json
 {
@@ -258,13 +258,13 @@ Authentication successful. Contains initial race state.
 
 `seed_id`: the seed's UUID, used by the mod to detect stale seed packs after a reroll (compared against the seed_id in the local config).
 
-`event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod — no mapping to zones or nodes is provided. `graph_json` is always `null` for mods.
+`event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod, no mapping to zones or nodes is provided. `graph_json` is always `null` for mods.
 
 `finish_event` _(int | null)_: Flag ID for the final boss kill. The mod sends this immediately (no loading screen on boss kill). All other event flags are deferred to loading screen exit.
 
 `spawn_items`: list of items to spawn at runtime via `func_item_inject`. Used for item types not supported by EMEVD's `DirectlyGivePlayerItem` (e.g., Gem/Ash of War, type 4). Each entry has `id` (EquipParamGem row ID) and `qty` (default 1). The mod spawns these once after game load, using event flag `1040292052` to prevent re-giving on reconnect or game restart. `null` if no runtime-spawned items exist.
 
-**Note:** The `race` object includes `started_at` and `seeds_released_at`, but the mod only uses `id`, `name`, and `status` — the other fields are silently ignored.
+**Note:** The `race` object includes `started_at` and `seeds_released_at`, but the mod only uses `id`, `name`, and `status`; the other fields are silently ignored.
 
 #### `auth_error`
 
@@ -279,7 +279,7 @@ Authentication failed. Connection is closed with code 4003.
 
 #### `error`
 
-Generic error during the message loop (not auth phase). Sent when a gameplay message (`status_update`, `event_flag`, `finished`) is rejected — for example, because the race is not running.
+Generic error during the message loop (not auth phase). Sent when a gameplay message (`status_update`, `event_flag`, `finished`) is rejected, for example because the race is not running.
 
 ```json
 {
@@ -339,7 +339,7 @@ Race status changed. Broadcast to all mods and spectators. Includes `started_at`
 | `started_at`        | `string?` | ISO 8601 timestamp, included when status is `running`          |
 | `countdown_seconds` | `int?`    | Cosmetic countdown duration in seconds, included for `running` |
 
-**Note:** The mod does not currently consume `started_at` from this message — the field is silently ignored by serde.
+**Note:** The mod does not currently consume `started_at` from this message; the field is silently ignored by serde.
 
 #### `zone_update`
 
@@ -380,7 +380,7 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
 
 #### `player_update`
 
-Single player update — broadcast to all connections (mods + spectators). See also the [Spectator Connection](#websocket-spectator-connection) section.
+Single player update, broadcast to all connections (mods + spectators). See also the [Spectator Connection](#websocket-spectator-connection) section.
 
 #### `ping`
 
@@ -399,7 +399,7 @@ The server sends `{"type": "ping"}` to each connected mod every **30 seconds**. 
 - **Server → Mod:** `ping` every 30s
 - **Mod → Server:** `pong` in response
 - **Mod timeout:** If no `ping` is received for **60 seconds**, the mod treats the connection as dead and triggers a reconnect
-- The server does not track pong responses — it relies on TCP-level `WebSocketDisconnect` for cleanup
+- The server does not track pong responses; it relies on TCP-level `WebSocketDisconnect` for cleanup
 
 ### Reconnection
 
@@ -578,7 +578,7 @@ Server → Client messages: `auth_ok`, `auth_error`, `error`, `race_start`, `zon
 
 Live web UI updates during training. Accepts both authenticated and anonymous spectators.
 
-- **Auth handshake required**: An `auth` message must be sent within 5 seconds (connection closed with code 4001 otherwise), but the `token` field is optional — omit it for anonymous access
+- **Auth handshake required**: An `auth` message must be sent within 5 seconds (connection closed with code 4001 otherwise), but the `token` field is optional (omit it for anonymous access)
 - **`race_state`**: Sent on connect with full graph (always included for training), seed info, and participant state
 - **`leaderboard_update`**: Single-participant update on status/zone changes
 - **`race_status_change`**: Sent when session finishes or is abandoned
@@ -617,7 +617,7 @@ Shared schema across all WebSocket messages:
 | `gap_ms`              | `int?`    | Gap to the leader in milliseconds (see below)   |
 | `layer_entry_igt`     | `int?`    | Player's IGT when entering their current layer  |
 
-`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack" }`. A node may appear multiple times if the player backtracks — each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). Entries without `type` are treated as `"fog"` for backward compatibility.
+`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack" }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). Entries without `type` are treated as `"fog"` for backward compatibility.
 
 **Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`, `gap_ms`, `layer_entry_igt`). Extra fields like `color_index`, `mod_connected`, and `zone_history` are present on the wire but silently ignored by serde.
 
@@ -654,8 +654,8 @@ Included in `auth_ok` (mod) and `race_state` (spectator):
 
 Participants in `leaderboard_update` are pre-sorted by priority:
 
-1. **Finished** — by `igt_ms` ascending (fastest first)
-2. **Playing** — by `current_layer` descending (furthest first), then `igt_ms` ascending
+1. **Finished**: by `igt_ms` ascending (fastest first)
+2. **Playing**: by `current_layer` descending (furthest first), then `igt_ms` ascending
 3. **Ready**
 4. **Registered**
 5. **Abandoned**
@@ -669,10 +669,10 @@ Gap timing uses a LiveSplit-style formula. The server computes `gap_ms` for web 
 Computed during `broadcast_leaderboard` for web spectators:
 
 - **Leader:** `null`
-- **Playing (within budget):** `player_layer_entry_igt - leader_splits[current_layer]` — fixed entry delta while the player's IGT is within the leader's time budget on the layer
-- **Playing (exceeded budget):** `igt_ms - leader_splits[current_layer + 1]` — gap grows once the player exceeds the leader's exit IGT for that layer
+- **Playing (within budget):** `player_layer_entry_igt - leader_splits[current_layer]`, fixed entry delta while the player's IGT is within the leader's time budget on the layer
+- **Playing (exceeded budget):** `igt_ms - leader_splits[current_layer + 1]`, gap grows once the player exceeds the leader's exit IGT for that layer
 - **Playing (leader on same layer):** entry delta only (no exit split available)
-- **Finished:** `igt_ms - leader_igt_ms` — direct time delta
+- **Finished:** `igt_ms - leader_igt_ms`, direct time delta
 - **Ready / Registered / Abandoned:** `null`
 
 #### Client-side (mod)
@@ -714,7 +714,7 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 
 ### Security Notes
 
-**Spectator WebSocket authentication (M9):** Spectator connections (`/ws/race/{race_id}`) are intentionally unauthenticated by default. Race leaderboard data is public by design. Optional auth within a 2-second grace period enables role-based DAG visibility during SETUP — this prevents anonymous viewers from seeing the graph before the race starts. During `running` and `finished`, all spectators see the DAG. This is an accepted design trade-off.
+**Spectator WebSocket authentication (M9):** Spectator connections (`/ws/race/{race_id}`) are intentionally unauthenticated by default. Race leaderboard data is public by design. Optional auth within a 2-second grace period enables role-based DAG visibility during SETUP, which prevents anonymous viewers from seeing the graph before the race starts. During `running` and `finished`, all spectators see the DAG. This is an accepted design trade-off.
 
 **CSRF (M5):** Auth tokens are stored in `localStorage` and sent via `Authorization` header, not auto-attached cookies. This makes CSRF attacks infeasible since the token is never sent automatically. If token storage changes to cookies in the future, CSRF protection must be added.
 
@@ -726,9 +726,9 @@ Gameplay messages (`status_update`, `event_flag`, `zone_query`, `finished`) are 
 
 1. **Server:** Each handler checks `race.status == RUNNING` before processing. If the race is not running, the server responds with an `error` message and discards the payload.
 2. **Mod (outgoing):** The mod gates `status_update` and `event_flag` sends behind `is_race_running()`. Event flags detected before the race starts are buffered and sent once the race transitions to running.
-3. **Mod (overlay):** A colored banner shows the race state — orange "WAITING FOR START" (setup), green "GO!" for 3 seconds (running), and green "RACE FINISHED" (finished).
+3. **Mod (overlay):** A colored banner shows the race state: orange "WAITING FOR START" (setup), green "GO!" for 3 seconds (running), and green "RACE FINISHED" (finished).
 
-The `ready` and `pong` messages are not gated — they are valid in any state.
+The `ready` and `pong` messages are not gated; they are valid in any state.
 
 ### Zone Tracking
 
@@ -757,5 +757,5 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 | `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update` | `leaderboard_update` or `player_update` |
 | Race starts                    | `race_start` + `zone_update` + `race_status_change`               | `race_state` + `race_status_change`     |
 | Race finishes                  | `race_status_change`                                              | `race_state` + `race_status_change`     |
-| Seeds released                 | —                                                                 | `race_state`                            |
-| Spectator connects/disconnects | —                                                                 | `spectator_count`                       |
+| Seeds released                 | (none)                                                            | `race_state`                            |
+| Spectator connects/disconnects | (none)                                                            | `spectator_count`                       |

@@ -8,7 +8,7 @@ import type { DagNodeType } from "./types";
 // Layout tuning
 // =============================================================================
 
-/** Padding around the SVG content (px) — accounts for rotated label overflow */
+/** Padding around the SVG content (px). Accounts for rotated label overflow. */
 export const PADDING = 90;
 
 /** Minimum gap between layers (px) */
@@ -77,19 +77,19 @@ export const LABEL_OFFSET_Y = 18;
 // =============================================================================
 
 export const PLAYER_COLORS = [
-  // Tier 1: anchor hues — maximum mutual contrast
+  // Tier 1: anchor hues, maximum mutual contrast
   "#38BDF8", // 0  sky blue
   "#FB7185", // 1  rose
   "#4ADE80", // 2  green
   "#FB923C", // 3  orange
   "#A78BFA", // 4  violet
   "#FACC15", // 5  yellow
-  // Tier 2: secondary hues — fill the gaps
+  // Tier 2: secondary hues, fill the gaps
   "#2DD4BF", // 6  teal
   "#E879F9", // 7  fuchsia
   "#F87171", // 8  red
   "#A3E635", // 9  lime
-  // Tier 3: tertiary hues — intermediate positions
+  // Tier 3: tertiary hues, intermediate positions
   "#818CF8", // 10 indigo
   "#34D399", // 11 emerald
   "#FBBF24", // 12 amber

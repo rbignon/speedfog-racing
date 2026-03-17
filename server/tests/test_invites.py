@@ -243,7 +243,7 @@ async def test_accept_invite_color_index_sequential(
         await db.commit()
 
     async with test_client as client:
-        # Accept first invite — should get color_index=1
+        # Accept first invite, should get color_index=1
         response = await client.post(
             "/api/invite/test_invite_token/accept",
             headers={"Authorization": f"Bearer {invited_user.api_token}"},
@@ -251,7 +251,7 @@ async def test_accept_invite_color_index_sequential(
         assert response.status_code == 200
         assert response.json()["participant"]["color_index"] == 1
 
-        # Accept second invite — should get color_index=2
+        # Accept second invite, should get color_index=2
         response = await client.post(
             "/api/invite/invite_token_2/accept",
             headers={"Authorization": "Bearer player_two_token"},

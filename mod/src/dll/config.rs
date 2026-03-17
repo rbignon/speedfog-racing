@@ -20,10 +20,10 @@ pub struct ServerSettings {
     pub mod_token: String,
     /// Race ID (UUID)
     pub race_id: String,
-    /// Training mode — hides leaderboard, uses /ws/training/ endpoint
+    /// Training mode: hides leaderboard, uses /ws/training/ endpoint
     #[serde(default)]
     pub training: bool,
-    /// Seed ID from seed pack — used to detect stale packs after seed re-roll
+    /// Seed ID from seed pack, used to detect stale packs after seed re-roll
     #[serde(default)]
     pub seed_id: String,
 }

@@ -33,7 +33,7 @@ SETUP ──→ RUNNING ──→ FINISHED
 **RUNNING or FINISHED → SETUP** (`POST /races/{id}/reset`, organizer only)
 
 - Closes all WebSocket connections first (`manager.close_room(code=1000)`).
-- Transitions status via `_transition_status()` with optimistic lock. Clears `started_at` (but NOT `seeds_released_at` — seed packs remain downloadable).
+- Transitions status via `_transition_status()` with optimistic lock. Clears `started_at` (but NOT `seeds_released_at`, as seed packs remain downloadable).
 - Resets all participants via ORM loop: `status=REGISTERED, current_zone=None, current_layer=0, igt_ms=0, death_count=0, zone_history=None, finished_at=None`.
 - Mod clients detect the close and reconnect automatically.
 
@@ -69,23 +69,23 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 
 ### Transitions
 
-**REGISTERED → READY** — mod sends `ready` WS message. Broadcasts `leaderboard_update`.
+**REGISTERED → READY**: mod sends `ready` WS message. Broadcasts `leaderboard_update`.
 
-**READY → PLAYING** — auto-triggered on the first `status_update` while the race is RUNNING. On transition:
+**READY → PLAYING**: auto-triggered on the first `status_update` while the race is RUNNING. On transition:
 
 - Sets `current_zone` to the start node.
 - Appends start node to `zone_history` with `igt_ms=0`.
 - `current_layer` remains 0 (start node is layer 0).
 - Broadcasts full `leaderboard_update`.
 
-**PLAYING → FINISHED** — `event_flag` message with `flag_id == finish_event`. On transition:
+**PLAYING → FINISHED**: `event_flag` message with `flag_id == finish_event`. On transition:
 
 - Sets `current_layer = total_layers` (progress shows N/N).
 - Sets `finished_at` to current time.
 - Calls `check_race_auto_finish()` for the race.
 - Implementation note: the finish handler uses two separate DB sessions to avoid nested-session deadlocks in SQLite tests. The `event_flag` handler commits progress, exits its session, then calls `handle_finished()` in a new session.
 
-**REGISTERED / READY / PLAYING → ABANDONED** — three paths:
+**REGISTERED / READY / PLAYING → ABANDONED**: three paths:
 
 1. **Inactivity monitor** (PLAYING): background loop checks every 60s for participants with `last_igt_change_at < now - 15min`. Marks them `ABANDONED` and triggers auto-finish check.
 2. **No-show monitor** (REGISTERED/READY): same loop also catches participants who never started playing when `race.started_at < now - 15min`. Marks them `ABANDONED`.
@@ -96,15 +96,15 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 `FINISHED` and `ABANDONED` are terminal. Once a participant reaches either state:
 
 - All incoming `status_update`, `event_flag`, `zone_query`, and `finished` messages are silently dropped.
-- The server does not update `igt_ms` or `death_count` — data is frozen.
+- The server does not update `igt_ms` or `death_count`; data is frozen.
 
 ### Progress Tracking
 
-**`current_layer`** is a **high watermark** — it tracks the furthest layer reached and never regresses, even if the player backtracks to an earlier zone. This ensures leaderboard stability.
+**`current_layer`** is a **high watermark**: it tracks the furthest layer reached and never regresses, even if the player backtracks to an earlier zone. This ensures leaderboard stability.
 
-**`zone_history`** is a JSON array of `{"node_id": str, "igt_ms": int, "deaths"?: int}` entries. A new entry is appended on every zone transition, including backtracks (the same `node_id` may appear multiple times). The `deaths` key is added/incremented by `status_update` when the death count increases — deaths are attributed to the **most recent** entry matching the player's current zone. Frontend consumers (popup, highlights, replay) aggregate time and deaths across all visits to the same node.
+**`zone_history`** is a JSON array of `{"node_id": str, "igt_ms": int, "deaths"?: int}` entries. A new entry is appended on every zone transition, including backtracks (the same `node_id` may appear multiple times). The `deaths` key is added/incremented by `status_update` when the death count increases. Deaths are attributed to the **most recent** entry matching the player's current zone. Frontend consumers (popup, highlights, replay) aggregate time and deaths across all visits to the same node.
 
-**`last_igt_change_at`** is updated on every `status_update` where `igt_ms` differs from the stored value. Used by the inactivity monitor. A quit-out (IGT=0) does not reset it since IGT doesn't change — it just becomes 0.
+**`last_igt_change_at`** is updated on every `status_update` where `igt_ms` differs from the stored value. Used by the inactivity monitor. A quit-out (IGT=0) does not reset it since IGT doesn't change, it just becomes 0.
 
 ---
 
@@ -175,7 +175,7 @@ Participants are sorted for display using a stable sort with composite key:
 1. `race_state` → each spectator (with `status: finished` + full zone_history)
 2. `race_status_change(finished)` → all
 3. `leaderboard_update` → all
-4. `fire_race_finished_notifications(race)` — fires on **all** finish paths:
+4. `fire_race_finished_notifications(race)`, fires on **all** finish paths:
    - Discord webhook (public races only, with podium)
    - Discord scheduled event → COMPLETED (if event exists)
 

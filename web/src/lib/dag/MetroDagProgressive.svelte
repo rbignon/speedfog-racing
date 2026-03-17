@@ -104,7 +104,7 @@
 		return adj;
 	});
 
-	// Progression polyline — my participant's path through discovered nodes
+	// Progression polyline: my participant's path through discovered nodes
 	let playerPath = $derived.by(() => {
 		const me = participants.find((p) => p.id === myParticipantId);
 		if (!me || !me.zone_history || me.zone_history.length === 0) return null;
@@ -123,7 +123,7 @@
 		if (deduped.length < 2) return null;
 
 		const expanded = expandNodePath(deduped, edgeMap, adjacency, dedupedTypes);
-		// Single player — slot is always 0, count always 1
+		// Single player: slot is always 0, count always 1
 		const waypointSegments = buildPlayerWaypoints(
 			expanded,
 			nodeById,

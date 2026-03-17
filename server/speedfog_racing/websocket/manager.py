@@ -320,7 +320,7 @@ def build_leader_splits(
         igt = entry.get("igt_ms")
         if node_id is None or igt is None:
             continue
-        # Skip unknown nodes — get_layer_for_node defaults to 0 which would
+        # Skip unknown nodes: get_layer_for_node defaults to 0 which would
         # produce a bogus split for layer 0.
         if str(node_id) not in nodes:
             continue
@@ -381,15 +381,15 @@ def compute_gap_ms(
     # Leader's exit = leader's entry on next layer
     leader_exit = leader_splits.get(current_layer + 1)
     if leader_exit is None:
-        # Leader hasn't left this layer yet — show entry delta only
+        # Leader hasn't left this layer yet, show entry delta only
         return entry_delta
     # Compare time spent in layer, not absolute IGTs
     time_in_layer = igt_ms - player_layer_entry_igt
     leader_time_in_layer = leader_exit - leader_entry
     if time_in_layer <= leader_time_in_layer:
-        # Within leader's time budget — fixed entry delta
+        # Within leader's time budget, fixed entry delta
         return entry_delta
-    # Exceeded leader's time budget — entry delay + layer overshoot
+    # Exceeded leader's time budget: entry delay + layer overshoot
     return entry_delta + (time_in_layer - leader_time_in_layer)
 
 

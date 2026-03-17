@@ -117,7 +117,7 @@ def attribute_deaths(
 ) -> list[dict[str, Any]]:
     """Attribute death delta to the most recent visit of current_zone.
 
-    Deep-copies entries so mutations don't affect the committed state —
+    Deep-copies entries so mutations don't affect the committed state.
     SQLAlchemy compares new vs committed to detect dirt.
     Returns a new list suitable for JSON column assignment.
     """

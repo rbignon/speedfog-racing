@@ -9,9 +9,9 @@
 
 The current zone tracking in the SpeedFog Racing mod relies on reading the player's `map_id` from game memory. This is unreliable because:
 
-- **Multiple zones share the same map_id** — Elden Ring's map coordinates don't correspond 1:1 to SpeedFog's logical zones. A single map_id can cover different areas.
-- **Race finish detection is not implemented** — there is no mechanism to detect when a player defeats the final boss. The `finished` message protocol exists but is never triggered.
-- **Zone transitions are imprecise** — detecting a map_id change misses fog gate traversals that stay within the same map tile.
+- **Multiple zones share the same map_id**: Elden Ring's map coordinates don't correspond 1:1 to SpeedFog's logical zones. A single map_id can cover different areas.
+- **Race finish detection is not implemented**: there is no mechanism to detect when a player defeats the final boss. The `finished` message protocol exists but is never triggered.
+- **Zone transitions are imprecise**: detecting a map_id change misses fog gate traversals that stay within the same map tile.
 
 ---
 
@@ -96,7 +96,7 @@ For each fog gate in the randomized world, add an EMEVD event that **sets an eve
 
 #### Final Boss Death Event
 
-Add an EMEVD event that sets a specific flag when the seed's final boss is defeated. This is separate from the fog gate events — it fires on boss death, not on fog gate traversal.
+Add an EMEVD event that sets a specific flag when the seed's final boss is defeated. This is separate from the fog gate events; it fires on boss death, not on fog gate traversal.
 
 ### 4.2 graph.json v4 Format
 
@@ -146,12 +146,12 @@ Extend graph.json with two new top-level fields:
 
 - `event_map` keys are stringified integers (JSON constraint), but values are node_ids from the `nodes` dict
 - The `finish_event` value is the integer flag ID, not a string
-- The start node (`chapel_start_4f96` in the example) is NOT in `event_map` — the player starts there, no fog gate traversal needed
+- The start node (`chapel_start_4f96` in the example) is NOT in `event_map` (the player starts there, no fog gate traversal needed)
 - Existing fields (`connections`, `area_tiers`, `nodes`, `edges`) remain unchanged for backward compatibility with the web visualization
 
 ### 4.3 Seed Pack Contents
 
-The seed pack currently includes `graph.json` in the zip. With EMEVD events, the mod no longer needs graph.json (it only needs the event flag IDs, which come from the server via WebSocket). However, **graph.json should remain in the seed pack for now** — it's needed by ModEngine for the fog gate randomizer itself. The racing mod ignores it.
+The seed pack currently includes `graph.json` in the zip. With EMEVD events, the mod no longer needs graph.json (it only needs the event flag IDs, which come from the server via WebSocket). However, **graph.json should remain in the seed pack for now**, as it's needed by ModEngine for the fog gate randomizer itself. The racing mod ignores it.
 
 ### 4.4 EMEVD Implementation Notes
 
@@ -225,11 +225,11 @@ Wire format:
 
 #### Removed/Modified Messages
 
-| Message                      | Change                                                 |
-| ---------------------------- | ------------------------------------------------------ |
-| `zone_entered`               | **Removed** — replaced by `event_flag`                 |
-| `status_update.current_zone` | **Removed** — zone is determined by events, not map_id |
-| `status_update`              | Simplified to `{ type, igt_ms, death_count }` only     |
+| Message                      | Change                                                |
+| ---------------------------- | ----------------------------------------------------- |
+| `zone_entered`               | **Removed**, replaced by `event_flag`                 |
+| `status_update.current_zone` | **Removed**, zone is determined by events, not map_id |
+| `status_update`              | Simplified to `{ type, igt_ms, death_count }` only    |
 
 ### 5.2 Event Flag Reading
 
@@ -242,7 +242,7 @@ Event flags in Elden Ring are stored as bits in a large bitfield. Reading a spec
 3. Read the byte and extract the bit
 
 ```rust
-// Pseudocode — actual offsets need discovery/verification
+// Pseudocode, actual offsets need discovery/verification
 pub struct EventFlagReader {
     // Pointer to VirtualMemoryFlag manager
     base_ptr: PointerChain<usize>,
@@ -283,7 +283,7 @@ pub struct RaceTracker {
 }
 ```
 
-**AuthOk handling — clear flags on new race:**
+**AuthOk handling: clear flags on new race:**
 
 When receiving `AuthOk`, the tracker must reset its event tracking state. This prevents stale flags from a previous race (or reconnection with a different seed) from leaking.
 
@@ -343,12 +343,12 @@ fn update(&mut self) {
 }
 ```
 
-**Reconnection handling:** On reconnect, the mod re-reads all event flags and re-sends any that are set. This handles the case where the mod disconnects and misses events — since flags are persistent, they can be recovered. The server ignores duplicate events (node already in `zone_history`), so re-sending is safe.
+**Reconnection handling:** On reconnect, the mod re-reads all event flags and re-sends any that are set. This handles the case where the mod disconnects and misses events. Since flags are persistent, they can be recovered. The server ignores duplicate events (node already in `zone_history`), so re-sending is safe.
 
 ### 5.4 WebSocket Client Changes
 
 ```rust
-// websocket.rs — OutgoingMessage enum
+// websocket.rs - OutgoingMessage enum
 EventFlag {
     flag_id: u32,
     igt_ms: u32,
@@ -550,7 +550,7 @@ elif msg_type == "event_flag":
 
 ## 7. Seed Pack Service Changes
 
-The seed pack service (`seed_pack_service.py`) copies the entire seed folder contents into the zip. No changes needed — graph.json remains in the pack for ModEngine, and the mod ignores it.
+The seed pack service (`seed_pack_service.py`) copies the entire seed folder contents into the zip. No changes needed, graph.json remains in the pack for ModEngine, and the mod ignores it.
 
 ---
 
@@ -602,7 +602,7 @@ Replaced by `event_flag`.
 }
 ```
 
-New field `event_ids`: flat list of event flag IDs the mod should monitor. Opaque to the mod — no mapping to zones or nodes.
+New field `event_ids`: flat list of event flag IDs the mod should monitor. Opaque to the mod, no mapping to zones or nodes.
 
 ---
 
@@ -610,7 +610,7 @@ New field `event_ids`: flat list of event flag IDs the mod should monitor. Opaqu
 
 ### Seed Pool
 
-Existing seeds in the pool (graph.json v3) do not have `event_map` or `finish_event`. They must be **regenerated** with the updated SpeedFog generator. Since we are not in production, this is not a compatibility concern — regenerate all pools.
+Existing seeds in the pool (graph.json v3) do not have `event_map` or `finish_event`. They must be **regenerated** with the updated SpeedFog generator. Since we are not in production, this is not a compatibility concern. Regenerate all pools.
 
 ### Database
 

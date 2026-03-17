@@ -140,7 +140,7 @@
 			expandedMap.set(p.id, expandNodePath(deduped, edgeMap, adjacency, dedupedTypes));
 		}
 
-		// Step 2: Build edge usage map — which participants traverse each edge
+		// Step 2: Build edge usage map (which participants traverse each edge)
 		// Uses canonical keys so forward and reverse traversals share one slot pool
 		const edgeUsageSets = new Map<string, Set<string>>();
 		for (const [participantId, expanded] of expandedMap) {
@@ -159,7 +159,7 @@
 			edgeUsage.set(key, [...s]);
 		}
 
-		// Step 3: Build slot map — for each participant+edge, their centered slot
+		// Step 3: Build slot map (for each participant+edge, their centered slot)
 		// 1 player: 0, 2 players: -0.5/+0.5, 3 players: -1/0/+1, etc.
 		const playerSlots = new Map<string, Map<string, number>>();
 		for (const [edgeKey, pids] of edgeUsage) {

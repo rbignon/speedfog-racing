@@ -1,4 +1,4 @@
-# SpeedFog Racing — Roadmap
+# SpeedFog Racing - Roadmap
 
 **Last updated:** 2026-02-10
 
@@ -6,13 +6,13 @@
 
 ## Completed
 
-### Phase 1 — MVP Foundation
+### Phase 1: MVP Foundation
 
 Server foundation, Twitch OAuth, seed pool management, race CRUD, seed pack generation, SvelteKit frontend, race management UI, WebSocket server (mod + spectator), WebSocket frontend, mod fork (Rust DLL), integration testing, protocol coherence.
 
 **Spec:** `docs/specs/phase1.md`
 
-### Phase 2 — UI/UX & DAG Visualization
+### Phase 2: UI/UX & DAG Visualization
 
 Metro-style DAG visualization (pure SVG, custom layout algorithm), homepage redesign with animated hero DAG, race detail page overhaul (state-driven layouts for lobby/running/finished), caster role, organizer participation toggle, optional WebSocket auth for DAG visibility, player colors, podium, spectator count, participant search with autocomplete, race creation form with pool cards.
 
@@ -61,9 +61,9 @@ LiveSplit-style gap computation: entry delta is fixed while within the leader's 
 
 ---
 
-## v1.0 — First Real Usage
+## v1.0 - First Real Usage
 
-Everything needed to run an actual race end-to-end with a usable feature set. The core platform is code-complete — remaining items are deployment prep and polish.
+Everything needed to run an actual race end-to-end with a usable feature set. The core platform is code-complete; remaining items are deployment prep and polish.
 
 ### OBS Overlays
 
@@ -71,8 +71,8 @@ Everything needed to run an actual race end-to-end with a usable feature set. Th
 
 Dedicated pages for OBS with transparent backgrounds, reusing existing components:
 
-- `/overlay/{id}/leaderboard` — vertical leaderboard with player colors, transparent background
-- `/overlay/{id}/dag` — metro DAG with live player positions, transparent background
+- `/overlay/{id}/leaderboard`: vertical leaderboard with player colors, transparent background
+- `/overlay/{id}/dag`: metro DAG with live player positions, transparent background
 
 Both are thin wrappers around `Leaderboard.svelte` and `MetroDagLive.svelte` with `background: transparent` and no page chrome. Visible to organizers and casters on the race detail page as direct links.
 
@@ -109,11 +109,11 @@ The `show_finished_names` config option was proposed in the design doc but never
 - `docs/specs/phase1.md`
 - `docs/specs/phase2-ui-ux.md`
 
-No code changes needed — it was never implemented.
+No code changes needed, it was never implemented.
 
 ---
 
-## v1.1 — Quality of Life
+## v1.1 - Quality of Life
 
 Improvements after initial real-world usage.
 
@@ -128,7 +128,7 @@ Coordinated countdown across all mod clients before `race_start`:
 
 ---
 
-## v2.0 — Advanced Features
+## v2.0 - Advanced Features
 
 Larger scope features for after the platform is established.
 

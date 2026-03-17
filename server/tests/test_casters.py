@@ -384,7 +384,7 @@ async def test_color_index_sequential(test_client, organizer, player, caster_use
         )
         assert r1.json()["participant"]["color_index"] == 0
 
-        # Add caster1 (as participant — need a third user)
+        # Add caster1 (as participant, need a third user)
         # caster_user is not a caster in this race, so can be added
         r2 = await client.post(
             f"/api/races/{race_id}/participants",

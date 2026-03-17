@@ -370,7 +370,7 @@ function detectZoneWall(
       zSeg(bestZone, nodeInfo),
       tSeg(" was "),
       pSeg(p),
-      tSeg(`'s nemesis — stuck for ${formatTime(bestTime)}`),
+      tSeg(`'s nemesis, stuck for ${formatTime(bestTime)}`),
     ],
     playerIds: [bestPlayerId],
     score: bestRatio * 15,
@@ -740,7 +740,7 @@ function detectDetour(participants: WsParticipant[]): Highlight | null {
     title: "Scenic Route",
     segments: [
       pSeg(maxPlayer),
-      tSeg(` explored ${maxNodes} zones — more than anyone else`),
+      tSeg(` explored ${maxNodes} zones, more than anyone else`),
     ],
     playerIds: [maxPlayer.id],
     score: (maxNodes / avgNodes) * 30,
@@ -991,7 +991,7 @@ export function computeHighlights(
   push(detectRageInducer(allZoneTimes, nodeInfo));
   push(detectEarlyExit(eligible));
 
-  // Community highlights (empty playerIds) get a 1.5x scoring boost —
+  // Community highlights (empty playerIds) get a 1.5x scoring boost:
   // shared moments (Graveyard, Hard Pass, etc.) are more interesting than
   // individual exploits when scores are in the same ballpark.
   const sortScore = (h: Highlight) =>

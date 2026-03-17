@@ -324,7 +324,7 @@ impl RaceTracker {
         let indent = "  ";
 
         for exit in &zone.exits {
-            // Line 1: destination — green if discovered, white "???" if not
+            // Line 1: destination (green if discovered, white "???" if not)
             if exit.discovered {
                 let dest = format!("\u{2192} {}", exit.to_name);
                 let truncated = truncate_to_width(ui, &dest, max_width);
@@ -386,7 +386,7 @@ impl RaceTracker {
             right_x
         };
 
-        // Left (name) — truncate to fit before gap column
+        // Left (name): truncate to fit before gap column
         let left_text = format!("{:2}. {}", rank, name);
         let left_max = gap_x - spacing;
         let truncated = truncate_to_width(ui, &left_text, left_max);
@@ -709,7 +709,7 @@ fn wrap_text(ui: &hudhook::imgui::Ui, indent: &str, text: &str, max_width: f32) 
         if ui.calc_text_size(&candidate)[0] <= max_width {
             current_line = candidate;
         } else if current_line.len() == indent.len() {
-            // Single word exceeds max_width — truncate it
+            // Single word exceeds max_width, truncate it
             let truncated = truncate_to_width(ui, &candidate, max_width);
             lines.push(truncated.into_owned());
         } else {

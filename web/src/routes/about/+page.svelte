@@ -10,7 +10,7 @@
 <main class="about">
 	<header class="about-hero">
 		<h1>How SpeedFog Racing Works</h1>
-		<p>Race through a randomized Elden Ring — compete on skill, not memorization.</p>
+		<p>Race through a randomized Elden Ring. Compete on skill, not memorization.</p>
 	</header>
 
 	<section class="section">
@@ -20,7 +20,7 @@
 			<a href="https://www.nexusmods.com/eldenring/mods/3295" target="_blank" rel="noopener noreferrer"
 				>Fog Gate Randomizer</a
 			>
-			by <strong>thefifthmatt</strong> — an Elden Ring mod that replaces every fog gate with
+			by <strong>thefifthmatt</strong>, an Elden Ring mod that replaces every fog gate with
 			a randomized connection. Instead of walking through a familiar door into the expected
 			area, each gate teleports you somewhere entirely different. The world becomes an
 			unpredictable maze.
@@ -28,7 +28,7 @@
 		<p>
 			SpeedFog adds structure on top of this chaos: it generates
 			<strong>balanced route maps</strong> where every path is equally long and challenging.
-			No lucky shortcut — only execution matters.
+			No lucky shortcut, only execution matters.
 		</p>
 	</section>
 
@@ -50,7 +50,7 @@
 				<div>
 					<strong>Download and launch</strong>
 					<p>
-						Each participant downloads a seed pack — just run the executable,
+						Each participant downloads a seed pack. Just run the executable,
 						no setup required. Everyone gets the same randomized world.
 					</p>
 				</div>
@@ -61,7 +61,7 @@
 					<strong>Race</strong>
 					<p>
 						Everyone starts at the same time. An in-game overlay tracks your
-						progress and shows a live leaderboard — no need to alt-tab.
+						progress and shows a live leaderboard, no need to alt-tab.
 					</p>
 				</div>
 			</div>
@@ -81,7 +81,7 @@
 	<section class="section">
 		<h2>The Route Map</h2>
 		<p>
-			Every seed generates a unique route map — a network of fog gates connecting zones
+			Every seed generates a unique route map, a network of fog gates connecting zones
 			across the Lands Between. SpeedFog Racing displays it as a
 			<strong>metro-style map</strong> so spectators and casters can follow each player's
 			progression in real time.
@@ -89,14 +89,14 @@
 		<p>
 			The map is structured in <strong>layers of increasing difficulty</strong>: mini
 			dungeons, legacy dungeons, boss arenas, and major bosses. Every parallel path is
-			balanced — same length, same challenge. The final destination is always a random
+			balanced: same length, same challenge. The final destination is always a random
 			major boss.
 		</p>
 		<div class="dag-demo">
 			<MetroDag graphJson={heroSeed} />
 		</div>
 		<p class="dag-caption">
-			An example route map. During a race, participants don't see the map — it is revealed
+			An example route map. During a race, participants don't see the map. It is revealed
 			to everyone once the race ends.
 		</p>
 	</section>
@@ -104,14 +104,14 @@
 	<section class="section">
 		<h2>In-Game</h2>
 		<p>
-			During a race, a compact <strong>overlay</strong> sits in the corner of your screen —
+			During a race, a compact <strong>overlay</strong> sits in the corner of your screen,
 			no need to alt-tab. It shows your race name, in-game time, current zone, progression,
 			tier, and death count at a glance. The overlay also lists your available exits so you
 			always know where you can go next. Below it, a <strong>live leaderboard</strong>
 			tracks every participant's position in real time.
 		</p>
 		<p>
-			Zone progression is <strong>tracked automatically</strong> through fog gates — walk
+			Zone progression is <strong>tracked automatically</strong> through fog gates: walk
 			through one and the server knows exactly where you are. Spectators and casters see
 			<strong>time gaps</strong> between players, zone by zone.
 		</p>
@@ -123,7 +123,7 @@
 			/>
 		</div>
 		<p class="screenshot-caption">
-			The in-game overlay during a race. Leaderboard, progression, exits, and IGT — all
+			The in-game overlay during a race. Leaderboard, progression, exits, and IGT, all
 			visible without leaving the game.
 		</p>
 	</section>
@@ -135,7 +135,7 @@
 				<strong>Balanced Paths</strong>
 				<p>
 					Every path through the map has the same structure and difficulty.
-					No shortcut, no lucky route — only execution matters.
+					No shortcut, no lucky route, only execution matters.
 				</p>
 			</div>
 			<div class="feature-card">
@@ -155,7 +155,7 @@
 			<div class="feature-card">
 				<strong>Solo Mode</strong>
 				<p>
-					Play on fresh seeds at your own pace — no account required. Your
+					Play on fresh seeds at your own pace, no account required. Your
 					sessions are saved with times, deaths, and route maps.
 				</p>
 			</div>
@@ -163,13 +163,13 @@
 				<strong>Care Package</strong>
 				<p>
 					Every run starts with a randomized build: weapons, armor, spells,
-					and talismans. Same seed, same build — fair from the first fog gate.
+					and talismans. Same seed, same build, fair from the first fog gate.
 				</p>
 			</div>
 			<div class="feature-card">
 				<strong>Multiple Formats</strong>
 				<p>
-					Sprint, Standard, or Hardcore — pick a seed pool that fits your
+					Sprint, Standard, or Hardcore: pick a seed pool that fits your
 					playstyle. From quick 30-minute runs to punishing gauntlets.
 				</p>
 			</div>

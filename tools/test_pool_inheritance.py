@@ -56,7 +56,7 @@ class TestDeepMerge:
 
 class TestResolvePoolConfig:
     def test_resolves_with_extends(self):
-        """standard.toml extends _base — should resolve with all sections."""
+        """standard.toml extends _base, should resolve with all sections."""
         resolved = resolve_pool_config("standard")
         assert "extends" not in resolved
         assert "display" in resolved

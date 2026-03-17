@@ -351,7 +351,7 @@ async def get_user_activity(
             )
         )
 
-    # 4. Training sessions (exclude cancelled — player never started)
+    # 4. Training sessions (exclude cancelled, player never started)
     training_q = await db.execute(
         select(TrainingSession)
         .where(
@@ -411,7 +411,7 @@ async def get_user_profile(
     )
     race_count = race_count_q.scalar_one()
 
-    # Training count (exclude cancelled — player never started)
+    # Training count (exclude cancelled, player never started)
     training_count_q = await db.execute(
         select(func.count())
         .select_from(TrainingSession)

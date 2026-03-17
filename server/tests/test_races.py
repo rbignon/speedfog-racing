@@ -1269,7 +1269,7 @@ async def test_delete_started_race_keeps_seed_consumed(test_client, organizer, a
         )
         assert response.status_code == 204
 
-    # Seed should stay consumed — players already saw it
+    # Seed should stay consumed (players already saw it)
     async with async_session() as db:
         from sqlalchemy import select
 

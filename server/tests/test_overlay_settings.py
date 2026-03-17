@@ -97,7 +97,7 @@ async def test_update_overlay_settings_merges(test_client, user_with_token):
             json={"font_size": 20.0},
             headers={"Authorization": f"Bearer {token}"},
         )
-        # Then update again — should still have font_size
+        # Then update again, should still have font_size
         response = await client.patch(
             "/api/users/me/settings",
             json={"font_size": 22.0},

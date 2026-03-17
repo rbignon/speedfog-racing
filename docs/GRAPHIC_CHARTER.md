@@ -1,8 +1,8 @@
-# SpeedFog Racing — Graphic Charter
+# SpeedFog Racing - Graphic Charter
 
 ## Design Direction
 
-**Hybrid**: clean esport/dashboard base with subtle Elden Ring touches through color only. Sobriety first — the dark theme does the heavy lifting, gold appears sparingly as punctuation on high-value elements.
+**Hybrid**: clean esport/dashboard base with subtle Elden Ring touches through color only. Sobriety first: the dark theme does the heavy lifting, gold appears sparingly as punctuation on high-value elements.
 
 **Effects philosophy**: flat design with subtle depth. Light glow on active elements, fine borders, soft shadows. No gradients, no blur, no background textures.
 
@@ -23,10 +23,10 @@
 
 | Role                  | Color         | Hex       |
 | --------------------- | ------------- | --------- |
-| Gold — primary accent | Warm amber    | `#C8A44E` |
-| Gold — hover/glow     | Light amber   | `#DDB95F` |
-| Purple — secondary    | Medium purple | `#8B5CF6` |
-| Purple — hover        | Light purple  | `#A78BFA` |
+| Gold (primary accent) | Warm amber    | `#C8A44E` |
+| Gold (hover/glow)     | Light amber   | `#DDB95F` |
+| Purple (secondary)    | Medium purple | `#8B5CF6` |
+| Purple (hover)        | Light purple  | `#A78BFA` |
 
 **Gold usage (exhaustive list):** logo, section h2 headings, primary CTA button, "running" race card left border, leaderboard #1 rank number. Nowhere else.
 
@@ -62,7 +62,7 @@
 | Element                    | Size        | Weight | Color     | Notes                                 |
 | -------------------------- | ----------- | ------ | --------- | ------------------------------------- |
 | Logo "SpeedFog Racing"     | `1.5rem`    | 700    | `#C8A44E` | Only permanent gold element           |
-| H1 (race name)             | `1.75rem`   | 600    | `#E8E6E1` | Not gold — sobriety                   |
+| H1 (race name)             | `1.75rem`   | 600    | `#E8E6E1` | Not gold, sobriety                    |
 | H2 (sections)              | `1.25rem`   | 600    | `#C8A44E` | "My Races", "Active Races", etc.      |
 | Body                       | `0.9375rem` | 400    | `#E8E6E1` |                                       |
 | Small / labels             | `0.8rem`    | 500    | `#9CA3AF` | `uppercase`, `letter-spacing: 0.05em` |
@@ -82,33 +82,33 @@
 
 ### Buttons
 
-**Primary (CTA)** — used sparingly: "Create Race", "Manage Race"
+**Primary (CTA)**, used sparingly: "Create Race", "Manage Race"
 
 - Background: `#C8A44E`
 - Text: `#0F1923` (strong contrast)
 - Hover: `#DDB95F` + `box-shadow: 0 0 12px rgba(200, 164, 78, 0.25)`
 - Border-radius: `6px`
 
-**Secondary** — common actions: "Download", "Logout"
+**Secondary**, common actions: "Download", "Logout"
 
 - Background: `transparent`
 - Border: `1px solid #253550`
 - Text: `#E8E6E1`
 - Hover: border `#8B5CF6`, text `#A78BFA`
 
-**Twitch** — "Login with Twitch"
+**Twitch**, "Login with Twitch"
 
 - Background: `#6441A5`
 - Hover: `#7C5BBF`
 
-**Danger** — "Delete Race", "Kick"
+**Danger**, "Delete Race", "Kick"
 
 - Background: `transparent`
 - Border: `1px solid #DC2626`
 - Text: `#EF4444`
 - Hover: background `rgba(220, 38, 38, 0.1)`
 
-**Rage Quit** — intentional exception to the flat design rule. Skeuomorphic 3D "big red button" (radial gradient, multi-layer box-shadow, press-down animation) for dramatic effect. The only component that uses gradients.
+**Rage Quit**, intentional exception to the flat design rule. Skeuomorphic 3D "big red button" (radial gradient, multi-layer box-shadow, press-down animation) for dramatic effect. The only component that uses gradients.
 
 ### Cards (race cards)
 
@@ -118,7 +118,7 @@
 - Padding: `1.25rem`
 - Hover: border becomes `#8B5CF6` (purple, not gold)
 - Transition: `border-color 0.2s ease`
-- **Exception**: a "running" race card gets `border-left: 3px solid #C8A44E` — only gold hint, discreet
+- **Exception**: a "running" race card gets `border-left: 3px solid #C8A44E`, only gold hint, discreet
 
 ### Badges
 
@@ -141,7 +141,7 @@
 
 ### Header / Navbar
 
-- Background: `#0F1923` (same as body — no hard separation)
+- Background: `#0F1923` (same as body, no hard separation)
 - Bottom separator: `border-bottom: 1px solid #253550`
 - Logo: only gold element, weight 700
 - Twitch avatar: `border-radius: 50%`, `border: 2px solid #253550`

@@ -31,8 +31,8 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ### Seeds
 
-- Care package expanded — weapon pool grows from 18 to 43 weapons covering all categories, armor pool from 6 to 15 pieces per slot with light/medium/heavy options
-- Final tier rebalanced across pools — Chill and Sprint lowered from 12 to 10, Standard from 20 to 18
+- Care package expanded: weapon pool grows from 18 to 43 weapons covering all categories, armor pool from 6 to 15 pieces per slot with light/medium/heavy options
+- Final tier rebalanced across pools: Chill and Sprint lowered from 12 to 10, Standard from 20 to 18
 - Fix: generated maps no longer exceed the configured maximum layer count
 - Fix: seed discard now processes all pools instead of only the first one
 
@@ -43,12 +43,12 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ### In-game
 
-- Fix: backtracking through fog gates is now properly detected — event flags are cleared after capture so the game can re-trigger them on revisit
+- Fix: backtracking through fog gates is now properly detected. Event flags are cleared after capture so the game can re-trigger them on revisit
 - Fix: ambiguous zone detection after death or remembrance now picks the most recently visited zone instead of an arbitrary candidate
 
 ### Metro map
 
-- Fix: player path lines no longer draw straight lines across the map after a teleport — paths now break at teleport gaps
+- Fix: player path lines no longer draw straight lines across the map after a teleport. Paths now break at teleport gaps
 
 ### Website
 
@@ -60,7 +60,7 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 - Boss randomization now supports 3 levels: none, minor bosses only, or all bosses (previously just on/off)
 - Minor boss randomization enabled on all pools except Chill; Boss Shuffle pool now randomizes all bosses including major ones
-- Rusty Key added to starting items — no more Gostoc detour at Stormveil
+- Rusty Key added to starting items, no more Gostoc detour at Stormveil
 - All crafting recipes unlocked from the start
 - Smithing stones, gloveworts, and crafting materials are now randomized
 - Talismans, notable weapons, and crystal tears now appear at seedtree, church, and cross locations
@@ -86,16 +86,16 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ### Seeds
 
-- New "Chill" pool for relaxed races — generous starting resources, gentler difficulty curve, and more legacy dungeons
+- New "Chill" pool for relaxed races: generous starting resources, gentler difficulty curve, and more legacy dungeons
 - Difficulty scaling tuned per pool: Chill eases you in with a gentle plateau, Hardcore ramps up sharply in the endgame
 - Boss and mini dungeon proportions adjusted, zones limited to 2 entrances max
 - Fix: legacy dungeon zones now show location names instead of boss names (e.g. "Academy of Raya Lucaria after Red Wolf" instead of "Red Wolf of Radagon")
-- Maps can now split and merge independently — wider splits no longer force faster convergence
+- Maps can now split and merge independently, so wider splits no longer force faster convergence
 
 ### Solo
 
-- OBS metro map overlay for solo training sessions — streamers can now show their training runs in OBS
-- Cancelled and abandoned sessions are now distinct — sessions where you never connected are marked as cancelled and excluded from your solo run counter
+- OBS metro map overlay for solo training sessions, so streamers can now show their training runs in OBS
+- Cancelled and abandoned sessions are now distinct: sessions where you never connected are marked as cancelled and excluded from your solo run counter
 
 ### Streaming
 
@@ -123,17 +123,17 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ### Logic
 
-- Zone history now tracks backtracking — when a player returns to a previously visited zone, time and deaths are correctly attributed to each visit instead of being lumped with the wrong zone
+- Zone history now tracks backtracking: when a player returns to a previously visited zone, time and deaths are correctly attributed to each visit instead of being lumped with the wrong zone
 - Players who don't connect within 15 minutes of race start are automatically abandoned, and the race auto-finishes if all remaining players are done
 
 ### Seeds
 
-- Cross-links enabled on all pools — fog gates can now connect distant branches, creating shortcuts and more route variety
+- Cross-links enabled on all pools: fog gates can now connect distant branches, creating shortcuts and more route variety
 - Standard pool now requires at least 2 legacy dungeons per seed
 
 ### Streaming
 
-- Casters can self-join a race with a "Cast this race" button — no need for the organizer to add them manually
+- Casters can self-join a race with a "Cast this race" button, no need for the organizer to add them manually
 - LIVE badge on the leaderboard and caster list for participants and casters currently streaming on Twitch
 
 ### In-game
@@ -151,34 +151,34 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ### Logic
 
-- Cross-links between DAG branches — fog gates can now connect parallel paths, creating alternate routes and more interesting race decisions
+- Cross-links between DAG branches: fog gates can now connect parallel paths, creating alternate routes and more interesting race decisions
 - Final boss candidates restricted to Remembrance bosses across all pools
 
 ### Solo
 
-- Mark a solo session as a "slow run" to exclude it from your performance stats — useful for casual runs, testing, or practice sessions
+- Mark a solo session as a "slow run" to exclude it from your performance stats, useful for casual runs, testing, or practice sessions
 
 ### In-game
 
-- LiveSplit-style gap timing in the leaderboard overlay — gaps stay fixed while within the leader's pace, then grow in real-time when falling behind. Gaps ahead of the leader's pace are shown in green, gaps behind in red
+- LiveSplit-style gap timing in the leaderboard overlay: gaps stay fixed while within the leader's pace, then grow in real-time when falling behind. Gaps ahead of the leader's pace are shown in green, gaps behind in red
 
 ### Metro map
 
-- Zone click popup on the race replay — click any node during replay to see entrance/exit details and visitor stats
+- Zone click popup on the race replay: click any node during replay to see entrance/exit details and visitor stats
 - Fix: abandoned players no longer orbit endlessly on the race replay
 
 ### Streaming
 
 - OBS overlay configuration panel: set max leaderboard lines and enable auto-follow for the DAG overlay
 - Live player dots on the DAG overlay during a running race
-- Follow mode for the DAG overlay — the camera automatically tracks player progression with trailing paths
+- Follow mode for the DAG overlay: the camera automatically tracks player progression with trailing paths
 - During setup, the DAG overlay now shows the real map structure (labels hidden) so streamers can position their OBS overlay before the race starts
 
 ## [1.3.0] - 2026-02-26
 
 ### Logic
 
-- Zone weights recalibrated from production race data — run lengths are now more balanced and predictable
+- Zone weights recalibrated from production race data, so run lengths are now more balanced and predictable
 - Traversal constraints prevent degenerate seeds where entry and exit fog gates are right next to each other (Stormveil, Academy, Haligtree, etc.)
 - Multi-zone boss areas where the boss can be skipped (e.g. Ashen Leyndell) are no longer treated as mandatory boss encounters
 - Boss zone weights now use a phase-based system (multi-phase bosses like Rennala, Messmer, Fire Giant count double) instead of timing data
@@ -196,7 +196,7 @@ All notable changes to SpeedFog Racing are documented in this file.
 - Training pools aligned with their race counterparts
 - Pool settings now display stonesword keys and gargoyle poison status
 - Maps can now branch into up to 4 parallel paths (previously 3), producing wider and more varied race maps
-- Split probability increased across all pools — race maps now branch much more frequently, reducing long linear stretches
+- Split probability increased across all pools, so race maps now branch much more frequently, reducing long linear stretches
 
 ### Solo
 
@@ -205,7 +205,7 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ### Races
 
-- F1-style gap timing in the leaderboard overlay — each player sees their time gap to the leader, using split times for running players and final time delta for finished players
+- F1-style gap timing in the leaderboard overlay: each player sees their time gap to the leader, using split times for running players and final time delta for finished players
 - Players can now abandon a running race via a "Rage quit" button on the race page
 - Inactive players (IGT unchanged for 5 minutes) are automatically abandoned
 - Add to calendar button (Google, Apple, Outlook) on scheduled race pages
@@ -237,7 +237,7 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 - Completely reworked seed generation algorithm: zones are now selected cluster-first, producing more varied and balanced paths
 - 5 additional major boss correctly integrated: Hoarah-Loux, Gideon, Placidusax, Putrescent Knight, and Rennala
-- Radagon/Elden Beast is now a valid final boss — the Erdtree warp now correctly forces Maliketh's defeat, preventing the softlock where Erdtree thorns blocked access
+- Radagon/Elden Beast is now a valid final boss. The Erdtree warp now correctly forces Maliketh's defeat, preventing the softlock where Erdtree thorns blocked access
 - Major bosses with a single fog gate (Messmer, Malenia, Bayle, etc.) can now appear as pass-through zones mid-run, not just as final boss dead-ends
 - Great Runes are now pre-activated at the start of a run to prevent a softlock at Fia's Champions
 - Fix: zone tracking could resolve to an unexplored zone on death or fast travel
@@ -348,7 +348,7 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ## [1.0.0] - 2026-02-19
 
-Initial release — first version used in a real race.
+Initial release, first version used in a real race.
 
 ### Races
 

@@ -98,7 +98,7 @@ class RaceStore {
           this.seed = msg.seed;
           this.participants = msg.participants;
           this.loading = false;
-          // Cancel pending finish check — race_state already has the data
+          // Cancel pending finish check, race_state already has the data
           if (this.finishCheckTimer) {
             clearTimeout(this.finishCheckTimer);
             this.finishCheckTimer = null;

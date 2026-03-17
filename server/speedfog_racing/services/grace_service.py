@@ -125,7 +125,7 @@ def resolve_zone_query(
             return matching[0]
 
         # Death/remembrance fallback: pick most recently visited among candidates.
-        # Only when grace_entity_id is absent — fast travel with failed grace lookup
+        # Only when grace_entity_id is absent: fast travel with failed grace lookup
         # should NOT guess (wrong entries pollute the MetroDag).
         if len(matching) > 1 and zone_history and (grace_entity_id is None or grace_entity_id == 0):
             matching_set = set(matching)

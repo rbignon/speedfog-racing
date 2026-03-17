@@ -1343,7 +1343,7 @@ async def delete_race(
 
     # Release seed back to pool only if the race was never started.
     # Started races (RUNNING/FINISHED) keep their seed consumed so it
-    # cannot be reused — players have already seen it.
+    # cannot be reused (players have already seen it).
     if race.seed_id and race.status in (RaceStatus.SETUP,):
         result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
         seed = result.scalar_one_or_none()
@@ -1375,7 +1375,7 @@ async def download_my_seed_pack(
     """Download the authenticated user's personalized seed pack for a race.
 
     Streams the original seed zip with an injected per-participant config.
-    No temp file or full-file copy — uses ~64 KB of RAM.
+    No temp file or full-file copy. Uses ~64 KB of RAM.
     """
     race = await _get_race_or_404(db, race_id)
 

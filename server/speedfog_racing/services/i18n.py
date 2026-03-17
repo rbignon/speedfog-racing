@@ -343,9 +343,9 @@ def _translate_exit_text(text: str, data: TranslationData) -> str:
     graph.json exits (there is no separate side_text field).
 
     Priority order:
-      1. Exact overrides (text, then side_text) — most specific
+      1. Exact overrides (text, then side_text): most specific
       2. Side_text patterns (longer, more constrained phrases)
-      3. Text patterns (short, greedy — e.g. ``"{zone} entrance"``)
+      3. Text patterns (short, greedy, e.g. ``"{zone} entrance"``)
 
     Side_text patterns are tried before text patterns because text
     patterns like ``"Before {boss}"`` are greedy enough to incorrectly
@@ -353,7 +353,7 @@ def _translate_exit_text(text: str, data: TranslationData) -> str:
     """
     if not text:
         return text
-    # 1. Exact overrides first (both sets) — most specific
+    # 1. Exact overrides first (both sets): most specific
     if text in data.overrides_text:
         return data.overrides_text[text]
     if text in data.overrides_side_text:
@@ -433,7 +433,7 @@ def _translate_graph_json_impl(graph_json: dict[str, Any], locale: str) -> dict[
             node_data["display_name"] = _format_display_name(_translate_name(display_name, data))
 
         # Add translated display_type (e.g. "legacy_dungeon" → "donjon majeur").
-        # Keep original "type" intact — the frontend uses it for rendering logic.
+        # Keep original "type" intact; the frontend uses it for rendering logic.
         node_type = node_data.get("type")
         if isinstance(node_type, str) and node_type in data.types:
             node_data["display_type"] = data.types[node_type]

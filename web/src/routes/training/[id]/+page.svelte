@@ -100,7 +100,7 @@
 	$effect(() => {
 		if (!auth.initialized) return;
 
-		// Read locale outside reactive tracking — locale changes mid-session
+		// Read locale outside reactive tracking: locale changes mid-session
 		// should not trigger a WS reconnect cycle.
 		const locale = untrack(() => getEffectiveLocale());
 		loadSession();
@@ -158,7 +158,7 @@
 
 <svelte:head>
 	<title>
-		{session ? `Solo — ${displayPoolName(session.pool_name)}` : 'Solo'} - SpeedFog Racing
+		{session ? `Solo - ${displayPoolName(session.pool_name)}` : 'Solo'} - SpeedFog Racing
 	</title>
 </svelte:head>
 

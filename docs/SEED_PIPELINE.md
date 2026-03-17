@@ -36,20 +36,20 @@ python tools/generate_pool.py \
 
 ### Steps Per Seed
 
-1. **Generate seed number** — `uuid4().hex[:12]` (e.g., `a1b2c3d4e5f6`). Stored as `seed_number` in the DB.
+1. **Generate seed number**: `uuid4().hex[:12]` (e.g., `a1b2c3d4e5f6`). Stored as `seed_number` in the DB.
 
-2. **Run speedfog** — subprocess call via `uv run speedfog <config> -o <temp_dir> --spoiler --game-dir <path>`. Each seed gets its own temp directory. Output is streamed to `<temp>/generation.log` (and optionally to stdout with `--verbose`).
+2. **Run speedfog**: subprocess call via `uv run speedfog <config> -o <temp_dir> --spoiler --game-dir <path>`. Each seed gets its own temp directory. Output is streamed to `<temp>/generation.log` (and optionally to stdout with `--verbose`).
 
 3. **Post-process the seed directory**:
    - Copy `speedfog_race_mod.dll` from `tools/assets/` to `<seed_dir>/lib/`.
    - Inject DLL path into `config_speedfog.toml`'s `external_dlls` array via regex replacement.
-   - Ensure `RandomizerHelper_config.ini` exists in `lib/` with safe racing defaults (no auto-equip, auto-upgrade enabled). This covers the case where item randomizer was disabled — the DLL is always present but may lack config.
+   - Ensure `RandomizerHelper_config.ini` exists in `lib/` with safe racing defaults (no auto-equip, auto-upgrade enabled). This covers the case where item randomizer was disabled, as the DLL is always present but may lack config.
 
-4. **Create zip** — all files under a top-level `speedfog_<slug>/` directory. Named `seed_<slug>.zip`.
+4. **Create zip**: all files under a top-level `speedfog_<slug>/` directory. Named `seed_<slug>.zip`.
 
-5. **Copy pool TOML** — `tools/pools/<pool>.toml` is copied to `<output>/<pool>/config.toml` for server-side metadata.
+5. **Copy pool TOML**: `tools/pools/<pool>.toml` is copied to `<output>/<pool>/config.toml` for server-side metadata.
 
-6. **Failure handling** — on generation or post-processing failure, the temp directory is preserved in `<output>/<pool>_failed/seed_<seed_number>/` for investigation.
+6. **Failure handling**: on generation or post-processing failure, the temp directory is preserved in `<output>/<pool>_failed/seed_<seed_number>/` for investigation.
 
 ### Pool Configuration
 
@@ -78,7 +78,7 @@ Called during server startup (lifespan). For each pool directory configured in `
 1. Walk the pool directory for `seed_*.zip` files.
 2. For each zip, extract `graph.json` (root-level or `*/graph.json`).
 3. Parse `total_layers` from `graph_json`.
-4. Check if `(seed_number, pool_name)` already exists in DB — skip if so.
+4. Check if `(seed_number, pool_name)` already exists in DB, skip if so.
 5. Create `Seed` record with `status=AVAILABLE`, `folder_path` pointing to the zip.
 
 ### Seed Assignment
@@ -125,9 +125,9 @@ When a participant downloads their seed pack (`GET /races/{id}/my-seed-pack`), t
 
 1. **Copy base zip** to a temp file (`tempfile.mkstemp(suffix=".zip")`).
 
-2. **Detect top-level directory** — `_get_top_dir()` finds the common top-level directory inside the zip (e.g., `speedfog_a1b2c3/`).
+2. **Detect top-level directory**: `_get_top_dir()` finds the common top-level directory inside the zip (e.g., `speedfog_a1b2c3/`).
 
-3. **Generate TOML config** — `generate_player_config(participant, race)` produces:
+3. **Generate TOML config**: `generate_player_config(participant, race)` produces:
 
    ```toml
    [server]
@@ -151,9 +151,9 @@ When a participant downloads their seed pack (`GET /races/{id}/my-seed-pack`), t
    toggle_ui = "f9"
    ```
 
-4. **Inject config** — writes `speedfog_race.toml` into `<top_dir>/lib/speedfog_race.toml` within the zip.
+4. **Inject config**: writes `speedfog_race.toml` into `<top_dir>/lib/speedfog_race.toml` within the zip.
 
-5. **Serve response** — FastAPI `FileResponse` streams the temp file. A `BackgroundTask` deletes the temp file after the response completes.
+5. **Serve response**: FastAPI `FileResponse` streams the temp file. A `BackgroundTask` deletes the temp file after the response completes.
 
 ### Training Mode Variant
 
@@ -161,7 +161,7 @@ When a participant downloads their seed pack (`GET /races/{id}/my-seed-pack`), t
 
 - Sets `training = true` in the `[server]` section.
 - Uses the training session's `mod_token` and `id` (as `race_id`).
-- Omits `seed_id` — training sessions don't use stale seed detection.
+- Omits `seed_id`, since training sessions don't use stale seed detection.
 
 ### Stale Seed Detection
 
@@ -186,9 +186,9 @@ DISCARDED ──reroll──→ stays DISCARDED (never released back)
 ### Key Invariants
 
 - A race always has exactly one seed assigned (set at creation, changeable via reroll during SETUP).
-- Seeds released via `POST /races/{id}/release-seeds` sets `seeds_released_at` — participants can then download. The seed itself stays CONSUMED.
+- Seeds released via `POST /races/{id}/release-seeds` sets `seeds_released_at`, and participants can then download. The seed itself stays CONSUMED.
 - Reroll is only allowed in SETUP status and when seeds have NOT been released.
-- Discarded seeds are permanently retired — the guard in `reroll_seed_for_race` prevents them from returning to AVAILABLE.
+- Discarded seeds are permanently retired; the guard in `reroll_seed_for_race` prevents them from returning to AVAILABLE.
 
 ---
 

@@ -66,7 +66,7 @@
 	let racerPositions = $state<{ x: number; y: number }[]>([]);
 	let showRacers = $state(false);
 
-	// Racer speed multipliers — fastest finishes first, slowest last
+	// Racer speed multipliers: fastest finishes first, slowest last
 	const RACER_SPEEDS = [1.15, 1.0, 0.88, 0.76];
 
 	/** Pause at the finish line before restarting (ms) */
@@ -128,7 +128,7 @@
 			});
 
 			if (allFinished) {
-				// All racers finished — pause then restart
+				// All racers finished, pause then restart
 				restartTimeout = setTimeout(startRace, FINISH_PAUSE_MS);
 			} else {
 				rafId = requestAnimationFrame(animate);

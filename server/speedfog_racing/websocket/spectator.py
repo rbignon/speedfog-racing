@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # Spectator connections are intentionally unauthenticated by default (public races).
 # Optional auth within this window identifies the user for future role-based features.
 # Accepted risk: unauthenticated connections can observe public race state. This is
-# by design — race data (leaderboard, zone progress) is intended to be public.
+# by design: race data (leaderboard, zone progress) is intended to be public.
 AUTH_GRACE_PERIOD = 2.0
 
 
@@ -46,7 +46,7 @@ def build_seed_info(
 ) -> SeedInfo:
     """Build SeedInfo with graph_json for all spectators.
 
-    Graph structure is always included — participants already receive it
+    Graph structure is always included. Participants already receive it
     in SETUP (for the race detail DAG), so hiding it from anonymous
     spectators provides no real benefit and breaks the OBS overlay.
     """
@@ -109,7 +109,7 @@ async def handle_spectator_websocket(
 
             # Send initial race state (session still open for lazy access)
             await send_race_state(websocket, race, locale=conn.locale)
-        # Session closed — released back to pool within ~2s of connect
+        # Session closed, released back to pool within ~2s of connect
 
         # Register connection
         await manager.connect_spectator(race_id, conn)
@@ -118,7 +118,7 @@ async def handle_spectator_websocket(
         heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
 
         try:
-            # Keep connection alive — spectators only receive broadcasts
+            # Keep connection alive; spectators only receive broadcasts
             while True:
                 try:
                     await websocket.receive_text()
