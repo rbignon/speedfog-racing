@@ -298,8 +298,8 @@ def test_resolve_zone_query_leyndell_bug():
     assert node_id == "leyndell_1259"
 
 
-def test_resolve_zone_query_leyndell_with_position():
-    """Position disambiguates Leyndell even when both nodes are visited."""
+def test_resolve_zone_query_leyndell_with_position_fast_travel():
+    """Position disambiguates Leyndell on fast travel (grace present)."""
     graph = {
         "nodes": {
             "leyndell_1259": {
@@ -320,25 +320,67 @@ def test_resolve_zone_query_leyndell_with_position():
         {"node_id": "leyndell_sanctuary_d3e5", "igt_ms": 300000},
     ]
 
-    # Main city position (low Y) → resolves to leyndell
+    # Fast travel with unmapped grace: position disambiguates
+    # Main city position (low Y) -> leyndell
     node_id = resolve_zone_query(
         graph,
         mapping,
+        grace_entity_id=99999999,  # unknown grace, but signals fast travel
         map_id="m11_00_00_00",
         position=(0.0, -50.0, 0.0),
         zone_history=history,
     )
     assert node_id == "leyndell_1259"
 
-    # Sanctuary position (high Y, low Z) → resolves to leyndell_sanctuary
+    # Sanctuary position (high Y, low Z) -> leyndell_sanctuary
     node_id = resolve_zone_query(
         graph,
         mapping,
+        grace_entity_id=99999999,
         map_id="m11_00_00_00",
         position=(0.0, 30.0, -400.0),
         zone_history=history,
     )
     assert node_id == "leyndell_sanctuary_d3e5"
+
+
+def test_resolve_zone_query_death_ignores_position():
+    """Death/respawn (no grace): position is ignored, most recent wins.
+
+    Regression: player dies at Malenia (haligtree_malenia), respawns at a
+    grace in Elphael. Position points to Elphael but the player was fighting
+    Malenia, so "most recently visited" is more reliable than position.
+    """
+    graph = {
+        "nodes": {
+            "haligtree_elphael_700b": {
+                "display_name": "Elphael, Brace of the Haligtree",
+                "zones": ["haligtree_elphael"],
+                "layer": 10,
+            },
+            "haligtree_malenia_8b07": {
+                "display_name": "Malenia, Blade of Miquella",
+                "zones": ["haligtree_malenia"],
+                "layer": 15,
+            },
+        }
+    }
+    mapping = load_graces_mapping()
+    history = [
+        {"node_id": "haligtree_elphael_700b", "igt_ms": 700000},
+        {"node_id": "haligtree_malenia_8b07", "igt_ms": 1200000},
+    ]
+
+    # Death at Malenia: position is the respawn point in Elphael (Y < 380),
+    # but most recently visited is haligtree_malenia_8b07
+    node_id = resolve_zone_query(
+        graph,
+        mapping,
+        map_id="m15_00_00_00",
+        position=(0.0, 100.0, 0.0),  # Elphael area (Y < 380)
+        zone_history=history,
+    )
+    assert node_id == "haligtree_malenia_8b07"
 
 
 def test_resolve_zone_query_single_match_unexplored():

@@ -99,8 +99,11 @@ def resolve_zone_query(
     if map_id is not None:
         zone_ids_for_map = get_zones_for_map(map_id)
 
-        # Use position to narrow candidates when available
-        if position is not None and zone_ids_for_map:
+        # Use position to narrow candidates, but only for fast travel (grace
+        # present). On death/respawn (no grace_entity_id), position is the
+        # respawn point, not where the player was fighting, so the "most
+        # recently visited" heuristic below is more reliable.
+        if position is not None and zone_ids_for_map and grace_entity_id:
             resolved = resolve_zone_by_position(map_id, *position)
             if resolved and resolved in zone_ids_for_map:
                 zone_ids_for_map = {resolved}

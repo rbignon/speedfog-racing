@@ -150,10 +150,10 @@ Three-strategy cascade for resolving where the player is after a death/fast-trav
 **Strategy 2, Map-based lookup** (fallback):
 
 1. `map_id` → `fog.txt` (complete map→zone mapping) → candidate `zone_ids`.
-2. If position available, `submaps.txt` narrows to one zone_id.
+2. If position available **and** `grace_entity_id` is present (fast travel context), use `submaps.txt` to narrow to one zone_id. Position is skipped for death/respawn because it reflects the respawn point (grace/stake), not where the player was fighting.
 3. Find graph nodes whose `zones` array intersects candidates.
 4. If still ambiguous, filter by `zone_history` (player can only be in an already-explored node).
-5. If still ambiguous and no `grace_entity_id` (death/remembrance context), pick the most recently visited node from `zone_history`. This works because death/remembrance always returns to the last grace, which is in the most recently visited zone.
+5. If still ambiguous and no `grace_entity_id` (death/remembrance context), pick the most recently visited node from `zone_history`.
 
 **Strategy 3, None**: Ambiguous or no data (including fast travel with failed grace lookup, as guessing would pollute the MetroDag). No `zone_update` sent; overlay stays on previous zone.
 
