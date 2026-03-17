@@ -27,6 +27,12 @@
 	let panY = $state(0);
 	let isDragging = $state(false);
 	let isAnimating = $state(false);
+	let containerWidth = $state(0);
+
+	// Ensure zoom can always reach 1:1 (SVG px = screen px) for readability
+	let effectiveMaxZoom = $derived(
+		containerWidth > 0 ? Math.max(maxZoom, width / containerWidth) : maxZoom
+	);
 
 	let isTransformed = $derived(zoom !== 1 || panX !== 0 || panY !== 0);
 
@@ -62,7 +68,7 @@
 		if (!point) return;
 
 		const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-		const newZoom = clamp(zoom * factor, minZoom, maxZoom);
+		const newZoom = clamp(zoom * factor, minZoom, effectiveMaxZoom);
 
 		const contentX = (point.x - panX) / zoom;
 		const contentY = (point.y - panY) / zoom;
@@ -147,7 +153,7 @@
 				const newZoom = clamp(
 					pinchStartZoom * (dist / pinchStartDist),
 					minZoom,
-					maxZoom
+					effectiveMaxZoom
 				);
 				const contentX = (center.x - panX) / zoom;
 				const contentY = (center.y - panY) / zoom;
@@ -195,7 +201,7 @@
 	}
 </script>
 
-<div class="zoomable-container" class:transparent>
+<div class="zoomable-container" class:transparent bind:clientWidth={containerWidth}>
 	{#if width > 0 && height > 0}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<svg
