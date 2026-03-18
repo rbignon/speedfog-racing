@@ -8,6 +8,7 @@
 		adminDiscardPool,
 		adminScanPool,
 		fetchAdminActivity,
+		adminRecalculateStats,
 		type AdminUser,
 		type AdminPoolStats,
 		type ActivityTimeline,
@@ -32,6 +33,9 @@
 	let activity: ActivityTimeline | null = $state(null);
 	let activityLoading = $state(false);
 	let activityLoadingMore = $state(false);
+
+	let recalcLoading = $state(false);
+	let recalcMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -183,6 +187,19 @@
 		}
 	}
 
+	async function handleRecalculateStats() {
+		recalcLoading = true;
+		recalcMessage = null;
+		try {
+			await adminRecalculateStats();
+			recalcMessage = { type: 'success', text: 'Stats recalculated successfully.' };
+		} catch (e) {
+			recalcMessage = { type: 'error', text: e instanceof Error ? e.message : 'Failed to recalculate stats.' };
+		} finally {
+			recalcLoading = false;
+		}
+	}
+
 	function formatDate(iso: string | null): string {
 		if (!iso) return 'Never';
 		const d = new Date(iso);
@@ -315,6 +332,22 @@
 				</table>
 			</div>
 		{/if}
+		<div class="stats-section">
+			<h2>Stats</h2>
+			<p class="stats-description">Recompute cached statistics for all users and participants from raw race data.</p>
+			<div class="stats-actions">
+				<button
+					class="action-btn recalc"
+					disabled={recalcLoading}
+					onclick={handleRecalculateStats}
+				>
+					{recalcLoading ? 'Recalculating...' : 'Recalculate Stats'}
+				</button>
+				{#if recalcMessage}
+					<span class="recalc-message {recalcMessage.type}">{recalcMessage.text}</span>
+				{/if}
+			</div>
+		</div>
 	{:else if activeTab === 'activity'}
 		{#if activityLoading}
 			<p class="loading">Loading activity...</p>
@@ -787,6 +820,53 @@
 	.btn-secondary:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.stats-section {
+		margin-top: 2rem;
+		padding-top: 1.5rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.stats-section h2 {
+		font-size: var(--font-size-lg);
+		font-weight: 600;
+		color: var(--color-text);
+		margin-bottom: 0.5rem;
+	}
+
+	.stats-description {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		margin-bottom: 1rem;
+	}
+
+	.stats-actions {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.action-btn.recalc {
+		color: var(--color-warning, #d97706);
+		border-color: var(--color-warning, #d97706);
+	}
+
+	.action-btn.recalc:hover:not(:disabled) {
+		background: var(--color-warning, #d97706);
+		color: white;
+	}
+
+	.recalc-message {
+		font-size: var(--font-size-sm);
+	}
+
+	.recalc-message.success {
+		color: var(--color-success, #22c55e);
+	}
+
+	.recalc-message.error {
+		color: var(--color-danger, #ef4444);
 	}
 
 	@media (max-width: 640px) {

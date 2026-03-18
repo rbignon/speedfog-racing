@@ -966,6 +966,17 @@ export async function fetchAdminActivity(
   return handleResponse<ActivityTimeline>(response);
 }
 
+/**
+ * Recalculate all user/participant stats (admin only).
+ */
+export async function adminRecalculateStats(): Promise<{ status: string }> {
+  const response = await fetch(`${API_BASE}/admin/stats/recalculate`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<{ status: string }>(response);
+}
+
 // =============================================================================
 // Training API
 // =============================================================================
