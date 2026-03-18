@@ -30,6 +30,7 @@ from speedfog_racing.schemas import (
     TrainingActivity,
 )
 from speedfog_racing.services import discard_pool, get_pool_stats, scan_pool
+from speedfog_racing.services.stats_service import recalculate_all_stats
 
 router = APIRouter()
 
@@ -115,6 +116,21 @@ async def discard_seeds(
     """
     count = await discard_pool(db, request.pool_name)
     return DiscardResponse(discarded=count, pool_name=request.pool_name)
+
+
+# =============================================================================
+# Stats Management
+# =============================================================================
+
+
+@router.post("/stats/recalculate")
+async def recalculate_stats(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Clear all ELO/trait data and replay from scratch. Requires admin role."""
+    await recalculate_all_stats(db)
+    return {"status": "ok"}
 
 
 # =============================================================================

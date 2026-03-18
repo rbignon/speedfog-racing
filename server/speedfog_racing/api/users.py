@@ -13,8 +13,10 @@ from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
     Caster,
+    EloHistory,
     Participant,
     ParticipantStatus,
+    PlayerTraitScores,
     Race,
     RaceStatus,
     Seed,
@@ -31,11 +33,13 @@ from speedfog_racing.schemas import (
     RaceOrganizerActivity,
     RaceParticipantActivity,
     TrainingActivity,
+    TraitScoresDetail,
     UserPoolStatsEntry,
     UserPoolStatsResponse,
     UserProfileDetailResponse,
     UserResponse,
     UserStatsResponse,
+    UserTraitsResponse,
 )
 from speedfog_racing.services.i18n import get_available_locales
 
@@ -449,4 +453,78 @@ async def get_user_profile(
         role=user.role.value if hasattr(user.role, "value") else str(user.role),
         created_at=user.created_at,
         stats=stats,
+    )
+
+
+@router.get("/{username}/traits", response_model=UserTraitsResponse)
+async def get_user_traits(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+) -> UserTraitsResponse:
+    """Get ELO and trait data for a user."""
+    user = (
+        await db.execute(select(User).where(User.twitch_username == username))
+    ).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    scores = await db.get(PlayerTraitScores, user.id)
+
+    # Enforce 3-race minimum
+    finished_count = (
+        await db.execute(
+            select(func.count()).where(
+                Participant.user_id == user.id,
+                Participant.status == ParticipantStatus.FINISHED,
+            )
+        )
+    ).scalar() or 0
+
+    # ELO rank (only for non-provisional)
+    elo_rank = None
+    if user.elo_races >= 3:
+        rank_count = (
+            await db.execute(
+                select(func.count())
+                .select_from(User)
+                .where(User.elo_races >= 3, User.elo_rating > user.elo_rating)
+            )
+        ).scalar() or 0
+        elo_rank = rank_count + 1
+
+    # Trend: sum of last 3 deltas
+    recent_deltas = (
+        (
+            await db.execute(
+                select(EloHistory.delta)
+                .where(EloHistory.user_id == user.id)
+                .order_by(EloHistory.created_at.desc())
+                .limit(3)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    trend_delta = round(sum(recent_deltas))
+
+    scores_detail = None
+    dominant_trait = None
+    if scores and finished_count >= 3:
+        dominant_trait = scores.dominant_trait
+        scores_detail = TraitScoresDetail(
+            rusher=scores.rusher,
+            cautious=scores.cautious,
+            resilient=scores.resilient,
+            rage_quitter=scores.rage_quitter,
+            explorer=scores.explorer,
+            pathfinder=scores.pathfinder,
+            boss_slayer=scores.boss_slayer,
+        )
+
+    return UserTraitsResponse(
+        dominant_trait=dominant_trait,
+        scores=scores_detail,
+        elo_rating=round(user.elo_rating),
+        elo_rank=elo_rank,
+        elo_trend_delta=trend_delta,
     )

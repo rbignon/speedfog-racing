@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from statistics import median
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,6 +16,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     PlayerTraitScores,
     Race,
+    RaceStatus,
     User,
 )
 
@@ -413,3 +414,31 @@ def compute_rage_quitter_score(abandoned: int, total: int) -> float:
     if total == 0:
         return 0.0
     return (abandoned / total) * 100.0
+
+
+async def recalculate_all_stats(db: AsyncSession) -> None:
+    """Clear all ELO/trait data and replay from scratch."""
+    await db.execute(delete(EloHistory))
+    await db.execute(delete(PlayerTraitScores))
+
+    all_users = (await db.execute(select(User))).scalars().all()
+    for u in all_users:
+        u.elo_rating = STARTING_ELO
+        u.elo_races = 0
+    await db.commit()
+
+    races = (
+        (
+            await db.execute(
+                select(Race)
+                .where(Race.status == RaceStatus.FINISHED)
+                .order_by(Race.started_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    for race in races:
+        await update_elo_ratings(race.id, db)
+        await update_player_traits(race.id, db)
