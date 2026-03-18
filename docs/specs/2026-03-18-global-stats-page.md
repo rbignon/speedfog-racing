@@ -12,22 +12,28 @@ The core design challenge: seeds are all different, so absolute time comparisons
 
 ### Algorithm
 
-Multi-player ELO adaptation. After each finished race, every pair of finishers is compared. For each pair (A, B):
+Multi-player ELO adaptation with margin-of-victory scaling. After each finished race, every pair of rated participants is compared. For each pair (A, B):
 
 1. Compute expected scores:
    - `E_A = 1 / (1 + 10^((R_B - R_A) / 400))`
    - `E_B = 1 - E_A`
-2. Actual scores: the player who placed higher gets `S = 1`, the other gets `S = 0`
+2. Actual scores with margin of victory:
+   - If both players finished: compute `gap = abs(igt_A - igt_B)` and `margin = min(gap / reference_time, 1.0)`
+   - The faster player gets `S = 0.5 + 0.5 * margin`, the slower gets `S = 0.5 - 0.5 * margin`
+   - A near-tie (few seconds apart) produces ~0.5 each (minimal ELO change); a blowout (20+ min) produces ~1.0 / ~0.0 (large ELO change)
+   - `reference_time = median(finishers_igt) * 0.3` (dynamic per race, so that "significant gap" scales with seed difficulty)
+   - If one player is ABANDONED: the finisher gets `S = 1.0`, the abandoner gets `S = 0.0` (maximum loss)
 3. Rating change: `delta = K * (S - E)` where `K` is the K-factor
 
-Sum all pairwise deltas for each player, divide by `(N-1)` where N is the number of finishers, then apply to the rating.
+Sum all pairwise deltas for each player, divide by `(N-1)` where N is the number of rated participants, then apply to the rating.
 
 ### Parameters
 
 - **Starting ELO**: 1500
 - **K-factor**: 32 (standard, appropriate for small player base)
-- **Eligible results**: only FINISHED participants count. ABANDONED participants are excluded (neutral, no ELO change).
-- **Minimum races for display**: a player's ELO appears on the leaderboard after 3 finished races (provisional indicator for fewer).
+- **Eligible participants**: FINISHED participants and ABANDONED participants who actually played (`igt_ms > 0`). ABANDONED with `igt_ms == 0` (never started) are excluded entirely. REGISTERED and READY participants are excluded.
+- **Abandon penalty**: ABANDONED-who-played are treated as last place, losing every pairwise comparison with `S = 0.0`. This prevents gaming (abandoning to avoid ELO loss) and feeds naturally into the Rage Quitter trait.
+- **Minimum races for display**: a player's ELO appears on the leaderboard after 3 rated races (provisional indicator for fewer).
 
 ### Precision
 
@@ -73,17 +79,17 @@ Each trait is scored 0-100 per player, based on their behavior **relative to oth
 
 Each per-race trait ranks players within a race. Let `N` = number of finishers, `igt_rank` = position sorted by IGT ascending (1 = fastest), `death_rank` = position sorted by deaths ascending (1 = fewest). Ranks are 1-indexed. Ties share the same rank (average rank method).
 
-1. **Fonceur**: finishes fast relative to opponents but with more deaths.
+1. **Rusher**: finishes fast relative to opponents but with more deaths.
    - Per race: `raw = max(0, death_rank - igt_rank) / (N - 1)`, clamped to [0, 1]
    - Scores high when fast (low igt_rank) but dies a lot (high death_rank)
    - Requires N >= 2
 
-2. **Prudent**: low deaths relative to time spent.
+2. **Cautious**: low deaths relative to time spent.
    - Per race: `raw = max(0, igt_rank - death_rank) / (N - 1)`, clamped to [0, 1]
    - Scores high when few deaths (low death_rank) but slower (high igt_rank)
    - Requires N >= 2
 
-3. **Coute que coute**: finishes races despite being far behind.
+3. **Resilient**: finishes races despite being far behind.
    - Global: `completion_rate = finished_races / total_participated_races`
    - Per finished race: `gap_ratio = (player_igt - leader_igt) / leader_igt`
    - `raw = completion_rate * avg(gap_ratio)`, normalized so that a player who finishes 100% of races with 50% avg gap scores ~0.75
@@ -91,15 +97,15 @@ Each per-race trait ranks players within a race. Let `N` = number of finishers, 
    - Requires at least 3 finished races
 
 4. **Rage Quitter**: high abandon rate.
-   - Global: `raw = abandoned_races / total_participated_races`
+   - Global: `raw = abandoned_races / total_participated_races` (only counts abandons where `igt_ms > 0`, consistent with ELO eligibility)
    - Not per-race relative. A player who abandons 50%+ of races scores very high.
 
-5. **Explorateur**: visits many nodes, high backtrack rate.
+5. **Explorer**: visits many nodes, high backtrack rate.
    - Per race: `coverage = unique_nodes_visited / total_nodes_in_seed`
    - Per race: `backtrack_rate = backtrack_entries / total_zone_history_entries` (where a backtrack entry is a revisit of a previously visited node)
    - `raw = 0.6 * coverage + 0.4 * backtrack_rate`
 
-6. **Routard**: takes unusual paths compared to other players on the same race.
+6. **Pathfinder**: takes unusual paths compared to other players on the same race.
    - Per race: `others_nodes = union of all other finishers' visited node sets`
    - `unique_nodes = player_nodes - others_nodes` (nodes only this player visited)
    - `raw = |unique_nodes| / |player_nodes|` (proportion of unique routing)
@@ -133,12 +139,12 @@ New table `PlayerTraitScores` (upsert on each recalculation via `merge()`):
 
 - `user_id`: FK to User (primary key)
 - `dominant_trait: str | None` -- enum name of highest trait, or null
-- `fonceur: int` -- 0-100
-- `prudent: int`
-- `coute_que_coute: int`
+- `rusher: int` -- 0-100
+- `cautious: int`
+- `resilient: int`
 - `rage_quitter: int`
-- `explorateur: int`
-- `routard: int`
+- `explorer: int`
+- `pathfinder: int`
 - `boss_slayer: int`
 - `updated_at: datetime`
 
@@ -217,7 +223,7 @@ At current scale (~100-200 finished participant records), no caching is needed. 
   - Optional query param: `?pool=standard`
 
 - `GET /api/stats/players` -- player profiles by trait
-  - Response: `{ profiles: { fonceur: [{ user, score, elo_rating }], prudent: [...], ... } }`
+  - Response: `{ profiles: { rusher: [{ user, score, elo_rating }], cautious: [...], ... } }`
   - Each trait list sorted by score descending, limited to top 10
   - Players appear only under their dominant trait
   - Players with no dominant trait (no score >= 40) do not appear in this tab; they are still visible via their profile page and the Leaderboard tab
@@ -225,7 +231,7 @@ At current scale (~100-200 finished participant records), no caching is needed. 
 ### User Profile Extension
 
 - `GET /api/users/{username}/traits` -- player's trait scores
-  - Response: `{ dominant_trait, scores: { fonceur, prudent, coute_que_coute, rage_quitter, explorateur, routard, boss_slayer }, elo_rating, elo_rank, elo_trend_delta }`
+  - Response: `{ dominant_trait, scores: { rusher, cautious, resilient, rage_quitter, explorer, pathfinder, boss_slayer }, elo_rating, elo_rank, elo_trend_delta }`
   - Returns null scores if fewer than 3 finished races
 
 ### Admin
@@ -278,19 +284,19 @@ Follows the existing graphic charter.
 
 ### Trait Names
 
-Trait names use French for flavor (matching the community's usage): Fonceur, Prudent, Coute que coute, Explorateur, Routard. Boss Slayer and Rage Quitter use English as the community already uses these terms. This is a deliberate design choice; the UI is otherwise English.
+All trait names are in English for clarity with the international audience: Rusher, Cautious, Resilient, Rage Quitter, Explorer, Pathfinder, Boss Slayer.
 
 ### Color Assignments
 
-| Trait           | Color    | Hex       |
-| --------------- | -------- | --------- |
-| Fonceur         | Red      | `#EF4444` |
-| Prudent         | Emerald  | `#10B981` |
-| Coute que coute | Gold     | `#C8A44E` |
-| Rage Quitter    | Dark red | `#DC2626` |
-| Explorateur     | Blue     | `#3B82F6` |
-| Routard         | Purple   | `#A78BFA` |
-| Boss Slayer     | Amber    | `#FBBF24` |
+| Trait        | Color    | Hex       |
+| ------------ | -------- | --------- |
+| Rusher       | Red      | `#EF4444` |
+| Cautious     | Emerald  | `#10B981` |
+| Resilient    | Gold     | `#C8A44E` |
+| Rage Quitter | Dark red | `#DC2626` |
+| Explorer     | Blue     | `#3B82F6` |
+| Pathfinder   | Purple   | `#A78BFA` |
+| Boss Slayer  | Amber    | `#FBBF24` |
 
 ELO ranking #1 uses gold (`#C8A44E`), others use secondary text (`#9CA3AF`), consistent with existing leaderboard style.
 
