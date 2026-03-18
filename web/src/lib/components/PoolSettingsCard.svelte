@@ -16,6 +16,9 @@
 
 	let miscNotes = $derived.by(() => {
 		const notes: string[] = [];
+		if (poolConfig.allcraft === true) {
+			notes.push('All crafting recipes unlocked');
+		}
 		if (poolConfig.nerf_gargoyles === true) {
 			notes.push('Gargoyle poison disabled');
 		}

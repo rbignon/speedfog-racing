@@ -254,6 +254,7 @@ class PoolConfig(BaseModel):
     item_difficulty: str | None = None
     difficulty_curve: str | None = None
     nerf_gargoyles: bool | None = None
+    allcraft: bool | None = None
 
 
 class PendingInviteResponse(BaseModel):

@@ -289,9 +289,11 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
     # Build human-readable starting items list
     item_names = {
         "academy_key": "Academy Key",
+        "rusty_key": "Rusty Key",
         "pureblood_medal": "Pureblood Medal",
         "drawing_room_key": "Drawing Room Key",
         "lantern": "Lantern",
+        "spirit_calling_bell": "Spirit Calling Bell",
         "physick_flask": "Physick Flask",
         "great_runes": "Great Runes",
         "whetblades": "Whetblades",
@@ -392,6 +394,7 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "item_difficulty": item_diff_label,
         "difficulty_curve": difficulty_curve_label,
         "nerf_gargoyles": item_randomizer.get("nerf_gargoyles"),
+        "allcraft": item_randomizer.get("allcraft"),
     }
 
 

@@ -50,6 +50,7 @@ final_boss_candidates = [
 
 [starting_items]
 whetblades = false
+spirit_calling_bell = false
 talisman_pouches = 2
 golden_seeds = 3
 sacred_tears = 2
@@ -76,6 +77,7 @@ ashes_of_war = 1
 [item_randomizer]
 difficulty = 75
 nerf_gargoyles = false
+allcraft = false
 
 [enemy]
 randomize_bosses = "minor"

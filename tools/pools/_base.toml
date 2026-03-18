@@ -20,9 +20,11 @@ crosslinks = true
 
 [starting_items]
 academy_key = true
+rusty_key = true
 pureblood_medal = false
 drawing_room_key = true
 lantern = true
+spirit_calling_bell = true
 physick_flask = true
 great_runes = true
 stonesword_keys = 6
@@ -47,3 +49,4 @@ auto_upgrade_dropped = true
 reduce_upgrade_cost = true
 dlc = true
 item_preset = true
+allcraft = true
