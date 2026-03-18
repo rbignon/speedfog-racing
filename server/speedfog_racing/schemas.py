@@ -396,3 +396,92 @@ class GhostResponse(BaseModel):
     zone_history: list[dict[str, Any]]
     igt_ms: int
     death_count: int
+
+
+# --- Stats ---
+
+
+class LeaderboardPlayer(BaseModel):
+    twitch_username: str
+    twitch_display_name: str | None
+    twitch_avatar_url: str | None
+    elo_rating: int
+    elo_races: int
+    wins: int
+    losses: int
+    trend_delta: int
+    provisional: bool
+
+
+class CommunityStats(BaseModel):
+    total_races: int
+    active_players: int
+    total_deaths: int
+    hours_raced: float
+
+
+class LeaderboardResponse(BaseModel):
+    players: list[LeaderboardPlayer]
+    community: CommunityStats
+
+
+class ZoneStatEntry(BaseModel):
+    display_name: str
+    type: str
+    total_deaths: int
+    avg_deaths_per_visit: float
+
+
+class ZoneVisitEntry(BaseModel):
+    display_name: str
+    type: str
+    visit_rate: float
+    total_visits: int
+
+
+class ZoneStatsResponse(BaseModel):
+    deadliest: list[ZoneStatEntry]
+    most_visited: list[ZoneVisitEntry]
+
+
+class BossStatEntry(BaseModel):
+    display_name: str
+    type: str
+    encounters: int
+    avg_deaths: float
+    max_deaths: int
+    avg_time_ms: int
+
+
+class BossStatsResponse(BaseModel):
+    bosses: list[BossStatEntry]
+
+
+class TraitPlayerEntry(BaseModel):
+    twitch_username: str
+    twitch_display_name: str | None
+    twitch_avatar_url: str | None
+    score: int
+    elo_rating: int
+
+
+class PlayerProfilesResponse(BaseModel):
+    profiles: dict[str, list[TraitPlayerEntry]]
+
+
+class TraitScoresDetail(BaseModel):
+    rusher: int
+    cautious: int
+    resilient: int
+    rage_quitter: int
+    explorer: int
+    pathfinder: int
+    boss_slayer: int
+
+
+class UserTraitsResponse(BaseModel):
+    dominant_trait: str | None
+    scores: TraitScoresDetail | None
+    elo_rating: int
+    elo_rank: int | None
+    elo_trend_delta: int
