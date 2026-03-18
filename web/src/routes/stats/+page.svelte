@@ -12,7 +12,7 @@
 	const TABS: { id: TabId; label: string }[] = [
 		{ id: 'leaderboard', label: 'Leaderboard' },
 		{ id: 'zones', label: 'Zones' },
-		{ id: 'bosses', label: 'Bosses' },
+		{ id: 'bosses', label: 'Major Bosses' },
 		{ id: 'players', label: 'Play Styles' }
 	];
 

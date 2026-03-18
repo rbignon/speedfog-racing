@@ -41,7 +41,7 @@
 			label: 'Resilient',
 			color: '#C8A44E',
 			icon: '\uD83D\uDCAA',
-			description: 'Finishes races despite being far behind'
+			description: 'Keeps finishing despite high death counts'
 		},
 		{
 			key: 'explorer',

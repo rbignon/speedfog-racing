@@ -10,8 +10,10 @@
 	let slowest = $derived(data?.slowest ?? []);
 	let fastest = $derived(data?.fastest ?? []);
 
-	let maxDeaths = $derived(Math.max(1, ...deadliest.map((z) => z.total_deaths)));
-	let maxBacktracks = $derived(Math.max(1, ...mostBacktracked.map((z) => z.backtrack_count)));
+	let maxDeaths = $derived(Math.max(1, ...deadliest.map((z) => z.avg_deaths_per_visit)));
+	let maxBacktracks = $derived(
+		Math.max(1, ...mostBacktracked.map((z) => z.avg_backtracks_per_race))
+	);
 	let maxTime = $derived(Math.max(1, ...slowest.map((z) => z.avg_time_ms)));
 	let maxFastTime = $derived(Math.max(1, ...fastest.map((z) => z.avg_time_ms)));
 
@@ -42,7 +44,7 @@
 
 	function typeLabel(type: string): string {
 		if (type === 'legacy_dungeon') return 'Legacy';
-		return 'Mini';
+		return 'Minor';
 	}
 
 	function formatTime(ms: number): string {
@@ -69,16 +71,14 @@
 						<div class="zone-row">
 							<div class="zone-header">
 								<span class="zone-name">{zone.display_name}</span>
-								<span class="type-badge {typeBadgeClass(zone.type)}"
-									>{typeLabel(zone.type)}</span
-								>
+								<span class="type-badge {typeBadgeClass(zone.type)}">{typeLabel(zone.type)}</span>
 							</div>
 							<div class="bar-row">
 								<div
 									class="bar bar-death"
-									style="width: {barWidth(zone.total_deaths, maxDeaths)}"
+									style="width: {barWidth(zone.avg_deaths_per_visit, maxDeaths)}"
 								></div>
-								<span class="bar-value">{zone.total_deaths}</span>
+								<span class="bar-value">{zone.avg_deaths_per_visit.toFixed(1)}</span>
 							</div>
 						</div>
 					{/each}
@@ -96,16 +96,14 @@
 						<div class="zone-row">
 							<div class="zone-header">
 								<span class="zone-name">{zone.display_name}</span>
-								<span class="type-badge {typeBadgeClass(zone.type)}"
-									>{typeLabel(zone.type)}</span
-								>
+								<span class="type-badge {typeBadgeClass(zone.type)}">{typeLabel(zone.type)}</span>
 							</div>
 							<div class="bar-row">
 								<div
 									class="bar bar-backtrack"
-									style="width: {barWidth(zone.backtrack_count, maxBacktracks)}"
+									style="width: {barWidth(zone.avg_backtracks_per_race, maxBacktracks)}"
 								></div>
-								<span class="bar-value">{zone.backtrack_count}x</span>
+								<span class="bar-value">{zone.avg_backtracks_per_race.toFixed(1)}x</span>
 							</div>
 						</div>
 					{/each}
@@ -123,9 +121,7 @@
 						<div class="zone-row">
 							<div class="zone-header">
 								<span class="zone-name">{zone.display_name}</span>
-								<span class="type-badge {typeBadgeClass(zone.type)}"
-									>{typeLabel(zone.type)}</span
-								>
+								<span class="type-badge {typeBadgeClass(zone.type)}">{typeLabel(zone.type)}</span>
 							</div>
 							<div class="bar-row">
 								<div
@@ -150,9 +146,7 @@
 						<div class="zone-row">
 							<div class="zone-header">
 								<span class="zone-name">{zone.display_name}</span>
-								<span class="type-badge {typeBadgeClass(zone.type)}"
-									>{typeLabel(zone.type)}</span
-								>
+								<span class="type-badge {typeBadgeClass(zone.type)}">{typeLabel(zone.type)}</span>
 							</div>
 							<div class="bar-row">
 								<div
