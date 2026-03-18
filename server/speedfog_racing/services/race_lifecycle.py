@@ -6,6 +6,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import ParticipantStatus, Race, RaceStatus
+from speedfog_racing.services.stats_service import update_elo_ratings, update_player_traits
 
 logger = logging.getLogger(__name__)
 
@@ -42,4 +43,8 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     race.status = RaceStatus.FINISHED
     race.version += 1
     await db.commit()
+
+    await update_elo_ratings(race.id, db)
+    await update_player_traits(race.id, db)
+
     return True

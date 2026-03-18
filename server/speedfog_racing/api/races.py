@@ -73,6 +73,7 @@ from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
     stream_seed_pack_with_config,
 )
+from speedfog_racing.services.stats_service import update_elo_ratings, update_player_traits
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 from speedfog_racing.websocket.manager import manager
 
@@ -1260,6 +1261,9 @@ async def finish_race(
 
     # Re-query with eager-loaded relationships (refresh only reloads columns)
     race = await _get_race_or_404(db, race.id, load_participants=True, load_casters=True)
+
+    await update_elo_ratings(race_id, db)
+    await update_player_traits(race_id, db)
 
     # Push full race_state (status + zone_history) before status change
     # so spectators get everything atomically in one message.
