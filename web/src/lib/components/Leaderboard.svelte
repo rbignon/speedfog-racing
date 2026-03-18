@@ -29,8 +29,9 @@
 		if (!zone || !zoneNames) return null;
 		const name = zoneNames.get(zone);
 		if (!name) return null;
-		if (name.length > 20) return name.slice(0, 19) + '\u2026';
-		return name;
+		const short = name.includes(' - ') ? name.split(' - ').pop()! : name;
+		if (short.length > 20) return short.slice(0, 19) + '\u2026';
+		return short;
 	}
 
 	function playerColor(participant: WsParticipant): string {
