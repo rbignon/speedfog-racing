@@ -13,7 +13,7 @@
 		{ id: 'leaderboard', label: 'Leaderboard' },
 		{ id: 'zones', label: 'Zones' },
 		{ id: 'bosses', label: 'Bosses' },
-		{ id: 'players', label: 'Players' }
+		{ id: 'players', label: 'Play Styles' }
 	];
 
 	let activeTab: TabId = $derived.by(() => {

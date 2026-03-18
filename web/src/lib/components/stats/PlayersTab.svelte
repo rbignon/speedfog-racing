@@ -153,7 +153,6 @@
 								</a>
 							</div>
 							<span class="trait-score">{player.score.toFixed(0)}</span>
-							<span class="trait-elo">{player.elo_rating}</span>
 							<div class="trait-bar-cell">
 								<div
 									class="trait-bar"
@@ -249,7 +248,7 @@
 
 	.trait-player-row {
 		display: grid;
-		grid-template-columns: 2.5rem 1fr 3.5rem 3.5rem minmax(60px, 120px);
+		grid-template-columns: 2.5rem 1fr 3.5rem minmax(60px, 120px);
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.35rem 0;
@@ -304,13 +303,6 @@
 		font-variant-numeric: tabular-nums;
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
-	}
-
-	.trait-elo {
-		text-align: right;
-		font-variant-numeric: tabular-nums;
-		font-size: var(--font-size-sm);
-		font-weight: 600;
 	}
 
 	.trait-bar-cell {
