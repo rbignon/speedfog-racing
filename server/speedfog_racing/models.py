@@ -3,7 +3,7 @@
 import enum
 import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -277,7 +277,7 @@ class EloHistory(Base):
     elo_before: Mapped[float] = mapped_column(nullable=False)
     elo_after: Mapped[float] = mapped_column(nullable=False)
     delta: Mapped[float] = mapped_column(nullable=False)
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (Index("ix_elo_history_user_created", "user_id", "created_at"),)
 
@@ -295,5 +295,5 @@ class PlayerTraitScores(Base):
     pathfinder: Mapped[int] = mapped_column(default=0)
     boss_slayer: Mapped[int] = mapped_column(default=0)
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

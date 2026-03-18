@@ -2,7 +2,6 @@
 
 import logging
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from statistics import median
 from typing import Any
 
@@ -141,7 +140,6 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
                 elo_before=elo_before,
                 elo_after=user.elo_rating,
                 delta=delta,
-                created_at=datetime.now(UTC),
             )
         )
 
@@ -299,7 +297,6 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         for key, val in scores.items():
             setattr(existing, key, val)
         existing.dominant_trait = dominant
-        existing.updated_at = datetime.now(UTC)
     else:
         db.add(
             PlayerTraitScores(
@@ -427,10 +424,10 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
         u.elo_races = 0
     await db.commit()
 
-    races = (
+    race_ids = (
         (
             await db.execute(
-                select(Race)
+                select(Race.id)
                 .where(Race.status == RaceStatus.FINISHED)
                 .order_by(Race.started_at.asc())
             )
@@ -439,6 +436,6 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
         .all()
     )
 
-    for race in races:
-        await update_elo_ratings(race.id, db)
-        await update_player_traits(race.id, db)
+    for race_id in race_ids:
+        await update_elo_ratings(race_id, db)
+        await update_player_traits(race_id, db)
