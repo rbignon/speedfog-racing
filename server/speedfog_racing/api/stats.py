@@ -213,17 +213,41 @@ def _aggregate_zone_stats(
                 if current_igt > 0 and next_igt > current_igt:
                     zone_times.setdefault(nid, []).append(next_igt - current_igt)
 
+    # Merge clusters that share the same display_name (e.g. Godskin Duo
+    # has two cluster ids but should appear as one entry in stats)
+    merged: dict[str, dict[str, Any]] = {}
+    for nid in seen_nids:
+        display_name = node_display.get(nid, (nid, ""))[0]
+        node_type = node_display.get(nid, ("", ""))[1]
+        if display_name in merged:
+            m = merged[display_name]
+            m["total_deaths"] += zone_deaths[nid]
+            m["visits"] += zone_visits[nid]
+            m["race_ids"].update(zone_race_ids[nid])
+            m["backtrack_count"] += zone_backtracks.get(nid, 0)
+            m["times"].extend(zone_times.get(nid, []))
+        else:
+            merged[display_name] = {
+                "display_name": display_name,
+                "type": node_type,
+                "total_deaths": zone_deaths[nid],
+                "visits": zone_visits[nid],
+                "race_ids": set(zone_race_ids[nid]),
+                "backtrack_count": zone_backtracks.get(nid, 0),
+                "times": list(zone_times.get(nid, [])),
+            }
+
     return {
-        nid: {
-            "display_name": node_display.get(nid, (nid, ""))[0],
-            "type": node_display.get(nid, ("", ""))[1],
-            "total_deaths": zone_deaths[nid],
-            "visits": zone_visits[nid],
-            "race_count": len(zone_race_ids[nid]),
-            "backtrack_count": zone_backtracks.get(nid, 0),
-            "times": zone_times.get(nid, []),
+        name: {
+            "display_name": name,
+            "type": data["type"],
+            "total_deaths": data["total_deaths"],
+            "visits": data["visits"],
+            "race_count": len(data["race_ids"]),
+            "backtrack_count": data["backtrack_count"],
+            "times": data["times"],
         }
-        for nid in seen_nids
+        for name, data in merged.items()
     }
 
 
@@ -394,16 +418,24 @@ async def get_boss_stats(
             if time_ms is not None:
                 boss_times.setdefault(nid, []).append(time_ms)
 
-    node_display = _resolve_node_display(seeds_by_id)
+    # Merge clusters that share the same display_name (e.g. Godskin Duo
+    # has two cluster ids but should appear as one entry)
+    merged_deaths: dict[str, list[int]] = {}
+    merged_times: dict[str, list[int]] = {}
+    merged_type: dict[str, str] = {}
+    for nid, deaths_list in boss_deaths.items():
+        display_name, node_type = node_display.get(nid, (nid, "major_boss"))
+        merged_deaths.setdefault(display_name, []).extend(deaths_list)
+        merged_times.setdefault(display_name, []).extend(boss_times.get(nid, []))
+        merged_type.setdefault(display_name, node_type)
 
     boss_entries = []
-    for nid, deaths_list in boss_deaths.items():
-        times_list = boss_times.get(nid, [])
-        display_name, node_type = node_display.get(nid, (nid, "major_boss"))
+    for display_name, deaths_list in merged_deaths.items():
+        times_list = merged_times.get(display_name, [])
         boss_entries.append(
             BossStatEntry(
                 display_name=display_name,
-                type=node_type,
+                type=merged_type[display_name],
                 encounters=len(deaths_list),
                 avg_deaths=round(sum(deaths_list) / len(deaths_list), 2) if deaths_list else 0.0,
                 max_deaths=max(deaths_list) if deaths_list else 0,
