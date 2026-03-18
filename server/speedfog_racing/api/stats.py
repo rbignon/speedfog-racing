@@ -280,10 +280,26 @@ async def get_zone_stats(
         for n in slowest_nodes
     ]
 
+    # Fastest: zones with lowest average traversal time (min 3 visits to avoid outliers)
+    fastest_nodes = sorted(
+        [n for n in node_data.values() if len(n["times"]) >= 3],
+        key=lambda n: sum(n["times"]) / len(n["times"]),
+    )[:5]
+    fastest = [
+        ZoneTimeEntry(
+            display_name=n["display_name"],
+            type=n["type"],
+            avg_time_ms=round(sum(n["times"]) / len(n["times"])),
+            visits=len(n["times"]),
+        )
+        for n in fastest_nodes
+    ]
+
     return ZoneStatsResponse(
         deadliest=deadliest,
         most_backtracked=most_backtracked,
         slowest=slowest,
+        fastest=fastest,
     )
 
 

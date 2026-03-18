@@ -8,10 +8,12 @@
 	let deadliest = $derived(data?.deadliest ?? []);
 	let mostBacktracked = $derived(data?.most_backtracked ?? []);
 	let slowest = $derived(data?.slowest ?? []);
+	let fastest = $derived(data?.fastest ?? []);
 
 	let maxDeaths = $derived(Math.max(1, ...deadliest.map((z) => z.total_deaths)));
 	let maxBacktracks = $derived(Math.max(1, ...mostBacktracked.map((z) => z.backtrack_count)));
 	let maxTime = $derived(Math.max(1, ...slowest.map((z) => z.avg_time_ms)));
+	let maxFastTime = $derived(Math.max(1, ...fastest.map((z) => z.avg_time_ms)));
 
 	$effect(() => {
 		loadData();
@@ -137,6 +139,33 @@
 				</div>
 			{/if}
 		</div>
+
+		<div class="zone-panel">
+			<h2>Fastest Zones</h2>
+			{#if fastest.length === 0}
+				<p class="empty">No data yet.</p>
+			{:else}
+				<div class="zone-list">
+					{#each fastest as zone}
+						<div class="zone-row">
+							<div class="zone-header">
+								<span class="zone-name">{zone.display_name}</span>
+								<span class="type-badge {typeBadgeClass(zone.type)}"
+									>{typeLabel(zone.type)}</span
+								>
+							</div>
+							<div class="bar-row">
+								<div
+									class="bar bar-fast"
+									style="width: {barWidth(zone.avg_time_ms, maxFastTime)}"
+								></div>
+								<span class="bar-value">{formatTime(zone.avg_time_ms)}</span>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
 	</div>
 {/if}
 
@@ -168,10 +197,6 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-lg);
 		padding: 1.25rem;
-	}
-
-	.zone-panel:last-child {
-		grid-column: 1 / -1;
 	}
 
 	.zone-panel h2 {
@@ -247,6 +272,10 @@
 		background: var(--color-gold);
 	}
 
+	.bar-fast {
+		background: var(--color-success);
+	}
+
 	.bar-value {
 		font-size: var(--font-size-sm);
 		font-variant-numeric: tabular-nums;
@@ -257,10 +286,6 @@
 	@media (max-width: 768px) {
 		.zones-layout {
 			grid-template-columns: 1fr;
-		}
-
-		.zone-panel:last-child {
-			grid-column: auto;
 		}
 	}
 </style>

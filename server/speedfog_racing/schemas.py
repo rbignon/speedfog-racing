@@ -447,6 +447,7 @@ class ZoneStatsResponse(BaseModel):
     deadliest: list[ZoneStatEntry]
     most_backtracked: list[ZoneBacktrackEntry]
     slowest: list[ZoneTimeEntry]
+    fastest: list[ZoneTimeEntry]
 
 
 class BossStatEntry(BaseModel):

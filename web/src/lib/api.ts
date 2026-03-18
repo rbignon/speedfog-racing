@@ -1182,6 +1182,7 @@ export interface ZoneStatsResponse {
   deadliest: ZoneStatEntry[];
   most_backtracked: ZoneBacktrackEntry[];
   slowest: ZoneTimeEntry[];
+  fastest: ZoneTimeEntry[];
 }
 
 export interface BossStatEntry {
