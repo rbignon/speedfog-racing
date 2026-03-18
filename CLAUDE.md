@@ -191,6 +191,7 @@ See `docs/PROTOCOL.md` for complete reference.
 - `docs/RACE_LIFECYCLE.md` - State machines (race, participant, seed) and transition rules
 - `docs/WEBSOCKET_LIFECYCLE.md` - WebSocket connection management (mod reconnect, spectator auth, broadcast safety)
 - `docs/EVENT_FLAG_TRACKING.md` - Event flag polling, zone progression, gap timing
+- `docs/STATS.md` - ELO ratings, behavioral traits, zone/boss analytics
 - `docs/SEED_PIPELINE.md` - Seed generation, ingestion, on-demand pack assembly
 - `docs/specs/phase1.md` - Phase 1 MVP detailed spec
 - `docs/specs/phase2-ui-ux.md` - Phase 2 UI/UX specification
