@@ -233,7 +233,7 @@ async def get_zone_stats(
     node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES)
 
     # Deadliest: by total_deaths desc
-    deadliest_nodes = sorted(node_data.values(), key=lambda n: n["total_deaths"], reverse=True)[:10]
+    deadliest_nodes = sorted(node_data.values(), key=lambda n: n["total_deaths"], reverse=True)[:5]
     deadliest = [
         ZoneStatEntry(
             display_name=n["display_name"],
@@ -251,7 +251,7 @@ async def get_zone_stats(
         [n for n in node_data.values() if n["backtrack_count"] > 0],
         key=lambda n: n["backtrack_count"],
         reverse=True,
-    )[:10]
+    )[:5]
     most_backtracked = [
         ZoneBacktrackEntry(
             display_name=n["display_name"],
@@ -269,7 +269,7 @@ async def get_zone_stats(
         [n for n in node_data.values() if n["times"]],
         key=lambda n: sum(n["times"]) / len(n["times"]),
         reverse=True,
-    )[:10]
+    )[:5]
     slowest = [
         ZoneTimeEntry(
             display_name=n["display_name"],
