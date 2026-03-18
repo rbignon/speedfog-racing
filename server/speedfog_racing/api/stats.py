@@ -159,12 +159,13 @@ def _aggregate_zone_stats(
     participants: Sequence[Any],
     seeds_by_id: dict[Any, Any],
     node_types: set[str],
+    node_display: dict[str, tuple[str, str]],
 ) -> dict[str, dict[str, Any]]:
     """Aggregate zone stats per cluster id (node_id) from zone_history.
 
     Groups by node_id so that the same cluster across different seeds is counted
-    together regardless of display_name changes. Uses the most recent seed's
-    display_name and type for output.
+    together regardless of display_name changes. Filters and resolves display_name
+    and type from node_display (most recent seed).
     """
     zone_deaths: dict[str, int] = {}
     zone_visits: dict[str, int] = {}
@@ -188,9 +189,12 @@ def _aggregate_zone_stats(
             nid = entry.get("node_id", "")
             if not nid:
                 continue
-            node_meta = nodes.get(nid, {})
-            node_type = node_meta.get("type", "")
-            if node_type not in node_types:
+            # Node must exist in this seed's graph
+            if nid not in nodes:
+                continue
+            # Filter by most recent type (not the per-seed type)
+            resolved_type = node_display.get(nid, ("", ""))[1]
+            if resolved_type not in node_types:
                 continue
             deaths = entry.get("deaths", 0)
             zone_deaths[nid] = zone_deaths.get(nid, 0) + deaths
@@ -209,8 +213,6 @@ def _aggregate_zone_stats(
                 next_igt = history[idx + 1].get("igt_ms", 0)
                 if current_igt > 0 and next_igt > current_igt:
                     zone_times.setdefault(nid, []).append(next_igt - current_igt)
-
-    node_display = _resolve_node_display(seeds_by_id)
 
     return {
         nid: {
@@ -253,7 +255,8 @@ async def get_zone_stats(
         if p.race and p.race.seed:
             seeds_by_id[p.race.seed_id] = p.race.seed
 
-    node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES)
+    node_display = _resolve_node_display(seeds_by_id)
+    node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display)
 
     # Deadliest: by total_deaths desc
     deadliest_nodes = sorted(node_data.values(), key=lambda n: n["total_deaths"], reverse=True)[:5]
@@ -353,6 +356,8 @@ async def get_boss_stats(
         if p.race and p.race.seed:
             seeds_by_id[p.race.seed_id] = p.race.seed
 
+    node_display = _resolve_node_display(seeds_by_id)
+
     # Aggregate per cluster id (node_id): deaths list, time_ms list
     boss_deaths: dict[str, list[int]] = {}
     boss_times: dict[str, list[int]] = {}
@@ -368,9 +373,11 @@ async def get_boss_stats(
             nid = entry.get("node_id", "")
             if not nid:
                 continue
-            node_meta = nodes.get(nid, {})
-            node_type = node_meta.get("type", "")
-            if node_type not in BOSS_NODE_TYPES:
+            if nid not in nodes:
+                continue
+            # Filter by most recent type
+            resolved_type = node_display.get(nid, ("", ""))[1]
+            if resolved_type not in BOSS_NODE_TYPES:
                 continue
             deaths = entry.get("deaths", 0)
 
