@@ -3,10 +3,20 @@
 import enum
 import secrets
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -79,6 +89,8 @@ class User(Base):
     overlay_settings: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    elo_rating: Mapped[float] = mapped_column(default=1500.0)
+    elo_races: Mapped[int] = mapped_column(default=0)
 
     # Relationships
     organized_races: Mapped[list["Race"]] = relationship(back_populates="organizer")
@@ -254,3 +266,34 @@ class TrainingSession(Base):
     # Relationships
     user: Mapped["User"] = relationship()
     seed: Mapped["Seed"] = relationship()
+
+
+class EloHistory(Base):
+    __tablename__ = "elo_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    race_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("races.id"), nullable=False)
+    elo_before: Mapped[float] = mapped_column(nullable=False)
+    elo_after: Mapped[float] = mapped_column(nullable=False)
+    delta: Mapped[float] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+    __table_args__ = (Index("ix_elo_history_user_created", "user_id", "created_at"),)
+
+
+class PlayerTraitScores(Base):
+    __tablename__ = "player_trait_scores"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    dominant_trait: Mapped[str | None] = mapped_column(nullable=True)
+    rusher: Mapped[int] = mapped_column(default=0)
+    cautious: Mapped[int] = mapped_column(default=0)
+    resilient: Mapped[int] = mapped_column(default=0)
+    rage_quitter: Mapped[int] = mapped_column(default=0)
+    explorer: Mapped[int] = mapped_column(default=0)
+    pathfinder: Mapped[int] = mapped_column(default=0)
+    boss_slayer: Mapped[int] = mapped_column(default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
