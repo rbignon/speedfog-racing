@@ -6,10 +6,12 @@
 	let error = $state<string | null>(null);
 
 	let deadliest = $derived(data?.deadliest ?? []);
-	let mostVisited = $derived(data?.most_visited ?? []);
+	let mostBacktracked = $derived(data?.most_backtracked ?? []);
+	let slowest = $derived(data?.slowest ?? []);
 
 	let maxDeaths = $derived(Math.max(1, ...deadliest.map((z) => z.total_deaths)));
-	let maxVisitRate = $derived(Math.max(1, ...mostVisited.map((z) => z.visit_rate)));
+	let maxBacktracks = $derived(Math.max(1, ...mostBacktracked.map((z) => z.backtrack_count)));
+	let maxTime = $derived(Math.max(1, ...slowest.map((z) => z.avg_time_ms)));
 
 	$effect(() => {
 		loadData();
@@ -27,12 +29,8 @@
 		}
 	}
 
-	function deathBarWidth(deaths: number): string {
-		return `${Math.max(4, (deaths / maxDeaths) * 100)}%`;
-	}
-
-	function visitBarWidth(rate: number): string {
-		return `${Math.max(4, (rate / maxVisitRate) * 100)}%`;
+	function barWidth(value: number, max: number): string {
+		return `${Math.max(4, (value / max) * 100)}%`;
 	}
 
 	function typeBadgeClass(type: string): string {
@@ -43,6 +41,13 @@
 	function typeLabel(type: string): string {
 		if (type === 'legacy_dungeon') return 'Legacy';
 		return 'Mini';
+	}
+
+	function formatTime(ms: number): string {
+		const totalSeconds = Math.round(ms / 1000);
+		const minutes = Math.floor(totalSeconds / 60);
+		const seconds = totalSeconds % 60;
+		return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 	}
 </script>
 
@@ -62,10 +67,15 @@
 						<div class="zone-row">
 							<div class="zone-header">
 								<span class="zone-name">{zone.display_name}</span>
-								<span class="type-badge {typeBadgeClass(zone.type)}">{typeLabel(zone.type)}</span>
+								<span class="type-badge {typeBadgeClass(zone.type)}"
+									>{typeLabel(zone.type)}</span
+								>
 							</div>
 							<div class="bar-row">
-								<div class="bar bar-death" style="width: {deathBarWidth(zone.total_deaths)}"></div>
+								<div
+									class="bar bar-death"
+									style="width: {barWidth(zone.total_deaths, maxDeaths)}"
+								></div>
 								<span class="bar-value">{zone.total_deaths}</span>
 							</div>
 						</div>
@@ -75,20 +85,52 @@
 		</div>
 
 		<div class="zone-panel">
-			<h2>Most Visited Zones</h2>
-			{#if mostVisited.length === 0}
+			<h2>Most Backtracked</h2>
+			{#if mostBacktracked.length === 0}
 				<p class="empty">No data yet.</p>
 			{:else}
 				<div class="zone-list">
-					{#each mostVisited as zone}
+					{#each mostBacktracked as zone}
 						<div class="zone-row">
 							<div class="zone-header">
 								<span class="zone-name">{zone.display_name}</span>
-								<span class="type-badge {typeBadgeClass(zone.type)}">{typeLabel(zone.type)}</span>
+								<span class="type-badge {typeBadgeClass(zone.type)}"
+									>{typeLabel(zone.type)}</span
+								>
 							</div>
 							<div class="bar-row">
-								<div class="bar bar-visit" style="width: {visitBarWidth(zone.visit_rate)}"></div>
-								<span class="bar-value">{(zone.visit_rate * 100).toFixed(0)}%</span>
+								<div
+									class="bar bar-backtrack"
+									style="width: {barWidth(zone.backtrack_count, maxBacktracks)}"
+								></div>
+								<span class="bar-value">{zone.backtrack_count}x</span>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<div class="zone-panel">
+			<h2>Slowest Zones</h2>
+			{#if slowest.length === 0}
+				<p class="empty">No data yet.</p>
+			{:else}
+				<div class="zone-list">
+					{#each slowest as zone}
+						<div class="zone-row">
+							<div class="zone-header">
+								<span class="zone-name">{zone.display_name}</span>
+								<span class="type-badge {typeBadgeClass(zone.type)}"
+									>{typeLabel(zone.type)}</span
+								>
+							</div>
+							<div class="bar-row">
+								<div
+									class="bar bar-time"
+									style="width: {barWidth(zone.avg_time_ms, maxTime)}"
+								></div>
+								<span class="bar-value">{formatTime(zone.avg_time_ms)}</span>
 							</div>
 						</div>
 					{/each}
@@ -126,6 +168,10 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-lg);
 		padding: 1.25rem;
+	}
+
+	.zone-panel:last-child {
+		grid-column: 1 / -1;
 	}
 
 	.zone-panel h2 {
@@ -193,8 +239,12 @@
 		background: var(--color-danger);
 	}
 
-	.bar-visit {
+	.bar-backtrack {
 		background: var(--color-purple);
+	}
+
+	.bar-time {
+		background: var(--color-gold);
 	}
 
 	.bar-value {
@@ -207,6 +257,10 @@
 	@media (max-width: 768px) {
 		.zones-layout {
 			grid-template-columns: 1fr;
+		}
+
+		.zone-panel:last-child {
+			grid-column: auto;
 		}
 	}
 </style>

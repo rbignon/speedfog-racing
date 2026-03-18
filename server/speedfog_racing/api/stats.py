@@ -28,9 +28,10 @@ from speedfog_racing.schemas import (
     LeaderboardResponse,
     PlayerProfilesResponse,
     TraitPlayerEntry,
+    ZoneBacktrackEntry,
     ZoneStatEntry,
     ZoneStatsResponse,
-    ZoneVisitEntry,
+    ZoneTimeEntry,
 )
 
 router = APIRouter()
@@ -134,14 +135,16 @@ def _aggregate_zone_stats(
     seeds_by_id: dict[Any, Any],
     node_types: set[str],
 ) -> dict[str, dict[str, Any]]:
-    """Aggregate death and visit counts per display_name from zone_history.
+    """Aggregate zone stats per display_name from zone_history.
 
     Groups by display_name so that the same zone across different seeds is counted together.
-    visit_rate denominator is the number of unique races where the zone was visited.
+    Collects: deaths, visits, race_count, backtrack_count, time_ms list.
     """
     zone_deaths: dict[str, int] = {}
     zone_visits: dict[str, int] = {}
     zone_race_ids: dict[str, set[Any]] = {}
+    zone_backtracks: dict[str, int] = {}
+    zone_times: dict[str, list[int]] = {}
     zone_info: dict[str, dict[str, str]] = {}
 
     for participant in participants:
@@ -152,7 +155,10 @@ def _aggregate_zone_stats(
         nodes: dict[str, Any] = seed.graph_json.get("nodes", {})
         race_id = participant.race_id
 
-        for entry in history:
+        # Track visited node_ids per participant for backtrack detection
+        visited_nids: set[str] = set()
+
+        for idx, entry in enumerate(history):
             nid = entry.get("node_id", "")
             if not nid:
                 continue
@@ -171,6 +177,18 @@ def _aggregate_zone_stats(
                     "type": node_type,
                 }
 
+            # Backtrack: revisiting a node_id already seen by this participant
+            if nid in visited_nids:
+                zone_backtracks[display_name] = zone_backtracks.get(display_name, 0) + 1
+            visited_nids.add(nid)
+
+            # Time: difference between this entry's igt_ms and next entry's igt_ms
+            current_igt = entry.get("igt_ms", 0)
+            if idx + 1 < len(history):
+                next_igt = history[idx + 1].get("igt_ms", 0)
+                if current_igt > 0 and next_igt > current_igt:
+                    zone_times.setdefault(display_name, []).append(next_igt - current_igt)
+
     return {
         display_name: {
             "display_name": display_name,
@@ -178,6 +196,8 @@ def _aggregate_zone_stats(
             "total_deaths": zone_deaths[display_name],
             "visits": zone_visits[display_name],
             "race_count": len(zone_race_ids[display_name]),
+            "backtrack_count": zone_backtracks.get(display_name, 0),
+            "times": zone_times.get(display_name, []),
         }
         for display_name in zone_info
     }
@@ -206,14 +226,9 @@ async def get_zone_stats(
     participants = (await db.execute(query)).scalars().all()
 
     seeds_by_id: dict[Any, Any] = {}
-    total_race_ids: set[Any] = set()
     for p in participants:
         if p.race and p.race.seed:
             seeds_by_id[p.race.seed_id] = p.race.seed
-        if p.race_id:
-            total_race_ids.add(p.race_id)
-
-    total_races = len(total_race_ids)
 
     node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES)
 
@@ -231,23 +246,45 @@ async def get_zone_stats(
         for n in deadliest_nodes
     ]
 
-    # Most visited: by visit_rate desc (races where zone was visited / total races)
-    most_visited_nodes = sorted(
-        node_data.values(),
-        key=lambda n: n["race_count"],
+    # Most backtracked: zones players revisit most often
+    backtracked_nodes = sorted(
+        [n for n in node_data.values() if n["backtrack_count"] > 0],
+        key=lambda n: n["backtrack_count"],
         reverse=True,
     )[:10]
-    most_visited = [
-        ZoneVisitEntry(
+    most_backtracked = [
+        ZoneBacktrackEntry(
             display_name=n["display_name"],
             type=n["type"],
-            visit_rate=round(n["race_count"] / total_races, 3) if total_races > 0 else 0.0,
-            total_visits=n["visits"],
+            backtrack_count=n["backtrack_count"],
+            avg_backtracks_per_race=round(n["backtrack_count"] / n["race_count"], 2)
+            if n["race_count"] > 0
+            else 0.0,
         )
-        for n in most_visited_nodes
+        for n in backtracked_nodes
     ]
 
-    return ZoneStatsResponse(deadliest=deadliest, most_visited=most_visited)
+    # Slowest: zones with highest average traversal time
+    slowest_nodes = sorted(
+        [n for n in node_data.values() if n["times"]],
+        key=lambda n: sum(n["times"]) / len(n["times"]),
+        reverse=True,
+    )[:10]
+    slowest = [
+        ZoneTimeEntry(
+            display_name=n["display_name"],
+            type=n["type"],
+            avg_time_ms=round(sum(n["times"]) / len(n["times"])),
+            visits=len(n["times"]),
+        )
+        for n in slowest_nodes
+    ]
+
+    return ZoneStatsResponse(
+        deadliest=deadliest,
+        most_backtracked=most_backtracked,
+        slowest=slowest,
+    )
 
 
 @router.get("/bosses", response_model=BossStatsResponse)

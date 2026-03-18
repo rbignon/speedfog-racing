@@ -1164,16 +1164,24 @@ export interface ZoneStatEntry {
   avg_deaths_per_visit: number;
 }
 
-export interface ZoneVisitEntry {
+export interface ZoneBacktrackEntry {
   display_name: string;
   type: string;
-  visit_rate: number;
-  total_visits: number;
+  backtrack_count: number;
+  avg_backtracks_per_race: number;
+}
+
+export interface ZoneTimeEntry {
+  display_name: string;
+  type: string;
+  avg_time_ms: number;
+  visits: number;
 }
 
 export interface ZoneStatsResponse {
   deadliest: ZoneStatEntry[];
-  most_visited: ZoneVisitEntry[];
+  most_backtracked: ZoneBacktrackEntry[];
+  slowest: ZoneTimeEntry[];
 }
 
 export interface BossStatEntry {

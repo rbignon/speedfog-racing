@@ -429,16 +429,24 @@ class ZoneStatEntry(BaseModel):
     avg_deaths_per_visit: float
 
 
-class ZoneVisitEntry(BaseModel):
+class ZoneBacktrackEntry(BaseModel):
     display_name: str
     type: str
-    visit_rate: float
-    total_visits: int
+    backtrack_count: int
+    avg_backtracks_per_race: float
+
+
+class ZoneTimeEntry(BaseModel):
+    display_name: str
+    type: str
+    avg_time_ms: int
+    visits: int
 
 
 class ZoneStatsResponse(BaseModel):
     deadliest: list[ZoneStatEntry]
-    most_visited: list[ZoneVisitEntry]
+    most_backtracked: list[ZoneBacktrackEntry]
+    slowest: list[ZoneTimeEntry]
 
 
 class BossStatEntry(BaseModel):
