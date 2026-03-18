@@ -41,10 +41,18 @@ class TestRusherScore:
 
 class TestCautiousScore:
     def test_few_deaths_but_slow(self):
+        """Rank 3 IGT, rank 1 deaths in 3-player race: raw=1.0, adjusted=1.0."""
         igts = [300, 200, 100]
         deaths = [2, 10, 15]
         score = compute_cautious_score(igts, deaths, player_index=0)
-        assert score > 0.8
+        assert score == pytest.approx(1.0)
+
+    def test_moderate_caution(self):
+        """Rank 2 IGT, rank 1 deaths in 3-player race: raw=0.5, adjusted=0.5^0.6=0.66."""
+        igts = [200, 100, 300]
+        deaths = [2, 10, 15]
+        score = compute_cautious_score(igts, deaths, player_index=0)
+        assert 0.6 < score < 0.7
 
     def test_fast_with_many_deaths(self):
         igts = [100, 200, 300]
