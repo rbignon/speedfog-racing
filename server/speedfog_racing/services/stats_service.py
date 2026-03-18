@@ -1,7 +1,22 @@
 """Stats computation: ELO ratings and behavioral traits."""
 
+import logging
+from datetime import UTC, datetime
 from statistics import median
 from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from speedfog_racing.models import (
+    EloHistory,
+    ParticipantStatus,
+    Race,
+    User,
+)
+
+logger = logging.getLogger(__name__)
 
 K_FACTOR = 32
 STARTING_ELO = 1500.0
@@ -64,3 +79,69 @@ def _actual_scores(a: dict[str, Any], b: dict[str, Any], ref_time: float) -> tup
         return 0.0, 1.0
     else:
         return 0.5, 0.5
+
+
+async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
+    """Compute and persist ELO changes for a finished race. Idempotent."""
+    existing = await db.execute(select(EloHistory.id).where(EloHistory.race_id == race_id).limit(1))
+    if existing.scalar_one_or_none() is not None:
+        return
+
+    race = await db.get(Race, race_id, options=[selectinload(Race.participants)])
+    if race is None:
+        return
+
+    players: list[dict[str, Any]] = []
+    for participant in race.participants:
+        if participant.status == ParticipantStatus.FINISHED:
+            players.append(
+                {
+                    "user_id": participant.user_id,
+                    "igt_ms": participant.igt_ms,
+                    "finished": True,
+                }
+            )
+        elif participant.status == ParticipantStatus.ABANDONED and participant.igt_ms > 0:
+            players.append(
+                {
+                    "user_id": participant.user_id,
+                    "igt_ms": participant.igt_ms,
+                    "finished": False,
+                }
+            )
+
+    if len(players) < 2:
+        return
+
+    user_ids = [p["user_id"] for p in players]
+    users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+    users_by_id = {u.id: u for u in users_result.scalars().all()}
+
+    for p in players:
+        p["elo"] = users_by_id[p["user_id"]].elo_rating
+
+    deltas = compute_elo_deltas(players)
+
+    for p in players:
+        user = users_by_id[p["user_id"]]
+        delta = deltas[p["user_id"]]
+        elo_before = user.elo_rating
+        user.elo_rating = elo_before + delta
+        user.elo_races += 1
+        db.add(
+            EloHistory(
+                user_id=user.id,
+                race_id=race_id,
+                elo_before=elo_before,
+                elo_after=user.elo_rating,
+                delta=delta,
+                created_at=datetime.now(UTC),
+            )
+        )
+
+    await db.commit()
+
+
+async def update_player_traits(race_id: Any, db: AsyncSession) -> None:
+    """Placeholder: compute and persist trait scores for race participants."""
+    pass
