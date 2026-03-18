@@ -2,6 +2,39 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.4.1] - 2026-03-18
+
+### Seeds
+
+- Margit and Morgott can no longer both appear in the same run
+- Sewer barred gates in Subterranean Shunning-Grounds are now opened at game start
+- Proximity groups for Leyndell, Academy, and Farum Azula prevent entry/exit pairs from using adjacent fog gates
+- Mohgwyn Palace added to the generation pool
+- Spirit Calling Bell given as a starting item, enabling spirit ash summoning from the start
+- Fix: tiers no longer regress between layers
+- Fix: recently-split branches no longer get immediately consumed by a rebalance on an unrelated branch
+- Fix: rebalancing now works with 2 parallel paths (merge-first strategy), producing better-paced maps
+- Fix: crosslinks now work through sequences of boss arenas
+- Fix: vanilla Stake of Marika at Radahn no longer causes a softlock by respawning outside the DAG
+
+### Races
+
+- Inactivity timeout increased from 15 to 30 minutes
+- Sprint Final now measures time spent on the final boss specifically, instead of summing all final-tier zones
+
+### Solo
+
+- New expedition pool for long runs (~5h, 90-100 layers)
+- Discord notification when starting a solo run while live on Twitch
+
+### In-game
+
+- Fix: zone detection after death no longer incorrectly backtracks to an adjacent zone
+
+### Metro map
+
+- Fix: large DAGs (100+ layers) are now readable with dynamic max zoom
+
 ## [1.4.0] - 2026-03-14
 
 ### Seeds
