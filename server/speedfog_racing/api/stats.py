@@ -130,22 +130,48 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
     return LeaderboardResponse(players=players, community=community)
 
 
+def _resolve_node_display(
+    seeds_by_id: dict[Any, Any],
+) -> dict[str, tuple[str, str]]:
+    """Build node_id -> (display_name, type) from the most recent seed.
+
+    When the same node_id appears in multiple seeds with different display_names
+    or types (due to clusters.json evolution), the most recent seed wins.
+    """
+    node_display: dict[str, tuple[str, str]] = {}
+    node_seed_date: dict[str, Any] = {}
+
+    for seed in seeds_by_id.values():
+        created = seed.created_at
+        nodes: dict[str, Any] = seed.graph_json.get("nodes", {})
+        for nid, meta in nodes.items():
+            prev_date = node_seed_date.get(nid)
+            if prev_date is None or created > prev_date:
+                node_seed_date[nid] = created
+                node_display[nid] = (
+                    meta.get("display_name", nid),
+                    meta.get("type", ""),
+                )
+    return node_display
+
+
 def _aggregate_zone_stats(
     participants: Sequence[Any],
     seeds_by_id: dict[Any, Any],
     node_types: set[str],
 ) -> dict[str, dict[str, Any]]:
-    """Aggregate zone stats per display_name from zone_history.
+    """Aggregate zone stats per cluster id (node_id) from zone_history.
 
-    Groups by display_name so that the same zone across different seeds is counted together.
-    Collects: deaths, visits, race_count, backtrack_count, time_ms list.
+    Groups by node_id so that the same cluster across different seeds is counted
+    together regardless of display_name changes. Uses the most recent seed's
+    display_name and type for output.
     """
     zone_deaths: dict[str, int] = {}
     zone_visits: dict[str, int] = {}
     zone_race_ids: dict[str, set[Any]] = {}
     zone_backtracks: dict[str, int] = {}
     zone_times: dict[str, list[int]] = {}
-    zone_info: dict[str, dict[str, str]] = {}
+    seen_nids: set[str] = set()
 
     for participant in participants:
         history = participant.zone_history or []
@@ -166,20 +192,15 @@ def _aggregate_zone_stats(
             node_type = node_meta.get("type", "")
             if node_type not in node_types:
                 continue
-            display_name = node_meta.get("display_name", nid)
             deaths = entry.get("deaths", 0)
-            zone_deaths[display_name] = zone_deaths.get(display_name, 0) + deaths
-            zone_visits[display_name] = zone_visits.get(display_name, 0) + 1
-            zone_race_ids.setdefault(display_name, set()).add(race_id)
-            if display_name not in zone_info:
-                zone_info[display_name] = {
-                    "display_name": display_name,
-                    "type": node_type,
-                }
+            zone_deaths[nid] = zone_deaths.get(nid, 0) + deaths
+            zone_visits[nid] = zone_visits.get(nid, 0) + 1
+            zone_race_ids.setdefault(nid, set()).add(race_id)
+            seen_nids.add(nid)
 
             # Backtrack: revisiting a node_id already seen by this participant
             if nid in visited_nids:
-                zone_backtracks[display_name] = zone_backtracks.get(display_name, 0) + 1
+                zone_backtracks[nid] = zone_backtracks.get(nid, 0) + 1
             visited_nids.add(nid)
 
             # Time: difference between this entry's igt_ms and next entry's igt_ms
@@ -187,19 +208,21 @@ def _aggregate_zone_stats(
             if idx + 1 < len(history):
                 next_igt = history[idx + 1].get("igt_ms", 0)
                 if current_igt > 0 and next_igt > current_igt:
-                    zone_times.setdefault(display_name, []).append(next_igt - current_igt)
+                    zone_times.setdefault(nid, []).append(next_igt - current_igt)
+
+    node_display = _resolve_node_display(seeds_by_id)
 
     return {
-        display_name: {
-            "display_name": display_name,
-            "type": zone_info[display_name]["type"],
-            "total_deaths": zone_deaths[display_name],
-            "visits": zone_visits[display_name],
-            "race_count": len(zone_race_ids[display_name]),
-            "backtrack_count": zone_backtracks.get(display_name, 0),
-            "times": zone_times.get(display_name, []),
+        nid: {
+            "display_name": node_display.get(nid, (nid, ""))[0],
+            "type": node_display.get(nid, ("", ""))[1],
+            "total_deaths": zone_deaths[nid],
+            "visits": zone_visits[nid],
+            "race_count": len(zone_race_ids[nid]),
+            "backtrack_count": zone_backtracks.get(nid, 0),
+            "times": zone_times.get(nid, []),
         }
-        for display_name in zone_info
+        for nid in seen_nids
     }
 
 
@@ -330,10 +353,9 @@ async def get_boss_stats(
         if p.race and p.race.seed:
             seeds_by_id[p.race.seed_id] = p.race.seed
 
-    # Aggregate per boss display_name: deaths list, time_ms list, type frequency
+    # Aggregate per cluster id (node_id): deaths list, time_ms list
     boss_deaths: dict[str, list[int]] = {}
     boss_times: dict[str, list[int]] = {}
-    boss_type_counts: dict[str, dict[str, int]] = {}
 
     for participant in participants:
         history = participant.zone_history or []
@@ -350,7 +372,6 @@ async def get_boss_stats(
             node_type = node_meta.get("type", "")
             if node_type not in BOSS_NODE_TYPES:
                 continue
-            display_name = node_meta.get("display_name", nid)
             deaths = entry.get("deaths", 0)
 
             # Time in zone = next entry's igt_ms - current entry's igt_ms
@@ -363,26 +384,20 @@ async def get_boss_stats(
                 next_igt = history[idx + 1].get("igt_ms", 0) or 0
             time_ms = next_igt - current_igt if current_igt > 0 and next_igt > current_igt else None
 
-            boss_deaths.setdefault(display_name, []).append(deaths)
+            boss_deaths.setdefault(nid, []).append(deaths)
             if time_ms is not None:
-                boss_times.setdefault(display_name, []).append(time_ms)
-            boss_type_counts.setdefault(display_name, {})
-            boss_type_counts[display_name][node_type] = (
-                boss_type_counts[display_name].get(node_type, 0) + 1
-            )
+                boss_times.setdefault(nid, []).append(time_ms)
+
+    node_display = _resolve_node_display(seeds_by_id)
 
     boss_entries = []
-    for display_name, deaths_list in boss_deaths.items():
-        times_list = boss_times.get(display_name, [])
-        # Use the most frequently seen type for this display_name
-        type_counts = boss_type_counts.get(display_name, {})
-        dominant_type = (
-            max(type_counts, key=lambda t: type_counts[t]) if type_counts else "boss_arena"
-        )
+    for nid, deaths_list in boss_deaths.items():
+        times_list = boss_times.get(nid, [])
+        display_name, node_type = node_display.get(nid, (nid, "major_boss"))
         boss_entries.append(
             BossStatEntry(
                 display_name=display_name,
-                type=dominant_type,
+                type=node_type,
                 encounters=len(deaths_list),
                 avg_deaths=round(sum(deaths_list) / len(deaths_list), 2) if deaths_list else 0.0,
                 max_deaths=max(deaths_list) if deaths_list else 0,
