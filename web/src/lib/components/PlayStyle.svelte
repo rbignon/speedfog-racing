@@ -49,7 +49,7 @@
 			key: 'pathfinder',
 			label: 'Pathfinder',
 			color: '#A78BFA',
-			icon: '\uD83D\uDDFA',
+			icon: '\uD83E\uDDED',
 			description: 'Takes unique paths'
 		},
 		{
@@ -80,42 +80,23 @@
 		return Math.max(1, ...Object.values(traits.scores));
 	});
 
-	let eloTrendPositive = $derived(traits.elo_trend_delta > 0);
-	let eloTrendNegative = $derived(traits.elo_trend_delta < 0);
+
 </script>
 
 {#if traits.scores}
-	<div class="playstyle-card">
-		<div class="top-row">
-			<div class="dominant-trait">
-				{#if dominantMeta}
-					<span class="dominant-icon">{dominantMeta.icon}</span>
-					<div class="dominant-info">
-						<span class="dominant-name" style="color: {dominantMeta.color}"
-							>{dominantMeta.label}</span
-						>
-						<span class="dominant-description">{dominantMeta.description}</span>
-					</div>
-				{:else}
-					<span class="no-dominant">No dominant trait yet</span>
-				{/if}
-			</div>
-			<div class="elo-block">
-				{#if traits.elo_rank}
-					<span class="elo-rank">#{traits.elo_rank}</span>
-				{/if}
-				<span class="elo-value">{traits.elo_rating}</span>
-				<span class="elo-label">ELO</span>
-				{#if traits.elo_trend_delta !== 0}
-					<span
-						class="elo-trend"
-						class:elo-trend-up={eloTrendPositive}
-						class:elo-trend-down={eloTrendNegative}
+	<div class="playstyle">
+		<div class="dominant-trait">
+			{#if dominantMeta}
+				<span class="dominant-icon">{dominantMeta.icon}</span>
+				<div class="dominant-info">
+					<span class="dominant-name" style="color: {dominantMeta.color}"
+						>{dominantMeta.label}</span
 					>
-						{eloTrendPositive ? '+' : ''}{traits.elo_trend_delta}
-					</span>
-				{/if}
-			</div>
+					<span class="dominant-description">{dominantMeta.description}</span>
+				</div>
+			{:else}
+				<span class="no-dominant">No dominant trait yet</span>
+			{/if}
 		</div>
 
 		<div class="trait-bars-grid">
@@ -140,28 +121,16 @@
 {/if}
 
 <style>
-	.playstyle-card {
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-md);
-		padding: 1.25rem;
+	.playstyle {
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
-	}
-
-	.top-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
 	}
 
 	.dominant-trait {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
-		flex: 1;
 		min-width: 0;
 	}
 
@@ -191,48 +160,6 @@
 		font-size: var(--font-size-sm);
 		color: var(--color-text-disabled);
 		font-style: italic;
-	}
-
-	.elo-block {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 0.1rem;
-		flex-shrink: 0;
-	}
-
-	.elo-rank {
-		font-size: var(--font-size-xs);
-		color: var(--color-text-secondary);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.elo-value {
-		font-size: var(--font-size-2xl);
-		font-weight: 700;
-		font-variant-numeric: tabular-nums;
-		line-height: 1;
-	}
-
-	.elo-label {
-		font-size: var(--font-size-xs);
-		color: var(--color-text-secondary);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.elo-trend {
-		font-size: var(--font-size-sm);
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.elo-trend-up {
-		color: #10b981;
-	}
-
-	.elo-trend-down {
-		color: #ef4444;
 	}
 
 	.trait-bars-grid {

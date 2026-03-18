@@ -113,40 +113,60 @@
 		</div>
 	{:else if profile}
 		<div class="profile-header">
-			{#if profile.twitch_avatar_url}
-				<img src={profile.twitch_avatar_url} alt="" class="profile-avatar" />
-			{:else}
-				<div class="profile-avatar-placeholder"></div>
-			{/if}
-			<div class="profile-info">
-				<div class="profile-name-row">
-					<h1>{profile.twitch_display_name || profile.twitch_username}</h1>
-					<a
-						href="https://twitch.tv/{profile.twitch_username}"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="twitch-link"
-						title="Twitch channel"
-						aria-label="Twitch channel"
-					>
-						<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-							<path
-								d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"
-							/>
-						</svg>
-					</a>
-					{#if profile.role === 'admin'}
-						<span class="role-badge admin">admin</span>
-					{/if}
-					{#if profile.stats.organized_count > 0}
-						<span class="role-badge organizer">organizer</span>
-					{/if}
-					{#if profile.stats.casted_count > 0}
-						<span class="role-badge caster">caster</span>
-					{/if}
+			<div class="profile-identity">
+				{#if profile.twitch_avatar_url}
+					<img src={profile.twitch_avatar_url} alt="" class="profile-avatar" />
+				{:else}
+					<div class="profile-avatar-placeholder"></div>
+				{/if}
+				<div class="profile-info">
+					<div class="profile-name-row">
+						<h1>{profile.twitch_display_name || profile.twitch_username}</h1>
+						<a
+							href="https://twitch.tv/{profile.twitch_username}"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="twitch-link"
+							title="Twitch channel"
+							aria-label="Twitch channel"
+						>
+							<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+								<path
+									d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"
+								/>
+							</svg>
+						</a>
+						{#if profile.role === 'admin'}
+							<span class="role-badge admin">admin</span>
+						{/if}
+						{#if profile.stats.organized_count > 0}
+							<span class="role-badge organizer">organizer</span>
+						{/if}
+						{#if profile.stats.casted_count > 0}
+							<span class="role-badge caster">caster</span>
+						{/if}
+					</div>
+					<p class="profile-joined">Joined {formatDate(profile.created_at)}</p>
 				</div>
-				<p class="profile-joined">Joined {formatDate(profile.created_at)}</p>
 			</div>
+			{#if traits}
+				<a href="/stats?tab=leaderboard" class="elo-block" title="View leaderboard">
+					{#if traits.elo_rank}
+						<span class="elo-rank">#{traits.elo_rank}</span>
+					{/if}
+					<span class="elo-value">{traits.elo_rating}</span>
+					<span class="elo-label">ELO</span>
+					{#if traits.elo_trend_delta !== 0}
+						<span
+							class="elo-trend"
+							class:elo-trend-up={traits.elo_trend_delta > 0}
+							class:elo-trend-down={traits.elo_trend_delta < 0}
+						>
+							{traits.elo_trend_delta > 0 ? '+' : ''}{traits.elo_trend_delta}
+						</span>
+					{/if}
+				</a>
+			{/if}
 		</div>
 
 		<div class="stats-grid">
@@ -295,8 +315,65 @@
 	.profile-header {
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
 		gap: 1.25rem;
 		margin-bottom: 2rem;
+	}
+
+	.profile-identity {
+		display: flex;
+		align-items: center;
+		gap: 1.25rem;
+		min-width: 0;
+	}
+
+	.elo-block {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.1rem;
+		flex-shrink: 0;
+		text-decoration: none;
+		color: inherit;
+		transition: opacity var(--transition);
+	}
+
+	.elo-block:hover {
+		opacity: 0.8;
+	}
+
+	.elo-rank {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.elo-value {
+		font-size: var(--font-size-2xl);
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+	}
+
+	.elo-label {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.elo-trend {
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.elo-trend-up {
+		color: #10b981;
+	}
+
+	.elo-trend-down {
+		color: #ef4444;
 	}
 
 	.profile-avatar {

@@ -54,7 +54,7 @@
 			key: 'pathfinder',
 			label: 'Pathfinder',
 			color: '#A78BFA',
-			icon: '\uD83D\uDDFA',
+			icon: '\uD83E\uDDED',
 			description: 'Takes unique paths others avoid'
 		},
 		{
