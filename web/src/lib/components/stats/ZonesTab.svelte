@@ -63,6 +63,7 @@
 	<div class="zones-layout">
 		<div class="zone-panel">
 			<h2>Deadliest Zones</h2>
+			<p class="panel-subtitle">avg. deaths per visit</p>
 			{#if deadliest.length === 0}
 				<p class="empty">No data yet.</p>
 			{:else}
@@ -88,6 +89,7 @@
 
 		<div class="zone-panel">
 			<h2>Most Backtracked</h2>
+			<p class="panel-subtitle">avg. backtracks per race</p>
 			{#if mostBacktracked.length === 0}
 				<p class="empty">No data yet.</p>
 			{:else}
@@ -113,6 +115,7 @@
 
 		<div class="zone-panel">
 			<h2>Slowest Zones</h2>
+			<p class="panel-subtitle">avg. traversal time</p>
 			{#if slowest.length === 0}
 				<p class="empty">No data yet.</p>
 			{:else}
@@ -138,6 +141,7 @@
 
 		<div class="zone-panel">
 			<h2>Fastest Zones</h2>
+			<p class="panel-subtitle">avg. traversal time</p>
 			{#if fastest.length === 0}
 				<p class="empty">No data yet.</p>
 			{:else}
@@ -194,10 +198,16 @@
 	}
 
 	.zone-panel h2 {
-		margin: 0 0 1rem 0;
+		margin: 0;
 		font-size: var(--font-size-lg);
 		font-weight: 600;
 		color: var(--color-gold);
+	}
+
+	.panel-subtitle {
+		margin: 0.15rem 0 1rem 0;
+		font-size: var(--font-size-xs);
+		color: var(--color-text-disabled);
 	}
 
 	.zone-list {
