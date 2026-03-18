@@ -148,10 +148,9 @@ def _resolve_node_display(
             prev_date = node_seed_date.get(nid)
             if prev_date is None or created > prev_date:
                 node_seed_date[nid] = created
-                node_display[nid] = (
-                    meta.get("display_name", nid),
-                    meta.get("type", ""),
-                )
+                full_name = meta.get("display_name", nid)
+                short_name = full_name.rsplit(" - ", 1)[-1]
+                node_display[nid] = (short_name, meta.get("type", ""))
     return node_display
 
 
