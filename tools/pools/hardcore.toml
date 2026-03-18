@@ -16,6 +16,7 @@ major_bosses = 12
 [structure]
 min_layers = 25
 max_layers = 30
+max_parallel_paths = 3
 final_tier = 28
 tier_curve = "power"
 tier_curve_exponent = 0.7
