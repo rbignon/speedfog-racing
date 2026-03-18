@@ -65,6 +65,11 @@
 							/></svg
 						>
 					</a>
+					<a href="/stats" class="nav-icon" aria-label="Stats" title="Community Stats">
+						<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+							<path d="M3 13h2v8H3zm6-4h2v12H9zm6-6h2v18h-2zm6 10h2v8h-2z" />
+						</svg>
+					</a>
 					<a href="/help" class="nav-icon" aria-label="Help">?</a>
 					{#if auth.loading}
 						<span class="loading">Loading...</span>
