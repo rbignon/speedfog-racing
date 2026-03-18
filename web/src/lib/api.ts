@@ -1120,3 +1120,146 @@ export async function downloadMySeedPack(raceId: string): Promise<void> {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// =============================================================================
+// Stats API
+// =============================================================================
+
+export interface LeaderboardPlayer {
+  twitch_username: string;
+  twitch_display_name: string | null;
+  twitch_avatar_url: string | null;
+  elo_rating: number;
+  elo_races: number;
+  wins: number;
+  losses: number;
+  trend_delta: number;
+  provisional: boolean;
+}
+
+export interface CommunityStats {
+  total_races: number;
+  active_players: number;
+  total_deaths: number;
+  hours_raced: number;
+}
+
+export interface LeaderboardResponse {
+  players: LeaderboardPlayer[];
+  community: CommunityStats;
+}
+
+export interface ZoneStatEntry {
+  display_name: string;
+  type: string;
+  total_deaths: number;
+  avg_deaths_per_visit: number;
+}
+
+export interface ZoneVisitEntry {
+  display_name: string;
+  type: string;
+  visit_rate: number;
+  total_visits: number;
+}
+
+export interface ZoneStatsResponse {
+  deadliest: ZoneStatEntry[];
+  most_visited: ZoneVisitEntry[];
+}
+
+export interface BossStatEntry {
+  display_name: string;
+  type: string;
+  encounters: number;
+  avg_deaths: number;
+  max_deaths: number;
+  avg_time_ms: number;
+}
+
+export interface BossStatsResponse {
+  bosses: BossStatEntry[];
+}
+
+export interface TraitPlayerEntry {
+  twitch_username: string;
+  twitch_display_name: string | null;
+  twitch_avatar_url: string | null;
+  score: number;
+  elo_rating: number;
+}
+
+export interface PlayerProfilesResponse {
+  profiles: Record<string, TraitPlayerEntry[]>;
+}
+
+export interface TraitScoresDetail {
+  rusher: number;
+  cautious: number;
+  resilient: number;
+  rage_quitter: number;
+  explorer: number;
+  pathfinder: number;
+  boss_slayer: number;
+}
+
+export interface UserTraitsResponse {
+  dominant_trait: string | null;
+  scores: TraitScoresDetail | null;
+  elo_rating: number;
+  elo_rank: number | null;
+  elo_trend_delta: number;
+}
+
+/**
+ * Fetch the ELO leaderboard and community stats.
+ */
+export async function fetchLeaderboard(): Promise<LeaderboardResponse> {
+  const res = await fetch(`${API_BASE}/stats/leaderboard`);
+  if (!res.ok) throw new Error("Failed to fetch leaderboard");
+  return res.json();
+}
+
+/**
+ * Fetch zone death/visit statistics, optionally filtered by pool.
+ */
+export async function fetchZoneStats(
+  pool?: string,
+): Promise<ZoneStatsResponse> {
+  const params = pool ? `?pool=${pool}` : "";
+  const res = await fetch(`${API_BASE}/stats/zones${params}`);
+  if (!res.ok) throw new Error("Failed to fetch zone stats");
+  return res.json();
+}
+
+/**
+ * Fetch boss encounter statistics, optionally filtered by pool.
+ */
+export async function fetchBossStats(
+  pool?: string,
+): Promise<BossStatsResponse> {
+  const params = pool ? `?pool=${pool}` : "";
+  const res = await fetch(`${API_BASE}/stats/bosses${params}`);
+  if (!res.ok) throw new Error("Failed to fetch boss stats");
+  return res.json();
+}
+
+/**
+ * Fetch per-trait player leaderboards.
+ */
+export async function fetchPlayerProfiles(): Promise<PlayerProfilesResponse> {
+  const res = await fetch(`${API_BASE}/stats/players`);
+  if (!res.ok) throw new Error("Failed to fetch player profiles");
+  return res.json();
+}
+
+/**
+ * Fetch a user's trait scores and ELO details.
+ */
+export async function fetchUserTraits(
+  username: string,
+): Promise<UserTraitsResponse> {
+  const res = await fetch(`${API_BASE}/users/${username}/traits`);
+  if (!res.ok) throw new Error("Failed to fetch user traits");
+  return res.json();
+}
