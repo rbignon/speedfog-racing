@@ -11,6 +11,7 @@ from speedfog_racing.models import (
     EloHistory,
     Participant,
     ParticipantStatus,
+    PlayerTraitScores,
     Race,
     RaceStatus,
     Seed,
@@ -18,7 +19,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
-from speedfog_racing.services.stats_service import update_elo_ratings
+from speedfog_racing.services.stats_service import update_elo_ratings, update_player_traits
 
 
 @pytest.fixture
@@ -215,3 +216,305 @@ class TestUpdateEloRatings:
             # Only 1 eligible player, no pairs possible
             assert finished_user.elo_races == 0
             assert abandoned_user.elo_races == 0
+
+
+@pytest.fixture
+async def three_races_with_zone_history(async_session):
+    """Create 3 finished races with zone_history data for trait computation.
+
+    Player 0 (rusher pattern): fast IGT, many deaths, few nodes visited.
+    Player 1 (cautious/explorer pattern): slow IGT, few deaths, many nodes visited.
+    Player 2 (medium): average on all dimensions.
+    """
+    graph_json = {
+        "nodes": {
+            "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+            "stormveil_c3d4": {
+                "type": "legacy_dungeon",
+                "display_name": "Stormveil Castle",
+                "layer": 1,
+            },
+            "cave_e5f6": {"type": "mini_dungeon", "display_name": "Coastal Cave", "layer": 1},
+            "margit_g7h8": {"type": "boss_arena", "display_name": "Margit", "layer": 2},
+            "raya_i9j0": {"type": "legacy_dungeon", "display_name": "Raya Lucaria", "layer": 3},
+            "final_k1l2": {"type": "final_boss", "display_name": "Loretta", "layer": 4},
+        },
+        "total_layers": 5,
+    }
+
+    async with async_session() as db:
+        users = [
+            User(
+                twitch_id=f"zh{i}",
+                twitch_username=f"zhp{i}",
+                api_token=f"zht{i}",
+                role=UserRole.USER,
+            )
+            for i in range(3)
+        ]
+        org = User(
+            twitch_id="zhorg",
+            twitch_username="zhorg",
+            api_token="zhtorg",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([*users, org])
+        await db.flush()
+
+        race_ids = []
+        for r_idx in range(3):
+            seed = Seed(
+                seed_number=f"sz{r_idx}",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=5,
+                folder_path=f"/t/sz{r_idx}",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+
+            race = Race(
+                name=f"Zone Race {r_idx}",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race)
+            await db.flush()
+            race_ids.append(race.id)
+
+            # Vary times slightly per race but keep the pattern consistent
+            time_mult = 1.0 + r_idx * 0.1  # 1.0, 1.1, 1.2
+
+            # Player 0: fast, many deaths, visits few nodes (rusher)
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=users[0].id,
+                    mod_token=f"zm0r{r_idx}",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=int(1_800_000 * time_mult),
+                    death_count=25,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "stormveil_c3d4", "igt_ms": 300_000, "deaths": 10},
+                        {"node_id": "margit_g7h8", "igt_ms": 800_000, "deaths": 8},
+                        {"node_id": "final_k1l2", "igt_ms": 1_500_000, "deaths": 7},
+                    ],
+                )
+            )
+            # Player 1: slow, few deaths, visits many nodes (cautious + explorer)
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=users[1].id,
+                    mod_token=f"zm1r{r_idx}",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=int(3_200_000 * time_mult),
+                    death_count=5,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "stormveil_c3d4", "igt_ms": 400_000, "deaths": 1},
+                        {"node_id": "cave_e5f6", "igt_ms": 800_000, "deaths": 1},
+                        {"node_id": "stormveil_c3d4", "igt_ms": 1_200_000},
+                        {"node_id": "margit_g7h8", "igt_ms": 1_600_000, "deaths": 1},
+                        {"node_id": "raya_i9j0", "igt_ms": 2_200_000, "deaths": 2},
+                        {"node_id": "final_k1l2", "igt_ms": 3_000_000, "deaths": 0},
+                    ],
+                )
+            )
+            # Player 2: medium stats
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=users[2].id,
+                    mod_token=f"zm2r{r_idx}",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=int(2_500_000 * time_mult),
+                    death_count=12,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "stormveil_c3d4", "igt_ms": 350_000, "deaths": 4},
+                        {"node_id": "margit_g7h8", "igt_ms": 900_000, "deaths": 5},
+                        {"node_id": "raya_i9j0", "igt_ms": 1_800_000, "deaths": 3},
+                        {"node_id": "final_k1l2", "igt_ms": 2_300_000, "deaths": 0},
+                    ],
+                )
+            )
+
+        await db.commit()
+        return race_ids, [u.id for u in users]
+
+
+class TestUpdatePlayerTraits:
+    async def test_creates_trait_scores(self, async_session, three_races_with_zone_history):
+        race_ids, user_ids = three_races_with_zone_history
+        # Process all 3 races so each player has 3 finished participations
+        for rid in race_ids:
+            async with async_session() as db:
+                await update_player_traits(rid, db)
+
+        async with async_session() as db:
+            for uid in user_ids:
+                scores = await db.get(PlayerTraitScores, uid)
+                assert scores is not None
+                assert 0 <= scores.rusher <= 100
+                assert 0 <= scores.cautious <= 100
+                assert 0 <= scores.explorer <= 100
+                assert 0 <= scores.pathfinder <= 100
+                assert 0 <= scores.boss_slayer <= 100
+                assert 0 <= scores.resilient <= 100
+                assert 0 <= scores.rage_quitter <= 100
+
+    async def test_rusher_scores_highest_for_fast_deadly_player(
+        self, async_session, three_races_with_zone_history
+    ):
+        race_ids, user_ids = three_races_with_zone_history
+        for rid in race_ids:
+            async with async_session() as db:
+                await update_player_traits(rid, db)
+
+        async with async_session() as db:
+            scores_p0 = await db.get(PlayerTraitScores, user_ids[0])
+            scores_p1 = await db.get(PlayerTraitScores, user_ids[1])
+            # Player 0 (fast + high deaths) should have higher rusher than player 1
+            assert scores_p0.rusher > scores_p1.rusher
+
+    async def test_cautious_scores_highest_for_careful_player(
+        self, async_session, three_races_with_zone_history
+    ):
+        race_ids, user_ids = three_races_with_zone_history
+        for rid in race_ids:
+            async with async_session() as db:
+                await update_player_traits(rid, db)
+
+        async with async_session() as db:
+            scores_p0 = await db.get(PlayerTraitScores, user_ids[0])
+            scores_p1 = await db.get(PlayerTraitScores, user_ids[1])
+            # Player 1 (slow + low deaths) should have higher cautious than player 0
+            assert scores_p1.cautious > scores_p0.cautious
+
+    async def test_explorer_scores_highest_for_thorough_player(
+        self, async_session, three_races_with_zone_history
+    ):
+        race_ids, user_ids = three_races_with_zone_history
+        for rid in race_ids:
+            async with async_session() as db:
+                await update_player_traits(rid, db)
+
+        async with async_session() as db:
+            scores_p0 = await db.get(PlayerTraitScores, user_ids[0])
+            scores_p1 = await db.get(PlayerTraitScores, user_ids[1])
+            # Player 1 visits more nodes and backtracks, higher explorer
+            assert scores_p1.explorer > scores_p0.explorer
+
+    async def test_below_min_races_returns_zero(self, async_session):
+        """With fewer than MIN_RACES_FOR_TRAITS finished races, per-race traits should be 0."""
+        graph_json = {
+            "nodes": {
+                "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+                "final_k1l2": {"type": "final_boss", "display_name": "Loretta", "layer": 1},
+            },
+            "total_layers": 2,
+        }
+        async with async_session() as db:
+            u1 = User(
+                twitch_id="min1",
+                twitch_username="min1",
+                api_token="mint1",
+                role=UserRole.USER,
+            )
+            u2 = User(
+                twitch_id="min2",
+                twitch_username="min2",
+                api_token="mint2",
+                role=UserRole.USER,
+            )
+            org = User(
+                twitch_id="minorg",
+                twitch_username="minorg",
+                api_token="mintorg",
+                role=UserRole.ORGANIZER,
+            )
+            db.add_all([u1, u2, org])
+            await db.flush()
+
+            seed = Seed(
+                seed_number="smin",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=2,
+                folder_path="/t/smin",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+
+            race = Race(
+                name="Min Race",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race)
+            await db.flush()
+
+            db.add_all(
+                [
+                    Participant(
+                        race_id=race.id,
+                        user_id=u1.id,
+                        mod_token="mmin0",
+                        status=ParticipantStatus.FINISHED,
+                        igt_ms=1_000_000,
+                        death_count=5,
+                        zone_history=[{"node_id": "start_a1b2", "igt_ms": 0}],
+                    ),
+                    Participant(
+                        race_id=race.id,
+                        user_id=u2.id,
+                        mod_token="mmin1",
+                        status=ParticipantStatus.FINISHED,
+                        igt_ms=2_000_000,
+                        death_count=10,
+                        zone_history=[{"node_id": "start_a1b2", "igt_ms": 0}],
+                    ),
+                ]
+            )
+            await db.commit()
+            rid = race.id
+            uid = u1.id
+
+        async with async_session() as db:
+            await update_player_traits(rid, db)
+
+        async with async_session() as db:
+            scores = await db.get(PlayerTraitScores, uid)
+            assert scores is not None
+            # Only 1 race, need MIN_RACES_FOR_TRAITS (3), so per-race traits should be 0
+            assert scores.rusher == 0
+            assert scores.cautious == 0
+            assert scores.explorer == 0
+
+    async def test_upserts_on_recompute(self, async_session, three_races_with_zone_history):
+        """Running update_player_traits again should update, not duplicate."""
+        race_ids, user_ids = three_races_with_zone_history
+        for rid in race_ids:
+            async with async_session() as db:
+                await update_player_traits(rid, db)
+
+        # Run again on the last race
+        async with async_session() as db:
+            await update_player_traits(race_ids[-1], db)
+
+        async with async_session() as db:
+            # Should still have exactly one row per user
+            from sqlalchemy import func as sqlfunc
+
+            count = (
+                await db.execute(select(sqlfunc.count()).select_from(PlayerTraitScores))
+            ).scalar()
+            assert count == 3  # One per user, not duplicated

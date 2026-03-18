@@ -6,13 +6,15 @@ from datetime import UTC, datetime
 from statistics import median
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import (
     EloHistory,
+    Participant,
     ParticipantStatus,
+    PlayerTraitScores,
     Race,
     User,
 )
@@ -23,6 +25,8 @@ K_FACTOR = 32
 STARTING_ELO = 1500.0
 MIN_RACES_FOR_DISPLAY = 3
 DOMINANT_TRAIT_THRESHOLD = 40
+BOSS_NODE_TYPES = {"boss_arena", "major_boss", "final_boss"}
+MIN_RACES_FOR_TRAITS = 3
 
 
 def compute_elo_deltas(
@@ -144,8 +148,165 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
 
 
 async def update_player_traits(race_id: Any, db: AsyncSession) -> None:
-    """Placeholder: compute and persist trait scores for race participants."""
-    pass
+    """Recompute trait scores for all participants of a finished race."""
+    race = await db.get(Race, race_id, options=[selectinload(Race.participants)])
+    if race is None:
+        return
+
+    user_ids = [
+        p.user_id
+        for p in race.participants
+        if p.status == ParticipantStatus.FINISHED
+        or (p.status == ParticipantStatus.ABANDONED and p.igt_ms > 0)
+    ]
+
+    for user_id in user_ids:
+        await _recompute_traits_for_user(user_id, db)
+
+    await db.commit()
+
+
+async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
+    """Recompute all trait scores for a single user across all their races."""
+    all_participations = (
+        (
+            await db.execute(
+                select(Participant)
+                .where(
+                    Participant.user_id == user_id,
+                    Participant.status == ParticipantStatus.FINISHED,
+                )
+                .options(
+                    selectinload(Participant.race).selectinload(Race.participants),
+                    selectinload(Participant.race).selectinload(Race.seed),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Count global stats
+    total_participated = (
+        await db.execute(
+            select(func.count()).where(
+                Participant.user_id == user_id,
+                Participant.status.in_([ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED]),
+                Participant.igt_ms > 0,
+            )
+        )
+    ).scalar() or 0
+
+    total_abandoned_playing = (
+        await db.execute(
+            select(func.count()).where(
+                Participant.user_id == user_id,
+                Participant.status == ParticipantStatus.ABANDONED,
+                Participant.igt_ms > 0,
+            )
+        )
+    ).scalar() or 0
+
+    total_finished = len(all_participations)
+
+    # Accumulate per-race trait scores
+    rusher_scores: list[float] = []
+    cautious_scores: list[float] = []
+    explorer_scores: list[float] = []
+    pathfinder_scores: list[float] = []
+    boss_slayer_scores: list[float] = []
+    gap_ratios: list[float] = []
+
+    for pp in all_participations:
+        race_obj = pp.race
+        seed = race_obj.seed
+        if seed is None:
+            continue
+
+        finishers = [rp for rp in race_obj.participants if rp.status == ParticipantStatus.FINISHED]
+        if len(finishers) < 2:
+            continue
+
+        graph = seed.graph_json
+        nodes = graph.get("nodes", {})
+        total_nodes = len(nodes)
+        igts = [f.igt_ms for f in finishers]
+        deaths = [f.death_count for f in finishers]
+        player_idx = next(i for i, f in enumerate(finishers) if f.user_id == user_id)
+
+        rusher_scores.append(compute_rusher_score(igts, deaths, player_idx))
+        cautious_scores.append(compute_cautious_score(igts, deaths, player_idx))
+
+        history = pp.zone_history or []
+        visited = {e.get("node_id", "") for e in history if e.get("node_id")}
+        explorer_scores.append(compute_explorer_score(visited, total_nodes, history))
+
+        others: set[str] = set()
+        for f in finishers:
+            if f.user_id != user_id:
+                for e in f.zone_history or []:
+                    nid = e.get("node_id", "")
+                    if nid:
+                        others.add(nid)
+        pathfinder_scores.append(compute_pathfinder_score(visited, others))
+
+        # Boss slayer
+        player_boss_deaths: dict[str, int] = {}
+        boss_death_totals: dict[str, list[int]] = {}
+        for f in finishers:
+            for e in f.zone_history or []:
+                nid = e.get("node_id", "")
+                node_info = nodes.get(nid, {})
+                if node_info.get("type") in BOSS_NODE_TYPES:
+                    d = e.get("deaths", 0)
+                    boss_death_totals.setdefault(nid, []).append(d)
+                    if f.user_id == user_id:
+                        player_boss_deaths[nid] = d
+        avg_bd = {bid: sum(v) / len(v) for bid, v in boss_death_totals.items() if v}
+        boss_slayer_scores.append(compute_boss_slayer_score(player_boss_deaths, avg_bd, avg_bd))
+
+        leader_igt = min(igts)
+        if leader_igt > 0:
+            gap_ratios.append((pp.igt_ms - leader_igt) / leader_igt)
+
+    def avg_or_zero(vals: list[float]) -> int:
+        if len(vals) < MIN_RACES_FOR_TRAITS:
+            return 0
+        return round(sum(vals) / len(vals) * 100)
+
+    scores = {
+        "rusher": avg_or_zero(rusher_scores),
+        "cautious": avg_or_zero(cautious_scores),
+        "explorer": avg_or_zero(explorer_scores),
+        "pathfinder": avg_or_zero(pathfinder_scores),
+        "boss_slayer": avg_or_zero(boss_slayer_scores),
+        "resilient": round(compute_resilient_score(total_finished, total_participated, gap_ratios))
+        if total_finished >= MIN_RACES_FOR_TRAITS
+        else 0,
+        "rage_quitter": round(
+            compute_rage_quitter_score(total_abandoned_playing, total_participated)
+        ),
+    }
+
+    max_score = max(scores.values())
+    dominant = None
+    if max_score >= DOMINANT_TRAIT_THRESHOLD:
+        dominant = max(scores, key=lambda k: scores[k])
+
+    existing = await db.get(PlayerTraitScores, user_id)
+    if existing:
+        for key, val in scores.items():
+            setattr(existing, key, val)
+        existing.dominant_trait = dominant
+        existing.updated_at = datetime.now(UTC)
+    else:
+        db.add(
+            PlayerTraitScores(
+                user_id=user_id,
+                dominant_trait=dominant,
+                **scores,
+            )
+        )
 
 
 def _compute_ranks(values: Sequence[int | float]) -> list[float]:
