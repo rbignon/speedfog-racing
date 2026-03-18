@@ -172,33 +172,37 @@ class TestBossSlayerScore:
 
 
 class TestResilientScore:
-    def test_always_finishes_far_behind(self):
-        """Player finishes all races but is always 30%+ behind: high score."""
-        gap_ratios = [0.5, 0.6, 0.4, 0.7, 0.5, 0.35, 0.6, 0.5, 0.4, 0.5]
-        score = compute_resilient_score(10, 10, gap_ratios)
-        assert score == 100.0  # All 10 races are far-behind, frequency = 100%
+    def test_always_most_deaths_and_finishes(self):
+        """Always has most deaths (percentile=1.0), finishes 100%: score = 100."""
+        death_pcts = [1.0, 1.0, 1.0, 1.0, 1.0]
+        score = compute_resilient_score(death_pcts, finished_races=5, total_races=5)
+        assert score == pytest.approx(100.0)
 
-    def test_leader_always(self):
-        """Player always wins (gap=0): score 0 (never far behind)."""
-        score = compute_resilient_score(10, 10, [0.0] * 10)
-        assert score == 0.0
+    def test_fewest_deaths_always(self):
+        """Always has fewest deaths (percentile=0.0): score = 0 (no adversity)."""
+        death_pcts = [0.0, 0.0, 0.0, 0.0, 0.0]
+        score = compute_resilient_score(death_pcts, finished_races=5, total_races=5)
+        assert score == pytest.approx(0.0)
 
-    def test_slightly_behind_not_resilient(self):
-        """Player is only 10-15% behind: not counted as far behind."""
-        gap_ratios = [0.1, 0.15, 0.12, 0.08, 0.1]
-        score = compute_resilient_score(5, 5, gap_ratios)
-        assert score == 0.0
+    def test_high_deaths_but_abandons_half(self):
+        """High deaths when playing, but abandons half: score = ~50."""
+        death_pcts = [1.0, 1.0, 1.0]  # Only 3 finished races
+        score = compute_resilient_score(death_pcts, finished_races=3, total_races=6)
+        assert 45 < score < 55
 
-    def test_mix_of_close_and_far(self):
-        """Some races close, some far behind: partial score."""
-        # 3 out of 6 races are >= 30% behind
-        gap_ratios = [0.05, 0.5, 0.1, 0.4, 0.02, 0.35]
-        score = compute_resilient_score(6, 6, gap_ratios)
-        assert score == pytest.approx(50.0)  # 3/6 = 50%
+    def test_moderate_deaths(self):
+        """Middle-of-the-pack deaths, 100% completion: moderate score."""
+        death_pcts = [0.5, 0.5, 0.5]
+        score = compute_resilient_score(death_pcts, finished_races=3, total_races=3)
+        assert 45 < score < 55
 
     def test_never_finishes(self):
-        score = compute_resilient_score(0, 10, [])
-        assert score == 0
+        score = compute_resilient_score([], finished_races=0, total_races=10)
+        assert score == 0.0
+
+    def test_no_races(self):
+        score = compute_resilient_score([], finished_races=0, total_races=0)
+        assert score == 0.0
 
 
 class TestRageQuitterScore:

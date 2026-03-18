@@ -216,7 +216,7 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
     explorer_scores: list[float] = []
     pathfinder_scores: list[float] = []
     boss_slayer_scores: list[float] = []
-    gap_ratios: list[float] = []
+    death_percentiles: list[float] = []
 
     for pp in all_participations:
         race_obj = pp.race
@@ -279,9 +279,11 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
                     player_boss_deaths[nid] = d
         boss_slayer_scores.append(compute_boss_slayer_score(player_boss_deaths, boss_all_deaths))
 
-        leader_igt = min(igts)
-        if leader_igt > 0:
-            gap_ratios.append((pp.igt_ms - leader_igt) / leader_igt)
+        # Resilient: death rank percentile among finishers
+        n_fin = len(finishers)
+        if n_fin >= 2:
+            death_ranks = _compute_ranks(deaths)
+            death_percentiles.append((death_ranks[player_idx] - 1) / (n_fin - 1))
 
     def avg_or_zero(vals: list[float]) -> int:
         if len(vals) < MIN_RACES_FOR_TRAITS:
@@ -294,7 +296,9 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         "explorer": avg_or_zero(explorer_scores),
         "pathfinder": avg_or_zero(pathfinder_scores),
         "boss_slayer": avg_or_zero(boss_slayer_scores),
-        "resilient": round(compute_resilient_score(total_finished, total_participated, gap_ratios))
+        "resilient": round(
+            compute_resilient_score(death_percentiles, total_finished, total_participated)
+        )
         if total_finished >= MIN_RACES_FOR_TRAITS
         else 0,
         "rage_quitter": round(
@@ -423,26 +427,19 @@ def compute_boss_slayer_score(
     return weighted_score / total_weight if total_weight > 0 else 0.0
 
 
-RESILIENT_GAP_THRESHOLD = 0.3  # Only count races where player was 30%+ behind leader
-
-
 def compute_resilient_score(
-    finished_races: int, total_races: int, gap_ratios: list[float]
+    death_percentiles: list[float], finished_races: int, total_races: int
 ) -> float:
-    """Score resilience (0-100): finishes races despite being far behind the leader.
+    """Score resilience (0-100): perseveres through high death counts.
 
-    Only considers races where the player finished 30%+ behind the leader.
-    Score = proportion of "far behind" races that were still completed.
+    death_percentiles: per finished race, (death_rank - 1) / (N - 1) among finishers.
+    High value = more deaths than others. Weighted by completion rate.
     """
-    if total_races == 0 or finished_races == 0:
+    if total_races == 0 or not death_percentiles:
         return 0.0
-    far_behind_finished = sum(1 for g in gap_ratios if g >= RESILIENT_GAP_THRESHOLD)
-    if far_behind_finished == 0:
-        return 0.0
-    # Scale: a player who finishes 100% of far-behind races scores high
-    # Weight by how often they're far behind (frequency matters)
-    frequency = far_behind_finished / finished_races
-    return min(frequency * 100.0, 100.0)
+    avg_death_pct = sum(death_percentiles) / len(death_percentiles)
+    completion_rate = finished_races / total_races
+    return min(avg_death_pct * completion_rate * 100.0, 100.0)
 
 
 def compute_rage_quitter_score(abandoned: int, total: int) -> float:
