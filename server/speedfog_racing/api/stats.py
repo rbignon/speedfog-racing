@@ -37,6 +37,9 @@ from speedfog_racing.schemas import (
 router = APIRouter()
 
 DUNGEON_NODE_TYPES = {"legacy_dungeon", "mini_dungeon"}
+# Only major_boss and final_boss for the public boss stats page.
+# boss_arena is intentionally excluded here (minor encounters), but IS included
+# in stats_service.py's BOSS_NODE_TYPES for trait scoring (Boss Slayer).
 BOSS_NODE_TYPES = {"major_boss", "final_boss"}
 
 
@@ -135,10 +138,13 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
 def _resolve_node_display(
     seeds_by_id: dict[Any, Any],
 ) -> dict[str, tuple[str, str]]:
-    """Build node_id -> (display_name, type) from the most recent seed.
+    """Build node_id -> (short_display_name, type) from the most recent seed.
 
-    When the same node_id appears in multiple seeds with different display_names
-    or types (due to clusters.json evolution), the most recent seed wins.
+    Node IDs are cluster IDs from SpeedFog's clusters.json. The same cluster_id
+    always refers to the same physical location, but display_names and types can
+    change across seeds if clusters.json was updated between seed generations
+    (e.g. display_name typo fixed, or a cluster reclassified from major_boss to
+    legacy_dungeon). Using the most recent seed ensures stats show current names.
     """
     node_display: dict[str, tuple[str, str]] = {}
     node_seed_date: dict[str, Any] = {}
@@ -220,8 +226,10 @@ def _aggregate_zone_stats(
                 if current_igt > 0 and final_igt > current_igt:
                     zone_times.setdefault(nid, []).append(final_igt - current_igt)
 
-    # Merge clusters that share the same display_name (e.g. Godskin Duo
-    # has two cluster ids but should appear as one entry in stats)
+    # Merge clusters sharing the same display_name. This happens when the same
+    # physical location produces different cluster_ids due to asymmetric drop
+    # connectivity in the zone graph (different entry points yield different
+    # reachable zone sets, so different cluster hashes).
     merged: dict[str, dict[str, Any]] = {}
     for nid in seen_nids:
         display_name = node_display.get(nid, (nid, ""))[0]

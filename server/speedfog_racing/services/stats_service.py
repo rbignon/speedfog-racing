@@ -124,6 +124,11 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
     users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
     users_by_id = {u.id: u for u in users_result.scalars().all()}
 
+    # Filter to players whose users still exist (defensive against deleted users)
+    players = [p for p in players if p["user_id"] in users_by_id]
+    if len(players) < 2:
+        return
+
     for p in players:
         p["elo"] = users_by_id[p["user_id"]].elo_rating
 
@@ -165,6 +170,18 @@ async def update_player_traits(race_id: Any, db: AsyncSession) -> None:
         await _recompute_traits_for_user(user_id, db)
 
     await db.commit()
+
+
+def _first_visit_path(zh: list[dict[str, Any]]) -> list[str]:
+    """Extract first-visit node order from zone_history, ignoring revisits."""
+    seen: set[str] = set()
+    path: list[str] = []
+    for e in zh:
+        nid = e.get("node_id", "")
+        if nid and nid not in seen:
+            seen.add(nid)
+            path.append(nid)
+    return path
 
 
 async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
@@ -243,16 +260,6 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         explorer_scores.append(compute_explorer_score(visited, total_nodes, history))
 
         # Pathfinder: sequence-based divergence (first-visit order, no revisits)
-        def _first_visit_path(zh: list[dict[str, Any]]) -> list[str]:
-            seen: set[str] = set()
-            path: list[str] = []
-            for e in zh:
-                nid = e.get("node_id", "")
-                if nid and nid not in seen:
-                    seen.add(nid)
-                    path.append(nid)
-            return path
-
         player_path = _first_visit_path(history)
         other_paths: list[list[str]] = []
         for f in finishers:
@@ -432,7 +439,7 @@ def compute_boss_slayer_score(
 def compute_resilient_score(
     death_percentiles: list[float], finished_races: int, total_races: int
 ) -> float:
-    """Score resilience (0-100): perseveres through high death counts.
+    """Score resilience (0-100): keeps finishing despite high death counts.
 
     death_percentiles: per finished race, (death_rank - 1) / (N - 1) among finishers.
     High value = more deaths than others. Weighted by completion rate.
