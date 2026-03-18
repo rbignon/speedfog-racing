@@ -36,12 +36,12 @@
 	}
 
 	function typeBadgeClass(type: string): string {
-		if (type === 'legacy') return 'type-badge-legacy';
+		if (type === 'legacy_dungeon') return 'type-badge-legacy';
 		return 'type-badge-mini';
 	}
 
 	function typeLabel(type: string): string {
-		if (type === 'legacy') return 'Legacy';
+		if (type === 'legacy_dungeon') return 'Legacy';
 		return 'Mini';
 	}
 </script>
@@ -88,7 +88,7 @@
 							</div>
 							<div class="bar-row">
 								<div class="bar bar-visit" style="width: {visitBarWidth(zone.visit_rate)}"></div>
-								<span class="bar-value">{zone.visit_rate.toFixed(0)}%</span>
+								<span class="bar-value">{(zone.visit_rate * 100).toFixed(0)}%</span>
 							</div>
 						</div>
 					{/each}

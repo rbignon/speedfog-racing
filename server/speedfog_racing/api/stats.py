@@ -162,10 +162,15 @@ def _aggregate_zone_stats(
     seeds_by_id: dict[Any, Any],
     node_types: set[str],
 ) -> dict[str, dict[str, Any]]:
-    """Aggregate death and visit counts per node_id from zone_history."""
-    node_deaths: dict[str, int] = {}
-    node_visits: dict[str, int] = {}
-    node_info: dict[str, dict[str, str]] = {}
+    """Aggregate death and visit counts per display_name from zone_history.
+
+    Groups by display_name so that the same zone across different seeds is counted together.
+    visit_rate denominator is the number of unique races where the zone was visited.
+    """
+    zone_deaths: dict[str, int] = {}
+    zone_visits: dict[str, int] = {}
+    zone_race_ids: dict[str, set[Any]] = {}
+    zone_info: dict[str, dict[str, str]] = {}
 
     for participant in participants:
         history = participant.zone_history or []
@@ -173,6 +178,7 @@ def _aggregate_zone_stats(
         if seed is None:
             continue
         nodes: dict[str, Any] = seed.graph_json.get("nodes", {})
+        race_id = participant.race_id
 
         for entry in history:
             nid = entry.get("node_id", "")
@@ -182,23 +188,26 @@ def _aggregate_zone_stats(
             node_type = node_meta.get("type", "")
             if node_type not in node_types:
                 continue
+            display_name = node_meta.get("display_name", nid)
             deaths = entry.get("deaths", 0)
-            node_deaths[nid] = node_deaths.get(nid, 0) + deaths
-            node_visits[nid] = node_visits.get(nid, 0) + 1
-            if nid not in node_info:
-                node_info[nid] = {
-                    "display_name": node_meta.get("display_name", nid),
+            zone_deaths[display_name] = zone_deaths.get(display_name, 0) + deaths
+            zone_visits[display_name] = zone_visits.get(display_name, 0) + 1
+            zone_race_ids.setdefault(display_name, set()).add(race_id)
+            if display_name not in zone_info:
+                zone_info[display_name] = {
+                    "display_name": display_name,
                     "type": node_type,
                 }
 
     return {
-        nid: {
-            "display_name": node_info[nid]["display_name"],
-            "type": node_info[nid]["type"],
-            "total_deaths": node_deaths[nid],
-            "visits": node_visits[nid],
+        display_name: {
+            "display_name": display_name,
+            "type": zone_info[display_name]["type"],
+            "total_deaths": zone_deaths[display_name],
+            "visits": zone_visits[display_name],
+            "race_count": len(zone_race_ids[display_name]),
         }
-        for nid in node_info
+        for display_name in zone_info
     }
 
 
@@ -225,32 +234,14 @@ async def get_zone_stats(
     participants = (await db.execute(query)).scalars().all()
 
     seeds_by_id: dict[Any, Any] = {}
+    total_race_ids: set[Any] = set()
     for p in participants:
         if p.race and p.race.seed:
             seeds_by_id[p.race.seed_id] = p.race.seed
+        if p.race_id:
+            total_race_ids.add(p.race_id)
 
-    # Count total participants per seed (for visit_rate)
-    total_participants_per_seed: dict[Any, int] = {}
-    if seeds_by_id:
-        seed_ids = list(seeds_by_id.keys())
-        counts_result = await db.execute(
-            select(Race.seed_id, func.count(Participant.id))
-            .select_from(Participant)
-            .join(Race, Participant.race_id == Race.id)
-            .where(
-                Participant.status == ParticipantStatus.FINISHED,
-                Race.seed_id.in_(seed_ids),
-            )
-            .group_by(Race.seed_id)
-        )
-        for row in counts_result.all():
-            total_participants_per_seed[row[0]] = row[1]
-
-    total_finishers = (
-        sum(total_participants_per_seed.values())
-        if total_participants_per_seed
-        else len(participants)
-    )
+    total_races = len(total_race_ids)
 
     node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES)
 
@@ -268,13 +259,17 @@ async def get_zone_stats(
         for n in deadliest_nodes
     ]
 
-    # Most visited: by visits desc
-    most_visited_nodes = sorted(node_data.values(), key=lambda n: n["visits"], reverse=True)[:10]
+    # Most visited: by visit_rate desc (races where zone was visited / total races)
+    most_visited_nodes = sorted(
+        node_data.values(),
+        key=lambda n: n["race_count"],
+        reverse=True,
+    )[:10]
     most_visited = [
         ZoneVisitEntry(
             display_name=n["display_name"],
             type=n["type"],
-            visit_rate=round(n["visits"] / total_finishers, 3) if total_finishers > 0 else 0.0,
+            visit_rate=round(n["race_count"] / total_races, 3) if total_races > 0 else 0.0,
             total_visits=n["visits"],
         )
         for n in most_visited_nodes

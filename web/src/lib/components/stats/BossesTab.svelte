@@ -55,12 +55,14 @@
 	}
 
 	function typeBadgeClass(type: string): string {
-		if (type === 'major') return 'boss-badge-major';
+		if (type === 'major_boss') return 'boss-badge-major';
+		if (type === 'final_boss') return 'boss-badge-final';
 		return 'boss-badge-normal';
 	}
 
 	function typeLabel(type: string): string {
-		if (type === 'major') return 'Major';
+		if (type === 'major_boss') return 'Major';
+		if (type === 'final_boss') return 'Final';
 		return 'Boss';
 	}
 </script>
@@ -217,6 +219,11 @@
 	.boss-badge-major {
 		background: rgba(139, 92, 246, 0.2);
 		color: var(--color-purple);
+	}
+
+	.boss-badge-final {
+		background: rgba(200, 164, 78, 0.2);
+		color: var(--color-gold);
 	}
 
 	.boss-badge-normal {

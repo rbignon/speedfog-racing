@@ -119,8 +119,9 @@
 				<h3>How ELO works</h3>
 				<p class="elo-explanation">
 					Players start at 1500 ELO. After each race, points are exchanged based on relative
-					performance. Beating a higher-rated player earns more points. The first 10 races are
-					provisional (higher volatility). W/L counts head-to-head pairings, not just race wins.
+					performance. Beating a higher-rated player earns more points. Players with fewer than 3
+					rated races are marked as provisional. Only finished races count; abandoning a race after
+					playing counts as a loss. W/L counts head-to-head pairings, not just race wins.
 				</p>
 			</div>
 		</aside>
