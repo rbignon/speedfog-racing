@@ -131,16 +131,43 @@ class TestPathfinderScore:
 
 
 class TestBossSlayerScore:
-    def test_zero_deaths_on_hard_boss(self):
-        score = compute_boss_slayer_score({"boss_a": 0}, {"boss_a": 10.0}, {"boss_a": 1.0})
+    def test_best_on_all_bosses(self):
+        """Rank 1 deaths on every boss among 3 players: score = 1.0."""
+        player = {"boss_a": 0, "boss_b": 1}
+        all_deaths = {"boss_a": [0, 5, 10], "boss_b": [1, 3, 8]}
+        score = compute_boss_slayer_score(player, all_deaths)
         assert score == pytest.approx(1.0)
 
-    def test_average_deaths(self):
-        score = compute_boss_slayer_score({"boss_a": 10}, {"boss_a": 10.0}, {"boss_a": 1.0})
+    def test_worst_on_all_bosses(self):
+        """Rank last on every boss: score = 0.0."""
+        player = {"boss_a": 10, "boss_b": 8}
+        all_deaths = {"boss_a": [0, 5, 10], "boss_b": [1, 3, 8]}
+        score = compute_boss_slayer_score(player, all_deaths)
         assert score == pytest.approx(0.0)
 
+    def test_average_player(self):
+        """Rank 2/3 on every boss: score ~0.5."""
+        player = {"boss_a": 5, "boss_b": 3}
+        all_deaths = {"boss_a": [0, 5, 10], "boss_b": [1, 3, 8]}
+        score = compute_boss_slayer_score(player, all_deaths)
+        assert 0.4 < score < 0.6
+
+    def test_weighted_by_difficulty(self):
+        """Hard boss (avg 10 deaths) weighted more than easy boss (avg 1 death)."""
+        player = {"easy": 0, "hard": 0}
+        all_deaths = {"easy": [0, 1, 2], "hard": [0, 5, 15]}
+        score = compute_boss_slayer_score(player, all_deaths)
+        assert score == pytest.approx(1.0)  # Best on both
+
     def test_no_bosses(self):
-        score = compute_boss_slayer_score({}, {}, {})
+        score = compute_boss_slayer_score({}, {})
+        assert score == 0.0
+
+    def test_single_player_on_boss(self):
+        """Only 1 player fought the boss: N<2, skip that boss."""
+        player = {"boss_a": 3}
+        all_deaths = {"boss_a": [3]}
+        score = compute_boss_slayer_score(player, all_deaths)
         assert score == 0.0
 
 

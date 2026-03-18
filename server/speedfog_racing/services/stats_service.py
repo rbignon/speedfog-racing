@@ -262,20 +262,22 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
                     other_paths.append(other_path)
         pathfinder_scores.append(compute_pathfinder_score(player_path, other_paths))
 
-        # Boss slayer
+        # Boss slayer: collect per-boss death lists for ranking
+        # Use last visit per boss per finisher (deaths accumulate on last entry)
         player_boss_deaths: dict[str, int] = {}
-        boss_death_totals: dict[str, list[int]] = {}
+        boss_all_deaths: dict[str, list[int]] = {}
         for f in finishers:
+            finisher_boss_deaths: dict[str, int] = {}
             for e in f.zone_history or []:
                 nid = e.get("node_id", "")
                 node_info = nodes.get(nid, {})
                 if node_info.get("type") in BOSS_NODE_TYPES:
-                    d = e.get("deaths", 0)
-                    boss_death_totals.setdefault(nid, []).append(d)
-                    if f.user_id == user_id:
-                        player_boss_deaths[nid] = d
-        avg_bd = {bid: sum(v) / len(v) for bid, v in boss_death_totals.items() if v}
-        boss_slayer_scores.append(compute_boss_slayer_score(player_boss_deaths, avg_bd, avg_bd))
+                    finisher_boss_deaths[nid] = e.get("deaths", 0)
+            for nid, d in finisher_boss_deaths.items():
+                boss_all_deaths.setdefault(nid, []).append(d)
+                if f.user_id == user_id:
+                    player_boss_deaths[nid] = d
+        boss_slayer_scores.append(compute_boss_slayer_score(player_boss_deaths, boss_all_deaths))
 
         leader_igt = min(igts)
         if leader_igt > 0:
@@ -390,21 +392,32 @@ def compute_pathfinder_score(player_path: list[str], other_paths: list[list[str]
 
 def compute_boss_slayer_score(
     player_boss_deaths: dict[str, int],
-    avg_boss_deaths: dict[str, float],
-    boss_weights: dict[str, float],
+    boss_all_deaths: dict[str, list[int]],
 ) -> float:
-    """Score boss efficiency: fewer deaths than average, weighted by boss difficulty."""
-    if not player_boss_deaths or not avg_boss_deaths:
+    """Score boss efficiency: rank-based, weighted by boss difficulty (avg deaths)."""
+    if not player_boss_deaths or not boss_all_deaths:
         return 0.0
     total_weight = 0.0
     weighted_score = 0.0
     for boss_id, player_deaths in player_boss_deaths.items():
-        avg = avg_boss_deaths.get(boss_id, 0.0)
-        weight = boss_weights.get(boss_id, 1.0)
-        if avg > 0:
-            score = max(0.0, 1.0 - player_deaths / avg)
-        else:
-            score = 1.0 if player_deaths == 0 else 0.0
+        all_deaths = boss_all_deaths.get(boss_id)
+        if not all_deaths or len(all_deaths) < 2:
+            continue
+        n = len(all_deaths)
+        ranks = _compute_ranks(all_deaths)
+        # Find player's rank (ties handled by _compute_ranks giving average rank)
+        player_rank = None
+        for idx, d in enumerate(all_deaths):
+            if d == player_deaths:
+                player_rank = ranks[idx]
+                break
+        if player_rank is None:
+            continue
+        score = (n - player_rank) / (n - 1)
+        # Weight by boss difficulty (average deaths across all players)
+        weight = sum(all_deaths) / n
+        if weight == 0:
+            weight = 1.0
         weighted_score += score * weight
         total_weight += weight
     return weighted_score / total_weight if total_weight > 0 else 0.0
