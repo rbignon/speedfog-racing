@@ -332,7 +332,8 @@ def compute_rusher_score(igts: list[int], deaths: list[int], player_index: int) 
     igt_ranks = _compute_ranks(igts)
     death_ranks = _compute_ranks(deaths)
     raw = max(0.0, death_ranks[player_index] - igt_ranks[player_index]) / (n - 1)
-    return min(raw, 1.0)
+    raw = min(raw, 1.0)
+    return raw**0.6
 
 
 def compute_cautious_score(igts: list[int], deaths: list[int], player_index: int) -> float:

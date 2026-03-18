@@ -15,10 +15,18 @@ from speedfog_racing.services.stats_service import (
 
 class TestRusherScore:
     def test_fastest_with_most_deaths(self):
+        """Rank 1 IGT, rank 3 deaths in 3-player race: raw=1.0, adjusted=1.0."""
         igts = [100, 200, 300]
         deaths = [20, 10, 5]
         score = compute_rusher_score(igts, deaths, player_index=0)
-        assert score > 0.8
+        assert score == pytest.approx(1.0)
+
+    def test_moderate_rush(self):
+        """Rank 1 IGT, rank 2 deaths in 3-player race: raw=0.5, adjusted=0.5^0.6=0.66."""
+        igts = [100, 200, 300]
+        deaths = [10, 20, 5]
+        score = compute_rusher_score(igts, deaths, player_index=0)
+        assert 0.6 < score < 0.7
 
     def test_slowest_with_fewest_deaths(self):
         igts = [300, 200, 100]
