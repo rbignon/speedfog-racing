@@ -214,6 +214,11 @@ def _aggregate_zone_stats(
                 next_igt = history[idx + 1].get("igt_ms", 0)
                 if current_igt > 0 and next_igt > current_igt:
                     zone_times.setdefault(nid, []).append(next_igt - current_igt)
+            else:
+                # Last zone: use participant's final IGT as the "next" timestamp
+                final_igt = participant.igt_ms or 0
+                if current_igt > 0 and final_igt > current_igt:
+                    zone_times.setdefault(nid, []).append(final_igt - current_igt)
 
     # Merge clusters that share the same display_name (e.g. Godskin Duo
     # has two cluster ids but should appear as one entry in stats)
@@ -283,8 +288,12 @@ async def get_zone_stats(
     node_display = _resolve_node_display(seeds_by_id)
     node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display)
 
-    # Deadliest: by total_deaths desc
-    deadliest_nodes = sorted(node_data.values(), key=lambda n: n["total_deaths"], reverse=True)[:5]
+    # Deadliest: by avg_deaths_per_visit desc (rate metric, not biased by popularity)
+    deadliest_nodes = sorted(
+        [n for n in node_data.values() if n["visits"] > 0],
+        key=lambda n: n["total_deaths"] / n["visits"],
+        reverse=True,
+    )[:5]
     deadliest = [
         ZoneStatEntry(
             display_name=n["display_name"],
@@ -297,10 +306,10 @@ async def get_zone_stats(
         for n in deadliest_nodes
     ]
 
-    # Most backtracked: zones players revisit most often
+    # Most backtracked: by avg_backtracks_per_race desc (rate metric)
     backtracked_nodes = sorted(
         [n for n in node_data.values() if n["backtrack_count"] > 0],
-        key=lambda n: n["backtrack_count"],
+        key=lambda n: n["backtrack_count"] / n["race_count"] if n["race_count"] > 0 else 0,
         reverse=True,
     )[:5]
     most_backtracked = [
