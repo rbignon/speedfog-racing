@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Sequence
+from difflib import SequenceMatcher
 from math import sqrt
 from statistics import median
 from typing import Any
@@ -241,14 +242,25 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         visited = {e.get("node_id", "") for e in history if e.get("node_id")}
         explorer_scores.append(compute_explorer_score(visited, total_nodes, history))
 
-        others: set[str] = set()
+        # Pathfinder: sequence-based divergence (first-visit order, no revisits)
+        def _first_visit_path(zh: list[dict[str, Any]]) -> list[str]:
+            seen: set[str] = set()
+            path: list[str] = []
+            for e in zh:
+                nid = e.get("node_id", "")
+                if nid and nid not in seen:
+                    seen.add(nid)
+                    path.append(nid)
+            return path
+
+        player_path = _first_visit_path(history)
+        other_paths: list[list[str]] = []
         for f in finishers:
             if f.user_id != user_id:
-                for e in f.zone_history or []:
-                    nid = e.get("node_id", "")
-                    if nid:
-                        others.add(nid)
-        pathfinder_scores.append(compute_pathfinder_score(visited, others))
+                other_path = _first_visit_path(f.zone_history or [])
+                if other_path:
+                    other_paths.append(other_path)
+        pathfinder_scores.append(compute_pathfinder_score(player_path, other_paths))
 
         # Boss slayer
         player_boss_deaths: dict[str, int] = {}
@@ -367,12 +379,13 @@ def compute_explorer_score(
     return 0.6 * coverage + 0.4 * backtrack_rate
 
 
-def compute_pathfinder_score(player_nodes: set[str], others_nodes: set[str]) -> float:
-    """Score how uniquely a player routes: fraction of visited nodes not seen by others."""
-    if not player_nodes or not others_nodes:
+def compute_pathfinder_score(player_path: list[str], other_paths: list[list[str]]) -> float:
+    """Score path uniqueness: how different the player's route order is from others."""
+    if not player_path or not other_paths:
         return 0.0
-    unique = player_nodes - others_nodes
-    return len(unique) / len(player_nodes)
+    similarities = [SequenceMatcher(None, player_path, other).ratio() for other in other_paths]
+    avg_similarity = sum(similarities) / len(similarities)
+    return 1.0 - avg_similarity
 
 
 def compute_boss_slayer_score(

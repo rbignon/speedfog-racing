@@ -94,20 +94,39 @@ class TestExplorerScore:
 
 
 class TestPathfinderScore:
-    def test_unique_path(self):
-        player_nodes = {"a", "b", "c", "d"}
-        others_nodes = {"a", "b"}
-        score = compute_pathfinder_score(player_nodes, others_nodes)
-        assert score == pytest.approx(0.5)
+    def test_completely_different_order(self):
+        """Reversed path vs others: high divergence."""
+        player = ["a", "b", "c", "d"]
+        others = [["d", "c", "b", "a"]]
+        score = compute_pathfinder_score(player, others)
+        assert score > 0.5
 
     def test_identical_paths(self):
-        player_nodes = {"a", "b", "c"}
-        others_nodes = {"a", "b", "c", "d"}
-        score = compute_pathfinder_score(player_nodes, others_nodes)
+        player = ["a", "b", "c"]
+        others = [["a", "b", "c"], ["a", "b", "c"]]
+        score = compute_pathfinder_score(player, others)
         assert score == 0.0
 
+    def test_partially_different(self):
+        """Same nodes, some reordering."""
+        player = ["a", "b", "c", "d", "e"]
+        others = [["a", "c", "b", "d", "e"]]
+        score = compute_pathfinder_score(player, others)
+        assert 0.1 < score < 0.5
+
+    def test_unique_nodes_in_path(self):
+        """Player visits extra nodes others didn't."""
+        player = ["a", "x", "y", "b", "c"]
+        others = [["a", "b", "c"]]
+        score = compute_pathfinder_score(player, others)
+        assert score > 0.2
+
     def test_empty_others(self):
-        score = compute_pathfinder_score({"a", "b"}, set())
+        score = compute_pathfinder_score(["a", "b"], [])
+        assert score == 0.0
+
+    def test_empty_player(self):
+        score = compute_pathfinder_score([], [["a", "b"]])
         assert score == 0.0
 
 
