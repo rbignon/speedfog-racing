@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Sequence
+from math import sqrt
 from statistics import median
 from typing import Any
 
@@ -351,10 +352,10 @@ def compute_cautious_score(igts: list[int], deaths: list[int], player_index: int
 def compute_explorer_score(
     visited_nodes: set[str], total_nodes: int, history: list[dict[str, Any]]
 ) -> float:
-    """Score exploration tendency: node coverage weighted with backtracking rate."""
+    """Score exploration tendency: sqrt-scaled node coverage weighted with backtracking rate."""
     if total_nodes == 0 or not history:
         return 0.0
-    coverage = len(visited_nodes) / total_nodes
+    coverage = sqrt(len(visited_nodes) / total_nodes)
     seen: set[str] = set()
     backtracks = 0
     for entry in history:

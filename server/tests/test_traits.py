@@ -63,6 +63,7 @@ class TestCautiousScore:
 
 class TestExplorerScore:
     def test_high_coverage_high_backtrack(self):
+        """5/6 coverage (83%), sqrt(0.83)=0.91. 1/6 backtrack rate. 0.6*0.91 + 0.4*0.17 = 0.61."""
         visited = {"a", "b", "c", "d", "e"}
         total_nodes = 6
         history = [
@@ -74,13 +75,22 @@ class TestExplorerScore:
             {"node_id": "e"},
         ]
         score = compute_explorer_score(visited, total_nodes, history)
-        assert 0.5 < score < 0.7
+        assert 0.55 < score < 0.70
 
-    def test_no_backtrack(self):
+    def test_low_coverage_no_backtrack(self):
+        """2/10 coverage (20%), sqrt(0.2)=0.45. No backtrack. 0.6*0.45 = 0.27."""
         visited = {"a", "b"}
         history = [{"node_id": "a"}, {"node_id": "b"}]
         score = compute_explorer_score(visited, 10, history)
-        assert 0.1 < score < 0.15
+        assert 0.25 < score < 0.30
+
+    def test_empty_history(self):
+        score = compute_explorer_score(set(), 10, [])
+        assert score == 0.0
+
+    def test_zero_total_nodes(self):
+        score = compute_explorer_score({"a"}, 0, [{"node_id": "a"}])
+        assert score == 0.0
 
 
 class TestPathfinderScore:
