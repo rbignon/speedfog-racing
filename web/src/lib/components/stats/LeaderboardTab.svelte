@@ -1,0 +1,335 @@
+<script lang="ts">
+	import { fetchLeaderboard, type LeaderboardResponse } from '$lib/api';
+
+	let data = $state<LeaderboardResponse | null>(null);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
+
+	let players = $derived(data?.players ?? []);
+	let community = $derived(data?.community ?? null);
+
+	$effect(() => {
+		loadData();
+	});
+
+	async function loadData() {
+		loading = true;
+		error = null;
+		try {
+			data = await fetchLeaderboard();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load leaderboard.';
+		} finally {
+			loading = false;
+		}
+	}
+
+	function formatHours(h: number): string {
+		if (h < 1) return '<1';
+		return h.toFixed(0);
+	}
+</script>
+
+{#if loading}
+	<p class="loading-text">Loading leaderboard...</p>
+{:else if error}
+	<p class="error-text">{error}</p>
+{:else}
+	<div class="leaderboard-layout">
+		<div class="ranking-panel">
+			<table class="ranking-table">
+				<thead>
+					<tr>
+						<th class="th-rank">#</th>
+						<th>Player</th>
+						<th class="th-num">ELO</th>
+						<th class="th-num">W/L</th>
+						<th class="th-num">Races</th>
+						<th class="th-num">Trend</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each players as player, i}
+						<tr>
+							<td class="rank" class:rank-gold={i === 0}>
+								{i + 1}
+							</td>
+							<td class="player-cell">
+								{#if player.twitch_avatar_url}
+									<img src={player.twitch_avatar_url} alt="" class="player-avatar" />
+								{:else}
+									<div class="player-avatar-placeholder"></div>
+								{/if}
+								<a href="/user/{player.twitch_username}" class="player-name">
+									{player.twitch_display_name || player.twitch_username}
+								</a>
+								{#if player.provisional}
+									<span class="provisional-badge">provisional</span>
+								{/if}
+							</td>
+							<td class="num elo-value">{player.elo_rating}</td>
+							<td class="num">{player.wins}/{player.losses}</td>
+							<td class="num">{player.elo_races}</td>
+							<td class="num">
+								{#if player.trend_delta > 0}
+									<span class="trend-up">+{player.trend_delta}</span>
+								{:else if player.trend_delta < 0}
+									<span class="trend-down">{player.trend_delta}</span>
+								{:else}
+									<span class="trend-neutral">0</span>
+								{/if}
+							</td>
+						</tr>
+					{/each}
+					{#if players.length === 0}
+						<tr>
+							<td colspan="6" class="empty-row">No ranked players yet.</td>
+						</tr>
+					{/if}
+				</tbody>
+			</table>
+		</div>
+
+		<aside class="sidebar">
+			{#if community}
+				<div class="sidebar-card">
+					<h3>Community</h3>
+					<dl class="stat-list">
+						<div class="stat-row">
+							<dt>Total races</dt>
+							<dd>{community.total_races}</dd>
+						</div>
+						<div class="stat-row">
+							<dt>Active players</dt>
+							<dd>{community.active_players}</dd>
+						</div>
+						<div class="stat-row">
+							<dt>Total deaths</dt>
+							<dd>{community.total_deaths.toLocaleString()}</dd>
+						</div>
+						<div class="stat-row">
+							<dt>Hours raced</dt>
+							<dd>{formatHours(community.hours_raced)}</dd>
+						</div>
+					</dl>
+				</div>
+			{/if}
+
+			<div class="sidebar-card">
+				<h3>How ELO works</h3>
+				<p class="elo-explanation">
+					Players start at 1500 ELO. After each race, points are exchanged based on relative
+					performance. Beating a higher-rated player earns more points. The first 10 races are
+					provisional (higher volatility). W/L counts head-to-head pairings, not just race wins.
+				</p>
+			</div>
+		</aside>
+	</div>
+{/if}
+
+<style>
+	.loading-text,
+	.error-text {
+		color: var(--color-text-disabled);
+		font-style: italic;
+		padding: 2rem 0;
+	}
+
+	.error-text {
+		color: var(--color-danger);
+	}
+
+	.leaderboard-layout {
+		display: grid;
+		grid-template-columns: 1fr 300px;
+		gap: 1.5rem;
+		align-items: start;
+	}
+
+	.ranking-panel {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		overflow-x: auto;
+	}
+
+	.ranking-table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+
+	.ranking-table thead th {
+		text-align: left;
+		padding: 0.65rem 0.75rem;
+		color: var(--color-text-secondary);
+		font-weight: 500;
+		font-size: var(--font-size-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.th-rank {
+		width: 3rem;
+	}
+
+	.th-num {
+		text-align: right !important;
+	}
+
+	.ranking-table tbody td {
+		padding: 0.6rem 0.75rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.ranking-table tbody tr:first-child td {
+		border-top: none;
+	}
+
+	.rank {
+		color: var(--color-text-secondary);
+		font-variant-numeric: tabular-nums;
+		font-weight: 600;
+	}
+
+	.rank-gold {
+		color: var(--color-gold);
+	}
+
+	.player-cell {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.player-avatar {
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+
+	.player-avatar-placeholder {
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		background: var(--color-surface-elevated);
+		flex-shrink: 0;
+	}
+
+	.player-name {
+		color: var(--color-text);
+		text-decoration: none;
+		font-weight: 500;
+		transition: color var(--transition);
+	}
+
+	.player-name:hover {
+		color: var(--color-purple);
+	}
+
+	.provisional-badge {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-disabled);
+		background: rgba(107, 114, 128, 0.15);
+		padding: 0.1rem 0.4rem;
+		border-radius: var(--radius-sm);
+		font-weight: 500;
+	}
+
+	.num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.elo-value {
+		font-weight: 700;
+	}
+
+	.trend-up {
+		color: var(--color-success);
+	}
+
+	.trend-down {
+		color: var(--color-danger);
+	}
+
+	.trend-neutral {
+		color: var(--color-text-disabled);
+	}
+
+	.empty-row {
+		text-align: center;
+		color: var(--color-text-disabled);
+		font-style: italic;
+		padding: 2rem 0.75rem !important;
+	}
+
+	.sidebar {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.sidebar-card {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		padding: 1rem 1.25rem;
+	}
+
+	.sidebar-card h3 {
+		margin: 0 0 0.75rem 0;
+		font-size: var(--font-size-base);
+		font-weight: 600;
+		color: var(--color-text);
+	}
+
+	.stat-list {
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.stat-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.stat-row dt {
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+	}
+
+	.stat-row dd {
+		margin: 0;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.elo-explanation {
+		margin: 0;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-disabled);
+		line-height: 1.5;
+	}
+
+	@media (max-width: 768px) {
+		.leaderboard-layout {
+			grid-template-columns: 1fr;
+		}
+
+		.sidebar {
+			flex-direction: row;
+			flex-wrap: wrap;
+		}
+
+		.sidebar-card {
+			flex: 1;
+			min-width: 200px;
+		}
+	}
+</style>
