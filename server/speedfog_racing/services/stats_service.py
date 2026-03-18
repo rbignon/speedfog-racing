@@ -1,6 +1,7 @@
 """Stats computation: ELO ratings and behavioral traits."""
 
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from statistics import median
 from typing import Any
@@ -145,3 +146,109 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
 async def update_player_traits(race_id: Any, db: AsyncSession) -> None:
     """Placeholder: compute and persist trait scores for race participants."""
     pass
+
+
+def _compute_ranks(values: Sequence[int | float]) -> list[float]:
+    """Compute 1-indexed ranks with average rank for ties."""
+    n = len(values)
+    sorted_indices = sorted(range(n), key=lambda i: values[i])
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j < n - 1 and values[sorted_indices[j + 1]] == values[sorted_indices[i]]:
+            j += 1
+        avg_rank = (i + j) / 2.0 + 1.0
+        for k in range(i, j + 1):
+            ranks[sorted_indices[k]] = avg_rank
+        i = j + 1
+    return ranks
+
+
+def compute_rusher_score(igts: list[int], deaths: list[int], player_index: int) -> float:
+    """Score how much a player rushes: fast IGT but many deaths."""
+    n = len(igts)
+    if n < 2:
+        return 0.0
+    igt_ranks = _compute_ranks(igts)
+    death_ranks = _compute_ranks(deaths)
+    raw = max(0.0, death_ranks[player_index] - igt_ranks[player_index]) / (n - 1)
+    return min(raw, 1.0)
+
+
+def compute_cautious_score(igts: list[int], deaths: list[int], player_index: int) -> float:
+    """Score how cautious a player is: few deaths but slow IGT."""
+    n = len(igts)
+    if n < 2:
+        return 0.0
+    igt_ranks = _compute_ranks(igts)
+    death_ranks = _compute_ranks(deaths)
+    raw = max(0.0, igt_ranks[player_index] - death_ranks[player_index]) / (n - 1)
+    return min(raw, 1.0)
+
+
+def compute_explorer_score(
+    visited_nodes: set[str], total_nodes: int, history: list[dict[str, Any]]
+) -> float:
+    """Score exploration tendency: node coverage weighted with backtracking rate."""
+    if total_nodes == 0 or not history:
+        return 0.0
+    coverage = len(visited_nodes) / total_nodes
+    seen: set[str] = set()
+    backtracks = 0
+    for entry in history:
+        nid = entry.get("node_id", "")
+        if nid in seen:
+            backtracks += 1
+        seen.add(nid)
+    backtrack_rate = backtracks / len(history) if history else 0.0
+    return 0.6 * coverage + 0.4 * backtrack_rate
+
+
+def compute_pathfinder_score(player_nodes: set[str], others_nodes: set[str]) -> float:
+    """Score how uniquely a player routes: fraction of visited nodes not seen by others."""
+    if not player_nodes or not others_nodes:
+        return 0.0
+    unique = player_nodes - others_nodes
+    return len(unique) / len(player_nodes)
+
+
+def compute_boss_slayer_score(
+    player_boss_deaths: dict[str, int],
+    avg_boss_deaths: dict[str, float],
+    boss_weights: dict[str, float],
+) -> float:
+    """Score boss efficiency: fewer deaths than average, weighted by boss difficulty."""
+    if not player_boss_deaths or not avg_boss_deaths:
+        return 0.0
+    total_weight = 0.0
+    weighted_score = 0.0
+    for boss_id, player_deaths in player_boss_deaths.items():
+        avg = avg_boss_deaths.get(boss_id, 0.0)
+        weight = boss_weights.get(boss_id, 1.0)
+        if avg > 0:
+            score = max(0.0, 1.0 - player_deaths / avg)
+        else:
+            score = 1.0 if player_deaths == 0 else 0.0
+        weighted_score += score * weight
+        total_weight += weight
+    return weighted_score / total_weight if total_weight > 0 else 0.0
+
+
+def compute_resilient_score(
+    finished_races: int, total_races: int, gap_ratios: list[float]
+) -> float:
+    """Score resilience (0-100): finishes races despite being far behind the leader."""
+    if total_races == 0 or finished_races == 0:
+        return 0.0
+    completion_rate = finished_races / total_races
+    avg_gap = sum(gap_ratios) / len(gap_ratios) if gap_ratios else 0.0
+    raw = completion_rate * avg_gap
+    return min(raw * 150.0, 100.0)
+
+
+def compute_rage_quitter_score(abandoned: int, total: int) -> float:
+    """Score rage-quitting tendency (0-100): fraction of races abandoned."""
+    if total == 0:
+        return 0.0
+    return (abandoned / total) * 100.0
