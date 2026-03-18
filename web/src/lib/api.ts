@@ -1142,10 +1142,7 @@ export interface LeaderboardPlayer {
   twitch_avatar_url: string | null;
   elo_rating: number;
   elo_races: number;
-  wins: number;
-  losses: number;
   trend_delta: number;
-  provisional: boolean;
 }
 
 export interface CommunityStats {

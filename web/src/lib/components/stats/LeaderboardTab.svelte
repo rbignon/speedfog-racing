@@ -43,7 +43,6 @@
 						<th class="th-rank">#</th>
 						<th>Player</th>
 						<th class="th-num">ELO</th>
-						<th class="th-num">W/L</th>
 						<th class="th-num">Races</th>
 						<th class="th-num">Trend</th>
 					</tr>
@@ -63,12 +62,8 @@
 								<a href="/user/{player.twitch_username}" class="player-name">
 									{player.twitch_display_name || player.twitch_username}
 								</a>
-								{#if player.provisional}
-									<span class="provisional-badge">provisional</span>
-								{/if}
 							</td>
 							<td class="num elo-value">{player.elo_rating}</td>
-							<td class="num">{player.wins}/{player.losses}</td>
 							<td class="num">{player.elo_races}</td>
 							<td class="num">
 								{#if player.trend_delta > 0}
@@ -83,7 +78,7 @@
 					{/each}
 					{#if players.length === 0}
 						<tr>
-							<td colspan="6" class="empty-row">No ranked players yet.</td>
+							<td colspan="5" class="empty-row">No ranked players yet.</td>
 						</tr>
 					{/if}
 				</tbody>
@@ -119,9 +114,9 @@
 				<h3>How ELO works</h3>
 				<p class="elo-explanation">
 					Players start at 1500 ELO. After each race, points are exchanged based on relative
-					performance. Beating a higher-rated player earns more points. Players with fewer than 3
-					rated races are marked as provisional. Only finished races count; abandoning a race after
-					playing counts as a loss. W/L counts head-to-head pairings, not just race wins.
+					performance. Beating a higher-rated player earns more points. Only players with 3 or more
+					rated races appear here. Only finished races count; abandoning a race after playing counts
+					as a loss.
 				</p>
 			</div>
 		</aside>
@@ -228,15 +223,6 @@
 
 	.player-name:hover {
 		color: var(--color-purple);
-	}
-
-	.provisional-badge {
-		font-size: var(--font-size-xs);
-		color: var(--color-text-disabled);
-		background: rgba(107, 114, 128, 0.15);
-		padding: 0.1rem 0.4rem;
-		border-radius: var(--radius-sm);
-		font-weight: 500;
 	}
 
 	.num {

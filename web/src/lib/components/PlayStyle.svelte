@@ -120,7 +120,7 @@
 
 		<div class="trait-bars-grid">
 			{#each sortedTraits() as trait}
-				<div class="trait-row">
+				<div class="trait-row" title={trait.description}>
 					<span class="trait-icon">{trait.icon}</span>
 					<span class="trait-label" style="color: {trait.color}">{trait.label}</span>
 					<div class="trait-track">

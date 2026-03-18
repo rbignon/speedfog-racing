@@ -42,36 +42,11 @@ BOSS_NODE_TYPES = {"boss_arena", "major_boss", "final_boss"}
 @router.get("/leaderboard", response_model=LeaderboardResponse)
 async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResponse:
     """ELO leaderboard with community stats."""
-    # Fetch all users who have raced
+    # Fetch users with at least 3 rated races (non-provisional only)
     users_result = await db.execute(
-        select(User).where(User.elo_races > 0).order_by(User.elo_rating.desc())
+        select(User).where(User.elo_races >= 3).order_by(User.elo_rating.desc())
     )
     users = users_result.scalars().all()
-
-    # Compute wins/losses for each user from finished races
-    # Win = 1st place (lowest igt_ms, ties broken by fewer deaths)
-    wins_by_user: dict[Any, int] = {}
-    losses_by_user: dict[Any, int] = {}
-
-    finished_races_result = await db.execute(
-        select(Race)
-        .where(Race.status == RaceStatus.FINISHED)
-        .options(selectinload(Race.participants))
-    )
-    finished_races = finished_races_result.scalars().all()
-
-    for race in finished_races:
-        finishers = [p for p in race.participants if p.status == ParticipantStatus.FINISHED]
-        if len(finishers) < 2:
-            continue
-        sorted_finishers = sorted(finishers, key=lambda p: (p.igt_ms, p.death_count))
-        winner_id = sorted_finishers[0].user_id
-        for p in finishers:
-            uid = p.user_id
-            if uid == winner_id:
-                wins_by_user[uid] = wins_by_user.get(uid, 0) + 1
-            else:
-                losses_by_user[uid] = losses_by_user.get(uid, 0) + 1
 
     # Compute trend deltas (sum of last 3 EloHistory entries per user)
     user_ids = [u.id for u in users]
@@ -102,10 +77,7 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
                 twitch_avatar_url=u.twitch_avatar_url,
                 elo_rating=round(u.elo_rating),
                 elo_races=u.elo_races,
-                wins=wins_by_user.get(u.id, 0),
-                losses=losses_by_user.get(u.id, 0),
                 trend_delta=trends.get(u.id, 0),
-                provisional=u.elo_races < 3,
             )
         )
 
@@ -305,10 +277,10 @@ async def get_boss_stats(
         if p.race and p.race.seed:
             seeds_by_id[p.race.seed_id] = p.race.seed
 
-    # Aggregate per boss node: deaths list, time_ms list, encounter count
+    # Aggregate per boss display_name: deaths list, time_ms list, type frequency
     boss_deaths: dict[str, list[int]] = {}
     boss_times: dict[str, list[int]] = {}
-    boss_info: dict[str, dict[str, str]] = {}
+    boss_type_counts: dict[str, dict[str, int]] = {}
 
     for participant in participants:
         history = participant.zone_history or []
@@ -317,7 +289,7 @@ async def get_boss_stats(
             continue
         nodes: dict[str, Any] = seed.graph_json.get("nodes", {})
 
-        for entry in history:
+        for idx, entry in enumerate(history):
             nid = entry.get("node_id", "")
             if not nid:
                 continue
@@ -325,24 +297,34 @@ async def get_boss_stats(
             node_type = node_meta.get("type", "")
             if node_type not in BOSS_NODE_TYPES:
                 continue
+            display_name = node_meta.get("display_name", nid)
             deaths = entry.get("deaths", 0)
-            time_ms = entry.get("time_ms", 0) or 0
-            boss_deaths.setdefault(nid, []).append(deaths)
-            boss_times.setdefault(nid, []).append(time_ms)
-            if nid not in boss_info:
-                boss_info[nid] = {
-                    "display_name": node_meta.get("display_name", nid),
-                    "type": node_type,
-                }
+
+            # Time in zone = next entry's igt_ms - current entry's igt_ms
+            current_igt = entry.get("igt_ms", 0) or 0
+            next_igt = history[idx + 1].get("igt_ms", 0) or 0 if idx + 1 < len(history) else 0
+            time_ms = next_igt - current_igt if current_igt > 0 and next_igt > current_igt else None
+
+            boss_deaths.setdefault(display_name, []).append(deaths)
+            if time_ms is not None:
+                boss_times.setdefault(display_name, []).append(time_ms)
+            boss_type_counts.setdefault(display_name, {})
+            boss_type_counts[display_name][node_type] = (
+                boss_type_counts[display_name].get(node_type, 0) + 1
+            )
 
     boss_entries = []
-    for nid, info in boss_info.items():
-        deaths_list = boss_deaths[nid]
-        times_list = boss_times[nid]
+    for display_name, deaths_list in boss_deaths.items():
+        times_list = boss_times.get(display_name, [])
+        # Use the most frequently seen type for this display_name
+        type_counts = boss_type_counts.get(display_name, {})
+        dominant_type = (
+            max(type_counts, key=lambda t: type_counts[t]) if type_counts else "boss_arena"
+        )
         boss_entries.append(
             BossStatEntry(
-                display_name=info["display_name"],
-                type=info["type"],
+                display_name=display_name,
+                type=dominant_type,
                 encounters=len(deaths_list),
                 avg_deaths=round(sum(deaths_list) / len(deaths_list), 2) if deaths_list else 0.0,
                 max_deaths=max(deaths_list) if deaths_list else 0,
@@ -361,7 +343,7 @@ async def get_player_profiles(db: AsyncSession = Depends(get_db)) -> PlayerProfi
     rows_result = await db.execute(
         select(PlayerTraitScores, User)
         .join(User, PlayerTraitScores.user_id == User.id)
-        .where(PlayerTraitScores.dominant_trait.isnot(None))
+        .where(PlayerTraitScores.dominant_trait.isnot(None), User.elo_races >= 3)
     )
     rows = rows_result.all()
 

@@ -407,10 +407,7 @@ class LeaderboardPlayer(BaseModel):
     twitch_avatar_url: str | None
     elo_rating: int
     elo_races: int
-    wins: int
-    losses: int
     trend_delta: int
-    provisional: bool
 
 
 class CommunityStats(BaseModel):
