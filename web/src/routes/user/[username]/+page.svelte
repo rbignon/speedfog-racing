@@ -4,18 +4,22 @@
 		fetchUserProfile,
 		fetchUserActivity,
 		fetchUserPoolStats,
+		fetchUserTraits,
 		type UserProfile,
 		type UserPoolStats,
 		type ActivityTimeline,
+		type UserTraitsResponse
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 	import PoolStatsTable from '$lib/components/PoolStatsTable.svelte';
+	import PlayStyle from '$lib/components/PlayStyle.svelte';
 
 	let username = $derived(page.params.username!);
 	let profile = $state<UserProfile | null>(null);
 	let poolStats = $state<UserPoolStats | null>(null);
 	let activity = $state<ActivityTimeline | null>(null);
+	let traits = $state<UserTraitsResponse | null>(null);
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let error = $state<string | null>(null);
@@ -28,14 +32,16 @@
 		loading = true;
 		error = null;
 		try {
-			const [p, a, ps] = await Promise.all([
+			const [p, a, ps, t] = await Promise.all([
 				fetchUserProfile(username),
 				fetchUserActivity(username),
 				fetchUserPoolStats(username),
+				fetchUserTraits(username).catch(() => null)
 			]);
 			profile = p;
 			activity = a;
 			poolStats = ps;
+			traits = t;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load profile.';
 		} finally {
@@ -51,7 +57,7 @@
 			activity = {
 				items: [...activity.items, ...more.items],
 				total: more.total,
-				has_more: more.has_more,
+				has_more: more.has_more
 			};
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load more activity.';
@@ -64,7 +70,7 @@
 		return new Date(dateStr).toLocaleDateString('en-US', {
 			month: 'short',
 			day: 'numeric',
-			year: 'numeric',
+			year: 'numeric'
 		});
 	}
 
@@ -72,7 +78,7 @@
 		return new Date(dateStr).toLocaleDateString('en-US', {
 			month: 'short',
 			day: 'numeric',
-			year: 'numeric',
+			year: 'numeric'
 		});
 	}
 
@@ -89,14 +95,11 @@
 		if (p === 3) return 'bronze';
 		return '';
 	}
-
 </script>
 
 <svelte:head>
 	<title>
-		{profile
-			? (profile.twitch_display_name || profile.twitch_username)
-			: 'Profile'} - SpeedFog Racing
+		{profile ? profile.twitch_display_name || profile.twitch_username : 'Profile'} - SpeedFog Racing
 	</title>
 </svelte:head>
 
@@ -127,7 +130,9 @@
 						aria-label="Twitch channel"
 					>
 						<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-							<path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
+							<path
+								d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"
+							/>
 						</svg>
 					</a>
 					{#if profile.role === 'admin'}
@@ -162,6 +167,13 @@
 				<span class="stat-label">Casted</span>
 			</div>
 		</div>
+
+		{#if traits?.scores}
+			<section class="play-style-section">
+				<h2>Play Style</h2>
+				<PlayStyle {traits} />
+			</section>
+		{/if}
 
 		{#if poolStats && poolStats.pools.length > 0}
 			<section class="pool-stats-section">
@@ -247,11 +259,7 @@
 					</div>
 
 					{#if activity.has_more}
-						<button
-							class="btn btn-secondary load-more"
-							disabled={loadingMore}
-							onclick={loadMore}
-						>
+						<button class="btn btn-secondary load-more" disabled={loadingMore} onclick={loadMore}>
 							{loadingMore ? 'Loading...' : 'Load more'}
 						</button>
 					{/if}
@@ -372,6 +380,17 @@
 		grid-template-columns: repeat(4, 1fr);
 		gap: 0.75rem;
 		margin-bottom: 2.5rem;
+	}
+
+	.play-style-section {
+		margin-bottom: 2.5rem;
+	}
+
+	.play-style-section h2 {
+		font-size: var(--font-size-lg);
+		font-weight: 600;
+		margin: 0 0 1rem 0;
+		color: var(--color-gold);
 	}
 
 	.pool-stats-section {
