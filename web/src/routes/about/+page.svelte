@@ -10,25 +10,26 @@
 <main class="about">
 	<header class="about-hero">
 		<h1>How SpeedFog Racing Works</h1>
-		<p>Race through a randomized Elden Ring. Compete on skill, not memorization.</p>
+		<p>Race through a randomized Elden Ring.</p>
 	</header>
 
 	<section class="section">
 		<h2>What is SpeedFog?</h2>
 		<p>
-			SpeedFog is built on top of the
-			<a href="https://www.nexusmods.com/eldenring/mods/3295" target="_blank" rel="noopener noreferrer"
-				>Fog Gate Randomizer</a
-			>
-			by <strong>thefifthmatt</strong>, an Elden Ring mod that replaces every fog gate with
-			a randomized connection. Instead of walking through a familiar door into the expected
-			area, each gate teleports you somewhere entirely different. The world becomes an
-			unpredictable maze.
+			The <a href="https://www.nexusmods.com/eldenring/mods/3295"
+			target="_blank" rel="noopener noreferrer" >Fog Gate Randomizer</a>
+			by <strong>thefifthmatt</strong> is an Elden Ring mod that replaces
+			every fog gate with a randomized connection. Instead of walking
+			through a familiar door into the expected area, each gate teleports
+			you somewhere entirely different.
 		</p>
 		<p>
-			SpeedFog adds structure on top of this chaos: it generates
-			<strong>balanced route maps</strong> where every path is equally long and challenging.
-			No lucky shortcut, only execution matters.
+			Speedfog is a competitive racing platform, letting players race
+			through <strong>balanced</strong> route maps where every path is
+			equally long and challenging. It features live leaderboards, in-game
+			overlay with progress tracking, spectator views, and an interactive
+			<strong>metro-style graph</strong> showing each player's path
+			through the fog.
 		</p>
 	</section>
 
