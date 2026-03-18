@@ -36,7 +36,7 @@ from speedfog_racing.schemas import (
 router = APIRouter()
 
 DUNGEON_NODE_TYPES = {"legacy_dungeon", "mini_dungeon"}
-BOSS_NODE_TYPES = {"boss_arena", "major_boss", "final_boss"}
+BOSS_NODE_TYPES = {"major_boss", "final_boss"}
 
 
 @router.get("/leaderboard", response_model=LeaderboardResponse)
@@ -301,8 +301,13 @@ async def get_boss_stats(
             deaths = entry.get("deaths", 0)
 
             # Time in zone = next entry's igt_ms - current entry's igt_ms
+            # For the last entry, use participant's final igt_ms as end time
             current_igt = entry.get("igt_ms", 0) or 0
-            next_igt = history[idx + 1].get("igt_ms", 0) or 0 if idx + 1 < len(history) else 0
+            is_last = idx >= len(history) - 1
+            if is_last:
+                next_igt = participant.igt_ms or 0
+            else:
+                next_igt = history[idx + 1].get("igt_ms", 0) or 0
             time_ms = next_igt - current_igt if current_igt > 0 and next_igt > current_igt else None
 
             boss_deaths.setdefault(display_name, []).append(deaths)

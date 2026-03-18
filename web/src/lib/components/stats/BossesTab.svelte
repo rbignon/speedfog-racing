@@ -54,17 +54,6 @@
 		return sortAsc ? ' \u25B2' : ' \u25BC';
 	}
 
-	function typeBadgeClass(type: string): string {
-		if (type === 'major_boss') return 'boss-badge-major';
-		if (type === 'final_boss') return 'boss-badge-final';
-		return 'boss-badge-normal';
-	}
-
-	function typeLabel(type: string): string {
-		if (type === 'major_boss') return 'Major';
-		if (type === 'final_boss') return 'Final';
-		return 'Boss';
-	}
 </script>
 
 {#if loading}
@@ -106,10 +95,7 @@
 			<tbody>
 				{#each bosses as boss}
 					<tr>
-						<td class="boss-cell">
-							<span class="boss-name">{boss.display_name}</span>
-							<span class="boss-badge {typeBadgeClass(boss.type)}">{typeLabel(boss.type)}</span>
-						</td>
+						<td class="boss-name">{boss.display_name}</td>
 						<td class="num">{boss.encounters}</td>
 						<td class="num">{boss.avg_deaths.toFixed(1)}</td>
 						<td class="num">{boss.max_deaths}</td>
@@ -197,38 +183,8 @@
 		border-top: none;
 	}
 
-	.boss-cell {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
 	.boss-name {
 		font-weight: 500;
-	}
-
-	.boss-badge {
-		font-size: 0.65rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		padding: 0.1rem 0.4rem;
-		border-radius: var(--radius-sm);
-	}
-
-	.boss-badge-major {
-		background: rgba(139, 92, 246, 0.2);
-		color: var(--color-purple);
-	}
-
-	.boss-badge-final {
-		background: rgba(200, 164, 78, 0.2);
-		color: var(--color-gold);
-	}
-
-	.boss-badge-normal {
-		background: rgba(156, 163, 175, 0.15);
-		color: var(--color-text-secondary);
 	}
 
 	.num {
