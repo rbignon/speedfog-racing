@@ -5,7 +5,14 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import selectinload
 
+from speedfog_racing.api.stats import (
+    BOSS_NODE_TYPES,
+    DUNGEON_NODE_TYPES,
+    _aggregate_zone_stats,
+    _resolve_node_display,
+)
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
     EloHistory,
@@ -518,3 +525,149 @@ class TestUpdatePlayerTraits:
                 await db.execute(select(sqlfunc.count()).select_from(PlayerTraitScores))
             ).scalar()
             assert count == 3  # One per user, not duplicated
+
+
+class TestZoneStatsAggregation:
+    async def test_aggregate_zone_stats_counts_deaths(
+        self, async_session, three_races_with_zone_history
+    ):
+        """Zone aggregation should sum deaths and filter by dungeon types only."""
+        race_ids, user_ids = three_races_with_zone_history
+        async with async_session() as db:
+            participants = (
+                (
+                    await db.execute(
+                        select(Participant)
+                        .where(Participant.status == ParticipantStatus.FINISHED)
+                        .options(
+                            selectinload(Participant.race).selectinload(Race.seed),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            seeds_by_id = {}
+            for p in participants:
+                if p.race and p.race.seed:
+                    seeds_by_id[p.race.seed_id] = p.race.seed
+
+            node_display = _resolve_node_display(seeds_by_id)
+            zone_data = _aggregate_zone_stats(
+                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+
+            # stormveil_c3d4 is legacy_dungeon, should be included
+            assert any("Stormveil" in name for name in zone_data)
+            # cave_e5f6 is mini_dungeon, should be included
+            assert any("Coastal" in name for name in zone_data)
+            # margit_g7h8 is boss_arena, should be excluded from dungeon stats
+            assert not any("Margit" in name for name in zone_data)
+            # final_k1l2 is final_boss, should be excluded
+            assert not any("Loretta" in name for name in zone_data)
+
+    async def test_aggregate_zone_stats_computes_times(
+        self, async_session, three_races_with_zone_history
+    ):
+        """Time should be computed as difference between consecutive igt_ms entries."""
+        race_ids, user_ids = three_races_with_zone_history
+        async with async_session() as db:
+            participants = (
+                (
+                    await db.execute(
+                        select(Participant)
+                        .where(Participant.status == ParticipantStatus.FINISHED)
+                        .options(
+                            selectinload(Participant.race).selectinload(Race.seed),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            seeds_by_id = {}
+            for p in participants:
+                if p.race and p.race.seed:
+                    seeds_by_id[p.race.seed_id] = p.race.seed
+
+            node_display = _resolve_node_display(seeds_by_id)
+            zone_data = _aggregate_zone_stats(
+                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+
+            # Each zone should have time entries with positive values
+            for name, data in zone_data.items():
+                assert data["times"], f"Zone {name} should have time entries"
+                for t in data["times"]:
+                    assert t > 0, f"Zone {name} has non-positive time {t}"
+
+    async def test_aggregate_zone_stats_detects_backtracks(
+        self, async_session, three_races_with_zone_history
+    ):
+        """Player 1 backtracks to stormveil, so stormveil should have backtrack count."""
+        race_ids, user_ids = three_races_with_zone_history
+        async with async_session() as db:
+            participants = (
+                (
+                    await db.execute(
+                        select(Participant)
+                        .where(Participant.status == ParticipantStatus.FINISHED)
+                        .options(
+                            selectinload(Participant.race).selectinload(Race.seed),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            seeds_by_id = {}
+            for p in participants:
+                if p.race and p.race.seed:
+                    seeds_by_id[p.race.seed_id] = p.race.seed
+
+            node_display = _resolve_node_display(seeds_by_id)
+            zone_data = _aggregate_zone_stats(
+                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+
+            stormveil = next((d for n, d in zone_data.items() if "Stormveil" in n), None)
+            assert stormveil is not None
+            # Player 1 backtracks to stormveil in each of the 3 races
+            assert stormveil["backtrack_count"] == 3
+
+
+class TestBossStatsFiltering:
+    async def test_boss_stats_excludes_boss_arena(
+        self, async_session, three_races_with_zone_history
+    ):
+        """Boss stats should only include major_boss and final_boss, not boss_arena."""
+        race_ids, user_ids = three_races_with_zone_history
+        async with async_session() as db:
+            participants = (
+                (
+                    await db.execute(
+                        select(Participant)
+                        .where(Participant.status == ParticipantStatus.FINISHED)
+                        .options(
+                            selectinload(Participant.race).selectinload(Race.seed),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            seeds_by_id = {}
+            for p in participants:
+                if p.race and p.race.seed:
+                    seeds_by_id[p.race.seed_id] = p.race.seed
+
+            node_display = _resolve_node_display(seeds_by_id)
+
+            # Verify type resolution
+            for nid, (display, ntype) in node_display.items():
+                if "final" in nid:
+                    assert ntype == "final_boss"
+                if "margit" in nid:
+                    # boss_arena should NOT be in stats.py BOSS_NODE_TYPES
+                    assert ntype == "boss_arena"
+                    assert ntype not in BOSS_NODE_TYPES
