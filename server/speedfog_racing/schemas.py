@@ -457,6 +457,7 @@ class BossStatEntry(BaseModel):
     avg_deaths: float
     max_deaths: int
     avg_time_ms: int
+    back_ratio: float
 
 
 class BossStatsResponse(BaseModel):

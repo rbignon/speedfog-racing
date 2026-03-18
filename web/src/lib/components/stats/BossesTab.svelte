@@ -6,7 +6,13 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	type SortKey = 'avg_deaths' | 'encounters' | 'max_deaths' | 'avg_time_ms' | 'display_name';
+	type SortKey =
+		| 'avg_deaths'
+		| 'encounters'
+		| 'max_deaths'
+		| 'avg_time_ms'
+		| 'back_ratio'
+		| 'display_name';
 	let sortKey = $state<SortKey>('avg_deaths');
 	let sortAsc = $state(false);
 
@@ -90,6 +96,11 @@
 							Avg Time{sortIndicator('avg_time_ms')}
 						</button>
 					</th>
+					<th class="th-num">
+						<button class="sort-btn" onclick={() => handleSort('back_ratio')}>
+							Back %{sortIndicator('back_ratio')}
+						</button>
+					</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -100,11 +111,12 @@
 						<td class="num">{boss.avg_deaths.toFixed(1)}</td>
 						<td class="num">{boss.max_deaths}</td>
 						<td class="num">{formatIgt(boss.avg_time_ms)}</td>
+						<td class="num">{Math.round(boss.back_ratio * 100)}%</td>
 					</tr>
 				{/each}
 				{#if (data?.bosses ?? []).length === 0}
 					<tr>
-						<td colspan="5" class="empty-row">No boss data yet.</td>
+						<td colspan="6" class="empty-row">No boss data yet.</td>
 					</tr>
 				{/if}
 			</tbody>

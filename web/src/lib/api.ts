@@ -1192,6 +1192,7 @@ export interface BossStatEntry {
   avg_deaths: number;
   max_deaths: number;
   avg_time_ms: number;
+  back_ratio: number;
 }
 
 export interface BossStatsResponse {

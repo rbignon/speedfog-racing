@@ -381,9 +381,12 @@ async def get_boss_stats(
 
     node_display = _resolve_node_display(seeds_by_id)
 
-    # Aggregate per cluster id (node_id): deaths list, time_ms list
-    boss_deaths: dict[str, list[int]] = {}
-    boss_times: dict[str, list[int]] = {}
+    # Per participant, collect boss encounter data grouped by node_id.
+    # back_ratio: on a player's LAST visit to a boss, did they backtrack?
+    # avg_deaths: exclude 0-death backtracks (player never fought).
+    nid_fight_deaths: dict[str, list[int]] = {}
+    nid_backed: dict[str, list[bool]] = {}
+    nid_times: dict[str, list[int]] = {}
 
     for participant in participants:
         history = participant.zone_history or []
@@ -392,54 +395,92 @@ async def get_boss_stats(
             continue
         nodes: dict[str, Any] = seed.graph_json.get("nodes", {})
 
+        # Collect all visits per boss node_id for this participant
+        visits_by_nid: dict[str, list[tuple[int, dict[str, Any]]]] = {}
         for idx, entry in enumerate(history):
             nid = entry.get("node_id", "")
-            if not nid:
+            if not nid or nid not in nodes:
                 continue
-            if nid not in nodes:
-                continue
-            # Filter by most recent type
             resolved_type = node_display.get(nid, ("", ""))[1]
             if resolved_type not in BOSS_NODE_TYPES:
                 continue
-            deaths = entry.get("deaths", 0)
+            visits_by_nid.setdefault(nid, []).append((idx, entry))
 
-            # Time in zone = next entry's igt_ms - current entry's igt_ms
-            # For the last entry, use participant's final igt_ms as end time
-            current_igt = entry.get("igt_ms", 0) or 0
-            is_last = idx >= len(history) - 1
-            if is_last:
-                next_igt = participant.igt_ms or 0
+        for nid, visits in visits_by_nid.items():
+            last_idx, last_entry = visits[-1]
+
+            # back_ratio: did the player backtrack on their last visit?
+            # Check if the node after the last visit was already visited
+            backed_last_visit = False
+            if last_idx + 1 < len(history):
+                next_nid = history[last_idx + 1].get("node_id", "")
+                # Build set of nodes visited before this last visit
+                visited_before: set[str] = set()
+                for prev_entry in history[:last_idx]:
+                    prev_nid = prev_entry.get("node_id", "")
+                    if prev_nid:
+                        visited_before.add(prev_nid)
+                backed_last_visit = next_nid in visited_before
+
+            # Collect deaths from all visits, excluding 0-death backtracks
+            # (those don't represent actual combat)
+            fight_deaths: list[int] = []
+            for visit_idx, visit_entry in visits:
+                deaths = visit_entry.get("deaths", 0)
+                if deaths == 0 and visit_idx + 1 < len(history):
+                    next_nid = history[visit_idx + 1].get("node_id", "")
+                    prev_visited: set[str] = set()
+                    for prev_entry in history[:visit_idx]:
+                        prev_nid = prev_entry.get("node_id", "")
+                        if prev_nid:
+                            prev_visited.add(prev_nid)
+                    if next_nid in prev_visited:
+                        continue  # 0-death backtrack, skip
+                fight_deaths.append(deaths)
+
+            # Time: use last visit for time calculation
+            current_igt = last_entry.get("igt_ms", 0) or 0
+            if last_idx + 1 < len(history):
+                next_igt = history[last_idx + 1].get("igt_ms", 0) or 0
             else:
-                next_igt = history[idx + 1].get("igt_ms", 0) or 0
+                next_igt = participant.igt_ms or 0
             time_ms = next_igt - current_igt if current_igt > 0 and next_igt > current_igt else None
 
-            boss_deaths.setdefault(nid, []).append(deaths)
+            nid_fight_deaths.setdefault(nid, []).extend(fight_deaths)
+            nid_backed.setdefault(nid, []).append(backed_last_visit)
             if time_ms is not None:
-                boss_times.setdefault(nid, []).append(time_ms)
+                nid_times.setdefault(nid, []).append(time_ms)
 
-    # Merge clusters that share the same display_name (e.g. Godskin Duo
-    # has two cluster ids but should appear as one entry)
+    # Merge clusters that share the same display_name (e.g. Godskin Duo)
     merged_deaths: dict[str, list[int]] = {}
+    merged_backed: dict[str, list[bool]] = {}
     merged_times: dict[str, list[int]] = {}
     merged_type: dict[str, str] = {}
-    for nid, deaths_list in boss_deaths.items():
+    for nid in nid_backed:
         display_name, node_type = node_display.get(nid, (nid, "major_boss"))
-        merged_deaths.setdefault(display_name, []).extend(deaths_list)
-        merged_times.setdefault(display_name, []).extend(boss_times.get(nid, []))
+        merged_deaths.setdefault(display_name, []).extend(nid_fight_deaths.get(nid, []))
+        merged_backed.setdefault(display_name, []).extend(nid_backed[nid])
+        merged_times.setdefault(display_name, []).extend(nid_times.get(nid, []))
         merged_type.setdefault(display_name, node_type)
 
     boss_entries = []
-    for display_name, deaths_list in merged_deaths.items():
-        times_list = merged_times.get(display_name, [])
+    for display_name, backed_list in merged_backed.items():
+        fight_deaths = merged_deaths.get(display_name, [])
+        times = merged_times.get(display_name, [])
+        total_encounters = len(backed_list)
+        backed_count = sum(backed_list)
+
         boss_entries.append(
             BossStatEntry(
                 display_name=display_name,
                 type=merged_type[display_name],
-                encounters=len(deaths_list),
-                avg_deaths=round(sum(deaths_list) / len(deaths_list), 2) if deaths_list else 0.0,
-                max_deaths=max(deaths_list) if deaths_list else 0,
-                avg_time_ms=round(sum(times_list) / len(times_list)) if times_list else 0,
+                encounters=total_encounters,
+                avg_deaths=(
+                    round(sum(fight_deaths) / len(fight_deaths), 2) if fight_deaths else 0.0
+                ),
+                max_deaths=max(fight_deaths) if fight_deaths else 0,
+                avg_time_ms=round(sum(times) / len(times)) if times else 0,
+                back_ratio=round(backed_count / total_encounters, 2) if total_encounters else 0.0,
             )
         )
 
