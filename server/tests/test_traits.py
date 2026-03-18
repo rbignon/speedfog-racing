@@ -22,11 +22,11 @@ class TestRusherScore:
         assert score == pytest.approx(1.0)
 
     def test_moderate_rush(self):
-        """Rank 1 IGT, rank 2 deaths in 3-player race: raw=0.5, adjusted=0.5^0.6=0.66."""
+        """Rank 1 IGT, rank 2 deaths in 3-player race: raw=0.5, adjusted=0.5^0.4=0.76."""
         igts = [100, 200, 300]
         deaths = [10, 20, 5]
         score = compute_rusher_score(igts, deaths, player_index=0)
-        assert 0.6 < score < 0.7
+        assert 0.7 < score < 0.8
 
     def test_slowest_with_fewest_deaths(self):
         igts = [300, 200, 100]
@@ -48,11 +48,11 @@ class TestCautiousScore:
         assert score == pytest.approx(1.0)
 
     def test_moderate_caution(self):
-        """Rank 2 IGT, rank 1 deaths in 3-player race: raw=0.5, adjusted=0.5^0.6=0.66."""
+        """Rank 2 IGT, rank 1 deaths in 3-player race: raw=0.5, adjusted=0.5^0.4=0.76."""
         igts = [200, 100, 300]
         deaths = [2, 10, 15]
         score = compute_cautious_score(igts, deaths, player_index=0)
-        assert 0.6 < score < 0.7
+        assert 0.7 < score < 0.8
 
     def test_fast_with_many_deaths(self):
         igts = [100, 200, 300]
@@ -95,11 +95,11 @@ class TestExplorerScore:
 
 class TestPathfinderScore:
     def test_completely_different_order(self):
-        """Reversed path vs others: high divergence."""
+        """Reversed path vs others: high divergence. raw~0.75, 0.75^0.6=0.83."""
         player = ["a", "b", "c", "d"]
         others = [["d", "c", "b", "a"]]
         score = compute_pathfinder_score(player, others)
-        assert score > 0.5
+        assert score > 0.6
 
     def test_identical_paths(self):
         player = ["a", "b", "c"]
@@ -108,18 +108,18 @@ class TestPathfinderScore:
         assert score == 0.0
 
     def test_partially_different(self):
-        """Same nodes, some reordering."""
+        """Same nodes, some reordering. raw~0.2, 0.2^0.6=0.38."""
         player = ["a", "b", "c", "d", "e"]
         others = [["a", "c", "b", "d", "e"]]
         score = compute_pathfinder_score(player, others)
-        assert 0.1 < score < 0.5
+        assert 0.2 < score < 0.5
 
     def test_unique_nodes_in_path(self):
-        """Player visits extra nodes others didn't."""
+        """Player visits extra nodes others didn't. raw~0.25, 0.25^0.6=0.43."""
         player = ["a", "x", "y", "b", "c"]
         others = [["a", "b", "c"]]
         score = compute_pathfinder_score(player, others)
-        assert score > 0.2
+        assert score > 0.3
 
     def test_empty_others(self):
         score = compute_pathfinder_score(["a", "b"], [])
@@ -132,32 +132,32 @@ class TestPathfinderScore:
 
 class TestBossSlayerScore:
     def test_best_on_all_bosses(self):
-        """Rank 1 deaths on every boss among 3 players: score = 1.0."""
+        """Rank 1 deaths on every boss among 3 players: raw=1.0, 1.0^1.4=1.0."""
         player = {"boss_a": 0, "boss_b": 1}
         all_deaths = {"boss_a": [0, 5, 10], "boss_b": [1, 3, 8]}
         score = compute_boss_slayer_score(player, all_deaths)
         assert score == pytest.approx(1.0)
 
     def test_worst_on_all_bosses(self):
-        """Rank last on every boss: score = 0.0."""
+        """Rank last on every boss: raw=0.0, 0.0^1.4=0.0."""
         player = {"boss_a": 10, "boss_b": 8}
         all_deaths = {"boss_a": [0, 5, 10], "boss_b": [1, 3, 8]}
         score = compute_boss_slayer_score(player, all_deaths)
         assert score == pytest.approx(0.0)
 
     def test_average_player(self):
-        """Rank 2/3 on every boss: score ~0.5."""
+        """Rank 2/3 on every boss: raw=0.5, 0.5^1.4=0.38."""
         player = {"boss_a": 5, "boss_b": 3}
         all_deaths = {"boss_a": [0, 5, 10], "boss_b": [1, 3, 8]}
         score = compute_boss_slayer_score(player, all_deaths)
-        assert 0.4 < score < 0.6
+        assert 0.3 < score < 0.45
 
     def test_weighted_by_difficulty(self):
         """Hard boss (avg 10 deaths) weighted more than easy boss (avg 1 death)."""
         player = {"easy": 0, "hard": 0}
         all_deaths = {"easy": [0, 1, 2], "hard": [0, 5, 15]}
         score = compute_boss_slayer_score(player, all_deaths)
-        assert score == pytest.approx(1.0)  # Best on both
+        assert score == pytest.approx(1.0)  # Best on both, raw=1.0
 
     def test_no_bosses(self):
         score = compute_boss_slayer_score({}, {})

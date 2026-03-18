@@ -352,7 +352,7 @@ def compute_rusher_score(igts: list[int], deaths: list[int], player_index: int) 
     death_ranks = _compute_ranks(deaths)
     raw = max(0.0, death_ranks[player_index] - igt_ranks[player_index]) / (n - 1)
     raw = min(raw, 1.0)
-    return float(raw**0.6)
+    return float(raw**0.4)
 
 
 def compute_cautious_score(igts: list[int], deaths: list[int], player_index: int) -> float:
@@ -364,7 +364,7 @@ def compute_cautious_score(igts: list[int], deaths: list[int], player_index: int
     death_ranks = _compute_ranks(deaths)
     raw = max(0.0, igt_ranks[player_index] - death_ranks[player_index]) / (n - 1)
     raw = min(raw, 1.0)
-    return float(raw**0.6)
+    return float(raw**0.4)
 
 
 def compute_explorer_score(
@@ -391,7 +391,8 @@ def compute_pathfinder_score(player_path: list[str], other_paths: list[list[str]
         return 0.0
     similarities = [SequenceMatcher(None, player_path, other).ratio() for other in other_paths]
     avg_similarity = sum(similarities) / len(similarities)
-    return 1.0 - avg_similarity
+    raw = 1.0 - avg_similarity
+    return float(raw**0.6)
 
 
 def compute_boss_slayer_score(
@@ -424,7 +425,8 @@ def compute_boss_slayer_score(
             weight = 1.0
         weighted_score += score * weight
         total_weight += weight
-    return weighted_score / total_weight if total_weight > 0 else 0.0
+    raw = weighted_score / total_weight if total_weight > 0 else 0.0
+    return float(raw**1.4)
 
 
 def compute_resilient_score(
