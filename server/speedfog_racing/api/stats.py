@@ -53,21 +53,23 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
     user_ids = [u.id for u in users]
     trends: dict[Any, int] = {}
     if user_ids:
-        # Fetch last 3 deltas per user using a subquery approach
-        for uid in user_ids:
-            recent = (
-                (
-                    await db.execute(
-                        select(EloHistory.delta)
-                        .where(EloHistory.user_id == uid)
-                        .order_by(EloHistory.created_at.desc())
-                        .limit(3)
-                    )
-                )
-                .scalars()
-                .all()
+        # Batch fetch all recent EloHistory for qualified users in one query,
+        # then group in Python. Replaces the N+1 pattern (one query per user).
+        all_history = (
+            await db.execute(
+                select(EloHistory.user_id, EloHistory.delta)
+                .where(EloHistory.user_id.in_(user_ids))
+                .order_by(EloHistory.user_id, EloHistory.created_at.desc())
             )
-            trends[uid] = round(sum(recent))
+        ).all()
+
+        # Accumulate last 3 deltas per user
+        delta_counts: dict[Any, int] = {}
+        for uid, delta in all_history:
+            count = delta_counts.get(uid, 0)
+            if count < 3:
+                trends[uid] = trends.get(uid, 0) + round(delta)
+                delta_counts[uid] = count + 1
 
     players = []
     for u in users:
