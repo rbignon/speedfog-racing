@@ -444,7 +444,7 @@ def compute_resilient_score(
 
 def compute_rage_quitter_score(abandoned: int, total: int) -> float:
     """Score rage-quitting tendency (0-100): fraction of races abandoned."""
-    if total == 0:
+    if total < MIN_RACES_FOR_TRAITS:
         return 0.0
     return (abandoned / total) * 100.0
 

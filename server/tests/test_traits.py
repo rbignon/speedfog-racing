@@ -217,3 +217,13 @@ class TestRageQuitterScore:
     def test_no_races(self):
         score = compute_rage_quitter_score(abandoned=0, total=0)
         assert score == 0.0
+
+    def test_below_minimum_races(self):
+        """Only 2 races played: too few for a trait, returns 0."""
+        score = compute_rage_quitter_score(abandoned=2, total=2)
+        assert score == 0.0
+
+    def test_at_minimum_races(self):
+        """Exactly 3 races: threshold met."""
+        score = compute_rage_quitter_score(abandoned=2, total=3)
+        assert score == pytest.approx(200 / 3)
