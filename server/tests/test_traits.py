@@ -101,13 +101,28 @@ class TestBossSlayerScore:
 
 class TestResilientScore:
     def test_always_finishes_far_behind(self):
-        gap_ratios = [0.5, 0.6, 0.4, 0.7, 0.5, 0.3, 0.6, 0.5, 0.4, 0.5]
+        """Player finishes all races but is always 30%+ behind: high score."""
+        gap_ratios = [0.5, 0.6, 0.4, 0.7, 0.5, 0.35, 0.6, 0.5, 0.4, 0.5]
         score = compute_resilient_score(10, 10, gap_ratios)
-        assert score > 60
+        assert score == 100.0  # All 10 races are far-behind, frequency = 100%
 
     def test_leader_always(self):
+        """Player always wins (gap=0): score 0 (never far behind)."""
         score = compute_resilient_score(10, 10, [0.0] * 10)
-        assert score < 10
+        assert score == 0.0
+
+    def test_slightly_behind_not_resilient(self):
+        """Player is only 10-15% behind: not counted as far behind."""
+        gap_ratios = [0.1, 0.15, 0.12, 0.08, 0.1]
+        score = compute_resilient_score(5, 5, gap_ratios)
+        assert score == 0.0
+
+    def test_mix_of_close_and_far(self):
+        """Some races close, some far behind: partial score."""
+        # 3 out of 6 races are >= 30% behind
+        gap_ratios = [0.05, 0.5, 0.1, 0.4, 0.02, 0.35]
+        score = compute_resilient_score(6, 6, gap_ratios)
+        assert score == pytest.approx(50.0)  # 3/6 = 50%
 
     def test_never_finishes(self):
         score = compute_resilient_score(0, 10, [])

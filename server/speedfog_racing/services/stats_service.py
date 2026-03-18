@@ -394,16 +394,26 @@ def compute_boss_slayer_score(
     return weighted_score / total_weight if total_weight > 0 else 0.0
 
 
+RESILIENT_GAP_THRESHOLD = 0.3  # Only count races where player was 30%+ behind leader
+
+
 def compute_resilient_score(
     finished_races: int, total_races: int, gap_ratios: list[float]
 ) -> float:
-    """Score resilience (0-100): finishes races despite being far behind the leader."""
+    """Score resilience (0-100): finishes races despite being far behind the leader.
+
+    Only considers races where the player finished 30%+ behind the leader.
+    Score = proportion of "far behind" races that were still completed.
+    """
     if total_races == 0 or finished_races == 0:
         return 0.0
-    completion_rate = finished_races / total_races
-    avg_gap = sum(gap_ratios) / len(gap_ratios) if gap_ratios else 0.0
-    raw = completion_rate * avg_gap
-    return min(raw * 150.0, 100.0)
+    far_behind_finished = sum(1 for g in gap_ratios if g >= RESILIENT_GAP_THRESHOLD)
+    if far_behind_finished == 0:
+        return 0.0
+    # Scale: a player who finishes 100% of far-behind races scores high
+    # Weight by how often they're far behind (frequency matters)
+    frequency = far_behind_finished / finished_races
+    return min(frequency * 100.0, 100.0)
 
 
 def compute_rage_quitter_score(abandoned: int, total: int) -> float:
