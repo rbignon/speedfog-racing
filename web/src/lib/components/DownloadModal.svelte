@@ -40,6 +40,10 @@
 				<li>Extract the zip anywhere</li>
 				<li>Run <code>launch_speedfog.bat</code></li>
 			</ol>
+			<p class="tip">
+				Save backups are created automatically while you play. If a crash corrupts your
+				save, run <code>recovery.bat</code> to restore a previous backup.
+			</p>
 		</div>
 
 		<button class="download-btn" onclick={onDownload} disabled={downloading}>
@@ -136,6 +140,21 @@
 		border-radius: var(--radius-sm);
 		font-family: 'JetBrains Mono', 'Fira Code', monospace;
 		font-size: var(--font-size-sm);
+	}
+
+	.tip {
+		margin: 0.5rem 0 0;
+		color: var(--color-text-disabled);
+		font-size: var(--font-size-xs);
+		line-height: 1.5;
+	}
+
+	.tip code {
+		background: var(--color-bg);
+		padding: 0.1rem 0.4rem;
+		border-radius: var(--radius-sm);
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-size: var(--font-size-xs);
 	}
 
 	.download-btn {

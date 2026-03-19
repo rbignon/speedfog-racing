@@ -672,6 +672,37 @@
 
 		<button
 			class="accordion"
+			class:open={isOpen('faq-crash-save')}
+			aria-expanded={isOpen('faq-crash-save')}
+			onclick={() => toggleDetail('faq-crash-save')}
+		>
+			<span>Game crashes when loading the save</span>
+			<span class="chevron"></span>
+		</button>
+		{#if isOpen('faq-crash-save')}
+			<div class="panel">
+				<p>
+					A crash during a modded warp can corrupt the save file. If Elden Ring crashes
+					again when you reload, use the built-in recovery tool:
+				</p>
+				<ol>
+					<li>
+						Run <code>recovery.bat</code> (Windows) or
+						<code>linux/recovery.sh</code> (Linux) from your seed pack folder.
+					</li>
+					<li>Pick a backup from the list (the most recent is selected by default).</li>
+					<li>Relaunch with <code>launch_speedfog.bat</code>.</li>
+				</ol>
+				<p>
+					Backups are created automatically every minute while the game is running. A
+					pre-run backup is also saved before each session, so you can always roll back
+					to the start.
+				</p>
+			</div>
+		{/if}
+
+		<button
+			class="accordion"
 			class:open={isOpen('faq-abandon')}
 			aria-expanded={isOpen('faq-abandon')}
 			onclick={() => toggleDetail('faq-abandon')}
