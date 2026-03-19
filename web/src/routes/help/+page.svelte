@@ -713,7 +713,7 @@
 		{#if isOpen('faq-abandon')}
 			<div class="panel">
 				<p>
-					If your IGT doesn't change for 15 minutes (game closed, stuck, or AFK), the
+					If your IGT doesn't change for 30 minutes (game closed, stuck, or AFK), the
 					server marks you as abandoned. The race can finish once all participants are done
 					or abandoned.
 				</p>
