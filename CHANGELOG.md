@@ -2,6 +2,26 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.4.2] - 2026-03-19
+
+### Stats
+
+- New global stats page with ELO leaderboard, zone analytics, boss analytics, and play styles
+- ELO rating system with margin-of-victory scoring
+- 7 behavioral traits: Rusher, Cautious, Explorer, Pathfinder, Boss Slayer, Resilient, Rage Quitter
+- Play style traits on user profiles, ELO rating in profile header
+- Zone stats: deadliest, most backtracked, slowest, and fastest zones
+- Boss stats: kill rates, average deaths, and backtrack ratios for major bosses
+- Players with fewer than 3 completed races are hidden as provisional
+
+### Seeds
+
+- Save backup system: seed packs now include an automatic backup daemon and recovery scripts for Windows and Linux
+- Convergence and fallback zone selection uses weighted random picks for more even type distribution across the map
+- More boss arenas (Morgott, Hoarah Loux, Godskin Noble, Gaius, Romina) can now serve as split points, since entry fog gates can also be used as exits
+- New proximity groups for Stranded Graveyard and Shadow Keep Storehouse elevator fogs
+- Maximum parallel paths reduced from 4 to 3 on Hardcore seeds
+
 ## [1.4.1] - 2026-03-18
 
 ### Seeds
