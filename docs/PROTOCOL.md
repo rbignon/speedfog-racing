@@ -343,7 +343,7 @@ Race status changed. Broadcast to all mods and spectators. Includes `started_at`
 
 #### `zone_update`
 
-Unicast to the originating mod after an `event_flag` is processed, after `zone_query` (fast travel), after `auth_ok` (reconnect during a running race), or after `race_start` (for the start node). Contains the entered zone's display name, tier, and exits with discovery status.
+Unicast to the originating mod after an `event_flag` is processed, after `zone_query` (fast travel), after `auth_ok` (reconnect during a running race), or after `race_start` (for the start node). Contains the entered zone's display name, tier, layer, and exits with discovery status.
 
 ```json
 {
@@ -352,6 +352,7 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
   "display_name": "Cave of Knowledge",
   "tier": 5,
   "original_tier": 8,
+  "layer": 2,
   "exits": [
     {
       "text": "Soldier of Godrick front",
@@ -367,16 +368,17 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
 }
 ```
 
-| Field                | Type     | Description                                                                |
-| -------------------- | -------- | -------------------------------------------------------------------------- |
-| `node_id`            | `string` | DAG node ID                                                                |
-| `display_name`       | `string` | Human-readable zone name (localized)                                       |
-| `tier`               | `int?`   | Node tier in the current graph layout (null for start node)                |
-| `original_tier`      | `int?`   | Original tier before graph rebalancing (null if same as `tier` or unknown) |
-| `exits`              | `list`   | Fog gates leaving this zone                                                |
-| `exits[].text`       | `string` | Fog gate label text (may include `[Zone Name]` annotation after i18n)      |
-| `exits[].to_name`    | `string` | Display name of the destination zone                                       |
-| `exits[].discovered` | `bool`   | Whether the destination has been visited (in zone_history)                 |
+| Field                | Type     | Description                                                                    |
+| -------------------- | -------- | ------------------------------------------------------------------------------ |
+| `node_id`            | `string` | DAG node ID                                                                    |
+| `display_name`       | `string` | Human-readable zone name (localized)                                           |
+| `tier`               | `int?`   | Node tier in the current graph layout (null for start node)                    |
+| `original_tier`      | `int?`   | Original tier before graph rebalancing (null if same as `tier` or unknown)     |
+| `layer`              | `int?`   | 0-indexed layer of this zone in the graph (used by mod to detect backtracking) |
+| `exits`              | `list`   | Fog gates leaving this zone                                                    |
+| `exits[].text`       | `string` | Fog gate label text (may include `[Zone Name]` annotation after i18n)          |
+| `exits[].to_name`    | `string` | Display name of the destination zone                                           |
+| `exits[].discovered` | `bool`   | Whether the destination has been visited (in zone_history)                     |
 
 #### `player_update`
 
