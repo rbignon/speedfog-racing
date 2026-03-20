@@ -93,9 +93,9 @@ class PoolTypeStatsResponse(BaseModel):
     """Stats for one type (race or training) in a pool."""
 
     runs: int
-    avg_time_ms: int
+    avg_time_ms: int | None = None
     avg_deaths: float
-    best_time_ms: int
+    best_time_ms: int | None = None
 
 
 class UserPoolStatsEntry(BaseModel):

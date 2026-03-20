@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,7 +18,6 @@ from speedfog_racing.models import (
     ParticipantStatus,
     PlayerTraitScores,
     Race,
-    RaceStatus,
     Seed,
     TrainingSession,
     TrainingSessionStatus,
@@ -184,48 +183,63 @@ async def get_user_pool_stats(
 
     user_id = user.id
 
-    # Race stats: aggregate finished participations grouped by pool_name
+    # Race stats: aggregate participations (FINISHED + ABANDONED with igt > 0)
+    # Time metrics only use FINISHED (abandoned times are incomplete).
+    finished_case = case(
+        (Participant.status == ParticipantStatus.FINISHED, Participant.igt_ms),
+    )
     race_stats_q = await db.execute(
         select(
             Seed.pool_name,
             func.count().label("runs"),
-            func.avg(Participant.igt_ms).label("avg_time_ms"),
+            func.avg(finished_case).label("avg_time_ms"),
             func.avg(Participant.death_count).label("avg_deaths"),
-            func.min(Participant.igt_ms).label("best_time_ms"),
+            func.min(finished_case).label("best_time_ms"),
         )
         .select_from(Participant)
         .join(Race, Participant.race_id == Race.id)
         .join(Seed, Race.seed_id == Seed.id)
         .where(
             Participant.user_id == user_id,
-            Participant.status == ParticipantStatus.FINISHED,
+            or_(
+                Participant.status == ParticipantStatus.FINISHED,
+                (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+            ),
         )
         .group_by(Seed.pool_name)
     )
     race_stats = {
         row.pool_name: PoolTypeStatsResponse(
             runs=row.runs,
-            avg_time_ms=int(row.avg_time_ms),
+            avg_time_ms=int(row.avg_time_ms) if row.avg_time_ms else None,
             avg_deaths=round(float(row.avg_deaths), 1),
             best_time_ms=row.best_time_ms,
         )
         for row in race_stats_q.all()
     }
 
-    # Training stats: aggregate finished sessions grouped by pool_name
+    # Training stats: aggregate sessions (FINISHED + ABANDONED with igt > 0)
+    # Time metrics only use FINISHED (abandoned times are incomplete).
+    training_finished_case = case(
+        (TrainingSession.status == TrainingSessionStatus.FINISHED, TrainingSession.igt_ms),
+    )
     training_stats_q = await db.execute(
         select(
             Seed.pool_name,
             func.count().label("runs"),
-            func.avg(TrainingSession.igt_ms).label("avg_time_ms"),
+            func.avg(training_finished_case).label("avg_time_ms"),
             func.avg(TrainingSession.death_count).label("avg_deaths"),
-            func.min(TrainingSession.igt_ms).label("best_time_ms"),
+            func.min(training_finished_case).label("best_time_ms"),
         )
         .select_from(TrainingSession)
         .join(Seed, TrainingSession.seed_id == Seed.id)
         .where(
             TrainingSession.user_id == user_id,
-            TrainingSession.status == TrainingSessionStatus.FINISHED,
+            or_(
+                TrainingSession.status == TrainingSessionStatus.FINISHED,
+                (TrainingSession.status == TrainingSessionStatus.ABANDONED)
+                & (TrainingSession.igt_ms > 0),
+            ),
             TrainingSession.exclude_from_stats == False,  # noqa: E712
         )
         .group_by(Seed.pool_name)
@@ -236,7 +250,7 @@ async def get_user_pool_stats(
         pool = row.pool_name.removeprefix("training_")
         training_stats[pool] = PoolTypeStatsResponse(
             runs=row.runs,
-            avg_time_ms=int(row.avg_time_ms),
+            avg_time_ms=int(row.avg_time_ms) if row.avg_time_ms else None,
             avg_deaths=round(float(row.avg_deaths), 1),
             best_time_ms=row.best_time_ms,
         )
@@ -403,14 +417,16 @@ async def get_user_profile(
 
     user_id = user.id
 
-    # Race count: participations in started races
+    # Race count: finished + abandoned with igt > 0 (actually played)
     race_count_q = await db.execute(
         select(func.count())
         .select_from(Participant)
-        .join(Race, Participant.race_id == Race.id)
         .where(
             Participant.user_id == user_id,
-            Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]),
+            or_(
+                Participant.status == ParticipantStatus.FINISHED,
+                (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+            ),
         )
     )
     race_count = race_count_q.scalar_one()
@@ -470,17 +486,7 @@ async def get_user_traits(
 
     scores = await db.get(PlayerTraitScores, user.id)
 
-    # Enforce 3-race minimum
-    finished_count = (
-        await db.execute(
-            select(func.count()).where(
-                Participant.user_id == user.id,
-                Participant.status == ParticipantStatus.FINISHED,
-            )
-        )
-    ).scalar() or 0
-
-    # ELO rank (only for non-provisional)
+    # ELO rank (only for non-provisional: 3+ races participated)
     elo_rank = None
     if user.elo_races >= 3:
         rank_count = (
@@ -509,7 +515,7 @@ async def get_user_traits(
 
     scores_detail = None
     dominant_trait = None
-    if scores and finished_count >= 3:
+    if scores and user.elo_races >= 3:
         dominant_trait = scores.dominant_trait
         scores_detail = TraitScoresDetail(
             rusher=scores.rusher,

@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -107,19 +107,22 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
         )
     ).scalar() or 0
 
+    participated_filter = or_(
+        Participant.status == ParticipantStatus.FINISHED,
+        (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+    )
+
     total_deaths = (
         await db.execute(
             select(func.sum(Participant.death_count))
             .select_from(Participant)
-            .where(Participant.status == ParticipantStatus.FINISHED)
+            .where(participated_filter)
         )
     ).scalar() or 0
 
     total_igt_ms = (
         await db.execute(
-            select(func.sum(Participant.igt_ms))
-            .select_from(Participant)
-            .where(Participant.status == ParticipantStatus.FINISHED)
+            select(func.sum(Participant.igt_ms)).select_from(Participant).where(participated_filter)
         )
     ).scalar() or 0
 
@@ -274,7 +277,12 @@ async def get_zone_stats(
     """Zone analytics: deadliest dungeons and most visited nodes."""
     query = (
         select(Participant)
-        .where(Participant.status == ParticipantStatus.FINISHED)
+        .where(
+            or_(
+                Participant.status == ParticipantStatus.FINISHED,
+                (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+            )
+        )
         .options(
             selectinload(Participant.race).selectinload(Race.seed),
         )
@@ -379,7 +387,12 @@ async def get_boss_stats(
     """Boss encounter stats."""
     query = (
         select(Participant)
-        .where(Participant.status == ParticipantStatus.FINISHED)
+        .where(
+            or_(
+                Participant.status == ParticipantStatus.FINISHED,
+                (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+            )
+        )
         .options(
             selectinload(Participant.race).selectinload(Race.seed),
         )

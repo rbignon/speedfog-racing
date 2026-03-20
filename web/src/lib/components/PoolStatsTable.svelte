@@ -48,8 +48,8 @@
 							<div class="bar bar-race" style="width: {barWidth(pool.race.runs)}"></div>
 							<span class="runs-value">{pool.race.runs}</span>
 						</td>
-						<td class="num">{formatIgt(pool.race.avg_time_ms)}</td>
-						<td class="num">{formatIgt(pool.race.best_time_ms)}</td>
+						<td class="num">{formatIgt(pool.race.avg_time_ms ?? 0)}</td>
+						<td class="num">{formatIgt(pool.race.best_time_ms ?? 0)}</td>
 						<td class="num">{pool.race.avg_deaths.toFixed(1)}</td>
 					</tr>
 				{/if}
@@ -68,8 +68,8 @@
 							></div>
 							<span class="runs-value">{pool.training.runs}</span>
 						</td>
-						<td class="num">{formatIgt(pool.training.avg_time_ms)}</td>
-						<td class="num">{formatIgt(pool.training.best_time_ms)}</td>
+						<td class="num">{formatIgt(pool.training.avg_time_ms ?? 0)}</td>
+						<td class="num">{formatIgt(pool.training.best_time_ms ?? 0)}</td>
 						<td class="num">{pool.training.avg_deaths.toFixed(1)}</td>
 					</tr>
 				{/if}

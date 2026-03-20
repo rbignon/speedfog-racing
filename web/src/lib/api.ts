@@ -795,9 +795,9 @@ export interface UserProfile {
 
 export interface PoolTypeStats {
   runs: number;
-  avg_time_ms: number;
+  avg_time_ms: number | null;
   avg_deaths: number;
-  best_time_ms: number;
+  best_time_ms: number | null;
 }
 
 export interface UserPoolStatsEntry {
