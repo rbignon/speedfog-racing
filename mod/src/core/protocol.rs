@@ -143,6 +143,8 @@ pub enum ServerMessage {
         #[serde(default)]
         original_tier: Option<i32>,
         #[serde(default)]
+        layer: Option<i32>,
+        #[serde(default)]
         exits: Vec<ExitInfo>,
     },
     /// Heartbeat ping
@@ -339,12 +341,14 @@ mod tests {
                 display_name,
                 tier,
                 original_tier,
+                layer,
                 exits,
             } => {
                 assert_eq!(node_id, "graveyard_cave_e235");
                 assert_eq!(display_name, "Cave of Knowledge");
                 assert_eq!(tier, Some(5));
                 assert_eq!(original_tier, None);
+                assert_eq!(layer, None);
                 assert_eq!(exits.len(), 2);
                 assert_eq!(exits[0].text, "Soldier of Godrick front");
                 assert_eq!(exits[0].to_name, "Road's End Catacombs");

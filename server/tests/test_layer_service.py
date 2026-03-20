@@ -149,6 +149,7 @@ def test_compute_zone_update_basic():
     assert result["node_id"] == "cave_e235"
     assert result["display_name"] == "Cave of Knowledge"
     assert result["tier"] == 5
+    assert result["layer"] == 2
     assert len(result["exits"]) == 2
     assert result["exits"][0]["text"] == "Soldier of Godrick front"
     assert result["exits"][0]["to_name"] == "Road's End Catacombs"
@@ -197,6 +198,23 @@ def test_compute_zone_update_no_tier():
     result = compute_zone_update("start_node", graph, zone_history=None)
     assert result is not None
     assert result["tier"] is None
+    assert result["layer"] == 0
+
+
+def test_compute_zone_update_no_layer():
+    """Node without layer returns None for layer."""
+    graph = {
+        "nodes": {
+            "mystery": {
+                "display_name": "Mystery Node",
+                "tier": 1,
+                "exits": [],
+            }
+        }
+    }
+    result = compute_zone_update("mystery", graph, zone_history=None)
+    assert result is not None
+    assert result["layer"] is None
 
 
 # =============================================================================

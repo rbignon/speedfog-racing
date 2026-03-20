@@ -104,12 +104,19 @@ def compute_zone_update(
             ex["from_zone"] = from_zone_label
         exits.append(ex)
 
+    layer = node_data.get("layer")
+    if isinstance(layer, int | float):
+        layer = int(layer)
+    else:
+        layer = None
+
     return {
         "type": "zone_update",
         "node_id": node_id,
         "display_name": display_name,
         "tier": tier,
         "original_tier": original_tier,
+        "layer": layer,
         "exits": exits,
     }
 

@@ -271,13 +271,21 @@ impl RaceTracker {
             ui.calc_text_size(&death_str)[0]
         };
 
+        let current_layer = me.map(|p| p.current_layer).unwrap_or(0);
         let tier_text = if let Some(z) = zone {
             if let Some(t) = z.tier {
-                if let Some(ot) = z.original_tier.filter(|&ot| ot != t) {
+                let mut s = if let Some(ot) = z.original_tier.filter(|&ot| ot != t) {
                     format!("  tier {}, previously {}", t, ot)
                 } else {
                     format!("  tier {}", t)
+                };
+                // Show current layer when backtracking (zone layer < max layer reached)
+                if let Some(zl) = z.layer {
+                    if zl < current_layer {
+                        s.push_str(&format!(", layer {}/{}", zl + 1, total_layers));
+                    }
                 }
+                s
             } else {
                 String::new()
             }
