@@ -228,7 +228,7 @@
 			displayType: node.displayType,
 			tier: node.tier,
 			layer: node.layer,
-			randomizedBoss: node.randomizedBoss,
+			randomizedBosses: node.randomizedBosses,
 			entrances,
 			exits,
 			visitors: visitors.length > 0 ? visitors : undefined

@@ -50,7 +50,7 @@ export interface NodePopupData {
   displayType?: string;
   tier: number;
   layer: number;
-  randomizedBoss?: string;
+  randomizedBosses?: string[];
   entrances: PopupConnection[];
   exits: PopupConnection[];
   playersHere?: PopupPlayer[];

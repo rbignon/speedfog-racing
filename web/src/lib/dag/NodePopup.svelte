@@ -90,9 +90,9 @@
 			{/if}
 			<span class="layer-badge">Layer {data.layer + 1}</span>
 		</div>
-		{#if data.randomizedBoss}
+		{#if data.randomizedBosses?.length}
 			<div class="popup-boss">
-				<span class="boss-label">Boss:</span> {data.randomizedBoss}
+				<span class="boss-label">Boss:</span> {data.randomizedBosses.join(', ')}
 			</div>
 		{/if}
 	</div>
