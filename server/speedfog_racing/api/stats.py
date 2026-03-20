@@ -398,14 +398,15 @@ async def get_boss_stats(
         if p.race and p.race.seed:
             seeds_by_id[p.race.seed_id] = p.race.seed
 
-    node_display = _resolve_node_display(seeds_by_id)
-
-    # Per participant, collect boss encounter data grouped by node_id.
+    # Per participant, collect boss encounter data.
+    # Resolve display name per-seed (using randomized_boss when present)
+    # so that randomized bosses show their actual name, not the zone name.
     # back_ratio: on a player's LAST visit to a boss, did they backtrack?
     # avg_deaths: exclude 0-death backtracks (player never fought).
-    nid_fight_deaths: dict[str, list[int]] = {}
-    nid_backed: dict[str, list[bool]] = {}
-    nid_times: dict[str, list[int]] = {}
+    merged_deaths: dict[str, list[int]] = {}
+    merged_backed: dict[str, list[bool]] = {}
+    merged_times: dict[str, list[int]] = {}
+    merged_type: dict[str, str] = {}
 
     for participant in participants:
         history = participant.zone_history or []
@@ -420,8 +421,7 @@ async def get_boss_stats(
             nid = entry.get("node_id", "")
             if not nid or nid not in nodes:
                 continue
-            resolved_type = node_display.get(nid, ("", ""))[1]
-            if resolved_type not in BOSS_NODE_TYPES:
+            if nodes[nid].get("type", "") not in BOSS_NODE_TYPES:
                 continue
             visits_by_nid.setdefault(nid, []).append((idx, entry))
 
@@ -465,22 +465,20 @@ async def get_boss_stats(
                 next_igt = participant.igt_ms or 0
             time_ms = next_igt - current_igt if current_igt > 0 and next_igt > current_igt else None
 
-            nid_fight_deaths.setdefault(nid, []).extend(fight_deaths)
-            nid_backed.setdefault(nid, []).append(backed_last_visit)
-            if time_ms is not None:
-                nid_times.setdefault(nid, []).append(time_ms)
+            # Resolve boss name from this participant's seed
+            node_meta = nodes[nid]
+            boss_name = (
+                node_meta.get("boss_name")
+                or node_meta.get("randomized_boss")
+                or node_meta.get("display_name", nid)
+            ).rsplit(" - ", 1)[-1]
+            node_type = node_meta.get("type", "major_boss")
 
-    # Merge clusters that share the same display_name (e.g. Godskin Duo)
-    merged_deaths: dict[str, list[int]] = {}
-    merged_backed: dict[str, list[bool]] = {}
-    merged_times: dict[str, list[int]] = {}
-    merged_type: dict[str, str] = {}
-    for nid in nid_backed:
-        display_name, node_type = node_display.get(nid, (nid, "major_boss"))
-        merged_deaths.setdefault(display_name, []).extend(nid_fight_deaths.get(nid, []))
-        merged_backed.setdefault(display_name, []).extend(nid_backed[nid])
-        merged_times.setdefault(display_name, []).extend(nid_times.get(nid, []))
-        merged_type.setdefault(display_name, node_type)
+            merged_deaths.setdefault(boss_name, []).extend(fight_deaths)
+            merged_backed.setdefault(boss_name, []).append(backed_last_visit)
+            if time_ms is not None:
+                merged_times.setdefault(boss_name, []).append(time_ms)
+            merged_type.setdefault(boss_name, node_type)
 
     boss_entries = []
     for display_name, backed_list in merged_backed.items():

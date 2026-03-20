@@ -671,3 +671,101 @@ class TestBossStatsFiltering:
                     # boss_arena should NOT be in stats.py BOSS_NODE_TYPES
                     assert ntype == "boss_arena"
                     assert ntype not in BOSS_NODE_TYPES
+
+    async def test_boss_stats_uses_boss_name_field(self, async_session):
+        """Stats should prefer boss_name over randomized_boss and display_name."""
+        graph_json = {
+            "nodes": {
+                "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+                "loretta_661f": {
+                    "type": "major_boss",
+                    "display_name": "Royal Knight Loretta",
+                    "boss_name": "Godskin Noble",
+                    "randomized_bosses": ["Godskin Noble Boss"],
+                    "layer": 1,
+                },
+                "gideon_x1y2": {
+                    "type": "major_boss",
+                    "display_name": "Ashen Leyndell - Gideon",
+                    "boss_name": "Sir Gideon Ofnir, the All-Knowing",
+                    "layer": 2,
+                },
+                "final_k1l2": {
+                    "type": "final_boss",
+                    "display_name": "Elden Beast",
+                    "boss_name": "Elden Beast",
+                    "layer": 3,
+                },
+            },
+            "total_layers": 4,
+        }
+
+        async with async_session() as db:
+            user = User(
+                twitch_id="bn1",
+                twitch_username="bnplayer",
+                api_token="bnt1",
+                role=UserRole.USER,
+            )
+            org = User(
+                twitch_id="bnorg",
+                twitch_username="bnorg",
+                api_token="bntorg",
+                role=UserRole.ORGANIZER,
+            )
+            db.add_all([user, org])
+            await db.flush()
+
+            seed = Seed(
+                seed_number="bn_seed",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=4,
+                folder_path="/t/bn_seed",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+
+            race = Race(
+                name="Boss Name Race",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race)
+            await db.flush()
+
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    mod_token="bnmod",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=2_000_000,
+                    death_count=8,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "loretta_661f", "igt_ms": 500_000, "deaths": 3},
+                        {"node_id": "gideon_x1y2", "igt_ms": 1_000_000, "deaths": 3},
+                        {"node_id": "final_k1l2", "igt_ms": 1_500_000, "deaths": 2},
+                    ],
+                )
+            )
+            await db.commit()
+
+        from speedfog_racing.api.stats import get_boss_stats
+
+        async with async_session() as db:
+            result = await get_boss_stats(pool=None, db=db)
+
+        boss_names = {b.display_name for b in result.bosses}
+
+        # boss_name takes priority over randomized_bosses and display_name
+        assert "Godskin Noble" in boss_names
+        assert "Sir Gideon Ofnir, the All-Knowing" in boss_names
+        assert "Elden Beast" in boss_names
+        # These should NOT appear
+        assert "Godskin Noble Boss" not in boss_names
+        assert "Gideon" not in boss_names
