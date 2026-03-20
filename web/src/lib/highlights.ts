@@ -410,7 +410,7 @@ function detectFastStarter(
     title: "Fast Starter",
     segments: [
       pSeg(fastest.player),
-      tSeg(` was first to push past tier 1 at ${formatTime(fastest.time)}`),
+      tSeg(`'s setup took only ${formatTime(fastest.time)}`),
     ],
     playerIds: [fastest.player.id],
     score,
@@ -591,7 +591,7 @@ function detectDeathless(
     segments: [
       pSeg(bestPlayer),
       tSeg(
-        ` cleared ${bestCount} high-tier zone${bestCount !== 1 ? "s" : ""} without dying`,
+        ` cleared ${bestCount} high-scaled zone${bestCount !== 1 ? "s" : ""} without dying`,
       ),
     ],
     playerIds: [bestPlayer.id],
