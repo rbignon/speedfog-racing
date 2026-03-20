@@ -399,8 +399,7 @@ async def get_boss_stats(
             seeds_by_id[p.race.seed_id] = p.race.seed
 
     # Per participant, collect boss encounter data.
-    # Resolve display name per-seed (using randomized_boss when present)
-    # so that randomized bosses show their actual name, not the zone name.
+    # Resolve display name per-seed (boss_name > randomized_boss > display_name).
     # back_ratio: on a player's LAST visit to a boss, did they backtrack?
     # avg_deaths: exclude 0-death backtracks (player never fought).
     merged_deaths: dict[str, list[int]] = {}
