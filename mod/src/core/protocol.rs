@@ -548,6 +548,44 @@ mod tests {
     }
 
     #[test]
+    fn test_server_zone_update_with_layer() {
+        let json = r#"{
+            "type": "zone_update",
+            "node_id": "cave_e235",
+            "display_name": "Cave of Knowledge",
+            "tier": 5,
+            "layer": 2,
+            "exits": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ZoneUpdate { layer, .. } => {
+                assert_eq!(layer, Some(2));
+            }
+            _ => panic!("Expected ZoneUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_server_zone_update_without_layer() {
+        // Backward compat: old server sends no layer field
+        let json = r#"{
+            "type": "zone_update",
+            "node_id": "cave_e235",
+            "display_name": "Cave of Knowledge",
+            "tier": 5,
+            "exits": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ZoneUpdate { layer, .. } => {
+                assert_eq!(layer, None);
+            }
+            _ => panic!("Expected ZoneUpdate"),
+        }
+    }
+
+    #[test]
     fn test_server_zone_update_without_original_tier() {
         // Backward compat: old server sends no original_tier field
         let json = r#"{
