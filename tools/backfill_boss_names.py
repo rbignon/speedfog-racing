@@ -22,6 +22,7 @@ import asyncio
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -69,11 +70,18 @@ def parse_boss_names(enemy_txt_path: Path) -> dict[int, str]:
     return boss_names
 
 
-def load_cluster_defeat_flags(clusters_json_path: Path) -> dict[str, int]:
-    """Load cluster_id -> defeat_flag mapping from clusters.json.
+@dataclass
+class ClusterMeta:
+    defeat_flag: int = 0
+    type: str = ""
 
-    Old graph_json nodes don't include defeat_flag, so we need to look it up
-    from clusters.json using the node_id (which is the cluster_id).
+
+def load_cluster_metadata(clusters_json_path: Path) -> dict[str, ClusterMeta]:
+    """Load cluster_id -> metadata from clusters.json.
+
+    Old graph_json nodes may have outdated types (e.g. major_boss that was
+    later reclassified to boss_arena) or missing defeat_flag. This provides
+    the current ground truth for both.
     """
     if not clusters_json_path.exists():
         return {}
@@ -81,11 +89,12 @@ def load_cluster_defeat_flags(clusters_json_path: Path) -> dict[str, int]:
     with open(clusters_json_path, encoding="utf-8") as f:
         data = json.load(f)
 
-    mapping: dict[str, int] = {}
+    mapping: dict[str, ClusterMeta] = {}
     for cluster in data.get("clusters", []):
-        defeat_flag = cluster.get("defeat_flag", 0)
-        if defeat_flag:
-            mapping[cluster["id"]] = defeat_flag
+        mapping[cluster["id"]] = ClusterMeta(
+            defeat_flag=cluster.get("defeat_flag", 0),
+            type=cluster.get("type", ""),
+        )
 
     return mapping
 
@@ -93,14 +102,23 @@ def load_cluster_defeat_flags(clusters_json_path: Path) -> dict[str, int]:
 def patch_seed_graph(
     graph_json: dict,
     boss_names: dict[int, str],
-    cluster_defeat_flags: dict[str, int],
+    cluster_meta: dict[str, ClusterMeta],
 ) -> tuple[dict, int]:
-    """Patch graph_json nodes with boss_name and randomized_bosses."""
+    """Patch graph_json nodes with boss_name, randomized_bosses, and corrected types."""
     nodes = graph_json.get("nodes", {})
     patched_count = 0
 
     for nid, node in nodes.items():
         changed = False
+        meta = cluster_meta.get(nid)
+
+        # Fix node type from current clusters.json (corrects misclassifications)
+        if meta and meta.type and node.get("type") != meta.type:
+            # Don't override final_boss (set dynamically per-seed based on end node)
+            if node.get("type") != "final_boss":
+                node["type"] = meta.type
+                changed = True
+
         node_type = node.get("type", "")
 
         # Convert randomized_boss (str) -> randomized_bosses (list)
@@ -118,10 +136,9 @@ def patch_seed_graph(
                 changed = True
             else:
                 # Priority 2: defeat_flag -> enemy.txt mapping
-                # Try graph_json node first (future seeds), then clusters.json lookup
-                defeat_flag = node.get("defeat_flag", 0) or cluster_defeat_flags.get(
-                    nid, 0
-                )
+                defeat_flag = node.get("defeat_flag", 0)
+                if not defeat_flag and meta:
+                    defeat_flag = meta.defeat_flag
                 if defeat_flag and defeat_flag in boss_names:
                     node["boss_name"] = boss_names[defeat_flag]
                     changed = True
@@ -147,8 +164,8 @@ async def backfill(
     boss_names = parse_boss_names(enemy_txt_path)
     print(f"Loaded {len(boss_names)} boss names from enemy.txt")
 
-    cluster_defeat_flags = load_cluster_defeat_flags(clusters_json_path)
-    print(f"Loaded {len(cluster_defeat_flags)} defeat flags from clusters.json")
+    cluster_meta = load_cluster_metadata(clusters_json_path)
+    print(f"Loaded {len(cluster_meta)} clusters from clusters.json")
 
     engine = create_async_engine(settings.database_url)
     session_maker = async_sessionmaker(
@@ -164,7 +181,7 @@ async def backfill(
 
         for seed in seeds:
             patched_graph, count = patch_seed_graph(
-                seed.graph_json, boss_names, cluster_defeat_flags
+                seed.graph_json, boss_names, cluster_meta
             )
             if count > 0:
                 total_patched += count
