@@ -2,6 +2,27 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.4.3] - 2026-03-21
+
+### Stats
+
+- Boss stats now show the actual randomized boss name instead of the vanilla boss name
+- Multi-phase bosses (e.g. Rennala, Fire Giant) are now tracked with both phase names
+- Abandoned races are now included in profile stats, pool stats, and dashboard
+
+### Seeds
+
+- Starting tier set to 3 on all pools (Sprint and Hardcore now match Standard and Chill)
+- Legacy dungeons are no longer forced as the first layer on Hardcore seeds
+- Fewer final boss candidates on Standard and Hardcore seeds
+- Rennala's arena and Midra can no longer serve as through-pass zones, since the boss fight can be skipped
+- Royal Ancestor Spirit and Valiant Gargoyles are now classified as major bosses
+
+### In-game
+
+- Overlay now shows the current layer number when backtracking
+- Fix: zone reveal delay was sometimes bypassed, briefly showing the next zone early
+
 ## [1.4.2] - 2026-03-19
 
 ### Stats
