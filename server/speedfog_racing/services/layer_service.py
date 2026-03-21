@@ -42,6 +42,8 @@ def compute_zone_update(
     node_id: str,
     graph_json: dict[str, Any],
     zone_history: list[dict[str, Any]] | None,
+    *,
+    is_first_visit: bool = False,
 ) -> dict[str, Any] | None:
     """Compute a zone_update message payload for a given node.
 
@@ -118,6 +120,7 @@ def compute_zone_update(
         "original_tier": original_tier,
         "layer": layer,
         "exits": exits,
+        "is_first_visit": is_first_visit,
     }
 
 

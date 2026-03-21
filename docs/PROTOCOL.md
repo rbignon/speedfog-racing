@@ -343,7 +343,7 @@ Race status changed. Broadcast to all mods and spectators. Includes `started_at`
 
 #### `zone_update`
 
-Unicast to the originating mod after an `event_flag` is processed, after `zone_query` (fast travel), after `auth_ok` (reconnect during a running race), or after `race_start` (for the start node). Contains the entered zone's display name, tier, layer, and exits with discovery status.
+Unicast to the originating mod after an `event_flag` is processed, after `zone_query` (fast travel), after `auth_ok` (reconnect during a running race), or after `race_start` (for the start node). Contains the entered zone's display name, tier, layer, exits with discovery status, and whether this is the player's first visit to this zone.
 
 ```json
 {
@@ -353,6 +353,7 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
   "tier": 5,
   "original_tier": 8,
   "layer": 2,
+  "is_first_visit": true,
   "exits": [
     {
       "text": "Soldier of Godrick front",
@@ -375,6 +376,7 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
 | `tier`               | `int?`   | Node tier in the current graph layout (null for start node)                    |
 | `original_tier`      | `int?`   | Original tier before graph rebalancing (null if same as `tier` or unknown)     |
 | `layer`              | `int?`   | 0-indexed layer of this zone in the graph (used by mod to detect backtracking) |
+| `is_first_visit`     | `bool`   | Whether this is the player's first visit to this zone (false on reconnect)     |
 | `exits`              | `list`   | Fog gates leaving this zone                                                    |
 | `exits[].text`       | `string` | Fog gate label text (may include `[Zone Name]` annotation after i18n)          |
 | `exits[].to_name`    | `string` | Display name of the destination zone                                           |

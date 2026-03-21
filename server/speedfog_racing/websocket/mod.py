@@ -536,7 +536,14 @@ async def handle_event_flag(
 
     # Unicast zone_update to originating mod
     if node_id and seed_graph:
-        await send_zone_update(websocket, node_id, seed_graph, participant.zone_history, locale)
+        await send_zone_update(
+            websocket,
+            node_id,
+            seed_graph,
+            participant.zone_history,
+            locale,
+            is_first_visit=is_first_visit,
+        )
 
 
 async def handle_zone_query(
@@ -621,7 +628,14 @@ async def handle_zone_query(
         await db.commit()
 
     # Unicast zone_update to originating mod
-    await send_zone_update(websocket, node_id, graph_json, participant.zone_history, locale)
+    await send_zone_update(
+        websocket,
+        node_id,
+        graph_json,
+        participant.zone_history,
+        locale,
+        is_first_visit=is_first_visit,
+    )
 
     # Broadcast based on whether this was a first visit or revisit
     if is_first_visit:
@@ -719,7 +733,12 @@ async def broadcast_race_start(
             if start_node:
                 for conn in room.mods.values():
                     await send_zone_update(
-                        conn.websocket, start_node, graph_json, None, conn.locale
+                        conn.websocket,
+                        start_node,
+                        graph_json,
+                        None,
+                        conn.locale,
+                        is_first_visit=True,
                     )
 
         # Also notify spectators of status change

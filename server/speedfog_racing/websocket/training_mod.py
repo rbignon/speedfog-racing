@@ -395,6 +395,8 @@ async def _handle_event_flag(
         if is_shared_entrance_duplicate(old_history, node_id, igt):
             return
 
+        is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
+
         session.igt_ms = igt
         session.current_zone = node_id
         session.zone_history = [
@@ -409,7 +411,14 @@ async def _handle_event_flag(
 
     # Send zone_update to mod
     if node_id and seed_graph:
-        await send_zone_update(websocket, node_id, seed_graph, session.zone_history or [], locale)
+        await send_zone_update(
+            websocket,
+            node_id,
+            seed_graph,
+            session.zone_history or [],
+            locale,
+            is_first_visit=is_first_visit,
+        )
 
 
 async def _handle_zone_query(
@@ -455,6 +464,7 @@ async def _handle_zone_query(
 
         # Record backtrack entry when the player moved to a different node
         # (death/teleport/quit-out, no event flag fired)
+        is_first_visit = False
         if node_id != session.current_zone:
             logger.info(
                 "zone_query backtrack: %s -> %s for training session %s",
@@ -464,6 +474,7 @@ async def _handle_zone_query(
             )
             igt = zq.igt_ms if zq.igt_ms is not None else session.igt_ms
             old_history = session.zone_history or []
+            is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
             session.igt_ms = igt
             session.zone_history = [
                 *old_history,
@@ -474,7 +485,14 @@ async def _handle_zone_query(
         await db.commit()
 
     # Unicast zone_update to mod
-    await send_zone_update(websocket, node_id, graph_json, session.zone_history or [], locale)
+    await send_zone_update(
+        websocket,
+        node_id,
+        graph_json,
+        session.zone_history or [],
+        locale,
+        is_first_visit=is_first_visit,
+    )
 
     # Broadcast to spectators so DAG view reflects current zone
     # (mod already got the unicast zone_update above)

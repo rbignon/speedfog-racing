@@ -194,6 +194,8 @@ class ZoneUpdateMessage(BaseModel):
     display_name: str
     tier: int | None = None
     original_tier: int | None = None
+    layer: int | None = None
+    is_first_visit: bool = False
     exits: list[ExitInfo]
 
 

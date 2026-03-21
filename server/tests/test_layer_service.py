@@ -142,7 +142,7 @@ GRAPH_WITH_EXITS = {
 
 
 def test_compute_zone_update_basic():
-    """All exits undiscovered."""
+    """All exits undiscovered, is_first_visit defaults to False."""
     result = compute_zone_update("cave_e235", GRAPH_WITH_EXITS, zone_history=None)
     assert result is not None
     assert result["type"] == "zone_update"
@@ -150,6 +150,7 @@ def test_compute_zone_update_basic():
     assert result["display_name"] == "Cave of Knowledge"
     assert result["tier"] == 5
     assert result["layer"] == 2
+    assert result["is_first_visit"] is False
     assert len(result["exits"]) == 2
     assert result["exits"][0]["text"] == "Soldier of Godrick front"
     assert result["exits"][0]["to_name"] == "Road's End Catacombs"
@@ -374,3 +375,12 @@ def test_compute_zone_update_original_tier_in_full_graph():
     assert result is not None
     # GRAPH_WITH_EXITS doesn't have original_tier
     assert result["original_tier"] is None
+
+
+def test_compute_zone_update_first_visit():
+    """is_first_visit=True is passed through to the output."""
+    result = compute_zone_update(
+        "cave_e235", GRAPH_WITH_EXITS, zone_history=None, is_first_visit=True
+    )
+    assert result is not None
+    assert result["is_first_visit"] is True

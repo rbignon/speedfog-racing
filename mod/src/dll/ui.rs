@@ -250,7 +250,10 @@ impl RaceTracker {
         };
         let right_width = ui.calc_text_size(&right_str)[0];
 
-        let zone_text = if let Some(z) = zone {
+        let in_suspense = self.is_in_suspense();
+        let zone_text = if let Some(secs) = self.suspense_remaining_secs() {
+            format!("  Reveal in {}s", secs)
+        } else if let Some(z) = zone {
             format!("  {}", z.display_name)
         } else {
             String::new()
@@ -277,7 +280,10 @@ impl RaceTracker {
         let current_layer = frozen_layer
             .or_else(|| me.map(|p| p.current_layer))
             .unwrap_or(0);
-        let tier_text = if let Some(z) = zone {
+        let tier_text = if in_suspense {
+            // Hide tier during first-visit suspense (would show old zone's tier)
+            String::new()
+        } else if let Some(z) = zone {
             if let Some(t) = z.tier {
                 let mut s = if let Some(ot) = z.original_tier.filter(|&ot| ot != t) {
                     format!("  tier {}, previously {}", t, ot)
@@ -333,6 +339,9 @@ impl RaceTracker {
     ///   Soldier of Godrick front        (gray, word-wrapped)
     /// ```
     fn render_exits(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
+        if self.is_in_suspense() {
+            return;
+        }
         let zone = match self.current_zone_info() {
             Some(z) if !z.exits.is_empty() => z,
             _ => return,

@@ -70,10 +70,11 @@ async def send_zone_update(
     zone_history: list[dict[str, Any]] | None,
     locale: str = "en",
     *,
+    is_first_visit: bool = False,
     send_timeout: float = SEND_TIMEOUT,
 ) -> None:
     """Send a zone_update unicast to the originating mod."""
-    msg = compute_zone_update(node_id, graph_json, zone_history)
+    msg = compute_zone_update(node_id, graph_json, zone_history, is_first_visit=is_first_visit)
     if msg:
         msg = translate_zone_update(msg, locale)
         try:

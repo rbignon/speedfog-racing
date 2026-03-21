@@ -35,6 +35,7 @@ pub struct ZoneUpdateData {
     pub tier: Option<i32>,
     pub original_tier: Option<i32>,
     pub layer: Option<i32>,
+    pub is_first_visit: bool,
     pub exits: Vec<ExitInfo>,
 }
 
@@ -343,17 +344,32 @@ impl RaceTracker {
             self.loading_exit_time = None;
         }
 
-        // Reveal pending zone update after position becomes readable + delay.
-        // The delay covers fade-in / spawn animation so the overlay doesn't update
-        // while the screen is still black.
+        // Reveal pending zone update after position becomes readable.
+        // First visits get a delay (covers fade-in + builds suspense);
+        // revisits reveal immediately since the zone is already known.
         if self.pending_zone_update.is_some() && position_readable {
-            if self.loading_exit_time.is_none() {
-                self.loading_exit_time = Some(Instant::now());
-            }
-            if self.loading_exit_time.unwrap().elapsed() >= ZONE_REVEAL_DELAY {
+            let is_first = self
+                .pending_zone_update
+                .as_ref()
+                .is_some_and(|z| z.is_first_visit);
+            if is_first {
+                // First visit: apply reveal delay
+                if self.loading_exit_time.is_none() {
+                    self.loading_exit_time = Some(Instant::now());
+                }
+                if self.loading_exit_time.unwrap().elapsed() >= ZONE_REVEAL_DELAY {
+                    let zone = self.pending_zone_update.take().unwrap();
+                    info!(name = %zone.display_name, "[RACE] Zone revealed");
+                    self.race_state.current_zone = Some(zone);
+                    self.loading_exit_time = None;
+                    self.pre_reveal_layer = None;
+                }
+            } else {
+                // Revisit: reveal immediately
                 let zone = self.pending_zone_update.take().unwrap();
-                info!(name = %zone.display_name, "[RACE] Zone revealed");
+                info!(name = %zone.display_name, "[RACE] Zone revealed (revisit)");
                 self.race_state.current_zone = Some(zone);
+                self.loading_exit_time = None;
                 self.pre_reveal_layer = None;
             }
         }
@@ -811,10 +827,11 @@ impl RaceTracker {
                 tier,
                 original_tier,
                 layer,
+                is_first_visit,
                 exits,
             } => {
                 self.last_received_debug = Some(format!("zone_update({})", display_name));
-                info!(node = %node_id, name = %display_name, "[WS] Zone update (pending reveal)");
+                info!(node = %node_id, name = %display_name, first = is_first_visit, "[WS] Zone update (pending reveal)");
                 // Last-writer-wins: if two flags fire in rapid succession, only the
                 // final destination zone is shown (intermediate corridor zones are skipped).
                 self.pending_zone_update = Some(ZoneUpdateData {
@@ -822,6 +839,7 @@ impl RaceTracker {
                     tier,
                     original_tier,
                     layer,
+                    is_first_visit,
                     exits,
                 });
             }
@@ -871,6 +889,32 @@ impl RaceTracker {
     /// before the leaderboard update. Returns None outside the delay window.
     pub fn pre_reveal_layer(&self) -> Option<i32> {
         self.pre_reveal_layer
+    }
+
+    /// True when a first-visit zone update is pending reveal (suspense period).
+    pub fn is_in_suspense(&self) -> bool {
+        self.pending_zone_update
+            .as_ref()
+            .is_some_and(|z| z.is_first_visit)
+    }
+
+    /// Seconds remaining before the zone name is revealed (ceiling).
+    /// Returns None when not in suspense.
+    pub fn suspense_remaining_secs(&self) -> Option<u32> {
+        if !self.is_in_suspense() {
+            return None;
+        }
+        let elapsed = self
+            .loading_exit_time
+            .map(|t| t.elapsed())
+            .unwrap_or(Duration::ZERO);
+        let remaining = ZONE_REVEAL_DELAY.saturating_sub(elapsed);
+        let secs = remaining.as_secs() as u32;
+        Some(if remaining.subsec_nanos() > 0 {
+            secs + 1
+        } else {
+            secs
+        })
     }
 
     pub fn my_participant_id(&self) -> Option<&String> {

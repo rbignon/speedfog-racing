@@ -145,6 +145,8 @@ pub enum ServerMessage {
         #[serde(default)]
         layer: Option<i32>,
         #[serde(default)]
+        is_first_visit: bool,
+        #[serde(default)]
         exits: Vec<ExitInfo>,
     },
     /// Heartbeat ping
@@ -342,6 +344,7 @@ mod tests {
                 tier,
                 original_tier,
                 layer,
+                is_first_visit,
                 exits,
             } => {
                 assert_eq!(node_id, "graveyard_cave_e235");
@@ -349,11 +352,36 @@ mod tests {
                 assert_eq!(tier, Some(5));
                 assert_eq!(original_tier, None);
                 assert_eq!(layer, None);
+                assert!(!is_first_visit);
                 assert_eq!(exits.len(), 2);
                 assert_eq!(exits[0].text, "Soldier of Godrick front");
                 assert_eq!(exits[0].to_name, "Road's End Catacombs");
                 assert!(!exits[0].discovered);
                 assert!(exits[1].discovered);
+            }
+            _ => panic!("Expected ZoneUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_server_zone_update_first_visit() {
+        let json = r#"{
+            "type": "zone_update",
+            "node_id": "cave_node",
+            "display_name": "Some Cave",
+            "tier": 3,
+            "is_first_visit": true,
+            "exits": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ZoneUpdate {
+                is_first_visit,
+                exits,
+                ..
+            } => {
+                assert!(is_first_visit);
+                assert!(exits.is_empty());
             }
             _ => panic!("Expected ZoneUpdate"),
         }
