@@ -133,8 +133,8 @@ def resolve_zone_query(
         if len(matching) > 1 and zone_history and (grace_entity_id is None or grace_entity_id == 0):
             matching_set = set(matching)
             for entry in reversed(zone_history):
-                nid = entry.get("node_id")
-                if nid in matching_set:
-                    return nid
+                candidate = str(entry.get("node_id", ""))
+                if candidate in matching_set:
+                    return candidate
 
     return None
