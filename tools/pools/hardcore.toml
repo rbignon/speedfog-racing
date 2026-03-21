@@ -7,6 +7,9 @@ sort_order = 4
 estimated_duration = "~1h"
 description = "Punishing race with scarce resources and tougher encounters"
 
+[run]
+sentry_torch_shop = false
+
 [requirements]
 legacy_dungeons = 2
 bosses = 7

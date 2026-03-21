@@ -5,6 +5,7 @@
 seed = 0
 run_complete_message = "RUN COMPLETE GG"
 chapel_grace = true
+sentry_torch_shop = true
 
 [budget]
 tolerance = 5
