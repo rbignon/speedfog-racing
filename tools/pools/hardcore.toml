@@ -67,5 +67,4 @@ nerf_gargoyles = false
 allcraft = false
 
 [enemy]
-randomize_bosses = "minor"
-ignore_arena_size = true
+randomize_bosses = false
