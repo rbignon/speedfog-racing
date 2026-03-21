@@ -479,11 +479,9 @@ async def get_boss_stats(
 
             # Resolve boss name from this participant's seed
             node_meta = nodes[nid]
-            boss_name = (
-                node_meta.get("boss_name")
-                or node_meta.get("randomized_boss")
-                or node_meta.get("display_name", nid)
-            ).rsplit(" - ", 1)[-1]
+            boss_name = (node_meta.get("boss_name") or node_meta.get("display_name", nid)).rsplit(
+                " - ", 1
+            )[-1]
             node_type = node_meta.get("type", "major_boss")
 
             merged_deaths.setdefault(boss_name, []).extend(fight_deaths)

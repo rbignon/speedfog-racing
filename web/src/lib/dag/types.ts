@@ -104,9 +104,7 @@ export function parseDagGraph(graphJson: Record<string, unknown>): DagGraph {
       weight: (raw.weight as number) ?? 1,
       randomizedBosses: Array.isArray(raw.randomized_bosses)
         ? (raw.randomized_bosses as string[])
-        : raw.randomized_boss
-          ? [raw.randomized_boss as string]
-          : undefined,
+        : undefined,
     });
   }
 
