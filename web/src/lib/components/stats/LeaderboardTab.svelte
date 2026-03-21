@@ -99,6 +99,10 @@
 							<dd>{community.active_players}</dd>
 						</div>
 						<div class="stat-row">
+							<dt>Ranked players</dt>
+							<dd>{community.ranked_players}</dd>
+						</div>
+						<div class="stat-row">
 							<dt>Total deaths</dt>
 							<dd>{community.total_deaths.toLocaleString()}</dd>
 						</div>

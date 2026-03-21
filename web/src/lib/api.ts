@@ -1150,6 +1150,7 @@ export interface LeaderboardPlayer {
 export interface CommunityStats {
   total_races: number;
   active_players: number;
+  ranked_players: number;
   total_deaths: number;
   hours_raced: number;
 }

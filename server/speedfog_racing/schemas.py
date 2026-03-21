@@ -415,6 +415,7 @@ class LeaderboardPlayer(BaseModel):
 class CommunityStats(BaseModel):
     total_races: int
     active_players: int
+    ranked_players: int
     total_deaths: int
     hours_raced: float
 

@@ -131,6 +131,7 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
     community = CommunityStats(
         total_races=total_races,
         active_players=active_players,
+        ranked_players=len(players),
         total_deaths=int(total_deaths),
         hours_raced=hours_raced,
     )
