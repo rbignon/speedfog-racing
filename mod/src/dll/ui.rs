@@ -225,6 +225,7 @@ impl RaceTracker {
         let me = self.my_participant();
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let zone = self.current_zone_info();
+        let frozen_layer = self.pre_reveal_layer();
 
         let is_setup = self
             .race_info()
@@ -240,7 +241,9 @@ impl RaceTracker {
             };
             (status.to_string(), color)
         } else {
-            let layer = me.map(|p| p.current_layer).unwrap_or(0);
+            let layer = frozen_layer
+                .or_else(|| me.map(|p| p.current_layer))
+                .unwrap_or(0);
             let display_layer = (layer + 1).min(total_layers);
             let color = if self.am_i_finished() { green } else { yellow };
             (format!("{}/{}", display_layer, total_layers), color)
@@ -271,7 +274,9 @@ impl RaceTracker {
             ui.calc_text_size(&death_str)[0]
         };
 
-        let current_layer = me.map(|p| p.current_layer).unwrap_or(0);
+        let current_layer = frozen_layer
+            .or_else(|| me.map(|p| p.current_layer))
+            .unwrap_or(0);
         let tier_text = if let Some(z) = zone {
             if let Some(t) = z.tier {
                 let mut s = if let Some(ot) = z.original_tier.filter(|&ot| ot != t) {
@@ -289,8 +294,14 @@ impl RaceTracker {
             } else {
                 String::new()
             }
-        } else if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
-            format!("  tier {}", tier)
+        } else if frozen_layer.is_none() {
+            // Only fall back to current_layer_tier when NOT in reveal delay,
+            // otherwise this would show the new zone's tier before its name.
+            if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
+                format!("  tier {}", tier)
+            } else {
+                String::new()
+            }
         } else {
             String::new()
         };

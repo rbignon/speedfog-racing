@@ -22,7 +22,7 @@ use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 
 /// Delay after a loading screen before revealing the zone name on the overlay.
 /// Covers fade-in / spawn animation so the overlay doesn't update while the screen is still black.
-const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(2);
+const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(4);
 
 // =============================================================================
 // RACE STATE
@@ -155,6 +155,11 @@ pub struct RaceTracker {
     // Zone update received during loading screen, waiting for load to finish
     pending_zone_update: Option<ZoneUpdateData>,
 
+    // Snapshot of current_layer taken when pending_zone_update is stored.
+    // During the reveal delay, the UI uses this instead of me.current_layer
+    // so the X/Y counter and tier line don't update before the zone name.
+    pre_reveal_layer: Option<i32>,
+
     // Timestamp when position became readable after a loading screen.
     // Used to delay zone reveal so the player has finished fading in / spawning.
     loading_exit_time: Option<Instant>,
@@ -264,6 +269,7 @@ impl RaceTracker {
             spawner_thread: None,
             items_spawned: false,
             pending_zone_update: None,
+            pre_reveal_layer: None,
             loading_exit_time: Some(Instant::now() - ZONE_REVEAL_DELAY), // Already elapsed → immediate reveal
             was_position_readable: true,
             seed_mismatch: false,
@@ -348,6 +354,7 @@ impl RaceTracker {
                 let zone = self.pending_zone_update.take().unwrap();
                 info!(name = %zone.display_name, "[RACE] Zone revealed");
                 self.race_state.current_zone = Some(zone);
+                self.pre_reveal_layer = None;
             }
         }
 
@@ -644,6 +651,7 @@ impl RaceTracker {
                 // After (re)auth, the server sends the player's current zone. Reveal
                 // it immediately without requiring a loading cycle.
                 self.loading_exit_time = Some(Instant::now() - ZONE_REVEAL_DELAY);
+                self.pre_reveal_layer = None;
                 self.race_state.race = Some(race);
                 self.frozen_igt_ms = None;
 
@@ -776,6 +784,11 @@ impl RaceTracker {
                 info!(node = %node_id, name = %display_name, "[WS] Zone update (pending reveal)");
                 // Last-writer-wins: if two flags fire in rapid succession, only the
                 // final destination zone is shown (intermediate corridor zones are skipped).
+                // Snapshot current_layer before the leaderboard update bumps it,
+                // so the UI keeps showing the old X/Y and tier during the reveal delay.
+                if self.pending_zone_update.is_none() {
+                    self.pre_reveal_layer = self.my_participant().map(|p| p.current_layer);
+                }
                 self.pending_zone_update = Some(ZoneUpdateData {
                     display_name,
                     tier,
@@ -824,6 +837,12 @@ impl RaceTracker {
 
     pub fn current_zone_info(&self) -> Option<&ZoneUpdateData> {
         self.race_state.current_zone.as_ref()
+    }
+
+    /// During the zone reveal delay, returns the frozen current_layer from
+    /// before the leaderboard update. Returns None outside the delay window.
+    pub fn pre_reveal_layer(&self) -> Option<i32> {
+        self.pre_reveal_layer
     }
 
     pub fn my_participant_id(&self) -> Option<&String> {
