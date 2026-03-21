@@ -16,7 +16,6 @@ major_bosses = 5
 [structure]
 min_layers = 25
 max_layers = 30
-start_tier = 3
 final_tier = 10
 tier_curve = "power"
 tier_curve_exponent = 1.5

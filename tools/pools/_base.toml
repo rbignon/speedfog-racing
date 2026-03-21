@@ -17,6 +17,7 @@ max_entrances = 2
 max_exits = 4
 min_branch_age = 3
 crosslinks = true
+start_tier = 3
 
 [starting_items]
 academy_key = true
