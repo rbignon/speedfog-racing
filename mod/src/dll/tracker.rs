@@ -744,6 +744,27 @@ impl RaceTracker {
                     participants.len()
                 ));
                 debug!(count = participants.len(), "[WS] Leaderboard update");
+                // Snapshot current_layer before it gets bumped by the new
+                // participants list, so the UI keeps the old X/Y and tier
+                // during the zone reveal delay. The leaderboard_update arrives
+                // before zone_update, so this is the right place to capture.
+                if self.pre_reveal_layer.is_none() {
+                    if let Some(my_id) = &self.my_participant_id {
+                        let old_layer = self
+                            .race_state
+                            .participants
+                            .iter()
+                            .find(|p| &p.id == my_id)
+                            .map(|p| p.current_layer);
+                        let new_layer = participants
+                            .iter()
+                            .find(|p| &p.id == my_id)
+                            .map(|p| p.current_layer);
+                        if old_layer != new_layer {
+                            self.pre_reveal_layer = old_layer;
+                        }
+                    }
+                }
                 self.race_state.participants = participants;
                 self.race_state.leader_splits = leader_splits;
             }
@@ -763,6 +784,18 @@ impl RaceTracker {
             }
             IncomingMessage::PlayerUpdate(player) => {
                 // Skip debug capture for player_update (too frequent)
+                // Snapshot current_layer on increase (same rationale as LeaderboardUpdate).
+                if self.pre_reveal_layer.is_none() {
+                    if let Some(my_id) = &self.my_participant_id {
+                        if &player.id == my_id {
+                            if let Some(old_me) = self.my_participant() {
+                                if player.current_layer > old_me.current_layer {
+                                    self.pre_reveal_layer = Some(old_me.current_layer);
+                                }
+                            }
+                        }
+                    }
+                }
                 if let Some(p) = self
                     .race_state
                     .participants
@@ -784,11 +817,6 @@ impl RaceTracker {
                 info!(node = %node_id, name = %display_name, "[WS] Zone update (pending reveal)");
                 // Last-writer-wins: if two flags fire in rapid succession, only the
                 // final destination zone is shown (intermediate corridor zones are skipped).
-                // Snapshot current_layer before the leaderboard update bumps it,
-                // so the UI keeps showing the old X/Y and tier during the reveal delay.
-                if self.pending_zone_update.is_none() {
-                    self.pre_reveal_layer = self.my_participant().map(|p| p.current_layer);
-                }
                 self.pending_zone_update = Some(ZoneUpdateData {
                     display_name,
                     tier,
