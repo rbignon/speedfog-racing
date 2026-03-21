@@ -394,7 +394,9 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "item_difficulty": item_diff_label,
         "difficulty_curve": difficulty_curve_label,
         "nerf_gargoyles": item_randomizer.get("nerf_gargoyles"),
+        "nerf_malenia": item_randomizer.get("nerf_malenia"),
         "allcraft": item_randomizer.get("allcraft"),
+        "sentry_torch_shop": data.get("run", {}).get("sentry_torch_shop"),
     }
 
 

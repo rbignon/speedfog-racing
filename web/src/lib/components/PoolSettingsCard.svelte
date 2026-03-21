@@ -22,6 +22,12 @@
 		if (poolConfig.nerf_gargoyles === true) {
 			notes.push('Gargoyle poison disabled');
 		}
+		if (poolConfig.nerf_malenia === true) {
+			notes.push('Malenia nerfed');
+		}
+		if (poolConfig.sentry_torch_shop === true) {
+			notes.push('Sentry Torch in shop');
+		}
 		return notes;
 	});
 </script>

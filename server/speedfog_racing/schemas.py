@@ -254,7 +254,9 @@ class PoolConfig(BaseModel):
     item_difficulty: str | None = None
     difficulty_curve: str | None = None
     nerf_gargoyles: bool | None = None
+    nerf_malenia: bool | None = None
     allcraft: bool | None = None
+    sentry_torch_shop: bool | None = None
 
 
 class PendingInviteResponse(BaseModel):

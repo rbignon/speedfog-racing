@@ -100,7 +100,9 @@ export interface PoolConfig {
   item_difficulty: string | null;
   difficulty_curve: string | null;
   nerf_gargoyles: boolean | null;
+  nerf_malenia: boolean | null;
   allcraft: boolean | null;
+  sentry_torch_shop: boolean | null;
 }
 
 export interface PendingInvite {
