@@ -161,7 +161,7 @@ DUNGEON_NODE_TYPES = {"legacy_dungeon", "mini_dungeon"}
 
 Node IDs are cluster IDs from SpeedFog's `clusters.json`. Since `clusters.json` can evolve between seed generations (display_name corrections, type reclassifications), the stats code resolves each node_id's display_name and type from the **most recent seed** that contains it. The area prefix is stripped with `rsplit(" - ", 1)[-1]` (e.g., "Limgrave - Stormveil Castle" becomes "Stormveil Castle").
 
-For boss stats specifically, the name resolution uses the `boss_name` field (canonical name from ItemRandomizer's `enemy.txt`), falling back to `randomized_boss` then `display_name` for seeds that predate the `boss_name` field. This ensures consistent naming across seeds with and without boss randomization (e.g., "Sir Gideon Ofnir, the All-Knowing" instead of "Gideon"). Resolution is per-seed (not global), so if the same node has different randomized bosses across seeds, they appear as separate entries.
+For boss stats specifically, the name resolution uses the `boss_name` field (canonical name from ItemRandomizer's `enemy.txt`), falling back to `display_name`. This ensures consistent naming across seeds with and without boss randomization (e.g., "Sir Gideon Ofnir, the All-Knowing" instead of "Gideon"). Resolution is per-seed (not global), so if the same node has different randomized bosses across seeds, they appear as separate entries.
 
 ### Cluster Merging
 
