@@ -40,9 +40,14 @@
 				<li>Extract the zip anywhere</li>
 				<li>Run <code>launch_speedfog.bat</code></li>
 			</ol>
-			<p class="tip">
-				Save backups are created automatically while you play. If a crash corrupts your
-				save, run <code>recovery.bat</code> to restore a previous backup.
+		</div>
+
+		<div class="section recovery">
+			<h3>Save Recovery</h3>
+			<p>
+				Save backups are created automatically every minute while you play. If a crash
+				corrupts your save, run <code>recovery.bat</code> (Windows) or
+				<code>linux/recovery.sh</code> (Linux).
 			</p>
 		</div>
 
@@ -142,19 +147,18 @@
 		font-size: var(--font-size-sm);
 	}
 
-	.tip {
-		margin: 0.5rem 0 0;
-		color: var(--color-text-disabled);
-		font-size: var(--font-size-xs);
-		line-height: 1.5;
+	.recovery {
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		padding: 0.75rem 1rem;
 	}
 
-	.tip code {
-		background: var(--color-bg);
-		padding: 0.1rem 0.4rem;
-		border-radius: var(--radius-sm);
-		font-family: 'JetBrains Mono', 'Fira Code', monospace;
-		font-size: var(--font-size-xs);
+	.recovery p {
+		margin: 0 0 0.5rem;
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+		line-height: 1.5;
 	}
 
 	.download-btn {
