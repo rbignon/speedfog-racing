@@ -22,7 +22,7 @@ use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 
 /// Delay after a loading screen before revealing the zone name on the overlay.
 /// Covers fade-in / spawn animation so the overlay doesn't update while the screen is still black.
-const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(4);
+const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(2);
 
 // =============================================================================
 // RACE STATE
@@ -330,21 +330,24 @@ impl RaceTracker {
         // Read position once per frame for loading screen detection
         let position_readable = self.game_state.read_position().is_some();
 
+        // Reset reveal timer when entering a loading screen, regardless of
+        // pending_zone_update. Without this, a stale loading_exit_time from a
+        // previous load causes the next ZoneUpdate to reveal immediately (0ms delay).
+        if !position_readable {
+            self.loading_exit_time = None;
+        }
+
         // Reveal pending zone update after position becomes readable + delay.
         // The delay covers fade-in / spawn animation so the overlay doesn't update
         // while the screen is still black.
-        if self.pending_zone_update.is_some() {
-            if position_readable {
-                if self.loading_exit_time.is_none() {
-                    self.loading_exit_time = Some(Instant::now());
-                }
-                if self.loading_exit_time.unwrap().elapsed() >= ZONE_REVEAL_DELAY {
-                    let zone = self.pending_zone_update.take().unwrap();
-                    info!(name = %zone.display_name, "[RACE] Zone revealed");
-                    self.race_state.current_zone = Some(zone);
-                }
-            } else {
-                self.loading_exit_time = None;
+        if self.pending_zone_update.is_some() && position_readable {
+            if self.loading_exit_time.is_none() {
+                self.loading_exit_time = Some(Instant::now());
+            }
+            if self.loading_exit_time.unwrap().elapsed() >= ZONE_REVEAL_DELAY {
+                let zone = self.pending_zone_update.take().unwrap();
+                info!(name = %zone.display_name, "[RACE] Zone revealed");
+                self.race_state.current_zone = Some(zone);
             }
         }
 
