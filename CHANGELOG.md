@@ -2,6 +2,20 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.4.4] - 2026-03-22
+
+### Seeds
+
+- Final boss is now selected from a weighted pool instead of uniform random, for better variety across runs
+- Sentry's Torch sold at Roundtable Hold on all pools except Hardcore
+- Malenia nerfed on Chill seeds
+- Minor boss randomization disabled on Hardcore seeds
+- Fix: Earthbore Cave boss can no longer use entry as exit, preventing broken paths
+
+### In-game
+
+- Zone reveal now triggers at the end of the loading screen instead of using a suspense countdown
+
 ## [1.4.3] - 2026-03-21
 
 ### Stats
