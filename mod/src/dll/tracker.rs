@@ -337,24 +337,21 @@ impl RaceTracker {
         // Read position once per frame for loading screen detection
         let position_readable = self.game_state.read_position().is_some();
 
-        // Reveal pending zone update once the loading screen ends.
-        // Uses the in-memory loading screen flag; falls back to position
-        // readability if the flag is unreadable. Defensive timeout ensures
-        // the zone is always revealed eventually.
+        // Reveal pending zone update once the loading screen ends and the
+        // player position is readable. The loading flag may clear before the
+        // fade-in completes, so position_readable acts as an additional guard.
+        // Defensive timeout ensures the zone is always revealed eventually.
         if self.pending_zone_update.is_some() {
             let timed_out = self
                 .pending_zone_received_at
                 .is_some_and(|t| t.elapsed() >= ZONE_REVEAL_TIMEOUT);
-            let should_reveal = if timed_out {
-                true
-            } else {
-                match self.game_state.is_in_loading_screen() {
-                    Some(false) => true,
-                    Some(true) => false,
-                    // Flag unreadable: fall back to position readability
-                    None => position_readable,
-                }
+            let loading_done = match self.game_state.is_in_loading_screen() {
+                Some(false) => true,
+                Some(true) => false,
+                // Flag unreadable: skip this check
+                None => true,
             };
+            let should_reveal = timed_out || (loading_done && position_readable);
             if should_reveal {
                 let zone = self.pending_zone_update.take().unwrap();
                 if timed_out {
