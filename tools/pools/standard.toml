@@ -39,10 +39,10 @@ ensis_boss = 1             # through-pass
 fissure_boss = 1           # through-pass
 scaduview_gaius = 1        # through-pass
 midramanse_boss = 2        # dead-end
-scadutree_base = 1         # dead-end
+scadutree_base = 2         # dead-end
 storehouse_messmer = 3     # through-pass
 rauhruins_romina = 1       # through-pass
-fingergrounds = 1          # dead-end
+fingergrounds = 2          # dead-end
 jaggedpeak_bayle = 3       # through-pass
 enirilim_radahn = 5        # dead-end
 
