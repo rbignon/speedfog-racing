@@ -35,6 +35,7 @@ pub struct ZoneUpdateData {
     pub tier: Option<i32>,
     pub original_tier: Option<i32>,
     pub layer: Option<i32>,
+    #[allow(dead_code)] // Kept for future use (e.g., spectator UI)
     pub is_first_visit: bool,
     pub exits: Vec<ExitInfo>,
 }
