@@ -147,7 +147,7 @@ On `StatusChanged(Connected)`:
 - `ready_sent = false` → `send_ready()` fires again.
 - `pending_event_flags` are drained and sent.
 - Safety-net rescan runs.
-- `loading_exit_time` is set to `Instant::now() - ZONE_REVEAL_DELAY` → any `zone_update` from the server is revealed immediately (no waiting for a loading cycle).
+- The game is not in a loading screen during reconnection, so any `zone_update` from the server is revealed on the next frame (no special initialization needed).
 
 ### Stale Seed Detection
 

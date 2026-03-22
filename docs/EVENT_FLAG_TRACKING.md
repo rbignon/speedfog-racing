@@ -97,17 +97,19 @@ At the `position_readable` rising edge:
    - Send `zone_query { grace_entity_id, map_id, position, play_region_id }`.
    - Clear captured grace entity ID.
 
-### Zone Reveal Delay
+### Zone Reveal Timing
 
 Separate from the loading exit event dispatch above, zone reveal has its own logic:
 
 When the server sends a `zone_update`, the mod stores it in `pending_zone_update`. Each frame, if `pending_zone_update` is set:
 
-- If position is **not** readable → reset `loading_exit_time` to None (still loading).
-- If position **is** readable → set `loading_exit_time` if not already set, then check if `ZONE_REVEAL_DELAY = 2s` has elapsed.
-- Once 2s have elapsed → move `pending_zone_update` to `current_zone` (displayed on overlay).
+- Read the loading screen flag at `[[EventFlagMan]+0x28]+0x113` (byte, non-zero = in loading/cutscene).
+- If `Some(false)` (loading done) → move `pending_zone_update` to `current_zone` (displayed on overlay).
+- If `Some(true)` (still loading) → wait.
+- If `None` (pointer unreadable) → fall back to position readability (`read_position().is_some()`).
+- If `ZONE_REVEAL_TIMEOUT = 15s` has elapsed since the zone_update was received → reveal anyway (defensive).
 
-This covers the fade-in / spawn animation so the overlay doesn't update while the screen is still black. Last-writer-wins: if two flags fire in rapid succession, only the last `zone_update` is shown.
+The overlay keeps showing the old zone until the reveal. A `pre_reveal_layer` snapshot freezes the X/Y counter and tier display so they don't leak the new layer before the zone name updates. Last-writer-wins: if two flags fire in rapid succession, only the last `zone_update` is shown.
 
 ---
 
@@ -214,7 +216,7 @@ Gaps are color-coded: green for negative (ahead), soft red for positive (behind)
 | Constant               | Value      | Location                | Purpose                                      |
 | ---------------------- | ---------- | ----------------------- | -------------------------------------------- |
 | Poll interval          | 100ms      | `tracker.rs`            | Event flag read frequency                    |
-| `ZONE_REVEAL_DELAY`    | 2s         | `tracker.rs`            | Delay before showing zone after loading      |
+| `ZONE_REVEAL_TIMEOUT`  | 15s        | `tracker.rs`            | Defensive timeout for zone reveal            |
 | `EVENT_FLAG_BASE`      | 1040292800 | `output.py`             | First SpeedFog event flag ID                 |
 | Flag range             | 800-999    | category 1040292        | Our offset range within FogRando's cat       |
 | Divisor                | 1000       | game memory             | Flags per category page                      |

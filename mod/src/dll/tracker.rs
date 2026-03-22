@@ -20,9 +20,9 @@ use super::death_icon::DeathIcon;
 use super::hotkey::begin_hotkey_frame;
 use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 
-/// Delay after a loading screen before revealing the zone name on the overlay.
-/// Covers fade-in / spawn animation so the overlay doesn't update while the screen is still black.
-const ZONE_REVEAL_DELAY: Duration = Duration::from_secs(4);
+/// Defensive timeout: if a zone update hasn't been revealed after this duration
+/// (e.g., loading screen flag is unreadable), reveal anyway.
+const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(15);
 
 // =============================================================================
 // RACE STATE
@@ -153,17 +153,16 @@ pub struct RaceTracker {
     // may silently clear our flag via internal sync. This bool is the primary guard.
     items_spawned: bool,
 
-    // Zone update received during loading screen, waiting for load to finish
+    // Zone update received, waiting for loading screen to end before revealing
     pending_zone_update: Option<ZoneUpdateData>,
 
-    // Snapshot of current_layer taken when pending_zone_update is stored.
-    // During the reveal delay, the UI uses this instead of me.current_layer
-    // so the X/Y counter and tier line don't update before the zone name.
+    // Snapshot of current_layer taken when leaderboard_update bumps the layer.
+    // The UI uses this instead of me.current_layer so the X/Y counter and tier
+    // don't update before the zone name is revealed.
     pre_reveal_layer: Option<i32>,
 
-    // Timestamp when position became readable after a loading screen.
-    // Used to delay zone reveal so the player has finished fading in / spawning.
-    loading_exit_time: Option<Instant>,
+    // When the pending zone update was received (for defensive timeout)
+    pending_zone_received_at: Option<Instant>,
 
     // Whether position was readable last frame (for detecting loading screen exit)
     was_position_readable: bool,
@@ -271,7 +270,7 @@ impl RaceTracker {
             items_spawned: false,
             pending_zone_update: None,
             pre_reveal_layer: None,
-            loading_exit_time: Some(Instant::now() - ZONE_REVEAL_DELAY), // Already elapsed → immediate reveal
+            pending_zone_received_at: None,
             was_position_readable: true,
             seed_mismatch: false,
             last_auth_error: None,
@@ -337,39 +336,33 @@ impl RaceTracker {
         // Read position once per frame for loading screen detection
         let position_readable = self.game_state.read_position().is_some();
 
-        // Reset reveal timer when entering a loading screen, regardless of
-        // pending_zone_update. Without this, a stale loading_exit_time from a
-        // previous load causes the next ZoneUpdate to reveal immediately (0ms delay).
-        if !position_readable {
-            self.loading_exit_time = None;
-        }
-
-        // Reveal pending zone update after position becomes readable.
-        // First visits get a delay (covers fade-in + builds suspense);
-        // revisits reveal immediately since the zone is already known.
-        if self.pending_zone_update.is_some() && position_readable {
-            let is_first = self
-                .pending_zone_update
-                .as_ref()
-                .is_some_and(|z| z.is_first_visit);
-            if is_first {
-                // First visit: apply reveal delay
-                if self.loading_exit_time.is_none() {
-                    self.loading_exit_time = Some(Instant::now());
-                }
-                if self.loading_exit_time.unwrap().elapsed() >= ZONE_REVEAL_DELAY {
-                    let zone = self.pending_zone_update.take().unwrap();
-                    info!(name = %zone.display_name, "[RACE] Zone revealed");
-                    self.race_state.current_zone = Some(zone);
-                    self.loading_exit_time = None;
-                    self.pre_reveal_layer = None;
-                }
+        // Reveal pending zone update once the loading screen ends.
+        // Uses the in-memory loading screen flag; falls back to position
+        // readability if the flag is unreadable. Defensive timeout ensures
+        // the zone is always revealed eventually.
+        if self.pending_zone_update.is_some() {
+            let timed_out = self
+                .pending_zone_received_at
+                .is_some_and(|t| t.elapsed() >= ZONE_REVEAL_TIMEOUT);
+            let should_reveal = if timed_out {
+                true
             } else {
-                // Revisit: reveal immediately
+                match self.game_state.is_in_loading_screen() {
+                    Some(false) => true,
+                    Some(true) => false,
+                    // Flag unreadable: fall back to position readability
+                    None => position_readable,
+                }
+            };
+            if should_reveal {
                 let zone = self.pending_zone_update.take().unwrap();
-                info!(name = %zone.display_name, "[RACE] Zone revealed (revisit)");
+                if timed_out {
+                    warn!(name = %zone.display_name, "[RACE] Zone revealed (timeout)");
+                } else {
+                    info!(name = %zone.display_name, "[RACE] Zone revealed");
+                }
                 self.race_state.current_zone = Some(zone);
-                self.loading_exit_time = None;
+                self.pending_zone_received_at = None;
                 self.pre_reveal_layer = None;
             }
         }
@@ -664,10 +657,6 @@ impl RaceTracker {
                 // Don't clear triggered_flags on reconnect: finish_event is one-shot.
                 // Regular fog gate flags are no longer tracked in triggered_flags;
                 // they're cleared in game memory after capture for re-traversal detection.
-                // After (re)auth, the server sends the player's current zone. Reveal
-                // it immediately without requiring a loading cycle.
-                self.loading_exit_time = Some(Instant::now() - ZONE_REVEAL_DELAY);
-                self.pre_reveal_layer = None;
                 self.race_state.race = Some(race);
                 self.frozen_igt_ms = None;
 
@@ -762,8 +751,7 @@ impl RaceTracker {
                 debug!(count = participants.len(), "[WS] Leaderboard update");
                 // Snapshot current_layer before it gets bumped by the new
                 // participants list, so the UI keeps the old X/Y and tier
-                // during the zone reveal delay. The leaderboard_update arrives
-                // before zone_update, so this is the right place to capture.
+                // until the zone name is revealed.
                 if self.pre_reveal_layer.is_none() {
                     if let Some(my_id) = &self.my_participant_id {
                         let old_layer = self
@@ -799,7 +787,6 @@ impl RaceTracker {
                 }
             }
             IncomingMessage::PlayerUpdate(player) => {
-                // Skip debug capture for player_update (too frequent)
                 // Snapshot current_layer on increase (same rationale as LeaderboardUpdate).
                 if self.pre_reveal_layer.is_none() {
                     if let Some(my_id) = &self.my_participant_id {
@@ -842,6 +829,7 @@ impl RaceTracker {
                     is_first_visit,
                     exits,
                 });
+                self.pending_zone_received_at = Some(Instant::now());
             }
             IncomingMessage::RequeueEventFlag { flag_id, igt_ms } => {
                 // Event flag was in the outgoing channel but never transmitted before
@@ -885,36 +873,10 @@ impl RaceTracker {
         self.race_state.current_zone.as_ref()
     }
 
-    /// During the zone reveal delay, returns the frozen current_layer from
-    /// before the leaderboard update. Returns None outside the delay window.
+    /// During the zone reveal wait, returns the frozen current_layer from
+    /// before the leaderboard update. Returns None outside the wait.
     pub fn pre_reveal_layer(&self) -> Option<i32> {
         self.pre_reveal_layer
-    }
-
-    /// True when a first-visit zone update is pending reveal (suspense period).
-    pub fn is_in_suspense(&self) -> bool {
-        self.pending_zone_update
-            .as_ref()
-            .is_some_and(|z| z.is_first_visit)
-    }
-
-    /// Seconds remaining before the zone name is revealed (ceiling).
-    /// Returns None when not in suspense.
-    pub fn suspense_remaining_secs(&self) -> Option<u32> {
-        if !self.is_in_suspense() {
-            return None;
-        }
-        let elapsed = self
-            .loading_exit_time
-            .map(|t| t.elapsed())
-            .unwrap_or(Duration::ZERO);
-        let remaining = ZONE_REVEAL_DELAY.saturating_sub(elapsed);
-        let secs = remaining.as_secs() as u32;
-        Some(if remaining.subsec_nanos() > 0 {
-            secs + 1
-        } else {
-            secs
-        })
     }
 
     pub fn my_participant_id(&self) -> Option<&String> {

@@ -22,6 +22,8 @@ pub struct GameState {
     pointers: Pointers,
     play_region_id_ptr: PointerChain<u32>,
     death_count_ptr: PointerChain<u32>,
+    /// [[EventFlagMan]+0x28]+0x113: non-zero during cutscenes/loading screens
+    loading_screen_ptr: PointerChain<u8>,
 }
 
 impl GameState {
@@ -41,10 +43,19 @@ impl GameState {
             GAMEDATAMAN_DEATH_COUNT_OFFSET,
         ]);
 
+        // Create pointer chain for loading screen flag
+        // CE table: "In cut-scene/loading screen" at [[EventFlagMan]+0x28]+0x113
+        let loading_screen_ptr = PointerChain::<u8>::new(&[
+            pointers.base_addresses.csfd4_virtual_memory_flag,
+            0x28,
+            0x113,
+        ]);
+
         Self {
             pointers,
             play_region_id_ptr,
             death_count_ptr,
+            loading_screen_ptr,
         }
     }
 
@@ -66,6 +77,14 @@ impl GameState {
     pub fn read_igt(&self) -> Option<u32> {
         // libeldenring reads IGT as usize but it's actually a u32 in milliseconds
         self.pointers.igt.read().map(|v| v as u32)
+    }
+
+    /// Check if the game is currently in a loading screen or cutscene.
+    ///
+    /// Returns `Some(true)` if loading, `Some(false)` if gameplay, `None` if
+    /// the pointer chain is unreadable (e.g., game not fully initialized).
+    pub fn is_in_loading_screen(&self) -> Option<bool> {
+        self.loading_screen_ptr.read().map(|v| v != 0)
     }
 }
 
