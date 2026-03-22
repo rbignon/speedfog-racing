@@ -28,8 +28,6 @@ tier_curve = "power"
 tier_curve_exponent = 0.8
 first_layer_type = "legacy_dungeon"
 final_boss_candidates = [
-    "haligtree_malenia",
     "leyndell_erdtree",
-    "jaggedpeak_bayle",
     "enirilim_radahn",
 ]

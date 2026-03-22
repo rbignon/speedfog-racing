@@ -18,20 +18,33 @@ min_layers = 25
 max_layers = 30
 final_tier = 18
 first_layer_type = "legacy_dungeon"
-final_boss_candidates = [
-    # Base game remembrance bosses
-    "academy_library",
-    "volcano_rykard",
-    "haligtree_malenia",
-    "leyndell_erdtree",
-    # DLC remembrance bosses + Bayle
-    "midramanse_boss",
-    "scadutree_base",
-    "storehouse_messmer",
-    "fingergrounds",
-    "jaggedpeak_bayle",
-    "enirilim_radahn",
-]
+
+[structure.final_boss_candidates]
+# Base game remembrance bosses
+stormveil_godrick = 1      # through-pass
+academy_library = 2        # dead-end
+caelid_radahn = 1          # through-pass
+leyndell_throne = 1        # through-pass
+volcano_rykard = 2         # dead-end
+flamepeak_firegiant = 1    # through-pass
+mohgwyn_boss = 1           # through-pass
+farumazula_maliketh = 1    # through-pass
+leyndell2_throne = 1       # through-pass
+haligtree_malenia = 4      # through-pass
+farumazula_placidusax = 4  # dead-end
+leyndell_erdtree = 5       # dead-end
+# DLC remembrance bosses + Bayle
+belurat_boss = 1           # through-pass
+ensis_boss = 1             # through-pass
+fissure_boss = 1           # through-pass
+scaduview_gaius = 1        # through-pass
+midramanse_boss = 2        # dead-end
+scadutree_base = 1         # dead-end
+storehouse_messmer = 3     # through-pass
+rauhruins_romina = 1       # through-pass
+fingergrounds = 1          # dead-end
+jaggedpeak_bayle = 3       # through-pass
+enirilim_radahn = 5        # dead-end
 
 [starting_items]
 whetblades = true
