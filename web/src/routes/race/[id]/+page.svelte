@@ -425,19 +425,6 @@
 		selectedParticipantIds = new Set();
 	}
 
-	let togglingVisibility = $state(false);
-
-	async function handleToggleVisibility() {
-		togglingVisibility = true;
-		try {
-			await updateRace(initialRace.id, { is_public: !initialRace.is_public });
-			initialRace = await fetchRace(initialRace.id);
-		} catch (e) {
-			console.error('Failed to toggle visibility:', e);
-		} finally {
-			togglingVisibility = false;
-		}
-	}
 </script>
 
 <svelte:head>
@@ -465,10 +452,6 @@
 				raceId={initialRace.id}
 				onRaceUpdated={handleRaceUpdated}
 			/>
-
-			{#if isOrganizer}
-				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
-			{/if}
 		{:else if raceStatus === 'running'}
 			<WatchLive casters={initialRace.casters.filter((c) => c.is_live)} />
 
@@ -515,10 +498,6 @@
 					</svg>
 					{downloading ? 'Preparing...' : 'Download Race Package'}
 				</button>
-			{/if}
-
-			{#if isOrganizer}
-				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
 			{/if}
 		{:else}
 			<div class="sidebar-section">
@@ -637,75 +616,6 @@
 			{#if isOrganizer || isCaster || myParticipant}
 				<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}> OBS Overlays </button>
 			{/if}
-
-			{#if isOrganizer}
-				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
-			{/if}
-		{/if}
-
-		{#if isOrganizer}
-			<div class="visibility-row">
-				<button
-					class="btn-toggle-visibility"
-					onclick={handleToggleVisibility}
-					disabled={togglingVisibility}
-				>
-					{#if initialRace.is_public}
-						<svg
-							class="visibility-icon"
-							viewBox="0 0 20 20"
-							fill="currentColor"
-							width="14"
-							height="14"
-						>
-							<path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-							<path
-								fill-rule="evenodd"
-								d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z"
-								clip-rule="evenodd"
-							/>
-						</svg>
-						Public
-					{:else}
-						<svg
-							class="visibility-icon"
-							viewBox="0 0 20 20"
-							fill="currentColor"
-							width="14"
-							height="14"
-						>
-							<path
-								fill-rule="evenodd"
-								d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z"
-								clip-rule="evenodd"
-							/>
-							<path
-								d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.741L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.065 7 9.542 7 .847 0 1.669-.105 2.454-.303z"
-							/>
-						</svg>
-						Private
-					{/if}
-				</button>
-				<button
-					class="btn-toggle-visibility btn-delete"
-					onclick={() => (showDeleteConfirm = true)}
-				>
-					<svg
-						class="visibility-icon"
-						viewBox="0 0 20 20"
-						fill="currentColor"
-						width="14"
-						height="14"
-					>
-						<path
-							fill-rule="evenodd"
-							d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-							clip-rule="evenodd"
-						/>
-					</svg>
-					Delete
-				</button>
-			</div>
 		{/if}
 
 		<div class="sidebar-footer">
@@ -804,6 +714,15 @@
 				</div>
 			{/if}
 		</div>
+
+		{#if isOrganizer}
+			<RaceControls
+				race={initialRace}
+				{raceStatus}
+				onRaceUpdated={handleRaceUpdated}
+				onDeleteRace={handleDeleteRace}
+			/>
+		{/if}
 
 		{#if liveSeed?.graph_json && raceStatus === 'finished'}
 			<RaceStats participants={raceStore.leaderboard} />
@@ -1454,50 +1373,6 @@
 		border-radius: var(--radius);
 		background: rgba(107, 114, 128, 0.2);
 		color: var(--color-text-disabled);
-	}
-
-	.visibility-row {
-		display: flex;
-		gap: 0.5rem;
-		padding: 0.75rem 0;
-		border-top: 1px solid var(--color-border);
-	}
-
-	.btn-toggle-visibility {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
-		background: none;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		padding: 0.35rem 0.75rem;
-		color: var(--color-text-secondary);
-		font-family: var(--font-family);
-		font-size: var(--font-size-xs);
-		cursor: pointer;
-		transition:
-			border-color var(--transition),
-			color var(--transition);
-	}
-
-	.btn-toggle-visibility:hover {
-		border-color: var(--color-text-secondary);
-		color: var(--color-text);
-	}
-
-	.btn-toggle-visibility:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.visibility-icon {
-		width: 14px;
-		height: 14px;
-	}
-
-	.btn-delete:hover {
-		border-color: var(--color-danger);
-		color: var(--color-danger);
 	}
 
 	.abandon-section {
