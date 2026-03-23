@@ -216,17 +216,6 @@
 		color: var(--color-purple);
 	}
 
-	.twitch-link {
-		color: var(--color-text-secondary);
-		display: flex;
-		align-items: center;
-		flex-shrink: 0;
-	}
-
-	.twitch-link:hover {
-		color: var(--color-text-primary);
-	}
-
 	.you-badge {
 		font-size: 0.65rem;
 		text-transform: uppercase;
