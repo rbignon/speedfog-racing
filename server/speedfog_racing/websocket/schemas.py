@@ -203,3 +203,29 @@ class PingMessage(BaseModel):
     """Heartbeat ping from server."""
 
     type: Literal["ping"] = "ping"
+
+
+# --- Client -> Server Messages (Chat) ---
+
+
+class SendChatMessage(BaseModel):
+    """Chat message from authenticated spectator/caster."""
+
+    type: Literal["chat"] = "chat"
+    message: str = Field(max_length=500)
+
+
+# --- Server -> Client Messages (Chat) ---
+
+
+class ChatBroadcastMessage(BaseModel):
+    """Chat message broadcast to room."""
+
+    type: Literal["chat_message"] = "chat_message"
+    username: str
+    display_name: str | None
+    avatar_url: str | None
+    role: str  # "organizer" | "caster" | "participant"
+    dominant_trait: str | None  # e.g. "rusher", "explorer", null
+    message: str
+    timestamp: str

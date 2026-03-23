@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.config import settings
-from speedfog_racing.models import Caster, Participant, Race
+from speedfog_racing.models import Caster, Participant, PlayerTraitScores, Race
 from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.websocket.common import heartbeat_loop
 from speedfog_racing.websocket.manager import (
@@ -24,10 +24,12 @@ from speedfog_racing.websocket.manager import (
     sort_leaderboard,
 )
 from speedfog_racing.websocket.schemas import (
+    ChatBroadcastMessage,
     ParticipantInfo,
     RaceInfo,
     RaceStateMessage,
     SeedInfo,
+    SendChatMessage,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,9 @@ async def handle_spectator_websocket(
 
     conn = SpectatorConnection(websocket=websocket, locale=query_locale)
 
+    # chat_info is set only for users with a role (organizer/caster/participant)
+    chat_info: dict[str, str | None] | None = None
+
     try:
         # Open a short-lived session for init only
         async with session_maker() as db:
@@ -107,6 +112,28 @@ async def handle_spectator_websocket(
                 if user_obj and user_obj.locale:
                     conn.locale = user_obj.locale
 
+                # Determine role in this race
+                role: str | None = None
+                if race.organizer_id == user_id:
+                    role = "organizer"
+                elif any(c.user_id == user_id for c in race.casters):
+                    role = "caster"
+                elif any(p.user_id == user_id for p in race.participants):
+                    role = "participant"
+
+                if role is not None and user_obj is not None:
+                    # Load dominant_trait from PlayerTraitScores
+                    trait_scores = await db.get(PlayerTraitScores, user_id)
+                    dominant_trait = trait_scores.dominant_trait if trait_scores else None
+
+                    chat_info = {
+                        "username": user_obj.twitch_username,
+                        "display_name": user_obj.twitch_display_name,
+                        "avatar_url": user_obj.twitch_avatar_url,
+                        "role": role,
+                        "dominant_trait": dominant_trait,
+                    }
+
             # Send initial race state (session still open for lazy access)
             await send_race_state(websocket, race, locale=conn.locale)
         # Session closed, released back to pool within ~2s of connect
@@ -118,12 +145,46 @@ async def handle_spectator_websocket(
         heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
 
         try:
-            # Keep connection alive; spectators only receive broadcasts
+            # Message loop: parse incoming messages and handle chat if authorized
             while True:
                 try:
-                    await websocket.receive_text()
+                    raw = await websocket.receive_text()
                 except WebSocketDisconnect:
                     break
+
+                # Ignore pong and non-JSON gracefully
+                try:
+                    msg = json.loads(raw)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+
+                msg_type = msg.get("type")
+                if msg_type == "pong":
+                    continue
+
+                if msg_type == "chat":
+                    if chat_info is None:
+                        # Silently ignore: spectator-only connections cannot chat
+                        continue
+                    try:
+                        chat_msg = SendChatMessage.model_validate(msg)
+                    except Exception:
+                        continue
+
+                    room = manager.get_room(race_id)
+                    if room is None:
+                        continue
+
+                    broadcast = ChatBroadcastMessage(
+                        username=chat_info["username"],  # type: ignore[arg-type]
+                        display_name=chat_info["display_name"],
+                        avatar_url=chat_info["avatar_url"],
+                        role=chat_info["role"],  # type: ignore[arg-type]
+                        dominant_trait=chat_info["dominant_trait"],
+                        message=chat_msg.message,
+                        timestamp=datetime.now(UTC).isoformat(),
+                    )
+                    await room.broadcast_to_all(broadcast.model_dump_json())
         finally:
             heartbeat_task.cancel()
             try:
