@@ -453,6 +453,43 @@ async def update_race(
                     detail="Scheduled time cannot be in the past",
                 )
         race.scheduled_at = request.scheduled_at
+
+    # open_registration and max_participants only editable in SETUP
+    registration_fields = {"open_registration", "max_participants"} & request.model_fields_set
+    if registration_fields:
+        if race.status != RaceStatus.SETUP:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only update registration settings for setup races",
+            )
+        # Apply field values (use current race values for fields not sent)
+        new_open_registration: bool = (
+            request.open_registration
+            if "open_registration" in request.model_fields_set
+            and request.open_registration is not None
+            else bool(race.open_registration)
+        )
+        new_max_participants: int | None = (
+            request.max_participants
+            if "max_participants" in request.model_fields_set
+            else race.max_participants
+        )
+        # Validate max_participants upper bound
+        if new_max_participants is not None and new_max_participants > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="max_participants cannot exceed 100",
+            )
+        # Cross-field: open_registration requires max_participants >= 2
+        if new_open_registration:
+            if new_max_participants is None or new_max_participants < 2:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="max_participants must be >= 2 when open_registration is enabled",
+                )
+        race.open_registration = new_open_registration
+        race.max_participants = new_max_participants
+
     await db.commit()
 
     # Sync Discord scheduled event

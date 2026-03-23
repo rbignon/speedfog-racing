@@ -40,10 +40,14 @@ class UpdateRaceRequest(BaseModel):
 
     scheduled_at: only editable in SETUP status.
     is_public: editable at any status.
+    open_registration: only editable in SETUP status.
+    max_participants: only editable in SETUP status.
     """
 
     scheduled_at: datetime | None = None
     is_public: bool | None = None
+    open_registration: bool | None = None
+    max_participants: int | None = None
 
 
 class AddParticipantRequest(BaseModel):

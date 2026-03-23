@@ -337,7 +337,12 @@ export async function createRace(
  */
 export async function updateRace(
   raceId: string,
-  data: { scheduled_at?: string | null; is_public?: boolean },
+  data: {
+    scheduled_at?: string | null;
+    is_public?: boolean;
+    open_registration?: boolean;
+    max_participants?: number | null;
+  },
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races/${raceId}`, {
     method: "PATCH",
