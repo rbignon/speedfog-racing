@@ -19,6 +19,7 @@
 	import RaceHighlights from '$lib/components/RaceHighlights.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import AddToCalendar from '$lib/components/AddToCalendar.svelte';
+	import ChatSidebar from '$lib/components/ChatSidebar.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -69,6 +70,7 @@
 	} | null>(null);
 	let highlightFocusNodeId = $state<string | null>(null);
 	let dagView = $state<'map' | 'replay'>('map');
+	let chatCollapsed = $state(true);
 
 	function handleHighlightZoneClick(nodeId: string) {
 		// Reset first so re-clicking the same zone re-triggers the $effect
@@ -76,6 +78,10 @@
 		requestAnimationFrame(() => {
 			highlightFocusNodeId = nodeId;
 		});
+	}
+
+	function sendChatMessage(message: string) {
+		raceStore.send({ type: 'chat', message });
 	}
 
 	async function handleDownload() {
@@ -612,10 +618,6 @@
 				raceId={initialRace.id}
 				onRaceUpdated={handleRaceUpdated}
 			/>
-
-			{#if isOrganizer || isCaster || myParticipant}
-				<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}> OBS Overlays </button>
-			{/if}
 		{/if}
 
 		<div class="sidebar-footer">
@@ -798,6 +800,16 @@
 			/>
 		{/if}
 	</main>
+
+	<ChatSidebar
+		messages={raceStore.chatMessages}
+		canSend={isOrganizer || isCaster || !!myParticipant}
+		collapsed={chatCollapsed}
+		showObsButton={isOrganizer || isCaster || !!myParticipant}
+		onSend={sendChatMessage}
+		onToggle={() => (chatCollapsed = !chatCollapsed)}
+		onOpenObs={() => (showObsModal = true)}
+	/>
 
 	{#if showObsModal}
 		<ObsOverlayModal raceId={initialRace.id} onClose={() => (showObsModal = false)} />
@@ -1219,25 +1231,6 @@
 	.sidebar-download-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
-	}
-
-	.obs-overlay-btn {
-		width: 100%;
-		padding: 0.5rem;
-		margin-top: 0.5rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		background: none;
-		color: var(--color-text-secondary);
-		font-family: var(--font-family);
-		font-size: var(--font-size-sm);
-		cursor: pointer;
-		transition: all var(--transition);
-	}
-
-	.obs-overlay-btn:hover {
-		border-color: var(--color-purple);
-		color: var(--color-purple);
 	}
 
 	:global(.race-page .zoomable-container) {
