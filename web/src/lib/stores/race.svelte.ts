@@ -5,6 +5,7 @@
 import {
   createRaceWebSocket,
   type RaceWebSocket,
+  type ChatMessage,
   type WsParticipant,
   type WsRaceInfo,
   type WsSeedInfo,
@@ -14,6 +15,7 @@ class RaceStore {
   race = $state<WsRaceInfo | null>(null);
   seed = $state<WsSeedInfo | null>(null);
   participants = $state<WsParticipant[]>([]);
+  chatMessages = $state<ChatMessage[]>([]);
   spectatorCount = $state(0);
   connected = $state(false);
   loading = $state(true);
@@ -78,6 +80,7 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
+    this.chatMessages = [];
     this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;
@@ -158,6 +161,10 @@ class RaceStore {
         onSpectatorCount: (msg) => {
           this.spectatorCount = msg.count;
         },
+
+        onChatMessage: (msg) => {
+          this.chatMessages = [...this.chatMessages, msg];
+        },
       },
       locale,
     );
@@ -182,6 +189,7 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
+    this.chatMessages = [];
     this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;
@@ -192,6 +200,13 @@ class RaceStore {
    */
   getCurrentRaceId(): string | null {
     return this.currentRaceId;
+  }
+
+  /**
+   * Send a message via the WebSocket connection.
+   */
+  send(data: Record<string, unknown>): void {
+    this.ws?.send(data);
   }
 
   /**
