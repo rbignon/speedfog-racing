@@ -164,8 +164,9 @@
 	$effect(() => {
 		if (!auth.initialized) return;
 
+		const raceId = data.race.id;
 		const locale = untrack(() => getEffectiveLocale());
-		raceStore.connect(initialRace.id, locale);
+		raceStore.connect(raceId, locale);
 
 		return () => {
 			raceStore.disconnect();
