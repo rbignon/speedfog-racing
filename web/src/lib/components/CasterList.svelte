@@ -101,28 +101,6 @@
 						<a href="/user/{caster.user.twitch_username}" class="name name-link">
 							{caster.user.twitch_display_name || caster.user.twitch_username}
 						</a>
-						<a
-							href="https://twitch.tv/{caster.user.twitch_username}"
-							target="_blank"
-							rel="noopener noreferrer"
-							class="twitch-link"
-							title="View on Twitch"
-						>
-							<svg
-								width="14"
-								height="14"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							>
-								<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-								<polyline points="15 3 21 3 21 9" />
-								<line x1="10" y1="14" x2="21" y2="3" />
-							</svg>
-						</a>
 						{#if caster.is_live}
 							<LiveBadge
 								href={caster.stream_url ?? `https://twitch.tv/${caster.user.twitch_username}`}

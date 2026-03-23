@@ -264,6 +264,15 @@
 		myWsParticipant?.status === 'finished' || myWsParticipant?.status === 'abandoned'
 	);
 
+	// Debug: force full DAG view even as participant (call __debugDagFull() in console)
+	let forceFullDag = $state(false);
+	if (typeof window !== 'undefined') {
+		(window as any).__debugDagFull = (on?: boolean) => {
+			forceFullDag = on ?? !forceFullDag;
+			return forceFullDag ? 'Full DAG enabled' : 'Progressive DAG restored';
+		};
+	}
+
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleString();
 	}
@@ -461,13 +470,13 @@
 				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
 			{/if}
 		{:else if raceStatus === 'running'}
-			<WatchLive casters={initialRace.casters} />
+			<WatchLive casters={initialRace.casters.filter((c) => c.is_live)} />
 
 			<div class="sidebar-section">
 				<Leaderboard
 					participants={raceStore.leaderboard}
 					{totalLayers}
-					zoneNames={myWsParticipantId && !myParticipantFinished ? null : zoneNames}
+					zoneNames={myWsParticipantId && !myParticipantFinished && !forceFullDag ? null : zoneNames}
 					selectedIds={selectedParticipantIds}
 					onToggle={handleLeaderboardToggle}
 					onClearSelection={clearSelection}
@@ -507,15 +516,6 @@
 					{downloading ? 'Preparing...' : 'Download Race Package'}
 				</button>
 			{/if}
-
-			<CasterList
-				casters={initialRace.casters}
-				canCast={auth.isLoggedIn && !myParticipant && !isCaster}
-				{isCaster}
-				currentUserId={auth.user?.id ?? null}
-				raceId={initialRace.id}
-				onRaceUpdated={handleRaceUpdated}
-			/>
 
 			{#if isOrganizer}
 				<RaceControls race={initialRace} {raceStatus} onRaceUpdated={handleRaceUpdated} />
@@ -764,7 +764,7 @@
 			{/if}
 
 			{#if liveSeed?.graph_json && raceStatus === 'running'}
-				{#if myWsParticipantId && !myParticipantFinished}
+				{#if myWsParticipantId && !myParticipantFinished && !forceFullDag}
 					<MetroDagProgressive
 						graphJson={liveSeed.graph_json}
 						participants={raceStore.participants}
@@ -790,13 +790,13 @@
 				{:else}
 					<RaceReplay graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} focusNodeId={highlightFocusNodeId} />
 				{/if}
-			{:else if liveSeed?.graph_json && myWsParticipantId}
+			{:else if liveSeed?.graph_json && myWsParticipantId && !forceFullDag}
 				<MetroDagProgressive
 					graphJson={liveSeed.graph_json}
 					participants={raceStore.participants}
 					myParticipantId={myWsParticipantId}
 				/>
-			{:else if liveSeed?.graph_json && isOrganizer}
+			{:else if liveSeed?.graph_json && (isOrganizer || forceFullDag)}
 				<MetroDag graphJson={liveSeed.graph_json} />
 			{:else if totalLayers}
 				<div class="dag-placeholder">
