@@ -69,7 +69,7 @@
 	} | null>(null);
 	let highlightFocusNodeId = $state<string | null>(null);
 	let dagView = $state<'map' | 'replay'>('map');
-	let chatCollapsed = $state(true);
+	let chatCollapsed = $state(false);
 
 	function handleHighlightZoneClick(nodeId: string) {
 		// Reset first so re-clicking the same zone re-triggers the $effect
