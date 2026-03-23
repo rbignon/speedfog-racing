@@ -143,7 +143,7 @@
 
 	.message-header {
 		display: flex;
-		align-items: flex-start;
+		align-items: center;
 		gap: 0.5rem;
 	}
 
@@ -152,7 +152,6 @@
 		height: 24px;
 		border-radius: 50%;
 		flex-shrink: 0;
-		margin-top: 2px;
 	}
 
 	.avatar-placeholder {
@@ -161,7 +160,6 @@
 		border-radius: 50%;
 		background: var(--color-border);
 		flex-shrink: 0;
-		margin-top: 2px;
 	}
 
 	.meta {
