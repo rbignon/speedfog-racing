@@ -72,12 +72,24 @@ export interface SpectatorCountMessage {
   count: number;
 }
 
+export interface ChatMessage {
+  type: "chat_message";
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  role: string; // "organizer" | "caster" | "participant"
+  dominant_trait: string | null;
+  message: string;
+  timestamp: string;
+}
+
 export type ServerMessage =
   | RaceStateMessage
   | LeaderboardUpdateMessage
   | PlayerUpdateMessage
   | RaceStatusChangeMessage
-  | SpectatorCountMessage;
+  | SpectatorCountMessage
+  | ChatMessage;
 
 const VALID_SERVER_MESSAGE_TYPES = new Set([
   "race_state",
@@ -85,6 +97,7 @@ const VALID_SERVER_MESSAGE_TYPES = new Set([
   "player_update",
   "race_status_change",
   "spectator_count",
+  "chat_message",
 ]);
 
 function isServerMessage(data: unknown): data is ServerMessage {
@@ -107,6 +120,7 @@ export interface RaceWebSocketOptions {
   onPlayerUpdate?: (msg: PlayerUpdateMessage) => void;
   onRaceStatusChange?: (msg: RaceStatusChangeMessage) => void;
   onSpectatorCount?: (msg: SpectatorCountMessage) => void;
+  onChatMessage?: (msg: ChatMessage) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: Event) => void;
@@ -233,6 +247,15 @@ export class RaceWebSocket {
   }
 
   /**
+   * Send a message to the server.
+   */
+  send(data: Record<string, unknown>): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data));
+    }
+  }
+
+  /**
    * Check if connected.
    */
   isConnected(): boolean {
@@ -255,6 +278,9 @@ export class RaceWebSocket {
         break;
       case "spectator_count":
         this.options.onSpectatorCount?.(msg);
+        break;
+      case "chat_message":
+        this.options.onChatMessage?.(msg);
         break;
       default:
         if (import.meta.env.DEV)
