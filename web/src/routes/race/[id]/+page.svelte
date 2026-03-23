@@ -58,7 +58,6 @@
 	let scheduleSaving = $state(false);
 	let selectedParticipantIds = $state<Set<string>>(new Set());
 	let showDownloadModal = $state(false);
-	let showDeleteConfirm = $state(false);
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
 	let pendingConfirm = $state<{
@@ -821,19 +820,6 @@
 			error={downloadError}
 			onClose={() => (showDownloadModal = false)}
 			onDownload={handleDownload}
-		/>
-	{/if}
-
-	{#if showDeleteConfirm}
-		<ConfirmModal
-			title="Delete Race"
-			message="This will permanently delete the race and all data. This cannot be undone."
-			confirmLabel="Delete"
-			danger
-			loading={deleting}
-			error={deleteError}
-			onConfirm={handleDeleteRace}
-			onCancel={() => (showDeleteConfirm = false)}
 		/>
 	{/if}
 
