@@ -6,20 +6,16 @@
 		messages: ChatMessage[];
 		canSend: boolean;
 		collapsed: boolean;
-		showObsButton: boolean;
 		onSend: (message: string) => void;
 		onToggle: () => void;
-		onOpenObs: () => void;
 	}
 
 	let {
 		messages,
 		canSend,
 		collapsed,
-		showObsButton,
 		onSend,
-		onToggle,
-		onOpenObs
+		onToggle
 	}: Props = $props();
 
 	let lastSeenCount = $state(0);
@@ -41,20 +37,23 @@
 <aside class="chat-sidebar" class:collapsed>
 	<button class="toggle-btn" onclick={onToggle} title={collapsed ? 'Open chat' : 'Close chat'}>
 		{#if collapsed}
-			<span class="icon">&#x1F4AC;</span>
+			<svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+			</svg>
 			{#if unreadCount > 0}
 				<span class="unread-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
 			{/if}
 		{:else}
-			<span class="icon close-icon">&#x2715;</span>
+			<svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<polyline points="13 6 19 12 13 18" />
+				<line x1="7" y1="12" x2="19" y2="12" />
+				<line x1="3" y1="4" x2="3" y2="20" />
+			</svg>
 		{/if}
 	</button>
 
 	{#if !collapsed}
 		<div class="sidebar-content">
-			{#if showObsButton}
-				<button class="obs-btn" onclick={onOpenObs}>OBS Overlays</button>
-			{/if}
 			<div class="chat-header">CHAT</div>
 			<div class="chat-area">
 				<ChatPanel {messages} {canSend} {onSend} />
@@ -103,12 +102,7 @@
 	}
 
 	.icon {
-		font-size: 1.2rem;
-		line-height: 1;
-	}
-
-	.close-icon {
-		font-size: 1rem;
+		flex-shrink: 0;
 	}
 
 	.unread-badge {
@@ -135,29 +129,6 @@
 		height: 100%;
 		padding-top: 52px;
 		min-height: 0;
-	}
-
-	.obs-btn {
-		margin: 0 0.75rem 0.5rem;
-		padding: 0.4rem 0.75rem;
-		background: var(--color-surface-elevated);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		color: var(--color-text-secondary);
-		font-family: var(--font-family);
-		font-size: var(--font-size-xs);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		cursor: pointer;
-		transition: all var(--transition);
-		flex-shrink: 0;
-		width: calc(100% - 1.5rem);
-	}
-
-	.obs-btn:hover {
-		border-color: var(--color-purple);
-		color: var(--color-purple);
 	}
 
 	.chat-header {

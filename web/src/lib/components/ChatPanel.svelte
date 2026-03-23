@@ -64,7 +64,7 @@
 		{#if messages.length === 0}
 			<p class="empty">No messages yet</p>
 		{:else}
-			{#each messages as msg (msg.timestamp + msg.username)}
+			{#each messages as msg, i (msg.timestamp + msg.username + i)}
 				<div class="message">
 					<div class="message-header">
 						{#if msg.avatar_url}
@@ -73,21 +73,19 @@
 							<div class="avatar-placeholder"></div>
 						{/if}
 						<div class="meta">
-							<span class="badges">
-								{#if msg.role === 'organizer'}
-									<span class="badge badge-organizer">ORG</span>
-								{:else if msg.role === 'caster'}
-									<span class="badge badge-caster">CAST</span>
-								{/if}
-								{#if msg.dominant_trait && TRAIT_META[msg.dominant_trait]}
-									{@const trait = TRAIT_META[msg.dominant_trait]}
-									<span
-										class="badge badge-trait"
-										style="background: {trait.color}20; color: {trait.color}"
-									>{trait.icon}</span>
-								{/if}
-							</span>
 							<span class="display-name">{msg.display_name ?? msg.username}</span>
+							{#if msg.role === 'organizer'}
+								<span class="badge badge-organizer">ORG</span>
+							{:else if msg.role === 'caster'}
+								<span class="badge badge-caster">CAST</span>
+							{/if}
+							{#if msg.dominant_trait && TRAIT_META[msg.dominant_trait]}
+								{@const trait = TRAIT_META[msg.dominant_trait]}
+								<span
+									class="badge badge-trait"
+									style="background: {trait.color}20; color: {trait.color}"
+								>{trait.icon}</span>
+							{/if}
 							<span class="timestamp">{formatTime(msg.timestamp)}</span>
 						</div>
 					</div>
@@ -172,13 +170,6 @@
 		flex-wrap: wrap;
 		gap: 0.3rem;
 		min-width: 0;
-	}
-
-	.badges {
-		display: flex;
-		align-items: center;
-		gap: 0.2rem;
-		flex-shrink: 0;
 	}
 
 	.badge {

@@ -617,6 +617,10 @@
 				raceId={initialRace.id}
 				onRaceUpdated={handleRaceUpdated}
 			/>
+
+			{#if isOrganizer || isCaster || myParticipant}
+				<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}>OBS Overlays</button>
+			{/if}
 		{/if}
 
 		<div class="sidebar-footer">
@@ -804,10 +808,8 @@
 		messages={raceStore.chatMessages}
 		canSend={isOrganizer || isCaster || !!myParticipant}
 		collapsed={chatCollapsed}
-		showObsButton={isOrganizer || isCaster || !!myParticipant}
 		onSend={sendChatMessage}
 		onToggle={() => (chatCollapsed = !chatCollapsed)}
-		onOpenObs={() => (showObsModal = true)}
 	/>
 
 	{#if showObsModal}
@@ -1217,6 +1219,25 @@
 	.sidebar-download-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.obs-overlay-btn {
+		width: 100%;
+		margin-top: 0.5rem;
+		padding: 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--color-text-secondary);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		cursor: pointer;
+		transition: all var(--transition);
+	}
+
+	.obs-overlay-btn:hover {
+		border-color: var(--color-purple);
+		color: var(--color-purple);
 	}
 
 	:global(.race-page .zoomable-container) {

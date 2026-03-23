@@ -172,7 +172,7 @@
 	async function handleToggleVisibility() {
 		togglingVisibility = true;
 		try {
-			const updated = await updateRace(race.id, { is_public: !race.is_public });
+			await updateRace(race.id, { is_public: !race.is_public });
 			onRaceUpdated(await fetchRace(race.id));
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to toggle visibility';
@@ -247,7 +247,10 @@
 					</button>
 				{/if}
 				{#if seedsReleased}
-					<span class="seeds-badge">Seeds released</span>
+					<span class="seeds-badge">
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+						Seeds ready
+					</span>
 				{/if}
 				<button class="btn btn-secondary" onclick={handleReroll} disabled={loading}>
 					{loading ? 'Re-rolling...' : 'Re-roll Seed'}
@@ -381,9 +384,15 @@
 	}
 
 	.seeds-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
 		color: var(--color-success, #10b981);
+		background: rgba(16, 185, 129, 0.1);
+		padding: 0.25rem 0.5rem;
+		border-radius: var(--radius-sm);
 		font-size: var(--font-size-xs);
-		font-weight: 500;
+		font-weight: 600;
 		white-space: nowrap;
 	}
 
@@ -461,24 +470,4 @@
 		font-size: var(--font-size-xs);
 	}
 
-	.btn-danger-outline {
-		background: none;
-		border: 1px solid var(--color-danger);
-		color: var(--color-danger);
-		border-radius: var(--radius-sm);
-		padding: 0.35rem 0.6rem;
-		font-family: var(--font-family);
-		font-size: var(--font-size-xs);
-		cursor: pointer;
-		transition: all var(--transition);
-	}
-
-	.btn-danger-outline:hover:not(:disabled) {
-		background: rgba(239, 68, 68, 0.1);
-	}
-
-	.btn-danger-outline:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
 </style>
