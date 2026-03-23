@@ -17,6 +17,7 @@
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
+	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 	import { statusLabel } from '$lib/format';
 
@@ -312,6 +313,13 @@
 					<MetroDag {graphJson} />
 				{/if}
 			</section>
+		{/if}
+
+		{#if session.pool_config}
+			<PoolSettingsCard
+				poolName={session.pool_name.replace(/^training_/, '')}
+				poolConfig={session.pool_config}
+			/>
 		{/if}
 	{/if}
 </main>
