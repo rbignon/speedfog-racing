@@ -19,6 +19,7 @@ from speedfog_racing.websocket.manager import (
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     AuthOkMessage,
+    DeathCountsMessage,
     EventFlagMessage,
     ExitInfo,
     LeaderboardUpdateMessage,
@@ -304,6 +305,34 @@ class TestSchemas:
         data = json.loads(msg.model_dump_json())
         assert data["tier"] is None
         assert data["exits"] == []
+
+    def test_death_counts_message(self):
+        """Test DeathCountsMessage serialization."""
+        msg = DeathCountsMessage(counts={"node_a": 4, "node_b": 1})
+        data = json.loads(msg.model_dump_json())
+        assert data["type"] == "death_counts"
+        assert data["counts"] == {"node_a": 4, "node_b": 1}
+
+    def test_death_counts_message_empty(self):
+        """Test DeathCountsMessage with empty counts."""
+        msg = DeathCountsMessage(counts={})
+        data = json.loads(msg.model_dump_json())
+        assert data["type"] == "death_counts"
+        assert data["counts"] == {}
+
+    def test_seed_info_death_flags(self):
+        """Test SeedInfo includes death_flags."""
+        info = SeedInfo(
+            total_layers=5,
+            death_flags={"node_a": [1040292500, 1040292501, 1040292502]},
+        )
+        data = json.loads(info.model_dump_json())
+        assert data["death_flags"] == {"node_a": [1040292500, 1040292501, 1040292502]}
+
+    def test_seed_info_death_flags_default_empty(self):
+        """Test SeedInfo death_flags defaults to empty dict."""
+        info = SeedInfo(total_layers=5)
+        assert info.death_flags == {}
 
 
 # --- Manager Tests ---

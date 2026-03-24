@@ -105,6 +105,7 @@ class SeedInfo(BaseModel):
     event_ids: list[int] = Field(default_factory=list)
     finish_event: int | None = None
     spawn_items: list[SpawnItem] = Field(default_factory=list)
+    death_flags: dict[str, list[int]] = Field(default_factory=dict)
 
 
 class AuthOkMessage(BaseModel):
@@ -129,6 +130,13 @@ class ErrorMessage(BaseModel):
 
     type: Literal["error"] = "error"
     message: str
+
+
+class DeathCountsMessage(BaseModel):
+    """Aggregated death counts per zone, broadcast to mods."""
+
+    type: Literal["death_counts"] = "death_counts"
+    counts: dict[str, int]  # node_id -> total deaths across all participants
 
 
 class RaceStartMessage(BaseModel):
