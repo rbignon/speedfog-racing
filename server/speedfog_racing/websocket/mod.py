@@ -39,6 +39,7 @@ from speedfog_racing.websocket.manager import (
 )
 from speedfog_racing.websocket.schemas import (
     AuthOkMessage,
+    DeathCountsMessage,
     ParticipantInfo,
     RaceInfo,
     RaceStartMessage,
@@ -191,6 +192,11 @@ async def handle_mod_websocket(
                     await send_zone_update(
                         websocket, zone, seed.graph_json, participant.zone_history, mod_locale
                     )
+
+                # Send current death counts on reconnect
+                counts = aggregate_death_counts(race.participants)
+                if counts:
+                    await websocket.send_text(DeathCountsMessage(counts=counts).model_dump_json())
         # Session closed, released back to pool
 
         # Register connection (includes locale)
@@ -360,6 +366,7 @@ async def handle_status_update(
     msg: dict[str, Any],
 ) -> None:
     """Handle periodic status update from mod."""
+    delta = 0
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
         if not participant:
@@ -421,6 +428,13 @@ async def handle_status_update(
             participant.death_count = new_death_count
 
         await db.commit()
+
+    # Broadcast death counts to all mods when deaths are attributed
+    if delta > 0:
+        counts = aggregate_death_counts(participant.race.participants)
+        room = manager.get_room(participant.race_id)
+        if room:
+            await room.broadcast_to_mods(DeathCountsMessage(counts=counts).model_dump_json())
 
     if became_playing:
         # READY→PLAYING: broadcast full leaderboard so all clients see the transition

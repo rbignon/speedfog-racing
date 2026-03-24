@@ -2256,3 +2256,54 @@ def test_finished_participant_event_flag_ignored(
     if history:
         node_ids = [e.get("node_id") for e in history]
         assert "node_a" not in node_ids, "Finished player should not gain new zone history"
+
+
+def test_death_counts_broadcast(integration_client, race_with_participants):
+    """Deaths broadcast death_counts to all connected mods."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Start the race
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with (
+        integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0,
+        integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1,
+    ):
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        mod1 = ModTestClient(ws1, players[1]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        assert mod1.auth()["type"] == "auth_ok"
+
+        # Player 0 discovers node_a
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        mod0.receive_until_type("leaderboard_update")
+        mod1.receive_until_type("leaderboard_update")
+
+        # Player 0 dies twice in node_a
+        mod0.send_status_update(igt_ms=15000, death_count=2)
+        time.sleep(0.3)
+
+        # Both mods should receive death_counts
+        msg0 = mod0.receive_until_type("death_counts")
+        assert msg0["counts"]["node_a"] == 2
+
+        msg1 = mod1.receive_until_type("death_counts")
+        assert msg1["counts"]["node_a"] == 2
+
+
+def test_death_flags_default_empty_in_auth_ok(integration_client, race_with_participants):
+    """auth_ok includes empty death_flags when graph_json has no death_flags."""
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        auth = mod.auth(drain=False)
+        assert auth["type"] == "auth_ok"
+        assert auth["seed"]["death_flags"] == {}
