@@ -455,6 +455,22 @@ impl RaceTracker {
                 }
             }
         }
+        // Re-apply death marker flags after loading screen exit.
+        // set_flag writes directly to VirtualMemoryFlag memory, but the game
+        // rebuilds the tree from save data on area transitions, so flags are
+        // lost. Re-applying here ensures bloodstains reappear within one frame.
+        if position_readable && !self.was_position_readable {
+            if let Some(ref seed) = self.race_state.seed {
+                for (node_id, total) in &self.race_state.death_counts {
+                    if let Some(flags) = seed.death_flags.get(node_id) {
+                        self.event_flag_reader.set_flag(flags[0], *total >= 1);
+                        self.event_flag_reader.set_flag(flags[1], *total >= 3);
+                        self.event_flag_reader.set_flag(flags[2], *total >= 5);
+                    }
+                }
+            }
+        }
+
         self.was_position_readable = position_readable;
 
         // Event flag polling runs ALWAYS (even when disconnected).

@@ -83,8 +83,9 @@ impl EventFlagReader {
     /// Set or clear an event flag in game memory.
     ///
     /// Uses the same tree traversal as `is_flag_set()` to locate the byte,
-    /// then writes the bit. The game's save system serializes the tree,
-    /// so the change persists in the save file.
+    /// then writes the bit directly. Note: the game rebuilds the
+    /// VirtualMemoryFlag tree from save data on area transitions, so
+    /// flags set this way do NOT persist across loading screens.
     pub fn set_flag(&self, flag_id: u32, value: bool) -> bool {
         let manager = match self.base_ptr.read() {
             Some(m) if m != 0 => m,
