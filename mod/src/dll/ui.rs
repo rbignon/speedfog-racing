@@ -183,18 +183,19 @@ impl RaceTracker {
                 });
                 if let Some(text) = countdown_text {
                     (text, yellow)
-                } else {
-                    let go_start = self.race_state.countdown_end.unwrap_or_else(|| {
-                        self.race_state
-                            .race_started_at
-                            .unwrap_or_else(std::time::Instant::now)
-                    });
+                } else if let Some(go_start) = self
+                    .race_state
+                    .countdown_end
+                    .or(self.race_state.race_started_at)
+                {
                     if go_start.elapsed() < Duration::from_secs(3) {
                         ("GO!".to_string(), green)
                     } else {
-                        // Normal IGT display
                         (self.format_igt_str(), blue)
                     }
+                } else {
+                    // Reconnect: no race_start received, skip GO! phase
+                    (self.format_igt_str(), blue)
                 }
             }
             "finished" => (self.format_igt_str(), green),
