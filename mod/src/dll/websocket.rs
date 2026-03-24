@@ -81,6 +81,8 @@ pub enum IncomingMessage {
         is_first_visit: bool,
         exits: Vec<ExitInfo>,
     },
+    /// Aggregated death counts per zone for death marker flags
+    DeathCounts(HashMap<String, u32>),
     /// Event flag drained from outgoing channel on reconnect, must be re-buffered
     RequeueEventFlag {
         flag_id: u32,
@@ -537,6 +539,9 @@ fn message_loop(
                                 is_first_visit,
                                 exits,
                             });
+                        }
+                        ServerMessage::DeathCounts { counts } => {
+                            let _ = incoming_tx.send(IncomingMessage::DeathCounts(counts));
                         }
                         ServerMessage::Error { message } => {
                             let _ = incoming_tx.send(IncomingMessage::Error(message));

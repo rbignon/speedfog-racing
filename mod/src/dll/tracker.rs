@@ -50,6 +50,7 @@ pub struct RaceState {
     pub race_started_at: Option<Instant>,
     pub countdown_end: Option<Instant>,
     pub current_zone: Option<ZoneUpdateData>,
+    pub death_counts: HashMap<String, u32>,
 }
 
 /// Result of reading a single flag for debug display
@@ -834,6 +835,19 @@ impl RaceTracker {
                 // disconnect. Re-buffer it so it gets sent after reconnection.
                 self.pending_event_flags.push((flag_id, igt_ms));
                 info!(flag_id, "[WS] Re-queued drained event flag");
+            }
+            IncomingMessage::DeathCounts(counts) => {
+                self.last_received_debug = Some(format!("death_counts({} zones)", counts.len()));
+                self.race_state.death_counts = counts.clone();
+                if let Some(ref seed) = self.race_state.seed {
+                    for (node_id, total) in &counts {
+                        if let Some(flags) = seed.death_flags.get(node_id) {
+                            self.event_flag_reader.set_flag(flags[0], *total >= 1);
+                            self.event_flag_reader.set_flag(flags[1], *total >= 3);
+                            self.event_flag_reader.set_flag(flags[2], *total >= 5);
+                        }
+                    }
+                }
             }
             IncomingMessage::Error(e) => {
                 self.last_received_debug = Some(format!("error({})", e));
