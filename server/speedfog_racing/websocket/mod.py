@@ -104,6 +104,19 @@ async def _load_participant(db: AsyncSession, participant_id: uuid.UUID) -> Part
     return result.scalar_one_or_none()
 
 
+def aggregate_death_counts(participants: list[Participant]) -> dict[str, int]:
+    """Aggregate deaths per node_id across all participants' zone_history."""
+    counts: dict[str, int] = {}
+    for p in participants:
+        for entry in p.zone_history or []:
+            deaths = entry.get("deaths", 0)
+            if deaths > 0:
+                node_id = entry.get("node_id")
+                if node_id:
+                    counts[node_id] = counts.get(node_id, 0) + deaths
+    return counts
+
+
 async def handle_mod_websocket(
     websocket: WebSocket,
     race_id: uuid.UUID,
@@ -278,6 +291,7 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
 
     # Extract gem items from care_package for runtime spawning by the mod
     spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
+    death_flags = seed.graph_json.get("death_flags", {}) if seed and seed.graph_json else {}
 
     # Build participant list
     room = manager.get_room(race.id)
@@ -308,6 +322,7 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
             event_ids=event_ids,
             finish_event=finish_event_id,
             spawn_items=spawn_items,
+            death_flags=death_flags,
         ),
         participants=participant_infos,
     )

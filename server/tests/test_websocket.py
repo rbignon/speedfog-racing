@@ -16,6 +16,7 @@ from speedfog_racing.websocket.manager import (
     participant_to_info,
     sort_leaderboard,
 )
+from speedfog_racing.websocket.mod import aggregate_death_counts
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     AuthOkMessage,
@@ -333,6 +334,56 @@ class TestSchemas:
         """Test SeedInfo death_flags defaults to empty dict."""
         info = SeedInfo(total_layers=5)
         assert info.death_flags == {}
+
+
+# --- Aggregate Death Counts Tests ---
+
+
+class TestAggregateDeathCounts:
+    """Test aggregate_death_counts utility."""
+
+    def test_single_participant_single_zone(self):
+        p = MockParticipant(zone_history=[{"node_id": "node_a", "igt_ms": 10000, "deaths": 3}])
+        counts = aggregate_death_counts([p])
+        assert counts == {"node_a": 3}
+
+    def test_multiple_participants_same_zone(self):
+        p1 = MockParticipant(zone_history=[{"node_id": "node_a", "igt_ms": 10000, "deaths": 2}])
+        p2 = MockParticipant(zone_history=[{"node_id": "node_a", "igt_ms": 15000, "deaths": 1}])
+        counts = aggregate_death_counts([p1, p2])
+        assert counts == {"node_a": 3}
+
+    def test_multiple_zones(self):
+        p = MockParticipant(
+            zone_history=[
+                {"node_id": "node_a", "igt_ms": 10000, "deaths": 2},
+                {"node_id": "node_b", "igt_ms": 20000, "deaths": 5},
+            ]
+        )
+        counts = aggregate_death_counts([p])
+        assert counts == {"node_a": 2, "node_b": 5}
+
+    def test_no_deaths(self):
+        p = MockParticipant(zone_history=[{"node_id": "node_a", "igt_ms": 10000}])
+        counts = aggregate_death_counts([p])
+        assert counts == {}
+
+    def test_empty_history(self):
+        p = MockParticipant(zone_history=None)
+        counts = aggregate_death_counts([p])
+        assert counts == {}
+
+    def test_backtrack_aggregates_all_visits(self):
+        """Deaths across multiple visits of the same node are summed."""
+        p = MockParticipant(
+            zone_history=[
+                {"node_id": "node_a", "igt_ms": 10000, "deaths": 2},
+                {"node_id": "node_b", "igt_ms": 20000, "deaths": 1},
+                {"node_id": "node_a", "igt_ms": 30000, "type": "backtrack", "deaths": 3},
+            ]
+        )
+        counts = aggregate_death_counts([p])
+        assert counts == {"node_a": 5, "node_b": 1}
 
 
 # --- Manager Tests ---
