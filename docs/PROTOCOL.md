@@ -382,6 +382,24 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
 | `exits[].to_name`    | `string` | Display name of the destination zone                                           |
 | `exits[].discovered` | `bool`   | Whether the destination has been visited (in zone_history)                     |
 
+#### `death_counts`
+
+Aggregated death counts per DAG node across all race participants. Broadcast to all mods when a death is attributed (delta > 0). Also sent as a unicast on reconnect if any deaths have occurred.
+
+The mod uses these counts with `death_flags` from `SeedInfo` to set EMEVD event flags that control in-game bloodstain visibility. Three thresholds: low (1+), med (3+), high (5+).
+
+```json
+{
+  "type": "death_counts",
+  "counts": {
+    "node_a": 4,
+    "node_b": 1
+  }
+}
+```
+
+`counts`: sparse dict of node_id to total deaths. Nodes with zero deaths are omitted. Deaths only increase during a race.
+
 #### `player_update`
 
 Single player update, broadcast to all connections (mods + spectators). See also the [Spectator Connection](#websocket-spectator-connection) section.
@@ -574,7 +592,7 @@ Same protocol as `/ws/mod/{race_id}` with differences:
 
 Client → Server messages: `auth`, `status_update`, `event_flag`, `zone_query`, `pong` (same format as mod WS).
 
-Server → Client messages: `auth_ok`, `auth_error`, `error`, `race_start`, `zone_update`, `leaderboard_update`, `race_status_change`, `ping` (same format as mod WS).
+Server → Client messages: `auth_ok`, `auth_error`, `error`, `race_start`, `zone_update`, `leaderboard_update`, `race_status_change`, `ping` (same format as mod WS). `death_counts` is **not** sent in training sessions (racing only, since there is only one participant in training).
 
 ### WebSocket: Training Spectator
 
@@ -643,16 +661,17 @@ Included in `auth_ok` and `race_state` messages:
 
 Included in `auth_ok` (mod) and `race_state` (spectator):
 
-| Field          | Type      | Mod | Spectator | Description                                         |
-| -------------- | --------- | --- | --------- | --------------------------------------------------- |
-| `seed_id`      | `string?` | yes | yes       | Seed UUID                                           |
-| `total_layers` | `int`     | yes | yes       | Number of layers in the DAG                         |
-| `graph_json`   | `object?` | no  | yes\*     | Full graph for DAG visualization (\* see DAG rules) |
-| `total_nodes`  | `int?`    | no  | yes       | Total number of nodes in the DAG                    |
-| `total_paths`  | `int?`    | no  | yes       | Total number of paths in the DAG                    |
-| `event_ids`    | `int[]`   | yes | no        | Event flag IDs to monitor                           |
-| `finish_event` | `int?`    | yes | no        | Final boss kill flag ID                             |
-| `spawn_items`  | `list`    | yes | no        | Items for runtime spawning                          |
+| Field          | Type      | Mod | Spectator | Description                                                  |
+| -------------- | --------- | --- | --------- | ------------------------------------------------------------ |
+| `seed_id`      | `string?` | yes | yes       | Seed UUID                                                    |
+| `total_layers` | `int`     | yes | yes       | Number of layers in the DAG                                  |
+| `graph_json`   | `object?` | no  | yes\*     | Full graph for DAG visualization (\* see DAG rules)          |
+| `total_nodes`  | `int?`    | no  | yes       | Total number of nodes in the DAG                             |
+| `total_paths`  | `int?`    | no  | yes       | Total number of paths in the DAG                             |
+| `event_ids`    | `int[]`   | yes | no        | Event flag IDs to monitor                                    |
+| `finish_event` | `int?`    | yes | no        | Final boss kill flag ID                                      |
+| `spawn_items`  | `list`    | yes | no        | Items for runtime spawning                                   |
+| `death_flags`  | `object`  | yes | no        | Death marker flags per cluster `{node_id: [low, med, high]}` |
 
 ### Leaderboard Sorting
 
