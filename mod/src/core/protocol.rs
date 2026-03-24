@@ -97,6 +97,9 @@ pub struct SeedInfo {
     /// Seed ID, compared against config to detect stale seed packs after re-roll
     #[serde(default)]
     pub seed_id: Option<String>,
+    /// Death marker event flags per cluster: [flag_low, flag_med, flag_high]
+    #[serde(default)]
+    pub death_flags: HashMap<String, [u32; 3]>,
 }
 
 /// Exit info in zone_update message
@@ -149,6 +152,8 @@ pub enum ServerMessage {
         #[serde(default)]
         exits: Vec<ExitInfo>,
     },
+    /// Aggregated death counts per zone (for conditional death markers)
+    DeathCounts { counts: HashMap<String, u32> },
     /// Heartbeat ping
     Ping,
     /// Generic error from server (e.g., race not running)
@@ -745,5 +750,43 @@ mod tests {
         }"#;
         let p: ParticipantInfo = serde_json::from_str(json).unwrap();
         assert_eq!(p.layer_entry_igt, Some(80000));
+    }
+
+    #[test]
+    fn test_server_death_counts_deserialize() {
+        let json = r#"{
+            "type": "death_counts",
+            "counts": {"node_a": 4, "node_b": 1}
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::DeathCounts { counts } => {
+                assert_eq!(counts.get("node_a"), Some(&4));
+                assert_eq!(counts.get("node_b"), Some(&1));
+                assert_eq!(counts.len(), 2);
+            }
+            _ => panic!("Expected DeathCounts"),
+        }
+    }
+
+    #[test]
+    fn test_seed_info_with_death_flags() {
+        let json = r#"{
+            "total_layers": 5,
+            "death_flags": {
+                "node_a": [1040292500, 1040292501, 1040292502]
+            }
+        }"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        let flags = seed.death_flags.get("node_a").unwrap();
+        assert_eq!(*flags, [1040292500, 1040292501, 1040292502]);
+    }
+
+    #[test]
+    fn test_seed_info_without_death_flags() {
+        // Backward compat: old server sends no death_flags field
+        let json = r#"{"total_layers": 5}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert!(seed.death_flags.is_empty());
     }
 }
