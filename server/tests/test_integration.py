@@ -2307,3 +2307,95 @@ def test_death_flags_default_empty_in_auth_ok(integration_client, race_with_part
         auth = mod.auth(drain=False)
         assert auth["type"] == "auth_ok"
         assert auth["seed"]["death_flags"] == {}
+
+
+def test_death_counts_on_reconnect(integration_client, race_with_participants):
+    """Reconnecting mod receives current death_counts after auth_ok."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Start the race
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    # Connect both mods
+    with (
+        integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0,
+        integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1,
+    ):
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        mod1 = ModTestClient(ws1, players[1]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        assert mod1.auth()["type"] == "auth_ok"
+
+        # Player 0 discovers node_a
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        mod0.receive_until_type("leaderboard_update")
+        mod1.receive_until_type("leaderboard_update")
+
+        # Player 0 dies twice in node_a
+        mod0.send_status_update(igt_ms=15000, death_count=2)
+        mod0.receive_until_type("death_counts")
+        mod1.receive_until_type("death_counts")
+        # Drain player_update from mod0
+        mod0.receive_until_type("player_update")
+
+    # mod1 is now disconnected; player 0 dies once more
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        mod0.send_status_update(igt_ms=20000, death_count=3)
+        mod0.receive_until_type("death_counts")
+        # Drain player_update from mod0
+        mod0.receive_until_type("player_update")
+
+    # Reconnect mod1: should receive death_counts with node_a == 3
+    # death_counts is sent during the auth phase (before leaderboard_update),
+    # so we use drain=False to inspect it before it gets consumed.
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1:
+        mod1 = ModTestClient(ws1, players[1]["mod_token"])
+        auth = mod1.auth(drain=False)
+        assert auth["type"] == "auth_ok"
+
+        msg = mod1.receive_until_type("death_counts")
+        assert msg["counts"]["node_a"] == 3
+
+
+def test_death_flags_populated_in_auth_ok(
+    integration_client, race_with_participants, integration_db
+):
+    """auth_ok includes death_flags when the seed's graph_json contains them."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    # Patch the seed's graph_json to include death_flags
+    async def add_death_flags():
+        async with integration_db() as db:
+            result = await db.execute(select(Race).where(Race.id == uuid.UUID(race_id)))
+            race = result.scalar_one()
+            result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
+            seed = result.scalar_one()
+            graph = dict(seed.graph_json)
+            graph["death_flags"] = {
+                "node_a": [1040292500, 1040292501, 1040292502],
+            }
+            seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(add_death_flags())
+
+    # Connect a mod and check auth_ok contains death_flags
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        auth = mod.auth(drain=False)
+        assert auth["type"] == "auth_ok"
+        assert auth["seed"]["death_flags"] == {
+            "node_a": [1040292500, 1040292501, 1040292502],
+        }
