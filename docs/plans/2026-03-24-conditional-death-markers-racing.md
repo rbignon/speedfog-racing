@@ -41,9 +41,15 @@ Added to `auth_ok` payload. Extracted from `graph_json["death_flags"]`.
 
 ### Backward compatibility
 
-- Old mods ignore unknown `death_counts` messages (catch-all `_ => {}` in websocket.rs).
+- Old mods without the `DeathCounts` variant fail to deserialize the message; the
+  `if let Ok(msg)` guard in `websocket.rs` silently discards deserialization errors.
 - Old servers omit `death_flags`; mod deserializes as empty HashMap via `#[serde(default)]`.
 - Python `SeedInfo` uses `Field(default_factory=dict)` for the same reason.
+
+### Scope
+
+Racing only. Training sessions (single participant, `training_mod.py`) do not broadcast
+`death_counts` since there are no competing players to aggregate across.
 
 ## Server Changes
 
@@ -82,22 +88,28 @@ Reused at two call sites (status_update broadcast and reconnect unicast).
 
 ### mod.py: broadcast on death
 
-In `handle_status_update()`, after `db.commit()` and session close, when `delta > 0`:
+In `handle_status_update()`, after `db.commit()` and session close, when `delta > 0`.
+This broadcast is independent of the `became_playing` if/else branch and fires whenever
+deaths are attributed, regardless of whether a leaderboard or player_update is also sent.
 
 ```python
-counts = aggregate_death_counts(participant.race.participants)
-await manager.broadcast_to_mods(
-    race_id,
-    DeathCountsMessage(counts=counts).model_dump_json(),
-)
+if delta > 0:
+    counts = aggregate_death_counts(participant.race.participants)
+    await manager.broadcast_to_mods(
+        race_id,
+        DeathCountsMessage(counts=counts).model_dump_json(),
+    )
 ```
 
 Uses detached objects (`expire_on_commit=False`), same pattern as leaderboard broadcasts.
+The `counts` dict is sparse: only nodes with at least one death are included. Deaths only
+increase during a race, so existing flags stay set.
 
 ### mod.py: reconnect unicast
 
-After `send_zone_update` on reconnect (existing block at line ~175), unicast current
-death counts to the reconnecting mod:
+Inside the auth session block (where `participant` and `race.participants` are already
+loaded via `selectinload`), after `send_zone_update` on reconnect, unicast current death
+counts to the reconnecting mod:
 
 ```python
 counts = aggregate_death_counts(race.participants)
@@ -135,6 +147,11 @@ New field on `SeedInfo`:
 pub death_flags: HashMap<String, [u32; 3]>,
 ```
 
+Note: `[u32; 3]` is a fixed-size array coupled to the 3-threshold design (low/med/high).
+If a 4th threshold were added in speedfog's generator, old mods would fail to deserialize
+`auth_ok`. This is acceptable: threshold count changes are a breaking protocol change that
+requires a mod update anyway.
+
 ### websocket.rs
 
 Forward `DeathCounts` via `IncomingMessage`:
@@ -150,6 +167,10 @@ New `IncomingMessage` variant to match.
 ### tracker.rs
 
 On receiving `IncomingMessage::DeathCounts(counts)`:
+
+1. Store `counts` in `RaceState.death_counts` (new `HashMap<String, u32>` field) so the
+   data persists for re-application and debug overlay display.
+2. Apply thresholds:
 
 ```rust
 for (node_id, total) in &counts {
@@ -189,4 +210,5 @@ Uses existing `set_flag()` (already used for clearing flags after capture).
 | `server/speedfog_racing/websocket/mod.py`     | `aggregate_death_counts()`, broadcast on death, reconnect unicast, `send_auth_ok` death_flags |
 | `mod/src/core/protocol.rs`                    | `DeathCounts` variant, `SeedInfo.death_flags`                                                 |
 | `mod/src/dll/websocket.rs`                    | Forward `DeathCounts` to `IncomingMessage`                                                    |
-| `mod/src/dll/tracker.rs`                      | Apply thresholds, set event flags                                                             |
+| `mod/src/dll/tracker.rs`                      | Store death_counts in RaceState, apply thresholds, set event flags                            |
+| `docs/PROTOCOL.md`                            | Document `death_counts` message and `death_flags` in SeedInfo                                 |
