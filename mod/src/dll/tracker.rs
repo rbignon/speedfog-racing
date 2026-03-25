@@ -894,6 +894,7 @@ impl RaceTracker {
             IncomingMessage::Error(e) => {
                 self.last_received_debug = Some(format!("error({})", e));
                 warn!(error = %e, "[WS] Error");
+                self.set_status(e);
             }
         }
     }
