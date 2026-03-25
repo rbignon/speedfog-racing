@@ -2,6 +2,33 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.0] - 2026-03-25
+
+### Death markers
+
+- Bloodstain visuals now appear at fog gate entrances where other players have died, revealing zone difficulty at a glance. Markers are activated dynamically as deaths occur during the race.
+
+### Seeds
+
+- Fix: Godskin Noble entry can no longer be used as exit, preventing broken paths
+- Fix: path splits no longer reuse a cluster already picked by a passant branch
+
+### In-game
+
+- Fix: death marker flags are re-applied after exiting a loading screen
+- Fix: overlay now shows IGT instead of a permanent "GO!" message on reconnect
+
+### Races
+
+- Ephemeral race chat: participants can exchange messages during a race via a collapsible sidebar
+- Organizer controls moved to a compact toolbar under the DAG
+- Open registration and max participants can now be updated after race creation
+
+### Website
+
+- Pool settings card now visible on solo session detail pages
+- Various UI polish (OBS button, scrollbars, badges, icons)
+
 ## [1.4.4] - 2026-03-22
 
 ### Seeds
