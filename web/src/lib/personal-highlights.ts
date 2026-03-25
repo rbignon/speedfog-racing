@@ -503,32 +503,35 @@ function detectSmartBacktrack(
     const backedLayer = backedInfo.layer;
 
     // Find the last visit to this zone in raw zone_history (matches aggregated outcome)
-    let entryIgt: number | null = null;
     let entryIdx = -1;
     for (let i = me.zone_history.length - 1; i >= 0; i--) {
       if (me.zone_history[i].node_id === myZt.nodeId) {
-        entryIgt = me.zone_history[i].igt_ms;
         entryIdx = i;
         break;
       }
     }
-    if (entryIgt === null) continue;
+    if (entryIdx < 0) continue;
 
-    // Find when the player next reached a strictly higher layer
-    let nextHigherIgt: number | null = null;
+    // Find the alternative zone: next zone at same or higher layer that was cleared
+    let altZoneId: string | null = null;
     for (let i = entryIdx + 1; i < me.zone_history.length; i++) {
-      const info = nodeInfo.get(me.zone_history[i].node_id);
-      if (info && info.layer > backedLayer) {
-        nextHigherIgt = me.zone_history[i].igt_ms;
+      const entryNodeId = me.zone_history[i].node_id;
+      const info = nodeInfo.get(entryNodeId);
+      if (!info || info.layer < backedLayer) continue;
+      const zt = myZones.find((z) => z.nodeId === entryNodeId);
+      if (zt && zt.outcome === "cleared") {
+        altZoneId = entryNodeId;
         break;
       }
     }
-    if (nextHigherIgt === null) continue;
+    if (!altZoneId) continue;
 
-    // Total cost of the detour: time from entering backed zone to reaching next layer
-    const myTotalCost = nextHigherIgt - entryIgt;
+    const altZone = myZones.find((z) => z.nodeId === altZoneId)!;
 
-    // Others who cleared this zone: their cost to pass this layer
+    // My cost: time wasted in backed zone + time in alternative zone
+    const myCost = myZt.timeMs + altZone.timeMs;
+
+    // Others who cleared the backed zone
     const othersClearTimes: number[] = [];
     for (const [pid, zones] of allZoneTimes) {
       if (pid === myId) continue;
@@ -542,7 +545,7 @@ function detectSmartBacktrack(
 
     const avgClearTime =
       othersClearTimes.reduce((s, t) => s + t, 0) / othersClearTimes.length;
-    const timeSavedMs = avgClearTime - myTotalCost;
+    const timeSavedMs = avgClearTime - myCost;
     if (timeSavedMs <= 0) continue;
 
     const score = (timeSavedMs / 1000) * 2;
