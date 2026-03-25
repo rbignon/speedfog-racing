@@ -1777,3 +1777,62 @@ async def test_ghost_endpoint_404_for_missing_session(async_session, monkeypatch
         resp = await ac.get(f"/api/training/{uuid.uuid4()}/ghosts")
 
     assert resp.status_code == 404
+
+
+def test_training_mod_auth_ok_includes_items_spawned_flag(async_session):
+    """Training mod WS: auth_ok includes items_spawned_flag from graph_json."""
+    from starlette.testclient import TestClient
+
+    from speedfog_racing.websocket.training_manager import training_manager
+
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 3,
+        "total_nodes": 2,
+        "total_paths": 1,
+        "start_node": "start",
+        "final_boss": "boss",
+        "event_map": {"1040292800": "start"},
+        "finish_event": 1040292899,
+        "nodes": {"start": {"type": "start", "layer": 0, "tier": 1, "name": "Start"}},
+        "edges": [],
+        "items_spawned_flag": 1050290000,
+    }
+
+    async def _setup():
+        async with async_session() as db:
+            user = User(
+                twitch_id="items_spawned_test_user",
+                twitch_username="items_spawned_tester",
+                api_token=generate_token(),
+                role=UserRole.USER,
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+            seed = Seed(
+                seed_number="items_spawned_test_001",
+                pool_name="training_standard",
+                graph_json=graph_json,
+                total_layers=3,
+                folder_path="/tmp/fake_seed",
+            )
+            db.add(seed)
+            await db.commit()
+
+            session = await create_training_session(db, user.id, "training_standard")
+            await db.commit()
+            await db.refresh(session)
+            return str(session.id), session.mod_token
+
+    sid, token = asyncio.run(_setup())
+
+    training_manager.rooms.clear()
+    with TestClient(app, raise_server_exceptions=False) as client:
+        with client.websocket_connect(f"/ws/training/{sid}") as ws:
+            ws.send_json({"type": "auth", "mod_token": token})
+            auth_ok = ws.receive_json()
+            assert auth_ok["type"] == "auth_ok"
+            assert auth_ok["seed"]["items_spawned_flag"] == 1050290000
+    training_manager.rooms.clear()

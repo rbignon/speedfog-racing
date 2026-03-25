@@ -2399,3 +2399,45 @@ def test_death_flags_populated_in_auth_ok(
         assert auth["seed"]["death_flags"] == {
             "node_a": [1040292500, 1040292501, 1040292502],
         }
+
+
+def test_items_spawned_flag_populated_in_auth_ok(
+    integration_client, race_with_participants, integration_db
+):
+    """auth_ok includes items_spawned_flag when the seed's graph_json contains it."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    # Patch the seed's graph_json to include items_spawned_flag
+    async def add_items_spawned_flag():
+        async with integration_db() as db:
+            result = await db.execute(select(Race).where(Race.id == uuid.UUID(race_id)))
+            race = result.scalar_one()
+            result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
+            seed = result.scalar_one()
+            graph = dict(seed.graph_json)
+            graph["items_spawned_flag"] = 1050290000
+            seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(add_items_spawned_flag())
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        auth = mod.auth(drain=False)
+        assert auth["type"] == "auth_ok"
+        assert auth["seed"]["items_spawned_flag"] == 1050290000
+
+
+def test_items_spawned_flag_default_none_in_auth_ok(integration_client, race_with_participants):
+    """auth_ok includes null items_spawned_flag when graph_json has no items_spawned_flag."""
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        auth = mod.auth(drain=False)
+        assert auth["type"] == "auth_ok"
+        assert auth["seed"]["items_spawned_flag"] is None

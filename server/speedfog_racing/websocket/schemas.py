@@ -106,6 +106,7 @@ class SeedInfo(BaseModel):
     finish_event: int | None = None
     spawn_items: list[SpawnItem] = Field(default_factory=list)
     death_flags: dict[str, list[int]] = Field(default_factory=dict)
+    items_spawned_flag: int | None = None
 
 
 class AuthOkMessage(BaseModel):

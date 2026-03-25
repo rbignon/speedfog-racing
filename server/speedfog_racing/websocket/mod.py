@@ -304,6 +304,9 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
     # Extract gem items from care_package for runtime spawning by the mod
     spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
     death_flags = seed.graph_json.get("death_flags", {}) if seed and seed.graph_json else {}
+    items_spawned_flag = (
+        seed.graph_json.get("items_spawned_flag") if seed and seed.graph_json else None
+    )
 
     # Build participant list
     room = manager.get_room(race.id)
@@ -335,6 +338,7 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
             finish_event=finish_event_id,
             spawn_items=spawn_items,
             death_flags=death_flags,
+            items_spawned_flag=items_spawned_flag,
         ),
         participants=participant_infos,
     )

@@ -290,6 +290,9 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
     # Extract gem items from care_package for runtime spawning by the mod
     spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
     death_flags = seed.graph_json.get("death_flags", {}) if seed and seed.graph_json else {}
+    items_spawned_flag = (
+        seed.graph_json.get("items_spawned_flag") if seed and seed.graph_json else None
+    )
 
     message = AuthOkMessage(
         participant_id=str(session.id),
@@ -307,6 +310,7 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
             finish_event=finish_event_id,
             spawn_items=spawn_items,
             death_flags=death_flags,
+            items_spawned_flag=items_spawned_flag,
         ),
         participants=[build_training_participant_info(session)],
     )
