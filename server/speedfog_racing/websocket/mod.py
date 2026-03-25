@@ -435,13 +435,6 @@ async def handle_status_update(
 
         await db.commit()
 
-    # Broadcast death counts to all mods when deaths are attributed
-    if delta > 0:
-        counts = aggregate_death_counts(participant.race.participants)
-        room = manager.get_room(participant.race_id)
-        if room:
-            await room.broadcast_to_mods(DeathCountsMessage(counts=counts).model_dump_json())
-
     if became_playing:
         # READY→PLAYING: broadcast full leaderboard so all clients see the transition
         await manager.broadcast_leaderboard(
@@ -454,6 +447,18 @@ async def handle_status_update(
         await manager.broadcast_player_update(
             participant.race_id, participant, graph_json=_get_graph_json(participant)
         )
+
+    # Broadcast death counts to all mods when deaths are attributed
+    if delta > 0:
+        counts = aggregate_death_counts(participant.race.participants)
+        logger.info(
+            "Broadcasting death_counts: race=%s, counts=%s",
+            participant.race_id,
+            counts,
+        )
+        room = manager.get_room(participant.race_id)
+        if room:
+            await room.broadcast_to_mods(DeathCountsMessage(counts=counts).model_dump_json())
 
 
 async def handle_event_flag(

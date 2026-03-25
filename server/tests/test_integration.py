@@ -2340,10 +2340,10 @@ def test_death_counts_on_reconnect(integration_client, race_with_participants):
 
         # Player 0 dies twice in node_a
         mod0.send_status_update(igt_ms=15000, death_count=2)
+        # Drain player_update then death_counts from both mods
+        mod0.receive_until_type("player_update")
         mod0.receive_until_type("death_counts")
         mod1.receive_until_type("death_counts")
-        # Drain player_update from mod0
-        mod0.receive_until_type("player_update")
 
     # mod1 is now disconnected; player 0 dies once more
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
@@ -2351,9 +2351,8 @@ def test_death_counts_on_reconnect(integration_client, race_with_participants):
         assert mod0.auth()["type"] == "auth_ok"
 
         mod0.send_status_update(igt_ms=20000, death_count=3)
-        mod0.receive_until_type("death_counts")
-        # Drain player_update from mod0
         mod0.receive_until_type("player_update")
+        mod0.receive_until_type("death_counts")
 
     # Reconnect mod1: should receive death_counts with node_a == 3
     # death_counts is sent during the auth phase (before leaderboard_update),

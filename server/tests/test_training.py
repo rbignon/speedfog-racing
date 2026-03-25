@@ -867,7 +867,6 @@ def test_training_mod_websocket_status_update(
     training_ws_client, training_session_data, async_session
 ):
     """Training mod WS: status_update persists IGT and deaths."""
-    import time
     import uuid as _uuid
 
     sid = training_session_data["session_id"]
@@ -877,10 +876,14 @@ def test_training_mod_websocket_status_update(
         ws.send_json({"type": "auth", "mod_token": token})
         ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update (start node)
 
         ws.send_json({"type": "status_update", "igt_ms": 5000, "death_count": 2})
-        # Give server time to process before closing the WS
-        time.sleep(0.3)
+        msg = ws.receive_json()  # leaderboard_update
+        assert msg["type"] == "leaderboard_update"
+        msg = ws.receive_json()  # death_counts
+        assert msg["type"] == "death_counts"
+        assert msg["counts"]  # non-empty (2 deaths attributed)
 
     # Verify persisted in DB
     async def _check():
@@ -1373,10 +1376,8 @@ def test_training_deaths_attributed_to_last_visit_after_backtrack(
 
         # Die twice, should go to the SECOND entry for zone_a_id (the revisit)
         ws.send_json({"type": "status_update", "igt_ms": 12000, "death_count": 2})
-
-        import time
-
-        time.sleep(0.3)
+        ws.receive_json()  # leaderboard_update
+        ws.receive_json()  # death_counts
 
     async def _check():
         async with async_session() as db:
