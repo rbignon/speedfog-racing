@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -348,8 +348,21 @@ async def list_races(
         selectinload(Race.casters).selectinload(Caster.user),
     )
 
-    # Only show public races in the listing
-    query = query.where(Race.is_public.is_(True))
+    # Public races visible to all; private races visible to their participants,
+    # organizers, and casters only
+    if _user:
+        my_participant_races = select(Participant.race_id).where(Participant.user_id == _user.id)
+        my_caster_races = select(Caster.race_id).where(Caster.user_id == _user.id)
+        query = query.where(
+            or_(
+                Race.is_public.is_(True),
+                Race.organizer_id == _user.id,
+                Race.id.in_(my_participant_races),
+                Race.id.in_(my_caster_races),
+            )
+        )
+    else:
+        query = query.where(Race.is_public.is_(True))
 
     if status_filter:
         statuses = [s.strip() for s in status_filter.split(",")]

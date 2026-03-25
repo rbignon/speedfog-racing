@@ -1472,8 +1472,8 @@ async def test_create_race_default_public(test_client, organizer, seed):
 
 
 @pytest.mark.asyncio
-async def test_private_race_hidden_from_listing(test_client, organizer, async_session):
-    """Private races do not appear in the public listing."""
+async def test_private_race_hidden_from_anonymous_listing(test_client, organizer, async_session):
+    """Private races do not appear in the listing for anonymous users."""
     async with async_session() as db:
         public_seed = Seed(
             seed_number="pub1",
@@ -1512,12 +1512,65 @@ async def test_private_race_hidden_from_listing(test_client, organizer, async_se
         await db.commit()
 
     async with test_client as client:
+        # Anonymous: only sees public races
         response = await client.get("/api/races")
         assert response.status_code == 200
         races = response.json()["races"]
         names = [r["name"] for r in races]
         assert "Public Race" in names
         assert "Private Race" not in names
+
+
+@pytest.mark.asyncio
+async def test_private_race_visible_to_participant_in_listing(
+    test_client, organizer, player, async_session
+):
+    """Private races appear in the listing for participants."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="priv_vis1",
+            pool_name="standard",
+            graph_json={},
+            total_layers=10,
+            folder_path="/test/priv_vis",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="My Private Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            is_public=False,
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.REGISTERED,
+        )
+        db.add(participant)
+        await db.commit()
+
+    async with test_client as client:
+        # Participant sees the private race
+        response = await client.get(
+            "/api/races",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert response.status_code == 200
+        names = [r["name"] for r in response.json()["races"]]
+        assert "My Private Race" in names
+
+        # Anonymous does not
+        anon_response = await client.get("/api/races")
+        assert anon_response.status_code == 200
+        anon_names = [r["name"] for r in anon_response.json()["races"]]
+        assert "My Private Race" not in anon_names
 
 
 @pytest.mark.asyncio
