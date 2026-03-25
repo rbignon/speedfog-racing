@@ -22,6 +22,7 @@ from speedfog_racing.services.layer_service import (
     get_tier_for_node,
 )
 from speedfog_racing.websocket.common import (
+    MAX_FRESH_IGT_MS,
     MOD_AUTH_TIMEOUT,
     attribute_deaths,
     extract_event_ids,
@@ -330,6 +331,21 @@ async def _handle_status_update(
         if not session or session.status != TrainingSessionStatus.ACTIVE:
             if session:
                 await send_error(websocket, "Solo session not active")
+            return
+
+        # Gate: reject stale saves on first initialization
+        igt_ms_val = msg.get("igt_ms")
+        if (
+            isinstance(igt_ms_val, int)
+            and not session.zone_history
+            and igt_ms_val > MAX_FRESH_IGT_MS
+        ):
+            logger.warning(
+                "Rejected stale save: training=%s igt_ms=%d",
+                session_id,
+                igt_ms_val,
+            )
+            await send_error(websocket, "Please start a New Game")
             return
 
         if isinstance(msg.get("igt_ms"), int):

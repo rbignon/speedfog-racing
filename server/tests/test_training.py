@@ -1521,6 +1521,97 @@ def test_training_spectator_owner(training_ws_client, training_session_data):
         assert msg["seed"] is not None
 
 
+# =============================================================================
+# Task 4: Fresh save IGT gate for training sessions
+# =============================================================================
+
+
+def test_training_stale_save_rejected(training_ws_client, training_session_data):
+    """Training status_update with high IGT on first init should be rejected."""
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update (start node)
+
+        # Send status_update with stale IGT (60 seconds)
+        ws.send_json({"type": "status_update", "igt_ms": 60_000, "death_count": 0})
+        resp = ws.receive_json()
+        assert resp["type"] == "error"
+        assert "New Game" in resp["message"]
+
+
+def test_training_stale_save_self_heals(training_ws_client, training_session_data):
+    """After stale rejection, a fresh save (low IGT) should succeed in training."""
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update (start node)
+
+        # Stale save rejected
+        ws.send_json({"type": "status_update", "igt_ms": 60_000, "death_count": 0})
+        resp = ws.receive_json()
+        assert resp["type"] == "error"
+
+        # Player starts New Game, IGT resets
+        ws.send_json({"type": "status_update", "igt_ms": 500, "death_count": 0})
+        resp = ws.receive_json()
+        assert resp["type"] == "leaderboard_update"
+        assert resp["participants"][0]["zone_history"] is not None
+        assert len(resp["participants"][0]["zone_history"]) == 1
+
+
+def test_training_resumed_session_not_blocked(
+    training_ws_client, training_session_data, async_session
+):
+    """A resumed training session (existing zone_history) should NOT be blocked by IGT gate."""
+    import uuid as _uuid
+
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    # First connection: initialize zone_history normally
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update
+
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        ws.receive_json()  # leaderboard_update
+
+    # Verify zone_history was initialized
+    async def check_history():
+        async with async_session() as db:
+            result = await db.execute(
+                select(TrainingSession).where(TrainingSession.id == _uuid.UUID(sid))
+            )
+            s = result.scalar_one()
+            return s.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is not None and len(history) >= 1
+
+    # Reconnect with high IGT (simulating resume after long play)
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+        ws.receive_json()  # zone_update (reconnect sends last zone)
+
+        # High IGT should be accepted (zone_history already exists)
+        ws.send_json({"type": "status_update", "igt_ms": 120_000, "death_count": 0})
+        resp = ws.receive_json()
+        assert resp["type"] == "leaderboard_update"  # NOT error
+
+
 def test_training_spectator_anonymous_invalid_session(training_ws_client, training_session_data):
     """Training spectator WS: anonymous connection to non-existent session closes."""
     import uuid as _uuid
