@@ -94,13 +94,20 @@ function detectBossSlayer(
         type: "boss_slayer",
         category: "combat" as PersonalHighlightCategory,
         title: "Boss Slayer",
-        segments: [
-          tSeg(
-            `You only died ${myEntry.deaths} time${myEntry.deaths !== 1 ? "s" : ""} on `,
-          ),
-          zSeg(bossId, nodeInfo),
-          tSeg(` (average: ${Math.round(avgDeaths)})`),
-        ],
+        segments:
+          myEntry.deaths === 0
+            ? [
+                tSeg("You cleared "),
+                zSeg(bossId, nodeInfo),
+                tSeg(` deathless (average: ${Math.round(avgDeaths)} deaths)`),
+              ]
+            : [
+                tSeg(
+                  `You only died ${myEntry.deaths} time${myEntry.deaths !== 1 ? "s" : ""} on `,
+                ),
+                zSeg(bossId, nodeInfo),
+                tSeg(` (average: ${Math.round(avgDeaths)})`),
+              ],
         playerIds: [myId],
         score,
       };
