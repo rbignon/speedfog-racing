@@ -223,8 +223,6 @@ async def handle_mod_websocket(
         # Start heartbeat in background
         heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
 
-        stale_save_warned: set[uuid.UUID] = set()
-
         try:
             # Main message loop
             while True:
@@ -242,9 +240,7 @@ async def handle_mod_websocket(
                 elif msg_type == "ready":
                     await handle_ready(session_maker, participant_id)
                 elif msg_type == "status_update":
-                    await handle_status_update(
-                        websocket, session_maker, participant_id, msg, stale_save_warned
-                    )
+                    await handle_status_update(websocket, session_maker, participant_id, msg)
                 elif msg_type == "event_flag":
                     await handle_event_flag(
                         websocket, session_maker, participant_id, msg, mod_locale
@@ -379,7 +375,6 @@ async def handle_status_update(
     session_maker: async_sessionmaker[AsyncSession],
     participant_id: uuid.UUID,
     msg: dict[str, Any],
-    stale_save_warned: set[uuid.UUID],
 ) -> None:
     """Handle periodic status update from mod."""
     delta = 0
@@ -411,19 +406,11 @@ async def handle_status_update(
             and participant.status == ParticipantStatus.READY
             and igt_ms_val > MAX_FRESH_IGT_MS
         ):
-            if participant_id not in stale_save_warned:
-                logger.warning(
-                    "Rejected stale save: participant=%s igt_ms=%d",
-                    participant_id,
-                    igt_ms_val,
-                )
-                stale_save_warned.add(participant_id)
-            else:
-                logger.debug(
-                    "Rejected stale save (repeat): participant=%s igt_ms=%d",
-                    participant_id,
-                    igt_ms_val,
-                )
+            logger.warning(
+                "Rejected stale save: participant=%s igt_ms=%d",
+                participant_id,
+                igt_ms_val,
+            )
             await send_error(websocket, "Please start a New Game to race")
             return
 
