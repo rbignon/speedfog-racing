@@ -620,6 +620,11 @@ async def add_participant(
         await db.refresh(participant)
 
         logger.info("Participant added: race=%s, user=%s", race_id, target_user.twitch_username)
+
+        # Broadcast updated state to spectators
+        race = await _get_race_or_404(db, race_id, load_participants=True)
+        await broadcast_race_state_update(race_id, race)
+
         return AddParticipantResponse(participant=participant_response(participant))
 
     else:
@@ -696,6 +701,10 @@ async def remove_participant(
     await db.delete(participant)
     await db.commit()
     logger.info("Participant removed: race=%s, participant=%s", race_id, participant_id)
+
+    # Broadcast updated state to spectators
+    race = await _get_race_or_404(db, race_id, load_participants=True)
+    await broadcast_race_state_update(race_id, race)
 
 
 @router.delete("/{race_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -929,6 +938,10 @@ async def join_race(
         )
     await db.refresh(participant)
 
+    # Broadcast updated state to spectators
+    race = await _get_race_or_404(db, race_id, load_participants=True)
+    await broadcast_race_state_update(race_id, race)
+
     return participant_response(participant)
 
 
@@ -971,6 +984,10 @@ async def leave_race(
 
     await db.delete(participant)
     await db.commit()
+
+    # Broadcast updated state to spectators
+    race = await _get_race_or_404(db, race_id, load_participants=True)
+    await broadcast_race_state_update(race_id, race)
 
 
 @router.post("/{race_id}/cast-join", response_model=RaceDetailResponse)
