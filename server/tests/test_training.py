@@ -991,6 +991,8 @@ def test_training_per_zone_death_tracking(training_ws_client, training_session_d
         ws.send_json({"type": "status_update", "igt_ms": 5000, "death_count": 2})
         msg = ws.receive_json()  # consume leaderboard_update
         assert msg["type"] == "leaderboard_update"
+        msg = ws.receive_json()  # consume death_counts
+        assert msg["type"] == "death_counts"
 
         # Discover next zone via event_flag (event_ids[0] maps to start_node,
         # so use event_ids[1] which maps to stormveil_01)

@@ -35,6 +35,7 @@ from speedfog_racing.websocket.common import (
 from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
 from speedfog_racing.websocket.schemas import (
     AuthOkMessage,
+    DeathCountsMessage,
     LeaderboardUpdateMessage,
     ParticipantInfo,
     RaceInfo,
@@ -46,6 +47,18 @@ from speedfog_racing.websocket.schemas import (
 from speedfog_racing.websocket.training_manager import training_manager
 
 logger = logging.getLogger(__name__)
+
+
+def _aggregate_session_deaths(zone_history: list[dict[str, Any]] | None) -> dict[str, int]:
+    """Aggregate deaths per node_id from a single session's zone_history."""
+    counts: dict[str, int] = {}
+    for entry in zone_history or []:
+        deaths = entry.get("deaths", 0)
+        if deaths > 0:
+            node_id = entry.get("node_id")
+            if node_id:
+                counts[node_id] = counts.get(node_id, 0) + deaths
+    return counts
 
 
 def _load_options() -> list[Any]:
@@ -142,6 +155,16 @@ async def handle_training_mod_websocket(
                         session.zone_history or [],
                         mod_locale,
                     )
+
+                # Send current death counts on reconnect
+                counts = _aggregate_session_deaths(session.zone_history)
+                if counts:
+                    logger.info(
+                        "Sending death_counts on reconnect: training=%s, counts=%s",
+                        session_id,
+                        counts,
+                    )
+                    await websocket.send_text(DeathCountsMessage(counts=counts).model_dump_json())
 
         # Register connection and notify spectators (mod already has auth_ok data)
         await training_manager.connect_mod(session_id, user_id, websocket)
@@ -266,6 +289,7 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
 
     # Extract gem items from care_package for runtime spawning by the mod
     spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
+    death_flags = seed.graph_json.get("death_flags", {}) if seed and seed.graph_json else {}
 
     message = AuthOkMessage(
         participant_id=str(session.id),
@@ -282,6 +306,7 @@ async def _send_auth_ok(websocket: WebSocket, session: TrainingSession) -> None:
             event_ids=event_ids,
             finish_event=finish_event_id,
             spawn_items=spawn_items,
+            death_flags=death_flags,
         ),
         participants=[build_training_participant_info(session)],
     )
@@ -295,6 +320,7 @@ async def _handle_status_update(
     msg: dict[str, Any],
 ) -> None:
     """Update IGT and death count."""
+    delta = 0
     async with session_maker() as db:
         session = await _load_session(db, session_id)
         if not session or session.status != TrainingSessionStatus.ACTIVE:
@@ -337,6 +363,16 @@ async def _handle_status_update(
     # Broadcast to spectators (session is detached from DB but all relationships
     # were eagerly loaded and expire_on_commit=False keeps attributes accessible)
     await _broadcast_participant_update(session)
+
+    # Send death counts to mod when deaths are attributed
+    if delta > 0:
+        counts = _aggregate_session_deaths(session.zone_history)
+        logger.info(
+            "Sending death_counts: training=%s, counts=%s",
+            session_id,
+            counts,
+        )
+        await websocket.send_text(DeathCountsMessage(counts=counts).model_dump_json())
 
 
 async def _handle_event_flag(
