@@ -1,17 +1,28 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
-	import { computeHighlights } from '$lib/highlights';
+	import { computeHighlights, type Highlight } from '$lib/highlights';
+	import { computePersonalHighlights } from '$lib/personal-highlights';
 	import { PLAYER_COLORS } from '$lib/dag/constants';
 
 	interface Props {
 		participants: WsParticipant[];
 		graphJson: Record<string, unknown>;
+		myParticipantId?: string;
 		onzoneclick?: (nodeId: string) => void;
 	}
 
-	let { participants, graphJson, onzoneclick }: Props = $props();
+	let { participants, graphJson, myParticipantId, onzoneclick }: Props = $props();
 
 	let highlights = $derived(computeHighlights(participants, graphJson));
+	let personalHighlights = $derived(
+		myParticipantId ? computePersonalHighlights(myParticipantId, participants, graphJson) : []
+	);
+
+	let showTabs = $derived(!!myParticipantId);
+	let activeTab = $state<'race' | 'personal'>('race');
+	let displayedHighlights: Highlight[] = $derived(
+		activeTab === 'personal' ? personalHighlights : highlights
+	);
 
 	function playerColor(playerId: string): string {
 		const p = participants.find((pp) => pp.id === playerId);
@@ -19,34 +30,55 @@
 	}
 </script>
 
-{#if highlights.length > 0}
+{#if highlights.length > 0 || personalHighlights.length > 0}
 	<div class="race-highlights">
 		<h2>Highlights</h2>
-		<ul class="highlight-list">
-			{#each highlights as highlight}
-				<li class="highlight-item">
-					<span class="highlight-title">{highlight.title}</span>
-					<span class="highlight-desc">
-						{#each highlight.segments as seg}
-							{#if seg.type === 'text'}
-								{seg.value}
-							{:else if seg.type === 'player'}
-								<span class="player-link" style="color: {playerColor(seg.playerId)}"
-									>{seg.name}</span
-								>
-							{:else if seg.type === 'zone'}
-								<button
-									class="zone-link"
-									onclick={() => onzoneclick?.(seg.nodeId)}
-								>
-									{seg.name}
-								</button>
-							{/if}
-						{/each}
-					</span>
-				</li>
-			{/each}
-		</ul>
+
+		{#if showTabs}
+			<div class="highlight-tabs">
+				<button
+					class="tab-btn"
+					class:active={activeTab === 'race'}
+					onclick={() => (activeTab = 'race')}
+				>
+					Race
+				</button>
+				<button
+					class="tab-btn"
+					class:active={activeTab === 'personal'}
+					onclick={() => (activeTab = 'personal')}
+				>
+					Your Race
+				</button>
+			</div>
+		{/if}
+
+		{#if displayedHighlights.length > 0}
+			<ul class="highlight-list">
+				{#each displayedHighlights as highlight}
+					<li class="highlight-item">
+						<span class="highlight-title">{highlight.title}</span>
+						<span class="highlight-desc">
+							{#each highlight.segments as seg}
+								{#if seg.type === 'text'}
+									{seg.value}
+								{:else if seg.type === 'player'}
+									<span class="player-link" style="color: {playerColor(seg.playerId)}"
+										>{seg.name}</span
+									>
+								{:else if seg.type === 'zone'}
+									<button class="zone-link" onclick={() => onzoneclick?.(seg.nodeId)}>
+										{seg.name}
+									</button>
+								{/if}
+							{/each}
+						</span>
+					</li>
+				{/each}
+			</ul>
+		{:else if activeTab === 'personal'}
+			<p class="no-highlights">No personal highlights for this race.</p>
+		{/if}
 	</div>
 {/if}
 
@@ -61,6 +93,38 @@
 		color: var(--color-gold);
 		margin: 0 0 1rem 0;
 		font-size: var(--font-size-lg);
+		font-weight: 600;
+	}
+
+	.highlight-tabs {
+		display: flex;
+		gap: 0.25rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		padding: 0.25rem;
+		width: fit-content;
+		margin-bottom: 1rem;
+	}
+
+	.tab-btn {
+		all: unset;
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		color: var(--color-text-disabled);
+		padding: 0.35rem 0.9rem;
+		border-radius: var(--radius-md);
+		cursor: pointer;
+		transition: all var(--transition);
+	}
+
+	.tab-btn:hover {
+		color: var(--color-text-secondary);
+	}
+
+	.tab-btn.active {
+		background: var(--color-border);
+		color: var(--color-text);
 		font-weight: 600;
 	}
 
@@ -113,5 +177,11 @@
 
 	.zone-link:hover {
 		text-decoration-color: var(--color-purple);
+	}
+
+	.no-highlights {
+		color: var(--color-text-disabled);
+		font-size: var(--font-size-sm);
+		margin: 0;
 	}
 </style>

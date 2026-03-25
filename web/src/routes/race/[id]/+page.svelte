@@ -147,9 +147,7 @@
 
 	// Merge REST participants with WS live status
 	let mergedParticipants = $derived.by(() => {
-		const wsMap = new Map(
-			raceStore.participants.map((wp) => [wp.twitch_username, wp])
-		);
+		const wsMap = new Map(raceStore.participants.map((wp) => [wp.twitch_username, wp]));
 		return initialRace.participants.map((p) => {
 			const ws = wsMap.get(p.user.twitch_username);
 			return {
@@ -430,7 +428,6 @@
 	function clearSelection() {
 		selectedParticipantIds = new Set();
 	}
-
 </script>
 
 <svelte:head>
@@ -465,7 +462,9 @@
 				<Leaderboard
 					participants={raceStore.leaderboard}
 					{totalLayers}
-					zoneNames={myWsParticipantId && !myParticipantFinished && !forceFullDag ? null : zoneNames}
+					zoneNames={myWsParticipantId && !myParticipantFinished && !forceFullDag
+						? null
+						: zoneNames}
 					selectedIds={selectedParticipantIds}
 					onToggle={handleLeaderboardToggle}
 					onClearSelection={clearSelection}
@@ -571,7 +570,8 @@
 							<a
 								href={getTwitchLoginUrl()}
 								data-sveltekit-reload
-								onclick={() => sessionStorage.setItem('redirect_after_login', window.location.pathname)}
+								onclick={() =>
+									sessionStorage.setItem('redirect_after_login', window.location.pathname)}
 								>Log in</a
 							> to join this race
 						</p>
@@ -643,7 +643,7 @@
 				{#if initialRace.scheduled_at}
 					<AddToCalendar
 						scheduledAt={initialRace.scheduled_at}
-						raceName={raceName}
+						{raceName}
 						raceUrl={window.location.href}
 					/>
 				{/if}
@@ -663,8 +663,16 @@
 		{#if liveSeed?.graph_json && raceStatus === 'finished'}
 			<Podium participants={raceStore.leaderboard} />
 			<div class="dag-view-toggle">
-				<button class="toggle-btn" class:active={dagView === 'map'} onclick={() => (dagView = 'map')}>Map</button>
-				<button class="toggle-btn" class:active={dagView === 'replay'} onclick={() => (dagView = 'replay')}>Replay</button>
+				<button
+					class="toggle-btn"
+					class:active={dagView === 'map'}
+					onclick={() => (dagView = 'map')}>Map</button
+				>
+				<button
+					class="toggle-btn"
+					class:active={dagView === 'replay'}
+					onclick={() => (dagView = 'replay')}>Replay</button
+				>
 			</div>
 		{/if}
 
@@ -704,7 +712,11 @@
 						focusNodeId={highlightFocusNodeId}
 					/>
 				{:else}
-					<RaceReplay graphJson={liveSeed.graph_json} participants={raceStore.leaderboard} focusNodeId={highlightFocusNodeId} />
+					<RaceReplay
+						graphJson={liveSeed.graph_json}
+						participants={raceStore.leaderboard}
+						focusNodeId={highlightFocusNodeId}
+					/>
 				{/if}
 			{:else if liveSeed?.graph_json && myWsParticipantId && !forceFullDag}
 				<MetroDagProgressive
@@ -732,15 +744,22 @@
 
 		{#if liveSeed?.graph_json && raceStatus === 'finished'}
 			<RaceStats participants={raceStore.leaderboard} />
-			<RaceHighlights participants={raceStore.leaderboard} graphJson={liveSeed.graph_json} onzoneclick={handleHighlightZoneClick} />
+			<RaceHighlights
+				participants={raceStore.leaderboard}
+				graphJson={liveSeed.graph_json}
+				myParticipantId={myWsParticipant?.id}
+				onzoneclick={handleHighlightZoneClick}
+			/>
 		{/if}
 
 		<div class="race-info">
 			<div class="info-grid">
 				<div class="info-item">
 					<span class="label">Participants</span>
-					<span class="value">{mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
-						/{initialRace.max_participants}{/if}</span>
+					<span class="value"
+						>{mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
+							/{initialRace.max_participants}{/if}</span
+					>
 				</div>
 				<div class="info-item">
 					<span class="label">Created</span>
