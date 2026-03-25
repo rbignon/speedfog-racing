@@ -11,10 +11,12 @@ The finished race page currently shows up to 6 global highlights (from 17 detect
 ### New file: `web/src/lib/personal-highlights.ts`
 
 - Exports `computePersonalHighlights(myParticipantId: string, participants: WsParticipant[], graphJson: Record<string, unknown>): Highlight[]`
-- Reuses types from `highlights.ts`: `Highlight`, `DescriptionSegment`, `HighlightCategory`, `ZoneTime`
-- Reuses helpers from `highlights.ts` (newly exported): `buildNodeInfo`, `pSeg`, `zSeg`, `tSeg`, `formatTime`, `uniqueNodePath`, `buildZonePlayerTimes`, `computeLeadersPerLayer`, `computeZoneTimes`
+- Reuses types from `highlights.ts`: `Highlight`, `DescriptionSegment`, `ZoneTime`
+- Defines its own `PersonalHighlightCategory = "combat" | "pathing" | "competitive"` (distinct from the global `HighlightCategory`). The `Highlight` interface's `category` field is typed as `string`, so personal categories work without modifying the shared type.
+- Reuses helpers from `highlights.ts` (newly exported): `buildNodeInfo`, `pSeg`, `zSeg`, `tSeg`, `formatTime`, `uniqueNodePath`, `buildZonePlayerTimes`, `computeLeadersPerLayer`
+- Note: `computeZoneTimes` is already exported
+- The orchestrator pre-builds `allZoneTimes: Map<string, ZoneTime[]>` (one entry per participant) and passes it to detectors, same pattern as the global orchestrator
 - 15 internal detector functions, each returning `Highlight | null`
-- 3 personal categories: `"combat"`, `"pathing"`, `"competitive"`
 
 ### Modified: `web/src/lib/components/RaceHighlights.svelte`
 
@@ -81,8 +83,9 @@ The following currently-internal helpers need to be exported:
 **against_the_flow** - "At the **Zone** crossroads, you took a path no one else did"
 
 - Condition: at a fork in the DAG (node with 2+ outgoing edges), the player chose a branch that no other player took
+- Branch detection: for each fork node in the player's zone_history, look at the first child node visited after the fork (using `uniqueNodePath` to ignore backtracks). Compare against other players' first child after the same fork. If the player's branch is unique, the highlight triggers.
 - Score: `otherPlayersCount * 30`
-- Uses graph_json edges to identify forks and which branch each player took
+- Uses graph_json edges to identify forks
 
 **smart_backtrack** - "Good call turning back from **Zone**: those who stayed spent X:XX longer on average"
 
