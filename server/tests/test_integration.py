@@ -815,6 +815,59 @@ def test_stale_save_rejected_on_status_update(
     assert history is None or len(history) == 0
 
 
+def test_stale_save_self_heals_on_new_game(
+    integration_client, race_with_participants, integration_db
+):
+    """After stale save rejection, a fresh save (low IGT) should succeed."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Connect, auth, send ready, start race
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # First: stale save rejected
+        mod0.send_status_update(igt_ms=60_000, death_count=0)
+        resp = mod0.receive()
+        assert resp["type"] == "error"
+
+        # Second: player starts New Game, IGT resets
+        mod0.send_status_update(igt_ms=500, death_count=0)
+        resp = mod0.receive()
+        assert resp["type"] == "leaderboard_update"  # READY->PLAYING broadcast
+
+    # Verify PLAYING in DB
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.status
+
+    status = asyncio.run(check_db())
+    assert status == ParticipantStatus.PLAYING
+
+
 # =============================================================================
 # Scenario 4: Zone History Accumulation
 # =============================================================================
