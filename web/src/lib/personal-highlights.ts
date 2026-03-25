@@ -482,11 +482,15 @@ function detectAgainstTheFlow(
 
 function detectSmartBacktrack(
   myId: string,
+  participants: WsParticipant[],
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
   const myZones = allZoneTimes.get(myId);
   if (!myZones) return null;
+
+  const me = participants.find((p) => p.id === myId);
+  if (!me?.zone_history) return null;
 
   let bestScore = 0;
   let bestHighlight: Highlight | null = null;
@@ -494,7 +498,37 @@ function detectSmartBacktrack(
   for (const myZt of myZones) {
     if (myZt.outcome !== "backed") continue;
 
-    // Find others who cleared this zone and how long it took them
+    const backedInfo = nodeInfo.get(myZt.nodeId);
+    if (!backedInfo) continue;
+    const backedLayer = backedInfo.layer;
+
+    // Find the last visit to this zone in raw zone_history (matches aggregated outcome)
+    let entryIgt: number | null = null;
+    let entryIdx = -1;
+    for (let i = me.zone_history.length - 1; i >= 0; i--) {
+      if (me.zone_history[i].node_id === myZt.nodeId) {
+        entryIgt = me.zone_history[i].igt_ms;
+        entryIdx = i;
+        break;
+      }
+    }
+    if (entryIgt === null) continue;
+
+    // Find when the player next reached a strictly higher layer
+    let nextHigherIgt: number | null = null;
+    for (let i = entryIdx + 1; i < me.zone_history.length; i++) {
+      const info = nodeInfo.get(me.zone_history[i].node_id);
+      if (info && info.layer > backedLayer) {
+        nextHigherIgt = me.zone_history[i].igt_ms;
+        break;
+      }
+    }
+    if (nextHigherIgt === null) continue;
+
+    // Total cost of the detour: time from entering backed zone to reaching next layer
+    const myTotalCost = nextHigherIgt - entryIgt;
+
+    // Others who cleared this zone: their cost to pass this layer
     const othersClearTimes: number[] = [];
     for (const [pid, zones] of allZoneTimes) {
       if (pid === myId) continue;
@@ -508,7 +542,7 @@ function detectSmartBacktrack(
 
     const avgClearTime =
       othersClearTimes.reduce((s, t) => s + t, 0) / othersClearTimes.length;
-    const timeSavedMs = avgClearTime - myZt.timeMs;
+    const timeSavedMs = avgClearTime - myTotalCost;
     if (timeSavedMs <= 0) continue;
 
     const score = (timeSavedMs / 1000) * 2;
@@ -522,7 +556,7 @@ function detectSmartBacktrack(
           tSeg("Good call turning back from "),
           zSeg(myZt.nodeId, nodeInfo),
           tSeg(
-            `: those who stayed spent ${formatTime(avgClearTime - myZt.timeMs)} longer on average`,
+            `: your detour saved you ${formatTime(timeSavedMs)} compared to those who stayed`,
           ),
         ],
         playerIds: [myId],
@@ -931,7 +965,7 @@ export function computePersonalHighlights(
   // Pathing detectors
   push(detectLoneExplorer(myParticipantId, eligible, allZoneTimes, nodeInfo));
   push(detectAgainstTheFlow(myParticipantId, eligible, nodeInfo, graphJson));
-  push(detectSmartBacktrack(myParticipantId, allZoneTimes, nodeInfo));
+  push(detectSmartBacktrack(myParticipantId, eligible, allZoneTimes, nodeInfo));
   push(detectCostlyDetour(myParticipantId, eligible, allZoneTimes, nodeInfo));
 
   // Competitive detectors

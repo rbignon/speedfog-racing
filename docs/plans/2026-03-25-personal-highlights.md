@@ -87,9 +87,10 @@ The following currently-internal helpers need to be exported:
 - Score: `otherPlayersCount * 30`
 - Uses graph_json edges to identify forks
 
-**smart_backtrack** - "Good call turning back from **Zone**: those who stayed spent X:XX longer on average"
+**smart_backtrack** - "Good call turning back from **Zone**: your detour saved you X:XX compared to those who stayed"
 
-- Condition: player backtracked from a zone (outcome "backed"), and players who cleared it spent significantly more time
+- Condition: player backtracked from a zone (outcome "backed"), and the total cost of their detour (time from entering backed zone until reaching the next higher layer via an alternative path) is less than the average time others spent clearing the zone
+- `timeSavedMs` = avgClearTime - myTotalDetourCost
 - Score: `timeSavedMs / 1000 * 2`
 - Min 1 other player who cleared the zone for comparison
 
