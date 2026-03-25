@@ -303,7 +303,254 @@ function detectCleanStreak(
 }
 
 // =============================================================================
-// Orchestrator (partial - combat only for now)
+// Pathing Detectors
+// =============================================================================
+
+function detectLoneExplorer(
+  myId: string,
+  participants: WsParticipant[],
+  allZoneTimes: Map<string, ZoneTime[]>,
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const myZones = allZoneTimes.get(myId);
+  if (!myZones) return null;
+
+  const othersZoneIds = new Set<string>();
+  for (const [pid, zones] of allZoneTimes) {
+    if (pid === myId) continue;
+    for (const zt of zones) othersZoneIds.add(zt.nodeId);
+  }
+
+  let bestScore = 0;
+  let bestHighlight: Highlight | null = null;
+
+  for (const zt of myZones) {
+    if (othersZoneIds.has(zt.nodeId)) continue;
+
+    const score = participants.length * 20;
+    if (score > bestScore) {
+      bestScore = score;
+      bestHighlight = {
+        type: "lone_explorer",
+        category: "pathing" as PersonalHighlightCategory,
+        title: "Lone Explorer",
+        segments: [
+          tSeg("You're the only one who visited "),
+          zSeg(zt.nodeId, nodeInfo),
+        ],
+        playerIds: [myId],
+        score,
+      };
+    }
+  }
+
+  return bestHighlight;
+}
+
+/**
+ * Build a map of parentId -> [childId, ...] from graph_json edges.
+ */
+function buildChildrenMap(
+  graphJson: Record<string, unknown>,
+): Map<string, string[]> {
+  const edges = (graphJson as { edges: { from: string; to: string }[] }).edges;
+  const map = new Map<string, string[]>();
+  if (!edges) return map;
+  for (const e of edges) {
+    if (!map.has(e.from)) map.set(e.from, []);
+    map.get(e.from)!.push(e.to);
+  }
+  return map;
+}
+
+function detectAgainstTheFlow(
+  myId: string,
+  participants: WsParticipant[],
+  nodeInfo: Map<string, NodeInfo>,
+  graphJson: Record<string, unknown>,
+): Highlight | null {
+  const childrenMap = buildChildrenMap(graphJson);
+  const eligible = participants.filter(
+    (p) => p.zone_history && p.zone_history.length > 0,
+  );
+
+  // For each player, build their unique node path
+  const playerPaths = new Map<string, string[]>();
+  for (const p of eligible) {
+    playerPaths.set(p.id, uniqueNodePath(p.zone_history!));
+  }
+
+  const myPath = playerPaths.get(myId);
+  if (!myPath) return null;
+
+  let bestScore = 0;
+  let bestHighlight: Highlight | null = null;
+
+  for (let i = 0; i < myPath.length; i++) {
+    const forkNode = myPath[i];
+    const children = childrenMap.get(forkNode);
+    if (!children || children.length < 2) continue;
+
+    // Find my first child after this fork
+    const myNextInPath = myPath[i + 1];
+    if (!myNextInPath || !children.includes(myNextInPath)) continue;
+
+    // Check what branches others took
+    let othersOnDifferentBranch = 0;
+    let anyoneOnMyBranch = false;
+
+    for (const [pid, path] of playerPaths) {
+      if (pid === myId) continue;
+      const forkIdx = path.indexOf(forkNode);
+      if (forkIdx < 0 || forkIdx >= path.length - 1) continue;
+      const theirNext = path[forkIdx + 1];
+      if (!children.includes(theirNext)) continue;
+      if (theirNext === myNextInPath) {
+        anyoneOnMyBranch = true;
+      } else {
+        othersOnDifferentBranch++;
+      }
+    }
+
+    if (anyoneOnMyBranch || othersOnDifferentBranch === 0) continue;
+
+    const score = othersOnDifferentBranch * 30;
+    if (score > bestScore) {
+      bestScore = score;
+      bestHighlight = {
+        type: "against_the_flow",
+        category: "pathing" as PersonalHighlightCategory,
+        title: "Against the Flow",
+        segments: [
+          tSeg("At the "),
+          zSeg(forkNode, nodeInfo),
+          tSeg(" crossroads, you took a path no one else did"),
+        ],
+        playerIds: [myId],
+        score,
+      };
+    }
+  }
+
+  return bestHighlight;
+}
+
+function detectSmartBacktrack(
+  myId: string,
+  allZoneTimes: Map<string, ZoneTime[]>,
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const myZones = allZoneTimes.get(myId);
+  if (!myZones) return null;
+
+  let bestScore = 0;
+  let bestHighlight: Highlight | null = null;
+
+  for (const myZt of myZones) {
+    if (myZt.outcome !== "backed") continue;
+
+    // Find others who cleared this zone and how long it took them
+    const othersClearTimes: number[] = [];
+    for (const [pid, zones] of allZoneTimes) {
+      if (pid === myId) continue;
+      const theirZt = zones.find((z) => z.nodeId === myZt.nodeId);
+      if (theirZt && theirZt.outcome === "cleared") {
+        othersClearTimes.push(theirZt.timeMs);
+      }
+    }
+
+    if (othersClearTimes.length === 0) continue;
+
+    const avgClearTime =
+      othersClearTimes.reduce((s, t) => s + t, 0) / othersClearTimes.length;
+    const timeSavedMs = avgClearTime - myZt.timeMs;
+    if (timeSavedMs <= 0) continue;
+
+    const score = (timeSavedMs / 1000) * 2;
+    if (score > bestScore) {
+      bestScore = score;
+      bestHighlight = {
+        type: "smart_backtrack",
+        category: "pathing" as PersonalHighlightCategory,
+        title: "Smart Backtrack",
+        segments: [
+          tSeg("Good call turning back from "),
+          zSeg(myZt.nodeId, nodeInfo),
+          tSeg(
+            `: those who stayed spent ${formatTime(avgClearTime - myZt.timeMs)} longer on average`,
+          ),
+        ],
+        playerIds: [myId],
+        score,
+      };
+    }
+  }
+
+  return bestHighlight;
+}
+
+function detectCostlyDetour(
+  myId: string,
+  participants: WsParticipant[],
+  allZoneTimes: Map<string, ZoneTime[]>,
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const myZones = allZoneTimes.get(myId);
+  if (!myZones) return null;
+
+  // Find better-ranked finishers
+  const me = participants.find((p) => p.id === myId);
+  if (!me) return null;
+
+  const betterFinishers = participants.filter(
+    (p) =>
+      p.id !== myId &&
+      p.status === "finished" &&
+      p.igt_ms < (me.igt_ms || Infinity),
+  );
+  if (betterFinishers.length === 0) return null;
+
+  // Zones visited by better finishers
+  const betterZoneIds = new Set<string>();
+  for (const p of betterFinishers) {
+    const zones = allZoneTimes.get(p.id);
+    if (zones) {
+      for (const zt of zones) betterZoneIds.add(zt.nodeId);
+    }
+  }
+
+  let bestScore = 0;
+  let bestHighlight: Highlight | null = null;
+
+  for (const myZt of myZones) {
+    if (betterZoneIds.has(myZt.nodeId)) continue;
+    if (myZt.timeMs <= 0) continue;
+
+    const score = (myZt.timeMs / 1000) * 1.5;
+    if (score > bestScore) {
+      bestScore = score;
+      bestHighlight = {
+        type: "costly_detour",
+        category: "pathing" as PersonalHighlightCategory,
+        title: "Costly Detour",
+        segments: [
+          tSeg("Your detour through "),
+          zSeg(myZt.nodeId, nodeInfo),
+          tSeg(
+            ` cost you ${formatTime(myZt.timeMs)} compared to those who skipped it`,
+          ),
+        ],
+        playerIds: [myId],
+        score,
+      };
+    }
+  }
+
+  return bestHighlight;
+}
+
+// =============================================================================
+// Orchestrator (combat + pathing)
 // =============================================================================
 
 export function computePersonalHighlights(
@@ -335,6 +582,12 @@ export function computePersonalHighlights(
   );
   push(detectDeathSpiral(myParticipantId, allZoneTimes, nodeInfo));
   push(detectCleanStreak(myParticipantId, eligible, allZoneTimes, nodeInfo));
+
+  // Pathing detectors
+  push(detectLoneExplorer(myParticipantId, eligible, allZoneTimes, nodeInfo));
+  push(detectAgainstTheFlow(myParticipantId, eligible, nodeInfo, graphJson));
+  push(detectSmartBacktrack(myParticipantId, allZoneTimes, nodeInfo));
+  push(detectCostlyDetour(myParticipantId, eligible, allZoneTimes, nodeInfo));
 
   // Selection
   candidates.sort((a, b) => b.score - a.score);

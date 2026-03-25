@@ -273,3 +273,141 @@ describe("combat detectors", () => {
     expect(h!.category).toBe("combat");
   });
 });
+
+describe("pathing detectors", () => {
+  it("detects lone_explorer when player visits a zone nobody else visited", () => {
+    const me = participant("me", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "secret", igt_ms: 50000 },
+        { node_id: "end", igt_ms: 200000 },
+      ],
+    });
+    const other = participant("other", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "normal", igt_ms: 50000 },
+        { node_id: "end", igt_ms: 200000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      secret: { layer: 1 },
+      normal: { layer: 1 },
+      end: { layer: 2 },
+    });
+    const result = computePersonalHighlights("me", [me, other], graph);
+    const h = findHighlight(result, "lone_explorer");
+    expect(h).toBeDefined();
+    expect(h!.category).toBe("pathing");
+    expect(descriptionText(h!)).toContain("secret");
+  });
+
+  it("detects against_the_flow at a fork where player took a unique branch", () => {
+    const me = participant("me", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "fork", igt_ms: 0 },
+        { node_id: "branch_b", igt_ms: 50000 },
+        { node_id: "end", igt_ms: 200000 },
+      ],
+    });
+    const p2 = participant("p2", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "fork", igt_ms: 0 },
+        { node_id: "branch_a", igt_ms: 60000 },
+        { node_id: "end", igt_ms: 250000 },
+      ],
+    });
+    const p3 = participant("p3", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "fork", igt_ms: 0 },
+        { node_id: "branch_a", igt_ms: 70000 },
+        { node_id: "end", igt_ms: 220000 },
+      ],
+    });
+    const graph = graphJson(
+      {
+        fork: { layer: 0 },
+        branch_a: { layer: 1 },
+        branch_b: { layer: 1 },
+        end: { layer: 2 },
+      },
+      [
+        { from: "fork", to: "branch_a" },
+        { from: "fork", to: "branch_b" },
+        { from: "branch_a", to: "end" },
+        { from: "branch_b", to: "end" },
+      ],
+    );
+    const result = computePersonalHighlights("me", [me, p2, p3], graph);
+    const h = findHighlight(result, "against_the_flow");
+    expect(h).toBeDefined();
+    expect(descriptionText(h!)).toContain("fork");
+  });
+
+  it("detects smart_backtrack when backing out saved time", () => {
+    const me = participant("me", {
+      igt_ms: 250000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "hard", igt_ms: 30000, deaths: 1 },
+        { node_id: "start", igt_ms: 50000 },
+        { node_id: "easy", igt_ms: 60000 },
+        { node_id: "end", igt_ms: 150000 },
+      ],
+    });
+    const other = participant("other", {
+      igt_ms: 400000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "hard", igt_ms: 30000, deaths: 5 },
+        { node_id: "end", igt_ms: 300000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      hard: { layer: 1 },
+      easy: { layer: 1 },
+      end: { layer: 2 },
+    });
+    const result = computePersonalHighlights("me", [me, other], graph);
+    const h = findHighlight(result, "smart_backtrack");
+    expect(h).toBeDefined();
+    expect(descriptionText(h!)).toContain("hard");
+  });
+
+  it("detects costly_detour when visiting a zone that top finishers skipped", () => {
+    const me = participant("me", {
+      igt_ms: 400000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "detour", igt_ms: 50000 },
+        { node_id: "main", igt_ms: 200000 },
+        { node_id: "end", igt_ms: 350000 },
+      ],
+    });
+    const winner = participant("winner", {
+      igt_ms: 250000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "main", igt_ms: 50000 },
+        { node_id: "end", igt_ms: 200000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      detour: { layer: 1 },
+      main: { layer: 1 },
+      end: { layer: 2 },
+    });
+    const result = computePersonalHighlights("me", [me, winner], graph);
+    const h = findHighlight(result, "costly_detour");
+    expect(h).toBeDefined();
+    expect(descriptionText(h!)).toContain("detour");
+  });
+});
