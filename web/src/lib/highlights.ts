@@ -24,7 +24,13 @@ export interface ZoneTime {
   outcome: ZoneOutcome;
 }
 
-export type HighlightCategory = "speed" | "deaths" | "path" | "competitive";
+export type HighlightCategory =
+  | "speed"
+  | "deaths"
+  | "path"
+  | "competitive"
+  | "combat"
+  | "pathing";
 
 export type DescriptionSegment =
   | { type: "text"; value: string }
@@ -110,14 +116,14 @@ export function computeZoneTimes(
   });
 }
 
-interface NodeInfo {
+export interface NodeInfo {
   tier: number;
   layer: number;
   displayName: string;
   type: string;
 }
 
-function buildNodeInfo(
+export function buildNodeInfo(
   graphJson: Record<string, unknown>,
 ): Map<string, NodeInfo> {
   const map = new Map<string, NodeInfo>();
@@ -136,7 +142,7 @@ function buildNodeInfo(
   return map;
 }
 
-function pSeg(p: WsParticipant): DescriptionSegment {
+export function pSeg(p: WsParticipant): DescriptionSegment {
   return {
     type: "player",
     playerId: p.id,
@@ -144,13 +150,13 @@ function pSeg(p: WsParticipant): DescriptionSegment {
   };
 }
 
-function shortName(displayName: string): string {
+export function shortName(displayName: string): string {
   return displayName.includes(" - ")
     ? displayName.split(" - ").pop()!
     : displayName;
 }
 
-function zSeg(
+export function zSeg(
   nodeId: string,
   nodeInfo: Map<string, NodeInfo>,
 ): DescriptionSegment {
@@ -162,11 +168,11 @@ function zSeg(
   };
 }
 
-function tSeg(value: string): DescriptionSegment {
+export function tSeg(value: string): DescriptionSegment {
   return { type: "text", value };
 }
 
-function formatTime(ms: number): string {
+export function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const min = Math.floor(totalSec / 60);
   const sec = totalSec % 60;
@@ -179,7 +185,7 @@ function formatTime(ms: number): string {
 }
 
 /** Extract unique node IDs from zone_history in first-visit order. */
-function uniqueNodePath(history: { node_id: string }[]): string[] {
+export function uniqueNodePath(history: { node_id: string }[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const entry of history) {
@@ -220,7 +226,7 @@ export function computeOutcome(
  * Build a map of zoneId → list of player times (only cleared zones).
  * Shared by detectSpeedDemon and detectZoneWall.
  */
-function buildZonePlayerTimes(
+export function buildZonePlayerTimes(
   allZoneTimes: Map<string, ZoneTime[]>,
   clearedOnly: boolean,
 ): Map<string, { playerId: string; timeMs: number }[]> {
