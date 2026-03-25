@@ -6,10 +6,9 @@
 //!
 //! Re-spawn prevention has two layers:
 //! 1. In-process `items_spawned` bool in RaceTracker (primary; covers reconnects)
-//! 2. Event flag 1040292052 in VirtualMemoryFlag tree (secondary; covers game restarts)
-//!
-//! The event flag persists in the save file but is unreliable across WebSocket
-//! reconnects; the game may silently clear it via internal flag sync.
+//! 2. Event flag from `items_spawned_flag` in graph.json (secondary; covers game
+//!    restarts). The flag ID is provided by the server in the auth_ok seed message
+//!    and lives in the saved flag range (persists in the save file).
 
 use std::ffi::c_void;
 use std::time::Duration;
@@ -22,13 +21,6 @@ use crate::eldenring::EventFlagReader;
 
 /// Gem type flag in item ID encoding (high nibble 0x8 = EquipParamGem)
 const GEM_TYPE_FLAG: u32 = 0x8000_0000;
-
-/// Event flag used to prevent re-spawning items (persists in save file).
-/// Category 1040292, offset 52, next to FINGER_PICKUP_FLAG (offset 51)
-/// used by SpeedFog's EMEVD injectors. Must stay below offset 100
-/// (FogRando's num10 allocation) and well below offset 400
-/// (SpeedFog zone tracking connection flags: 1040292400+).
-const ITEMS_SPAWNED_FLAG: u32 = 1040292052;
 
 /// Spawn request struct matching Elden Ring's internal MapItemMan format.
 #[repr(C)]
@@ -49,9 +41,17 @@ type SpawnItemFn = unsafe extern "system" fn(*const c_void, *mut SpawnRequest, *
 /// the player has loaded into the game world, then calls func_item_inject
 /// for each item.
 ///
-/// Uses event flag `ITEMS_SPAWNED_FLAG` to prevent re-giving items on
-/// reconnect or game restart (flag persists in save file).
-pub fn spawn_items_blocking(items: Vec<SpawnItem>, flag_reader: &EventFlagReader) {
+/// When `items_spawned_flag` is `Some(flag_id)`, checks the flag before
+/// spawning and sets it after to prevent re-giving items on game restart.
+///
+/// When `items_spawned_flag` is `None` (old server), we have no persistent
+/// re-spawn guard. The in-process items_spawned bool still prevents
+/// double-spawn within a session, but a full game restart will re-give items.
+pub fn spawn_items_blocking(
+    items: Vec<SpawnItem>,
+    flag_reader: &EventFlagReader,
+    items_spawned_flag: Option<u32>,
+) {
     if items.is_empty() {
         return;
     }
@@ -92,20 +92,19 @@ pub fn spawn_items_blocking(items: Vec<SpawnItem>, flag_reader: &EventFlagReader
     // Brief delay for the game to finish initialization after MapItemMan is set
     std::thread::sleep(Duration::from_secs(2));
 
-    // Check re-spawn prevention flag
-    match flag_reader.is_flag_set(ITEMS_SPAWNED_FLAG) {
-        Some(true) => {
-            info!(
-                flag = ITEMS_SPAWNED_FLAG,
-                "Items already spawned (flag set), skipping"
-            );
-            return;
-        }
-        Some(false) => {
-            // Flag not set, proceed with spawning
-        }
-        None => {
-            warn!("Cannot read items-spawned flag, proceeding anyway");
+    // Check re-spawn prevention flag (only when server provides one)
+    if let Some(flag_id) = items_spawned_flag {
+        match flag_reader.is_flag_set(flag_id) {
+            Some(true) => {
+                info!(flag = flag_id, "Items already spawned (flag set), skipping");
+                return;
+            }
+            Some(false) => {
+                // Flag not set, proceed with spawning
+            }
+            None => {
+                warn!("Cannot read items-spawned flag, proceeding anyway");
+            }
         }
     }
 
@@ -148,11 +147,13 @@ pub fn spawn_items_blocking(items: Vec<SpawnItem>, flag_reader: &EventFlagReader
         );
     }
 
-    // Set re-spawn prevention flag
-    if flag_reader.set_flag(ITEMS_SPAWNED_FLAG, true) {
-        info!("Items-spawned flag set");
-    } else {
-        warn!("Failed to set items-spawned flag");
+    // Set re-spawn prevention flag (only when server provides one)
+    if let Some(flag_id) = items_spawned_flag {
+        if flag_reader.set_flag(flag_id, true) {
+            info!(flag = flag_id, "Items-spawned flag set");
+        } else {
+            warn!(flag = flag_id, "Failed to set items-spawned flag");
+        }
     }
 
     info!(count = items.len(), "All items spawned");

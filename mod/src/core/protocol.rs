@@ -100,6 +100,10 @@ pub struct SeedInfo {
     /// Death marker event flags per cluster: [flag_low, flag_med, flag_high]
     #[serde(default)]
     pub death_flags: HashMap<String, [u32; 3]>,
+    /// Event flag for persistent re-spawn prevention (saved range).
+    /// When None (old server), only in-process guard prevents double-spawn.
+    #[serde(default)]
+    pub items_spawned_flag: Option<u32>,
 }
 
 /// Exit info in zone_update message
@@ -788,5 +792,19 @@ mod tests {
         let json = r#"{"total_layers": 5}"#;
         let seed: SeedInfo = serde_json::from_str(json).unwrap();
         assert!(seed.death_flags.is_empty());
+    }
+
+    #[test]
+    fn test_seed_info_with_items_spawned_flag() {
+        let json = r#"{"total_layers": 5, "event_ids": [100], "items_spawned_flag": 1050290000}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(seed.items_spawned_flag, Some(1050290000));
+    }
+
+    #[test]
+    fn test_seed_info_without_items_spawned_flag() {
+        let json = r#"{"total_layers": 5}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(seed.items_spawned_flag, None);
     }
 }

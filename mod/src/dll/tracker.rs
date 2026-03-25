@@ -604,16 +604,22 @@ impl RaceTracker {
                 // Check key categories
                 let has_9000 = cats.contains(&9000);
                 let has_1040292 = cats.contains(&1040292);
-                info!(has_9000, has_1040292, "[RACE] Key categories present?");
-                // If FogRando category exists, show nearby categories for context
-                if has_1040292 {
+                let has_1050292 = cats.contains(&1050292);
+                info!(
+                    has_9000,
+                    has_1040292, has_1050292, "[RACE] Key categories present?"
+                );
+                // Show neighborhood if either base is present
+                if has_1040292 || has_1050292 {
                     let nearby: Vec<_> = cats
                         .iter()
-                        .filter(|&&c| (1040290..=1040299).contains(&c))
+                        .filter(|&&c| {
+                            (1040290..=1040299).contains(&c) || (1050290..=1050299).contains(&c)
+                        })
                         .collect();
                     info!(
-                        fogrando_cats = ?nearby,
-                        "[RACE] FogRando category neighborhood"
+                        cats = ?nearby,
+                        "[RACE] SpeedFog category neighborhood"
                     );
                 }
             }
@@ -732,6 +738,7 @@ impl RaceTracker {
                                 );
                             } else {
                                 let items = seed_info.spawn_items.clone();
+                                let spawned_flag = seed_info.items_spawned_flag;
                                 let ids: Vec<u32> = items.iter().map(|i| i.id).collect();
                                 info!(count = items.len(), item_ids = ?ids, "[RACE] Spawning runtime items");
                                 // Set before thread spawn: prevents reconnect double-spawn.
@@ -743,6 +750,7 @@ impl RaceTracker {
                                     crate::eldenring::item_spawner::spawn_items_blocking(
                                         items,
                                         &flag_reader,
+                                        spawned_flag,
                                     );
                                 }));
                             }
