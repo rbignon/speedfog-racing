@@ -71,7 +71,7 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 
 **REGISTERED → READY**: mod sends `ready` WS message. Broadcasts `leaderboard_update`.
 
-**READY → PLAYING**: auto-triggered on the first `status_update` while the race is RUNNING. On transition:
+**READY → PLAYING**: auto-triggered on the first `status_update` while the race is RUNNING, provided `igt_ms <= MAX_FRESH_IGT_MS` (15 000ms). If the IGT exceeds the threshold (player loaded a pre-existing save instead of starting a New Game), the server rejects the transition with an `error` message and the participant stays in READY. The check repeats on each `status_update`, so the player can fix it by starting a New Game (IGT resets to 0). On successful transition:
 
 - Sets `current_zone` to the start node.
 - Appends start node to `zone_history` with `igt_ms=0`.
@@ -97,6 +97,8 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 
 - All incoming `status_update`, `event_flag`, `zone_query`, and `finished` messages are silently dropped.
 - The server does not update `igt_ms` or `death_count`; data is frozen.
+
+More broadly, `event_flag` and `zone_query` handlers require `status == PLAYING`. Messages from READY or REGISTERED participants are silently dropped, preventing zone_history mutations before the player has been validated (see READY to PLAYING transition above).
 
 ### Progress Tracking
 

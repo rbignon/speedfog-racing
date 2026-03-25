@@ -282,12 +282,19 @@ Authentication failed. Connection is closed with code 4003.
 
 #### `error`
 
-Generic error during the message loop (not auth phase). Sent when a gameplay message (`status_update`, `event_flag`, `finished`) is rejected, for example because the race is not running.
+Generic error during the message loop (not auth phase). Sent when a gameplay message is rejected. Examples: race not running, stale save detected (IGT too high on first `status_update`).
 
 ```json
 {
   "type": "error",
   "message": "Race not running"
+}
+```
+
+```json
+{
+  "type": "error",
+  "message": "Please start a New Game to race"
 }
 ```
 
@@ -756,6 +763,10 @@ Gameplay messages (`status_update`, `event_flag`, `zone_query`, `finished`) are 
 3. **Mod (overlay):** A colored banner shows the race state: orange "WAITING FOR START" (setup), green "GO!" for 3 seconds (running), and green "RACE FINISHED" (finished).
 
 The `ready` and `pong` messages are not gated; they are valid in any state.
+
+**Participant status gating:** Beyond race status, `event_flag` and `zone_query` require `participant.status == PLAYING`. Messages from READY, REGISTERED, FINISHED, or ABANDONED participants are silently dropped.
+
+**Fresh save validation:** On the READY to PLAYING transition (first `status_update`), the server checks `igt_ms <= 15000`. If the IGT is too high (player loaded a pre-existing save), the server sends an `error` message and the participant stays in READY. The mod displays the error on the overlay via `set_status()`. Self-healing: starting a New Game resets IGT. Training mode applies the same check on first `zone_history` initialization.
 
 ### Zone Tracking
 
