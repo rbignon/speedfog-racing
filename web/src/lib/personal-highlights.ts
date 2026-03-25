@@ -302,6 +302,46 @@ function detectCleanStreak(
   };
 }
 
+/**
+ * Compute each player's rank (1-based) at each layer.
+ * Rank is determined by earliest IGT to reach that layer.
+ * Returns Map<layer, Map<participantId, rank>>.
+ */
+function computeRanksPerLayer(
+  participants: WsParticipant[],
+  nodeInfo: Map<string, NodeInfo>,
+): Map<number, Map<string, number>> {
+  const maxLayer = Math.max(...[...nodeInfo.values()].map((n) => n.layer), 0);
+  const ranks = new Map<number, Map<string, number>>();
+
+  for (let layer = 1; layer <= maxLayer; layer++) {
+    const arrivals: { id: string; igt: number }[] = [];
+    for (const p of participants) {
+      if (!p.zone_history) continue;
+      for (const entry of p.zone_history) {
+        const info = nodeInfo.get(entry.node_id);
+        if (info && info.layer >= layer) {
+          arrivals.push({ id: p.id, igt: entry.igt_ms });
+          break;
+        }
+      }
+    }
+    arrivals.sort((a, b) => a.igt - b.igt);
+    const layerRanks = new Map<string, number>();
+    arrivals.forEach((a, i) => layerRanks.set(a.id, i + 1));
+    ranks.set(layer, layerRanks);
+  }
+
+  return ranks;
+}
+
+/** Format number as ordinal: 1 -> "1st", 2 -> "2nd", etc. */
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 // =============================================================================
 // Pathing Detectors
 // =============================================================================
@@ -550,6 +590,306 @@ function detectCostlyDetour(
 }
 
 // =============================================================================
+// Competitive Detectors
+// =============================================================================
+
+function detectFasterThanAll(
+  myId: string,
+  allZoneTimes: Map<string, ZoneTime[]>,
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes, true);
+
+  let bestScore = 0;
+  let bestHighlight: Highlight | null = null;
+
+  for (const [zoneId, times] of zonePlayerTimes) {
+    if (times.length < 2) continue;
+    const info = nodeInfo.get(zoneId);
+    if (info?.type === "start") continue;
+
+    const myTime = times.find((t) => t.playerId === myId);
+    if (!myTime || myTime.timeMs <= 0) continue;
+
+    const avg = times.reduce((s, t) => s + t.timeMs, 0) / times.length;
+    if (avg <= 0) continue;
+
+    const ratio = myTime.timeMs / avg;
+    if (ratio >= 0.6) continue;
+
+    // Check we're actually the fastest
+    const isFastest = times.every(
+      (t) => t.playerId === myId || t.timeMs >= myTime.timeMs,
+    );
+    if (!isFastest) continue;
+
+    const tierMult = info?.tier ?? 1;
+    const score = (1 - ratio) * 100 * tierMult;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestHighlight = {
+        type: "faster_than_all",
+        category: "competitive" as PersonalHighlightCategory,
+        title: "Fastest Through",
+        segments: [
+          tSeg("You were the fastest through "),
+          zSeg(zoneId, nodeInfo),
+          tSeg(`: ${formatTime(myTime.timeMs)} (average: ${formatTime(avg)})`),
+        ],
+        playerIds: [myId],
+        score,
+      };
+    }
+  }
+
+  return bestHighlight;
+}
+
+function detectSlowerThanAll(
+  myId: string,
+  allZoneTimes: Map<string, ZoneTime[]>,
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes, true);
+
+  let bestScore = 0;
+  let bestHighlight: Highlight | null = null;
+
+  for (const [zoneId, times] of zonePlayerTimes) {
+    if (times.length < 2) continue;
+    const info = nodeInfo.get(zoneId);
+    if (info?.type === "start") continue;
+
+    const myTime = times.find((t) => t.playerId === myId);
+    if (!myTime || myTime.timeMs <= 0) continue;
+
+    const avg = times.reduce((s, t) => s + t.timeMs, 0) / times.length;
+    if (avg <= 0) continue;
+
+    const ratio = myTime.timeMs / avg;
+    if (ratio <= 1.5) continue;
+
+    // Check we're actually the slowest
+    const isSlowest = times.every(
+      (t) => t.playerId === myId || t.timeMs <= myTime.timeMs,
+    );
+    if (!isSlowest) continue;
+
+    const score = (ratio - 1) * 50;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestHighlight = {
+        type: "slower_than_all",
+        category: "competitive" as PersonalHighlightCategory,
+        title: "Rough Zone",
+        segments: [
+          zSeg(zoneId, nodeInfo),
+          tSeg(
+            ` slowed you down: last with ${formatTime(myTime.timeMs)} (average: ${formatTime(avg)})`,
+          ),
+        ],
+        playerIds: [myId],
+        score,
+      };
+    }
+  }
+
+  return bestHighlight;
+}
+
+function detectLeadLost(
+  myId: string,
+  participants: WsParticipant[],
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const ranks = computeRanksPerLayer(participants, nodeInfo);
+  const layers = [...ranks.keys()].sort((a, b) => a - b);
+
+  for (let i = 0; i < layers.length - 1; i++) {
+    const curRanks = ranks.get(layers[i]);
+    const nextRanks = ranks.get(layers[i + 1]);
+    if (!curRanks || !nextRanks) continue;
+
+    const myRankNow = curRanks.get(myId);
+    const myRankNext = nextRanks.get(myId);
+
+    if (myRankNow === 1 && myRankNext !== undefined && myRankNext > 1) {
+      return {
+        type: "lead_lost",
+        category: "competitive" as PersonalHighlightCategory,
+        title: "Lead Lost",
+        segments: [
+          tSeg(
+            `You were leading the race, but lost the lead at layer ${layers[i + 1]}`,
+          ),
+        ],
+        playerIds: [myId],
+        score: 60,
+      };
+    }
+  }
+
+  return null;
+}
+
+function detectComeback(
+  myId: string,
+  participants: WsParticipant[],
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const ranks = computeRanksPerLayer(participants, nodeInfo);
+  const layers = [...ranks.keys()].sort((a, b) => a - b);
+
+  let bestGain = 0;
+  let bestHighlight: Highlight | null = null;
+
+  for (let i = 0; i < layers.length - 1; i++) {
+    const curRanks = ranks.get(layers[i]);
+    const nextRanks = ranks.get(layers[i + 1]);
+    if (!curRanks || !nextRanks) continue;
+
+    const rankBefore = curRanks.get(myId);
+    const rankAfter = nextRanks.get(myId);
+    if (rankBefore === undefined || rankAfter === undefined) continue;
+
+    const gain = rankBefore - rankAfter;
+    if (gain >= 2 && gain > bestGain) {
+      bestGain = gain;
+      bestHighlight = {
+        type: "comeback",
+        category: "competitive" as PersonalHighlightCategory,
+        title: "Comeback",
+        segments: [
+          tSeg(
+            `You were ${ordinal(rankBefore)} at layer ${layers[i]} before climbing back to ${ordinal(rankAfter)} place`,
+          ),
+        ],
+        playerIds: [myId],
+        score: gain * 30,
+      };
+    }
+  }
+
+  return bestHighlight;
+}
+
+function detectLeadSwap(
+  myId: string,
+  participants: WsParticipant[],
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const ranks = computeRanksPerLayer(participants, nodeInfo);
+  const layers = [...ranks.keys()].sort((a, b) => a - b);
+
+  // Count how many times me and each other player alternated as rank 1
+  const swapCounts = new Map<string, number>();
+
+  for (let i = 1; i < layers.length; i++) {
+    const prevRanks = ranks.get(layers[i - 1]);
+    const curRanks = ranks.get(layers[i]);
+    if (!prevRanks || !curRanks) continue;
+
+    const prevLeader = [...prevRanks.entries()].find(([, r]) => r === 1)?.[0];
+    const curLeader = [...curRanks.entries()].find(([, r]) => r === 1)?.[0];
+
+    if (!prevLeader || !curLeader || prevLeader === curLeader) continue;
+
+    // Only count swaps involving me
+    if (prevLeader !== myId && curLeader !== myId) continue;
+    const other = prevLeader === myId ? curLeader : prevLeader;
+    swapCounts.set(other, (swapCounts.get(other) ?? 0) + 1);
+  }
+
+  let bestOther = "";
+  let bestSwaps = 0;
+  for (const [otherId, count] of swapCounts) {
+    if (count > bestSwaps) {
+      bestSwaps = count;
+      bestOther = otherId;
+    }
+  }
+
+  if (bestSwaps < 3) return null;
+
+  const otherP = participants.find((p) => p.id === bestOther);
+  if (!otherP) return null;
+
+  return {
+    type: "lead_swap",
+    category: "competitive" as PersonalHighlightCategory,
+    title: "Lead Swap",
+    segments: [
+      tSeg("You and "),
+      pSeg(otherP),
+      tSeg(` traded the lead ${bestSwaps} times during the race`),
+    ],
+    playerIds: [myId, bestOther],
+    score: bestSwaps * 25,
+  };
+}
+
+function detectNeckAndNeck(
+  myId: string,
+  participants: WsParticipant[],
+  nodeInfo: Map<string, NodeInfo>,
+): Highlight | null {
+  const ranks = computeRanksPerLayer(participants, nodeInfo);
+  const layers = [...ranks.keys()].sort((a, b) => a - b);
+  if (layers.length < 3) return null;
+
+  const me = participants.find((p) => p.id === myId);
+  if (!me) return null;
+
+  let bestHighlight: Highlight | null = null;
+  let bestScore = 0;
+
+  for (const other of participants) {
+    if (other.id === myId) continue;
+
+    let layersTogether = 0;
+    for (const layer of layers) {
+      const layerRanks = ranks.get(layer);
+      if (!layerRanks) continue;
+      const myRank = layerRanks.get(myId);
+      const theirRank = layerRanks.get(other.id);
+      if (myRank !== undefined && theirRank !== undefined) {
+        if (Math.abs(myRank - theirRank) <= 1) layersTogether++;
+      }
+    }
+
+    const ratio = layersTogether / layers.length;
+    if (ratio < 0.7) continue;
+
+    // Check final IGT gap < 10% of faster player's time
+    const fasterIgt = Math.min(me.igt_ms, other.igt_ms);
+    if (fasterIgt <= 0) continue;
+    const gap = Math.abs(me.igt_ms - other.igt_ms);
+    if (gap / fasterIgt >= 0.1) continue;
+
+    const score = layersTogether * 10;
+    if (score > bestScore) {
+      bestScore = score;
+      bestHighlight = {
+        type: "neck_and_neck",
+        category: "competitive" as PersonalHighlightCategory,
+        title: "Neck and Neck",
+        segments: [
+          tSeg("You stayed neck and neck with "),
+          pSeg(other),
+          tSeg(" throughout the race"),
+        ],
+        playerIds: [myId, other.id],
+        score,
+      };
+    }
+  }
+
+  return bestHighlight;
+}
+
+// =============================================================================
 // Orchestrator (combat + pathing)
 // =============================================================================
 
@@ -588,6 +928,14 @@ export function computePersonalHighlights(
   push(detectAgainstTheFlow(myParticipantId, eligible, nodeInfo, graphJson));
   push(detectSmartBacktrack(myParticipantId, allZoneTimes, nodeInfo));
   push(detectCostlyDetour(myParticipantId, eligible, allZoneTimes, nodeInfo));
+
+  // Competitive detectors
+  push(detectFasterThanAll(myParticipantId, allZoneTimes, nodeInfo));
+  push(detectSlowerThanAll(myParticipantId, allZoneTimes, nodeInfo));
+  push(detectLeadLost(myParticipantId, eligible, nodeInfo));
+  push(detectComeback(myParticipantId, eligible, nodeInfo));
+  push(detectLeadSwap(myParticipantId, eligible, nodeInfo));
+  push(detectNeckAndNeck(myParticipantId, eligible, nodeInfo));
 
   // Selection
   candidates.sort((a, b) => b.score - a.score);

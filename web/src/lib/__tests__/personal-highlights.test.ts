@@ -411,3 +411,194 @@ describe("pathing detectors", () => {
     expect(descriptionText(h!)).toContain("detour");
   });
 });
+
+describe("competitive detectors", () => {
+  it("detects faster_than_all when player is fastest on a zone", () => {
+    const me = participant("me", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "zone_a", igt_ms: 10000 },
+        { node_id: "end", igt_ms: 100000 },
+      ],
+    });
+    const p2 = participant("p2", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "zone_a", igt_ms: 50000 },
+        { node_id: "end", igt_ms: 200000 },
+      ],
+    });
+    const p3 = participant("p3", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "zone_a", igt_ms: 60000 },
+        { node_id: "end", igt_ms: 250000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      zone_a: { layer: 1 },
+      end: { layer: 2 },
+    });
+    const result = computePersonalHighlights("me", [me, p2, p3], graph);
+    const h = findHighlight(result, "faster_than_all");
+    expect(h).toBeDefined();
+    expect(h!.category).toBe("competitive");
+  });
+
+  it("detects lead_lost when player was leading then lost the lead", () => {
+    // me leads at layer 1 (arrives first), p2 leads at layer 2 (arrives first)
+    const me = participant("me", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "zone_a", igt_ms: 30000 },
+        { node_id: "zone_b", igt_ms: 200000 },
+      ],
+    });
+    const p2 = participant("p2", {
+      igt_ms: 250000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "zone_a", igt_ms: 50000 },
+        { node_id: "zone_b", igt_ms: 100000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      zone_a: { layer: 1 },
+      zone_b: { layer: 2 },
+    });
+    const result = computePersonalHighlights("me", [me, p2], graph);
+    const h = findHighlight(result, "lead_lost");
+    expect(h).toBeDefined();
+  });
+
+  it("detects comeback when player improves rank by 2+ positions", () => {
+    // 3 players: me starts last at layer 1, then finishes first at layer 3
+    const me = participant("me", {
+      igt_ms: 200000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "l1", igt_ms: 80000 },
+        { node_id: "l2", igt_ms: 120000 },
+        { node_id: "l3", igt_ms: 150000 },
+      ],
+    });
+    const p2 = participant("p2", {
+      igt_ms: 250000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "l1", igt_ms: 30000 },
+        { node_id: "l2", igt_ms: 140000 },
+        { node_id: "l3", igt_ms: 200000 },
+      ],
+    });
+    const p3 = participant("p3", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "l1", igt_ms: 40000 },
+        { node_id: "l2", igt_ms: 160000 },
+        { node_id: "l3", igt_ms: 250000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      l1: { layer: 1 },
+      l2: { layer: 2 },
+      l3: { layer: 3 },
+    });
+    const result = computePersonalHighlights("me", [me, p2, p3], graph);
+    const h = findHighlight(result, "comeback");
+    expect(h).toBeDefined();
+    expect(h!.category).toBe("competitive");
+  });
+
+  it("detects lead_swap when two players alternate as leader", () => {
+    // me and p2 alternate leads across 4 layers
+    const me = participant("me", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "l1", igt_ms: 20000 },
+        { node_id: "l2", igt_ms: 90000 },
+        { node_id: "l3", igt_ms: 120000 },
+        { node_id: "l4", igt_ms: 250000 },
+      ],
+    });
+    const p2 = participant("p2", {
+      igt_ms: 280000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "l1", igt_ms: 40000 },
+        { node_id: "l2", igt_ms: 60000 },
+        { node_id: "l3", igt_ms: 150000 },
+        { node_id: "l4", igt_ms: 200000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      l1: { layer: 1 },
+      l2: { layer: 2 },
+      l3: { layer: 3 },
+      l4: { layer: 4 },
+    });
+    const result = computePersonalHighlights("me", [me, p2], graph);
+    const h = findHighlight(result, "lead_swap");
+    expect(h).toBeDefined();
+    expect(descriptionText(h!)).toContain("P2");
+  });
+
+  it("detects neck_and_neck when two players stay close throughout", () => {
+    // p2 leads at every layer, me is always rank 2. p3 is far behind.
+    // Final times are within 5% of each other to satisfy the IGT gap check.
+    // me never leads, so lead_lost cannot fire for me.
+    // Zone times similar across all shared zones to avoid faster_than_all.
+    const me = participant("me", {
+      igt_ms: 200000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "l1", igt_ms: 32000 },
+        { node_id: "l2", igt_ms: 82000 },
+        { node_id: "l3", igt_ms: 132000 },
+        { node_id: "l4", igt_ms: 172000 },
+      ],
+    });
+    const p2 = participant("p2", {
+      igt_ms: 205000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "l1", igt_ms: 30000 },
+        { node_id: "l2", igt_ms: 80000 },
+        { node_id: "l3", igt_ms: 130000 },
+        { node_id: "l4", igt_ms: 170000 },
+      ],
+    });
+    // p3 far behind so rank differences between me and p2 are clear
+    const p3 = participant("p3", {
+      igt_ms: 400000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "l1", igt_ms: 100000 },
+        { node_id: "l2", igt_ms: 200000 },
+        { node_id: "l3", igt_ms: 300000 },
+        { node_id: "l4", igt_ms: 350000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      l1: { layer: 1 },
+      l2: { layer: 2 },
+      l3: { layer: 3 },
+      l4: { layer: 4 },
+    });
+    const result = computePersonalHighlights("me", [me, p2, p3], graph);
+    const h = findHighlight(result, "neck_and_neck");
+    expect(h).toBeDefined();
+    expect(descriptionText(h!)).toContain("P2");
+  });
+});
