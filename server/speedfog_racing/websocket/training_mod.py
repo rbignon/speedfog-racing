@@ -140,20 +140,19 @@ async def handle_training_mod_websocket(
             # Send race_start immediately (training starts right away)
             await websocket.send_text(RaceStartMessage().model_dump_json())
 
-            # Send initial zone_update if session has progress
+            # Send initial zone_update only on reconnect (zone_history exists).
+            # For new sessions, the zone_update arrives after the first valid
+            # status_update + event_flag/zone_query cycle, avoiding premature
+            # display before fresh-save validation passes.
             seed = session.seed
-            if seed and seed.graph_json:
-                last_node = None
-                if session.zone_history:
-                    last_node = session.zone_history[-1].get("node_id")
-                if not last_node:
-                    last_node = get_start_node(seed.graph_json)
+            if seed and seed.graph_json and session.zone_history:
+                last_node = session.zone_history[-1].get("node_id")
                 if last_node:
                     await send_zone_update(
                         websocket,
                         last_node,
                         seed.graph_json,
-                        session.zone_history or [],
+                        session.zone_history,
                         mod_locale,
                     )
 

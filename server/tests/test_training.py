@@ -876,7 +876,6 @@ def test_training_mod_websocket_status_update(
         ws.send_json({"type": "auth", "mod_token": token})
         ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update (start node)
 
         ws.send_json({"type": "status_update", "igt_ms": 5000, "death_count": 2})
         msg = ws.receive_json()  # leaderboard_update
@@ -909,7 +908,6 @@ def test_training_mod_websocket_event_flag(
         ws.send_json({"type": "auth", "mod_token": token})
         auth_ok = ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update (start node)
 
         # Initialize zone_history via status_update (required before event_flag)
         ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
@@ -947,7 +945,6 @@ def test_training_zone_history_includes_start_node(
         ws.send_json({"type": "auth", "mod_token": token})
         auth_ok = ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update (start node)
 
         # First status_update should record start node in zone_history
         ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
@@ -984,7 +981,6 @@ def test_training_per_zone_death_tracking(training_ws_client, training_session_d
         ws.send_json({"type": "auth", "mod_token": token})
         auth_ok = ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update (start node)
 
         event_ids = auth_ok["seed"]["event_ids"]
 
@@ -1047,7 +1043,6 @@ def test_training_per_zone_death_tracking_start_node(
         ws.send_json({"type": "auth", "mod_token": token})
         ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update
 
         # First status_update with deaths > 0 (start_node init + death attribution)
         ws.send_json({"type": "status_update", "igt_ms": 3000, "death_count": 4})
@@ -1134,7 +1129,6 @@ def test_training_zone_query_fast_travel(training_ws_client, async_session):
         auth_ok = ws.receive_json()
         assert auth_ok["type"] == "auth_ok"
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update (start node)
 
         # Initialize zone_history via status_update (required before event_flag)
         ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
@@ -1223,7 +1217,6 @@ def test_training_zone_query_same_zone_does_not_backtrack(training_ws_client, as
         ws.send_json({"type": "auth", "mod_token": token})
         ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update
 
         # Init start node
         ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
@@ -1293,7 +1286,6 @@ def test_training_event_flag_revisit_appends_to_zone_history(
         ws.send_json({"type": "auth", "mod_token": token})
         auth_ok = ws.receive_json()
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update
 
         event_ids = auth_ok["seed"]["event_ids"]
         finish_event = auth_ok["seed"].get("finish_event")
@@ -1355,7 +1347,6 @@ def test_training_deaths_attributed_to_last_visit_after_backtrack(
         ws.send_json({"type": "auth", "mod_token": token})
         auth_ok = ws.receive_json()
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update
 
         event_ids = auth_ok["seed"]["event_ids"]
         finish_event = auth_ok["seed"].get("finish_event")
@@ -1467,7 +1458,6 @@ def test_training_auth_ok_reconnect_has_tier(training_ws_client, async_session):
         auth_ok = ws.receive_json()
         assert auth_ok["type"] == "auth_ok"
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update
 
         # Initialize zone_history via status_update (required before event_flag)
         ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
@@ -1547,7 +1537,6 @@ def test_training_stale_save_rejected(training_ws_client, training_session_data)
         ws.send_json({"type": "auth", "mod_token": token})
         ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update (start node)
 
         # Send status_update with stale IGT (60 seconds)
         ws.send_json({"type": "status_update", "igt_ms": 60_000, "death_count": 0})
@@ -1565,7 +1554,6 @@ def test_training_stale_save_self_heals(training_ws_client, training_session_dat
         ws.send_json({"type": "auth", "mod_token": token})
         ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update (start node)
 
         # Stale save rejected
         ws.send_json({"type": "status_update", "igt_ms": 60_000, "death_count": 0})
@@ -1594,7 +1582,6 @@ def test_training_resumed_session_not_blocked(
         ws.send_json({"type": "auth", "mod_token": token})
         ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update
 
         ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
         ws.receive_json()  # leaderboard_update
@@ -1643,7 +1630,6 @@ def test_training_event_flag_before_status_update_dropped(
         ws.send_json({"type": "auth", "mod_token": token})
         auth_ok = ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
-        ws.receive_json()  # initial zone_update (start node)
 
         event_ids = auth_ok["seed"]["event_ids"]
         finish_event = auth_ok["seed"].get("finish_event")
