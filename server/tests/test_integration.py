@@ -483,6 +483,8 @@ def test_complete_race_flow(integration_client, race_with_participants):
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")  # READY->PLAYING
         mod0.send_event_flag(9000000, igt_ms=10000)
         lb = mod0.receive_until_type("leaderboard_update")
         p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
@@ -492,6 +494,8 @@ def test_complete_race_flow(integration_client, race_with_participants):
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1:
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
         assert mod1.auth()["type"] == "auth_ok"
+        mod1.send_status_update(igt_ms=1000, death_count=0)
+        mod1.receive_until_type("leaderboard_update")  # READY->PLAYING
         mod1.send_event_flag(9000001, igt_ms=15000)
         lb = mod1.receive_until_type("leaderboard_update")
         p1 = next(p for p in lb["participants"] if p["twitch_username"] == "player1")
@@ -501,13 +505,15 @@ def test_complete_race_flow(integration_client, race_with_participants):
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws2:
         mod2 = ModTestClient(ws2, players[2]["mod_token"])
         assert mod2.auth()["type"] == "auth_ok"
+        mod2.send_status_update(igt_ms=1000, death_count=0)
+        mod2.receive_until_type("leaderboard_update")  # READY->PLAYING
         mod2.send_event_flag(9000003, igt_ms=50000)
         lb = mod2.receive_until_type("leaderboard_update")
         p2 = next(p for p in lb["participants"] if p["twitch_username"] == "player2")
         assert p2["status"] == "finished"
         assert p2["current_layer"] == 5  # bumped to total_layers on finish
 
-    # Player 0 finishes
+    # Player 0 finishes (already PLAYING from earlier)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
@@ -516,7 +522,7 @@ def test_complete_race_flow(integration_client, race_with_participants):
         assert lb["participants"][0]["twitch_username"] == "player2"
         assert lb["participants"][1]["twitch_username"] == "player0"
 
-    # Player 1 finishes last (triggers race completion)
+    # Player 1 finishes last (triggers race completion; already PLAYING from earlier)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1:
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
         assert mod1.auth()["type"] == "auth_ok"
@@ -868,6 +874,62 @@ def test_stale_save_self_heals_on_new_game(
     assert status == ParticipantStatus.PLAYING
 
 
+def test_event_flag_ignored_when_participant_not_playing(
+    integration_client, race_with_participants, integration_db
+):
+    """event_flag from a READY participant (not yet PLAYING) should be silently dropped."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Ready up and start race
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    # Connect but do NOT send status_update (stays READY), send event_flag
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        auth_ok = mod0.auth()
+        assert auth_ok["type"] == "auth_ok"
+        event_ids = auth_ok["seed"]["event_ids"]
+
+        # Send event_flag while still READY
+        mod0.send_event_flag(flag_id=event_ids[0], igt_ms=5000)
+        # Then transition to PLAYING normally
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        resp = mod0.receive()
+        assert resp["type"] == "leaderboard_update"
+        time.sleep(0.5)
+
+    # Verify zone_history has only the spawn entry (no fog entry from the dropped event_flag)
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_db())
+    assert history is not None
+    assert len(history) == 1  # Only spawn entry, no fog entry
+    assert history[0]["type"] == "spawn"
+
+
 # =============================================================================
 # Scenario 4: Zone History Accumulation
 # =============================================================================
@@ -881,6 +943,13 @@ def test_zone_history_accumulates(integration_client, race_with_participants, in
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     # Start the race
     response = integration_client.post(
         f"/api/races/{race_id}/start",
@@ -892,6 +961,10 @@ def test_zone_history_accumulates(integration_client, race_with_participants, in
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
+
+        # Transition READY->PLAYING before sending event flags
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
 
         mod0.send_event_flag(9000000, igt_ms=10000)
         mod0.receive_until_type("leaderboard_update")
@@ -913,11 +986,12 @@ def test_zone_history_accumulates(integration_client, race_with_participants, in
 
     history = asyncio.run(check_history())
     assert history is not None
-    assert len(history) == 2
-    assert history[0]["node_id"] == "node_a"
-    assert history[0]["igt_ms"] == 10000
-    assert history[1]["node_id"] == "node_b"
-    assert history[1]["igt_ms"] == 20000
+    # zone_history: spawn (from status_update) + node_a + node_b
+    assert len(history) == 3
+    assert history[1]["node_id"] == "node_a"
+    assert history[1]["igt_ms"] == 10000
+    assert history[2]["node_id"] == "node_b"
+    assert history[2]["igt_ms"] == 20000
 
 
 def test_per_zone_death_tracking(integration_client, race_with_participants, integration_db):
@@ -927,6 +1001,13 @@ def test_per_zone_death_tracking(integration_client, race_with_participants, int
     race_id = race_with_participants["race_id"]
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
+
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
 
     # Start the race
     response = integration_client.post(
@@ -938,6 +1019,10 @@ def test_per_zone_death_tracking(integration_client, race_with_participants, int
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
+
+        # Transition READY->PLAYING (places in start_node)
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
 
         # Discover node_a (sets current_zone=node_a, adds to zone_history)
         mod0.send_event_flag(9000000, igt_ms=10000)
@@ -969,7 +1054,8 @@ def test_per_zone_death_tracking(integration_client, race_with_participants, int
 
     history, total_deaths = asyncio.run(check_deaths())
     assert total_deaths == 5
-    assert len(history) == 2
+    # zone_history: spawn + node_a + node_b
+    assert len(history) == 3
 
     # node_a got 2 deaths
     node_a_entry = next(e for e in history if e["node_id"] == "node_a")
@@ -1090,6 +1176,13 @@ def test_event_flag_revisit_appends_to_zone_history(
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     integration_client.post(
         f"/api/races/{race_id}/start",
         headers={"Authorization": f"Bearer {organizer.api_token}"},
@@ -1098,6 +1191,10 @@ def test_event_flag_revisit_appends_to_zone_history(
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
+
+        # Transition READY->PLAYING before sending event flags
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
 
         # Send same flag twice (first visit + revisit)
         mod0.send_event_flag(9000000, igt_ms=10000)
@@ -1121,11 +1218,12 @@ def test_event_flag_revisit_appends_to_zone_history(
 
     history = asyncio.run(check_history())
     assert history is not None
-    assert len(history) == 2  # Both visits recorded
-    assert history[0]["node_id"] == "node_a"
-    assert history[0]["igt_ms"] == 10000
+    # zone_history: spawn + first visit node_a + revisit node_a
+    assert len(history) == 3
     assert history[1]["node_id"] == "node_a"
-    assert history[1]["igt_ms"] == 15000
+    assert history[1]["igt_ms"] == 10000
+    assert history[2]["node_id"] == "node_a"
+    assert history[2]["igt_ms"] == 15000
 
 
 def test_shared_entrance_multi_flag_dedup(
@@ -1159,6 +1257,13 @@ def test_shared_entrance_multi_flag_dedup(
 
     asyncio.run(add_shared_entrance_flag())
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     integration_client.post(
         f"/api/races/{race_id}/start",
         headers={"Authorization": f"Bearer {organizer.api_token}"},
@@ -1167,6 +1272,10 @@ def test_shared_entrance_multi_flag_dedup(
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
+
+        # Transition READY->PLAYING before sending event flags
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
 
         # Send two flags that resolve to the same node with near-identical IGT
         # (simulates shared entrance: both fire in same EMEVD frame)
@@ -1189,9 +1298,10 @@ def test_shared_entrance_multi_flag_dedup(
 
     history = asyncio.run(check_history())
     assert history is not None
-    assert len(history) == 1  # Only one entry, duplicate was deduped
-    assert history[0]["node_id"] == "node_a"
-    assert history[0]["igt_ms"] == 10000
+    # zone_history: spawn + node_a (duplicate was deduped)
+    assert len(history) == 2
+    assert history[1]["node_id"] == "node_a"
+    assert history[1]["igt_ms"] == 10000
 
 
 def test_shared_entrance_dedup_allows_legitimate_revisit(
@@ -1204,6 +1314,13 @@ def test_shared_entrance_dedup_allows_legitimate_revisit(
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     integration_client.post(
         f"/api/races/{race_id}/start",
         headers={"Authorization": f"Bearer {organizer.api_token}"},
@@ -1212,6 +1329,10 @@ def test_shared_entrance_dedup_allows_legitimate_revisit(
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
+
+        # Transition READY->PLAYING before sending event flags
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
 
         # First visit to node_a
         mod0.send_event_flag(9000000, igt_ms=10000)
@@ -1234,9 +1355,10 @@ def test_shared_entrance_dedup_allows_legitimate_revisit(
 
     history = asyncio.run(check_history())
     assert history is not None
-    assert len(history) == 2  # Both visits recorded
-    assert history[0]["igt_ms"] == 10000
-    assert history[1]["igt_ms"] == 15000
+    # zone_history: spawn + first visit node_a + revisit node_a
+    assert len(history) == 3
+    assert history[1]["igt_ms"] == 10000
+    assert history[2]["igt_ms"] == 15000
 
 
 def test_event_flag_lower_layer_recorded_without_regressing(
@@ -1249,6 +1371,13 @@ def test_event_flag_lower_layer_recorded_without_regressing(
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     integration_client.post(
         f"/api/races/{race_id}/start",
         headers={"Authorization": f"Bearer {organizer.api_token}"},
@@ -1260,6 +1389,7 @@ def test_event_flag_lower_layer_recorded_without_regressing(
 
         # Transition to PLAYING via status_update (places in start_node, layer 0).
         mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")  # READY->PLAYING
 
         # Progress to node_b (layer 2), skipping node_a (layer 1) is fine
         mod0.send_event_flag(9000001, igt_ms=20000)
@@ -1552,6 +1682,13 @@ def test_event_flag_same_layer_accepted(integration_client, race_with_participan
 
     asyncio.run(add_sibling_node())
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     integration_client.post(
         f"/api/races/{race_id}/start",
         headers={"Authorization": f"Bearer {organizer.api_token}"},
@@ -1561,8 +1698,9 @@ def test_event_flag_same_layer_accepted(integration_client, race_with_participan
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
 
-        # Transition to PLAYING (no response to mod, sequential processing)
+        # Transition to PLAYING and drain the broadcast
         mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")  # READY->PLAYING
 
         # Progress to node_a (layer 1)
         mod0.send_event_flag(9000000, igt_ms=10000)
@@ -1600,6 +1738,13 @@ def test_zone_update_content(integration_client, race_with_participants):
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     integration_client.post(
         f"/api/races/{race_id}/start",
         headers={"Authorization": f"Bearer {organizer.api_token}"},
@@ -1613,6 +1758,10 @@ def test_zone_update_content(integration_client, race_with_participants):
         zu_start = mod0.receive_until_type("zone_update")
         assert zu_start["node_id"] == "start_node"
         assert zu_start["display_name"] == "Chapel of Anticipation"
+
+        # Transition READY->PLAYING (consumes the connect broadcast + PLAYING broadcast)
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")  # READY->PLAYING
 
         # Trigger flag 9000000 -> node_a ("Stormveil Castle")
         mod0.send_event_flag(9000000, igt_ms=10000)
@@ -1947,8 +2096,11 @@ def test_zone_query_updates_overlay(integration_db, integration_client, seed_fol
         mod = ModTestClient(ws, mod_token)
         assert mod.auth()["type"] == "auth_ok"
 
-        # Discover stormveil_godrick via event_flag (also transitions READY→PLAYING
-        # internally via status_update, but we skip that as existing tests do)
+        # Transition READY->PLAYING before sending event flags
+        mod.send_status_update(igt_ms=1000, death_count=0)
+        mod.receive_until_type("leaderboard_update")  # READY->PLAYING
+
+        # Discover stormveil_godrick via event_flag
         mod.send_event_flag(1040292800, 5000)
         # Server sends leaderboard_update (broadcast) + zone_update (unicast)
         lb = mod.receive_until_type("leaderboard_update")
@@ -2113,12 +2265,19 @@ def test_zone_query_map_id_death_respawn(integration_db, integration_client, see
     resp = integration_client.post(f"/api/races/{race_id}/start", headers=org_headers)
     assert resp.status_code == 200
 
-    # Connect and send zone_query with map_id only (death/respawn scenario)
+    # Connect, become PLAYING, explore ainsel_boss, then simulate death/respawn
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
         mod = ModTestClient(ws, mod_token)
         assert mod.auth()["type"] == "auth_ok"
 
-        # Send zone_query with map_id only (simulates death/respawn)
+        # Transition READY->PLAYING and explore ainsel_boss via event_flag
+        mod.send_status_update(igt_ms=1000, death_count=0)
+        mod.receive_until_type("leaderboard_update")  # READY->PLAYING
+        mod.send_event_flag(1040292800, igt_ms=5000)
+        mod.receive_until_type("leaderboard_update")
+
+        # Send zone_query with map_id only (simulates death/respawn in ainsel_boss)
+        # The player has already explored ainsel_boss_node so the history filter passes
         mod.send_zone_query(map_id="m12_04_00_00")
         zone_update = mod.receive_until_type("zone_update")
         assert zone_update["node_id"] == "ainsel_boss_node"
@@ -2276,16 +2435,25 @@ def test_finished_participant_status_update_ignored(
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     # Start the race
     integration_client.post(
         f"/api/races/{race_id}/start",
         headers={"Authorization": f"Bearer {organizer.api_token}"},
     )
 
-    # Player 0 finishes with igt=50000
+    # Player 0 finishes with igt=50000 (must be PLAYING first)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")  # READY->PLAYING
         mod0.send_event_flag(9000003, igt_ms=50000)
         lb = mod0.receive_until_type("leaderboard_update")
         p0 = next(p for p in lb["participants"] if p["twitch_username"] == "player0")
@@ -2326,16 +2494,25 @@ def test_finished_participant_event_flag_ignored(
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     # Start the race
     integration_client.post(
         f"/api/races/{race_id}/start",
         headers={"Authorization": f"Bearer {organizer.api_token}"},
     )
 
-    # Player 0 finishes
+    # Player 0 finishes (must be PLAYING first)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")  # READY->PLAYING
         mod0.send_event_flag(9000003, igt_ms=50000)
         mod0.receive_until_type("leaderboard_update")
 
@@ -2373,6 +2550,13 @@ def test_death_counts_broadcast(integration_client, race_with_participants):
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     # Start the race
     response = integration_client.post(
         f"/api/races/{race_id}/start",
@@ -2388,6 +2572,11 @@ def test_death_counts_broadcast(integration_client, race_with_participants):
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
         assert mod1.auth()["type"] == "auth_ok"
+
+        # Transition player 0 READY->PLAYING before sending event flags
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")  # READY->PLAYING (mod0)
+        mod1.receive_until_type("leaderboard_update")  # broadcast to mod1 too
 
         # Player 0 discovers node_a
         mod0.send_event_flag(9000000, igt_ms=10000)
@@ -2424,6 +2613,13 @@ def test_death_counts_on_reconnect(integration_client, race_with_participants):
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
     # Start the race
     response = integration_client.post(
         f"/api/races/{race_id}/start",
@@ -2440,6 +2636,11 @@ def test_death_counts_on_reconnect(integration_client, race_with_participants):
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
         assert mod1.auth()["type"] == "auth_ok"
+
+        # Transition player 0 READY->PLAYING before sending event flags
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")  # READY->PLAYING (mod0)
+        mod1.receive_until_type("leaderboard_update")  # broadcast to mod1 too
 
         # Player 0 discovers node_a
         mod0.send_event_flag(9000000, igt_ms=10000)

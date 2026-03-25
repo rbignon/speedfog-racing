@@ -535,8 +535,8 @@ async def handle_event_flag(
             await send_error(websocket, "Race countdown in progress")
             return
 
-        if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
-            return  # Silently drop: player finished or abandoned
+        if participant.status != ParticipantStatus.PLAYING:
+            return  # Only PLAYING participants can trigger events
 
         seed = participant.race.seed
         if not seed or not seed.graph_json:
@@ -650,8 +650,8 @@ async def handle_zone_query(
         if _is_countdown_active(participant.race):
             return
 
-        if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
-            return  # Silently drop: player finished or abandoned
+        if participant.status != ParticipantStatus.PLAYING:
+            return  # Only PLAYING participants can trigger zone queries
 
         seed = participant.race.seed
         if not seed or not seed.graph_json:
