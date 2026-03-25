@@ -419,6 +419,12 @@ async def _handle_event_flag(
                 await send_error(websocket, "Solo session not active")
             return
 
+        # Guard: zone_history must be initialized by the first valid status_update
+        # before processing event flags. Without this, stale flags persisted in a
+        # loaded save bypass the fresh-save IGT gate in _handle_status_update.
+        if not session.zone_history:
+            return
+
         seed = session.seed
         if not seed or not seed.graph_json:
             return
@@ -493,6 +499,10 @@ async def _handle_zone_query(
     async with session_maker() as db:
         session = await _load_session(db, session_id)
         if not session or session.status != TrainingSessionStatus.ACTIVE:
+            return
+
+        # Guard: same as _handle_event_flag, require zone_history initialization
+        if not session.zone_history:
             return
 
         seed = session.seed

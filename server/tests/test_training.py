@@ -911,6 +911,10 @@ def test_training_mod_websocket_event_flag(
         ws.receive_json()  # race_start
         ws.receive_json()  # initial zone_update (start node)
 
+        # Initialize zone_history via status_update (required before event_flag)
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        ws.receive_json()  # leaderboard_update
+
         # Get a valid event flag from the seed's event_map
         event_ids = auth_ok["seed"]["event_ids"]
         assert len(event_ids) > 0
@@ -1131,6 +1135,10 @@ def test_training_zone_query_fast_travel(training_ws_client, async_session):
         assert auth_ok["type"] == "auth_ok"
         ws.receive_json()  # race_start
         ws.receive_json()  # initial zone_update (start node)
+
+        # Initialize zone_history via status_update (required before event_flag)
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        ws.receive_json()  # leaderboard_update
 
         # Discover godrick_node via event_flag first (so it's in progress)
         ws.send_json({"type": "event_flag", "flag_id": 1040292800, "igt_ms": 5000})
@@ -1461,6 +1469,10 @@ def test_training_auth_ok_reconnect_has_tier(training_ws_client, async_session):
         ws.receive_json()  # race_start
         ws.receive_json()  # initial zone_update
 
+        # Initialize zone_history via status_update (required before event_flag)
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        ws.receive_json()  # leaderboard_update
+
         # Trigger event flag to advance
         ws.send_json({"type": "event_flag", "flag_id": 1040292800, "igt_ms": 5000})
         ws.receive_json()  # leaderboard_update
@@ -1610,6 +1622,63 @@ def test_training_resumed_session_not_blocked(
         ws.send_json({"type": "status_update", "igt_ms": 120_000, "death_count": 0})
         resp = ws.receive_json()
         assert resp["type"] == "leaderboard_update"  # NOT error
+
+
+def test_training_event_flag_before_status_update_dropped(
+    training_ws_client, training_session_data, async_session
+):
+    """event_flag arriving before first status_update should be silently dropped.
+
+    Reproduces bug: loading a stale save triggers persisted event flags
+    before the fresh save gate in status_update can reject them. This
+    corrupts zone_history and bypasses the IGT gate.
+    """
+    import time
+    import uuid as _uuid
+
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        auth_ok = ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+        ws.receive_json()  # initial zone_update (start node)
+
+        event_ids = auth_ok["seed"]["event_ids"]
+        finish_event = auth_ok["seed"].get("finish_event")
+        fog_event_ids = [e for e in event_ids if e != finish_event]
+
+        # Simulate stale save: event_flag arrives BEFORE any status_update
+        # (mod detected a persisted flag from a previous session)
+        ws.send_json({"type": "event_flag", "flag_id": fog_event_ids[0], "igt_ms": 60_000})
+
+        # Give server time to process (should be dropped silently)
+        time.sleep(0.3)
+
+        # Now send a valid fresh status_update
+        ws.send_json({"type": "status_update", "igt_ms": 500, "death_count": 0})
+        resp = ws.receive_json()
+        assert resp["type"] == "leaderboard_update"
+
+        # zone_history should have only the spawn entry from status_update,
+        # NOT the stale event_flag entry
+        p = resp["participants"][0]
+        assert p["zone_history"] is not None
+        assert len(p["zone_history"]) == 1
+        assert p["zone_history"][0]["type"] == "spawn"
+
+    # Double-check in DB
+    async def _check():
+        async with async_session() as db:
+            result = await db.execute(
+                select(TrainingSession).where(TrainingSession.id == _uuid.UUID(sid))
+            )
+            s = result.scalar_one()
+            assert len(s.zone_history) == 1
+            assert s.zone_history[0]["type"] == "spawn"
+
+    asyncio.run(_check())
 
 
 def test_training_spectator_anonymous_invalid_session(training_ws_client, training_session_data):
