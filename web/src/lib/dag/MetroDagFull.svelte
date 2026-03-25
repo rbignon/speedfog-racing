@@ -5,6 +5,7 @@
 	import LivePlayerDots from './LivePlayerDots.svelte';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
+	import { bfsShortestPath } from './animation';
 	import { expandNodePath, buildPlayerWaypoints, computeSlot, canonicalEdgeKey } from './parallel';
 	import {
 		NODE_RADIUS,
@@ -402,27 +403,51 @@
 			if (!p.zone_history || p.zone_history.length < 2) continue;
 			const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length];
 
-			// Take last TRAIL_LENGTH+1 zone entries to get TRAIL_LENGTH edges
+			// Take last TRAIL_LENGTH+1 zone entries, dedup consecutive same-node
 			const recent = p.zone_history.slice(-TRAIL_LENGTH - 1);
-			const edges: { from: string; to: string }[] = [];
-			for (let i = 0; i < recent.length - 1; i++) {
-				if (recent[i].node_id !== recent[i + 1].node_id) {
-					edges.push({ from: recent[i].node_id, to: recent[i + 1].node_id });
+			const deduped: { node_id: string; type?: string }[] = [];
+			for (const entry of recent) {
+				if (deduped.length === 0 || deduped[deduped.length - 1].node_id !== entry.node_id) {
+					if (nodeMap.has(entry.node_id)) {
+						deduped.push({ node_id: entry.node_id, type: entry.type });
+					}
 				}
 			}
 
-			// Render most recent first
-			for (let i = edges.length - 1; i >= 0; i--) {
-				const age = edges.length - 1 - i;
-				if (age >= TRAIL_LENGTH) break;
-				const fromNode = nodeMap.get(edges[i].from);
-				const toNode = nodeMap.get(edges[i].to);
-				if (!fromNode || !toNode) continue;
+			if (deduped.length < 2) continue;
 
-				// Use edge routing for metro-style segments
-				const edgeKey = `${edges[i].from}->${edges[i].to}`;
-				const routedEdge = edgeMap.get(edgeKey) ?? edgeMap.get(`${edges[i].to}->${edges[i].from}`);
-				if (routedEdge) {
+			// Process each transition with graph-aware expansion (same as playerPaths)
+			for (let t = deduped.length - 2; t >= 0; t--) {
+				const age = deduped.length - 2 - t;
+				if (age >= TRAIL_LENGTH) break;
+
+				const from = deduped[t].node_id;
+				const to = deduped[t + 1].node_id;
+				const toType = deduped[t + 1].type;
+				const isFog = toType === undefined || toType === 'fog';
+
+				// Expand transition: direct edge, BFS bridge, or teleport (skip)
+				let expanded: string[];
+				if (edgeMap.has(`${from}->${to}`) || edgeMap.has(`${to}->${from}`)) {
+					expanded = [from, to];
+				} else if (isFog) {
+					const bridge = bfsShortestPath(from, to, adjacency);
+					if (!bridge) continue;
+					expanded = bridge;
+				} else {
+					// Non-fog teleport (e.g. roundtable warp): no trail
+					continue;
+				}
+
+				// Draw each edge in the expanded path with the same opacity
+				for (let i = 0; i < expanded.length - 1; i++) {
+					const fromId = expanded[i];
+					const toId = expanded[i + 1];
+					const edgeKey = `${fromId}->${toId}`;
+					const routedEdge =
+						edgeMap.get(edgeKey) ?? edgeMap.get(`${toId}->${fromId}`);
+					if (!routedEdge) continue;
+
 					for (const seg of routedEdge.segments) {
 						result.push({
 							key: `${p.id}-${edgeKey}-${age}-${seg.x1}-${seg.y1}`,
@@ -434,17 +459,6 @@
 							opacity: OPACITY_LEVELS[age] ?? 0
 						});
 					}
-				} else {
-					// Straight line fallback
-					result.push({
-						key: `${p.id}-${edgeKey}-${age}`,
-						x1: fromNode.x,
-						y1: fromNode.y,
-						x2: toNode.x,
-						y2: toNode.y,
-						color,
-						opacity: OPACITY_LEVELS[age] ?? 0
-					});
 				}
 			}
 		}
