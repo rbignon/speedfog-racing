@@ -233,7 +233,8 @@ Authentication successful. Contains initial race state.
     "spawn_items": [
       { "id": 10500, "qty": 1 },
       { "id": 16300, "qty": 1 }
-    ]
+    ],
+    "items_spawned_flag": 1050290000
   },
   "participants": [
     {
@@ -262,7 +263,9 @@ Authentication successful. Contains initial race state.
 
 `finish_event` _(int | null)_: Flag ID for the final boss kill. The mod sends this immediately (no loading screen on boss kill). All other event flags are deferred to loading screen exit.
 
-`spawn_items`: list of items to spawn at runtime via `func_item_inject`. Used for item types not supported by EMEVD's `DirectlyGivePlayerItem` (e.g., Gem/Ash of War, type 4). Each entry has `id` (EquipParamGem row ID) and `qty` (default 1). The mod spawns these once after game load, using event flag `1040292052` to prevent re-giving on reconnect or game restart. `null` if no runtime-spawned items exist.
+`spawn_items`: list of items to spawn at runtime via `func_item_inject`. Used for item types not supported by EMEVD's `DirectlyGivePlayerItem` (e.g., Gem/Ash of War, type 4). Each entry has `id` (EquipParamGem row ID) and `qty` (default 1). The mod spawns these once after game load, using `items_spawned_flag` to prevent re-giving on reconnect or game restart. `null` if no runtime-spawned items exist.
+
+`items_spawned_flag`: (int, optional) Event flag ID for runtime item spawn prevention. When present, the mod checks this flag before spawning items, and sets it after. Persists in save file (saved flag range). `null` if not provided by graph.json (backward compat: mod skips flag check).
 
 **Note:** The `race` object includes `started_at` and `seeds_released_at`, but the mod only uses `id`, `name`, and `status`; the other fields are silently ignored.
 
@@ -661,17 +664,18 @@ Included in `auth_ok` and `race_state` messages:
 
 Included in `auth_ok` (mod) and `race_state` (spectator):
 
-| Field          | Type      | Mod | Spectator | Description                                                  |
-| -------------- | --------- | --- | --------- | ------------------------------------------------------------ |
-| `seed_id`      | `string?` | yes | yes       | Seed UUID                                                    |
-| `total_layers` | `int`     | yes | yes       | Number of layers in the DAG                                  |
-| `graph_json`   | `object?` | no  | yes\*     | Full graph for DAG visualization (\* see DAG rules)          |
-| `total_nodes`  | `int?`    | no  | yes       | Total number of nodes in the DAG                             |
-| `total_paths`  | `int?`    | no  | yes       | Total number of paths in the DAG                             |
-| `event_ids`    | `int[]`   | yes | no        | Event flag IDs to monitor                                    |
-| `finish_event` | `int?`    | yes | no        | Final boss kill flag ID                                      |
-| `spawn_items`  | `list`    | yes | no        | Items for runtime spawning                                   |
-| `death_flags`  | `object`  | yes | no        | Death marker flags per cluster `{node_id: [low, med, high]}` |
+| Field                | Type      | Mod | Spectator | Description                                                  |
+| -------------------- | --------- | --- | --------- | ------------------------------------------------------------ |
+| `seed_id`            | `string?` | yes | yes       | Seed UUID                                                    |
+| `total_layers`       | `int`     | yes | yes       | Number of layers in the DAG                                  |
+| `graph_json`         | `object?` | no  | yes\*     | Full graph for DAG visualization (\* see DAG rules)          |
+| `total_nodes`        | `int?`    | no  | yes       | Total number of nodes in the DAG                             |
+| `total_paths`        | `int?`    | no  | yes       | Total number of paths in the DAG                             |
+| `event_ids`          | `int[]`   | yes | no        | Event flag IDs to monitor                                    |
+| `finish_event`       | `int?`    | yes | no        | Final boss kill flag ID                                      |
+| `spawn_items`        | `list`    | yes | no        | Items for runtime spawning                                   |
+| `items_spawned_flag` | `int?`    | yes | no        | Event flag ID for runtime item spawn prevention              |
+| `death_flags`        | `object`  | yes | no        | Death marker flags per cluster `{node_id: [low, med, high]}` |
 
 ### Leaderboard Sorting
 
@@ -763,7 +767,7 @@ See `docs/specs/emevd-zone-tracking.md` for the full specification.
 
 ### Runtime Item Spawning
 
-Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `DirectlyGivePlayerItem`. Instead, the server extracts them from `graph_json.care_package` and sends them in `auth_ok.seed.spawn_items`. The mod spawns them at runtime using `func_item_inject` after the game is fully loaded (MapItemMan initialized). Event flag `1040292052` prevents re-giving items on reconnect or game restart.
+Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `DirectlyGivePlayerItem`. Instead, the server extracts them from `graph_json.care_package` and sends them in `auth_ok.seed.spawn_items`. The mod spawns them at runtime using `func_item_inject` after the game is fully loaded (MapItemMan initialized). The `items_spawned_flag` field (sent alongside `spawn_items`) is used to prevent re-giving items on reconnect or game restart: the mod checks the flag before spawning and sets it after. If `items_spawned_flag` is `null`, the flag check is skipped (backward compatibility).
 
 ### Broadcasting Strategy
 
