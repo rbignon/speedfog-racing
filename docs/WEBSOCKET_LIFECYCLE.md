@@ -80,7 +80,7 @@ Client connects
 
 **Blocked statuses**: `event_flag` and `zone_query` handlers require `participant.status == PLAYING`; messages from any other status (REGISTERED, READY, FINISHED, ABANDONED) are silently dropped. `status_update` and `event_flag` send an `error` message if the race is not `RUNNING`.
 
-**Fresh save validation**: On the first `status_update` that would trigger READY to PLAYING, the server checks `igt_ms <= MAX_FRESH_IGT_MS` (15 000ms). If the IGT exceeds this threshold (player loaded a pre-existing save), the server sends an `error` message and the participant stays READY. The mod displays this via `set_status()`. The check is self-healing: starting a New Game resets the IGT and the next `status_update` succeeds. Log dedup: first rejection per participant is WARNING, subsequent rejections are DEBUG (`stale_save_warned` set scoped to the connection). Training mode applies the same check on first `zone_history` initialization (empty history + high IGT), but allows session resumption (existing history bypasses the gate).
+**Fresh save validation**: On the first `status_update` that would trigger READY to PLAYING, the server checks `igt_ms <= MAX_FRESH_IGT_MS` (15 000ms). If the IGT exceeds this threshold (player loaded a pre-existing save), the server sends an `error` message and the participant stays READY. The mod displays this via `set_status()`. The check is self-healing: starting a New Game resets the IGT and the next `status_update` succeeds. Each rejection logs at WARNING level. Training mode applies the same check on first `zone_history` initialization (empty history + high IGT), but allows session resumption (existing history bypasses the gate).
 
 ---
 
