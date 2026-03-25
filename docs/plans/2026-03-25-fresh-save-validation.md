@@ -2,7 +2,7 @@
 
 ## Problem
 
-When a player joins a race by loading a pre-existing save (not a fresh "New Game"), several things break:
+When a player joins a race or training session by loading a pre-existing save (not a fresh "New Game"), several things break:
 
 1. **IGT is inflated**: the in-game timer is already minutes/hours in. All zone entry timestamps, gap timing, and splits are meaningless.
 2. **zone_query on load**: the player is physically located somewhere in the game world. On loading screen exit, the mod sends a `zone_query` that may resolve to a DAG node, creating a ghost zone visit.
@@ -55,14 +55,30 @@ Since `status_update` is sent every ~1s and the server re-rejects each time, the
 
 This also makes other existing error messages visible ("Race not running", etc.), which is desirable.
 
+### Training: IGT gate on first zone_history initialization
+
+In `_handle_status_update` (`websocket/training_mod.py`), at the `if not session.zone_history:` check (line 340), apply the same IGT gate:
+
+- If `not session.zone_history` and `msg["igt_ms"] > MAX_FRESH_IGT_MS` (15 000ms):
+  - Log a warning (once per session, subsequent rejections at debug level)
+  - Send `error` message with payload `"Please start a New Game"` to the mod
+  - Return early (no IGT write, no DB commit, no zone_history initialization)
+- Otherwise: proceed as today
+
+**Resumption safe:** training sessions are resumable. If `zone_history` already has entries, the session was previously initialized on a valid save, so the IGT gate does not apply. Only the first initialization (empty zone_history) is gated.
+
+**Self-healing:** same as race mode. The player can start a new game without disconnecting, and the next `status_update` with low IGT will pass the check.
+
 ### Logging
 
 To avoid log spam (the server rejects ~1/s while the player has a stale save):
 
-- First rejection for a given participant: `logger.warning`
+- First rejection for a given participant/session: `logger.warning`
 - Subsequent rejections: `logger.debug`
 
-Track with a `stale_save_warned: set[uuid.UUID]` local to `handle_mod_websocket`, passed to `handle_status_update` as a parameter. Cleaned up automatically when the connection closes.
+Race mode: track with a `stale_save_warned: set[uuid.UUID]` local to `handle_mod_websocket`, passed to `handle_status_update` as a parameter. Cleaned up automatically when the connection closes.
+
+Training mode: same pattern, local to `handle_training_mod_websocket`.
 
 ## Scope
 
@@ -70,8 +86,10 @@ Track with a `stale_save_warned: set[uuid.UUID]` local to `handle_mod_websocket`
   - `handle_status_update`: IGT gate before READY to PLAYING transition
   - `handle_event_flag`: replace FINISHED/ABANDONED check with `!= PLAYING`
   - `handle_zone_query`: add `!= PLAYING` guard
+- **Server changes**: `server/speedfog_racing/websocket/training_mod.py`
+  - `_handle_status_update`: IGT gate before first zone_history initialization
 - **Mod changes**: `mod/src/dll/tracker.rs`
   - `IncomingMessage::Error` handler: add `set_status(e)` call
 - **Frontend changes**: none
 - **Protocol changes**: none (reuses existing `error` message type with human-readable text)
-- **Tests**: add test cases for stale save rejection and self-healing (new game resets IGT)
+- **Tests**: add test cases for stale save rejection and self-healing (race + training)
