@@ -11,11 +11,12 @@ The finished race page currently shows up to 6 global highlights (from 17 detect
 ### New file: `web/src/lib/personal-highlights.ts`
 
 - Exports `computePersonalHighlights(myParticipantId: string, participants: WsParticipant[], graphJson: Record<string, unknown>): Highlight[]`
-- Reuses types from `highlights.ts`: `Highlight`, `DescriptionSegment`, `ZoneTime`
-- Defines its own `PersonalHighlightCategory = "combat" | "pathing" | "competitive"` (distinct from the global `HighlightCategory`). The `Highlight` interface's `category` field is typed as `string`, so personal categories work without modifying the shared type.
-- Reuses helpers from `highlights.ts` (newly exported): `buildNodeInfo`, `pSeg`, `zSeg`, `tSeg`, `formatTime`, `uniqueNodePath`, `buildZonePlayerTimes`, `computeLeadersPerLayer`
+- Reuses types from `highlights.ts`: `DescriptionSegment`, `ZoneTime`
+- The `Highlight` interface in `highlights.ts` has `category: HighlightCategory` where `HighlightCategory = "speed" | "deaths" | "path" | "competitive"`. To support personal categories, widen the type: `HighlightCategory = "speed" | "deaths" | "path" | "competitive" | "combat" | "pathing"`. This keeps type safety (no `string`) while allowing both global and personal detectors to produce `Highlight` objects. The global selection logic only encounters global categories, and the personal selection logic only encounters personal ones.
+- Reuses helpers from `highlights.ts` (newly exported): `buildNodeInfo`, `pSeg`, `zSeg`, `tSeg`, `formatTime`, `uniqueNodePath`, `buildZonePlayerTimes`
 - Note: `computeZoneTimes` is already exported
 - The orchestrator pre-builds `allZoneTimes: Map<string, ZoneTime[]>` (one entry per participant) and passes it to detectors, same pattern as the global orchestrator
+- Adds a new internal helper `computeRanksPerLayer(participants, nodeInfo): Map<number, Map<string, number>>` that returns each player's rank (1-based) at each layer, based on earliest IGT to reach that layer. Used by `comeback`, `lead_swap`, and `neck_and_neck`. `computeLeadersPerLayer` (from `highlights.ts`) is not sufficient as it only returns the leader, not full rankings.
 - 15 internal detector functions, each returning `Highlight | null`
 
 ### Modified: `web/src/lib/components/RaceHighlights.svelte`
@@ -40,7 +41,6 @@ The following currently-internal helpers need to be exported:
 - `formatTime`, `shortName`
 - `uniqueNodePath`
 - `buildZonePlayerTimes`
-- `computeLeadersPerLayer`
 
 ## Detectors
 
@@ -95,9 +95,9 @@ The following currently-internal helpers need to be exported:
 
 **costly_detour** - "Your detour through **Zone** cost you X:XX compared to those who skipped it"
 
-- Condition: player visited an optional zone that better-ranked finishers did not visit, with measurable time cost
+- Condition: player visited a zone that better-ranked finishers did not visit, with measurable time cost
+- `timeLostMs` = total time the player spent in that zone (from `computeZoneTimes`)
 - Score: `timeLostMs / 1000 * 1.5`
-- Compare player's time on that zone vs time advantage of those who skipped it
 
 ### Category: competitive (6 detectors)
 
@@ -113,25 +113,27 @@ The following currently-internal helpers need to be exported:
 
 **lead_lost** - "You were leading the race, but lost the lead at layer X"
 
-- Condition: player was the leader at some layer but not at the next
+- Condition: player was rank 1 at some layer but not at the next
 - Score: `60` (fixed, strong narrative moment)
-- Uses `computeLeadersPerLayer()`
+- Uses `computeRanksPerLayer()`
 
 **comeback** - "You were Xth at layer Y before climbing back to Zth place"
 
 - Condition: player's rank improved by 2+ positions between two layers
 - Score: `positionsGained * 30`
+- Uses `computeRanksPerLayer()`
 
 **lead_swap** - "You and **Player** traded the lead X times during the race"
 
-- Condition: player and another player alternated as leader across 3+ layers
+- Condition: player and another player alternated as rank 1 across 3+ layers
 - Score: `swapCount * 25`
-- Uses `computeLeadersPerLayer()`
+- Uses `computeRanksPerLayer()`
 
 **neck_and_neck** - "You stayed neck and neck with **Player** throughout the race"
 
 - Condition: two players within 1 rank of each other for 70%+ of layers, and final IGT gap < 10%
 - Score: `layersTogether * 10`
+- Uses `computeRanksPerLayer()`
 
 ## Selection Algorithm
 
