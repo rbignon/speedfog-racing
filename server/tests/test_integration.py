@@ -395,6 +395,7 @@ def race_with_participants(integration_db, integration_client, seed_folder):
                 }
                 graph["finish_event"] = 9000003
                 graph["total_layers"] = 5
+                graph.pop("death_flags", None)
                 race.seed.graph_json = graph
                 race.seed.total_layers = 5
                 await db.commit()
