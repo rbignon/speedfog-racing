@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL = 30.0  # seconds between pings
 SEND_TIMEOUT = 5.0  # seconds before a send is considered failed
 MOD_AUTH_TIMEOUT = 5.0  # seconds to wait for auth message
+MAX_FRESH_IGT_MS = 15_000  # 15s: fresh save reaches first load screen at ~3-5s
 
 
 async def heartbeat_loop(

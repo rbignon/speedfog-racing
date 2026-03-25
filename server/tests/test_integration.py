@@ -761,6 +761,61 @@ def test_status_update_transitions_to_playing_with_start_zone(
 
 
 # =============================================================================
+# Scenario 3c: Stale Save Rejected on Status Update
+# =============================================================================
+
+
+def test_stale_save_rejected_on_status_update(
+    integration_client, race_with_participants, integration_db
+):
+    """status_update with high IGT (stale save) should be rejected, participant stays READY."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Connect, auth, send ready
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    # Start the race
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    # Send status_update with stale IGT (60 seconds)
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=60_000, death_count=0)
+        resp = mod0.receive()
+        assert resp["type"] == "error"
+        assert "New Game" in resp["message"]
+
+    # Verify participant is still READY (not transitioned to PLAYING)
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.status, p.zone_history
+
+    status, history = asyncio.run(check_db())
+    assert status == ParticipantStatus.READY
+    assert history is None or len(history) == 0
+
+
+# =============================================================================
 # Scenario 4: Zone History Accumulation
 # =============================================================================
 
