@@ -304,7 +304,6 @@ fn websocket_thread(
                     info!("[WS] Connected and authenticated");
                 }
                 consecutive_failures = 0;
-                last_disconnect_reason = None;
 
                 // Drain stale outgoing messages before notifying Connected.
                 // During disconnection, status_update messages pile up in the channel;
