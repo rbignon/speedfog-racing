@@ -224,6 +224,7 @@ def stream_seed_pack_with_config(
         FileNotFoundError: If *seed_zip_path* does not exist.
         ValueError: If the file is not a valid ZIP or uses ZIP64.
     """
+    logger.info("Generating seed pack from %s", seed_zip_path.name)
     # --- Phase 1: analyse (reads a few KB from end of file) ---------------
     with open(seed_zip_path, "rb") as f:
         _eocd_offset, cd_offset, cd_size, num_entries = _find_eocd(f)

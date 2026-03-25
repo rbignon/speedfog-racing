@@ -64,6 +64,11 @@ class RaceRoom:
             try:
                 await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
             except Exception:
+                logger.debug(
+                    "Mod broadcast failed, removing: race=%s, participant=%s",
+                    self.race_id,
+                    participant_id,
+                )
                 return participant_id
             return None
 
@@ -87,6 +92,7 @@ class RaceRoom:
             try:
                 await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
             except Exception:
+                logger.debug("Spectator broadcast failed, removing: race=%s", self.race_id)
                 return conn
             return None
 
@@ -179,13 +185,13 @@ class ConnectionManager:
             try:
                 await mod_conn.websocket.close(code=code, reason=reason)
             except Exception:
-                pass
+                logger.debug("Failed to close mod connection in room %s", race_id)
 
         for spec_conn in room.spectators:
             try:
                 await spec_conn.websocket.close(code=code, reason=reason)
             except Exception:
-                pass
+                logger.debug("Failed to close spectator connection in room %s", race_id)
 
         logger.info(f"Closed room: race={race_id}")
 

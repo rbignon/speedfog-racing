@@ -270,6 +270,8 @@ fn websocket_thread(
 ) {
     let mut reconnect_delay = Duration::from_secs(1);
     let max_delay = Duration::from_secs(30);
+    let mut consecutive_failures: u32 = 0;
+    let mut last_disconnect_reason: Option<String> = None;
 
     loop {
         if shutdown_flag.load(Ordering::SeqCst) {
@@ -293,7 +295,16 @@ fn websocket_thread(
 
         match connect_and_auth(&url, &settings.mod_token, &incoming_tx) {
             Ok(mut socket) => {
-                info!("[WS] Connected and authenticated");
+                if consecutive_failures > 0 {
+                    info!(
+                        after_failures = consecutive_failures,
+                        "[WS] Connected and authenticated (recovered)"
+                    );
+                } else {
+                    info!("[WS] Connected and authenticated");
+                }
+                consecutive_failures = 0;
+                last_disconnect_reason = None;
 
                 // Drain stale outgoing messages before notifying Connected.
                 // During disconnection, status_update messages pile up in the channel;
@@ -328,6 +339,7 @@ fn websocket_thread(
                 let result = message_loop(&mut socket, &outgoing_rx, &incoming_tx, &shutdown_flag);
                 if let Err(e) = &result {
                     info!(error = %e, "[WS] Disconnected");
+                    last_disconnect_reason = Some(e.clone());
                 }
                 let _ = socket.close(None);
 
@@ -338,7 +350,9 @@ fn websocket_thread(
                 }
             }
             Err(e) => {
-                error!(error = %e, "[WS] Connection failed");
+                consecutive_failures += 1;
+                last_disconnect_reason = Some(e.clone());
+                error!(error = %e, attempts = consecutive_failures, "[WS] Connection failed");
                 let _ = incoming_tx.send(IncomingMessage::Error(e.clone()));
                 let _ = incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Error));
             }
@@ -348,7 +362,12 @@ fn websocket_thread(
             break;
         }
 
-        info!(delay = reconnect_delay.as_secs(), "[WS] Reconnecting...");
+        info!(
+            delay_secs = reconnect_delay.as_secs(),
+            failures = consecutive_failures,
+            reason = last_disconnect_reason.as_deref().unwrap_or("unknown"),
+            "[WS] Reconnecting..."
+        );
         thread::sleep(reconnect_delay);
         reconnect_delay = (reconnect_delay * 2).min(max_delay);
     }
@@ -440,6 +459,7 @@ fn message_loop(
         // Handle outgoing
         match outgoing_rx.try_recv() {
             Ok(OutgoingMessage::Ready) => {
+                info!("[WS] Sending: ready");
                 let msg = ClientMessage::Ready;
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
@@ -460,6 +480,7 @@ fn message_loop(
                     .map_err(|e| e.to_string())?;
             }
             Ok(OutgoingMessage::EventFlag { flag_id, igt_ms }) => {
+                info!(flag_id, igt_ms, "[WS] Sending: event_flag");
                 let msg = ClientMessage::EventFlag { flag_id, igt_ms };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
@@ -473,6 +494,7 @@ fn message_loop(
                 position,
                 play_region_id,
             }) => {
+                info!(?grace_entity_id, ?map_id, "[WS] Sending: zone_query");
                 let msg = ClientMessage::ZoneQuery {
                     igt_ms,
                     grace_entity_id,
@@ -493,7 +515,11 @@ fn message_loop(
         // Handle incoming
         match socket.read() {
             Ok(Message::Text(text)) => {
-                if let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) {
+                let parsed = serde_json::from_str::<ServerMessage>(&text);
+                if let Err(ref e) = parsed {
+                    warn!(error = %e, text_len = text.len(), "[WS] Failed to parse server message");
+                }
+                if let Ok(msg) = parsed {
                     match msg {
                         ServerMessage::Ping => {
                             last_ping_received = Instant::now();
@@ -504,7 +530,12 @@ fn message_loop(
                                 .map_err(|e| e.to_string())?;
                         }
                         ServerMessage::RaceStart { countdown_seconds } => {
-                            let _ = incoming_tx.send(IncomingMessage::RaceStart(countdown_seconds));
+                            if incoming_tx
+                                .send(IncomingMessage::RaceStart(countdown_seconds))
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: race_start dropped");
+                            }
                         }
                         ServerMessage::LeaderboardUpdate {
                             participants,
@@ -516,7 +547,14 @@ fn message_loop(
                             });
                         }
                         ServerMessage::RaceStatusChange { status } => {
-                            let _ = incoming_tx.send(IncomingMessage::RaceStatusChange(status));
+                            if incoming_tx
+                                .send(IncomingMessage::RaceStatusChange(status))
+                                .is_err()
+                            {
+                                warn!(
+                                    "[WS] Incoming channel full/closed: race_status_change dropped"
+                                );
+                            }
                         }
                         ServerMessage::PlayerUpdate { player } => {
                             let _ = incoming_tx.send(IncomingMessage::PlayerUpdate(player));
@@ -530,21 +568,28 @@ fn message_loop(
                             is_first_visit,
                             exits,
                         } => {
-                            let _ = incoming_tx.send(IncomingMessage::ZoneUpdate {
-                                node_id,
-                                display_name,
-                                tier,
-                                original_tier,
-                                layer,
-                                is_first_visit,
-                                exits,
-                            });
+                            if incoming_tx
+                                .send(IncomingMessage::ZoneUpdate {
+                                    node_id,
+                                    display_name,
+                                    tier,
+                                    original_tier,
+                                    layer,
+                                    is_first_visit,
+                                    exits,
+                                })
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: zone_update dropped");
+                            }
                         }
                         ServerMessage::DeathCounts { counts } => {
                             let _ = incoming_tx.send(IncomingMessage::DeathCounts(counts));
                         }
                         ServerMessage::Error { message } => {
-                            let _ = incoming_tx.send(IncomingMessage::Error(message));
+                            if incoming_tx.send(IncomingMessage::Error(message)).is_err() {
+                                warn!("[WS] Incoming channel full/closed: error dropped");
+                            }
                         }
                         _ => {}
                     }

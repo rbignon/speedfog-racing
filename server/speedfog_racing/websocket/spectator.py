@@ -281,7 +281,9 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
                 timeout=SEND_TIMEOUT,
             )
         except Exception:
-            logger.warning("Error sending race state to spectator in race %s", race_id)
+            logger.warning(
+                "Error sending race state to spectator in race %s", race_id, exc_info=True
+            )
             return conn
         return None
 

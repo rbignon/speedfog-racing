@@ -147,6 +147,9 @@ pub struct RaceTracker {
     // One-time diagnostic log flag
     flags_diagnosed: bool,
 
+    // Last flag reader status discriminant (for transition logging)
+    last_flag_reader_ok: Option<bool>,
+
     // Item spawner thread handle (prevents double-spawn on reconnect)
     spawner_thread: Option<JoinHandle<()>>,
 
@@ -268,6 +271,7 @@ impl RaceTracker {
             ready_sent: false,
             status_message: None,
             flags_diagnosed: false,
+            last_flag_reader_ok: None,
             spawner_thread: None,
             items_spawned: false,
             pending_zone_update: None,
@@ -477,6 +481,22 @@ impl RaceTracker {
         if !self.event_ids.is_empty() && self.last_flag_poll.elapsed() >= Duration::from_millis(100)
         {
             self.last_flag_poll = Instant::now();
+
+            // Log flag reader status transitions (not every tick)
+            let current_ok = matches!(
+                self.event_flag_reader.diagnose(),
+                FlagReaderStatus::Ok { .. }
+            );
+            if self.last_flag_reader_ok != Some(current_ok) {
+                if current_ok {
+                    info!("[RACE] Flag reader recovered (Ok)");
+                } else {
+                    let status = self.event_flag_reader.diagnose();
+                    warn!("[RACE] Flag reader degraded: {}", status);
+                }
+                self.last_flag_reader_ok = Some(current_ok);
+            }
+
             let igt_ms = self.game_state.read_igt().unwrap_or(0);
             for &flag_id in &self.event_ids {
                 if self.finish_event == Some(flag_id) {

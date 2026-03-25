@@ -190,7 +190,13 @@ async def handle_mod_websocket(
                 zone = participant.current_zone or get_start_node(seed.graph_json)
                 if zone:
                     await send_zone_update(
-                        websocket, zone, seed.graph_json, participant.zone_history, mod_locale
+                        websocket,
+                        zone,
+                        seed.graph_json,
+                        participant.zone_history,
+                        mod_locale,
+                        race_id=race_id,
+                        participant_id=participant_id,
                     )
 
                 # Send current death counts on reconnect
@@ -572,6 +578,8 @@ async def handle_event_flag(
             participant.zone_history,
             locale,
             is_first_visit=is_first_visit,
+            race_id=participant.race_id,
+            participant_id=participant_id,
         )
 
 
@@ -664,6 +672,8 @@ async def handle_zone_query(
         participant.zone_history,
         locale,
         is_first_visit=is_first_visit,
+        race_id=participant.race_id,
+        participant_id=participant_id,
     )
 
     # Broadcast based on whether this was a first visit or revisit
@@ -768,6 +778,8 @@ async def broadcast_race_start(
                         None,
                         conn.locale,
                         is_first_visit=True,
+                        race_id=race_id,
+                        participant_id=conn.participant_id,
                     )
 
         # Also notify spectators of status change

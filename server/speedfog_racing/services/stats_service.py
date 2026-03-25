@@ -134,6 +134,8 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
 
     deltas = compute_elo_deltas(players)
 
+    logger.debug("ELO update for race %s: %d players", race_id, len(players))
+
     for p in players:
         user = users_by_id[p["user_id"]]
         delta = deltas[p["user_id"]]

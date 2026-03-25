@@ -33,6 +33,7 @@ async def heartbeat_loop(
             await asyncio.sleep(interval)
             await asyncio.wait_for(websocket.send_text(ping_json), timeout=send_timeout)
     except Exception:
+        logger.debug("Heartbeat failed, closing connection")
         try:
             await websocket.close()
         except Exception:
@@ -72,6 +73,8 @@ async def send_zone_update(
     *,
     is_first_visit: bool = False,
     send_timeout: float = SEND_TIMEOUT,
+    race_id: object | None = None,
+    participant_id: object | None = None,
 ) -> None:
     """Send a zone_update unicast to the originating mod."""
     msg = compute_zone_update(node_id, graph_json, zone_history, is_first_visit=is_first_visit)
@@ -80,7 +83,12 @@ async def send_zone_update(
         try:
             await asyncio.wait_for(websocket.send_text(json.dumps(msg)), timeout=send_timeout)
         except Exception:
-            logger.warning("Failed to send zone_update")
+            logger.warning(
+                "Failed to send zone_update: race=%s, participant=%s, node=%s",
+                race_id,
+                participant_id,
+                node_id,
+            )
 
 
 _graces_mapping: dict[str, dict[str, Any]] | None = None

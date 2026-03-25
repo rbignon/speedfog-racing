@@ -51,6 +51,7 @@ def resolve_grace_to_node(
 
     grace_info = graces_mapping.get(str(grace_entity_id))
     if not grace_info:
+        logger.debug("Unknown grace_entity_id %d (not in graces.json)", grace_entity_id)
         return None
 
     zone_id = grace_info.get("zone_id")
@@ -64,6 +65,11 @@ def resolve_grace_to_node(
             if zone_id in zones:
                 return str(node_id)
 
+    logger.debug(
+        "Grace %d resolved to zone_id=%s but no matching graph node found",
+        grace_entity_id,
+        zone_id,
+    )
     return None
 
 

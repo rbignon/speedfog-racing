@@ -619,6 +619,7 @@ async def add_participant(
             )
         await db.refresh(participant)
 
+        logger.info("Participant added: race=%s, user=%s", race_id, target_user.twitch_username)
         return AddParticipantResponse(participant=participant_response(participant))
 
     else:
@@ -694,6 +695,7 @@ async def remove_participant(
 
     await db.delete(participant)
     await db.commit()
+    logger.info("Participant removed: race=%s, participant=%s", race_id, participant_id)
 
 
 @router.delete("/{race_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1143,6 +1145,7 @@ async def reroll_seed(
             detail="Can only re-roll seed for setup races",
         )
 
+    logger.info("Seed reroll requested: race=%s, by=%s", race_id, user.twitch_username)
     try:
         await reroll_seed_for_race(db, race)
     except ValueError as e:

@@ -44,6 +44,8 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     race.version += 1
     await db.commit()
 
+    logger.info("Race %s auto-finished (all participants done)", race.id)
+
     await update_elo_ratings(race.id, db)
     await update_player_traits(race.id, db)
 
