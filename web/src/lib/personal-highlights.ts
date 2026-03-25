@@ -134,6 +134,8 @@ function detectBossWall(
     const ratio = myEntry.deaths / avgDeaths;
     if (ratio <= 2) continue;
 
+    // Spec says ratio * 30, bumped to 40 so boss_wall wins over
+    // death_spiral on the same zone via zone-reuse filtering.
     const score = ratio * 40;
 
     if (score > bestScore) {
@@ -173,13 +175,16 @@ function detectStoodYourGround(
     if (myZt.outcome !== "cleared") continue;
 
     let backedCount = 0;
+    let otherClearedCount = 0;
     for (const [pid, zones] of allZoneTimes) {
       if (pid === myId) continue;
       const theirZt = zones.find((z) => z.nodeId === myZt.nodeId);
       if (theirZt && theirZt.outcome === "backed") backedCount++;
+      else if (theirZt && theirZt.outcome === "cleared") otherClearedCount++;
     }
 
-    if (backedCount === 0) continue;
+    // Only fire if ALL others who visited this zone backed out
+    if (backedCount === 0 || otherClearedCount > 0) continue;
 
     const info = nodeInfo.get(myZt.nodeId);
     const tierMult = info?.tier ?? 1;
