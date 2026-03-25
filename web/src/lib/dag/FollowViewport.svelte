@@ -54,17 +54,10 @@
 	}
 
 	let targetViewport: Viewport = $derived.by(() => {
-		if (raceStatus === 'finished') {
-			// Show full DAG
-			return {
-				centerX: width / 2,
-				centerY: height / 2,
-				visibleWidth: width,
-				visibleHeight: height
-			};
-		}
-
-		const activePlayers = participants.filter((p) => p.status === 'playing');
+		const activePlayers =
+			raceStatus === 'finished'
+				? participants.filter((p) => p.status === 'finished' || p.status === 'playing')
+				: participants.filter((p) => p.status === 'playing');
 
 		if (raceStatus === 'setup' || activePlayers.length === 0) {
 			// Zoom on start area: find start node
@@ -201,14 +194,15 @@
 	}
 
 	let offscreenIndicators = $derived.by(() => {
-		if (raceStatus !== 'running' || currentVB.h <= 0) return [];
+		if ((raceStatus !== 'running' && raceStatus !== 'finished') || currentVB.h <= 0) return [];
 
 		const vLeft = currentVB.x;
 		const vRight = currentVB.x + currentVB.w;
 		const indicators: OffscreenIndicator[] = [];
 
+		const visibleStatuses = raceStatus === 'finished' ? ['playing', 'finished'] : ['playing'];
 		for (const p of participants) {
-			if (p.status !== 'playing' || !p.current_zone) continue;
+			if (!visibleStatuses.includes(p.status) || !p.current_zone) continue;
 			const node = nodeMap.get(p.current_zone);
 			if (!node) continue;
 
