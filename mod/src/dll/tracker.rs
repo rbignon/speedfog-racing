@@ -14,7 +14,7 @@ use crate::core::color::parse_hex_color;
 use crate::core::flag_buffer::FlagBuffer;
 use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
-use crate::eldenring::{CategoryPage, EventFlagReader, FlagReaderStatus, GameState};
+use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
 
 use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
