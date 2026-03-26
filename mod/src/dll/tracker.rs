@@ -11,6 +11,7 @@ use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::color::parse_hex_color;
+use crate::core::flag_buffer::FlagBuffer;
 use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
 use crate::eldenring::{CategoryPage, EventFlagReader, FlagReaderStatus, GameState};
@@ -125,10 +126,7 @@ pub struct RaceTracker {
     // Event flag tracking
     event_ids: Vec<u32>,
     pub(crate) triggered_flags: HashSet<u32>,
-    /// Event flags detected while disconnected, pending re-send on reconnection
-    pending_event_flags: Vec<(u32, u32)>,
-    /// Event flags detected this loading cycle, sent at loading exit
-    deferred_event_flags: Vec<(u32, u32)>,
+    flag_buffer: FlagBuffer,
     /// finish_event from server, sent immediately (no loading screen on boss kill)
     finish_event: Option<u32>,
 
@@ -263,8 +261,7 @@ impl RaceTracker {
             my_participant_id: None,
             event_ids: Vec::new(),
             triggered_flags: HashSet::new(),
-            pending_event_flags: Vec::new(),
-            deferred_event_flags: Vec::new(),
+            flag_buffer: FlagBuffer::default(),
             finish_event: None,
             last_status_update: Instant::now(),
             last_flag_poll: Instant::now(),
@@ -399,13 +396,13 @@ impl RaceTracker {
                                     ));
                                     info!(flag_id, "[RACE] Finish event caught at loading exit");
                                 } else if !self.am_i_finished() {
-                                    self.pending_event_flags.push((flag_id, igt_ms));
+                                    self.flag_buffer.add_pending(flag_id, igt_ms);
                                 }
                             }
                         } else {
                             self.event_flag_reader
                                 .set_flag_cached(flag_id, false, page_ref);
-                            self.deferred_event_flags.push((flag_id, igt_ms));
+                            self.flag_buffer.defer(flag_id, igt_ms);
                             info!(flag_id, "[RACE] Event flag caught at loading exit");
                         }
                     }
@@ -417,9 +414,9 @@ impl RaceTracker {
                 && !self.am_i_finished()
                 && !self.is_countdown_active()
             {
-                if !self.deferred_event_flags.is_empty() {
+                if self.flag_buffer.has_deferred() {
                     // Fog gate traversal: send deferred flags now that loading is done
-                    for (flag_id, igt_ms) in self.deferred_event_flags.drain(..) {
+                    for (flag_id, igt_ms) in self.flag_buffer.drain_deferred() {
                         self.ws_client.send_event_flag(flag_id, igt_ms);
                         self.last_sent_debug = Some(format!(
                             "event_flag({}, igt={}ms) [deferred]",
@@ -457,8 +454,20 @@ impl RaceTracker {
                     }
                 }
             } else {
-                // Not connected or race not running, clean up
-                self.deferred_event_flags.clear();
+                // Disconnected during a live race: buffer deferred flags for
+                // re-send on reconnect (they are already cleared from game
+                // memory, so the safety-net rescan cannot recover them).
+                if self.is_race_running() && !self.am_i_finished() {
+                    let count = self.flag_buffer.park_deferred();
+                    if count > 0 {
+                        info!(
+                            count,
+                            "[RACE] Deferred flags moved to pending (disconnected)"
+                        );
+                    }
+                } else {
+                    self.flag_buffer.clear_deferred();
+                }
                 let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
                 if grace_id > 0 {
                     crate::eldenring::warp_hook::clear_captured_grace_entity_id();
@@ -535,7 +544,7 @@ impl RaceTracker {
                                 ));
                                 info!(flag_id, "[RACE] Finish event sent immediately");
                             } else if !self.am_i_finished() {
-                                self.pending_event_flags.push((flag_id, igt_ms));
+                                self.flag_buffer.add_pending(flag_id, igt_ms);
                             }
                         }
                     }
@@ -545,7 +554,7 @@ impl RaceTracker {
                     {
                         self.event_flag_reader
                             .set_flag_cached(flag_id, false, page_ref);
-                        self.deferred_event_flags.push((flag_id, igt_ms));
+                        self.flag_buffer.defer(flag_id, igt_ms);
                         info!(flag_id, "[RACE] Event flag deferred until loading exit");
                     }
                 }
@@ -572,7 +581,7 @@ impl RaceTracker {
 
             if self.is_race_running() && !self.am_i_finished() && !self.is_countdown_active() {
                 // Drain event flags buffered during disconnection
-                for (flag_id, flag_igt) in self.pending_event_flags.drain(..) {
+                for (flag_id, flag_igt) in self.flag_buffer.drain_pending() {
                     self.ws_client.send_event_flag(flag_id, flag_igt);
                     self.last_sent_debug =
                         Some(format!("event_flag({}, igt={})", flag_id, flag_igt));
@@ -686,8 +695,7 @@ impl RaceTracker {
                         self.set_status("Server connected".to_string());
                     }
                     ConnectionStatus::Reconnecting => {
-                        self.pending_event_flags
-                            .extend(self.deferred_event_flags.drain(..));
+                        self.flag_buffer.park_deferred();
                         self.set_status("Reconnecting to server...".to_string());
                     }
                     ConnectionStatus::Error => {
@@ -902,7 +910,7 @@ impl RaceTracker {
             IncomingMessage::RequeueEventFlag { flag_id, igt_ms } => {
                 // Event flag was in the outgoing channel but never transmitted before
                 // disconnect. Re-buffer it so it gets sent after reconnection.
-                self.pending_event_flags.push((flag_id, igt_ms));
+                self.flag_buffer.add_pending(flag_id, igt_ms);
                 info!(flag_id, "[WS] Re-queued drained event flag");
             }
             IncomingMessage::DeathCounts(counts) => {
