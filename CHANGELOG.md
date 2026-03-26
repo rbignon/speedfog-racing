@@ -2,6 +2,28 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.1] - 2026-03-26
+
+### Seeds
+
+- Zone weights recalibrated from observed race data (316 participants, 65 seeds), improving run pacing accuracy
+- Weight-matched cluster selection: parallel branches now correctly pick zones with similar difficulty, producing more balanced splits
+
+### Races
+
+- Personal highlights on finished race pages: 15 detectors across combat, pathing, and competitive categories surface your standout moments (boss slayer, smart backtrack, comeback, and more)
+- Fix: private races now appear in the race listing for participants, organizers, and casters
+- Fix: participant list now updates in real-time for spectators when players join or leave during setup
+
+### In-game
+
+- Fresh save validation: the mod rejects stale saves (IGT > 15s) when joining a race or starting a solo session, preventing corrupted zone data. Starting a New Game clears the rejection
+
+### Metro map
+
+- Fix: player trailing paths no longer draw straight lines across the map on backtracks
+- Fix: zoomed metro view stays centered on finished players in the OBS overlay instead of switching to full map
+
 ## [1.5.0] - 2026-03-25
 
 ### Death markers
