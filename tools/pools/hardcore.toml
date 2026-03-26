@@ -54,6 +54,8 @@ enirilim_radahn = 5        # dead-end
 [starting_items]
 whetblades = false
 spirit_calling_bell = false
+gaolupperlevelkey = false
+gaollowerlevelkey = false
 talisman_pouches = 2
 golden_seeds = 3
 sacred_tears = 2
