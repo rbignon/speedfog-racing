@@ -413,16 +413,23 @@ def format_zone_overrides(
     deviation_pct: float,
     min_samples: int,
 ) -> list[str]:
-    """Format suggested zone overrides where median deviates from type default."""
+    """Format suggested zone overrides where observed median deviates from current weight.
+
+    Compares the proposed weight (derived from observed data) against the zone's
+    current effective weight (explicit override or current type default from
+    zone_metadata.toml). This makes the tool iterative: adjust the TOML, re-run,
+    and zones that are now calibrated disappear from the list.
+    """
     lines = []
     lines.append("")
     lines.append("=" * 80)
     lines.append(
-        f"ZONE OVERRIDES (deviation > {deviation_pct:.0f}% from new type default, "
+        f"ZONE OVERRIDES (deviation > {deviation_pct:.0f}% from current weight, "
         f"N >= {min_samples})"
     )
     lines.append("=" * 80)
 
+    current_defaults = current_metadata.get("defaults", {})
     zones_meta = current_metadata.get("zones", {})
     suggestions: list[dict] = []
 
@@ -432,24 +439,31 @@ def format_zone_overrides(
             continue
 
         zone_type = zone_types.get(zone_name, "other")
-        type_default = new_defaults.get(zone_type, {}).get("median")
-        if type_default is None or type_default == 0:
-            continue
-
         median = statistics.median(durations)
         n_zones = cluster_sizes.get(zone_name, 1)
         proposed = _round_half(median)
         if proposed < 0.5:
             proposed = 0.5
 
-        deviation = abs(proposed - type_default) / type_default * 100
-
-        # Get current override (if any)
+        # Current effective weight: explicit override or current type default
         current_override = None
         if zone_name in zones_meta:
             zm = zones_meta[zone_name]
             if isinstance(zm, dict) and "weight" in zm:
                 current_override = zm["weight"]
+
+        cur_type_default = current_defaults.get(zone_type, 2)
+        effective_weight = (
+            current_override if current_override is not None else cur_type_default
+        )
+
+        if effective_weight == 0:
+            continue
+
+        deviation = abs(proposed - effective_weight) / effective_weight * 100
+
+        # Also check what the proposed type default would be (for context)
+        proposed_type_default = new_defaults.get(zone_type, {}).get("median")
 
         suggestions.append(
             {
@@ -459,9 +473,11 @@ def format_zone_overrides(
                 "n_zones": n_zones,
                 "median": median,
                 "proposed": proposed,
-                "type_default": type_default,
+                "effective_weight": effective_weight,
                 "deviation": deviation,
                 "current_override": current_override,
+                "cur_type_default": cur_type_default,
+                "proposed_type_default": proposed_type_default,
             }
         )
 
@@ -469,46 +485,36 @@ def format_zone_overrides(
 
     lines.append(
         f"  {'Zone':<36} {'Type':<14} {'N':>3} {'Clu':>3} {'Med':>6} "
-        f"{'TyDef':>5} {'Prop':>5} {'Dev%':>5} {'CurOv':>5}  Action"
+        f"{'CurWt':>5} {'Prop':>5} {'Dev%':>5}  Action"
     )
-    lines.append("  " + "-" * 100)
+    lines.append("  " + "-" * 96)
 
     n_changes = 0
     for s in suggestions:
-        needs_override = s["deviation"] >= deviation_pct
-        already_correct = s["current_override"] == s["proposed"]
-        already_default = s["proposed"] == s["type_default"]
+        if s["deviation"] < deviation_pct:
+            continue
 
-        if already_default:
-            if s["current_override"] is not None:
-                action = "REMOVE override (matches default)"
-                n_changes += 1
+        if s["proposed"] == s["effective_weight"]:
+            continue
+
+        # Determine action
+        if s["current_override"] is not None:
+            if s["proposed"] == s["cur_type_default"]:
+                action = "REMOVE override (matches type default)"
             else:
-                continue
-        elif needs_override:
-            if already_correct:
-                action = "(already correct)"
-            elif s["current_override"] is not None:
                 action = (
                     f"UPDATE {_fmt_wt(s['current_override'])} "
                     f"-> {_fmt_wt(s['proposed'])}"
                 )
-                n_changes += 1
-            else:
-                action = f"ADD weight = {_fmt_wt(s['proposed'])}"
-                n_changes += 1
         else:
-            continue
+            action = f"ADD weight = {_fmt_wt(s['proposed'])}"
+        n_changes += 1
 
-        cur_str = (
-            _fmt_wt(s["current_override"]) if s["current_override"] is not None else "-"
-        )
         clu_str = f"x{s['n_zones']}" if s["n_zones"] > 1 else ""
         lines.append(
             f"  {s['zone']:<36} {s['type']:<14} {s['n']:>3} {clu_str:>3} "
-            f"{s['median']:>5.1f}m {_fmt_wt(s['type_default']):>5} "
-            f"{_fmt_wt(s['proposed']):>5} {s['deviation']:>4.0f}% "
-            f"{cur_str:>5}  {action}"
+            f"{s['median']:>5.1f}m {_fmt_wt(s['effective_weight']):>5} "
+            f"{_fmt_wt(s['proposed']):>5} {s['deviation']:>4.0f}%  {action}"
         )
 
     lines.append(f"\n  {n_changes} change(s) suggested")
