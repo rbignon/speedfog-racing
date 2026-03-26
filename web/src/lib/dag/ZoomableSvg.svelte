@@ -199,6 +199,27 @@
 		panY = 0;
 		setTimeout(() => (isAnimating = false), 300);
 	}
+
+	/**
+	 * Animate pan so that the given content coordinate is centered in the viewport.
+	 * Returns a promise that resolves when the animation completes.
+	 */
+	export function centerOnPoint(contentX: number, contentY: number): Promise<void> {
+		isAnimating = true;
+		const [cx, cy] = clampPan(
+			width / 2 - contentX * zoom,
+			height / 2 - contentY * zoom,
+			zoom
+		);
+		panX = cx;
+		panY = cy;
+		return new Promise((resolve) => {
+			setTimeout(() => {
+				isAnimating = false;
+				resolve();
+			}, 300);
+		});
+	}
 </script>
 
 <div class="zoomable-container" class:transparent bind:clientWidth={containerWidth}>

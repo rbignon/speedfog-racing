@@ -297,6 +297,7 @@
 	}
 
 	let dagContainer: HTMLElement | undefined = $state();
+	let zoomableSvg: ReturnType<typeof ZoomableSvg> | undefined = $state();
 
 	function openPopupForNode(nodeId: string) {
 		const node = nodeMap.get(nodeId);
@@ -348,7 +349,16 @@
 
 	$effect(() => {
 		if (focusNodeId) {
-			openPopupForNode(focusNodeId);
+			const node = nodeMap.get(focusNodeId);
+			if (node && zoomableSvg) {
+				// Center the DAG on the node, then open popup after animation
+				const id = focusNodeId;
+				zoomableSvg.centerOnPoint(node.x, node.y).then(() => {
+					openPopupForNode(id);
+				});
+			} else {
+				openPopupForNode(focusNodeId);
+			}
 		}
 	});
 
@@ -645,6 +655,7 @@
 			</FollowViewport>
 		{:else}
 			<ZoomableSvg
+				bind:this={zoomableSvg}
 				width={layout.width}
 				height={layout.height}
 				{transparent}

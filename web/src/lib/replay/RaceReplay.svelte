@@ -139,6 +139,7 @@
 	}
 
 	let dagContainer: HTMLElement | undefined = $state();
+	let zoomableSvg: ReturnType<typeof ZoomableSvg> | undefined = $state();
 
 	function openPopupForNode(nodeId: string) {
 		const node = nodeMap.get(nodeId);
@@ -184,7 +185,15 @@
 
 	$effect(() => {
 		if (focusNodeId) {
-			openPopupForNode(focusNodeId);
+			const node = nodeMap.get(focusNodeId);
+			if (node && zoomableSvg) {
+				const id = focusNodeId;
+				zoomableSvg.centerOnPoint(node.x, node.y).then(() => {
+					openPopupForNode(id);
+				});
+			} else {
+				openPopupForNode(focusNodeId);
+			}
 		}
 	});
 
@@ -308,7 +317,7 @@
 	<div class="race-replay" bind:this={dagContainer}>
 		<div class="replay-dag-container">
 			<div class="replay-svg-area">
-				<ZoomableSvg width={layout.width} height={layout.height} onnodeclick={onNodeClick} onpanstart={closePopup}>
+				<ZoomableSvg bind:this={zoomableSvg} width={layout.width} height={layout.height} onnodeclick={onNodeClick} onpanstart={closePopup}>
 					<defs>
 						<filter id="replay-player-glow" x="-50%" y="-50%" width="200%" height="200%">
 							<feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
