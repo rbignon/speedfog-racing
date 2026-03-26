@@ -13,7 +13,7 @@
 		type Race,
 		type TrainingSession,
 	} from '$lib/api';
-	import { timeAgo, formatScheduledTime } from '$lib/utils/time';
+	import { timeAgo, raceDisplayDate } from '$lib/utils/time';
 	import { displayPoolName, formatIgt } from '$lib/utils/training';
 	import { formatPoolName } from '$lib/utils/format';
 	import { statusLabel } from '$lib/format';
@@ -213,7 +213,7 @@
 				<div class="active-cards">
 					{#each activeRaces as race}
 						{@const overflowCount = Math.max(0, race.participant_count - race.participant_previews.length)}
-						{@const relativeTime = race.scheduled_at && race.status === 'setup' ? formatScheduledTime(race.scheduled_at) : timeAgo(race.created_at)}
+						{@const relativeTime = raceDisplayDate(race)}
 						<a href="/race/{race.id}" class="active-card border-{race.status === 'running' ? 'running' : 'setup'}">
 							<div class="active-card-header">
 								<div class="active-title">

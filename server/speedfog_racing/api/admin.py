@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import user_response
+from speedfog_racing.api.helpers import race_date, user_response
 from speedfog_racing.auth import require_admin
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
@@ -307,7 +307,7 @@ async def get_global_activity(
 
         items.append(
             RaceParticipantActivity(
-                date=race.created_at,
+                date=race_date(race),
                 user=user_response(p.user),
                 race_id=race.id,
                 race_name=race.name,
@@ -329,7 +329,7 @@ async def get_global_activity(
     for race in org_q.scalars().all():
         items.append(
             RaceOrganizerActivity(
-                date=race.created_at,
+                date=race_date(race),
                 user=user_response(race.organizer),
                 race_id=race.id,
                 race_name=race.name,
@@ -348,7 +348,7 @@ async def get_global_activity(
     for c in caster_q.scalars().all():
         items.append(
             RaceCasterActivity(
-                date=c.race.created_at,
+                date=race_date(c.race),
                 user=user_response(c.user),
                 race_id=c.race.id,
                 race_name=c.race.name,

@@ -1,5 +1,7 @@
 """Shared API response helpers."""
 
+from datetime import datetime
+
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus, User
 from speedfog_racing.schemas import (
     CasterResponse,
@@ -9,6 +11,11 @@ from speedfog_racing.schemas import (
     UserResponse,
 )
 from speedfog_racing.services.twitch_live import twitch_live_service
+
+
+def race_date(race: Race) -> datetime:
+    """Best date for a race: started_at > scheduled_at > created_at."""
+    return race.started_at or race.scheduled_at or race.created_at
 
 
 def format_pool_display_name(pool_name: str | None) -> str:

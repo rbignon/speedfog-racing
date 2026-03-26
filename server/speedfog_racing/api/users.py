@@ -8,7 +8,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import race_response, user_response
+from speedfog_racing.api.helpers import race_date, race_response, user_response
 from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
@@ -150,7 +150,7 @@ async def get_my_races(
             selectinload(Race.participants).selectinload(Participant.user),
             selectinload(Race.casters).selectinload(Caster.user),
         )
-        .order_by(Race.created_at.desc())
+        .order_by(func.coalesce(Race.started_at, Race.scheduled_at, Race.created_at).desc())
     )
     result = await db.execute(query)
     races = list(result.scalars().all())
@@ -325,7 +325,7 @@ async def get_user_activity(
 
         items.append(
             RaceParticipantActivity(
-                date=race.created_at,
+                date=race_date(race),
                 race_id=race.id,
                 race_name=race.name,
                 status=race.status.value,
@@ -345,7 +345,7 @@ async def get_user_activity(
     for race in organized_races:
         items.append(
             RaceOrganizerActivity(
-                date=race.created_at,
+                date=race_date(race),
                 race_id=race.id,
                 race_name=race.name,
                 status=race.status.value,
@@ -362,7 +362,7 @@ async def get_user_activity(
     for c in caster_roles:
         items.append(
             RaceCasterActivity(
-                date=c.race.created_at,
+                date=race_date(c.race),
                 race_id=c.race.id,
                 race_name=c.race.name,
                 status=c.race.status.value,

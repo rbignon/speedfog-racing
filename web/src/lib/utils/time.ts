@@ -25,6 +25,21 @@ export function timeAgo(dateString: string): string {
  * Format a future datetime as a relative or absolute label.
  * Returns "In 2h", "Tomorrow at 8:00 PM", or "Feb 18 at 8:00 PM".
  */
+/**
+ * Pick the best date to represent a race: started_at > scheduled_at > created_at.
+ */
+export function raceDisplayDate(race: {
+  started_at: string | null;
+  scheduled_at: string | null;
+  created_at: string;
+  status: string;
+}): string {
+  if (race.started_at) return timeAgo(race.started_at);
+  if (race.scheduled_at && race.status === "setup")
+    return formatScheduledTime(race.scheduled_at);
+  return timeAgo(race.created_at);
+}
+
 export function formatScheduledTime(dateString: string): string {
   const date = new Date(dateString);
   const now = Date.now();
