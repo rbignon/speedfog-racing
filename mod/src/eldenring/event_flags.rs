@@ -38,6 +38,20 @@ impl fmt::Display for FlagReaderStatus {
     }
 }
 
+/// Pre-resolved category page for batch flag operations.
+///
+/// Avoids repeated red-black tree traversal when multiple flags share the
+/// same category (flag_id / divisor). Resolve once per poll cycle, then
+/// use `is_flag_set_cached` / `set_flag_cached` for each flag.
+///
+/// **Do not cache across poll cycles or frames.** The game rebuilds the
+/// VirtualMemoryFlag tree on area transitions, invalidating `data_ptr`.
+pub struct CategoryPage {
+    divisor: u32,
+    category: u32,
+    data_ptr: usize,
+}
+
 /// Reads EMEVD event flags from Elden Ring's VirtualMemoryFlag manager.
 ///
 /// The manager stores flags in a red-black tree of category pages. Each page
@@ -161,6 +175,97 @@ impl EventFlagReader {
 
         let byte_val: u8 = PointerChain::<u8>::new(&[data_ptr + byte_offset]).read()?;
         Some((byte_val & (1 << bit_index)) != 0)
+    }
+
+    /// Resolve the category page for a flag ID, for use with batch operations.
+    ///
+    /// All flags in the same category (flag_id / divisor) share the same page.
+    /// Call once per poll cycle, then use `is_flag_set_fast` / `set_flag_fast`
+    /// for each individual flag to skip the tree traversal.
+    pub fn resolve_category(&self, flag_id: u32) -> Option<CategoryPage> {
+        let manager = self.base_ptr.read()?;
+        if manager == 0 {
+            return None;
+        }
+        let divisor: u32 = PointerChain::<u32>::new(&[manager + 0x1c]).read()?;
+        if divisor == 0 {
+            return None;
+        }
+        let category = flag_id / divisor;
+        let data_ptr = self.find_category_page(manager, category)?;
+        Some(CategoryPage {
+            divisor,
+            category,
+            data_ptr,
+        })
+    }
+
+    /// Check a flag using a pre-resolved category page (no tree traversal).
+    ///
+    /// If the flag is in a different category than the cached page, falls back
+    /// to the full `is_flag_set` with tree traversal.
+    pub fn is_flag_set_fast(&self, flag_id: u32, page: &CategoryPage) -> Option<bool> {
+        let category = flag_id / page.divisor;
+        if category != page.category {
+            return self.is_flag_set(flag_id);
+        }
+        let remainder = flag_id % page.divisor;
+        let byte_offset = (remainder >> 3) as usize;
+        let bit_index = 7 - (remainder & 7);
+        let byte_val: u8 = PointerChain::<u8>::new(&[page.data_ptr + byte_offset]).read()?;
+        Some((byte_val & (1 << bit_index)) != 0)
+    }
+
+    /// Set or clear a flag using a pre-resolved category page (no tree traversal).
+    ///
+    /// Falls back to the full `set_flag` if the flag is in a different category.
+    pub fn set_flag_fast(&self, flag_id: u32, value: bool, page: &CategoryPage) -> bool {
+        let category = flag_id / page.divisor;
+        if category != page.category {
+            return self.set_flag(flag_id, value);
+        }
+        let remainder = flag_id % page.divisor;
+        let byte_offset = (remainder >> 3) as usize;
+        let bit_index = 7 - (remainder & 7);
+        let mask = 1u8 << bit_index;
+        let addr = page.data_ptr + byte_offset;
+        let current: u8 = match PointerChain::<u8>::new(&[addr]).read() {
+            Some(v) => v,
+            None => return false,
+        };
+        let new_val = if value {
+            current | mask
+        } else {
+            current & !mask
+        };
+        if new_val != current {
+            unsafe {
+                std::ptr::write(addr as *mut u8, new_val);
+            }
+        }
+        true
+    }
+
+    /// Check a flag, using a cached category page if available.
+    ///
+    /// Convenience wrapper: dispatches to `is_flag_set_fast` when a page is
+    /// provided, otherwise falls back to the full `is_flag_set` tree traversal.
+    pub fn is_flag_set_cached(&self, flag_id: u32, page: Option<&CategoryPage>) -> Option<bool> {
+        match page {
+            Some(p) => self.is_flag_set_fast(flag_id, p),
+            None => self.is_flag_set(flag_id),
+        }
+    }
+
+    /// Set or clear a flag, using a cached category page if available.
+    ///
+    /// Convenience wrapper: dispatches to `set_flag_fast` when a page is
+    /// provided, otherwise falls back to the full `set_flag` tree traversal.
+    pub fn set_flag_cached(&self, flag_id: u32, value: bool, page: Option<&CategoryPage>) -> bool {
+        match page {
+            Some(p) => self.set_flag_fast(flag_id, value, p),
+            None => self.set_flag(flag_id, value),
+        }
     }
 
     /// Walk the red-black tree and collect category keys (for diagnostics).

@@ -1,10 +1,18 @@
 //! Formatting utilities for race data display.
 
 use std::collections::HashMap;
+use std::fmt::Write;
 
 /// Format a gap in milliseconds as `+M:SS` / `+H:MM:SS` (behind)
 /// or `-M:SS` / `-H:MM:SS` (ahead).
 pub fn format_gap(ms: i32) -> String {
+    let mut buf = String::with_capacity(10);
+    format_gap_into(&mut buf, ms);
+    buf
+}
+
+/// Write a gap into an existing buffer (avoids allocation when reused).
+pub fn format_gap_into(buf: &mut String, ms: i32) {
     let (sign, abs_ms) = if ms < 0 {
         ("-", (-ms) as u32)
     } else {
@@ -14,9 +22,9 @@ pub fn format_gap(ms: i32) -> String {
     let mins = secs / 60;
     let hours = mins / 60;
     if hours > 0 {
-        format!("{}{}:{:02}:{:02}", sign, hours, mins % 60, secs % 60)
+        write!(buf, "{}{}:{:02}:{:02}", sign, hours, mins % 60, secs % 60).ok();
     } else {
-        format!("{}{}:{:02}", sign, mins, secs % 60)
+        write!(buf, "{}{}:{:02}", sign, mins, secs % 60).ok();
     }
 }
 

@@ -1,6 +1,7 @@
 //! Race UI - ImGui overlay for SpeedFog Racing
 
 use std::borrow::Cow;
+use std::fmt::Write;
 use std::time::Duration;
 
 use hudhook::imgui::{
@@ -123,22 +124,22 @@ impl ImguiRenderLoop for RaceTracker {
 }
 
 impl RaceTracker {
-    /// Format the IGT string for display.
-    fn format_igt_str(&self) -> String {
+    /// Write the IGT display string into a buffer.
+    fn write_igt(&self, buf: &mut String) {
         if self.am_i_finished() {
             if let Some(me) = self.my_participant().filter(|p| p.igt_ms > 0) {
-                format_time_u32(me.igt_ms as u32)
+                write_time_u32(buf, me.igt_ms as u32);
             } else {
-                "--:--:--".to_string()
+                buf.push_str("--:--:--");
             }
         } else if let Some(frozen) = self.frozen_igt_ms {
-            format_time_u32(frozen)
+            write_time_u32(buf, frozen);
         } else if !self.is_race_running() {
-            "--:--:--".to_string()
+            buf.push_str("--:--:--");
         } else if let Some(igt_ms) = self.read_igt() {
-            format_time_u32(igt_ms)
+            write_time_u32(buf, igt_ms);
         } else {
-            "--:--:--".to_string()
+            buf.push_str("--:--:--");
         }
     }
 
@@ -158,6 +159,10 @@ impl RaceTracker {
     /// Line 2: `  ZoneName                    X/Y` (X yellow→green on finish, /Y white)
     /// Line 3: `  tier X, normally Y   [☠]N`          (tier yellow, deaths white)
     fn render_player_status(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
+        // Reusable buffers for text formatting (cleared between each line)
+        let mut buf_right = String::with_capacity(16);
+        let mut buf_left = String::with_capacity(48);
+
         let blue = [0.4, 0.6, 1.0, 1.0];
         let yellow = [1.0, 1.0, 0.0, 1.0];
         let green = [0.0, 1.0, 0.0, 1.0];
@@ -173,35 +178,48 @@ impl RaceTracker {
         let orange = [1.0, 0.75, 0.0, 1.0];
         let status_str = self.race_info().map(|r| r.status.as_str()).unwrap_or("");
 
-        let (right_text, right_color) = match status_str {
-            "setup" => ("WAITING".to_string(), orange),
+        let right_color = match status_str {
+            "setup" => {
+                buf_right.push_str("WAITING");
+                orange
+            }
             "running" => {
-                // Countdown → "3", "2", "1" in yellow; then "GO!" in green for 3s
-                let countdown_text = self.race_state.countdown_end.and_then(|end| {
+                // Countdown: "3", "2", "1" in yellow; then "GO!" in green for 3s
+                let countdown_secs = self.race_state.countdown_end.and_then(|end| {
                     end.checked_duration_since(std::time::Instant::now())
-                        .map(|remaining| format!("{}", remaining.as_secs() + 1))
+                        .map(|remaining| remaining.as_secs() + 1)
                 });
-                if let Some(text) = countdown_text {
-                    (text, yellow)
+                if let Some(secs) = countdown_secs {
+                    write!(buf_right, "{}", secs).ok();
+                    yellow
                 } else if let Some(go_start) = self
                     .race_state
                     .countdown_end
                     .or(self.race_state.race_started_at)
                 {
                     if go_start.elapsed() < Duration::from_secs(3) {
-                        ("GO!".to_string(), green)
+                        buf_right.push_str("GO!");
+                        green
                     } else {
-                        (self.format_igt_str(), blue)
+                        self.write_igt(&mut buf_right);
+                        blue
                     }
                 } else {
                     // Reconnect: no race_start received, skip GO! phase
-                    (self.format_igt_str(), blue)
+                    self.write_igt(&mut buf_right);
+                    blue
                 }
             }
-            "finished" => (self.format_igt_str(), green),
-            _ => (self.format_igt_str(), blue),
+            "finished" => {
+                self.write_igt(&mut buf_right);
+                green
+            }
+            _ => {
+                self.write_igt(&mut buf_right);
+                blue
+            }
         };
-        let igt_width = ui.calc_text_size(&right_text)[0];
+        let igt_width = ui.calc_text_size(&buf_right)[0];
 
         let dot_str = "\u{25CF} "; // "● "
         let dot_width = ui.calc_text_size(dot_str)[0];
@@ -211,18 +229,21 @@ impl RaceTracker {
         ui.text_colored(dot_color, dot_str);
         ui.same_line_with_spacing(0.0, 0.0);
 
-        let name_text = if let Some(race) = self.race_info() {
-            race.name.to_string()
+        if let Some(race) = self.race_info() {
+            buf_left.push_str(&race.name);
         } else {
-            "Connecting...".to_string()
-        };
-        let truncated = truncate_to_width(ui, &name_text, name_max);
+            buf_left.push_str("Connecting...");
+        }
+        let truncated = truncate_to_width(ui, &buf_left, name_max);
         ui.text_colored(self.cached_colors.text_disabled, &truncated);
 
         ui.same_line_with_pos(max_width - igt_width);
-        ui.text_colored(right_color, &right_text);
+        ui.text_colored(right_color, &buf_right);
 
         // --- Line 2: zone name (left, white), progress X/Y (right, X=yellow/green Y=white) ---
+        buf_right.clear();
+        buf_left.clear();
+
         let me = self.my_participant();
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let zone = self.current_zone_info();
@@ -233,79 +254,77 @@ impl RaceTracker {
             .is_some_and(|r| r.status.as_str() == "setup");
 
         // In setup phase, show participant status instead of layer progress
-        let (right_str, right_color) = if is_setup {
+        let right_color = if is_setup {
             let status = me.map(|p| p.status.as_str()).unwrap_or("registered");
             let orange = [1.0, 0.65, 0.0, 1.0];
-            let color = match status {
+            buf_right.push_str(status);
+            match status {
                 "ready" => orange,
                 _ => self.cached_colors.text_disabled,
-            };
-            (status.to_string(), color)
+            }
         } else {
             let layer = frozen_layer
                 .or_else(|| me.map(|p| p.current_layer))
                 .unwrap_or(0);
             let display_layer = (layer + 1).min(total_layers);
-            let color = if self.am_i_finished() { green } else { yellow };
-            (format!("{}/{}", display_layer, total_layers), color)
+            write!(buf_right, "{}/{}", display_layer, total_layers).ok();
+            if self.am_i_finished() {
+                green
+            } else {
+                yellow
+            }
         };
-        let right_width = ui.calc_text_size(&right_str)[0];
+        let right_width = ui.calc_text_size(&buf_right)[0];
 
-        let zone_text = if let Some(z) = zone {
-            format!("  {}", z.display_name)
-        } else {
-            String::new()
-        };
+        if let Some(z) = zone {
+            write!(buf_left, "  {}", z.display_name).ok();
+        }
         let zone_max = max_width - right_width - gap;
-        let zone_truncated = truncate_to_width(ui, &zone_text, zone_max);
+        let zone_truncated = truncate_to_width(ui, &buf_left, zone_max);
         ui.text(&zone_truncated);
 
         ui.same_line_with_pos(max_width - right_width);
-        ui.text_colored(right_color, &right_str);
+        ui.text_colored(right_color, &buf_right);
 
         // --- Line 3: tier info (left, yellow), death icon + count (right, white) ---
+        buf_right.clear();
+        buf_left.clear();
+
         let deaths = self.read_deaths().unwrap_or(0);
-        let death_str = format!("{}", deaths);
+        write!(buf_right, "{}", deaths).ok();
         let font_height = ui.text_line_height();
         let icon_size = font_height;
         let icon_gap = 2.0;
         let right_total = if self.death_icon.is_some() {
-            icon_size + icon_gap + ui.calc_text_size(&death_str)[0]
+            icon_size + icon_gap + ui.calc_text_size(&buf_right)[0]
         } else {
-            ui.calc_text_size(&death_str)[0]
+            ui.calc_text_size(&buf_right)[0]
         };
 
         let current_layer = frozen_layer
             .or_else(|| me.map(|p| p.current_layer))
             .unwrap_or(0);
-        let tier_text = if let Some(z) = zone {
+        if let Some(z) = zone {
             if let Some(t) = z.tier {
-                let mut s = if let Some(ot) = z.original_tier.filter(|&ot| ot != t) {
-                    format!("  tier {}, normally {}", t, ot)
+                if let Some(ot) = z.original_tier.filter(|&ot| ot != t) {
+                    write!(buf_left, "  tier {}, normally {}", t, ot).ok();
                 } else {
-                    format!("  tier {}", t)
-                };
+                    write!(buf_left, "  tier {}", t).ok();
+                }
                 // Show current layer when backtracking (zone layer < max layer reached)
                 if let Some(zl) = z.layer {
                     if zl < current_layer {
-                        s.push_str(&format!(", layer {}/{}", zl + 1, total_layers));
+                        write!(buf_left, ", layer {}/{}", zl + 1, total_layers).ok();
                     }
                 }
-                s
-            } else {
-                String::new()
             }
         } else if frozen_layer.is_none() {
             // Only fall back to current_layer_tier when NOT waiting for reveal,
             // otherwise this would show the new zone's tier before its name.
             if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
-                format!("  tier {}", tier)
-            } else {
-                String::new()
+                write!(buf_left, "  tier {}", tier).ok();
             }
-        } else {
-            String::new()
-        };
+        }
         let has_tier = zone.is_some_and(|z| z.tier.is_some())
             || me.is_some_and(|p| p.current_layer_tier.is_some());
         let tier_color = if has_tier {
@@ -315,7 +334,7 @@ impl RaceTracker {
         };
 
         let tier_max = max_width - right_total - gap;
-        let tier_truncated = truncate_to_width(ui, &tier_text, tier_max);
+        let tier_truncated = truncate_to_width(ui, &buf_left, tier_max);
         ui.text_colored(tier_color, &tier_truncated);
 
         ui.same_line_with_pos(max_width - right_total);
@@ -323,7 +342,7 @@ impl RaceTracker {
             Image::new(icon.texture_id(), [icon_size, icon_size]).build(ui);
             ui.same_line_with_spacing(0.0, icon_gap);
         }
-        ui.text_colored(self.cached_colors.text, &death_str);
+        ui.text_colored(self.cached_colors.text, &buf_right);
     }
 
     /// Render exit list from zone_update:
@@ -360,23 +379,25 @@ impl RaceTracker {
         }
     }
 
-    /// Render a single leaderboard row with optional gap column:
+    /// Render a single leaderboard row with optional gap column.
     /// `{rank}. {name}   [+/-gap]   {progress_or_time}`
-    /// Gap is color-coded: green (ahead), soft red (behind).
-    /// If `is_self` is true, the name color is brightened to stand out.
+    ///
+    /// Accepts pre-computed `right_text` and `gap_text` (built by the caller into
+    /// reusable buffers), plus a `left_buf` for internal name formatting.
     fn render_participant_row(
         &self,
         ui: &hudhook::imgui::Ui,
         p: &crate::core::protocol::ParticipantInfo,
         rank: usize,
-        total_layers: i32,
         max_width: f32,
         spacing: f32,
         is_self: bool,
         gap_col_width: f32,
         right_col_width: f32,
-        is_setup: bool,
+        right_text: &str,
+        gap_text: Option<&str>,
         computed_gap_ms: Option<i32>,
+        left_buf: &mut String,
     ) {
         let name = p
             .twitch_display_name
@@ -395,9 +416,6 @@ impl RaceTracker {
             base_color
         };
 
-        let right_text = right_text_for(p, total_layers, is_setup);
-        let gap_text = computed_gap_ms.map(crate::core::format_gap);
-
         // Layout: [name]  [gap right-aligned in gap_col]  [right right-aligned]
         let right_x = max_width - right_col_width;
         let gap_x = if gap_col_width > 0.0 {
@@ -407,13 +425,14 @@ impl RaceTracker {
         };
 
         // Left (name): truncate to fit before gap column
-        let left_text = format!("{:2}. {}", rank, name);
+        left_buf.clear();
+        write!(left_buf, "{:2}. {}", rank, name).ok();
         let left_max = gap_x - spacing;
-        let truncated = truncate_to_width(ui, &left_text, left_max);
+        let truncated = truncate_to_width(ui, left_buf, left_max);
         ui.text_colored(color, &truncated);
 
         // Gap (right-aligned within gap column, color-coded)
-        if let Some(ref gt) = gap_text {
+        if let Some(gt) = gap_text {
             let gap_color = match computed_gap_ms {
                 Some(ms) if ms < 0 => [0.3, 0.9, 0.3, 1.0], // green: ahead of pace
                 Some(ms) if ms > 0 => [0.9, 0.35, 0.35, 1.0], // soft red: behind
@@ -425,9 +444,9 @@ impl RaceTracker {
         }
 
         // Right (right-aligned)
-        let rt_width = ui.calc_text_size(&right_text)[0];
+        let rt_width = ui.calc_text_size(right_text)[0];
         ui.same_line_with_pos(max_width - rt_width);
-        ui.text_colored(color, &right_text);
+        ui.text_colored(color, right_text);
     }
 
     /// Leaderboard with color-coded status, gap timing, and right-aligned values.
@@ -441,6 +460,12 @@ impl RaceTracker {
             ui.text_disabled("No participants");
             return;
         }
+
+        // Reusable buffers for text formatting (cleared between each row)
+        let mut buf_right = String::with_capacity(16);
+        let mut buf_gap = String::with_capacity(16);
+        let mut buf_left = String::with_capacity(32);
+        let mut buf_footer = String::with_capacity(16);
 
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let is_setup = self
@@ -509,16 +534,20 @@ impl RaceTracker {
             })
             .collect();
 
-        // Pre-compute column widths across ALL visible participants
+        // Pre-compute column widths using reusable buffers
         let mut max_gap_width: f32 = 0.0;
         let mut max_right_width: f32 = 0.0;
         for (i, p) in participants.iter().enumerate() {
-            let rw = ui.calc_text_size(&right_text_for(p, total_layers, is_setup))[0];
+            buf_right.clear();
+            write_right_text(&mut buf_right, p, total_layers, is_setup);
+            let rw = ui.calc_text_size(&buf_right)[0];
             if rw > max_right_width {
                 max_right_width = rw;
             }
             if let Some(gap_ms) = gaps[i] {
-                let gw = ui.calc_text_size(&crate::core::format_gap(gap_ms))[0];
+                buf_gap.clear();
+                crate::core::format_gap_into(&mut buf_gap, gap_ms);
+                let gw = ui.calc_text_size(&buf_gap)[0];
                 if gw > max_gap_width {
                     max_gap_width = gw;
                 }
@@ -536,21 +565,32 @@ impl RaceTracker {
             10.min(participants.len())
         };
 
-        // Render top rows
+        // Render top rows (buffers reused across iterations)
         for (i, p) in participants.iter().take(top_count).enumerate() {
-            let is_self = my_index == Some(i);
+            buf_right.clear();
+            write_right_text(&mut buf_right, p, total_layers, is_setup);
+
+            let gap_str = if let Some(gap_ms) = gaps[i] {
+                buf_gap.clear();
+                crate::core::format_gap_into(&mut buf_gap, gap_ms);
+                Some(buf_gap.as_str())
+            } else {
+                None
+            };
+
             self.render_participant_row(
                 ui,
                 p,
                 i + 1,
-                total_layers,
                 max_width,
                 spacing,
-                is_self,
+                my_index == Some(i),
                 max_gap_width,
                 max_right_width,
-                is_setup,
+                &buf_right,
+                gap_str,
                 gaps[i],
+                &mut buf_left,
             );
         }
 
@@ -559,18 +599,31 @@ impl RaceTracker {
             if let Some(idx) = my_index {
                 ui.text_disabled("  \u{00B7}\u{00B7}\u{00B7}");
                 let p = &participants[idx];
+
+                buf_right.clear();
+                write_right_text(&mut buf_right, p, total_layers, is_setup);
+
+                let gap_str = if let Some(gap_ms) = gaps[idx] {
+                    buf_gap.clear();
+                    crate::core::format_gap_into(&mut buf_gap, gap_ms);
+                    Some(buf_gap.as_str())
+                } else {
+                    None
+                };
+
                 self.render_participant_row(
                     ui,
                     p,
                     idx + 1,
-                    total_layers,
                     max_width,
                     spacing,
                     true,
                     max_gap_width,
                     max_right_width,
-                    is_setup,
+                    &buf_right,
+                    gap_str,
                     gaps[idx],
+                    &mut buf_left,
                 );
             }
         }
@@ -582,7 +635,8 @@ impl RaceTracker {
             top_count
         };
         if participants.len() > displayed {
-            ui.text_disabled(format!("  + {} more", participants.len() - displayed));
+            write!(buf_footer, "  + {} more", participants.len() - displayed).ok();
+            ui.text_disabled(&buf_footer);
         }
     }
 
@@ -670,44 +724,49 @@ fn brighten(color: [f32; 4], factor: f32) -> [f32; 4] {
     ]
 }
 
-/// Right-column text for a participant row: finish time, layer progress, or status label.
-fn right_text_for(
+/// Write right-column text for a participant row into a buffer.
+/// Produces: finish time, layer progress, or status label.
+fn write_right_text(
+    buf: &mut String,
     p: &crate::core::protocol::ParticipantInfo,
     total_layers: i32,
     is_setup: bool,
-) -> String {
+) {
     match p.status.as_str() {
-        "finished" => format_time(p.igt_ms),
-        "ready" if is_setup => "ready".to_string(),
-        "registered" if is_setup => "registered".to_string(),
-        _ if is_setup => p.status.clone(),
+        "finished" => write_time(buf, p.igt_ms),
+        "ready" if is_setup => buf.push_str("ready"),
+        "registered" if is_setup => buf.push_str("registered"),
+        _ if is_setup => buf.push_str(&p.status),
         _ => {
             let display = (p.current_layer + 1).min(total_layers);
-            format!("{}/{}", display, total_layers)
+            write!(buf, "{}/{}", display, total_layers).ok();
         }
     }
 }
 
-fn format_time(ms: i32) -> String {
+/// Write a time value (signed ms) as M:SS or H:MM:SS into a buffer.
+fn write_time(buf: &mut String, ms: i32) {
     if ms < 0 {
-        return "--:--".to_string();
+        buf.push_str("--:--");
+        return;
     }
     let ms = ms as u32;
     let secs = ms / 1000;
     let mins = secs / 60;
     let hours = mins / 60;
     if hours > 0 {
-        format!("{}:{:02}:{:02}", hours, mins % 60, secs % 60)
+        write!(buf, "{}:{:02}:{:02}", hours, mins % 60, secs % 60).ok();
     } else {
-        format!("{:02}:{:02}", mins, secs % 60)
+        write!(buf, "{:02}:{:02}", mins, secs % 60).ok();
     }
 }
 
-fn format_time_u32(ms: u32) -> String {
+/// Write a time value (unsigned ms) as HH:MM:SS into a buffer.
+fn write_time_u32(buf: &mut String, ms: u32) {
     let secs = ms / 1000;
     let mins = secs / 60;
     let hours = mins / 60;
-    format!("{:02}:{:02}:{:02}", hours, mins % 60, secs % 60)
+    write!(buf, "{:02}:{:02}:{:02}", hours, mins % 60, secs % 60).ok();
 }
 
 /// Word-wrap `text` into lines that fit within `max_width`, prepending `indent` to each line.

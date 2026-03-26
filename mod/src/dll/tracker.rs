@@ -13,7 +13,7 @@ use windows::Win32::Foundation::HINSTANCE;
 use crate::core::color::parse_hex_color;
 use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
-use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
+use crate::eldenring::{CategoryPage, EventFlagReader, FlagReaderStatus, GameState};
 
 use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
@@ -339,8 +339,9 @@ impl RaceTracker {
             self.handle_ws_message(msg);
         }
 
-        // Read position once per frame for loading screen detection
-        let position_readable = self.game_state.read_position().is_some();
+        // Check position readability once per frame for loading screen detection.
+        // Uses is_position_readable() to avoid allocating a map_id String.
+        let position_readable = self.game_state.is_position_readable();
 
         // Reveal pending zone update once the loading screen ends and the
         // player position is readable. The loading flag may clear before the
@@ -377,8 +378,12 @@ impl RaceTracker {
             // because is_flag_set() returns None while position is unreadable.
             if !self.event_ids.is_empty() {
                 let igt_ms = self.game_state.read_igt().unwrap_or(0);
+                // Resolve category page once (all event_ids share the same category)
+                let page = self.event_flag_reader.resolve_category(self.event_ids[0]);
+                let page_ref = page.as_ref();
                 for &flag_id in &self.event_ids {
-                    if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                    if let Some(true) = self.event_flag_reader.is_flag_set_cached(flag_id, page_ref)
+                    {
                         if self.finish_event == Some(flag_id) {
                             if !self.triggered_flags.contains(&flag_id) {
                                 self.triggered_flags.insert(flag_id);
@@ -398,7 +403,8 @@ impl RaceTracker {
                                 }
                             }
                         } else {
-                            self.event_flag_reader.set_flag(flag_id, false);
+                            self.event_flag_reader
+                                .set_flag_cached(flag_id, false, page_ref);
                             self.deferred_event_flags.push((flag_id, igt_ms));
                             info!(flag_id, "[RACE] Event flag caught at loading exit");
                         }
@@ -464,11 +470,22 @@ impl RaceTracker {
             // rebuilds the tree from save data on area transitions, so flags are
             // lost. Re-applying here ensures bloodstains reappear within one frame.
             if let Some(ref seed) = self.race_state.seed {
+                // Resolve category page once for all death flags (same category)
+                let death_page = seed
+                    .death_flags
+                    .values()
+                    .flat_map(|f| f.iter())
+                    .next()
+                    .and_then(|&fid| self.event_flag_reader.resolve_category(fid));
+                let dp = death_page.as_ref();
                 for (node_id, total) in &self.race_state.death_counts {
                     if let Some(flags) = seed.death_flags.get(node_id) {
-                        self.event_flag_reader.set_flag(flags[0], *total >= 1);
-                        self.event_flag_reader.set_flag(flags[1], *total >= 3);
-                        self.event_flag_reader.set_flag(flags[2], *total >= 5);
+                        self.event_flag_reader
+                            .set_flag_cached(flags[0], *total >= 1, dp);
+                        self.event_flag_reader
+                            .set_flag_cached(flags[1], *total >= 3, dp);
+                        self.event_flag_reader
+                            .set_flag_cached(flags[2], *total >= 5, dp);
                     }
                 }
             }
@@ -483,26 +500,28 @@ impl RaceTracker {
             self.last_flag_poll = Instant::now();
 
             // Log flag reader status transitions (not every tick)
-            let current_ok = matches!(
-                self.event_flag_reader.diagnose(),
-                FlagReaderStatus::Ok { .. }
-            );
+            let status = self.event_flag_reader.diagnose();
+            let current_ok = matches!(status, FlagReaderStatus::Ok { .. });
             if self.last_flag_reader_ok != Some(current_ok) {
                 if current_ok {
                     info!("[RACE] Flag reader recovered (Ok)");
                 } else {
-                    let status = self.event_flag_reader.diagnose();
                     warn!("[RACE] Flag reader degraded: {}", status);
                 }
                 self.last_flag_reader_ok = Some(current_ok);
             }
 
             let igt_ms = self.game_state.read_igt().unwrap_or(0);
+            // Resolve category page once for all event_ids (same category)
+            let page = self.event_flag_reader.resolve_category(self.event_ids[0]);
+            let page_ref = page.as_ref();
             for &flag_id in &self.event_ids {
                 if self.finish_event == Some(flag_id) {
                     // finish_event: one-shot, use triggered_flags guard
                     if !self.triggered_flags.contains(&flag_id) {
-                        if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                        if let Some(true) =
+                            self.event_flag_reader.is_flag_set_cached(flag_id, page_ref)
+                        {
                             self.triggered_flags.insert(flag_id);
                             if self.ws_client.is_connected()
                                 && self.is_race_running()
@@ -522,8 +541,10 @@ impl RaceTracker {
                     }
                 } else {
                     // Regular fog gate: clear after capture so re-traversals are detected
-                    if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
-                        self.event_flag_reader.set_flag(flag_id, false);
+                    if let Some(true) = self.event_flag_reader.is_flag_set_cached(flag_id, page_ref)
+                    {
+                        self.event_flag_reader
+                            .set_flag_cached(flag_id, false, page_ref);
                         self.deferred_event_flags.push((flag_id, igt_ms));
                         info!(flag_id, "[RACE] Event flag deferred until loading exit");
                     }
@@ -559,10 +580,14 @@ impl RaceTracker {
                 }
 
                 // Safety-net rescan: catch any flags still set in memory that polling missed
+                let rescan_page = self.event_flag_reader.resolve_category(self.event_ids[0]);
+                let rp = rescan_page.as_ref();
                 for &flag_id in &self.event_ids {
                     if self.finish_event == Some(flag_id) {
                         if !self.triggered_flags.contains(&flag_id) {
-                            if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
+                            if let Some(true) =
+                                self.event_flag_reader.is_flag_set_cached(flag_id, rp)
+                            {
                                 self.triggered_flags.insert(flag_id);
                                 self.ws_client.send_event_flag(flag_id, igt_ms);
                                 self.last_sent_debug =
@@ -570,8 +595,10 @@ impl RaceTracker {
                                 info!(flag_id, "[RACE] Finish event re-sent after reconnect");
                             }
                         }
-                    } else if let Some(true) = self.event_flag_reader.is_flag_set(flag_id) {
-                        self.event_flag_reader.set_flag(flag_id, false);
+                    } else if let Some(true) =
+                        self.event_flag_reader.is_flag_set_cached(flag_id, rp)
+                    {
+                        self.event_flag_reader.set_flag_cached(flag_id, false, rp);
                         self.ws_client.send_event_flag(flag_id, igt_ms);
                         self.last_sent_debug =
                             Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
@@ -882,11 +909,21 @@ impl RaceTracker {
                 self.last_received_debug = Some(format!("death_counts({} zones)", counts.len()));
                 self.race_state.death_counts = counts.clone();
                 if let Some(ref seed) = self.race_state.seed {
+                    let page = seed
+                        .death_flags
+                        .values()
+                        .flat_map(|f| f.iter())
+                        .next()
+                        .and_then(|&fid| self.event_flag_reader.resolve_category(fid));
+                    let page_ref = page.as_ref();
                     for (node_id, total) in &counts {
                         if let Some(flags) = seed.death_flags.get(node_id) {
-                            self.event_flag_reader.set_flag(flags[0], *total >= 1);
-                            self.event_flag_reader.set_flag(flags[1], *total >= 3);
-                            self.event_flag_reader.set_flag(flags[2], *total >= 5);
+                            self.event_flag_reader
+                                .set_flag_cached(flags[0], *total >= 1, page_ref);
+                            self.event_flag_reader
+                                .set_flag_cached(flags[1], *total >= 3, page_ref);
+                            self.event_flag_reader
+                                .set_flag_cached(flags[2], *total >= 5, page_ref);
                         }
                     }
                 }

@@ -86,6 +86,21 @@ impl GameState {
     pub fn is_in_loading_screen(&self) -> Option<bool> {
         self.loading_screen_ptr.read().map(|v| v != 0)
     }
+
+    /// Check if the player position is readable without allocating a String
+    /// for the map ID. Use this instead of `read_position().is_some()` when
+    /// only a boolean check is needed (e.g., loading screen detection).
+    pub fn is_position_readable(&self) -> bool {
+        let coords = match self.pointers.global_position.read() {
+            Some(c) => c,
+            None => return false,
+        };
+        let map_id = match self.pointers.global_position.read_map_id() {
+            Some(m) => m,
+            None => return false,
+        };
+        map_id != INVALID_MAP_ID && !(coords[0] == 0.0 && coords[1] == 0.0 && coords[2] == 0.0)
+    }
 }
 
 impl Default for GameState {
