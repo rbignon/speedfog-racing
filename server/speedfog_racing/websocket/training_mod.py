@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -171,15 +171,34 @@ async def handle_training_mod_websocket(
         authenticated = True
         await _broadcast_participant_update(session, spectator_only=True)
 
-        # Fire-and-forget: notify Discord if player is live on Twitch
-        notif_task = asyncio.create_task(
-            send_training_live_notification(
-                session_id=str(session.id),
-                user=session.user,
-                pool_name=session.seed.pool_name if session.seed else "training_standard",
+        # Fire-and-forget: notify Discord if player is live on Twitch.
+        # Atomic DB check prevents duplicate notifications on server restart
+        # (in-memory cooldown is lost, but discord_notified_at persists).
+        # The timestamp is set optimistically before delivery confirmation;
+        # if the notification fails (not live, webhook error), it won't retry.
+        should_notify = session.discord_notified_at is None
+        if should_notify:
+            async with session_maker() as db:
+                result = await db.execute(
+                    update(TrainingSession)
+                    .where(
+                        TrainingSession.id == session_id,
+                        TrainingSession.discord_notified_at.is_(None),
+                    )
+                    .values(discord_notified_at=datetime.now(UTC))
+                )
+                await db.commit()
+                should_notify = result.rowcount > 0  # type: ignore[attr-defined]
+
+        if should_notify:
+            notif_task = asyncio.create_task(
+                send_training_live_notification(
+                    session_id=str(session.id),
+                    user=session.user,
+                    pool_name=session.seed.pool_name if session.seed else "training_standard",
+                )
             )
-        )
-        notif_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            notif_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
         # Start heartbeat
         heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))

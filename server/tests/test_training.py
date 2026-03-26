@@ -4,6 +4,8 @@ import asyncio
 import os
 import tempfile
 import uuid
+from datetime import UTC, datetime
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -1981,4 +1983,70 @@ def test_training_mod_auth_ok_includes_items_spawned_flag(async_session):
             auth_ok = ws.receive_json()
             assert auth_ok["type"] == "auth_ok"
             assert auth_ok["seed"]["items_spawned_flag"] == 1050290000
+    training_manager.rooms.clear()
+
+
+# ---------------------------------------------------------------------------
+# Discord notification dedup on reconnect / server restart
+# ---------------------------------------------------------------------------
+
+
+def test_discord_notified_at_set_on_first_connect(
+    training_ws_client, training_session_data, async_session
+):
+    """First WS connection sets discord_notified_at in DB."""
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+
+        # Send a message so the server enters the message loop, which means
+        # all pre-loop code (including the discord_notified_at UPDATE) has run.
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        ws.receive_json()  # leaderboard_update
+
+    async def _check():
+        async with async_session() as db:
+            result = await db.execute(
+                select(TrainingSession).where(TrainingSession.id == uuid.UUID(sid))
+            )
+            s = result.scalar_one()
+            assert s.discord_notified_at is not None
+
+    asyncio.run(_check())
+
+
+def test_discord_notification_skipped_on_reconnect(async_session, training_user, training_seed):
+    """Reconnect (discord_notified_at already set) must not fire notification."""
+    from starlette.testclient import TestClient
+
+    from speedfog_racing.websocket.training_manager import training_manager
+
+    # Create session with discord_notified_at already set (simulates restart)
+    async def _setup():
+        async with async_session() as db:
+            session = await create_training_session(db, training_user.id, "training_standard")
+            session.discord_notified_at = datetime.now(UTC)
+            await db.commit()
+            await db.refresh(session)
+            return str(session.id), session.mod_token
+
+    sid, token = asyncio.run(_setup())
+
+    training_manager.rooms.clear()
+    with (
+        TestClient(app, raise_server_exceptions=False) as client,
+        patch(
+            "speedfog_racing.websocket.training_mod.send_training_live_notification"
+        ) as mock_notify,
+    ):
+        with client.websocket_connect(f"/ws/training/{sid}") as ws:
+            ws.send_json({"type": "auth", "mod_token": token})
+            ws.receive_json()  # auth_ok
+            ws.receive_json()  # race_start
+
+        mock_notify.assert_not_called()
     training_manager.rooms.clear()
