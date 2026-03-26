@@ -328,7 +328,7 @@
 						</filter>
 					</defs>
 
-					<DagBaseLayer {layout} {labelAbove} />
+					<DagBaseLayer {layout} {labelAbove} selectedNodeId={popupData?.nodeId} />
 
 					<!-- Animated overlay -->
 					{#if replayState !== 'idle'}

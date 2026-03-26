@@ -16,9 +16,11 @@
 		layout: DagLayout;
 		/** Set of node IDs whose labels should be placed above the node */
 		labelAbove: Set<string>;
+		/** Node ID currently selected (popup open), highlighted like hover */
+		selectedNodeId?: string | null;
 	}
 
-	let { layout, labelAbove }: Props = $props();
+	let { layout, labelAbove, selectedNodeId = null }: Props = $props();
 
 	function truncateLabel(name: string): string {
 		const short = name.includes(' - ') ? name.split(' - ').pop()! : name;
@@ -66,7 +68,7 @@
 
 <!-- Nodes -->
 {#each layout.nodes as node}
-	<g class="dag-node" data-type={node.type} data-node-id={node.id}>
+	<g class="dag-node" class:selected={selectedNodeId === node.id} data-type={node.type} data-node-id={node.id}>
 		<title>{node.displayName}</title>
 
 		<g class="dag-node-shape">
@@ -138,7 +140,8 @@
 		transition: transform 0.15s ease;
 	}
 
-	.dag-node:hover .dag-node-shape {
+	.dag-node:hover .dag-node-shape,
+	.dag-node.selected .dag-node-shape {
 		transform: scale(1.3);
 	}
 

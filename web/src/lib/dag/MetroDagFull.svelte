@@ -538,7 +538,7 @@
 
 	<!-- Nodes -->
 	{#each layout.nodes as node}
-		<g class="dag-node" data-type={anonymous ? undefined : node.type} data-node-id={node.id}>
+		<g class="dag-node" class:selected={popupData?.nodeId === node.id} data-type={anonymous ? undefined : node.type} data-node-id={node.id}>
 			{#if !anonymous}<title>{node.displayName}</title>{/if}
 
 			<g class="dag-node-shape">
@@ -699,7 +699,8 @@
 		transition: transform 0.15s ease;
 	}
 
-	.dag-node:hover .dag-node-shape {
+	.dag-node:hover .dag-node-shape,
+	.dag-node.selected .dag-node-shape {
 		transform: scale(1.3);
 	}
 
