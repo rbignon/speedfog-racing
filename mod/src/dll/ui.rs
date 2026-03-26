@@ -156,7 +156,7 @@ impl RaceTracker {
     /// Line 1: `● RaceName               HH:MM:SS` (name dimmed, right side in blue)
     ///         Right side shows: WAITING (setup), countdown/GO! (start), IGT (running)
     /// Line 2: `  ZoneName                    X/Y` (X yellow→green on finish, /Y white)
-    /// Line 3: `  tier X, previously Y   [☠]N`     (tier yellow, deaths white)
+    /// Line 3: `  tier X, normally Y   [☠]N`          (tier yellow, deaths white)
     fn render_player_status(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
         let blue = [0.4, 0.6, 1.0, 1.0];
         let yellow = [1.0, 1.0, 0.0, 1.0];
@@ -281,7 +281,7 @@ impl RaceTracker {
         let tier_text = if let Some(z) = zone {
             if let Some(t) = z.tier {
                 let mut s = if let Some(ot) = z.original_tier.filter(|&ot| ot != t) {
-                    format!("  tier {}, previously {}", t, ot)
+                    format!("  tier {}, normally {}", t, ot)
                 } else {
                     format!("  tier {}", t)
                 };
