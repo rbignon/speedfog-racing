@@ -409,6 +409,52 @@ describe("pathing detectors", () => {
     const h = findHighlight(result, "costly_detour");
     expect(h).toBeDefined();
     expect(descriptionText(h!)).toContain("detour");
+    expect(descriptionText(h!)).toContain("skipped it");
+  });
+
+  it("groups multi-zone branches as a single costly detour", () => {
+    // Player takes a 3-zone branch (b1 -> b2 -> b3) while the winner
+    // takes a different route. The downstream zones (b2, b3) weren't
+    // individual choices; the branch was committed at the fork.
+    const me = participant("me", {
+      igt_ms: 600000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "fork", igt_ms: 50000 },
+        { node_id: "b1", igt_ms: 100000 },
+        { node_id: "b2", igt_ms: 150000 },
+        { node_id: "b3", igt_ms: 200000 },
+        { node_id: "merge", igt_ms: 500000 },
+      ],
+    });
+    const winner = participant("winner", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "fork", igt_ms: 50000 },
+        { node_id: "alt", igt_ms: 100000 },
+        { node_id: "merge", igt_ms: 200000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      fork: { layer: 1 },
+      b1: { layer: 2 },
+      b2: { layer: 3 },
+      b3: { layer: 4, display_name: "Hard Boss" },
+      alt: { layer: 2 },
+      merge: { layer: 5 },
+    });
+    const result = computePersonalHighlights("me", [me, winner], graph);
+    const h = findHighlight(result, "costly_detour");
+    expect(h).toBeDefined();
+    // Should mention the costliest zone (b3: 300000ms) not individual zones
+    expect(descriptionText(h!)).toContain("Hard Boss");
+    // Multi-zone branch uses "different route" wording, not "skipped it"
+    expect(descriptionText(h!)).toContain("different route");
+    expect(descriptionText(h!)).not.toContain("skipped it");
+    // Total branch time: b1=50s + b2=50s + b3=300s = 400s = 6:40
+    expect(descriptionText(h!)).toContain("6:40");
   });
 });
 
