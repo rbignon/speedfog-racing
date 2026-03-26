@@ -245,7 +245,7 @@ def run_speedfog(
                     str(config_path.absolute()),
                     "-o",
                     str(output_dir),
-                    "--spoiler",
+                    "--logs",
                     "--game-dir",
                     str(game_dir),
                 ],
