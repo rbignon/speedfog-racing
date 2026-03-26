@@ -123,7 +123,7 @@
 					placeholder="Pick a date"
 				/>
 				<p class="hint">
-					Leave empty if you don't have a fixed start time yet.
+					Indicative only. The organizer starts the race manually at any time.
 				</p>
 			</div>
 
