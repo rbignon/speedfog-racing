@@ -501,10 +501,15 @@ class TestUpdatePlayerTraits:
         async with async_session() as db:
             scores = await db.get(PlayerTraitScores, uid)
             assert scores is not None
-            # Only 1 race, need MIN_RACES_FOR_TRAITS (3), so per-race traits should be 0
+            # Only 1 race, need MIN_RACES_FOR_TRAITS (3), so all traits should be 0
             assert scores.rusher == 0
             assert scores.cautious == 0
             assert scores.explorer == 0
+            assert scores.pathfinder == 0
+            assert scores.boss_slayer == 0
+            assert scores.resilient == 0
+            assert scores.rage_quitter == 0
+            assert scores.dominant_trait is None
 
     async def test_upserts_on_recompute(self, async_session, three_races_with_zone_history):
         """Running update_player_traits again should update, not duplicate."""

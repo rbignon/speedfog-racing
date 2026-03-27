@@ -1232,6 +1232,8 @@ export interface TraitScoresDetail {
 export interface UserTraitsResponse {
   dominant_trait: string | null;
   scores: TraitScoresDetail | null;
+  finished_races: number;
+  races_required: number;
   elo_rating: number;
   elo_rank: number | null;
   elo_trend_delta: number;

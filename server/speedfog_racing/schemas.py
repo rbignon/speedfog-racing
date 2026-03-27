@@ -496,6 +496,8 @@ class TraitScoresDetail(BaseModel):
 class UserTraitsResponse(BaseModel):
     dominant_trait: str | None
     scores: TraitScoresDetail | None
+    finished_races: int
+    races_required: int
     elo_rating: int
     elo_rank: int | None
     elo_trend_delta: int

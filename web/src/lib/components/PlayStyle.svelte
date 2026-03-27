@@ -118,6 +118,10 @@
 			{/each}
 		</div>
 	</div>
+{:else}
+	<p class="traits-progress">
+		{traits.finished_races} / {traits.races_required} races finished. Complete more races to unlock your play style profile.
+	</p>
 {/if}
 
 <style>
@@ -206,6 +210,13 @@
 		color: var(--color-text-secondary);
 		font-variant-numeric: tabular-nums;
 		text-align: right;
+	}
+
+	.traits-progress {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		font-style: italic;
+		margin: 0;
 	}
 
 	@media (max-width: 560px) {

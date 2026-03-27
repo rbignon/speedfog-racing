@@ -41,6 +41,7 @@ from speedfog_racing.schemas import (
     UserTraitsResponse,
 )
 from speedfog_racing.services.i18n import get_available_locales
+from speedfog_racing.services.stats_service import MIN_RACES_FOR_TRAITS
 
 router = APIRouter()
 
@@ -486,6 +487,15 @@ async def get_user_traits(
 
     scores = await db.get(PlayerTraitScores, user.id)
 
+    finished_races = (
+        await db.execute(
+            select(func.count()).where(
+                Participant.user_id == user.id,
+                Participant.status == ParticipantStatus.FINISHED,
+            )
+        )
+    ).scalar() or 0
+
     # ELO rank (only for non-provisional: 3+ races participated)
     elo_rank = None
     if user.elo_races >= 3:
@@ -516,20 +526,34 @@ async def get_user_traits(
     scores_detail = None
     dominant_trait = None
     if scores and user.elo_races >= 3:
-        dominant_trait = scores.dominant_trait
-        scores_detail = TraitScoresDetail(
-            rusher=scores.rusher,
-            cautious=scores.cautious,
-            resilient=scores.resilient,
-            rage_quitter=scores.rage_quitter,
-            explorer=scores.explorer,
-            pathfinder=scores.pathfinder,
-            boss_slayer=scores.boss_slayer,
+        has_nonzero = any(
+            [
+                scores.rusher,
+                scores.cautious,
+                scores.resilient,
+                scores.rage_quitter,
+                scores.explorer,
+                scores.pathfinder,
+                scores.boss_slayer,
+            ]
         )
+        if has_nonzero:
+            dominant_trait = scores.dominant_trait
+            scores_detail = TraitScoresDetail(
+                rusher=scores.rusher,
+                cautious=scores.cautious,
+                resilient=scores.resilient,
+                rage_quitter=scores.rage_quitter,
+                explorer=scores.explorer,
+                pathfinder=scores.pathfinder,
+                boss_slayer=scores.boss_slayer,
+            )
 
     return UserTraitsResponse(
         dominant_trait=dominant_trait,
         scores=scores_detail,
+        finished_races=finished_races,
+        races_required=MIN_RACES_FOR_TRAITS,
         elo_rating=round(user.elo_rating),
         elo_rank=elo_rank,
         elo_trend_delta=trend_delta,

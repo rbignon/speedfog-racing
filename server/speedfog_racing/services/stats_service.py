@@ -312,7 +312,9 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         else 0,
         "rage_quitter": round(
             compute_rage_quitter_score(total_abandoned_playing, total_participated)
-        ),
+        )
+        if total_finished >= MIN_RACES_FOR_TRAITS
+        else 0,
     }
 
     max_score = max(scores.values())

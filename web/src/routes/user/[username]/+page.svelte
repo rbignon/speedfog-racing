@@ -188,7 +188,7 @@
 			</div>
 		</div>
 
-		{#if traits?.scores}
+		{#if traits}
 			<section class="play-style-section">
 				<h2>Play Style</h2>
 				<PlayStyle {traits} />

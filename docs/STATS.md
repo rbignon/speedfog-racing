@@ -49,9 +49,11 @@ Seven traits scored 0-100 per player. Computed across all finished races, recomp
 
 ### Requirements
 
-- Minimum 3 finished races (`MIN_RACES_FOR_TRAITS`)
-- Each race needs at least 2 finishers to contribute
+- Minimum 3 finished races (`MIN_RACES_FOR_TRAITS`) for all traits (including rage_quitter)
+- Each race needs at least 2 finishers to contribute to per-race traits
 - Dominant trait set when max score >= 40 (`DOMINANT_TRAIT_THRESHOLD`)
+- API returns `finished_races` and `races_required` so the frontend can show progress
+- If all scores are 0, `scores` is returned as `null` (frontend shows progress message instead of empty bars)
 
 ### Trait Formulas
 
@@ -135,7 +137,7 @@ Displayed as: "High abandon rate across races". Simple abandonment ratio. No pow
 score = (abandoned_with_progress / total_participated) * 100
 ```
 
-Requires `MIN_RACES_FOR_TRAITS` (3) total races, otherwise 0.
+Requires `MIN_RACES_FOR_TRAITS` (3) **finished** races, same threshold as all other traits. This prevents players with few finishes but several abandons from being labeled "Rage Quitter" based on insufficient data.
 
 ### Data Model
 

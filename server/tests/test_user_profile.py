@@ -340,3 +340,96 @@ async def test_profile_stats_counts(test_client, user_with_activity):
         assert stats["training_count"] == 1  # 1 training session
         assert stats["organized_count"] == 1  # organized 1 race
         assert stats["casted_count"] == 1  # casted 1 race
+
+
+@pytest.mark.asyncio
+async def test_traits_returns_progress_when_insufficient_races(test_client, async_session):
+    """Traits endpoint returns scores=null with progress info when player has too few finishes."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="few_finishes",
+            twitch_username="few_finishes",
+            api_token="few_finishes_token",
+            role=UserRole.USER,
+            elo_races=4,
+        )
+        db.add(user)
+        await db.flush()
+
+        org = User(
+            twitch_id="traits_org",
+            twitch_username="traits_org",
+            api_token="traits_org_token",
+            role=UserRole.ORGANIZER,
+        )
+        db.add(org)
+        await db.flush()
+
+        seed = Seed(
+            seed_number="traits_seed",
+            pool_name="standard",
+            graph_json={"nodes": {}, "total_layers": 1},
+            total_layers=1,
+            folder_path="/fake/traits",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        # 2 finished races, 2 abandoned: below MIN_RACES_FOR_TRAITS (3) finishes
+        for i, status in enumerate(
+            [
+                ParticipantStatus.FINISHED,
+                ParticipantStatus.FINISHED,
+                ParticipantStatus.ABANDONED,
+                ParticipantStatus.ABANDONED,
+            ]
+        ):
+            race = Race(
+                name=f"Traits Race {i}",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+            )
+            db.add(race)
+            await db.flush()
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    mod_token=f"traits_mod_{i}",
+                    status=status,
+                    igt_ms=1_000_000 + i * 100_000,
+                    death_count=5 + i,
+                )
+            )
+
+        # Add a PlayerTraitScores row with all zeros (as recompute would produce)
+        from speedfog_racing.models import PlayerTraitScores
+
+        db.add(
+            PlayerTraitScores(
+                user_id=user.id,
+                rusher=0,
+                cautious=0,
+                resilient=0,
+                rage_quitter=0,
+                explorer=0,
+                pathfinder=0,
+                boss_slayer=0,
+                dominant_trait=None,
+            )
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/users/few_finishes/traits")
+        assert response.status_code == 200
+        data = response.json()
+
+        # scores should be null (all zeros hidden)
+        assert data["scores"] is None
+        assert data["dominant_trait"] is None
+        # Progress fields present
+        assert data["finished_races"] == 2
+        assert data["races_required"] == 3
