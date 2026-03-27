@@ -37,11 +37,11 @@ The game stores EMEVD event flags in a sparse `std::map<category, page>` (MSVC r
 
 **`is_flag_set()`**: Calls `find_category_page()`, then reads bit `7 - (remainder & 7)` of byte `remainder >> 3` in the category page. Returns `Option<bool>`: `None` on memory read failure (loading screens), `Some(false)` or `Some(true)`.
 
-### Category 1040292
+### Category 1050294
 
-FogRando pre-allocates category 1040292 at runtime. SpeedFog Racing uses offsets 800-999 within this category; FogRando uses ~100-299. Category 9000 (originally planned) does NOT exist in a typical game. `SetEventFlag` to category 9000 is a silent no-op.
+SpeedFog uses category 1050294 for zone tracking flags (saved, 4xxx offsets). The category is allocated when the injected EMEVD references it. Flags in the 4xxx range persist across area reloads, ensuring the mod's forced rescan at loading exit can catch any flags the 10Hz poll missed.
 
-The `EVENT_FLAG_BASE` in `../speedfog/speedfog/output.py` is `1040292800`, giving flag IDs `1040292800` through `1040292999`.
+The `EVENT_FLAG_BASE` in `../speedfog/speedfog/output.py` is `1050294000`, giving flag IDs `1050294000` through `1050294999`.
 
 ### Polling Loop
 
@@ -64,7 +64,7 @@ for each flag_id in event_ids:
 
 **Regular fog gate flags are repeatable**: After capture, the flag is cleared in game memory (`set_flag(false)`) so the EMEVD script can re-set it on the next fog gate traversal. This enables backtrack detection: re-traversing an already-visited fog gate produces a new `event_flag` message.
 
-**Polling runs always**: Even when disconnected or race not running. Flags are transient in game memory (~seconds), so detection must be immediate.
+**Polling runs always**: Even when disconnected or race not running. Flags are cleared after capture (for re-traversal detection), so polling must be continuous.
 
 ### Deferred vs Immediate Flags
 
@@ -219,8 +219,8 @@ Gaps are color-coded: green for negative (ahead), soft red for positive (behind)
 | ---------------------- | ---------- | ----------------------- | -------------------------------------------- |
 | Poll interval          | 100ms      | `tracker.rs`            | Event flag read frequency                    |
 | `ZONE_REVEAL_TIMEOUT`  | 15s        | `tracker.rs`            | Defensive timeout for zone reveal            |
-| `EVENT_FLAG_BASE`      | 1040292800 | `output.py`             | First SpeedFog event flag ID                 |
-| Flag range             | 800-999    | category 1040292        | Our offset range within FogRando's cat       |
+| `EVENT_FLAG_BASE`      | 1050294000 | `output.py`             | First SpeedFog event flag ID (saved, 4xxx)   |
+| Flag range             | 0-999      | category 1050294        | Zone tracking + finish + death markers       |
 | Divisor                | 1000       | game memory             | Flags per category page                      |
 | Max tree iterations    | 64         | `event_flags.rs`        | Guard against infinite tree traversal        |
 | Status update interval | 1s         | `tracker.rs`            | Throttle for IGT/death broadcasts            |
