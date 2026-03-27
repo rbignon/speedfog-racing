@@ -168,10 +168,16 @@ impl RaceTracker {
         let green = [0.0, 1.0, 0.0, 1.0];
 
         // --- Line 1: connection dot + race name (left), local IGT in blue (right) ---
-        let dot_color = match self.ws_status() {
-            ConnectionStatus::Connected => green,
-            ConnectionStatus::Connecting | ConnectionStatus::Reconnecting => [1.0, 0.65, 0.0, 1.0],
-            _ => [1.0, 0.0, 0.0, 1.0],
+        let dot_color = if self.permanent_error.is_some() {
+            [1.0, 0.0, 0.0, 1.0] // red
+        } else {
+            match self.ws_status() {
+                ConnectionStatus::Connected => green,
+                ConnectionStatus::Connecting | ConnectionStatus::Reconnecting => {
+                    [1.0, 0.65, 0.0, 1.0]
+                }
+                _ => [1.0, 0.0, 0.0, 1.0],
+            }
         };
 
         // Right side of line 1: state banner during setup/countdown/go, IGT otherwise.
@@ -642,8 +648,15 @@ impl RaceTracker {
         }
     }
 
-    /// Temporary status message (yellow text with separator, disappears after 3s).
+    /// Status message: persistent red for permanent errors, temporary yellow otherwise.
     fn render_status_message(&self, ui: &hudhook::imgui::Ui) {
+        // Permanent errors are always visible (red)
+        if let Some(ref err) = self.permanent_error {
+            ui.separator();
+            ui.text_colored([1.0, 0.3, 0.3, 1.0], err);
+            return;
+        }
+        // Temporary status messages (yellow, auto-dismiss)
         if let Some(status) = self.get_status() {
             ui.separator();
             ui.text_colored([1.0, 1.0, 0.0, 1.0], status);

@@ -181,6 +181,9 @@ pub struct RaceTracker {
     // runs within the same poll() drain loop.
     last_auth_error: Option<String>,
 
+    // Permanent error from server (persistent red banner, no auto-dismiss)
+    pub(crate) permanent_error: Option<String>,
+
     // IGT captured from game memory when the race ends and the player hasn't
     // finished. The mod's local participant igt_ms is stale (only updated via
     // leaderboard_update on events), so we freeze the live game IGT instead.
@@ -279,6 +282,7 @@ impl RaceTracker {
             was_position_readable: true,
             seed_mismatch: false,
             last_auth_error: None,
+            permanent_error: None,
             frozen_igt_ms: None,
         })
     }
@@ -941,10 +945,10 @@ impl RaceTracker {
                 warn!(error = %e, "[WS] Error");
                 self.set_status(e);
             }
-            IncomingMessage::PermanentError(e) => {
-                self.last_received_debug = Some(format!("permanent_error({})", e));
-                error!(error = %e, "[WS] Permanent error, will not reconnect");
-                self.set_status(e);
+            IncomingMessage::PermanentError(msg) => {
+                self.last_received_debug = Some(format!("permanent_error({})", msg));
+                error!(message = %msg, "[WS] Permanent error, stopping reconnection");
+                self.permanent_error = Some(msg);
             }
         }
     }
