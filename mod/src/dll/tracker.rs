@@ -5,6 +5,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
@@ -151,10 +153,10 @@ pub struct RaceTracker {
     // Item spawner thread handle (prevents double-spawn on reconnect)
     spawner_thread: Option<JoinHandle<()>>,
 
-    // Items already spawned this session (in-process guard for reconnects).
-    // The event flag in game memory is unreliable across reconnects: the game
-    // may silently clear our flag via internal sync. This bool is the primary guard.
-    items_spawned: bool,
+    // Items actually spawned this session (in-process guard for reconnects).
+    // Set by the spawner thread AFTER items are given to the player, so a stale
+    // save that skips spawning leaves this false, allowing retry on the next auth_ok.
+    items_spawned: Arc<AtomicBool>,
 
     // Zone update received, waiting for loading screen to end before revealing
     pending_zone_update: Option<ZoneUpdateData>,
@@ -270,7 +272,7 @@ impl RaceTracker {
             flags_diagnosed: false,
             last_flag_reader_ok: None,
             spawner_thread: None,
-            items_spawned: false,
+            items_spawned: Arc::new(AtomicBool::new(false)),
             pending_zone_update: None,
             pre_reveal_layer: None,
             pending_zone_received_at: None,
@@ -755,7 +757,7 @@ impl RaceTracker {
                 // Spawn runtime items (gems/AoW) if present in seed
                 if let Some(ref seed_info) = self.race_state.seed {
                     if !seed_info.spawn_items.is_empty() {
-                        if self.items_spawned {
+                        if self.items_spawned.load(Ordering::Relaxed) {
                             info!(
                                 count = seed_info.spawn_items.len(),
                                 "[RACE] Items already spawned this session, skipping"
@@ -776,16 +778,14 @@ impl RaceTracker {
                                 let spawned_flag = seed_info.items_spawned_flag;
                                 let ids: Vec<u32> = items.iter().map(|i| i.id).collect();
                                 info!(count = items.len(), item_ids = ?ids, "[RACE] Spawning runtime items");
-                                // Set before thread spawn: prevents reconnect double-spawn.
-                                // If the thread fails, items won't retry this session
-                                // (event flag in item_spawner covers game restarts).
-                                self.items_spawned = true;
                                 let flag_reader = self.event_flag_reader.clone();
+                                let spawned_flag_ref = Arc::clone(&self.items_spawned);
                                 self.spawner_thread = Some(std::thread::spawn(move || {
                                     crate::eldenring::item_spawner::spawn_items_blocking(
                                         items,
                                         &flag_reader,
                                         spawned_flag,
+                                        &spawned_flag_ref,
                                     );
                                 }));
                             }

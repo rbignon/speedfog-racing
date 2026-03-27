@@ -4,13 +4,17 @@
 //! DirectlyGivePlayerItem doesn't support the Gem item type, so we use
 //! func_item_inject (same function as the ER practice tool) at runtime.
 //!
-//! Re-spawn prevention has two layers:
-//! 1. In-process `items_spawned` bool in RaceTracker (primary; covers reconnects)
-//! 2. Event flag from `items_spawned_flag` in graph.json (secondary; covers game
-//!    restarts). The flag ID is provided by the server in the auth_ok seed message
-//!    and lives in the saved flag range (persists in the save file).
+//! Re-spawn prevention has three layers:
+//! 1. In-process `items_spawned` AtomicBool in RaceTracker (primary; covers
+//!    reconnects). Set by this thread AFTER items are actually spawned.
+//! 2. IGT freshness check: if IGT > 15s when the game loads, the save is stale
+//!    (not a fresh New Game). Skip spawning so the player can retry with a new save.
+//! 3. Event flag from `items_spawned_flag` in graph.json (covers game restarts).
+//!    The flag ID is provided by the server in the auth_ok seed message and lives
+//!    in the saved flag range (persists in the save file).
 
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use libeldenring::pointers::Pointers;
@@ -18,6 +22,11 @@ use tracing::{error, info, warn};
 
 use crate::core::protocol::SpawnItem;
 use crate::eldenring::EventFlagReader;
+
+/// Maximum IGT (in milliseconds) for a save to be considered fresh.
+/// Matches the server-side `MAX_FRESH_IGT_MS` constant.
+/// A fresh New Game reaches the first load screen at ~3-5s IGT.
+const MAX_FRESH_IGT_MS: u32 = 15_000;
 
 /// Gem type flag in item ID encoding (high nibble 0x8 = EquipParamGem)
 const GEM_TYPE_FLAG: u32 = 0x8000_0000;
@@ -41,16 +50,18 @@ type SpawnItemFn = unsafe extern "system" fn(*const c_void, *mut SpawnRequest, *
 /// the player has loaded into the game world, then calls func_item_inject
 /// for each item.
 ///
+/// Before spawning, checks the in-game time (IGT). If the save is stale
+/// (IGT > 15s), skips the spawn so the player can create a fresh save.
+/// The `items_spawned` AtomicBool is only set to `true` after items are
+/// actually given, allowing a retry on the next auth_ok.
+///
 /// When `items_spawned_flag` is `Some(flag_id)`, checks the flag before
 /// spawning and sets it after to prevent re-giving items on game restart.
-///
-/// When `items_spawned_flag` is `None` (old server), we have no persistent
-/// re-spawn guard. The in-process items_spawned bool still prevents
-/// double-spawn within a session, but a full game restart will re-give items.
 pub fn spawn_items_blocking(
     items: Vec<SpawnItem>,
     flag_reader: &EventFlagReader,
     items_spawned_flag: Option<u32>,
+    items_spawned: &AtomicBool,
 ) {
     if items.is_empty() {
         return;
@@ -91,6 +102,21 @@ pub fn spawn_items_blocking(
 
     // Brief delay for the game to finish initialization after MapItemMan is set
     std::thread::sleep(Duration::from_secs(2));
+
+    // Stale save guard: if IGT is already high, the player loaded an existing
+    // save instead of starting a New Game. Skip spawning so the server's
+    // "Please start a New Game" rejection doesn't permanently block items.
+    // The player can then create a fresh save and items will spawn on the
+    // next auth_ok (since items_spawned AtomicBool was never set to true).
+    let igt_ms = pointers.igt.read().map(|v| v as u32).unwrap_or(0);
+    if igt_ms > MAX_FRESH_IGT_MS {
+        warn!(
+            igt_ms,
+            max = MAX_FRESH_IGT_MS,
+            "Stale save detected (IGT too high), skipping item spawn"
+        );
+        return;
+    }
 
     // Check re-spawn prevention flag (only when server provides one)
     if let Some(flag_id) = items_spawned_flag {
@@ -146,6 +172,9 @@ pub fn spawn_items_blocking(
             "Spawned item"
         );
     }
+
+    // Mark as spawned in-process (primary guard against reconnect double-spawn)
+    items_spawned.store(true, Ordering::Relaxed);
 
     // Set re-spawn prevention flag (only when server provides one)
     if let Some(flag_id) = items_spawned_flag {
