@@ -241,6 +241,9 @@ class ConnectionManager:
                     leader_splits=leader_splits,
                     leader_igt_ms=leader_igt_ms,
                     is_leader=(has_leader and i == 0),
+                    leader_finished=(
+                        has_leader and sorted_participants[0].status.value == "finished"
+                    ),
                 )
                 if has_leader and graph_json
                 else None,
@@ -367,11 +370,13 @@ def compute_gap_ms(
     leader_splits: dict[int, int],
     leader_igt_ms: int,
     is_leader: bool = False,
+    leader_finished: bool = False,
 ) -> int | None:
     """Compute gap_ms for a participant relative to the leader (LiveSplit-style).
 
     - While player's IGT is within leader's time budget on the layer: gap = entry delta
     - Once player exceeds leader's exit IGT: gap = entry delta + overshoot
+    - On the last layer after leader finishes: use leader's finish IGT as exit time
     """
     if is_leader:
         return None
@@ -387,8 +392,12 @@ def compute_gap_ms(
     # Leader's exit = leader's entry on next layer
     leader_exit = leader_splits.get(current_layer + 1)
     if leader_exit is None:
-        # Leader hasn't left this layer yet, show entry delta only
-        return entry_delta
+        if leader_finished:
+            # Last layer: leader finished, use finish IGT as exit time
+            leader_exit = leader_igt_ms
+        else:
+            # Leader hasn't left this layer yet, show entry delta only
+            return entry_delta
     # Compare time spent in layer, not absolute IGTs
     time_in_layer = igt_ms - player_layer_entry_igt
     leader_time_in_layer = leader_exit - leader_entry

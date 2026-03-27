@@ -499,6 +499,7 @@ impl RaceTracker {
             .unwrap_or(0);
         let has_leader = !leader_splits.is_empty()
             || participants.first().is_some_and(|p| p.status == "finished");
+        let leader_finished = participants.first().is_some_and(|p| p.status == "finished");
 
         // Pre-compute gaps for all participants
         let race_finished = self
@@ -530,6 +531,7 @@ impl RaceTracker {
                     i == 0,
                     &p.status,
                     leader_igt_ms,
+                    leader_finished,
                 )
             })
             .collect();

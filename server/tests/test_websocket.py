@@ -918,6 +918,62 @@ class TestGapComputation:
         )
         assert gap is None
 
+    def test_compute_gap_last_layer_leader_finished_within_budget(self):
+        """Last layer, leader finished: within budget -> entry delta only."""
+        from speedfog_racing.websocket.manager import compute_gap_ms
+
+        leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
+        # Player entered layer 3 at 125000, leader at 120000 -> entry_delta = 5000
+        # Leader finished at 150000, spent 30000 in layer
+        # Player spent 10000 (135000-125000) -> within budget
+        gap = compute_gap_ms(
+            "playing",
+            igt_ms=135000,
+            current_layer=3,
+            player_layer_entry_igt=125000,
+            leader_splits=leader_splits,
+            leader_igt_ms=150000,
+            leader_finished=True,
+        )
+        assert gap == 5000
+
+    def test_compute_gap_last_layer_leader_finished_exceeded(self):
+        """Last layer, leader finished: exceeded budget -> entry delta + overshoot."""
+        from speedfog_racing.websocket.manager import compute_gap_ms
+
+        leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
+        # Player entered layer 3 at 125000, leader at 120000 -> entry_delta = 5000
+        # Leader finished at 150000, spent 30000 in layer
+        # Player spent 40000 (165000-125000) -> overshoot = 10000
+        # gap = 5000 + 10000 = 15000
+        gap = compute_gap_ms(
+            "playing",
+            igt_ms=165000,
+            current_layer=3,
+            player_layer_entry_igt=125000,
+            leader_splits=leader_splits,
+            leader_igt_ms=150000,
+            leader_finished=True,
+        )
+        assert gap == 15000
+
+    def test_compute_gap_last_layer_leader_not_finished(self):
+        """Last layer, leader NOT finished: entry delta only (no exit info)."""
+        from speedfog_racing.websocket.manager import compute_gap_ms
+
+        leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
+        # Both on layer 3, leader hasn't finished -> entry delta only
+        gap = compute_gap_ms(
+            "playing",
+            igt_ms=165000,
+            current_layer=3,
+            player_layer_entry_igt=125000,
+            leader_splits=leader_splits,
+            leader_igt_ms=0,
+            leader_finished=False,
+        )
+        assert gap == 5000  # entry delta only
+
     def test_get_layer_entry_igt(self):
         """Returns first IGT at the specified layer."""
         from speedfog_racing.websocket.manager import get_layer_entry_igt

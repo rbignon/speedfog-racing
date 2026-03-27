@@ -181,19 +181,21 @@ LiveSplit-style gap computation. The gap is fixed (entry delta) while the player
 
 ### Server-Side Gap Computation
 
-`compute_gap_ms(status, igt_ms, current_layer, player_layer_entry_igt, leader_splits, leader_igt_ms, is_leader)`:
+`compute_gap_ms(status, igt_ms, current_layer, player_layer_entry_igt, leader_splits, leader_igt_ms, is_leader, leader_finished)`:
 
-| Condition                                         | Result                                          |
-| ------------------------------------------------- | ----------------------------------------------- |
-| Is leader                                         | `None`                                          |
-| Status = `finished`                               | `igt_ms - leader_igt_ms` (direct delta)         |
-| Status = `playing`, within leader's time budget   | `player_layer_entry_igt - leader_splits[layer]` |
-| Status = `playing`, exceeded leader's time budget | `igt_ms - leader_splits[layer + 1]`             |
-| Status = `playing`, leader still on same layer    | `player_layer_entry_igt - leader_splits[layer]` |
-| Status = `playing`, no split for layer            | `None`                                          |
-| Other statuses                                    | `None`                                          |
+| Condition                                                  | Result                                                 |
+| ---------------------------------------------------------- | ------------------------------------------------------ |
+| Is leader                                                  | `None`                                                 |
+| Status = `finished`                                        | `igt_ms - leader_igt_ms` (direct delta)                |
+| Status = `playing`, within leader's time budget            | `player_layer_entry_igt - leader_splits[layer]`        |
+| Status = `playing`, exceeded leader's time budget          | `igt_ms - leader_splits[layer + 1]`                    |
+| Status = `playing`, last layer, leader finished, in budget | `player_layer_entry_igt - leader_splits[layer]`        |
+| Status = `playing`, last layer, leader finished, exceeded  | entry delta + overshoot (uses `leader_igt_ms` as exit) |
+| Status = `playing`, leader still on same layer             | `player_layer_entry_igt - leader_splits[layer]`        |
+| Status = `playing`, no split for layer                     | `None`                                                 |
+| Other statuses                                             | `None`                                                 |
 
-"Within budget" means `igt_ms <= leader_splits[current_layer + 1]`, i.e. the player hasn't used more time on this layer than the leader did.
+"Within budget" means the player's time in the layer hasn't exceeded the leader's time in the same layer. On the last layer, when the leader has finished, `leader_igt_ms` is used as the leader's exit time (since no `leader_splits[layer + 1]` exists).
 
 ### Leaderboard Sorting
 
