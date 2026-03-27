@@ -184,8 +184,6 @@ See `docs/PROTOCOL.md` for complete reference.
 
 ## Documentation
 
-- `docs/ROADMAP.md` - Project roadmap (v1.0, v1.1, v2.0, future)
-- `docs/DESIGN.md` - Overall design
 - `docs/GRAPHIC_CHARTER.md` - Visual identity and color palette
 - `docs/PROTOCOL.md` - API and WebSocket protocol reference
 - `docs/RACE_LIFECYCLE.md` - State machines (race, participant, seed) and transition rules
@@ -193,17 +191,7 @@ See `docs/PROTOCOL.md` for complete reference.
 - `docs/EVENT_FLAG_TRACKING.md` - Event flag polling, zone progression, gap timing
 - `docs/STATS.md` - ELO ratings, behavioral traits, zone/boss analytics
 - `docs/SEED_PIPELINE.md` - Seed generation, ingestion, on-demand pack assembly
-- `docs/specs/phase1.md` - Phase 1 MVP detailed spec
-- `docs/specs/phase2-ui-ux.md` - Phase 2 UI/UX specification
-- `docs/specs/emevd-zone-tracking.md` - EMEVD zone tracking spec (v1.0 critical)
 - `docs/DISCORD_BOT.md` - Discord bot setup and configuration
-
-## Current State
-
-Phase 1 and Phase 2 complete.
-
-**Phase 1 completed:** Steps 1-12 (Server Foundation, Twitch Auth, Seed Pool Basic, Race CRUD, Seed Pack Generation, Frontend Foundation, Race Management UI, WebSocket Server, WebSocket Frontend, Mod Fork, Integration Testing, Protocol Coherence & Frontend Gaps)
-**Phase 2 completed:** Steps 1-8 (Data Model & API, Metro DAG Core, Homepage Redesign, Race Detail Lobby/Running/Finished States, Race Creation & Management, Polish). See `docs/specs/phase2-ui-ux.md`.
 
 ## Deployment
 
