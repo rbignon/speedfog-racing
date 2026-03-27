@@ -571,6 +571,10 @@ async def resolve_dominant_traits(db: AsyncSession) -> None:
 
 async def recalculate_all_stats(db: AsyncSession) -> None:
     """Clear all ELO/trait data and replay from scratch."""
+    from speedfog_racing.services.seed_difficulty import backfill_difficulty_scores
+
+    await backfill_difficulty_scores(db)
+
     await db.execute(delete(EloHistory))
     await db.execute(delete(PlayerTraitScores))
 
