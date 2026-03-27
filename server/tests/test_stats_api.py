@@ -26,7 +26,11 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
-from speedfog_racing.services.stats_service import update_elo_ratings, update_player_traits
+from speedfog_racing.services.stats_service import (
+    resolve_dominant_traits,
+    update_elo_ratings,
+    update_player_traits,
+)
 
 
 @pytest.fixture
@@ -556,8 +560,6 @@ class TestUpdatePlayerTraits:
             uid_a = users[0].id
 
         # Run the percentile resolution
-        from speedfog_racing.services.stats_service import resolve_dominant_traits
-
         async with async_session() as db:
             await resolve_dominant_traits(db)
 
@@ -609,8 +611,6 @@ class TestUpdatePlayerTraits:
             await db.commit()
             uid_d = users[3].id
 
-        from speedfog_racing.services.stats_service import resolve_dominant_traits
-
         async with async_session() as db:
             await resolve_dominant_traits(db)
 
@@ -658,8 +658,6 @@ class TestUpdatePlayerTraits:
             await db.commit()
             uid_a = users[0].id
 
-        from speedfog_racing.services.stats_service import resolve_dominant_traits
-
         async with async_session() as db:
             await resolve_dominant_traits(db)
 
@@ -693,7 +691,6 @@ class TestUpdatePlayerTraits:
     ):
         """Full flow: compute raw traits then resolve dominant via percentile."""
         race_ids, user_ids = three_races_with_zone_history
-        from speedfog_racing.services.stats_service import resolve_dominant_traits
 
         # Compute raw scores for all 3 races
         for rid in race_ids:

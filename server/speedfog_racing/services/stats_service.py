@@ -332,10 +332,13 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         )
 
 
-def _compute_ranks(values: Sequence[int | float]) -> list[float]:
-    """Compute 1-indexed ranks with average rank for ties."""
+def _compute_ranks(values: Sequence[int | float], *, descending: bool = False) -> list[float]:
+    """Compute 1-indexed ranks with average rank for ties.
+
+    By default, lowest value = rank 1. With descending=True, highest value = rank 1.
+    """
     n = len(values)
-    sorted_indices = sorted(range(n), key=lambda i: values[i])
+    sorted_indices = sorted(range(n), key=lambda i: values[i], reverse=descending)
     ranks = [0.0] * n
     i = 0
     while i < n:
@@ -486,7 +489,7 @@ async def resolve_dominant_traits(db: AsyncSession) -> None:
 
     for trait in TRAIT_KEYS:
         values = [getattr(s, trait) for s in all_scores]
-        ranks = _compute_ranks_desc(values)
+        ranks = _compute_ranks(values, descending=True)
         for i, s in enumerate(all_scores):
             # Convert rank to percentile: (rank - 1) / (n - 1) if n > 1
             # 0.0 = best (rank 1), 1.0 = worst (rank n)
@@ -503,7 +506,7 @@ async def resolve_dominant_traits(db: AsyncSession) -> None:
         )
         best_pct = user_pcts[best_trait]
 
-        if best_pct <= DOMINANT_PERCENTILE_THRESHOLD and raw_scores[best_trait] > 0:
+        if best_pct <= DOMINANT_PERCENTILE_THRESHOLD and raw_scores[best_trait] > 0 and n >= 2:
             s.dominant_trait = best_trait
             # Human-readable: "Top X% among N players"
             top_pct = max(1, round(best_pct * 100))
@@ -516,26 +519,6 @@ async def resolve_dominant_traits(db: AsyncSession) -> None:
             s.dominant_description = None
 
     await db.commit()
-
-
-def _compute_ranks_desc(values: list[int | float]) -> list[float]:
-    """Compute 1-indexed ranks for descending order (highest value = rank 1).
-
-    Uses average rank for ties, same as _compute_ranks but reversed.
-    """
-    n = len(values)
-    sorted_indices = sorted(range(n), key=lambda i: values[i], reverse=True)
-    ranks = [0.0] * n
-    i = 0
-    while i < n:
-        j = i
-        while j < n - 1 and values[sorted_indices[j + 1]] == values[sorted_indices[i]]:
-            j += 1
-        avg_rank = (i + j) / 2.0 + 1.0
-        for k in range(i, j + 1):
-            ranks[sorted_indices[k]] = avg_rank
-        i = j + 1
-    return ranks
 
 
 async def recalculate_all_stats(db: AsyncSession) -> None:
