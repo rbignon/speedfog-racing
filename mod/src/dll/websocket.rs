@@ -89,6 +89,8 @@ pub enum IncomingMessage {
         igt_ms: u32,
     },
     Error(String),
+    /// Server rejected permanently (4xxx close code or auth failure). Stop reconnecting.
+    PermanentError(String),
 }
 
 // =============================================================================
@@ -272,6 +274,7 @@ fn websocket_thread(
     let max_delay = Duration::from_secs(30);
     let mut consecutive_failures: u32 = 0;
     let mut last_disconnect_reason: Option<String> = None;
+    let stop_reconnect = AtomicBool::new(false);
 
     loop {
         if shutdown_flag.load(Ordering::SeqCst) {
@@ -335,7 +338,13 @@ fn websocket_thread(
                     incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Connected));
                 reconnect_delay = Duration::from_secs(1);
 
-                let result = message_loop(&mut socket, &outgoing_rx, &incoming_tx, &shutdown_flag);
+                let result = message_loop(
+                    &mut socket,
+                    &outgoing_rx,
+                    &incoming_tx,
+                    &shutdown_flag,
+                    &stop_reconnect,
+                );
                 if let Err(e) = &result {
                     info!(error = %e, "[WS] Disconnected");
                     last_disconnect_reason = Some(e.clone());
@@ -351,13 +360,22 @@ fn websocket_thread(
             Err(e) => {
                 consecutive_failures += 1;
                 last_disconnect_reason = Some(e.clone());
+
+                if e.starts_with("Auth failed:") {
+                    // Auth rejection is permanent, do not reconnect
+                    let _ = incoming_tx.send(IncomingMessage::PermanentError(e.clone()));
+                    let _ =
+                        incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Error));
+                    break;
+                }
+
                 error!(error = %e, attempts = consecutive_failures, "[WS] Connection failed");
                 let _ = incoming_tx.send(IncomingMessage::Error(e.clone()));
                 let _ = incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Error));
             }
         }
 
-        if shutdown_flag.load(Ordering::SeqCst) {
+        if shutdown_flag.load(Ordering::SeqCst) || stop_reconnect.load(Ordering::SeqCst) {
             break;
         }
 
@@ -430,6 +448,7 @@ fn message_loop(
     outgoing_rx: &Receiver<OutgoingMessage>,
     incoming_tx: &Sender<IncomingMessage>,
     shutdown_flag: &Arc<AtomicBool>,
+    stop_reconnect: &AtomicBool,
 ) -> Result<(), String> {
     let mut last_ping_received = Instant::now();
     let ping_timeout = Duration::from_secs(60);
@@ -594,7 +613,26 @@ fn message_loop(
                     }
                 }
             }
-            Ok(Message::Close(_)) => return Err("Server closed".to_string()),
+            Ok(Message::Close(frame)) => {
+                if let Some(ref cf) = frame {
+                    let code: u16 = cf.code.into();
+                    let reason = cf.reason.to_string();
+                    if is_permanent_close(code) {
+                        stop_reconnect.store(true, Ordering::SeqCst);
+                        let msg = if reason.is_empty() {
+                            format!("Server rejected (code {})", code)
+                        } else {
+                            reason.clone()
+                        };
+                        let _ = incoming_tx.send(IncomingMessage::PermanentError(msg));
+                    }
+                    return Err(format!(
+                        "Server closed (code={}, reason={})",
+                        code, cf.reason
+                    ));
+                }
+                return Err("Server closed".to_string());
+            }
             Err(tungstenite::Error::Io(ref e))
                 if e.kind() == std::io::ErrorKind::WouldBlock
                     || e.kind() == std::io::ErrorKind::Interrupted => {}
@@ -604,4 +642,10 @@ fn message_loop(
 
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+/// Returns true if the WebSocket close code represents a permanent error
+/// that should not trigger reconnection (application-level rejection).
+fn is_permanent_close(code: u16) -> bool {
+    code >= 4000
 }

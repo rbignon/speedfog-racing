@@ -941,6 +941,11 @@ impl RaceTracker {
                 warn!(error = %e, "[WS] Error");
                 self.set_status(e);
             }
+            IncomingMessage::PermanentError(e) => {
+                self.last_received_debug = Some(format!("permanent_error({})", e));
+                error!(error = %e, "[WS] Permanent error, will not reconnect");
+                self.set_status(e);
+            }
         }
     }
 
