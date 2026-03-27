@@ -10,5 +10,5 @@ mod game_state;
 pub mod item_spawner;
 pub mod warp_hook;
 
-pub use event_flags::{CategoryPage, EventFlagReader, FlagReaderStatus};
+pub use event_flags::{EventFlagReader, FlagReaderStatus};
 pub use game_state::GameState;
