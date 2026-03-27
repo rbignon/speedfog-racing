@@ -511,6 +511,163 @@ class TestUpdatePlayerTraits:
             assert scores.rage_quitter == 0
             assert scores.dominant_trait is None
 
+    async def test_dominant_trait_uses_percentile_ranking(self, async_session):
+        """Dominant trait should be the one where the player ranks best
+        relative to all other players, not the highest raw score."""
+        async with async_session() as db:
+            # Create 4 users with pre-computed trait scores.
+            # Player A: rusher=80, boss_slayer=90 -- raw max is boss_slayer,
+            #   but all 4 players have high boss_slayer (80-95), while only
+            #   player A has a high rusher. So percentile-wise, rusher wins.
+            users = []
+            for i in range(4):
+                u = User(
+                    twitch_id=f"pct{i}",
+                    twitch_username=f"pct{i}",
+                    api_token=f"pcttok{i}",
+                    role=UserRole.USER,
+                )
+                users.append(u)
+            db.add_all(users)
+            await db.flush()
+
+            scores_data = [
+                # (rusher, cautious, explorer, pathfinder, boss_slayer, resilient, rage_quitter)
+                (80, 10, 10, 10, 90, 20, 0),  # Player A: high rusher AND boss_slayer
+                (20, 10, 10, 10, 95, 20, 0),  # Player B: very high boss_slayer
+                (15, 10, 10, 10, 85, 20, 0),  # Player C: high boss_slayer
+                (10, 10, 10, 10, 80, 20, 0),  # Player D: high boss_slayer
+            ]
+            for user, (ru, ca, ex, pf, bs, re, rq) in zip(users, scores_data):
+                db.add(
+                    PlayerTraitScores(
+                        user_id=user.id,
+                        rusher=ru,
+                        cautious=ca,
+                        explorer=ex,
+                        pathfinder=pf,
+                        boss_slayer=bs,
+                        resilient=re,
+                        rage_quitter=rq,
+                        dominant_trait=None,
+                    )
+                )
+            await db.commit()
+            uid_a = users[0].id
+
+        # Run the percentile resolution
+        from speedfog_racing.services.stats_service import resolve_dominant_traits
+
+        async with async_session() as db:
+            await resolve_dominant_traits(db)
+
+        async with async_session() as db:
+            scores_a = await db.get(PlayerTraitScores, uid_a)
+            # Player A's raw max is boss_slayer (90), but all players have
+            # high boss_slayer. Player A is rank 1 in rusher (80 vs 20/15/10),
+            # which is a better percentile than rank 2 in boss_slayer (90 < 95).
+            assert scores_a.dominant_trait == "rusher"
+            assert scores_a.dominant_description is not None
+            assert "4" in scores_a.dominant_description  # "among 4 players"
+
+    async def test_no_dominant_when_not_in_top_half(self, async_session):
+        """If a player isn't in the top 50% on any trait, no dominant trait."""
+        async with async_session() as db:
+            users = []
+            for i in range(4):
+                u = User(
+                    twitch_id=f"nod{i}",
+                    twitch_username=f"nod{i}",
+                    api_token=f"nodtok{i}",
+                    role=UserRole.USER,
+                )
+                users.append(u)
+            db.add_all(users)
+            await db.flush()
+
+            # Player D is last or tied-last on every trait
+            scores_data = [
+                (80, 80, 80, 80, 80, 80, 0),
+                (70, 70, 70, 70, 70, 70, 0),
+                (60, 60, 60, 60, 60, 60, 0),
+                (10, 10, 10, 10, 10, 10, 0),  # Player D: bottom on everything
+            ]
+            for user, (ru, ca, ex, pf, bs, re, rq) in zip(users, scores_data):
+                db.add(
+                    PlayerTraitScores(
+                        user_id=user.id,
+                        rusher=ru,
+                        cautious=ca,
+                        explorer=ex,
+                        pathfinder=pf,
+                        boss_slayer=bs,
+                        resilient=re,
+                        rage_quitter=rq,
+                        dominant_trait=None,
+                    )
+                )
+            await db.commit()
+            uid_d = users[3].id
+
+        from speedfog_racing.services.stats_service import resolve_dominant_traits
+
+        async with async_session() as db:
+            await resolve_dominant_traits(db)
+
+        async with async_session() as db:
+            scores_d = await db.get(PlayerTraitScores, uid_d)
+            assert scores_d.dominant_trait is None
+            assert scores_d.dominant_description is None
+
+    async def test_dominant_trait_tiebreak_uses_raw_score(self, async_session):
+        """When two traits have the same percentile, prefer the one with higher raw score."""
+        async with async_session() as db:
+            users = []
+            for i in range(3):
+                u = User(
+                    twitch_id=f"tie{i}",
+                    twitch_username=f"tie{i}",
+                    api_token=f"tietok{i}",
+                    role=UserRole.USER,
+                )
+                users.append(u)
+            db.add_all(users)
+            await db.flush()
+
+            # Player A is rank 1 on both rusher and explorer (same percentile),
+            # but has higher raw rusher score
+            scores_data = [
+                (90, 10, 80, 10, 10, 10, 0),  # Player A: rank 1 rusher (90) AND explorer (80)
+                (50, 10, 50, 10, 10, 10, 0),
+                (20, 10, 20, 10, 10, 10, 0),
+            ]
+            for user, (ru, ca, ex, pf, bs, re, rq) in zip(users, scores_data):
+                db.add(
+                    PlayerTraitScores(
+                        user_id=user.id,
+                        rusher=ru,
+                        cautious=ca,
+                        explorer=ex,
+                        pathfinder=pf,
+                        boss_slayer=bs,
+                        resilient=re,
+                        rage_quitter=rq,
+                        dominant_trait=None,
+                    )
+                )
+            await db.commit()
+            uid_a = users[0].id
+
+        from speedfog_racing.services.stats_service import resolve_dominant_traits
+
+        async with async_session() as db:
+            await resolve_dominant_traits(db)
+
+        async with async_session() as db:
+            scores_a = await db.get(PlayerTraitScores, uid_a)
+            # Same percentile on rusher and explorer, but rusher=90 > explorer=80
+            assert scores_a.dominant_trait == "rusher"
+
     async def test_upserts_on_recompute(self, async_session, three_races_with_zone_history):
         """Running update_player_traits again should update, not duplicate."""
         race_ids, user_ids = three_races_with_zone_history

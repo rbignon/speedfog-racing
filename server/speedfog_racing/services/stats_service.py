@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 K_FACTOR = 32
 STARTING_ELO = 1500.0
 MIN_RACES_FOR_DISPLAY = 3
-DOMINANT_TRAIT_THRESHOLD = 40
+DOMINANT_PERCENTILE_THRESHOLD = 0.5  # Must be in top 50% on at least one trait
 BOSS_NODE_TYPES = {"boss_arena", "major_boss", "final_boss"}
 MIN_RACES_FOR_TRAITS = 3
 
@@ -317,21 +317,16 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         else 0,
     }
 
-    max_score = max(scores.values())
-    dominant = None
-    if max_score >= DOMINANT_TRAIT_THRESHOLD:
-        dominant = max(scores, key=lambda k: scores[k])
-
+    # Upsert raw scores only; dominant_trait and dominant_description
+    # are resolved globally by resolve_dominant_traits()
     existing = await db.get(PlayerTraitScores, user_id)
     if existing:
         for key, val in scores.items():
             setattr(existing, key, val)
-        existing.dominant_trait = dominant
     else:
         db.add(
             PlayerTraitScores(
                 user_id=user_id,
-                dominant_trait=dominant,
                 **scores,
             )
         )
@@ -460,6 +455,87 @@ def compute_rage_quitter_score(abandoned: int, total: int) -> float:
     if total < MIN_RACES_FOR_TRAITS:
         return 0.0
     return (abandoned / total) * 100.0
+
+
+TRAIT_KEYS = [
+    "rusher",
+    "cautious",
+    "explorer",
+    "pathfinder",
+    "boss_slayer",
+    "resilient",
+    "rage_quitter",
+]
+
+
+async def resolve_dominant_traits(db: AsyncSession) -> None:
+    """Resolve dominant trait for all players using percentile ranking.
+
+    For each trait, rank all players by raw score. Each player's dominant
+    trait is the one where they rank best (lowest percentile). Ties in
+    percentile are broken by higher raw score.
+    """
+    all_scores = (await db.execute(select(PlayerTraitScores))).scalars().all()
+    if not all_scores:
+        return
+
+    n = len(all_scores)
+
+    # Build per-trait percentiles: {user_id: {trait: percentile}}
+    percentiles: dict[Any, dict[str, float]] = {s.user_id: {} for s in all_scores}
+
+    for trait in TRAIT_KEYS:
+        values = [getattr(s, trait) for s in all_scores]
+        ranks = _compute_ranks_desc(values)
+        for i, s in enumerate(all_scores):
+            # Convert rank to percentile: (rank - 1) / (n - 1) if n > 1
+            # 0.0 = best (rank 1), 1.0 = worst (rank n)
+            percentiles[s.user_id][trait] = (ranks[i] - 1) / (n - 1) if n > 1 else 0.0
+
+    for s in all_scores:
+        user_pcts = percentiles[s.user_id]
+        raw_scores = {t: getattr(s, t) for t in TRAIT_KEYS}
+
+        # Find best trait: lowest percentile, then highest raw score for ties
+        best_trait = min(
+            TRAIT_KEYS,
+            key=lambda t: (user_pcts[t], -raw_scores[t]),
+        )
+        best_pct = user_pcts[best_trait]
+
+        if best_pct <= DOMINANT_PERCENTILE_THRESHOLD and raw_scores[best_trait] > 0:
+            s.dominant_trait = best_trait
+            # Human-readable: "Top X% among N players"
+            top_pct = max(1, round(best_pct * 100))
+            if best_pct == 0.0:
+                s.dominant_description = f"#1 among {n} players"
+            else:
+                s.dominant_description = f"Top {top_pct}% among {n} players"
+        else:
+            s.dominant_trait = None
+            s.dominant_description = None
+
+    await db.commit()
+
+
+def _compute_ranks_desc(values: list[int | float]) -> list[float]:
+    """Compute 1-indexed ranks for descending order (highest value = rank 1).
+
+    Uses average rank for ties, same as _compute_ranks but reversed.
+    """
+    n = len(values)
+    sorted_indices = sorted(range(n), key=lambda i: values[i], reverse=True)
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j < n - 1 and values[sorted_indices[j + 1]] == values[sorted_indices[i]]:
+            j += 1
+        avg_rank = (i + j) / 2.0 + 1.0
+        for k in range(i, j + 1):
+            ranks[sorted_indices[k]] = avg_rank
+        i = j + 1
+    return ranks
 
 
 async def recalculate_all_stats(db: AsyncSession) -> None:
