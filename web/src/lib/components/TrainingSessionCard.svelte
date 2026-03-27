@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { TrainingSession } from '$lib/api';
-	import { displayPoolName, formatIgt } from '$lib/utils/training';
+	import { formatPoolName } from '$lib/utils/format';
+	import { formatIgt } from '$lib/utils/training';
 	import { timeAgo } from '$lib/utils/time';
 
 	let { session }: { session: TrainingSession } = $props();
@@ -8,7 +9,7 @@
 
 <a href="/training/{session.id}" class="card border-active">
 	<div class="card-header">
-		<span class="card-title">{displayPoolName(session.pool_name)}</span>
+		<span class="card-title">{session.pool_display_name || formatPoolName(session.pool_name)}</span>
 		<span class="badge badge-{session.status}">{session.status}</span>
 	</div>
 

@@ -2,15 +2,6 @@
  * Shared utilities for training pages.
  */
 
-import { formatPoolName } from "./format";
-
-/**
- * Strip "training_" prefix and format the pool name for display.
- */
-export function displayPoolName(poolName: string): string {
-  return formatPoolName(poolName.replace(/^training_/, ""));
-}
-
 /**
  * Format IGT milliseconds as HH:MM:SS or MM:SS.
  */

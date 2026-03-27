@@ -169,6 +169,7 @@ class TrainingActivity(ActivityItemBase):
     type: str = "training"
     session_id: UUID
     pool_name: str
+    pool_display_name: str | None = None
     status: str
     igt_ms: int
     death_count: int
@@ -238,6 +239,7 @@ class RaceResponse(BaseModel):
 
 
 class PoolConfig(BaseModel):
+    name: str | None = None
     type: str = "race"
     sort_order: int = 99
     estimated_duration: str | None = None
@@ -363,6 +365,7 @@ class TrainingSessionResponse(BaseModel):
     user: UserResponse
     status: TrainingSessionStatus
     pool_name: str
+    pool_display_name: str | None = None
     igt_ms: int
     death_count: int
     exclude_from_stats: bool

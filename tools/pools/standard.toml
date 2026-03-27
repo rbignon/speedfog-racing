@@ -3,6 +3,7 @@
 extends = "_base"
 
 [display]
+name = "Standard"
 sort_order = 1
 estimated_duration = "~1h"
 description = "Balanced race with legacy dungeons and bosses"

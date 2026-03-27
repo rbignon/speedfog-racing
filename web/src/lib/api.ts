@@ -80,6 +80,7 @@ export interface Caster {
 }
 
 export interface PoolConfig {
+  name: string | null;
   type: string | null;
   sort_order: number;
   estimated_duration: string | null;
@@ -860,6 +861,7 @@ export interface TrainingActivityItem extends ActivityItemBase {
   type: "training";
   session_id: string;
   pool_name: string;
+  pool_display_name: string | null;
   status: string;
   igt_ms: number;
   death_count: number;
@@ -993,6 +995,7 @@ export interface TrainingSession {
   user: User;
   status: "active" | "finished" | "abandoned" | "cancelled";
   pool_name: string;
+  pool_display_name: string | null;
   igt_ms: number;
   death_count: number;
   exclude_from_stats: boolean;

@@ -259,6 +259,10 @@ async def test_created_training_notification(created_kwargs):
     with (
         patch("speedfog_racing.discord.settings") as mock_settings,
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+        patch(
+            "speedfog_racing.api.helpers.get_pool_config",
+            return_value={"name": "Hardcore", "type": "training"},
+        ),
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
         mock_settings.base_url = "https://speedfog.malenia.win"
@@ -323,6 +327,10 @@ async def test_sends_training_notification(race_kwargs):
     with (
         patch("speedfog_racing.discord.settings") as mock_settings,
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+        patch(
+            "speedfog_racing.api.helpers.get_pool_config",
+            return_value={"name": "Hardcore", "type": "training"},
+        ),
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
         mock_settings.base_url = "https://speedfog.malenia.win"

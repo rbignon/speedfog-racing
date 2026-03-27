@@ -12,7 +12,7 @@
 		compact?: boolean;
 	} = $props();
 
-	let title = $derived(formatPoolName(poolName));
+	let title = $derived(poolConfig.name || formatPoolName(poolName));
 
 	let miscNotes = $derived.by(() => {
 		const notes: string[] = [];

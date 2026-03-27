@@ -3,6 +3,7 @@
 extends = "_base"
 
 [display]
+name = "Sprint"
 sort_order = 3
 estimated_duration = "~30min"
 description = "Fast-paced race with minimal exploration"

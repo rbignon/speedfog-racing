@@ -18,7 +18,8 @@
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
-	import { displayPoolName, formatIgt } from '$lib/utils/training';
+	import { formatPoolName } from '$lib/utils/format';
+	import { formatIgt } from '$lib/utils/training';
 	import { statusLabel } from '$lib/format';
 
 	function formatDatetime(iso: string): string {
@@ -160,7 +161,7 @@
 
 <svelte:head>
 	<title>
-		{session ? `Solo - ${displayPoolName(session.pool_name)}` : 'Solo'} - SpeedFog Racing
+		{session ? `Solo - ${session.pool_config?.name || formatPoolName(session.pool_name)}` : 'Solo'} - SpeedFog Racing
 	</title>
 </svelte:head>
 
@@ -192,7 +193,7 @@
 		<div class="header">
 			<div class="header-left">
 				<a href="/training" class="back-link">&larr; Solo</a>
-				<h1>{displayPoolName(session.pool_name)}</h1>
+				<h1>{session.pool_config?.name || formatPoolName(session.pool_name)}</h1>
 				{#if session.user}
 					<span class="player-name">
 						by
@@ -333,7 +334,7 @@
 
 		{#if session.pool_config}
 			<PoolSettingsCard
-				poolName={session.pool_name.replace(/^training_/, '')}
+				poolName={session.pool_config?.name || formatPoolName(session.pool_name)}
 				poolConfig={session.pool_config}
 			/>
 		{/if}

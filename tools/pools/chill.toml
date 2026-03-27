@@ -3,6 +3,7 @@
 extends = "_base"
 
 [display]
+name = "Chill"
 sort_order = 2
 estimated_duration = "~1h"
 description = "Relaxed race with generous resources and loot"

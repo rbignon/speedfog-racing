@@ -8,7 +8,12 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import race_date, race_response, user_response
+from speedfog_racing.api.helpers import (
+    format_pool_display_name,
+    race_date,
+    race_response,
+    user_response,
+)
 from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
@@ -387,6 +392,7 @@ async def get_user_activity(
                 date=t.created_at,
                 session_id=t.id,
                 pool_name=t.seed.pool_name,
+                pool_display_name=format_pool_display_name(t.seed.pool_name),
                 status=t.status.value,
                 igt_ms=t.igt_ms,
                 death_count=t.death_count,

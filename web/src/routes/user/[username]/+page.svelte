@@ -11,7 +11,8 @@
 		type UserTraitsResponse
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
-	import { displayPoolName, formatIgt } from '$lib/utils/training';
+	import { formatPoolName } from '$lib/utils/format';
+	import { formatIgt } from '$lib/utils/training';
 	import PoolStatsTable from '$lib/components/PoolStatsTable.svelte';
 	import PlayStyle from '$lib/components/PlayStyle.svelte';
 
@@ -266,7 +267,7 @@
 											{/if}
 										</div>
 										<a href="/training/{item.session_id}" class="activity-title">
-											{displayPoolName(item.pool_name)}
+											{item.pool_display_name || formatPoolName(item.pool_name)}
 										</a>
 										<div class="activity-details">
 											<span class="mono">{formatIgt(item.igt_ms)}</span>

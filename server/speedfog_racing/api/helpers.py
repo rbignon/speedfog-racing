@@ -10,6 +10,7 @@ from speedfog_racing.schemas import (
     RaceResponse,
     UserResponse,
 )
+from speedfog_racing.services.seed_service import get_pool_config
 from speedfog_racing.services.twitch_live import twitch_live_service
 
 
@@ -19,11 +20,17 @@ def race_date(race: Race) -> datetime:
 
 
 def format_pool_display_name(pool_name: str | None) -> str:
-    """Format a pool name for display: 'training_standard' → 'Standard'."""
-    name = pool_name or "unknown"
-    if name.startswith("training_"):
-        name = name.removeprefix("training_")
-    return name.replace("_", " ").title()
+    """Format a pool name for display using the config's display name.
+
+    Looks up the pool's config.toml for an explicit name. Falls back to
+    title-casing the raw pool name if config is unavailable.
+    """
+    if not pool_name:
+        return "Unknown"
+    config = get_pool_config(pool_name)
+    if config and config.get("name"):
+        return str(config["name"])
+    return pool_name.replace("_", " ").title()
 
 
 def user_response(user: User) -> UserResponse:

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.responses import StreamingResponse
 
-from speedfog_racing.api.helpers import user_response
+from speedfog_racing.api.helpers import format_pool_display_name, user_response
 from speedfog_racing.auth import get_current_user, get_current_user_optional
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
@@ -95,6 +95,7 @@ def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
         user=user_response(session.user),
         status=session.status,
         pool_name=session.seed.pool_name,
+        pool_display_name=format_pool_display_name(session.seed.pool_name),
         igt_ms=session.igt_ms,
         death_count=session.death_count,
         exclude_from_stats=session.exclude_from_stats,

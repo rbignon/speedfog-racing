@@ -3,6 +3,7 @@
 extends = "standard"
 
 [display]
+name = "Boss Shuffle"
 sort_order = 5
 description = "Standard race with randomized boss encounters"
 

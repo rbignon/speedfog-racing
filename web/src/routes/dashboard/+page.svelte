@@ -14,7 +14,7 @@
 		type TrainingSession,
 	} from '$lib/api';
 	import { timeAgo, raceDisplayDate } from '$lib/utils/time';
-	import { displayPoolName, formatIgt } from '$lib/utils/training';
+	import { formatIgt } from '$lib/utils/training';
 	import { formatPoolName } from '$lib/utils/format';
 	import { statusLabel } from '$lib/format';
 	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
@@ -86,7 +86,7 @@
 		if (item.type === 'race_participant') return item.race_name;
 		if (item.type === 'race_organizer') return item.race_name;
 		if (item.type === 'race_caster') return item.race_name;
-		if (item.type === 'training') return `${displayPoolName(item.pool_name)}`;
+		if (item.type === 'training') return item.pool_display_name || formatPoolName(item.pool_name);
 		return '';
 	}
 
@@ -280,7 +280,7 @@
 					{#each activeTraining as session}
 						<a href="/training/{session.id}" class="active-card border-training">
 							<div class="active-card-header">
-								<span class="active-name">{displayPoolName(session.pool_name)}</span>
+								<span class="active-name">{session.pool_display_name || formatPoolName(session.pool_name)}</span>
 								<div class="active-badges">
 									<span class="badge badge-training-ghost">Solo</span>
 								</div>

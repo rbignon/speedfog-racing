@@ -138,7 +138,7 @@
 					<div class="pool-cards">
 						{#each sortedPools as [pool, info] (pool)}
 							<button type="button" class="pool-card disabled">
-								<span class="pool-name">{formatPoolName(pool)}</span>
+								<span class="pool-name">{info.pool_config?.name || formatPoolName(pool)}</span>
 								{#if info.pool_config?.estimated_duration}
 									<span class="pool-duration">{info.pool_config?.estimated_duration}</span>
 								{/if}
@@ -160,7 +160,7 @@
 								class:disabled
 								onclick={() => { if (!disabled && !creating) poolName = pool; }}
 							>
-								<span class="pool-name">{formatPoolName(pool)}</span>
+								<span class="pool-name">{info.pool_config?.name || formatPoolName(pool)}</span>
 								{#if info.pool_config?.estimated_duration}
 									<span class="pool-duration">{info.pool_config?.estimated_duration}</span>
 								{/if}

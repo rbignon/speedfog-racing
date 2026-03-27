@@ -11,12 +11,10 @@
 		adminRecalculateStats,
 		type AdminUser,
 		type AdminPoolStats,
-		type ActivityTimeline,
-		type ActivityItem
+		type ActivityTimeline
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
 	import { formatPoolName } from '$lib/utils/format';
-	import { displayPoolName } from '$lib/utils/training';
 
 	type Tab = 'users' | 'seeds' | 'activity';
 	let activeTab: Tab = $state('users');
@@ -372,7 +370,7 @@
 							{#if item.type === 'race_participant' || item.type === 'race_organizer' || item.type === 'race_caster'}
 								<a href="/race/{item.race_id}" class="activity-title">{item.race_name}</a>
 							{:else if item.type === 'training'}
-								<a href="/training/{item.session_id}" class="activity-title">{displayPoolName(item.pool_name)}</a>
+								<a href="/training/{item.session_id}" class="activity-title">{item.pool_display_name || formatPoolName(item.pool_name)}</a>
 							{/if}
 						</div>
 						<div class="col-context">

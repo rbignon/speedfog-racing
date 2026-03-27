@@ -3,6 +3,7 @@
 extends = "_base"
 
 [display]
+name = "Hardcore"
 sort_order = 4
 estimated_duration = "~1h"
 description = "Punishing race with scarce resources and tougher encounters"

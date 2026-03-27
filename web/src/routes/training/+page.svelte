@@ -12,7 +12,8 @@
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 	import TrainingSessionCard from '$lib/components/TrainingSessionCard.svelte';
 	import { timeAgo } from '$lib/utils/time';
-	import { displayPoolName, formatIgt } from '$lib/utils/training';
+	import { formatPoolName } from '$lib/utils/format';
+	import { formatIgt } from '$lib/utils/training';
 
 	let pools: PoolStats = $state({});
 	let sessions: TrainingSession[] = $state([]);
@@ -130,7 +131,7 @@
 							class:disabled
 							onclick={() => { if (!disabled && !startingPool) selectedPool = pool; }}
 						>
-							<span class="pool-name">{displayPoolName(pool)}</span>
+							<span class="pool-name">{info.pool_config?.name || formatPoolName(pool)}</span>
 							{#if info.pool_config?.estimated_duration}
 								<span class="pool-duration">{info.pool_config.estimated_duration}</span>
 							{/if}
@@ -152,7 +153,7 @@
 				</div>
 				{#if selectedPool && selectedConfig}
 					<div class="pool-detail">
-						<PoolSettingsCard poolName={selectedPool.replace(/^training_/, '')} poolConfig={selectedConfig} compact />
+						<PoolSettingsCard poolName={selectedConfig?.name || formatPoolName(selectedPool)} poolConfig={selectedConfig} compact />
 						<label class="slow-run-toggle">
 							<input type="checkbox" bind:checked={slowRun} />
 							<span class="slow-run-label">Slow run</span>
@@ -212,7 +213,7 @@
 							<tr>
 								<td>
 									<a href="/training/{session.id}" class="session-link">
-										{displayPoolName(session.pool_name)}
+										{session.pool_display_name || formatPoolName(session.pool_name)}
 									</a>
 								</td>
 								<td>

@@ -462,6 +462,7 @@ async def test_get_played_seed_counts_multiple_pools(
 # =============================================================================
 
 TRAINING_POOL_CONFIG = {
+    "name": "Standard",
     "type": "training",
     "estimated_duration": "~1h",
     "description": "Training pool",
@@ -482,10 +483,11 @@ def test_client(async_session, monkeypatch):
     app.dependency_overrides[get_db] = override_get_db
 
     # Monkeypatch get_pool_config so "training_standard" returns a training config
-    monkeypatch.setattr(
-        "speedfog_racing.api.training.get_pool_config",
-        lambda name: TRAINING_POOL_CONFIG if name == "training_standard" else None,
-    )
+    def _pool_config_mock(name: str) -> dict | None:
+        return TRAINING_POOL_CONFIG if name == "training_standard" else None
+
+    monkeypatch.setattr("speedfog_racing.api.training.get_pool_config", _pool_config_mock)
+    monkeypatch.setattr("speedfog_racing.api.helpers.get_pool_config", _pool_config_mock)
 
     # Disable rate limiting in tests to avoid 429 across test functions
     limiter.enabled = False
@@ -601,6 +603,7 @@ async def test_list_training_sessions_api(test_client, training_user, training_s
         data = resp.json()
         assert len(data) == 1
         assert data[0]["status"] == "active"
+        assert data[0]["pool_display_name"] == "Standard"
 
 
 @pytest.mark.asyncio
