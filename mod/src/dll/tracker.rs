@@ -483,8 +483,8 @@ impl RaceTracker {
         self.was_position_readable = position_readable;
 
         // Event flag polling runs ALWAYS (even when disconnected).
-        // Flags are transient in game memory (~seconds), so we must detect them immediately.
-        // Regular flags are deferred until loading exit; finish_event is sent immediately.
+        // Regular flags are cleared after capture (for re-traversal detection) and
+        // deferred until loading exit; finish_event is sent immediately.
         if !self.event_ids.is_empty() && self.last_flag_poll.elapsed() >= Duration::from_millis(100)
         {
             self.last_flag_poll = Instant::now();
@@ -621,13 +621,13 @@ impl RaceTracker {
                 // Check key categories
                 let has_9000 = cats.contains(&9000);
                 let has_1040292 = cats.contains(&1040292);
-                let has_1050292 = cats.contains(&1050292);
+                let has_1050294 = cats.contains(&1050294);
                 info!(
                     has_9000,
-                    has_1040292, has_1050292, "[RACE] Key categories present?"
+                    has_1040292, has_1050294, "[RACE] Key categories present?"
                 );
                 // Show neighborhood if either base is present
-                if has_1040292 || has_1050292 {
+                if has_1040292 || has_1050294 {
                     let nearby: Vec<_> = cats
                         .iter()
                         .filter(|&&c| {

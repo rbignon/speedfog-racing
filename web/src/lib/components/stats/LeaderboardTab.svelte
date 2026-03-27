@@ -45,6 +45,7 @@
 						<th class="th-num">ELO</th>
 						<th class="th-num">Races</th>
 						<th class="th-num">Trend</th>
+						<th class="th-num">SoS</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -74,11 +75,18 @@
 									<span class="trend-neutral">0</span>
 								{/if}
 							</td>
+							<td class="num sos-value">
+								{#if player.avg_opponent_elo != null}
+									{player.avg_opponent_elo}
+								{:else}
+									<span class="trend-neutral">-</span>
+								{/if}
+							</td>
 						</tr>
 					{/each}
 					{#if players.length === 0}
 						<tr>
-							<td colspan="5" class="empty-row">No ranked players yet.</td>
+							<td colspan="6" class="empty-row">No ranked players yet.</td>
 						</tr>
 					{/if}
 				</tbody>
@@ -118,9 +126,9 @@
 				<h3>How ELO works</h3>
 				<p class="elo-explanation">
 					Players start at 1500 ELO. After each race, points are exchanged based on relative
-					performance. Beating a higher-rated player earns more points. Only players with 3 or more
-					rated races appear here. Only finished races count; abandoning a race after playing counts
-					as a loss.
+					performance. Beating a higher-rated player earns more points. Seed difficulty and
+					opponent strength are factored in. SoS (Strength of Schedule) shows the average
+					ELO of opponents faced. Only players with 3 or more rated races appear here.
 				</p>
 			</div>
 		</aside>
@@ -248,6 +256,10 @@
 
 	.trend-neutral {
 		color: var(--color-text-disabled);
+	}
+
+	.sos-value {
+		color: var(--color-text-secondary);
 	}
 
 	.empty-row {

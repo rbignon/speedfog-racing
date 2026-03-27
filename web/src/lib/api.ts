@@ -1153,6 +1153,7 @@ export interface LeaderboardPlayer {
   elo_rating: number;
   elo_races: number;
   trend_delta: number;
+  avg_opponent_elo: number | null;
 }
 
 export interface CommunityStats {
