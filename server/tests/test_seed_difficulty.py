@@ -119,6 +119,10 @@ class TestComputeSeedDifficulty:
         # Sanity: a realistic seed should produce a score in the hundreds
         assert score > 50
 
+    def test_non_dict_nodes_returns_zero(self):
+        """Nodes as a list (legacy test fixtures) returns 0."""
+        assert compute_seed_difficulty({"nodes": []}) == 0.0
+
 
 @pytest.fixture
 async def async_db():

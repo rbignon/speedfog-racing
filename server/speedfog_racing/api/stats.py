@@ -75,6 +75,8 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
                 delta_counts[uid] = count + 1
 
     # Compute Strength of Schedule: average ELO of opponents per user.
+    # Joins on EloHistory, so races without ELO entries (solo finishes,
+    # races that never had update_elo_ratings run) are naturally excluded.
     sos: dict[Any, int] = {}
     if user_ids:
         user_races_sq = (
