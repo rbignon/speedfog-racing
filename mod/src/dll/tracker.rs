@@ -479,31 +479,6 @@ impl RaceTracker {
                     crate::eldenring::warp_hook::clear_captured_grace_entity_id();
                 }
             }
-
-            // Re-apply death marker flags after loading screen exit.
-            // set_flag writes directly to VirtualMemoryFlag memory, but the game
-            // rebuilds the tree from save data on area transitions, so flags are
-            // lost. Re-applying here ensures bloodstains reappear within one frame.
-            if let Some(ref seed) = self.race_state.seed {
-                // Resolve category page once for all death flags (same category)
-                let death_page = seed
-                    .death_flags
-                    .values()
-                    .flat_map(|f| f.iter())
-                    .next()
-                    .and_then(|&fid| self.event_flag_reader.resolve_category(fid));
-                let dp = death_page.as_ref();
-                for (node_id, total) in &self.race_state.death_counts {
-                    if let Some(flags) = seed.death_flags.get(node_id) {
-                        self.event_flag_reader
-                            .set_flag_cached(flags[0], *total >= 1, dp);
-                        self.event_flag_reader
-                            .set_flag_cached(flags[1], *total >= 3, dp);
-                        self.event_flag_reader
-                            .set_flag_cached(flags[2], *total >= 5, dp);
-                    }
-                }
-            }
         }
         self.was_position_readable = position_readable;
 
