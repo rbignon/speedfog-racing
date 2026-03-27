@@ -29,6 +29,7 @@ lantern = true
 spirit_calling_bell = true
 physick_flask = true
 great_runes = true
+whetstone_knife = true
 stonesword_keys = 6
 
 # DLC key items (prevent softlocks in DLC areas)
