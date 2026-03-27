@@ -1,6 +1,14 @@
 """Tests for ELO algorithm."""
 
-from speedfog_racing.services.stats_service import compute_elo_deltas
+import pytest
+
+from speedfog_racing.services.stats_service import (
+    DIFFICULTY_INJECTION,
+    REFERENCE_ELO,
+    apply_difficulty_bonus,
+    apply_field_strength_weight,
+    compute_elo_deltas,
+)
 
 
 class TestComputeEloDeltas:
@@ -85,3 +93,60 @@ class TestComputeEloDeltas:
         deltas = compute_elo_deltas(players)
         assert abs(deltas["a"]) < 0.01
         assert abs(deltas["b"]) < 0.01
+
+
+class TestDifficultyBonus:
+    """Test the difficulty injection that breaks zero-sum."""
+
+    def test_average_difficulty_no_bonus(self):
+        """Difficulty factor 1.0 (average) gives zero bonus."""
+        deltas = {"a": 10.0, "b": -10.0}
+        result = apply_difficulty_bonus(deltas, difficulty_factor=1.0)
+        assert result["a"] == pytest.approx(10.0)
+        assert result["b"] == pytest.approx(-10.0)
+
+    def test_hard_seed_positive_bonus(self):
+        """Difficulty factor > 1.0 adds positive bonus to all players."""
+        deltas = {"a": 10.0, "b": -10.0}
+        result = apply_difficulty_bonus(deltas, difficulty_factor=1.3)
+        bonus = DIFFICULTY_INJECTION * 0.3
+        assert result["a"] == pytest.approx(10.0 + bonus)
+        assert result["b"] == pytest.approx(-10.0 + bonus)
+
+    def test_easy_seed_negative_bonus(self):
+        """Difficulty factor < 1.0 subtracts from all players."""
+        deltas = {"a": 10.0, "b": -10.0}
+        result = apply_difficulty_bonus(deltas, difficulty_factor=0.7)
+        bonus = DIFFICULTY_INJECTION * -0.3
+        assert result["a"] == pytest.approx(10.0 + bonus)
+        assert result["b"] == pytest.approx(-10.0 + bonus)
+
+
+class TestFieldStrengthWeight:
+    """Test K-factor weighting by field strength."""
+
+    def test_average_field_no_change(self):
+        """Field at REFERENCE_ELO gives weight=1.0, no change."""
+        deltas = {"a": 10.0, "b": -10.0}
+        elos = {"a": 1500.0, "b": 1500.0}
+        result = apply_field_strength_weight(deltas, elos)
+        assert result["a"] == pytest.approx(10.0)
+        assert result["b"] == pytest.approx(-10.0)
+
+    def test_strong_field_amplifies(self):
+        """Field above REFERENCE_ELO amplifies deltas."""
+        deltas = {"a": 10.0, "b": -10.0}
+        elos = {"a": 1700.0, "b": 1700.0}
+        result = apply_field_strength_weight(deltas, elos)
+        weight = 1700.0 / REFERENCE_ELO
+        assert result["a"] == pytest.approx(10.0 * weight)
+        assert result["b"] == pytest.approx(-10.0 * weight)
+
+    def test_weak_field_dampens(self):
+        """Field below REFERENCE_ELO dampens deltas."""
+        deltas = {"a": 10.0, "b": -10.0}
+        elos = {"a": 1300.0, "b": 1300.0}
+        result = apply_field_strength_weight(deltas, elos)
+        weight = 1300.0 / REFERENCE_ELO
+        assert result["a"] == pytest.approx(10.0 * weight)
+        assert result["b"] == pytest.approx(-10.0 * weight)

@@ -18,12 +18,15 @@ from speedfog_racing.models import (
     PlayerTraitScores,
     Race,
     RaceStatus,
+    Seed,
     User,
 )
 
 logger = logging.getLogger(__name__)
 
 K_FACTOR = 32
+DIFFICULTY_INJECTION = 5.0  # Max ELO bonus/penalty per race from seed difficulty
+REFERENCE_ELO = 1500.0  # Baseline for field strength weighting
 STARTING_ELO = 1500.0
 MIN_RACES_FOR_DISPLAY = 3
 DOMINANT_PERCENTILE_THRESHOLD = 0.5  # Must be in top 50% on at least one trait
@@ -67,6 +70,37 @@ def compute_elo_deltas(
         deltas[uid] /= n - 1
 
     return deltas
+
+
+def apply_field_strength_weight(
+    deltas: dict[str, float],
+    player_elos: dict[str, float],
+) -> dict[str, float]:
+    """Scale ELO deltas by the average field strength.
+
+    Strong fields (avg ELO > REFERENCE_ELO) amplify gains/losses.
+    Weak fields dampen them. This accelerates rating divergence
+    once difficulty injection starts separating pool averages.
+    """
+    if not player_elos:
+        return deltas
+    avg_elo = sum(player_elos.values()) / len(player_elos)
+    weight = avg_elo / REFERENCE_ELO
+    return {uid: delta * weight for uid, delta in deltas.items()}
+
+
+def apply_difficulty_bonus(
+    deltas: dict[str, float],
+    difficulty_factor: float,
+) -> dict[str, float]:
+    """Add a uniform bonus/penalty based on seed difficulty.
+
+    This intentionally breaks zero-sum: harder seeds inject positive
+    ELO into the system, easier seeds remove it. Over time, players
+    who race on harder seeds drift upward.
+    """
+    bonus = DIFFICULTY_INJECTION * (difficulty_factor - 1.0)
+    return {uid: delta + bonus for uid, delta in deltas.items()}
 
 
 def _actual_scores(a: dict[str, Any], b: dict[str, Any], ref_time: float) -> tuple[float, float]:
@@ -133,6 +167,20 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
         p["elo"] = users_by_id[p["user_id"]].elo_rating
 
     deltas = compute_elo_deltas(players)
+
+    # --- Field strength weighting ---
+    player_elos = {p["user_id"]: p["elo"] for p in players}
+    deltas = apply_field_strength_weight(deltas, player_elos)
+
+    # --- Difficulty injection ---
+    seed = await db.get(Seed, race.seed_id) if race.seed_id else None
+    if seed and seed.difficulty_score > 0:
+        avg_result = await db.execute(
+            select(func.avg(Seed.difficulty_score)).where(Seed.difficulty_score > 0)
+        )
+        global_avg = avg_result.scalar() or seed.difficulty_score
+        difficulty_factor = seed.difficulty_score / global_avg
+        deltas = apply_difficulty_bonus(deltas, difficulty_factor)
 
     logger.debug("ELO update for race %s: %d players", race_id, len(players))
 
