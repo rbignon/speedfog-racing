@@ -679,7 +679,11 @@ mod tests {
         assert!(!is_permanent_close(1011)); // Server error
         assert!(!is_permanent_close(1012)); // Service restart
 
+        // Boundary: 3999 is the last non-permanent code
+        assert!(!is_permanent_close(3999));
+
         // Application close codes: permanent, do not reconnect
+        assert!(is_permanent_close(4000)); // Boundary
         assert!(is_permanent_close(4001)); // Auth timeout
         assert!(is_permanent_close(4003)); // Auth error
         assert!(is_permanent_close(4004)); // Not found
