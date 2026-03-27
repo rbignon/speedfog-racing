@@ -564,3 +564,7 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
     for race_id in race_ids:
         await update_elo_ratings(race_id, db)
         await update_player_traits(race_id, db)
+
+    # After all per-user raw scores are computed, resolve dominant traits
+    # using percentile ranking across all players
+    await resolve_dominant_traits(db)
