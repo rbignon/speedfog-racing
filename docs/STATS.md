@@ -51,7 +51,7 @@ Seven traits scored 0-100 per player. Computed across all finished races, recomp
 
 - Minimum 3 finished races (`MIN_RACES_FOR_TRAITS`) for all traits (including rage_quitter)
 - Each race needs at least 2 finishers to contribute to per-race traits
-- Dominant trait set when max score >= 40 (`DOMINANT_TRAIT_THRESHOLD`)
+- Dominant trait determined by percentile ranking (see Data Model below)
 - API returns `finished_races` and `races_required` so the frontend can show progress
 - If all scores are 0, `scores` is returned as `null` (frontend shows progress message instead of empty bars)
 
@@ -141,7 +141,15 @@ Requires `MIN_RACES_FOR_TRAITS` (3) **finished** races, same threshold as all ot
 
 ### Data Model
 
-`PlayerTraitScores` stores all 7 scores as integers (0-100) plus `dominant_trait` (nullable string). Keyed by `user_id`. Upserted on recompute.
+`PlayerTraitScores` stores all 7 scores as integers (0-100) plus `dominant_trait` (nullable string) and `dominant_description` (nullable string). Keyed by `user_id`. Raw scores are upserted per-user after each race; dominant trait is resolved globally via `resolve_dominant_traits()`.
+
+#### Dominant Trait Selection
+
+The dominant trait is determined by **percentile ranking**, not highest raw score. For each of the 7 traits, all players are ranked by their raw score (highest = rank 1). A player's dominant trait is the trait where they rank best (lowest percentile) among all players. If two traits have the same percentile, the one with the higher raw score wins.
+
+A minimum threshold applies: the player must be in the **top 50%** (`DOMINANT_PERCENTILE_THRESHOLD = 0.5`) on at least one trait to have a dominant trait assigned. Players below the median on all traits have no dominant trait.
+
+`dominant_description` stores a human-readable explanation (e.g. "Top 9% among 32 players", or "#1 among 32 players" for rank 1). Displayed in the player profile alongside the trait name.
 
 ---
 
