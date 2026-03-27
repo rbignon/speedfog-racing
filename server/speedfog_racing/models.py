@@ -290,6 +290,7 @@ class PlayerTraitScores(Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
     dominant_trait: Mapped[str | None] = mapped_column(nullable=True)
+    dominant_description: Mapped[str | None] = mapped_column(nullable=True)
     rusher: Mapped[int] = mapped_column(default=0)
     cautious: Mapped[int] = mapped_column(default=0)
     resilient: Mapped[int] = mapped_column(default=0)
