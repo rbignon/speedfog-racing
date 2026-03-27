@@ -171,6 +171,21 @@
 		};
 	});
 
+	// Re-fetch initialRace when WS delivers a different participant set
+	// (e.g., someone joins/leaves while we're viewing the setup page).
+	$effect(() => {
+		const wsParticipants = raceStore.participants;
+		if (wsParticipants.length === 0) return;
+
+		const wsIds = new Set(wsParticipants.map((p) => p.id));
+		const restIds = untrack(() => new Set(initialRace.participants.map((p) => p.id)));
+
+		if (wsIds.size === restIds.size && [...wsIds].every((id) => restIds.has(id))) return;
+
+		const raceId = untrack(() => initialRace.id);
+		fetchRace(raceId).then((r) => (initialRace = r));
+	});
+
 	// Wall-clock elapsed timer based on server's started_at timestamp
 	let startedAt = $derived(liveRace?.started_at ?? initialRace.started_at);
 
