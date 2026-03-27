@@ -15,7 +15,7 @@ use tungstenite::{connect, Message, WebSocket};
 
 use super::config::ServerSettings;
 use crate::core::protocol::{
-    ClientMessage, ExitInfo, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage,
+    is_permanent_close, ClientMessage, ExitInfo, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage,
 };
 
 // =============================================================================
@@ -657,36 +657,5 @@ fn message_loop(
         }
 
         thread::sleep(Duration::from_millis(10));
-    }
-}
-
-/// Returns true if the WebSocket close code represents a permanent error
-/// that should not trigger reconnection (application-level rejection).
-fn is_permanent_close(code: u16) -> bool {
-    code >= 4000
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_permanent_close_codes() {
-        // Standard close codes: should reconnect
-        assert!(!is_permanent_close(1000)); // Normal
-        assert!(!is_permanent_close(1001)); // Going away
-        assert!(!is_permanent_close(1006)); // Abnormal
-        assert!(!is_permanent_close(1011)); // Server error
-        assert!(!is_permanent_close(1012)); // Service restart
-
-        // Boundary: 3999 is the last non-permanent code
-        assert!(!is_permanent_close(3999));
-
-        // Application close codes: permanent, do not reconnect
-        assert!(is_permanent_close(4000)); // Boundary
-        assert!(is_permanent_close(4001)); // Auth timeout
-        assert!(is_permanent_close(4003)); // Auth error
-        assert!(is_permanent_close(4004)); // Not found
-        assert!(is_permanent_close(4999)); // Any future 4xxx code
     }
 }
