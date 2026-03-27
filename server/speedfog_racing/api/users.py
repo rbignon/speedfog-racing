@@ -525,6 +525,7 @@ async def get_user_traits(
 
     scores_detail = None
     dominant_trait = None
+    dominant_description = None
     if scores and user.elo_races >= 3:
         has_nonzero = any(
             [
@@ -539,6 +540,7 @@ async def get_user_traits(
         )
         if has_nonzero:
             dominant_trait = scores.dominant_trait
+            dominant_description = scores.dominant_description
             scores_detail = TraitScoresDetail(
                 rusher=scores.rusher,
                 cautious=scores.cautious,
@@ -551,6 +553,7 @@ async def get_user_traits(
 
     return UserTraitsResponse(
         dominant_trait=dominant_trait,
+        dominant_description=dominant_description,
         scores=scores_detail,
         finished_races=finished_races,
         races_required=MIN_RACES_FOR_TRAITS,

@@ -1231,6 +1231,7 @@ export interface TraitScoresDetail {
 
 export interface UserTraitsResponse {
   dominant_trait: string | null;
+  dominant_description: string | null;
   scores: TraitScoresDetail | null;
   finished_races: number;
   races_required: number;

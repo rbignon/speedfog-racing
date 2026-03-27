@@ -430,6 +430,7 @@ async def test_traits_returns_progress_when_insufficient_races(test_client, asyn
         # scores should be null (all zeros hidden)
         assert data["scores"] is None
         assert data["dominant_trait"] is None
+        assert data["dominant_description"] is None
         # Progress fields present
         assert data["finished_races"] == 2
         assert data["races_required"] == 3

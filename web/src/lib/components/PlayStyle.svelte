@@ -92,7 +92,7 @@
 					<span class="dominant-name" style="color: {dominantMeta.color}"
 						>{dominantMeta.label}</span
 					>
-					<span class="dominant-description">{dominantMeta.description}</span>
+					<span class="dominant-description">{traits.dominant_description || dominantMeta.description}</span>
 				</div>
 			{:else}
 				<span class="no-dominant">No dominant trait yet</span>

@@ -495,6 +495,7 @@ class TraitScoresDetail(BaseModel):
 
 class UserTraitsResponse(BaseModel):
     dominant_trait: str | None
+    dominant_description: str | None
     scores: TraitScoresDetail | None
     finished_races: int
     races_required: int
