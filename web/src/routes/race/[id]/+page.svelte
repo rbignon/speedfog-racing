@@ -118,6 +118,7 @@
 	});
 
 	// Live data from WebSocket
+	let wsError = $derived(raceStore.wsError);
 	let liveRace = $derived(raceStore.race);
 	let liveSeed = $derived(raceStore.seed);
 
@@ -433,6 +434,21 @@
 	<title>{raceName} - SpeedFog Racing</title>
 </svelte:head>
 
+{#if wsError}
+	<div class="ws-error">
+		<h2>
+			{#if wsError.code === 4004}
+				Race not found
+			{:else if wsError.code === 4003}
+				Authentication error
+			{:else}
+				Connection error
+			{/if}
+		</h2>
+		<p class="ws-error-detail">{wsError.reason}</p>
+		<a href="/" class="btn btn-primary">Back to races</a>
+	</div>
+{:else}
 <div class="race-page">
 	<aside class="sidebar">
 		{#if raceStatus === 'finished'}
@@ -871,6 +887,7 @@
 		/>
 	{/if}
 </div>
+{/if}
 
 <style>
 	.dag-view-toggle {
@@ -1466,6 +1483,26 @@
 	.abandon-error {
 		margin: 0.5rem 0 0;
 		color: var(--color-danger, #ef4444);
+		font-size: var(--font-size-sm);
+	}
+
+	.ws-error {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 40vh;
+		text-align: center;
+		gap: 0.5rem;
+	}
+
+	.ws-error h2 {
+		color: var(--color-text);
+		font-size: 1.5rem;
+	}
+
+	.ws-error-detail {
+		color: var(--color-text-secondary);
 		font-size: var(--font-size-sm);
 	}
 </style>
