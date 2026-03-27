@@ -688,6 +688,40 @@ class TestUpdatePlayerTraits:
             ).scalar()
             assert count == 3  # One per user, not duplicated
 
+    async def test_end_to_end_traits_with_percentile(
+        self, async_session, three_races_with_zone_history
+    ):
+        """Full flow: compute raw traits then resolve dominant via percentile."""
+        race_ids, user_ids = three_races_with_zone_history
+        from speedfog_racing.services.stats_service import resolve_dominant_traits
+
+        # Compute raw scores for all 3 races
+        for rid in race_ids:
+            async with async_session() as db:
+                await update_player_traits(rid, db)
+
+        # Resolve dominant traits via percentile
+        async with async_session() as db:
+            await resolve_dominant_traits(db)
+
+        async with async_session() as db:
+            scores = {}
+            for uid in user_ids:
+                scores[uid] = await db.get(PlayerTraitScores, uid)
+
+            # Player 0 (rusher): should have rusher as dominant (ranks best on it)
+            p0 = scores[user_ids[0]]
+            assert p0.rusher > 0
+            assert p0.dominant_trait is not None
+            assert p0.dominant_description is not None
+            assert "3" in p0.dominant_description  # "among 3 players"
+
+            # Player 1 (cautious/explorer): should NOT have boss_slayer dominant
+            # (which was the old bug with raw-score selection)
+            p1 = scores[user_ids[1]]
+            assert p1.dominant_trait is not None
+            assert p1.dominant_trait in ("cautious", "explorer", "pathfinder")
+
 
 class TestZoneStatsAggregation:
     async def test_aggregate_zone_stats_counts_deaths(
