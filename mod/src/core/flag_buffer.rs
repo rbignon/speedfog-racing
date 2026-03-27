@@ -18,8 +18,15 @@ pub struct FlagBuffer {
 }
 
 impl FlagBuffer {
+    /// Defer a flag for sending at loading screen exit.
+    ///
+    /// Deduplicates by flag_id: if the same flag was already deferred in this
+    /// loading cycle, the first occurrence wins (more accurate IGT from the
+    /// 10Hz poll during fade-out vs the rescan at loading exit).
     pub fn defer(&mut self, flag_id: u32, igt_ms: u32) {
-        self.deferred.push((flag_id, igt_ms));
+        if !self.deferred.iter().any(|(fid, _)| *fid == flag_id) {
+            self.deferred.push((flag_id, igt_ms));
+        }
     }
 
     pub fn has_deferred(&self) -> bool {
@@ -128,5 +135,15 @@ mod tests {
         let sent: Vec<_> = buf.drain_deferred().collect();
         assert_eq!(sent, vec![(100, 1000), (101, 1100)]);
         assert!(!buf.has_deferred());
+    }
+
+    #[test]
+    fn defer_deduplicates_by_flag_id() {
+        let mut buf = FlagBuffer::default();
+        buf.defer(100, 1000);
+        buf.defer(100, 1500); // same flag, different igt
+
+        let sent: Vec<_> = buf.drain_deferred().collect();
+        assert_eq!(sent, vec![(100, 1000)]); // keeps first occurrence
     }
 }
