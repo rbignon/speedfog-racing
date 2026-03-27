@@ -28,6 +28,20 @@
 		if (h < 1) return '<1';
 		return h.toFixed(0);
 	}
+
+	const CONFIDENCE_THRESHOLD = 20;
+
+	function confidenceLevel(races: number): 'high' | 'medium' | 'low' {
+		const pct = Math.min(100, (races / CONFIDENCE_THRESHOLD) * 100);
+		if (pct >= 75) return 'high';
+		if (pct >= 40) return 'medium';
+		return 'low';
+	}
+
+	function confidenceLabel(races: number): string {
+		const pct = Math.min(100, Math.round((races / CONFIDENCE_THRESHOLD) * 100));
+		return `Rating confidence: ${pct}% (${races} races)`;
+	}
 </script>
 
 {#if loading}
@@ -45,14 +59,19 @@
 						<th class="th-num">ELO</th>
 						<th class="th-num">Races</th>
 						<th class="th-num">Trend</th>
-						<th class="th-num">SoS</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each players as player, i}
 						<tr>
 							<td class="rank" class:rank-gold={i === 0}>
-								{i + 1}
+								<span class="rank-content">
+									{i + 1}
+									<span
+										class="confidence-dot confidence-{confidenceLevel(player.elo_races)}"
+										title={confidenceLabel(player.elo_races)}
+									></span>
+								</span>
 							</td>
 							<td class="player-cell">
 								{#if player.twitch_avatar_url}
@@ -75,18 +94,11 @@
 									<span class="trend-neutral">0</span>
 								{/if}
 							</td>
-							<td class="num sos-value">
-								{#if player.avg_opponent_elo != null}
-									{player.avg_opponent_elo}
-								{:else}
-									<span class="trend-neutral">-</span>
-								{/if}
-							</td>
 						</tr>
 					{/each}
 					{#if players.length === 0}
 						<tr>
-							<td colspan="6" class="empty-row">No ranked players yet.</td>
+							<td colspan="5" class="empty-row">No ranked players yet.</td>
 						</tr>
 					{/if}
 				</tbody>
@@ -126,10 +138,21 @@
 				<h3>How ELO works</h3>
 				<p class="elo-explanation">
 					Players start at 1500 ELO. After each race, points are exchanged based on relative
-					performance. Beating a higher-rated player earns more points. Seed difficulty and
-					opponent strength are factored in. SoS (Strength of Schedule) shows the average
-					ELO of opponents faced. Only players with 3 or more rated races appear here.
+					performance. Beating a higher-rated player earns more points. Seed difficulty is factored
+					in. Rankings account for rating confidence: players with more races are ranked higher when
+					ratings are close. The colored dot next to each rank shows confidence level.
 				</p>
+				<div class="confidence-legend">
+					<span class="legend-item">
+						<span class="confidence-dot confidence-high"></span> Established
+					</span>
+					<span class="legend-item">
+						<span class="confidence-dot confidence-medium"></span> Settling
+					</span>
+					<span class="legend-item">
+						<span class="confidence-dot confidence-low"></span> Provisional
+					</span>
+				</div>
 			</div>
 		</aside>
 	</div>
@@ -204,6 +227,32 @@
 		color: var(--color-gold);
 	}
 
+	.rank-content {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.confidence-dot {
+		display: inline-block;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.confidence-high {
+		background: var(--color-success);
+	}
+
+	.confidence-medium {
+		background: var(--color-warning);
+	}
+
+	.confidence-low {
+		background: var(--color-text-disabled);
+	}
+
 	.player-cell {
 		display: flex;
 		align-items: center;
@@ -256,10 +305,6 @@
 
 	.trend-neutral {
 		color: var(--color-text-disabled);
-	}
-
-	.sos-value {
-		color: var(--color-text-secondary);
 	}
 
 	.empty-row {
@@ -318,6 +363,21 @@
 		font-size: var(--font-size-sm);
 		color: var(--color-text-disabled);
 		line-height: 1.5;
+	}
+
+	.confidence-legend {
+		display: flex;
+		gap: 0.75rem;
+		margin-top: 0.6rem;
+		flex-wrap: wrap;
+	}
+
+	.legend-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-disabled);
 	}
 
 	@media (max-width: 768px) {
