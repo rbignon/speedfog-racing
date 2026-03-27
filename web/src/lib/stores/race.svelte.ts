@@ -19,6 +19,7 @@ class RaceStore {
   spectatorCount = $state(0);
   connected = $state(false);
   loading = $state(true);
+  wsError = $state<{ code: number; reason: string } | null>(null);
 
   private ws: RaceWebSocket | null = null;
   private currentRaceId: string | null = null;
@@ -84,6 +85,7 @@ class RaceStore {
     this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;
+    this.wsError = null;
 
     this.ws = createRaceWebSocket(
       raceId,
@@ -92,8 +94,12 @@ class RaceStore {
           this.connected = true;
         },
 
-        onDisconnect: () => {
+        onDisconnect: (code?: number, reason?: string) => {
           this.connected = false;
+          if (code !== undefined && code >= 4000) {
+            this.wsError = { code, reason: reason || "Connection rejected" };
+            this.loading = false;
+          }
         },
 
         onRaceState: (msg) => {
@@ -193,6 +199,7 @@ class RaceStore {
     this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;
+    this.wsError = null;
   }
 
   /**

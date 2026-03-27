@@ -122,7 +122,7 @@ export interface RaceWebSocketOptions {
   onSpectatorCount?: (msg: SpectatorCountMessage) => void;
   onChatMessage?: (msg: ChatMessage) => void;
   onConnect?: () => void;
-  onDisconnect?: () => void;
+  onDisconnect?: (code?: number, reason?: string) => void;
   onError?: (error: Event) => void;
 }
 
@@ -180,12 +180,15 @@ export class RaceWebSocket {
       this.options.onConnect?.();
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event) => {
       if (import.meta.env.DEV)
-        console.log(`[WS] Disconnected from race ${this.raceId}`);
-      this.options.onDisconnect?.();
+        console.log(
+          `[WS] Disconnected from race ${this.raceId} (code=${event.code}, reason=${event.reason || "none"})`,
+        );
+      this.options.onDisconnect?.(event.code, event.reason);
 
-      if (!this.intentionallyClosed) {
+      // 4xxx = permanent application error, do not reconnect
+      if (!this.intentionallyClosed && event.code < 4000) {
         this.scheduleReconnect();
       }
     };
