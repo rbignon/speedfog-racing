@@ -439,6 +439,22 @@ fn connect_and_auth(
                 _ => Err(format!("Unexpected response: {:?}", msg)),
             }
         }
+        Message::Close(frame) => {
+            if let Some(ref cf) = frame {
+                let code: u16 = cf.code.into();
+                let reason = cf.reason.to_string();
+                if is_permanent_close(code) {
+                    let msg = if reason.is_empty() {
+                        format!("Server rejected (code {})", code)
+                    } else {
+                        reason
+                    };
+                    let _ = incoming_tx.send(IncomingMessage::PermanentError(msg));
+                    return Err(format!("Auth failed: server closed (code={})", code));
+                }
+            }
+            Err("Server closed during auth".to_string())
+        }
         _ => Err("Unexpected message type".to_string()),
     }
 }
