@@ -55,6 +55,7 @@
 	let deathCount = $derived(liveParticipant?.death_count ?? session?.death_count ?? 0);
 	let currentLayer = $derived(liveParticipant?.current_layer ?? 0);
 	let totalLayers = $derived(session?.seed_total_layers ?? 0);
+	let wsError = $derived(trainingStore.wsError);
 
 	let isOwner = $derived(auth.isLoggedIn && session?.user?.id === auth.user?.id);
 
@@ -164,14 +165,29 @@
 </svelte:head>
 
 <main class="training-detail">
-	{#if loading}
-		<p class="loading">Loading session...</p>
-	{:else if error && !session}
-		<div class="error-state">
-			<p>{error}</p>
-			<a href="/training" class="btn btn-secondary">Back to Solo</a>
+	{#if wsError}
+		<div class="ws-error">
+			<h2>
+				{#if wsError.code === 4004}
+					Training session not found
+				{:else if wsError.code === 4003}
+					Authentication error
+				{:else}
+					Connection error
+				{/if}
+			</h2>
+			<p class="ws-error-detail">{wsError.reason}</p>
+			<a href="/training" class="btn btn-primary">Back to training</a>
 		</div>
-	{:else if session}
+	{:else}
+		{#if loading}
+			<p class="loading">Loading session...</p>
+		{:else if error && !session}
+			<div class="error-state">
+				<p>{error}</p>
+				<a href="/training" class="btn btn-secondary">Back to Solo</a>
+			</div>
+		{:else if session}
 		<!-- Header -->
 		<div class="header">
 			<div class="header-left">
@@ -322,6 +338,7 @@
 			/>
 		{/if}
 	{/if}
+{/if}
 </main>
 
 {#if showAbandonConfirm}
@@ -352,6 +369,26 @@
 	.loading {
 		color: var(--color-text-disabled);
 		font-style: italic;
+	}
+
+	.ws-error {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 40vh;
+		text-align: center;
+		gap: 0.5rem;
+	}
+
+	.ws-error h2 {
+		color: var(--color-text);
+		font-size: 1.5rem;
+	}
+
+	.ws-error-detail {
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
 	}
 
 	.error-state {
