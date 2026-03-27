@@ -19,6 +19,7 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
     Seed,
+    SeedStatus,
     User,
 )
 
@@ -173,10 +174,14 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
     deltas = apply_field_strength_weight(deltas, player_elos)
 
     # --- Difficulty injection ---
+    # Average only over seeds consumed by finished races (excludes training
+    # pools which inflate the global average but never participate in ELO).
     seed = await db.get(Seed, race.seed_id) if race.seed_id else None
     if seed and seed.difficulty_score > 0:
         avg_result = await db.execute(
-            select(func.avg(Seed.difficulty_score)).where(Seed.difficulty_score > 0)
+            select(func.avg(Seed.difficulty_score)).where(
+                Seed.difficulty_score > 0, Seed.status == SeedStatus.CONSUMED
+            )
         )
         global_avg = avg_result.scalar() or seed.difficulty_score
         difficulty_factor = seed.difficulty_score / global_avg

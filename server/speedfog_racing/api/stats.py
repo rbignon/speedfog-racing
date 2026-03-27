@@ -46,9 +46,15 @@ BOSS_NODE_TYPES = {"major_boss", "final_boss"}
 @router.get("/leaderboard", response_model=LeaderboardResponse)
 async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResponse:
     """ELO leaderboard with community stats."""
-    # Fetch users with at least 3 rated races (non-provisional only)
+    # Fetch users with at least 3 rated races, sorted by confidence-adjusted
+    # rating: elo - BASE_UNCERTAINTY / sqrt(races). Players with few races get
+    # a larger penalty, preventing low-confidence ratings from outranking
+    # established players.
+    BASE_UNCERTAINTY = 100.0
     users_result = await db.execute(
-        select(User).where(User.elo_races >= 3).order_by(User.elo_rating.desc())
+        select(User)
+        .where(User.elo_races >= 3)
+        .order_by((User.elo_rating - BASE_UNCERTAINTY / func.sqrt(User.elo_races)).desc())
     )
     users = users_result.scalars().all()
 
