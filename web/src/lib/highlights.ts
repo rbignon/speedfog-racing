@@ -383,46 +383,6 @@ function detectZoneWall(
   };
 }
 
-function detectFastStarter(
-  participants: WsParticipant[],
-  nodeInfo: Map<string, NodeInfo>,
-): Highlight | null {
-  const times: { player: WsParticipant; time: number }[] = [];
-
-  for (const p of participants) {
-    if (!p.zone_history) continue;
-    for (const entry of p.zone_history) {
-      const info = nodeInfo.get(entry.node_id);
-      if (info && info.layer >= 2) {
-        times.push({ player: p, time: entry.igt_ms });
-        break;
-      }
-    }
-  }
-
-  if (times.length === 0) return null;
-  times.sort((a, b) => a.time - b.time);
-
-  const fastest = times[0];
-  // Score based on gap to 2nd place (or use own time if solo)
-  const secondTime = times.length > 1 ? times[1].time : fastest.time * 2;
-  const gap = secondTime - fastest.time;
-  const gapRatio = gap / Math.max(fastest.time, 1);
-  const score = Math.max(20, 30 + gapRatio * 40);
-
-  return {
-    type: "fast_starter",
-    category: "speed",
-    title: "Fast Starter",
-    segments: [
-      pSeg(fastest.player),
-      tSeg(`'s setup took only ${formatTime(fastest.time)}`),
-    ],
-    playerIds: [fastest.player.id],
-    score,
-  };
-}
-
 function detectSprintFinal(
   participants: WsParticipant[],
   allZoneTimes: Map<string, ZoneTime[]>,
@@ -644,16 +604,17 @@ function detectComebackKid(participants: WsParticipant[]): Highlight | null {
 
 function detectRoadLessTraveled(
   participants: WsParticipant[],
+  nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
   if (participants.length < 3) return null;
 
-  const paths = participants.map((p) => ({
-    player: p,
-    nodes: new Set(uniqueNodePath(p.zone_history ?? [])),
-  }));
+  const paths = participants.map((p) => {
+    const orderedNodes = uniqueNodePath(p.zone_history ?? []);
+    return { player: p, nodes: new Set(orderedNodes), orderedNodes };
+  });
 
   let bestUniqueness = 0;
-  let bestPlayer: WsParticipant | null = null;
+  let bestIdx = -1;
 
   for (let i = 0; i < paths.length; i++) {
     const myNodes = paths[i].nodes;
@@ -673,17 +634,50 @@ function detectRoadLessTraveled(
 
     if (uniqueness > bestUniqueness) {
       bestUniqueness = uniqueness;
-      bestPlayer = paths[i].player;
+      bestIdx = i;
     }
   }
 
-  if (!bestPlayer || bestUniqueness < 0.3) return null;
+  if (bestIdx < 0 || bestUniqueness < 0.3) return null;
+
+  const bestPlayer = paths[bestIdx].player;
+  const orderedNodes = paths[bestIdx].orderedNodes;
+
+  // Find zones unique to this player (not visited by anyone else)
+  const othersNodes = new Set<string>();
+  for (let j = 0; j < paths.length; j++) {
+    if (j === bestIdx) continue;
+    for (const n of paths[j].nodes) othersNodes.add(n);
+  }
+  const uniqueZones = orderedNodes.filter((n) => !othersNodes.has(n));
+
+  let segments: DescriptionSegment[];
+  if (uniqueZones.length >= 2) {
+    segments = [
+      pSeg(bestPlayer),
+      tSeg(" forged a unique path from "),
+      zSeg(uniqueZones[0], nodeInfo),
+      tSeg(" to "),
+      zSeg(uniqueZones[uniqueZones.length - 1], nodeInfo),
+    ];
+  } else if (uniqueZones.length === 1) {
+    segments = [
+      pSeg(bestPlayer),
+      tSeg(" forged a unique path through "),
+      zSeg(uniqueZones[0], nodeInfo),
+    ];
+  } else {
+    segments = [
+      pSeg(bestPlayer),
+      tSeg(" forged a unique path through the fog"),
+    ];
+  }
 
   return {
     type: "road_less_traveled",
     category: "path",
     title: "Road Less Traveled",
-    segments: [pSeg(bestPlayer), tSeg(" forged a unique path through the fog")],
+    segments,
     playerIds: [bestPlayer.id],
     score: bestUniqueness * 80,
   };
@@ -722,7 +716,10 @@ function detectSameBrain(participants: WsParticipant[]): Highlight | null {
   return null;
 }
 
-function detectDetour(participants: WsParticipant[]): Highlight | null {
+function detectDetour(
+  participants: WsParticipant[],
+  graphJson: Record<string, unknown>,
+): Highlight | null {
   let maxNodes = 0;
   let maxPlayer: WsParticipant | null = null;
   let avgNodes = 0;
@@ -740,13 +737,16 @@ function detectDetour(participants: WsParticipant[]): Highlight | null {
 
   if (!maxPlayer || maxNodes <= avgNodes * 1.3 || maxNodes < 4) return null;
 
+  const totalLayers = (graphJson.total_layers as number) ?? 0;
+  const layerSuffix = totalLayers > 0 ? ` across ${totalLayers} layers` : "";
+
   return {
     type: "detour",
     category: "path",
     title: "Scenic Route",
     segments: [
       pSeg(maxPlayer),
-      tSeg(` explored ${maxNodes} zones, more than anyone else`),
+      tSeg(` explored ${maxNodes} zones${layerSuffix}, more than anyone else`),
     ],
     playerIds: [maxPlayer.id],
     score: (maxNodes / avgNodes) * 30,
@@ -981,15 +981,14 @@ export function computeHighlights(
 
   push(detectSpeedDemon(eligible, allZoneTimes, nodeInfo));
   push(detectZoneWall(eligible, allZoneTimes, nodeInfo));
-  push(detectFastStarter(eligible, nodeInfo));
   push(detectSprintFinal(eligible, allZoneTimes, nodeInfo));
   push(detectGraveyard(eligible, allZoneTimes, nodeInfo));
   push(detectDeathZone(eligible, allZoneTimes, nodeInfo));
   push(detectDeathless(eligible, allZoneTimes, nodeInfo));
   push(detectComebackKid(eligible));
-  push(detectRoadLessTraveled(eligible));
+  push(detectRoadLessTraveled(eligible, nodeInfo));
   push(detectSameBrain(eligible));
-  push(detectDetour(eligible));
+  push(detectDetour(eligible, graphJson));
   push(detectPhotoFinish(eligible));
   push(detectLeadChanges(eligible, nodeInfo));
   push(detectDominant(eligible, nodeInfo));

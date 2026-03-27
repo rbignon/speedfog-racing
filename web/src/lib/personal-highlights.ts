@@ -347,6 +347,20 @@ function computeRanksPerLayer(
   return ranks;
 }
 
+/** Find the first zone a player reaches at a given layer. */
+function firstZoneAtLayer(
+  participant: WsParticipant,
+  layer: number,
+  nodeInfo: Map<string, NodeInfo>,
+): string | null {
+  if (!participant.zone_history) return null;
+  for (const entry of participant.zone_history) {
+    const info = nodeInfo.get(entry.node_id);
+    if (info && info.layer === layer) return entry.node_id;
+  }
+  return null;
+}
+
 /** Format number as ordinal: 1 -> "1st", 2 -> "2nd", etc. */
 function ordinal(n: number): string {
   const s = ["th", "st", "nd", "rd"];
@@ -373,30 +387,32 @@ function detectLoneExplorer(
     for (const zt of zones) othersZoneIds.add(zt.nodeId);
   }
 
-  let bestScore = 0;
-  let bestHighlight: Highlight | null = null;
+  // Pick the solo zone with the highest tier (ties broken by first-visit order)
+  let bestTier = -1;
+  let bestZoneId: string | null = null;
 
   for (const zt of myZones) {
     if (othersZoneIds.has(zt.nodeId)) continue;
-
-    const score = participants.length * 20;
-    if (score > bestScore) {
-      bestScore = score;
-      bestHighlight = {
-        type: "lone_explorer",
-        category: "pathing" as PersonalHighlightCategory,
-        title: "Lone Explorer",
-        segments: [
-          tSeg("You're the only one who visited "),
-          zSeg(zt.nodeId, nodeInfo),
-        ],
-        playerIds: [myId],
-        score,
-      };
+    const tier = nodeInfo.get(zt.nodeId)?.tier ?? 1;
+    if (tier > bestTier) {
+      bestTier = tier;
+      bestZoneId = zt.nodeId;
     }
   }
 
-  return bestHighlight;
+  if (!bestZoneId) return null;
+
+  return {
+    type: "lone_explorer",
+    category: "pathing" as PersonalHighlightCategory,
+    title: "Lone Explorer",
+    segments: [
+      tSeg("You're the only one who visited "),
+      zSeg(bestZoneId, nodeInfo),
+    ],
+    playerIds: [myId],
+    score: participants.length * 20,
+  };
 }
 
 /**
@@ -476,7 +492,9 @@ function detectAgainstTheFlow(
         segments: [
           tSeg("At the "),
           zSeg(forkNode, nodeInfo),
-          tSeg(" crossroads, you took a path no one else did"),
+          tSeg(" crossroads, you headed towards "),
+          zSeg(myNextInPath, nodeInfo),
+          tSeg(" where no one else went"),
         ],
         playerIds: [myId],
         score,
@@ -565,8 +583,10 @@ function detectSmartBacktrack(
         segments: [
           tSeg("Good call turning back from "),
           zSeg(myZt.nodeId, nodeInfo),
+          tSeg(": going to "),
+          zSeg(altZoneId, nodeInfo),
           tSeg(
-            `: your detour saved you ${formatTime(timeSavedMs)} compared to those who stayed`,
+            ` instead saved you ${formatTime(timeSavedMs)} compared to those who stayed`,
           ),
         ],
         playerIds: [myId],
@@ -688,8 +708,10 @@ function detectCostlyDetour(
     category: "pathing" as PersonalHighlightCategory,
     title: "Costly Detour",
     segments: [
-      tSeg("Your path through "),
-      zSeg(best.costliestZone.nodeId, nodeInfo),
+      tSeg("Your path from "),
+      zSeg(best.zones[0].nodeId, nodeInfo),
+      tSeg(" to "),
+      zSeg(best.zones[best.zones.length - 1].nodeId, nodeInfo),
       tSeg(
         ` cost you ${formatTime(best.totalTimeMs)} compared to those who took a different route`,
       ),
@@ -826,15 +848,24 @@ function detectLeadLost(
     const myRankNext = nextRanks.get(myId);
 
     if (myRankNow === 1 && myRankNext !== undefined && myRankNext > 1) {
+      const me = participants.find((p) => p.id === myId);
+      const zoneId = me ? firstZoneAtLayer(me, layers[i + 1], nodeInfo) : null;
+      const segments: DescriptionSegment[] = zoneId
+        ? [
+            tSeg("You were leading the race, but lost the lead at "),
+            zSeg(zoneId, nodeInfo),
+            tSeg(` (layer ${layers[i + 1]})`),
+          ]
+        : [
+            tSeg(
+              `You were leading the race, but lost the lead at layer ${layers[i + 1]}`,
+            ),
+          ];
       return {
         type: "lead_lost",
         category: "competitive" as PersonalHighlightCategory,
         title: "Lead Lost",
-        segments: [
-          tSeg(
-            `You were leading the race, but lost the lead at layer ${layers[i + 1]}`,
-          ),
-        ],
+        segments,
         playerIds: [myId],
         score: 60,
       };
@@ -867,15 +898,25 @@ function detectComeback(
     const gain = rankBefore - rankAfter;
     if (gain >= 2 && gain > bestGain) {
       bestGain = gain;
+      const me = participants.find((p) => p.id === myId);
+      const zoneId = me ? firstZoneAtLayer(me, layers[i + 1], nodeInfo) : null;
+      const segments: DescriptionSegment[] = zoneId
+        ? [
+            tSeg(
+              `You were ${ordinal(rankBefore)} at layer ${layers[i]}, then climbed back to ${ordinal(rankAfter)} place at `,
+            ),
+            zSeg(zoneId, nodeInfo),
+          ]
+        : [
+            tSeg(
+              `You were ${ordinal(rankBefore)} at layer ${layers[i]} before climbing back to ${ordinal(rankAfter)} place`,
+            ),
+          ];
       bestHighlight = {
         type: "comeback",
         category: "competitive" as PersonalHighlightCategory,
         title: "Comeback",
-        segments: [
-          tSeg(
-            `You were ${ordinal(rankBefore)} at layer ${layers[i]} before climbing back to ${ordinal(rankAfter)} place`,
-          ),
-        ],
+        segments,
         playerIds: [myId],
         score: gain * 30,
       };

@@ -219,3 +219,281 @@ Sorted by `avg_deaths DESC`. Boss name resolution uses `boss_name` (per-seed), w
 ## Recalculation
 
 `recalculate_all_stats` (admin endpoint) clears all ELO and trait data, resets all users to 1500 ELO, then replays all finished races in chronological order (`started_at ASC`). This ensures consistency after formula changes or bug fixes.
+
+---
+
+## Race Highlights
+
+Computed client-side in `web/src/lib/highlights.ts`. Detects race-wide moments from zone_history data and graph topology.
+
+**Selection:** Max 6 highlights, max 2 per category, no overlapping zones between highlights. Community highlights (no specific player) get a 1.5x scoring boost for ranking.
+
+### Speed
+
+#### Speed Demon
+
+Player cleared a zone significantly faster than average.
+
+- **Condition:** `avg_time / player_time >= 1.5`, player is objectively fastest, zone type is not start or final_boss, at least 2 players cleared the zone
+- **Score:** `(avg / player_time) * tier * 20`
+- **Text:** "[Player] blitzed through [Zone] in [Time]"
+
+#### Zone Wall
+
+Player was stuck on a zone far longer than average.
+
+- **Condition:** `player_time / avg_time >= 2.0`, player is objectively slowest, zone type is not start or final_boss, at least 2 players on the zone
+- **Score:** `(player_time / avg) * tier * 15`
+- **Text:** "[Zone] was [Player]'s nemesis, stuck for [Time]"
+
+#### Sprint Final
+
+Player defeated the final boss faster than anyone else.
+
+- **Condition:** At least one player cleared the final_boss zone
+- **Score:** `max(20, (avg_final_boss_time / best_time) * 25)`
+- **Text:** "[Player] beat [FinalBoss] in [Time]"
+
+### Deaths
+
+#### Graveyard
+
+A zone claimed the most total deaths across all players.
+
+- **Condition:** `total_deaths >= 3`, zone type is not start
+- **Score:** `total_deaths * 8`
+- **Text:** "[Zone] claimed [N] deaths across all racers"
+
+#### Death Zone
+
+A single player died many times in one zone.
+
+- **Condition:** `deaths >= 3`
+- **Score:** `deaths * 10`
+- **Text:** "[Player] died [N] times in [Zone]"
+
+#### Deathless
+
+Player cleared multiple high-tier zones without dying.
+
+- **Condition:** Cleared zones with tier >= 3 and 0 deaths, at least 1 such zone
+- **Score:** `50 + zone_count * 10`
+- **Text:** "[Player] cleared [N] high-scaled zone(s) without dying"
+
+#### Comeback Kid
+
+Player finished well despite many deaths.
+
+- **Condition:** Top-half finisher (by IGT) with >= 5 deaths
+- **Score:** `deaths * 5 + (num_finishers - rank) * 10`
+- **Text:** "[Player] died [N] times but still finished [Rank]"
+
+#### Rage Inducer
+
+A zone caused multiple players to abandon the race.
+
+- **Condition:** Zone has >= 2 abandoned outcomes
+- **Score:** `abandons * 40`
+- **Text:** "[Zone] made [N] player(s) rage-quit"
+
+### Path
+
+#### Road Less Traveled
+
+Player took the most unique path compared to everyone else.
+
+- **Condition:** At least 3 participants; uniqueness >= 0.3, where `uniqueness = 1 - avg_overlap_ratio` across all other players' node sets
+- **Score:** `uniqueness * 80`
+- **Text:** "[Player] forged a unique path from [FirstUniqueZone] to [LastUniqueZone]" (falls back to generic text if no exclusively unique zones)
+
+#### Same Brain
+
+Two players took the exact same path (first-visit order).
+
+- **Condition:** Identical `uniqueNodePath` sequences, path length >= 2
+- **Score:** `40 + path_length * 8`
+- **Text:** "[Player1] and [Player2] took the exact same path"
+
+#### Scenic Route
+
+Player explored more zones than anyone else.
+
+- **Condition:** `max_unique_zones >= avg * 1.3` and `>= 4`
+- **Score:** `(max_nodes / avg_nodes) * 30`
+- **Text:** "[Player] explored [N] zones across [M] layers, more than anyone else"
+
+#### Hard Pass
+
+Multiple players backed out of a zone.
+
+- **Condition:** Zone has >= 2 backed outcomes
+- **Score:** `backouts * tier * 15`
+- **Text:** "[N] players backed out of [Zone]"
+
+### Competitive
+
+#### Photo Finish
+
+Two players finished very close together.
+
+- **Condition:** IGT gap between consecutive finishers <= 30s
+- **Score:** `(30000 / max(gap_ms, 1000)) * 20`
+- **Text:** "[Player1] and [Player2] finished just [Gap] apart"
+
+#### Back and Forth
+
+The lead changed hands multiple times.
+
+- **Condition:** >= 2 lead changes across layers (different player first to reach each layer)
+- **Score:** `changes * 25`
+- **Text:** "The lead changed [N] times throughout the race"
+
+#### Dominant
+
+One player led at every single layer.
+
+- **Condition:** Same player is first to reach every layer (>= 2 layers)
+- **Score:** `40 + num_layers * 8`
+- **Text:** "[Player] led from start to finish"
+
+#### Early Exit
+
+A player abandoned the race very early.
+
+- **Condition:** Abandoned player's IGT < 80% of median finisher IGT
+- **Score:** `max(20, 90 - (igt / median_igt) * 100)`
+- **Text:** "[Player] rage-quit after just [Time]"
+
+---
+
+## Personal Highlights
+
+Computed client-side in `web/src/lib/personal-highlights.ts`. Detects player-specific moments using direct "You..." tone.
+
+**Selection:** Same rules as race highlights (max 6, max 2 per category, no overlapping zones).
+
+### Combat
+
+#### Boss Slayer
+
+Player had far fewer deaths than average on a boss.
+
+- **Condition:** `deaths / avg_deaths < 0.5`, at least 2 players fought the boss
+- **Score:** `(1 - ratio) * 100 * tier`
+- **Text:** "You cleared [Boss] deathless (average: [N] deaths)" or "You only died [N] time(s) on [Boss] (average: [M])"
+
+#### Boss Wall
+
+Player struggled on a boss far more than others.
+
+- **Condition:** `deaths / avg_deaths >= 2.0`, at least 1 death
+- **Score:** `ratio * 40`
+- **Text:** "[Boss] gave you trouble: [N] deaths (average: [M])"
+
+#### Stood Your Ground
+
+Player was the only one who didn't back out of a zone; every other visitor backed.
+
+- **Condition:** Player cleared the zone, all other visitors have outcome "backed", at least 2 total visitors
+- **Score:** `backouts * 35 * tier`
+- **Text:** "You're the only one who didn't turn back from [Zone]"
+
+#### Death Spiral
+
+Player died many times on a zone but still cleared it.
+
+- **Condition:** `deaths >= 5`, outcome is "cleared"
+- **Score:** `deaths * 15 * tier`
+- **Text:** "You left [N] lives on [Zone] before finally pushing through"
+
+#### Clean Streak
+
+Player cleared multiple consecutive zones without dying while others struggled.
+
+- **Condition:** >= 3 consecutive zones with 0 deaths; other players had deaths on at least one of those zones
+- **Score:** `streak_length * 25 + others_total_deaths * 5`
+- **Text:** "You cleared [N] zones in a row without dying, while others lost [M] lives there"
+
+### Pathing
+
+#### Lone Explorer
+
+Player visited a zone nobody else visited. Picks the highest-tier solo zone (ties broken by first-visit order).
+
+- **Score:** `num_participants * 20`
+- **Text:** "You're the only one who visited [Zone]"
+
+#### Against the Flow
+
+Player took a unique branch at a fork that no other player took.
+
+- **Condition:** At a graph node with 2+ children, player's next node differs from all other players' next node at the same fork
+- **Score:** `others_on_different_branch * 30`
+- **Text:** "At the [Fork] crossroads, you headed towards [Branch] where no one else went"
+
+#### Smart Backtrack
+
+Player backed out of a zone and found a better alternative, saving time.
+
+- **Condition:** Player backed a zone, then cleared an alternative at same or higher layer; `avg_clear_time_of_backed_zone - (backed_time + alt_time) > 0`
+- **Score:** `(time_saved_ms / 1000) * 2`
+- **Text:** "Good call turning back from [BackedZone]: going to [AltZone] instead saved you [Time] compared to those who stayed"
+
+#### Costly Detour
+
+Player took a branch that cost time compared to players who skipped it.
+
+- **Condition:** Contiguous zones not visited by faster finishers form a "branch"; picks the costliest branch by total time
+- **Score:** `(total_branch_time_ms / 1000) * 1.5`
+- **Text (single zone):** "Your detour through [Zone] cost you [Time] compared to those who skipped it"
+- **Text (multi-zone):** "Your path from [FirstZone] to [LastZone] cost you [Time] compared to those who took a different route"
+
+### Competitive
+
+#### Faster Than All
+
+Player was the fastest through a zone.
+
+- **Condition:** `time / avg_time <= 0.6`, player is objectively fastest, at least 2 players cleared the zone
+- **Score:** `(1 - ratio) * 100 * tier`
+- **Text:** "You were the fastest through [Zone]: [Time] (average: [AvgTime])"
+
+#### Rough Zone (Slower Than All)
+
+Player was the slowest through a zone.
+
+- **Condition:** `time / avg_time >= 1.5`, player is objectively slowest
+- **Score:** `(ratio - 1) * 50`
+- **Text:** "[Zone] slowed you down: last with [Time] (average: [AvgTime])"
+
+#### Lead Lost
+
+Player was leading the race but lost the lead.
+
+- **Condition:** Rank 1 at layer N, rank > 1 at layer N+1; fires once (first occurrence)
+- **Score:** Fixed `60`
+- **Text:** "You were leading the race, but lost the lead at [Zone] (layer [N])"
+
+#### Comeback
+
+Player gained 2+ positions between consecutive layers.
+
+- **Condition:** `rank_before - rank_after >= 2`; picks the largest gain
+- **Score:** `rank_gain * 30`
+- **Text:** "You were [Rank] at layer [N], then climbed back to [Rank] place at [Zone]"
+
+#### Lead Swap
+
+Player and another player alternated as leader multiple times.
+
+- **Condition:** >= 3 alternations as rank 1 between the same two players
+- **Score:** `swaps * 25`
+- **Text:** "You and [Player] traded the lead [N] times during the race"
+
+#### Neck and Neck
+
+Player stayed close to another player throughout the race.
+
+- **Condition:** Within 1 rank for >= 70% of layers, final IGT gap < 10% of faster player's time
+- **Score:** `layers_together * 10`
+- **Text:** "You stayed neck and neck with [Player] throughout the race"

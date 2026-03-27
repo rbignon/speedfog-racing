@@ -305,7 +305,42 @@ describe("pathing detectors", () => {
     expect(descriptionText(h!)).toContain("secret");
   });
 
+  it("lone_explorer picks highest-tier solo zone over first visited", () => {
+    const me = participant("me", {
+      igt_ms: 400000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "low_tier_solo", igt_ms: 50000 },
+        { node_id: "high_tier_solo", igt_ms: 150000 },
+        { node_id: "end", igt_ms: 300000 },
+      ],
+    });
+    const other = participant("other", {
+      igt_ms: 400000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "shared", igt_ms: 50000 },
+        { node_id: "end", igt_ms: 300000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      low_tier_solo: { layer: 1, tier: 1, display_name: "Low Tier" },
+      high_tier_solo: { layer: 2, tier: 4, display_name: "High Tier Boss" },
+      shared: { layer: 1 },
+      end: { layer: 3 },
+    });
+    const result = computePersonalHighlights("me", [me, other], graph);
+    const h = findHighlight(result, "lone_explorer");
+    expect(h).toBeDefined();
+    expect(descriptionText(h!)).toContain("High Tier Boss");
+    expect(descriptionText(h!)).not.toContain("Low Tier");
+  });
+
   it("detects against_the_flow at a fork where player took a unique branch", () => {
+    // p4 visits branch_b (not via fork) so it's not a lone_explorer zone,
+    // but at the fork only me takes branch_b while p2/p3 take branch_a.
+    // Similar finish times avoid triggering competitive highlights.
     const me = participant("me", {
       igt_ms: 300000,
       zone_history: [
@@ -319,7 +354,7 @@ describe("pathing detectors", () => {
       zone_history: [
         { node_id: "fork", igt_ms: 0 },
         { node_id: "branch_a", igt_ms: 60000 },
-        { node_id: "end", igt_ms: 250000 },
+        { node_id: "end", igt_ms: 200000 },
       ],
     });
     const p3 = participant("p3", {
@@ -327,7 +362,14 @@ describe("pathing detectors", () => {
       zone_history: [
         { node_id: "fork", igt_ms: 0 },
         { node_id: "branch_a", igt_ms: 70000 },
-        { node_id: "end", igt_ms: 220000 },
+        { node_id: "end", igt_ms: 200000 },
+      ],
+    });
+    const p4 = participant("p4", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "branch_b", igt_ms: 0 },
+        { node_id: "end", igt_ms: 200000 },
       ],
     });
     const graph = graphJson(
@@ -344,10 +386,11 @@ describe("pathing detectors", () => {
         { from: "branch_b", to: "end" },
       ],
     );
-    const result = computePersonalHighlights("me", [me, p2, p3], graph);
+    const result = computePersonalHighlights("me", [me, p2, p3, p4], graph);
     const h = findHighlight(result, "against_the_flow");
     expect(h).toBeDefined();
     expect(descriptionText(h!)).toContain("fork");
+    expect(descriptionText(h!)).toContain("branch_b");
   });
 
   it("detects smart_backtrack when backing out saved time", () => {
@@ -379,6 +422,8 @@ describe("pathing detectors", () => {
     const h = findHighlight(result, "smart_backtrack");
     expect(h).toBeDefined();
     expect(descriptionText(h!)).toContain("hard");
+    expect(descriptionText(h!)).toContain("easy");
+    expect(descriptionText(h!)).toContain("instead saved you");
   });
 
   it("detects costly_detour when visiting a zone that top finishers skipped", () => {
@@ -439,7 +484,7 @@ describe("pathing detectors", () => {
     const graph = graphJson({
       start: { layer: 0 },
       fork: { layer: 1 },
-      b1: { layer: 2 },
+      b1: { layer: 2, display_name: "Branch Entry" },
       b2: { layer: 3 },
       b3: { layer: 4, display_name: "Hard Boss" },
       alt: { layer: 2 },
@@ -448,7 +493,8 @@ describe("pathing detectors", () => {
     const result = computePersonalHighlights("me", [me, winner], graph);
     const h = findHighlight(result, "costly_detour");
     expect(h).toBeDefined();
-    // Should mention the costliest zone (b3: 300000ms) not individual zones
+    // Should mention the first and last zone of the branch to delimit the detour
+    expect(descriptionText(h!)).toContain("Branch Entry");
     expect(descriptionText(h!)).toContain("Hard Boss");
     // Multi-zone branch uses "different route" wording, not "skipped it"
     expect(descriptionText(h!)).toContain("different route");
@@ -521,6 +567,9 @@ describe("competitive detectors", () => {
     const result = computePersonalHighlights("me", [me, p2], graph);
     const h = findHighlight(result, "lead_lost");
     expect(h).toBeDefined();
+    const text = descriptionText(h!);
+    expect(text).toContain("zone_b");
+    expect(text).toContain("layer 2");
   });
 
   it("detects comeback when player improves rank by 2+ positions", () => {
@@ -562,6 +611,11 @@ describe("competitive detectors", () => {
     const h = findHighlight(result, "comeback");
     expect(h).toBeDefined();
     expect(h!.category).toBe("competitive");
+    const text = descriptionText(h!);
+    // Should mention the zone where the comeback happened
+    expect(text).toContain("l2");
+    // And keep the layer info
+    expect(text).toContain("layer 1");
   });
 
   it("detects lead_swap when two players alternate as leader", () => {

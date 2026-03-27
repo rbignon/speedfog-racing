@@ -23,15 +23,12 @@ const ZONE_HIGHLIGHTS = new Set([
   "rage_inducer",
 ]);
 
-const START_HIGHLIGHTS = new Set(["fast_starter"]);
-
 /**
  * Map Phase 1 highlights to timeline events with IGT timestamps.
  *
  * Strategy:
  * - Finish-related highlights: placed at the latest involved player's totalIgt
  * - Zone-related highlights: placed at the midpoint of the relevant zone visit
- * - Start-related highlights: placed at the IGT when the player reaches layer 2
  * - Global/path highlights: placed at race midpoint
  */
 export function mapHighlightsToTimeline(
@@ -53,15 +50,6 @@ export function mapHighlightsToTimeline(
         .map((id) => rpMap.get(id)?.totalIgt ?? 0)
         .filter((t) => t > 0);
       igtMs = finishTimes.length > 0 ? Math.max(...finishTimes) : maxIgt;
-    } else if (START_HIGHLIGHTS.has(h.type)) {
-      // Use the earliest involved player's IGT for their second zone visit
-      const startTimes = h.playerIds
-        .map((id) => {
-          const rp = rpMap.get(id);
-          return rp && rp.zoneVisits.length > 1 ? rp.zoneVisits[1].enterIgt : 0;
-        })
-        .filter((t) => t > 0);
-      igtMs = startTimes.length > 0 ? Math.min(...startTimes) : maxIgt * 0.1;
     } else if (ZONE_HIGHLIGHTS.has(h.type)) {
       // Find the zone mentioned in the highlight segments
       const zoneSegment = h.segments.find((s) => s.type === "zone");

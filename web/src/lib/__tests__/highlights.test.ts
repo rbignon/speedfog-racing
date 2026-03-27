@@ -344,7 +344,7 @@ describe("speed highlights", () => {
 
   it("Sprint Final: detects fastest final boss kill", () => {
     // Both players have similar zone_a/zone_b times (no Speed Demon/Zone Wall),
-    // similar layer-2 arrival (low Fast Starter score), but different boss times.
+    // but different boss times.
     const sprintGraph = graphJson({
       start: { tier: 1, layer: 0, type: "start" },
       zone_a: { tier: 2, layer: 1 },
@@ -642,6 +642,10 @@ describe("path highlights", () => {
     expect(road).toBeDefined();
     // Alice took zone_b + zone_d while others took zone_a + zone_c
     expect(road!.playerIds).toContain("alice");
+    // Should mention the unique zones (zone_b and zone_d)
+    const text = descriptionText(road!);
+    expect(text).toContain("zone_b");
+    expect(text).toContain("zone_d");
   });
 });
 
