@@ -74,6 +74,38 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
                 trends[uid] = trends.get(uid, 0) + round(delta)
                 delta_counts[uid] = count + 1
 
+    # Compute Strength of Schedule: average ELO of opponents per user.
+    sos: dict[Any, int] = {}
+    if user_ids:
+        user_races_sq = (
+            select(Participant.race_id, Participant.user_id)
+            .where(
+                Participant.user_id.in_(user_ids),
+                Participant.status.in_([ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED]),
+                Participant.igt_ms > 0,
+            )
+            .subquery()
+        )
+
+        opp_elos = (
+            await db.execute(
+                select(
+                    user_races_sq.c.user_id,
+                    func.avg(EloHistory.elo_before),
+                )
+                .join(
+                    EloHistory,
+                    (EloHistory.race_id == user_races_sq.c.race_id)
+                    & (EloHistory.user_id != user_races_sq.c.user_id),
+                )
+                .group_by(user_races_sq.c.user_id)
+            )
+        ).all()
+
+        for uid, avg_opp in opp_elos:
+            if avg_opp is not None:
+                sos[uid] = round(avg_opp)
+
     players = []
     for u in users:
         players.append(
@@ -84,6 +116,7 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
                 elo_rating=round(u.elo_rating),
                 elo_races=u.elo_races,
                 trend_delta=trends.get(u.id, 0),
+                avg_opponent_elo=sos.get(u.id),
             )
         )
 

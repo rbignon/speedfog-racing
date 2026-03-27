@@ -417,6 +417,7 @@ class LeaderboardPlayer(BaseModel):
     elo_rating: int
     elo_races: int
     trend_delta: int
+    avg_opponent_elo: int | None = None
 
 
 class CommunityStats(BaseModel):
