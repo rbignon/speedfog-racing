@@ -44,6 +44,7 @@ class TrainingStore {
   participant = $state<WsParticipant | null>(null);
   connected = $state(false);
   loading = $state(true);
+  wsError = $state<{ code: number; reason: string } | null>(null);
 
   private ws: WebSocket | null = null;
   private currentSessionId: string | null = null;
@@ -74,6 +75,7 @@ class TrainingStore {
     this.participant = null;
     this.connected = false;
     this.loading = true;
+    this.wsError = null;
     this.intentionallyClosed = false;
     this.reconnectAttempt = 0;
 
@@ -107,6 +109,7 @@ class TrainingStore {
     this.participant = null;
     this.connected = false;
     this.loading = true;
+    this.wsError = null;
   }
 
   private doConnect() {
@@ -148,6 +151,16 @@ class TrainingStore {
         );
       this.ws = null;
       this.connected = false;
+
+      // 4xxx = permanent error, do not reconnect
+      if (event.code >= 4000) {
+        this.wsError = {
+          code: event.code,
+          reason: event.reason || "Connection rejected",
+        };
+        this.loading = false;
+        return;
+      }
 
       if (!this.intentionallyClosed) {
         this.scheduleReconnect();
