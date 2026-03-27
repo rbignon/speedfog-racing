@@ -28,7 +28,10 @@ def compute_seed_difficulty(graph_json: dict[str, Any]) -> float:
     Score = sum over non-start nodes of: type_weight * tier^TIER_EXPONENT.
     """
     score = 0.0
-    for node in graph_json.get("nodes", {}).values():
+    nodes = graph_json.get("nodes", {})
+    if not isinstance(nodes, dict):
+        return 0.0
+    for node in nodes.values():
         node_type = node.get("type", "")
         if node_type == "start":
             continue
