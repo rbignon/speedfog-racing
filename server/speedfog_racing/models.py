@@ -108,6 +108,7 @@ class Seed(Base):
     pool_name: Mapped[str] = mapped_column(String(50), nullable=False)  # "standard", "sprint"
     graph_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     total_layers: Mapped[int] = mapped_column(Integer, nullable=False)
+    difficulty_score: Mapped[float] = mapped_column(default=0.0, server_default="0.0")
     folder_path: Mapped[str] = mapped_column(String(500), nullable=False)
     status: Mapped[SeedStatus] = mapped_column(Enum(SeedStatus), default=SeedStatus.AVAILABLE)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
