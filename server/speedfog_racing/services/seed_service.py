@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.config import settings
 from speedfog_racing.models import Race, Seed, SeedStatus
+from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
 
 logger = logging.getLogger(__name__)
 
@@ -93,12 +94,15 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
         if total_layers == 0:
             logger.warning(f"Missing total_layers in {entry}")
 
+        difficulty_score = compute_seed_difficulty(graph_json)
+
         # Create seed record
         seed = Seed(
             seed_number=seed_number,
             pool_name=pool_name,
             graph_json=graph_json,
             total_layers=total_layers,
+            difficulty_score=difficulty_score,
             folder_path=str(entry),
             status=SeedStatus.AVAILABLE,
         )

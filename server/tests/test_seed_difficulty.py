@@ -1,7 +1,11 @@
 """Tests for seed difficulty computation."""
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from speedfog_racing.database import Base
+from speedfog_racing.models import Seed
 from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
 
 
@@ -114,3 +118,57 @@ class TestComputeSeedDifficulty:
         assert score > 0
         # Sanity: a realistic seed should produce a score in the hundreds
         assert score > 50
+
+
+@pytest.fixture
+async def async_db():
+    """Create async in-memory test database session."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_factory() as session:
+        yield session
+    await engine.dispose()
+
+
+class TestSeedDifficultyAtIngestion:
+    """Verify seeds get difficulty_score populated during scan."""
+
+    @pytest.mark.asyncio
+    async def test_scanned_seed_has_difficulty_score(self, async_db: AsyncSession, tmp_path):
+        """Seeds ingested via scan_pool should have difficulty_score > 0."""
+        import json
+        import zipfile
+
+        from speedfog_racing.config import settings
+        from speedfog_racing.services.seed_service import scan_pool
+
+        # Create a fake seed zip
+        graph = {
+            "total_layers": 5,
+            "nodes": {
+                "start": {"type": "start", "tier": 3},
+                "ld1": {"type": "legacy_dungeon", "tier": 8},
+                "mb1": {"type": "major_boss", "tier": 12},
+            },
+        }
+        pool_dir = tmp_path / "test_pool"
+        pool_dir.mkdir()
+        zip_path = pool_dir / "seed_abc123.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("graph.json", json.dumps(graph))
+
+        original_dir = settings.seeds_pool_dir
+        settings.seeds_pool_dir = str(tmp_path)
+        try:
+            added = await scan_pool(async_db, "test_pool")
+        finally:
+            settings.seeds_pool_dir = original_dir
+
+        assert added == 1
+
+        seed = (
+            await async_db.execute(select(Seed).where(Seed.seed_number == "abc123"))
+        ).scalar_one()
+        assert seed.difficulty_score > 0
