@@ -24,7 +24,7 @@
 		if (!value) return '18:00';
 		const d = new Date(value);
 		const h = d.getHours().toString().padStart(2, '0');
-		const m = (Math.floor(d.getMinutes() / 30) * 30).toString().padStart(2, '0');
+		const m = d.getMinutes().toString().padStart(2, '0');
 		return `${h}:${m}`;
 	});
 
@@ -189,10 +189,8 @@
 			const slotMin = h * 60 + m;
 			const minMin = minLocal.hours * 60 + minLocal.minutes;
 			if (slotMin < minMin) {
-				// Snap to next valid 30-min slot
-				const snapped = Math.ceil(minMin / 30) * 30;
-				const sh = Math.floor(snapped / 60);
-				const sm = snapped % 60;
+				const sh = Math.floor(minMin / 60);
+				const sm = minMin % 60;
 				time = `${sh.toString().padStart(2, '0')}:${sm.toString().padStart(2, '0')}`;
 			}
 		}
@@ -200,15 +198,164 @@
 		open = false;
 	}
 
-	function handleTimeChange(e: Event) {
-		const time = (e.target as HTMLSelectElement).value;
-		if (!selectedLocalDate) return;
-		emitChange(selectedLocalDate.year, selectedLocalDate.month, selectedLocalDate.day, time);
+	// Time combobox state
+	let timeInputValue = $state('18:00');
+	let timeDropdownOpen = $state(false);
+	let highlightedSlotIndex = $state(-1);
+	let timeInputEl: HTMLInputElement | undefined = $state();
+	let timeDropdownEl: HTMLDivElement | undefined = $state();
+
+	// Sync input value with selected time when not editing
+	$effect(() => {
+		const time = selectedTime;
+		if (!timeDropdownOpen) {
+			timeInputValue = time;
+		}
+	});
+
+	// Scroll to nearest slot when dropdown opens
+	$effect(() => {
+		if (timeDropdownOpen && timeDropdownEl) {
+			const idx = findClosestSlotIndex(selectedTime);
+			highlightedSlotIndex = idx;
+			const el = timeDropdownEl.children[idx] as HTMLElement;
+			if (el) el.scrollIntoView({ block: 'nearest' });
+		}
+	});
+
+	function findClosestSlotIndex(time: string): number {
+		const [h, m] = time.split(':').map(Number);
+		if (isNaN(h) || isNaN(m)) return 0;
+		const minutes = h * 60 + m;
+		let closest = 0;
+		let closestDiff = Infinity;
+		for (let i = 0; i < timeSlots.length; i++) {
+			const [sh, sm] = timeSlots[i].split(':').map(Number);
+			const diff = Math.abs(sh * 60 + sm - minutes);
+			if (diff < closestDiff) {
+				closestDiff = diff;
+				closest = i;
+			}
+		}
+		return closest;
+	}
+
+	function parseTimeInput(input: string): string | null {
+		const trimmed = input.trim();
+
+		// HH:MM (24h)
+		const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+		if (match24) {
+			const h = parseInt(match24[1]);
+			const m = parseInt(match24[2]);
+			if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+				return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+			}
+		}
+
+		// H:MM AM/PM
+		const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+		if (match12) {
+			let h = parseInt(match12[1]);
+			const m = parseInt(match12[2]);
+			const period = match12[3].toLowerCase();
+			if (h >= 1 && h <= 12 && m >= 0 && m <= 59) {
+				if (period === 'pm' && h !== 12) h += 12;
+				if (period === 'am' && h === 12) h = 0;
+				return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+			}
+		}
+
+		return null;
+	}
+
+	function commitTimeInput() {
+		const parsed = parseTimeInput(timeInputValue);
+		if (parsed && selectedLocalDate) {
+			let time = parsed;
+			if (
+				minLocal &&
+				selectedLocalDate.year === minLocal.year &&
+				selectedLocalDate.month === minLocal.month &&
+				selectedLocalDate.day === minLocal.day
+			) {
+				const [h, m] = time.split(':').map(Number);
+				const slotMin = h * 60 + m;
+				const minMin = minLocal.hours * 60 + minLocal.minutes;
+				if (slotMin < minMin) {
+					time = `${Math.floor(minMin / 60).toString().padStart(2, '0')}:${(minMin % 60).toString().padStart(2, '0')}`;
+				}
+			}
+			emitChange(selectedLocalDate.year, selectedLocalDate.month, selectedLocalDate.day, time);
+		}
+		timeInputValue = selectedTime;
+		timeDropdownOpen = false;
+		highlightedSlotIndex = -1;
+	}
+
+	function handleTimeInputFocus() {
+		open = false; // close calendar if open
+		timeDropdownOpen = true;
+		setTimeout(() => timeInputEl?.select(), 0);
+	}
+
+	function handleTimeInputBlur() {
+		commitTimeInput();
+	}
+
+	function handleTimeInputKeydown(e: KeyboardEvent) {
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			if (!timeDropdownOpen) {
+				timeDropdownOpen = true;
+				highlightedSlotIndex = findClosestSlotIndex(timeInputValue);
+			} else {
+				highlightedSlotIndex = Math.min(highlightedSlotIndex + 1, timeSlots.length - 1);
+			}
+			scrollToHighlighted();
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			if (timeDropdownOpen) {
+				highlightedSlotIndex = Math.max(highlightedSlotIndex - 1, 0);
+				scrollToHighlighted();
+			}
+		} else if (e.key === 'Enter') {
+			e.preventDefault();
+			if (timeDropdownOpen && highlightedSlotIndex >= 0) {
+				selectTimeSlot(timeSlots[highlightedSlotIndex]);
+			} else {
+				commitTimeInput();
+			}
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			timeInputValue = selectedTime;
+			timeDropdownOpen = false;
+			timeInputEl?.blur();
+		}
+	}
+
+	function scrollToHighlighted() {
+		if (timeDropdownEl && highlightedSlotIndex >= 0) {
+			const el = timeDropdownEl.children[highlightedSlotIndex] as HTMLElement;
+			if (el) el.scrollIntoView({ block: 'nearest' });
+		}
+	}
+
+	function selectTimeSlot(slot: string) {
+		timeInputValue = slot;
+		timeDropdownOpen = false;
+		highlightedSlotIndex = -1;
+		if (selectedLocalDate) {
+			emitChange(selectedLocalDate.year, selectedLocalDate.month, selectedLocalDate.day, slot);
+		}
 	}
 
 	function handleClickOutside(e: MouseEvent) {
 		if (containerEl && !containerEl.contains(e.target as Node)) {
 			open = false;
+			if (timeDropdownOpen) {
+				commitTimeInput();
+			}
 		}
 	}
 
@@ -217,7 +364,7 @@
 	}
 
 	$effect(() => {
-		if (open) {
+		if (open || timeDropdownOpen) {
 			document.addEventListener('mousedown', handleClickOutside);
 			document.addEventListener('keydown', handleKeydown);
 			return () => {
@@ -258,16 +405,52 @@
 		</button>
 
 		{#if selectedLocalDate}
-			<select
-				class="time-select"
-				value={selectedTime}
-				onchange={handleTimeChange}
-				{disabled}
-			>
-				{#each timeSlots as slot}
-					<option value={slot}>{slot}</option>
-				{/each}
-			</select>
+			<div class="time-combobox">
+				<input
+					bind:this={timeInputEl}
+					class="time-input"
+					type="text"
+					bind:value={timeInputValue}
+					onfocus={handleTimeInputFocus}
+					onblur={handleTimeInputBlur}
+					onkeydown={handleTimeInputKeydown}
+					role="combobox"
+					aria-label="Time"
+					aria-autocomplete="list"
+					aria-expanded={timeDropdownOpen}
+					aria-controls="time-listbox"
+					aria-activedescendant={highlightedSlotIndex >= 0
+						? `time-option-${highlightedSlotIndex}`
+						: undefined}
+					{disabled}
+				/>
+				{#if timeDropdownOpen}
+					<div
+						class="time-dropdown"
+						bind:this={timeDropdownEl}
+						role="listbox"
+						id="time-listbox"
+					>
+						{#each timeSlots as slot, i}
+							<button
+								type="button"
+								class="time-option"
+								class:highlighted={i === highlightedSlotIndex}
+								class:selected={slot === selectedTime}
+								role="option"
+								id="time-option-{i}"
+								aria-selected={slot === selectedTime}
+								onmousedown={(e) => {
+									e.preventDefault();
+									selectTimeSlot(slot);
+								}}
+							>
+								{slot}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		{/if}
 	</div>
 
@@ -359,7 +542,11 @@
 		flex-shrink: 0;
 	}
 
-	.time-select {
+	.time-combobox {
+		position: relative;
+	}
+
+	.time-input {
 		padding: 0.75rem 0.5rem;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-sm);
@@ -367,23 +554,60 @@
 		color: var(--color-text);
 		font-family: var(--font-family);
 		font-size: 1rem;
-		cursor: pointer;
+		width: 5.5rem;
 		transition: border-color var(--transition);
-		appearance: auto;
 	}
 
-	.time-select:hover:not(:disabled) {
+	.time-input:hover:not(:disabled) {
 		border-color: var(--color-purple);
 	}
 
-	.time-select:focus {
+	.time-input:focus {
 		outline: none;
 		border-color: var(--color-purple);
 	}
 
-	.time-select:disabled {
+	.time-input:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	.time-dropdown {
+		position: absolute;
+		top: 100%;
+		left: 0;
+		z-index: 100;
+		background: var(--color-surface-elevated);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+		max-height: 200px;
+		overflow-y: auto;
+		width: 100%;
+		margin-top: 2px;
+	}
+
+	.time-option {
+		display: block;
+		width: 100%;
+		padding: 0.4rem 0.75rem;
+		border: none;
+		background: none;
+		color: var(--color-text);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.time-option:hover,
+	.time-option.highlighted {
+		background: var(--color-surface);
+	}
+
+	.time-option.selected {
+		color: var(--color-purple);
+		font-weight: 600;
 	}
 
 	.calendar-popup {
