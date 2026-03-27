@@ -29,6 +29,41 @@ For each pair (A, B):
    - Both abandoned: `(0.5, 0.5)` (draw)
 3. Delta: `K_FACTOR * (actual - expected)`, normalized by `/ (n - 1)` to avoid over-rewarding large fields
 
+**Seed difficulty scoring:**
+
+Each seed receives an intrinsic difficulty score at ingestion time, computed from its graph structure:
+
+- `score = sum(type_weight * tier^1.3)` over all non-start nodes
+- Type weights: `legacy_dungeon=1.0`, `mini_dungeon=0.7`, `boss_arena=1.5`, `major_boss=2.0`, `final_boss=2.5`
+- Stored as `difficulty_score` on the Seed model
+
+**Field strength weighting (post-pairwise):**
+
+After pairwise deltas are computed, they are scaled by the average field ELO:
+
+```
+weight = avg_field_elo / 1500.0
+adjusted_delta = pairwise_delta * weight
+```
+
+Races among strong players (avg ELO > 1500) amplify gains/losses. Races among weaker players dampen them.
+
+**Difficulty injection (post-pairwise):**
+
+A uniform bonus/penalty is added to all participants based on the race seed's difficulty relative to the global average:
+
+```
+difficulty_factor = seed.difficulty_score / global_avg_difficulty_score
+bonus = 5.0 * (difficulty_factor - 1.0)
+final_delta = field_weighted_delta + bonus
+```
+
+This intentionally breaks zero-sum: harder seeds inject positive ELO into the system. Over time, players who consistently race on harder seeds drift upward, while players on easier seeds drift downward, even if the two groups never cross paths.
+
+**Strength of Schedule (SoS):**
+
+Displayed on the leaderboard as `avg_opponent_elo`: the average `elo_before` of all opponents across all rated races for a player. Contextualizes the ELO rating by showing the caliber of competition faced.
+
 **Idempotency:** `update_elo_ratings` checks for existing `EloHistory` entries for the race before computing. No double-counting on replay.
 
 ### Leaderboard
