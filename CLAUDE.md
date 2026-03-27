@@ -40,24 +40,49 @@ uv run mypy speedfog_racing/
 
 ```
 server/speedfog_racing/
-├── main.py          # FastAPI app, CORS, lifespan
-├── config.py        # Pydantic settings (env vars)
-├── database.py      # SQLAlchemy async setup
-├── models.py        # DB models (User, Race, Seed, Participant, Invite)
-├── auth.py          # Twitch OAuth helpers + FastAPI dependencies
-├── api/             # REST routes
-│   ├── auth.py      # /api/auth/*
-│   ├── races.py     # /api/races/*
-│   └── users.py     # /api/users/*
-├── websocket/       # WebSocket handlers
-│   ├── manager.py   # Connection manager for race rooms
-│   ├── mod.py       # Mod WebSocket handler
-│   ├── spectator.py # Spectator WebSocket handler
-│   └── schemas.py   # WebSocket message schemas
-├── services/        # Business logic
-│   ├── seed.py      # Seed pool management
-│   └── seed_pack_service.py # Seed pack generation for participants
-└── schemas.py       # Pydantic schemas for API responses
+├── main.py              # FastAPI app, CORS, lifespan
+├── config.py            # Pydantic settings (env vars)
+├── database.py          # SQLAlchemy async setup
+├── models.py            # DB models (User, Race, Seed, Participant, Caster, Invite, TrainingSession, EloHistory, PlayerTraitScores)
+├── auth.py              # Twitch OAuth helpers + FastAPI dependencies
+├── schemas.py           # Pydantic schemas for API responses
+├── discord.py           # Discord bot integration
+├── rate_limit.py        # slowapi rate limiting setup
+├── api/                 # REST routes
+│   ├── auth.py          # /api/auth/*
+│   ├── races.py         # /api/races/*
+│   ├── users.py         # /api/users/*
+│   ├── admin.py         # /api/admin/*
+│   ├── discord.py       # /api/discord/*
+│   ├── invites.py       # /api/invites/*
+│   ├── pools.py         # /api/pools/*
+│   ├── stats.py         # /api/stats/*
+│   ├── training.py      # /api/training/*
+│   ├── helpers.py       # Shared API helpers (auth, pagination)
+│   └── i18n.py          # Internationalization routes
+├── websocket/           # WebSocket handlers
+│   ├── manager.py       # Connection manager for race rooms
+│   ├── mod.py           # Mod WebSocket handler
+│   ├── spectator.py     # Spectator WebSocket handler
+│   ├── schemas.py       # WebSocket message schemas
+│   ├── common.py        # Shared WebSocket utilities
+│   ├── training_manager.py  # Training mode connection manager
+│   ├── training_mod.py      # Training mod WebSocket handler
+│   └── training_spectator.py # Training spectator handler
+├── services/            # Business logic
+│   ├── seed_service.py      # Seed pool management
+│   ├── seed_pack_service.py # Seed pack generation for participants
+│   ├── seed_difficulty.py   # Seed difficulty scoring
+│   ├── race_lifecycle.py    # Race state transitions
+│   ├── layer_service.py     # Zone layer/tier computation
+│   ├── zone_resolver.py     # Zone name resolution from event flags
+│   ├── stats_service.py     # ELO ratings + behavioral traits
+│   ├── training_service.py  # Training session management
+│   ├── grace_service.py     # Grace period logic
+│   ├── inactivity_monitor.py # AFK detection
+│   ├── twitch_live.py       # Twitch live status polling
+│   └── i18n.py              # Server-side i18n
+└── ...
 ```
 
 ### Conventions
@@ -95,23 +120,66 @@ npm run format
 ```
 web/src/
 ├── lib/
-│   ├── api.ts           # REST API client + types
-│   ├── websocket.ts     # WebSocket client with reconnect
+│   ├── api.ts               # REST API client + types
+│   ├── websocket.ts         # WebSocket client with reconnect
+│   ├── format.ts            # Display formatting helpers
+│   ├── highlights.ts        # Race highlights computation
+│   ├── personal-highlights.ts # Per-player highlights
 │   ├── stores/
-│   │   ├── auth.ts      # Auth store (isLoggedIn, currentUser)
-│   │   └── race.ts      # Race state store (live WebSocket data)
-│   └── components/
-│       ├── Leaderboard.svelte      # Live leaderboard
-│       ├── RaceStatus.svelte       # Status badge
-│       └── ConnectionStatus.svelte # WebSocket connection indicator
+│   │   ├── auth.svelte.ts       # Auth store (isLoggedIn, currentUser)
+│   │   ├── race.svelte.ts       # Race state store (live WebSocket data)
+│   │   ├── locale.svelte.ts     # Locale/i18n store
+│   │   └── training.svelte.ts   # Training session state
+│   ├── dag/                 # Metro-style DAG (pure SVG, custom layout)
+│   │   ├── MetroDag.svelte      # Main DAG component
+│   │   ├── NodePopup.svelte     # Zone info popup
+│   │   ├── layout.ts            # DAG layout algorithm
+│   │   ├── popupData.ts         # Popup data aggregation
+│   │   └── ...
+│   ├── replay/              # Race replay system
+│   │   ├── RaceReplay.svelte    # Replay player
+│   │   ├── ReplayDag.svelte     # Replay DAG view
+│   │   └── ...
+│   ├── utils/               # Shared utilities
+│   ├── data/                # Static data files
+│   └── components/          # UI components (30+)
+│       ├── Leaderboard.svelte       # Live leaderboard
+│       ├── RaceStatus.svelte        # Status badge
+│       ├── RaceCard.svelte          # Race list card
+│       ├── RaceControls.svelte      # Organizer race actions
+│       ├── RaceHighlights.svelte    # Post-race highlights
+│       ├── RaceStats.svelte         # Race statistics
+│       ├── ParticipantCard.svelte   # Player card with optional remove
+│       ├── CasterList.svelte        # Caster management
+│       ├── Podium.svelte            # Podium display
+│       ├── PlayStyle.svelte         # Player trait visualization
+│       ├── ChatPanel.svelte         # Race chat
+│       ├── LeaderboardOverlay.svelte # OBS overlay leaderboard
+│       ├── stats/                   # Stats page components
+│       │   ├── LeaderboardTab.svelte
+│       │   ├── PlayersTab.svelte
+│       │   ├── ZonesTab.svelte
+│       │   └── BossesTab.svelte
+│       └── ...
 └── routes/
     ├── +layout.svelte   # Global layout with navbar
-    ├── +page.svelte     # Home (race list)
-    ├── auth/callback/   # Twitch OAuth callback
-    └── race/
-        ├── new/         # Create race form
-        └── [id]/
-            └── +page    # Race detail (spectator + organizer view)
+    ├── +page.svelte     # Home (race list + hero DAG)
+    ├── auth/            # Twitch OAuth callback
+    ├── race/
+    │   ├── new/         # Create race form
+    │   └── [id]/        # Race detail (spectator + organizer view)
+    ├── races/           # Race listing
+    ├── training/        # Training mode
+    ├── stats/           # Global statistics
+    ├── dashboard/       # User dashboard
+    ├── admin/           # Admin panel
+    ├── overlay/         # OBS overlay
+    ├── user/            # User profiles
+    ├── settings/        # User settings
+    ├── invite/          # Invite handling
+    ├── about/           # About page
+    ├── changelog/       # Changelog page
+    └── help/            # Help page
 ```
 
 ### Conventions
@@ -146,18 +214,26 @@ mod/src/
 │   ├── mod.rs
 │   ├── protocol.rs       # WebSocket message types
 │   ├── map_utils.rs      # Map ID formatting
-│   └── types.rs          # PlayerPosition etc.
+│   ├── types.rs          # PlayerPosition etc.
+│   ├── color.rs          # Color utilities
+│   ├── constants.rs      # Shared constants
+│   ├── flag_buffer.rs    # Event flag buffering
+│   ├── format.rs         # Display formatting
+│   └── traits.rs         # Shared traits
 ├── dll/                # Windows-only DLL code
 │   ├── mod.rs
 │   ├── config.rs         # TOML config loading
 │   ├── tracker.rs        # Main orchestrator
 │   ├── ui.rs             # ImGui overlay
-│   └── websocket.rs      # WebSocket client
+│   ├── websocket.rs      # WebSocket client
+│   ├── death_icon.rs     # Death icon overlay
+│   └── hotkey.rs         # Hotkey handling
 └── eldenring/          # Game memory reading
     ├── mod.rs
-    ├── game_state.rs
-    ├── game_man.rs
-    └── ...
+    ├── game_state.rs     # Game state detection
+    ├── event_flags.rs    # EMEVD event flag reading (VirtualMemoryFlag tree)
+    ├── item_spawner.rs   # Item spawn via game memory
+    └── warp_hook.rs      # Warp/teleport hook
 ```
 
 ### Protocol
