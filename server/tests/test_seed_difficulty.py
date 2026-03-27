@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
-from speedfog_racing.models import Seed
+from speedfog_racing.models import Seed, SeedStatus
 from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
 
 
@@ -172,3 +172,63 @@ class TestSeedDifficultyAtIngestion:
             await async_db.execute(select(Seed).where(Seed.seed_number == "abc123"))
         ).scalar_one()
         assert seed.difficulty_score > 0
+
+
+class TestBackfillDifficultyScores:
+    @pytest.mark.asyncio
+    async def test_backfill_updates_zero_scores(self, async_db: AsyncSession):
+        """Backfill should compute difficulty for seeds with score=0."""
+        from speedfog_racing.services.seed_difficulty import backfill_difficulty_scores
+
+        seed = Seed(
+            seed_number="backfill1",
+            pool_name="test",
+            graph_json={
+                "total_layers": 3,
+                "nodes": {
+                    "s": {"type": "start", "tier": 1},
+                    "a": {"type": "legacy_dungeon", "tier": 10},
+                },
+            },
+            total_layers=3,
+            difficulty_score=0.0,
+            folder_path="/fake/path.zip",
+            status=SeedStatus.AVAILABLE,
+        )
+        async_db.add(seed)
+        await async_db.commit()
+
+        count = await backfill_difficulty_scores(async_db)
+        assert count == 1
+
+        await async_db.refresh(seed)
+        assert seed.difficulty_score > 0
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_already_computed(self, async_db: AsyncSession):
+        """Backfill should not recompute seeds that already have a score."""
+        from speedfog_racing.services.seed_difficulty import backfill_difficulty_scores
+
+        seed = Seed(
+            seed_number="backfill2",
+            pool_name="test",
+            graph_json={
+                "total_layers": 3,
+                "nodes": {
+                    "s": {"type": "start", "tier": 1},
+                    "a": {"type": "legacy_dungeon", "tier": 10},
+                },
+            },
+            total_layers=3,
+            difficulty_score=99.9,
+            folder_path="/fake/path.zip",
+            status=SeedStatus.AVAILABLE,
+        )
+        async_db.add(seed)
+        await async_db.commit()
+
+        count = await backfill_difficulty_scores(async_db)
+        assert count == 0
+
+        await async_db.refresh(seed)
+        assert seed.difficulty_score == pytest.approx(99.9)

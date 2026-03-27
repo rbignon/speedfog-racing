@@ -1,6 +1,12 @@
 """Seed difficulty scoring from graph structure."""
 
+import logging
 from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 # Type weights: how much each node type contributes relative to a legacy dungeon.
 # Bosses produce more deaths, so they weigh more.
@@ -30,3 +36,24 @@ def compute_seed_difficulty(graph_json: dict[str, Any]) -> float:
         tier = node.get("tier", 1)
         score += weight * (tier**TIER_EXPONENT)
     return score
+
+
+async def backfill_difficulty_scores(db: AsyncSession) -> int:
+    """Recompute difficulty_score for seeds that have score=0.
+
+    Returns the number of seeds updated.
+    """
+    from speedfog_racing.models import Seed
+
+    result = await db.execute(select(Seed).where(Seed.difficulty_score == 0.0))
+    seeds = result.scalars().all()
+    count = 0
+    for seed in seeds:
+        score = compute_seed_difficulty(seed.graph_json)
+        if score > 0:
+            seed.difficulty_score = score
+            count += 1
+    if count > 0:
+        await db.commit()
+        logger.info("Backfilled difficulty_score for %d seeds", count)
+    return count
