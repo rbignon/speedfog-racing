@@ -176,7 +176,7 @@ async def post_runner_message() -> bool:
         "POST",
         f"/channels/{channel_id}/messages",
         json={
-            "content": "## Runner Role\nClick below to get notified when races are organized!",
+            "content": "## Runner Role\nClick below to get notified when races are organized",
             "components": [
                 {
                     "type": 1,  # ACTION_ROW
@@ -481,7 +481,7 @@ async def send_training_live_notification(
     base_url = settings.base_url.rstrip("/")
 
     embed: dict[str, object] = {
-        "title": f"🎮 {display_name} started a solo SpeedFog run!",
+        "title": f"🎮 {display_name} started a solo SpeedFog run",
         "url": f"{base_url}/training/{session_id}",
         "color": 0x3B82F6,  # blue (training/solo)
         "fields": [
