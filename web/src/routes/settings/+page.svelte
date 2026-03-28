@@ -56,6 +56,18 @@
 		<p class="description">Customize the in-game overlay that displays race information. It automatically applies when you download seeds</p>
 
 		<div class="setting-field">
+			<label class="field-label" for="font-size">Font size</label>
+			<p class="field-description">Size of the text displayed on the overlay.</p>
+			<div class="setting-row">
+				<div class="input-with-unit">
+					<input id="font-size" type="number" min="8" max="72" step="1" bind:value={fontSize} />
+					<span class="unit">px</span>
+				</div>
+				<span class="hint">8–72 px (default: 18)</span>
+			</div>
+		</div>
+
+		<div class="setting-field">
 			<span class="field-label">Language</span>
 			<p class="field-description">Zone names and fog gate descriptions displayed in-game.</p>
 			<div class="locale-select">
@@ -71,18 +83,6 @@
 						{locale.name}
 					</label>
 				{/each}
-			</div>
-		</div>
-
-		<div class="setting-field">
-			<label class="field-label" for="font-size">Font size</label>
-			<p class="field-description">Size of the text displayed on the overlay.</p>
-			<div class="setting-row">
-				<div class="input-with-unit">
-					<input id="font-size" type="number" min="8" max="72" step="1" bind:value={fontSize} />
-					<span class="unit">px</span>
-				</div>
-				<span class="hint">8–72 px (default: 18)</span>
 			</div>
 		</div>
 	</section>

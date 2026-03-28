@@ -141,9 +141,9 @@
 					<span class="settings-banner-icon">&#9881;</span>
 					<p>
 						You can customize your experience in
-						<a href="/settings">Settings</a>: choose your
-						<strong>language</strong> for zone names and exit descriptions, and adjust the in-game
-						<strong>overlay font size</strong>.
+						<a href="/settings">Settings</a>: adjust the in-game
+						<strong>overlay font size</strong> and choose your
+						<strong>language</strong> for zone names and exit descriptions.
 					</p>
 				</div>
 				<button class="settings-banner-close" onclick={dismissBanner} aria-label="Dismiss">&times;</button>
