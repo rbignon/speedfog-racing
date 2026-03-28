@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from speedfog_racing.auth import get_app_access_token
+from speedfog_racing.auth import get_app_access_token, invalidate_app_access_token
 from speedfog_racing.services.twitch_live import TwitchLiveService
 
 
@@ -197,3 +197,154 @@ async def test_poll_once_no_broadcast_when_unchanged():
 
     # No change, so no broadcast
     mock_ws_manager.broadcast_leaderboard.assert_not_called()
+
+
+# --- Token invalidation ---
+
+
+@pytest.mark.asyncio
+async def test_invalidate_app_access_token(monkeypatch):
+    """Invalidating the cache forces a fresh fetch on next call."""
+    call_count = 0
+
+    async def mock_post(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+
+        class MockResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"access_token": f"token_{call_count}", "expires_in": 3600}
+
+        return MockResponse()
+
+    monkeypatch.setattr("speedfog_racing.auth.httpx.AsyncClient.post", mock_post)
+
+    get_app_access_token._cache = None
+
+    token1 = await get_app_access_token()
+    assert token1 == "token_1"
+
+    invalidate_app_access_token()
+
+    token2 = await get_app_access_token()
+    assert token2 == "token_2"
+    assert call_count == 2
+
+
+# --- 401 retry in check_live_status ---
+
+
+def _make_mock_response(status_code, data=None):
+    """Create a mock httpx response."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = {"data": data or []}
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_check_live_status_retries_on_401():
+    """On 401, the token is refreshed and the batch is retried successfully."""
+    service = TwitchLiveService()
+
+    resp_401 = _make_mock_response(401)
+    resp_200 = _make_mock_response(200, [{"user_login": "player1", "type": "live"}])
+
+    token_calls = []
+
+    async def mock_get_token():
+        token_calls.append(1)
+        return f"token_{len(token_calls)}"
+
+    with (
+        patch(
+            "speedfog_racing.services.twitch_live.get_app_access_token", side_effect=mock_get_token
+        ),
+        patch(
+            "speedfog_racing.services.twitch_live.invalidate_app_access_token"
+        ) as mock_invalidate,
+        patch("speedfog_racing.services.twitch_live.httpx.AsyncClient") as mock_client_class,
+    ):
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [resp_401, resp_200]
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        live = await service.check_live_status(["player1"])
+
+    assert live == {"player1"}
+    mock_invalidate.assert_called_once()
+    assert mock_client.get.call_count == 2
+    # First call used token_1, retry used token_2
+    assert len(token_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_check_live_status_401_retry_also_fails():
+    """If the retry after 401 also fails, no crash, empty result."""
+    service = TwitchLiveService()
+
+    resp_401_a = _make_mock_response(401)
+    resp_401_b = _make_mock_response(401)
+
+    async def mock_get_token():
+        return "token"
+
+    with (
+        patch(
+            "speedfog_racing.services.twitch_live.get_app_access_token", side_effect=mock_get_token
+        ),
+        patch("speedfog_racing.services.twitch_live.invalidate_app_access_token"),
+        patch("speedfog_racing.services.twitch_live.httpx.AsyncClient") as mock_client_class,
+    ):
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [resp_401_a, resp_401_b]
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        live = await service.check_live_status(["player1"])
+
+    assert live == set()
+    assert mock_client.get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_check_live_status_401_retries_only_once():
+    """A second batch hitting 401 after a retry already happened is not retried."""
+    service = TwitchLiveService()
+
+    resp_401 = _make_mock_response(401)
+    resp_200_empty = _make_mock_response(200, [])
+
+    usernames = [f"user{i}" for i in range(150)]  # 2 batches: 100 + 50
+
+    async def mock_get_token():
+        return "token"
+
+    with (
+        patch(
+            "speedfog_racing.services.twitch_live.get_app_access_token", side_effect=mock_get_token
+        ),
+        patch("speedfog_racing.services.twitch_live.invalidate_app_access_token"),
+        patch("speedfog_racing.services.twitch_live.httpx.AsyncClient") as mock_client_class,
+    ):
+        mock_client = AsyncMock()
+        # Batch 1: 401 -> retry succeeds (200)
+        # Batch 2: 401 -> no retry (already retried)
+        mock_client.get.side_effect = [resp_401, resp_200_empty, resp_401]
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        live = await service.check_live_status(usernames)
+
+    assert live == set()
+    # 3 calls: batch1 (401) + batch1 retry (200) + batch2 (401, no retry)
+    assert mock_client.get.call_count == 3

@@ -175,6 +175,15 @@ async def get_app_access_token() -> str:
         return token
 
 
+def invalidate_app_access_token() -> None:
+    """Invalidate the cached app access token.
+
+    Call this when the Twitch API returns 401 so the next call to
+    get_app_access_token() fetches a fresh token.
+    """
+    get_app_access_token._cache = None  # type: ignore[attr-defined]
+
+
 # =============================================================================
 # FastAPI Dependencies
 # =============================================================================

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.auth import get_app_access_token
+from speedfog_racing.auth import get_app_access_token, invalidate_app_access_token
 from speedfog_racing.config import settings
 from speedfog_racing.models import Caster, Participant, Race, RaceStatus
 
@@ -31,34 +31,63 @@ class TwitchLiveService:
     def __init__(self) -> None:
         self.live_usernames: set[str] = set()
 
+    async def _fetch_streams(
+        self,
+        client: httpx.AsyncClient,
+        token: str,
+        params: tuple[tuple[str, str], ...],
+    ) -> httpx.Response:
+        """Send a single Twitch Helix streams request."""
+        return await client.get(
+            "https://api.twitch.tv/helix/streams",
+            params=params,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Client-Id": settings.twitch_client_id,
+            },
+        )
+
+    @staticmethod
+    def _collect_live(resp: httpx.Response, live: set[str]) -> None:
+        """Extract live usernames from a successful Helix response."""
+        for stream in resp.json().get("data", []):
+            if stream.get("type") == "live":
+                live.add(stream["user_login"].lower())
+
     async def check_live_status(self, usernames: list[str]) -> set[str]:
         """Query Twitch API for which usernames are currently live.
 
         Returns set of live usernames (lowercase).
+        On 401, invalidates the cached token and retries once with a fresh one.
         """
         if not usernames:
             return set()
 
         live: set[str] = set()
         token = await get_app_access_token()
+        retried = False
 
         async with httpx.AsyncClient() as client:
             for i in range(0, len(usernames), BATCH_SIZE):
                 batch = usernames[i : i + BATCH_SIZE]
                 params = tuple(("user_login", name) for name in batch)
                 try:
-                    resp = await client.get(
-                        "https://api.twitch.tv/helix/streams",
-                        params=params,
-                        headers={
-                            "Authorization": f"Bearer {token}",
-                            "Client-Id": settings.twitch_client_id,
-                        },
-                    )
+                    resp = await self._fetch_streams(client, token, params)
                     if resp.status_code == 200:
-                        for stream in resp.json().get("data", []):
-                            if stream.get("type") == "live":
-                                live.add(stream["user_login"].lower())
+                        self._collect_live(resp, live)
+                    elif resp.status_code == 401 and not retried:
+                        retried = True
+                        invalidate_app_access_token()
+                        token = await get_app_access_token()
+                        logger.info("Twitch token expired mid-poll, refreshed token")
+                        resp = await self._fetch_streams(client, token, params)
+                        if resp.status_code == 200:
+                            self._collect_live(resp, live)
+                        else:
+                            logger.warning(
+                                "Twitch streams API returned %d after token refresh",
+                                resp.status_code,
+                            )
                     else:
                         logger.warning("Twitch streams API returned %d", resp.status_code)
                 except Exception:
