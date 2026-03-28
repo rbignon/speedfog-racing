@@ -2,6 +2,32 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.2] - 2026-03-28
+
+### Stats
+
+- ELO revamp: ratings now factor in seed difficulty, field strength, and number of races played, with a confidence badge on the leaderboard.
+- Dominant traits use percentile ranking with descriptive labels (e.g. "Top 5% Rusher")
+
+### Seeds
+
+- Runes are awarded directly rather than through Lord's Runes
+- Starting runes reduced (Chill: 150k to 100k, others except Hardcore: 100k to 25k)
+- Starting class weapons upgraded to +24 on all pools except Hardcore
+- Whetstone Knife given on all pools
+- Lamenter's Gaol keys removed from Hardcore pools
+- Colosseum entrance grouped with Gideon/Goldfrey fogs to prevent adjacent entry/exit pairs
+- Snowfield tunnel restricted to its main entrance gate
+- Fix: Spirit Calling Bell now correctly usable
+
+### In-game
+
+- Fix: gap timing updates correctly on the last layer when the leader finishes
+
+### Races
+
+- Editable combobox for scheduling race time
+
 ## [1.5.1] - 2026-03-26
 
 ### Seeds
