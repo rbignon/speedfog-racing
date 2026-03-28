@@ -23,10 +23,10 @@
 			duration: string;
 			pitch: string;
 			layers: string;
-			legacyDungeons: number;
 			majorBosses: number;
 			finalTier: number;
 			startingRunes: string;
+			weaponUpgrade: number;
 			bossRandomization: string;
 			curve: string;
 			carePackage: string;
@@ -38,10 +38,10 @@
 			duration: '~1h',
 			pitch: 'The balanced format. Good variety of zones, fair resources, straightforward difficulty curve.',
 			layers: '25–30',
-			legacyDungeons: 2,
 			majorBosses: 8,
 			finalTier: 18,
-			startingRunes: '100k',
+			startingRunes: '25k',
+			weaponUpgrade: 24,
 			bossRandomization: 'Minor bosses only',
 			curve: 'Linear',
 			carePackage: 'Catalysts, talismans, spells',
@@ -52,10 +52,10 @@
 			duration: '~30min',
 			pitch: 'Short and fast. Fewer layers, quicker to the final boss. Great for warmups or time-limited sessions.',
 			layers: '10–15',
-			legacyDungeons: 1,
-			majorBosses: 3,
-			finalTier: 10,
-			startingRunes: '100k',
+			majorBosses: 4,
+			finalTier: 13,
+			startingRunes: '25k',
+			weaponUpgrade: 24,
 			bossRandomization: 'Minor bosses only',
 			curve: 'Linear',
 			carePackage: 'Weapons, shields, catalysts, talismans, spells',
@@ -67,26 +67,26 @@
 			pitch:
 				'Generous resources and a late difficulty spike. More legacy dungeons to explore, easier item drops. Good entry point.',
 			layers: '25–30',
-			legacyDungeons: 3,
 			majorBosses: 5,
 			finalTier: 10,
-			startingRunes: '150k',
-			bossRandomization: 'All bosses shuffled',
+			startingRunes: '100k',
+			weaponUpgrade: 24,
+			bossRandomization: 'None',
 			curve: 'Late spike',
 			carePackage: 'Weapons, shields, catalysts, talismans, spells',
-			notes: ['Extra Golden Seeds and Sacred Tears', 'Gargoyles nerfed']
+			notes: ['Extra Golden Seeds and Sacred Tears', 'Gargoyles and Malenia nerfed']
 		},
 		hardcore: {
 			label: 'Hardcore',
 			duration: '~1h',
 			pitch:
-				'Scarce resources, early difficulty spike, high boss density. No whetblades, minimal care package. You earn everything.',
+				'Scarce resources, early difficulty spike, high boss density. No whetblades, minimal care package.',
 			layers: '25–30',
-			legacyDungeons: 1,
 			majorBosses: 12,
 			finalTier: 28,
 			startingRunes: '50k',
-			bossRandomization: 'Minor bosses only',
+			weaponUpgrade: 0,
+			bossRandomization: 'None',
 			curve: 'Early spike',
 			carePackage: 'Minimal',
 			notes: ['No whetblades']
@@ -95,16 +95,31 @@
 			label: 'Boss Shuffle',
 			duration: '~1h',
 			pitch:
-				'Same structure as Standard, but every boss is randomized, majors included. You never know what awaits behind the fog.',
+				'Same structure as Standard, but every boss is randomized, majors included.',
 			layers: '25–30',
-			legacyDungeons: 2,
 			majorBosses: 8,
 			finalTier: 18,
-			startingRunes: '100k',
+			startingRunes: '25k',
+			weaponUpgrade: 24,
 			bossRandomization: 'All bosses shuffled',
 			curve: 'Linear',
 			carePackage: 'Catalysts, talismans, spells',
 			notes: ['Gargoyles nerfed']
+		},
+		expedition: {
+			label: 'Expedition',
+			duration: '~5h',
+			pitch:
+				'Epic race through most of the Lands Between. Massive route with narrow paths, high boss count, and a long grind to the final boss.',
+			layers: '90–100',
+			majorBosses: 15,
+			finalTier: 28,
+			startingRunes: '25k',
+			weaponUpgrade: 24,
+			bossRandomization: 'Minor bosses only',
+			curve: 'Early ramp',
+			carePackage: 'Catalysts, talismans, spells',
+			notes: ['Gargoyles nerfed', 'Narrow paths (max 2 parallel)']
 		}
 	};
 </script>
@@ -131,7 +146,7 @@
 		</a>
 		<a href="#game-modes" class="toc-card">
 			<strong>Game Modes</strong>
-			<span>Standard, Sprint, Chill, Hardcore...</span>
+			<span>Standard, Sprint, Chill, Hardcore, Expedition...</span>
 		</a>
 		<a href="#during-the-race" class="toc-card">
 			<strong>During the Race</strong>
@@ -351,10 +366,6 @@
 								<span class="pool-stat-value">{pool.layers}</span>
 							</div>
 							<div class="pool-stat">
-								<span class="pool-stat-label">Legacy Dungeons</span>
-								<span class="pool-stat-value">{pool.legacyDungeons}</span>
-							</div>
-							<div class="pool-stat">
 								<span class="pool-stat-label">Major Bosses</span>
 								<span class="pool-stat-value">{pool.majorBosses}</span>
 							</div>
@@ -365,6 +376,10 @@
 							<div class="pool-stat">
 								<span class="pool-stat-label">Starting Runes</span>
 								<span class="pool-stat-value">{pool.startingRunes}</span>
+							</div>
+							<div class="pool-stat">
+								<span class="pool-stat-label">Starting Weapons</span>
+								<span class="pool-stat-value">+{pool.weaponUpgrade}</span>
 							</div>
 							<div class="pool-stat">
 								<span class="pool-stat-label">Boss Shuffle</span>
