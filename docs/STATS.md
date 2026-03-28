@@ -50,10 +50,10 @@ Races among strong players (avg ELO > 1500) amplify gains/losses. Races among we
 
 **Difficulty injection (post-pairwise):**
 
-A uniform bonus/penalty is added to all participants based on the race seed's difficulty relative to the global average:
+A uniform bonus/penalty is added to all participants based on the race seed's difficulty relative to the global average of consumed seeds (training pool seeds are excluded):
 
 ```
-difficulty_factor = seed.difficulty_score / global_avg_difficulty_score
+difficulty_factor = seed.difficulty_score / avg(consumed_seeds.difficulty_score)
 bonus = 5.0 * (difficulty_factor - 1.0)
 final_delta = field_weighted_delta + bonus
 ```
@@ -62,13 +62,15 @@ This intentionally breaks zero-sum: harder seeds inject positive ELO into the sy
 
 **Strength of Schedule (SoS):**
 
-Displayed on the leaderboard as `avg_opponent_elo`: the average `elo_before` of all opponents across all rated races for a player. Contextualizes the ELO rating by showing the caliber of competition faced.
+Available in the API as `avg_opponent_elo` on `LeaderboardPlayer`: the average `elo_before` of all opponents across all rated races for a player. Not displayed in the frontend (replaced by confidence badge).
 
 **Idempotency:** `update_elo_ratings` checks for existing `EloHistory` entries for the race before computing. No double-counting on replay.
 
 ### Leaderboard
 
-- Users with `elo_races >= 3`, sorted by `elo_rating DESC`
+- Users with `elo_races >= 3`, sorted by confidence-adjusted rating: `elo_rating - 100 / sqrt(elo_races)` DESC
+- Players with fewer races get a larger uncertainty penalty, preventing low-confidence ratings from outranking established players
+- Confidence badge next to ELO value: green (15+ races, >= 75%), orange (8-14 races, 40-74%), gray (3-7 races, < 40%). Threshold: 20 races = 100% confidence
 - Trend delta: sum of last 3 `EloHistory.delta` per user (batch query, not N+1)
 - Community stats: total finished races, 30-day active players, total deaths, total hours
 
