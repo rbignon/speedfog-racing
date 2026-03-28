@@ -65,13 +65,7 @@
 					{#each players as player, i}
 						<tr>
 							<td class="rank" class:rank-gold={i === 0}>
-								<span class="rank-content">
-									{i + 1}
-									<span
-										class="confidence-dot confidence-{confidenceLevel(player.elo_races)}"
-										title={confidenceLabel(player.elo_races)}
-									></span>
-								</span>
+								{i + 1}
 							</td>
 							<td class="player-cell">
 								{#if player.twitch_avatar_url}
@@ -83,7 +77,14 @@
 									{player.twitch_display_name || player.twitch_username}
 								</a>
 							</td>
-							<td class="num elo-value">{player.elo_rating}</td>
+							<td class="num elo-value">
+								<span class="elo-content">
+									{player.elo_rating}<span
+										class="confidence-dot confidence-{confidenceLevel(player.elo_races)}"
+										title={confidenceLabel(player.elo_races)}
+									></span>
+								</span>
+							</td>
 							<td class="num">{player.elo_races}</td>
 							<td class="num">
 								{#if player.trend_delta > 0}
@@ -227,9 +228,10 @@
 		color: var(--color-gold);
 	}
 
-	.rank-content {
+	.elo-content {
 		display: inline-flex;
 		align-items: center;
+		justify-content: flex-end;
 		gap: 0.35rem;
 	}
 
