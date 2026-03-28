@@ -260,6 +260,7 @@ async def three_races_with_zone_history(async_session):
                 twitch_username=f"zhp{i}",
                 api_token=f"zht{i}",
                 role=UserRole.USER,
+                elo_races=3,
             )
             for i in range(3)
         ]
@@ -530,6 +531,7 @@ class TestUpdatePlayerTraits:
                     twitch_username=f"pct{i}",
                     api_token=f"pcttok{i}",
                     role=UserRole.USER,
+                    elo_races=3,
                 )
                 users.append(u)
             db.add_all(users)
@@ -629,6 +631,7 @@ class TestUpdatePlayerTraits:
                     twitch_username=f"tie{i}",
                     api_token=f"tietok{i}",
                     role=UserRole.USER,
+                    elo_races=3,
                 )
                 users.append(u)
             db.add_all(users)
