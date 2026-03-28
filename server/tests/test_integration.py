@@ -661,24 +661,20 @@ def test_seed_pack_contains_player_specific_config(integration_client, race_with
 
     This verifies the full API flow:
     1. Seed packs are generated via API
-    2. Each player can download their seed pack
+    2. Each player can download their own seed pack via /my-seed-pack
     3. The seed pack contains speedfog_race.toml with their unique mod_token and race_id
     """
     race_id = race_with_participants["race_id"]
     players = race_with_participants["players"]
-
-    # Seed packs were already generated in the fixture, get download URLs
-    race_response = integration_client.get(f"/api/races/{race_id}")
-    assert race_response.status_code == 200
 
     # Download and verify each player's seed pack
     for player_data in players:
         mod_token = player_data["mod_token"]
         username = player_data["user"].twitch_username
 
-        # Download the seed pack using mod_token (authenticated as the player)
+        # Download the seed pack via /my-seed-pack (authenticated as the player)
         download_response = integration_client.get(
-            f"/api/races/{race_id}/download/{mod_token}",
+            f"/api/races/{race_id}/my-seed-pack",
             headers={"Authorization": f"Bearer {player_data['user'].api_token}"},
         )
         assert download_response.status_code == 200, f"Failed to download seed pack for {username}"

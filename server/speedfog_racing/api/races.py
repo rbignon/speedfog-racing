@@ -109,7 +109,9 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         if hasattr(race, "casters") and race.casters is not None
         else []
     )
-    is_organizer = user is not None and race.organizer_id == user.id
+    is_organizer = user is not None and (
+        race.organizer_id == user.id or user.role == UserRole.ADMIN
+    )
     pending_invites = (
         [
             PendingInviteResponse(
@@ -182,11 +184,11 @@ async def _get_race_or_404(
 
 
 def _require_organizer(race: Race, user: User) -> None:
-    """Raise 403 if user is not the race organizer."""
-    if race.organizer_id != user.id:
+    """Raise 403 if user is not the race organizer or an admin."""
+    if race.organizer_id != user.id and user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the race organizer can perform this action",
+            detail="Only the race organizer or an admin can perform this action",
         )
 
 
@@ -1497,85 +1499,6 @@ async def download_my_seed_pack(
         )
 
     filename = f"speedfog_{sanitize_filename(user.twitch_username)}.zip"
-    return StreamingResponse(
-        stream,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Length": str(content_length),
-        },
-    )
-
-
-@router.get("/{race_id}/download/{mod_token}")
-async def download_seed_pack(
-    race_id: UUID,
-    mod_token: str,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> StreamingResponse:
-    """Download personalized seed pack for a participant.
-
-    Streams the pack on-demand. Requires authentication.
-    Caller must be the participant, the race organizer, or a caster.
-    """
-    race = await _get_race_or_404(db, race_id)
-
-    # Gate download on seed release
-    if race.seeds_released_at is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Seeds have not been released yet",
-        )
-
-    # Find participant by mod_token
-    result = await db.execute(
-        select(Participant)
-        .where(Participant.race_id == race_id, Participant.mod_token == mod_token)
-        .options(selectinload(Participant.user))
-    )
-    participant = result.scalar_one_or_none()
-
-    if not participant:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Participant not found",
-        )
-
-    # Authorize: participant themselves, organizer, or caster
-    is_owner = participant.user_id == user.id
-    if not is_owner:
-        is_organizer = race.organizer_id == user.id
-        is_caster = False
-        if not is_organizer:
-            caster_result = await db.execute(
-                select(Caster).where(Caster.race_id == race_id, Caster.user_id == user.id)
-            )
-            is_caster = caster_result.scalar_one_or_none() is not None
-        if not (is_organizer or is_caster):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to download this seed pack",
-            )
-
-    if not race.seed:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Race has no seed assigned",
-        )
-
-    try:
-        config = generate_player_config(participant, race)
-        stream, content_length = stream_seed_pack_with_config(Path(race.seed.folder_path), config)
-    except FileNotFoundError:
-        logger.warning("Seed zip missing for race %s (cleaned up)", race_id)
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="This seed pack is no longer available."
-            " Seed files are removed after a race ends.",
-        )
-
-    filename = f"speedfog_{sanitize_filename(participant.user.twitch_username)}.zip"
     return StreamingResponse(
         stream,
         media_type="application/zip",

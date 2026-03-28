@@ -791,32 +791,6 @@ async def test_cannot_start_already_started_race(test_client, organizer, player,
 
 
 @pytest.mark.asyncio
-async def test_download_seed_pack_invalid_token(test_client, organizer, seed):
-    """Download seed pack returns 404 for invalid token."""
-    async with test_client as client:
-        # Create race
-        create_response = await client.post(
-            "/api/races",
-            json={"name": "Test Race"},
-            headers={"Authorization": f"Bearer {organizer.api_token}"},
-        )
-        race_id = create_response.json()["id"]
-
-        # Release seeds first
-        await client.post(
-            f"/api/races/{race_id}/release-seeds",
-            headers={"Authorization": f"Bearer {organizer.api_token}"},
-        )
-
-        # Try to download with invalid token (as organizer)
-        response = await client.get(
-            f"/api/races/{race_id}/download/invalid_token",
-            headers={"Authorization": f"Bearer {organizer.api_token}"},
-        )
-        assert response.status_code == 404
-
-
-@pytest.mark.asyncio
 async def test_download_my_seed_pack_success(
     test_client, organizer, player, seed_with_zip, seed_zip_context
 ):
@@ -2177,3 +2151,437 @@ async def test_cast_leave_not_caster(test_client, organizer, player, seed):
             headers={"Authorization": f"Bearer {player.api_token}"},
         )
         assert resp.status_code == 404
+
+
+# =============================================================================
+# Admin Race Management Tests
+# =============================================================================
+
+
+@pytest.fixture
+async def admin(async_session):
+    """Create an admin user."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="admin_mgmt",
+            twitch_username="admin_mgmt",
+            twitch_display_name="Admin Manager",
+            api_token="admin_mgmt_token",
+            role=UserRole.ADMIN,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+@pytest.mark.asyncio
+async def test_admin_can_update_race(test_client, organizer, admin, seed):
+    """Admin can update a race they did not create."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Organizer Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+        assert create_resp.json()["is_public"] is True
+
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"is_public": False},
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["is_public"] is False
+
+
+@pytest.mark.asyncio
+async def test_admin_can_add_participant(test_client, organizer, admin, player, seed):
+    """Admin can add a participant to another organizer's race."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Organizer Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": player.twitch_username},
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["participant"]["user"]["twitch_username"] == player.twitch_username
+
+
+@pytest.mark.asyncio
+async def test_admin_can_remove_participant(test_client, organizer, admin, player, seed):
+    """Admin can remove a participant from another organizer's race."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Organizer Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        # Add participant as organizer
+        add_resp = await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": player.twitch_username},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        participant_id = add_resp.json()["participant"]["id"]
+
+        # Remove as admin
+        resp = await client.delete(
+            f"/api/races/{race_id}/participants/{participant_id}",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_admin_can_add_caster(test_client, organizer, admin, player, seed):
+    """Admin can add a caster to another organizer's race."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Organizer Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/races/{race_id}/casters",
+            json={"twitch_username": player.twitch_username},
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["user"]["twitch_username"] == player.twitch_username
+
+
+@pytest.mark.asyncio
+async def test_admin_can_remove_caster(test_client, organizer, admin, player, seed):
+    """Admin can remove a caster from another organizer's race."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Organizer Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        # Add caster as organizer
+        add_resp = await client.post(
+            f"/api/races/{race_id}/casters",
+            json={"twitch_username": player.twitch_username},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        caster_id = add_resp.json()["id"]
+
+        # Remove as admin
+        resp = await client.delete(
+            f"/api/races/{race_id}/casters/{caster_id}",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_admin_can_release_seeds(test_client, organizer, admin, seed):
+    """Admin can release seeds for another organizer's race."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Organizer Race", "organizer_participates": True},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_can_start_another_organizers_race(test_client, organizer, admin, player, seed):
+    """Admin can start a race they did not create."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Organizer Race", "organizer_participates": True},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": player.twitch_username},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        resp = await client.post(
+            f"/api/races/{race_id}/start",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_finish_another_organizers_race(
+    test_client, organizer, admin, player, async_session
+):
+    """Admin can force-finish a race they did not create."""
+    async with async_session() as db:
+        s = Seed(
+            seed_number="admin_finish",
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/admin_finish",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(s)
+        await db.flush()
+
+        race = Race(
+            name="Running Race",
+            organizer_id=organizer.id,
+            seed_id=s.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        resp = await client.post(
+            f"/api/races/{race_id}/finish",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "finished"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_reset_another_organizers_race(
+    test_client, organizer, admin, async_session
+):
+    """Admin can reset a race they did not create."""
+    async with async_session() as db:
+        s = Seed(
+            seed_number="admin_reset",
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/admin_reset",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(s)
+        await db.flush()
+
+        race = Race(
+            name="Running Race",
+            organizer_id=organizer.id,
+            seed_id=s.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        resp = await client.post(
+            f"/api/races/{race_id}/reset",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "setup"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_reroll_seed(test_client, organizer, admin, async_session):
+    """Admin can reroll the seed of another organizer's race."""
+    async with async_session() as db:
+        old_seed = Seed(
+            seed_number="admin_reroll_old",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/admin_reroll_old",
+            status=SeedStatus.CONSUMED,
+        )
+        new_seed = Seed(
+            seed_number="admin_reroll_new",
+            pool_name="standard",
+            graph_json={"total_layers": 8, "nodes": {}},
+            total_layers=8,
+            folder_path="/test/admin_reroll_new",
+            status=SeedStatus.AVAILABLE,
+        )
+        db.add_all([old_seed, new_seed])
+        await db.flush()
+
+        race = Race(
+            name="Reroll Race",
+            organizer_id=organizer.id,
+            seed_id=old_seed.id,
+            status=RaceStatus.SETUP,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        resp = await client.post(
+            f"/api/races/{race_id}/reroll-seed",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_can_delete_another_organizers_race(test_client, organizer, admin, seed):
+    """Admin can delete a race they did not create."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Doomed Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        resp = await client.delete(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_admin_can_revoke_invite(test_client, organizer, admin, async_session, seed):
+    """Admin can revoke an invite on another organizer's race."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Invite Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        # Inviting a non-existent user creates an invite
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "nonexistent_user"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        # Get the invite ID from race detail
+        detail_resp = await client.get(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        invite_id = detail_resp.json()["pending_invites"][0]["id"]
+
+        # Revoke as admin
+        resp = await client.delete(
+            f"/api/races/{race_id}/invites/{invite_id}",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_admin_sees_invite_tokens(test_client, organizer, admin, async_session, seed):
+    """Admin can see invite tokens in race detail response."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Token Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        # Create invite
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "invited_player"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        # Fetch race detail as admin
+        resp = await client.get(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert resp.status_code == 200
+        invites = resp.json()["pending_invites"]
+        assert len(invites) == 1
+        assert invites[0]["token"] is not None
+
+
+@pytest.mark.asyncio
+async def test_non_admin_non_organizer_cannot_see_invite_tokens(
+    test_client, organizer, player, seed
+):
+    """Regular user cannot see invite tokens in race detail response."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Token Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "invited_player2"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        # Fetch as regular player
+        resp = await client.get(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert resp.status_code == 200
+        invites = resp.json()["pending_invites"]
+        assert len(invites) == 1
+        assert invites[0]["token"] is None
+
+
+@pytest.mark.asyncio
+async def test_regular_user_still_cannot_manage_race(test_client, organizer, player, seed):
+    """Regular user (non-admin, non-organizer) still gets 403 on race management."""
+    async with test_client as client:
+        create_resp = await client.post(
+            "/api/races",
+            json={"name": "Guarded Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_resp.json()["id"]
+
+        # Try several management endpoints as regular user
+        for method, path in [
+            ("patch", f"/api/races/{race_id}"),
+            ("post", f"/api/races/{race_id}/release-seeds"),
+            ("post", f"/api/races/{race_id}/reroll-seed"),
+            ("delete", f"/api/races/{race_id}"),
+        ]:
+            resp = await getattr(client, method)(
+                path,
+                headers={"Authorization": f"Bearer {player.api_token}"},
+                **({"json": {"name": "Hacked"}} if method == "patch" else {}),
+            )
+            assert resp.status_code == 403, f"{method.upper()} {path} should be 403"

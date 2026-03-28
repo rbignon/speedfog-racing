@@ -234,7 +234,7 @@ class ChatBroadcastMessage(BaseModel):
     username: str
     display_name: str | None
     avatar_url: str | None
-    role: str  # "organizer" | "caster" | "participant"
+    role: str  # "organizer" | "admin" | "caster" | "participant"
     dominant_trait: str | None  # e.g. "rusher", "explorer", null
     message: str
     timestamp: str

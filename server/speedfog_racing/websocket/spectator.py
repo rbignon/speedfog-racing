@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.config import settings
-from speedfog_racing.models import Caster, Participant, PlayerTraitScores, Race
+from speedfog_racing.models import Caster, Participant, PlayerTraitScores, Race, UserRole
 from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.websocket.common import heartbeat_loop
 from speedfog_racing.websocket.manager import (
@@ -116,6 +116,8 @@ async def handle_spectator_websocket(
                 role: str | None = None
                 if race.organizer_id == user_id:
                     role = "organizer"
+                elif user_obj and user_obj.role == UserRole.ADMIN:
+                    role = "admin"
                 elif any(c.user_id == user_id for c in race.casters):
                     role = "caster"
                 elif any(p.user_id == user_id for p in race.participants):

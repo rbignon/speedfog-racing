@@ -42,7 +42,7 @@ Sets `seeds_released_at = now()`. Requires organizer role, race must be in SETUP
 
 ### Download Gating
 
-The `GET /api/races/{race_id}/my-seed-pack` and `GET /api/races/{race_id}/download/{mod_token}` endpoints return **403** if `seeds_released_at is NULL`.
+The `GET /api/races/{race_id}/my-seed-pack` endpoint returns **403** if `seeds_released_at is NULL`.
 
 ### WebSocket Notification
 

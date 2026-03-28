@@ -232,9 +232,6 @@ POST /api/races/{race_id}/generate-zips
     -> Generate personalized zips for all participants
     -> Return download URLs
 
-GET /api/races/{race_id}/download/{mod_token}
-    -> Download personalized zip for participant
-
 POST /api/races/{race_id}/start
     Headers: Authorization: Bearer <token>
     Body: { scheduled_start: datetime }

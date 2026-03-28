@@ -22,27 +22,26 @@ Reference document for API endpoints and WebSocket messages.
 
 ### Races
 
-| Method | Endpoint                               | Auth   | Description                                              |
-| ------ | -------------------------------------- | ------ | -------------------------------------------------------- |
-| GET    | `/api/races`                           | -      | List races (`?status=setup,running,...`)                 |
-| POST   | `/api/races`                           | Bearer | Create race (status: SETUP)                              |
-| GET    | `/api/races/{id}`                      | -      | Race details with participants and casters               |
-| PATCH  | `/api/races/{id}`                      | Bearer | Update race settings (organizer, SETUP only)             |
-| POST   | `/api/races/{id}/participants`         | Bearer | Add participant (organizer only)                         |
-| DELETE | `/api/races/{id}/participants/{pid}`   | Bearer | Remove participant (organizer, SETUP only)               |
-| POST   | `/api/races/{id}/casters`              | Bearer | Add caster (organizer only)                              |
-| DELETE | `/api/races/{id}/casters/{cid}`        | Bearer | Remove caster (organizer only)                           |
-| DELETE | `/api/races/{id}/invites/{invite_id}`  | Bearer | Revoke invite (organizer, SETUP only)                    |
-| POST   | `/api/races/{id}/join`                 | Bearer | Self-join open-registration race (SETUP only)            |
-| POST   | `/api/races/{id}/leave`                | Bearer | Leave race (SETUP only)                                  |
-| POST   | `/api/races/{id}/release-seeds`        | Bearer | Release seeds for download (organizer, SETUP)            |
-| POST   | `/api/races/{id}/reroll-seed`          | Bearer | Reroll the seed (organizer, SETUP, seeds not released)   |
-| POST   | `/api/races/{id}/start`                | Bearer | Start race: SETUP → RUNNING (organizer)                  |
-| POST   | `/api/races/{id}/reset`                | Bearer | Reset race: RUNNING → SETUP (organizer)                  |
-| POST   | `/api/races/{id}/finish`               | Bearer | Force-finish race: RUNNING → FINISHED (organizer)        |
-| DELETE | `/api/races/{id}`                      | Bearer | Delete race (organizer, SETUP only)                      |
-| GET    | `/api/races/{id}/my-seed-pack`         | Bearer | Download own seed pack (requires seeds released)         |
-| GET    | `/api/races/{id}/download/{mod_token}` | Bearer | Download participant seed pack (requires seeds released) |
+| Method | Endpoint                              | Auth   | Description                                            |
+| ------ | ------------------------------------- | ------ | ------------------------------------------------------ |
+| GET    | `/api/races`                          | -      | List races (`?status=setup,running,...`)               |
+| POST   | `/api/races`                          | Bearer | Create race (status: SETUP)                            |
+| GET    | `/api/races/{id}`                     | -      | Race details with participants and casters             |
+| PATCH  | `/api/races/{id}`                     | Bearer | Update race settings (organizer, SETUP only)           |
+| POST   | `/api/races/{id}/participants`        | Bearer | Add participant (organizer only)                       |
+| DELETE | `/api/races/{id}/participants/{pid}`  | Bearer | Remove participant (organizer, SETUP only)             |
+| POST   | `/api/races/{id}/casters`             | Bearer | Add caster (organizer only)                            |
+| DELETE | `/api/races/{id}/casters/{cid}`       | Bearer | Remove caster (organizer only)                         |
+| DELETE | `/api/races/{id}/invites/{invite_id}` | Bearer | Revoke invite (organizer, SETUP only)                  |
+| POST   | `/api/races/{id}/join`                | Bearer | Self-join open-registration race (SETUP only)          |
+| POST   | `/api/races/{id}/leave`               | Bearer | Leave race (SETUP only)                                |
+| POST   | `/api/races/{id}/release-seeds`       | Bearer | Release seeds for download (organizer, SETUP)          |
+| POST   | `/api/races/{id}/reroll-seed`         | Bearer | Reroll the seed (organizer, SETUP, seeds not released) |
+| POST   | `/api/races/{id}/start`               | Bearer | Start race: SETUP → RUNNING (organizer)                |
+| POST   | `/api/races/{id}/reset`               | Bearer | Reset race: RUNNING → SETUP (organizer)                |
+| POST   | `/api/races/{id}/finish`              | Bearer | Force-finish race: RUNNING → FINISHED (organizer)      |
+| DELETE | `/api/races/{id}`                     | Bearer | Delete race (organizer, SETUP only)                    |
+| GET    | `/api/races/{id}/my-seed-pack`        | Bearer | Download own seed pack (requires seeds released)       |
 
 ### Pools
 

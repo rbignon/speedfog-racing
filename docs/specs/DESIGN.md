@@ -384,7 +384,7 @@ Races:
   POST /api/races/{id}/participants  -> Add player (by twitch name)
   POST /api/races/{id}/generate-zips -> Generate personalized .zips
   POST /api/races/{id}/start         -> Set scheduled_start, launch
-  GET  /api/races/{id}/download/{token} -> Download personal .zip
+  GET  /api/races/{id}/my-seed-pack      -> Download personal .zip
 
 Seeds (admin):
   GET  /api/admin/seeds              -> Pool stats (available/consumed)
