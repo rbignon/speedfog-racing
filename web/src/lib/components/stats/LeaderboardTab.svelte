@@ -137,21 +137,33 @@
 
 			<div class="sidebar-card">
 				<h3>How ELO works</h3>
+				<dl class="elo-details">
+					<div class="elo-detail-row">
+						<dt>Starting rating</dt>
+						<dd>1500</dd>
+					</div>
+					<div class="elo-detail-row">
+						<dt>Min. races to rank</dt>
+						<dd>3</dd>
+					</div>
+				</dl>
 				<p class="elo-explanation">
-					Players start at 1500 ELO. After each race, points are exchanged based on relative
-					performance. Beating a higher-rated player earns more points. Seed difficulty is factored
-					in. Rankings account for rating confidence: players with more races are ranked higher when
-					ratings are close. The colored dot next to each rank shows confidence level.
+					After each race, points are exchanged based on finish order and time gaps. Beating
+					higher-rated players earns more. Harder seeds give a small bonus to all participants.
+				</p>
+				<p class="elo-explanation">
+					Rankings factor in confidence: when two players have similar ratings, the one with more
+					races ranks higher.
 				</p>
 				<div class="confidence-legend">
 					<span class="legend-item">
-						<span class="confidence-dot confidence-high"></span> Established
+						<span class="confidence-dot confidence-high"></span> Established (15+)
 					</span>
 					<span class="legend-item">
-						<span class="confidence-dot confidence-medium"></span> Settling
+						<span class="confidence-dot confidence-medium"></span> Settling (8-14)
 					</span>
 					<span class="legend-item">
-						<span class="confidence-dot confidence-low"></span> Provisional
+						<span class="confidence-dot confidence-low"></span> Provisional (3-7)
 					</span>
 				</div>
 			</div>
@@ -360,11 +372,40 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	.elo-explanation {
+	.elo-details {
+		margin: 0 0 0.6rem 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+
+	.elo-detail-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.elo-detail-row dt {
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+	}
+
+	.elo-detail-row dd {
 		margin: 0;
+		font-weight: 600;
+		font-size: var(--font-size-sm);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.elo-explanation {
+		margin: 0 0 0.5rem 0;
 		font-size: var(--font-size-sm);
 		color: var(--color-text-disabled);
 		line-height: 1.5;
+	}
+
+	.elo-explanation:last-of-type {
+		margin-bottom: 0;
 	}
 
 	.confidence-legend {
