@@ -28,13 +28,13 @@ whetblades = true
 talisman_pouches = 3
 golden_seeds = 10
 sacred_tears = 6
-starting_runes = 150000
+starting_runes = 100000
 larval_tears = 6
 stonesword_keys = 6
 
 [care_package]
 enabled = true
-weapon_upgrade = 0
+weapon_upgrade = 24
 weapons = 4
 shields = 2
 catalysts = 2
