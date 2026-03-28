@@ -541,6 +541,7 @@
 
 	.connected-dot {
 		color: var(--color-success);
+		text-align: center;
 	}
 
 	/* DAG view toggle */
