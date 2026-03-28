@@ -535,20 +535,31 @@ async def resolve_dominant_traits(db: AsyncSession) -> None:
     if not all_scores:
         return
 
-    n = len(all_scores)
+    # Only rank players with enough races for meaningful traits.
+    # Players below the threshold keep their raw scores but get no
+    # dominant trait (avoids inflating "among N players" with zeroes).
+    qualified_user_ids: set[Any] = set()
+    qualified_result = await db.execute(
+        select(User.id).where(User.elo_races >= MIN_RACES_FOR_TRAITS)
+    )
+    for (uid,) in qualified_result:
+        qualified_user_ids.add(uid)
+
+    qualified_scores = [s for s in all_scores if s.user_id in qualified_user_ids]
+    n = len(qualified_scores)
 
     # Build per-trait percentiles: {user_id: {trait: percentile}}
-    percentiles: dict[Any, dict[str, float]] = {s.user_id: {} for s in all_scores}
+    percentiles: dict[Any, dict[str, float]] = {s.user_id: {} for s in qualified_scores}
 
     for trait in TRAIT_KEYS:
-        values = [getattr(s, trait) for s in all_scores]
+        values = [getattr(s, trait) for s in qualified_scores]
         ranks = _compute_ranks(values, descending=True)
-        for i, s in enumerate(all_scores):
+        for i, s in enumerate(qualified_scores):
             # Convert rank to percentile: (rank - 1) / (n - 1) if n > 1
             # 0.0 = best (rank 1), 1.0 = worst (rank n)
             percentiles[s.user_id][trait] = (ranks[i] - 1) / (n - 1) if n > 1 else 0.0
 
-    for s in all_scores:
+    for s in qualified_scores:
         user_pcts = percentiles[s.user_id]
         raw_scores = {t: getattr(s, t) for t in TRAIT_KEYS}
 
@@ -568,6 +579,12 @@ async def resolve_dominant_traits(db: AsyncSession) -> None:
             else:
                 s.dominant_description = f"Top {top_pct}% among {n} players"
         else:
+            s.dominant_trait = None
+            s.dominant_description = None
+
+    # Clear dominant trait for unqualified players
+    for s in all_scores:
+        if s.user_id not in qualified_user_ids:
             s.dominant_trait = None
             s.dominant_description = None
 
