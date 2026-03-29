@@ -42,19 +42,31 @@ export function raceDisplayDate(race: {
  */
 export function formatScheduledTime(dateString: string): string {
   const date = new Date(dateString);
-  const now = Date.now();
-  const diffMs = date.getTime() - now;
+  const now = new Date();
 
-  if (diffMs <= 0) return "Now";
+  if (date.getTime() - now.getTime() <= 0) return "Now";
 
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return "In <1m";
-  if (minutes < 60) return `In ${minutes}m`;
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
 
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `In ${hours}h`;
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const isTomorrow =
+    date.getFullYear() === tomorrow.getFullYear() &&
+    date.getMonth() === tomorrow.getMonth() &&
+    date.getDate() === tomorrow.getDate();
 
-  return date.toLocaleDateString("en-US", {
+  const timeStr = date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  if (isToday) return `Today, ${timeStr}`;
+  if (isTomorrow) return `Tomorrow, ${timeStr}`;
+
+  return date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     hour: "numeric",
