@@ -190,22 +190,28 @@
 							<div class="welcome-step-icon">
 								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
 							</div>
-							<div class="welcome-step-label">1. Start a solo</div>
-							<div class="welcome-step-desc">Pick a seed pool and generate your run</div>
+							<div class="welcome-step-text">
+								<div class="welcome-step-label">1. Start a solo</div>
+								<div class="welcome-step-desc">Pick a seed pool and generate your run</div>
+							</div>
 						</div>
 						<div class="welcome-step">
 							<div class="welcome-step-icon">
 								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
 							</div>
-							<div class="welcome-step-label">2. Download</div>
-							<div class="welcome-step-desc">Get the seed pack, a single zip file</div>
+							<div class="welcome-step-text">
+								<div class="welcome-step-label">2. Download</div>
+								<div class="welcome-step-desc">Get the seed pack, a single zip file</div>
+							</div>
 						</div>
 						<div class="welcome-step">
 							<div class="welcome-step-icon">
 								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
 							</div>
-							<div class="welcome-step-label">3. Run and play</div>
-							<div class="welcome-step-desc">Launch the bat file, done</div>
+							<div class="welcome-step-text">
+								<div class="welcome-step-label">3. Run and play</div>
+								<div class="welcome-step-desc">Launch the bat file, done</div>
+							</div>
 						</div>
 					</div>
 					<div class="welcome-actions">
