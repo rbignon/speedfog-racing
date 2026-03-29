@@ -552,7 +552,7 @@
 							isCurrentUser={auth.user?.id === mp.user.id}
 							isLive={mp.isLive}
 							streamUrl={mp.streamUrl}
-							canRemove={(isOrganizer || auth.isAdmin) && mp.user.id !== initialRace.organizer.id}
+							canRemove={isOrganizer && mp.user.id !== initialRace.organizer.id}
 							onRemove={() => handleRemoveParticipant(mp.id, mp.user.twitch_username)}
 						/>
 					{/each}
@@ -561,14 +561,14 @@
 						{#each initialRace.pending_invites as invite (invite.id)}
 							<InviteCard
 								{invite}
-								canRemove={isOrganizer || auth.isAdmin}
+								canRemove={isOrganizer}
 								onRemove={() => handleRevokeInvite(invite.id, invite.twitch_username)}
 							/>
 						{/each}
 					{/if}
 				</div>
 
-				{#if isOrganizer || auth.isAdmin}
+				{#if isOrganizer}
 					{#if showInviteSearch}
 						<div class="invite-search">
 							<ParticipantSearch
@@ -644,7 +644,7 @@
 
 			<CasterList
 				casters={initialRace.casters}
-				editable={isOrganizer || auth.isAdmin}
+				editable={isOrganizer}
 				canCast={auth.isLoggedIn && !myParticipant && !isCaster}
 				{isCaster}
 				currentUserId={auth.user?.id ?? null}
@@ -758,7 +758,7 @@
 					participants={raceStore.participants}
 					myParticipantId={myWsParticipantId}
 				/>
-			{:else if liveSeed?.graph_json && (isOrganizer || auth.isAdmin || forceFullDag)}
+			{:else if liveSeed?.graph_json && (isOrganizer || forceFullDag)}
 				<MetroDag graphJson={liveSeed.graph_json} />
 			{:else if totalLayers}
 				<div class="dag-placeholder">
@@ -767,7 +767,7 @@
 			{/if}
 		</div>
 
-		{#if isOrganizer || auth.isAdmin}
+		{#if isOrganizer}
 			<RaceControls
 				race={initialRace}
 				{raceStatus}
@@ -828,11 +828,11 @@
 					{:else if initialRace.scheduled_at}
 						<span class="value">
 							{formatDate(initialRace.scheduled_at)}
-							{#if (isOrganizer || auth.isAdmin) && raceStatus === 'setup'}
+							{#if isOrganizer && raceStatus === 'setup'}
 								<button class="btn-edit" onclick={startEditSchedule}>Edit</button>
 							{/if}
 						</span>
-					{:else if (isOrganizer || auth.isAdmin) && raceStatus === 'setup'}
+					{:else if isOrganizer && raceStatus === 'setup'}
 						<span class="value">
 							To be defined
 							<button class="btn-edit" onclick={startEditSchedule}>Set time</button>
