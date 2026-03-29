@@ -146,7 +146,7 @@
 
 	<div class="race-meta">
 		<span>
-			{race.participant_count}{#if race.max_participants}/{race.max_participants}{/if} player{race.participant_count !== 1 ? 's' : ''}
+			{race.participant_count}{#if race.max_participants && race.status == 'setup'}/{race.max_participants}{/if} player{race.participant_count !== 1 ? 's' : ''}
 			{#if race.pool_name}
 				&middot; {formatPoolName(race.pool_name)}
 			{/if}
