@@ -10,7 +10,7 @@ from speedfog_racing.config import settings
 
 engine = create_async_engine(
     settings.database_url,
-    echo=settings.log_level == "DEBUG",
+    echo=False,
     pool_size=15,
     max_overflow=25,
 )

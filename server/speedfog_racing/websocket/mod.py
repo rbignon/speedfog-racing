@@ -23,8 +23,12 @@ from speedfog_racing.services.layer_service import (
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.websocket.common import (
     MAX_FRESH_IGT_MS,
+    MAX_ZONE_HISTORY,
     MOD_AUTH_TIMEOUT,
+    MessageRateLimiter,
     attribute_deaths,
+    clamp_death_count,
+    clamp_igt,
     extract_event_ids,
     get_graces_mapping,
     heartbeat_loop,
@@ -222,11 +226,20 @@ async def handle_mod_websocket(
 
         # Start heartbeat in background
         heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
+        rate_limiter = MessageRateLimiter()
 
         try:
             # Main message loop
             while True:
                 data = await websocket.receive_text()
+
+                if not rate_limiter.check():
+                    logger.warning(
+                        "Rate limit exceeded: race=%s, participant=%s", race_id, participant_id
+                    )
+                    await websocket.close(code=4008, reason="Rate limit exceeded")
+                    return
+
                 try:
                     msg = json.loads(data)
                 except json.JSONDecodeError as e:
@@ -400,9 +413,9 @@ async def handle_status_update(
             return
 
         # Gate: reject stale saves (pre-existing save with high IGT)
-        igt_ms_val = msg.get("igt_ms")
+        igt_ms_val = clamp_igt(msg.get("igt_ms"))
         if (
-            isinstance(igt_ms_val, int)
+            igt_ms_val is not None
             and participant.status == ParticipantStatus.READY
             and igt_ms_val > MAX_FRESH_IGT_MS
         ):
@@ -414,10 +427,10 @@ async def handle_status_update(
             await send_error(websocket, "Please start a New Game to race")
             return
 
-        if isinstance(msg.get("igt_ms"), int):
-            if msg["igt_ms"] != participant.igt_ms:
+        if igt_ms_val is not None:
+            if igt_ms_val != participant.igt_ms:
                 participant.last_igt_change_at = datetime.now(UTC)
-            participant.igt_ms = msg["igt_ms"]
+            participant.igt_ms = igt_ms_val
 
         # Transition READY→PLAYING first so current_zone/zone_history are
         # set before death attribution (handles reconnect with deaths > 0).
@@ -436,8 +449,8 @@ async def handle_status_update(
                     history.append({"node_id": start_node, "igt_ms": 0, "type": "spawn"})
                     participant.zone_history = history
 
-        new_death_count = msg.get("death_count")
-        if isinstance(new_death_count, int):
+        new_death_count = clamp_death_count(msg.get("death_count"))
+        if new_death_count is not None:
             delta = new_death_count - participant.death_count
             if delta < 0:
                 logger.warning(
@@ -534,7 +547,7 @@ async def handle_event_flag(
         finish_event = seed_graph.get("finish_event")
 
         # Update IGT
-        igt = msg.get("igt_ms", 0) if isinstance(msg.get("igt_ms"), int) else 0
+        igt = clamp_igt(msg.get("igt_ms")) or 0
 
         # Check finish event first (not in event_map, it's a boss kill, not a fog gate)
         if flag_id == finish_event:
@@ -558,6 +571,10 @@ async def handle_event_flag(
             old_history = participant.zone_history or []
 
             if is_shared_entrance_duplicate(old_history, node_id, igt):
+                return
+
+            if len(old_history) >= MAX_ZONE_HISTORY:
+                logger.warning("zone_history cap reached for participant %s", participant_id)
                 return
 
             is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
@@ -674,12 +691,20 @@ async def handle_zone_query(
             )
             igt = zq.igt_ms if zq.igt_ms is not None else participant.igt_ms
             old_history = participant.zone_history or []
-            is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
 
-            participant.last_igt_change_at = datetime.now(UTC)
-            participant.igt_ms = igt
-            new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt, "type": "backtrack"}
-            participant.zone_history = [*old_history, new_entry]
+            if len(old_history) >= MAX_ZONE_HISTORY:
+                logger.warning("zone_history cap reached for participant %s", participant_id)
+            else:
+                is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
+
+                participant.last_igt_change_at = datetime.now(UTC)
+                participant.igt_ms = igt
+                new_entry: dict[str, Any] = {
+                    "node_id": node_id,
+                    "igt_ms": igt,
+                    "type": "backtrack",
+                }
+                participant.zone_history = [*old_history, new_entry]
 
             # current_layer is a high watermark, never regress
             node_layer = get_layer_for_node(node_id, graph_json)
@@ -741,8 +766,9 @@ async def handle_finished(
             return  # Already finished (idempotency guard)
 
         participant.status = ParticipantStatus.FINISHED
-        if isinstance(msg.get("igt_ms"), int):
-            participant.igt_ms = msg["igt_ms"]
+        finished_igt = clamp_igt(msg.get("igt_ms"))
+        if finished_igt is not None:
+            participant.igt_ms = finished_igt
         participant.finished_at = datetime.now(UTC)
 
         # Bump current_layer to total_layers so progress displays N/N

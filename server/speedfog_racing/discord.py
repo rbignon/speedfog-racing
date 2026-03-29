@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -78,7 +79,7 @@ async def create_scheduled_event(
         "POST",
         f"/guilds/{guild_id}/scheduled-events",
         json={
-            "name": race_name,
+            "name": _escape_discord_md(race_name),
             "entity_type": 3,  # EXTERNAL
             "scheduled_start_time": scheduled_at.isoformat(),
             "scheduled_end_time": (scheduled_at + EVENT_DURATION).isoformat(),
@@ -237,6 +238,14 @@ async def _send_webhook(
         logger.warning("Discord webhook error: %s", e)
 
 
+_DISCORD_MD_RE = re.compile(r"([*_~|>`])")
+
+
+def _escape_discord_md(text: str) -> str:
+    """Escape Discord markdown special characters in user-provided text."""
+    return _DISCORD_MD_RE.sub(r"\\\1", text)
+
+
 def _race_label_and_color(pool_name: str | None) -> tuple[str, int]:
     """Return (label, color) based on pool type."""
     is_training = pool_name.startswith("training_") if pool_name else False
@@ -263,15 +272,18 @@ async def notify_race_created(
     label, color = _race_label_and_color(pool_name)
     display_pool = format_pool_display_name(pool_name)
 
+    safe_name = _escape_discord_md(race_name)
+    safe_organizer = _escape_discord_md(organizer_name)
+
     fields: list[dict[str, object]] = [
         {"name": "Pool", "value": display_pool, "inline": True},
-        {"name": "Organizer", "value": organizer_name, "inline": True},
+        {"name": "Organizer", "value": safe_organizer, "inline": True},
     ]
     if scheduled_at:
         fields.append({"name": "Scheduled", "value": scheduled_at, "inline": True})
 
     embed: dict[str, object] = {
-        "title": f"📋 New {label}: {race_name}",
+        "title": f"📋 New {label}: {safe_name}",
         "url": _race_url(race_id),
         "color": color,
         "fields": fields,
@@ -297,15 +309,17 @@ async def notify_race_started(
     """Send Discord notification when a race is started."""
     label, color = _race_label_and_color(pool_name)
     display_pool = format_pool_display_name(pool_name)
+    safe_name = _escape_discord_md(race_name)
+    safe_organizer = _escape_discord_md(organizer_name)
 
     embed: dict[str, object] = {
-        "title": f"🏁 {label} Started: {race_name}",
+        "title": f"🏁 {label} Started: {safe_name}",
         "url": _race_url(race_id),
         "color": color,
         "fields": [
             {"name": "Pool", "value": display_pool, "inline": True},
             {"name": "Participants", "value": str(participant_count), "inline": True},
-            {"name": "Organizer", "value": organizer_name, "inline": True},
+            {"name": "Organizer", "value": safe_organizer, "inline": True},
         ],
     }
     if organizer_avatar_url:
@@ -353,16 +367,18 @@ async def notify_race_finished(
     podium is a list of {"name": ..., "igt": ...} dicts for top finishers.
     """
     label, _ = _race_label_and_color(pool_name)
+    safe_name = _escape_discord_md(race_name)
 
     podium_lines = []
     medals = ["🥇", "🥈", "🥉"]
     for i, entry in enumerate(podium[:3]):
         medal = medals[i] if i < len(medals) else f"{i + 1}."
-        podium_lines.append(f"{medal} **{entry['name']}** - {entry['igt']}")
+        safe_player = _escape_discord_md(entry["name"])
+        podium_lines.append(f"{medal} **{safe_player}** - {entry['igt']}")
     podium_text = "\n".join(podium_lines) if podium_lines else "No finishers"
 
     embed: dict[str, object] = {
-        "title": f"🏆 {label} Finished: {race_name}",
+        "title": f"🏆 {label} Finished: {safe_name}",
         "url": _race_url(race_id),
         "color": 0x22C55E,  # green for finished
         "fields": [
@@ -475,7 +491,7 @@ async def send_training_live_notification(
     if user.twitch_username.lower() not in live_usernames:
         return
 
-    display_name = user.twitch_display_name or user.twitch_username
+    display_name = _escape_discord_md(user.twitch_display_name or user.twitch_username)
     display_pool = format_pool_display_name(pool_name)
     stream_url = f"https://twitch.tv/{user.twitch_username}"
     base_url = settings.base_url.rstrip("/")

@@ -23,8 +23,12 @@ from speedfog_racing.services.layer_service import (
 )
 from speedfog_racing.websocket.common import (
     MAX_FRESH_IGT_MS,
+    MAX_ZONE_HISTORY,
     MOD_AUTH_TIMEOUT,
+    MessageRateLimiter,
     attribute_deaths,
+    clamp_death_count,
+    clamp_igt,
     extract_event_ids,
     get_graces_mapping,
     heartbeat_loop,
@@ -202,10 +206,17 @@ async def handle_training_mod_websocket(
 
         # Start heartbeat
         heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
+        rate_limiter = MessageRateLimiter()
 
         try:
             while True:
                 data = await websocket.receive_text()
+
+                if not rate_limiter.check():
+                    logger.warning("Rate limit exceeded: training session=%s", session_id)
+                    await websocket.close(code=4008, reason="Rate limit exceeded")
+                    return
+
                 try:
                     msg = json.loads(data)
                 except json.JSONDecodeError as e:
@@ -352,12 +363,8 @@ async def _handle_status_update(
             return
 
         # Gate: reject stale saves on first initialization
-        igt_ms_val = msg.get("igt_ms")
-        if (
-            isinstance(igt_ms_val, int)
-            and not session.zone_history
-            and igt_ms_val > MAX_FRESH_IGT_MS
-        ):
+        igt_ms_val = clamp_igt(msg.get("igt_ms"))
+        if igt_ms_val is not None and not session.zone_history and igt_ms_val > MAX_FRESH_IGT_MS:
             logger.warning(
                 "Rejected stale save: training=%s igt_ms=%d",
                 session_id,
@@ -366,8 +373,8 @@ async def _handle_status_update(
             await send_error(websocket, "Please start a New Game")
             return
 
-        if isinstance(msg.get("igt_ms"), int):
-            session.igt_ms = msg["igt_ms"]
+        if igt_ms_val is not None:
+            session.igt_ms = igt_ms_val
 
         # Record start node on first status_update (mirrors race mode READY→PLAYING).
         # Must happen BEFORE death attribution so current_zone/zone_history exist.
@@ -379,8 +386,8 @@ async def _handle_status_update(
                     session.zone_history = [{"node_id": start_node, "igt_ms": 0, "type": "spawn"}]
                     session.current_zone = start_node
 
-        new_death_count = msg.get("death_count")
-        if isinstance(new_death_count, int):
+        new_death_count = clamp_death_count(msg.get("death_count"))
+        if new_death_count is not None:
             delta = new_death_count - session.death_count
             if delta < 0:
                 logger.warning(
@@ -426,7 +433,7 @@ async def _handle_event_flag(
     if not isinstance(flag_id, int):
         return
 
-    igt = msg.get("igt_ms", 0) if isinstance(msg.get("igt_ms"), int) else 0
+    igt = clamp_igt(msg.get("igt_ms")) or 0
     node_id = None
     seed_graph = None
 
@@ -473,6 +480,10 @@ async def _handle_event_flag(
         old_history = session.zone_history or []
 
         if is_shared_entrance_duplicate(old_history, node_id, igt):
+            return
+
+        if len(old_history) >= MAX_ZONE_HISTORY:
+            logger.warning("zone_history cap reached for training session %s", session_id)
             return
 
         is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
@@ -558,12 +569,16 @@ async def _handle_zone_query(
             )
             igt = zq.igt_ms if zq.igt_ms is not None else session.igt_ms
             old_history = session.zone_history or []
-            is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
-            session.igt_ms = igt
-            session.zone_history = [
-                *old_history,
-                {"node_id": node_id, "igt_ms": igt, "type": "backtrack"},
-            ]
+
+            if len(old_history) >= MAX_ZONE_HISTORY:
+                logger.warning("zone_history cap reached for training session %s", session_id)
+            else:
+                is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
+                session.igt_ms = igt
+                session.zone_history = [
+                    *old_history,
+                    {"node_id": node_id, "igt_ms": igt, "type": "backtrack"},
+                ]
 
         session.current_zone = node_id
         await db.commit()

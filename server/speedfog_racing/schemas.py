@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from speedfog_racing.models import ParticipantStatus, RaceStatus, TrainingSessionStatus
 
@@ -16,7 +16,7 @@ from speedfog_racing.models import ParticipantStatus, RaceStatus, TrainingSessio
 class CreateRaceRequest(BaseModel):
     """Request to create a new race."""
 
-    name: str
+    name: str = Field(min_length=1, max_length=200)
     pool_name: str = "standard"
     config: dict[str, Any] = {}
     organizer_participates: bool = False

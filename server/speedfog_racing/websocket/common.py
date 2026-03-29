@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
-from dataclasses import dataclass
+import time
+from collections import deque
+from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import WebSocket
@@ -19,6 +21,49 @@ HEARTBEAT_INTERVAL = 30.0  # seconds between pings
 SEND_TIMEOUT = 5.0  # seconds before a send is considered failed
 MOD_AUTH_TIMEOUT = 5.0  # seconds to wait for auth message
 MAX_FRESH_IGT_MS = 15_000  # 15s: fresh save reaches first load screen at ~3-5s
+MAX_IGT_MS = 86_400_000  # 24 hours
+MAX_DEATH_COUNT = 10_000
+MAX_ZONE_HISTORY = 1000  # 1000 event flags allocated per seed
+MSG_RATE_WINDOW = 10.0  # sliding window in seconds
+MSG_RATE_LIMIT = 200  # max messages per window (normal mod sends ~2/s)
+
+
+@dataclass
+class MessageRateLimiter:
+    """Sliding window rate limiter for WebSocket messages."""
+
+    window: float = MSG_RATE_WINDOW
+    limit: int = MSG_RATE_LIMIT
+    _timestamps: deque[float] = field(default_factory=deque)
+
+    def check(self) -> bool:
+        """Record a message and return True if within limit, False if exceeded."""
+        now = time.monotonic()
+        cutoff = now - self.window
+        while self._timestamps and self._timestamps[0] < cutoff:
+            self._timestamps.popleft()
+        self._timestamps.append(now)
+        return len(self._timestamps) <= self.limit
+
+
+def clamp_igt(value: object) -> int | None:
+    """Validate and return igt_ms, or None if out of range."""
+    if not isinstance(value, int):
+        return None
+    if not (0 <= value <= MAX_IGT_MS):
+        logger.warning("igt_ms out of range: %s", value)
+        return None
+    return value
+
+
+def clamp_death_count(value: object) -> int | None:
+    """Validate and return death_count, or None if out of range."""
+    if not isinstance(value, int):
+        return None
+    if not (0 <= value <= MAX_DEATH_COUNT):
+        logger.warning("death_count out of range: %s", value)
+        return None
+    return value
 
 
 async def heartbeat_loop(
