@@ -49,7 +49,13 @@
 		return null;
 	}
 
-	let action = $derived(actionLabel(race.status, role));
+	const roleLabels: Record<string, string> = {
+		organizing: 'Organizing',
+		participating: 'Participating',
+		casting: 'Casting'
+	};
+	let effectiveRole = $derived(role ?? (race.my_role ? roleLabels[race.my_role] : undefined));
+	let action = $derived(actionLabel(race.status, effectiveRole));
 	let relativeTime = $derived(raceDisplayDate(race));
 	let showOpenBadge = $derived(race.open_registration && race.status === 'setup');
 </script>
@@ -72,8 +78,8 @@
 			{#if showOpenBadge}
 				<span class="badge badge-open">Open</span>
 			{/if}
-			{#if role}
-				<span class="badge badge-role">{role}</span>
+			{#if effectiveRole}
+				<span class="badge badge-role">{effectiveRole}</span>
 			{/if}
 			<span class="badge badge-{race.status}">{statusLabel(race.status)}</span>
 		</div>

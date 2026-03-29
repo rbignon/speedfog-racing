@@ -93,23 +93,27 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
     else:
         previews = [participant_preview(p.user) for p in race.participants[:5]]
 
-    # Compute can_join
+    # Compute can_join and my_role
     participant_count = len(race.participants)
     is_open_setup = race.open_registration and race.status == RaceStatus.SETUP
     is_full = race.max_participants is not None and participant_count >= race.max_participants
+    casters = race.casters if "casters" in race.__dict__ else []
+
+    my_role: str | None = None
+    if user is not None:
+        if race.organizer_id == user.id:
+            my_role = "organizing"
+        elif any(p.user_id == user.id for p in race.participants):
+            my_role = "participating"
+        elif any(c.user_id == user.id for c in casters):
+            my_role = "casting"
 
     if not is_open_setup or is_full:
         can_join = False
     elif user is None:
         can_join = True
     else:
-        casters = race.casters if "casters" in race.__dict__ else []
-        is_involved = (
-            race.organizer_id == user.id
-            or any(p.user_id == user.id for p in race.participants)
-            or any(c.user_id == user.id for c in casters)
-        )
-        can_join = not is_involved
+        can_join = my_role is None
 
     return RaceResponse(
         id=race.id,
@@ -128,4 +132,5 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         participant_previews=previews,
         casters=[caster_response(c) for c in race.casters] if "casters" in race.__dict__ else [],
         can_join=can_join,
+        my_role=my_role,
     )

@@ -48,6 +48,7 @@ export interface Race {
   my_igt_ms?: number | null;
   my_death_count?: number | null;
   can_join: boolean;
+  my_role: string | null;
 }
 
 export interface RaceListResponse {
