@@ -338,6 +338,55 @@ async def create_race(
     return race_response(race, user)
 
 
+@router.get("/joinable", response_model=RaceListResponse)
+async def list_joinable_races(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RaceListResponse:
+    """List open-registration setup races the user can join."""
+    my_participant_races = select(Participant.race_id).where(Participant.user_id == user.id)
+    my_caster_races = select(Caster.race_id).where(Caster.user_id == user.id)
+
+    # Count participants per race for the "not full" check
+    participant_count_sq = (
+        select(Participant.race_id, func.count().label("cnt"))
+        .group_by(Participant.race_id)
+        .subquery()
+    )
+
+    query = (
+        select(Race)
+        .options(
+            selectinload(Race.organizer),
+            selectinload(Race.seed),
+            selectinload(Race.participants).selectinload(Participant.user),
+            selectinload(Race.casters).selectinload(Caster.user),
+        )
+        .outerjoin(participant_count_sq, Race.id == participant_count_sq.c.race_id)
+        .where(
+            Race.status == RaceStatus.SETUP,
+            Race.open_registration.is_(True),
+            Race.is_public.is_(True),
+            Race.organizer_id != user.id,
+            Race.id.notin_(my_participant_races),
+            Race.id.notin_(my_caster_races),
+            or_(
+                Race.max_participants.is_(None),
+                Race.max_participants > func.coalesce(participant_count_sq.c.cnt, 0),
+            ),
+        )
+        .order_by(
+            case((Race.scheduled_at.is_(None), 1), else_=0),
+            Race.scheduled_at.asc(),
+            Race.created_at.desc(),
+        )
+    )
+
+    result = await db.execute(query)
+    races = list(result.scalars().all())
+    return RaceListResponse(races=[race_response(r, user) for r in races])
+
+
 @router.get("", response_model=RaceListResponse)
 async def list_races(
     status_filter: str | None = Query(None, alias="status"),
