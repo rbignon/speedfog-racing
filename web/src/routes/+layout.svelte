@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getTwitchLoginUrl, fetchJoinableRaces } from '$lib/api';
+	import { joinableStore } from '$lib/stores/joinable.svelte';
 	import NavUserSearch from '$lib/components/NavUserSearch.svelte';
 
 	let { children } = $props();
@@ -42,6 +43,7 @@
 	});
 
 	$effect(() => {
+		joinableStore.refreshKey;
 		if (auth.isLoggedIn) {
 			fetchJoinableRaces()
 				.then((races) => { joinableCount = races.length; })

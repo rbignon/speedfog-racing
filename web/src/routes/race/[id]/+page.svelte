@@ -41,6 +41,7 @@
 		type RaceDetail
 	} from '$lib/api';
 	import { formatScheduledTime } from '$lib/utils/time';
+	import { joinableStore } from '$lib/stores/joinable.svelte';
 
 	let downloading = $state(false);
 	let downloadError = $state<string | null>(null);
@@ -366,6 +367,7 @@
 		try {
 			await joinRace(initialRace.id);
 			initialRace = await fetchRace(initialRace.id);
+			joinableStore.invalidate();
 		} catch (e) {
 			joinLeaveError = e instanceof Error ? e.message : 'Failed to join';
 		} finally {
@@ -379,6 +381,7 @@
 		try {
 			await leaveRace(initialRace.id);
 			initialRace = await fetchRace(initialRace.id);
+			joinableStore.invalidate();
 		} catch (e) {
 			joinLeaveError = e instanceof Error ? e.message : 'Failed to leave';
 		} finally {
