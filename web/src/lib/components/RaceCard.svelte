@@ -51,6 +51,7 @@
 
 	let action = $derived(actionLabel(race.status, role));
 	let relativeTime = $derived(raceDisplayDate(race));
+	let showOpenBadge = $derived(race.open_registration && race.status === 'setup');
 </script>
 
 <a
@@ -66,6 +67,9 @@
 			<span class="race-name">{race.name}</span>
 		</div>
 		<div class="race-badges">
+			{#if showOpenBadge}
+				<span class="badge badge-open">Open</span>
+			{/if}
 			{#if role}
 				<span class="badge badge-role">{role}</span>
 			{/if}
@@ -103,12 +107,17 @@
 					{/if}
 					<span class="winner-name">{winner.twitch_display_name || winner.twitch_username}</span>
 				</div>
+			{:else if race.can_join}
+				<span class="join-cta">Join</span>
 			{/if}
 			<span class="relative-time">{relativeTime}</span>
 		</div>
 	{:else}
 		<div class="avatar-row">
 			<span class="no-participants">No players yet</span>
+			{#if race.can_join}
+				<span class="join-cta">Join</span>
+			{/if}
 			<span class="relative-time">{relativeTime}</span>
 		</div>
 	{/if}
@@ -134,7 +143,7 @@
 
 	<div class="race-meta">
 		<span>
-			{race.participant_count} player{race.participant_count !== 1 ? 's' : ''}
+			{race.participant_count}{#if race.max_participants}/{race.max_participants}{/if} player{race.participant_count !== 1 ? 's' : ''}
 			{#if race.pool_name}
 				&middot; {formatPoolName(race.pool_name)}
 			{/if}
@@ -356,6 +365,16 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.join-cta {
+		border: 1px solid var(--color-success);
+		color: var(--color-success);
+		font-weight: 600;
+		font-size: var(--font-size-xs);
+		padding: 0.2rem 0.65rem;
+		border-radius: var(--radius-sm);
+		letter-spacing: 0.03em;
 	}
 
 	/* Meta row */
