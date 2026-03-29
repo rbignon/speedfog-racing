@@ -47,6 +47,7 @@ export interface Race {
   my_current_layer?: number | null;
   my_igt_ms?: number | null;
   my_death_count?: number | null;
+  can_join: boolean;
 }
 
 export interface RaceListResponse {
@@ -226,6 +227,18 @@ export async function fetchRacesPaginated(
     headers: getAuthHeaders(),
   });
   return handleResponse<RaceListResponse>(response);
+}
+
+/**
+ * Fetch open-registration races the current user can join.
+ * Requires authentication.
+ */
+export async function fetchJoinableRaces(): Promise<Race[]> {
+  const response = await fetch(`${API_BASE}/races/joinable`, {
+    headers: getAuthHeaders(),
+  });
+  const data = await handleResponse<RaceListResponse>(response);
+  return data.races;
 }
 
 /**
