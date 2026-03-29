@@ -189,6 +189,7 @@
 		padding: 1rem 1.25rem;
 		text-decoration: none;
 		color: inherit;
+		min-width: 0;
 		transition:
 			border-color var(--transition),
 			box-shadow var(--transition);
