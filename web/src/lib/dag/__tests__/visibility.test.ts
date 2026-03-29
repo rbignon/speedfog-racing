@@ -73,9 +73,17 @@ describe("computeNodeVisibility", () => {
     expect(vis.get("boss")).toBe("adjacent");
   });
 
-  it("makes parent adjacent when only child is discovered", () => {
-    const vis = computeNodeVisibility(nodes, edges, new Set(["b"]));
-    expect(vis.get("a")).toBe("adjacent");
-    expect(vis.get("b")).toBe("discovered");
+  it("hides entrance nodes that only lead TO discovered nodes", () => {
+    // Graph: x -> a -> b (discover only a; x has no discovered predecessor)
+    const testNodes = [makeNode("x"), makeNode("a"), makeNode("b")];
+    const testEdges: DagEdge[] = [
+      { from: "x", to: "a" },
+      { from: "a", to: "b" },
+    ];
+    const vis = computeNodeVisibility(testNodes, testEdges, new Set(["a"]));
+    // x leads TO a, but has no discovered predecessor => hidden
+    expect(vis.get("x")).toBe("hidden");
+    // b is reachable FROM a => adjacent
+    expect(vis.get("b")).toBe("adjacent");
   });
 });

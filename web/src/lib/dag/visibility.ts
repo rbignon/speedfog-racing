@@ -14,7 +14,7 @@ export type NodeVisibility = "discovered" | "adjacent" | "hidden";
  * Compute visibility for each node in the graph.
  *
  * - Discovered: node.id is in discoveredIds
- * - Adjacent: not discovered, but shares an edge with a discovered node
+ * - Adjacent: not discovered, but reachable from a discovered node (forward exit)
  * - Hidden: everything else
  * - The "start" node is always discovered
  */
@@ -33,13 +33,13 @@ export function computeNodeVisibility(
     }
   }
 
-  // Build adjacency from edges
-  const neighbors = new Map<string, Set<string>>();
+  // Build predecessor map: for each node, track which nodes have edges pointing to it.
+  // Only forward edges (discovered -> undiscovered) determine adjacency, so nodes
+  // that merely lead TO discovered nodes (entrances) stay hidden.
+  const predecessors = new Map<string, Set<string>>();
   for (const edge of edges) {
-    if (!neighbors.has(edge.from)) neighbors.set(edge.from, new Set());
-    if (!neighbors.has(edge.to)) neighbors.set(edge.to, new Set());
-    neighbors.get(edge.from)!.add(edge.to);
-    neighbors.get(edge.to)!.add(edge.from);
+    if (!predecessors.has(edge.to)) predecessors.set(edge.to, new Set());
+    predecessors.get(edge.to)!.add(edge.from);
   }
 
   // Classify each node
@@ -49,11 +49,11 @@ export function computeNodeVisibility(
       continue;
     }
 
-    // Check if any neighbor is discovered
-    const nodeNeighbors = neighbors.get(node.id);
-    if (nodeNeighbors) {
-      for (const neighborId of nodeNeighbors) {
-        if (effectiveDiscovered.has(neighborId)) {
+    // Adjacent only if reachable from a discovered node (forward exit)
+    const preds = predecessors.get(node.id);
+    if (preds) {
+      for (const predId of preds) {
+        if (effectiveDiscovered.has(predId)) {
           result.set(node.id, "adjacent");
           break;
         }
