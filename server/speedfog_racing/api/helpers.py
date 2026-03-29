@@ -78,7 +78,7 @@ def caster_response(caster: Caster) -> CasterResponse:
     )
 
 
-def race_response(race: Race) -> RaceResponse:
+def race_response(race: Race, user: User | None = None) -> RaceResponse:
     """Convert Race model to RaceResponse."""
     if race.status == RaceStatus.FINISHED:
         finished = sorted(
@@ -93,6 +93,24 @@ def race_response(race: Race) -> RaceResponse:
     else:
         previews = [participant_preview(p.user) for p in race.participants[:5]]
 
+    # Compute can_join
+    participant_count = len(race.participants)
+    is_open_setup = race.open_registration and race.status == RaceStatus.SETUP
+    is_full = race.max_participants is not None and participant_count >= race.max_participants
+
+    if not is_open_setup or is_full:
+        can_join = False
+    elif user is None:
+        can_join = True
+    else:
+        casters = race.casters if "casters" in race.__dict__ else []
+        is_involved = (
+            race.organizer_id == user.id
+            or any(p.user_id == user.id for p in race.participants)
+            or any(c.user_id == user.id for c in casters)
+        )
+        can_join = not is_involved
+
     return RaceResponse(
         id=race.id,
         name=race.name,
@@ -106,7 +124,8 @@ def race_response(race: Race) -> RaceResponse:
         scheduled_at=race.scheduled_at,
         started_at=race.started_at,
         seeds_released_at=race.seeds_released_at,
-        participant_count=len(race.participants),
+        participant_count=participant_count,
         participant_previews=previews,
         casters=[caster_response(c) for c in race.casters] if "casters" in race.__dict__ else [],
+        can_join=can_join,
     )

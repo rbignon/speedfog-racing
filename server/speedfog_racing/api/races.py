@@ -335,7 +335,7 @@ async def create_race(
         ev_task = asyncio.create_task(_create_discord_event())
         ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
-    return race_response(race)
+    return race_response(race, user)
 
 
 @router.get("", response_model=RaceListResponse)
@@ -415,14 +415,14 @@ async def list_races(
         result = await db.execute(query)
         races = list(result.scalars().all())
         return RaceListResponse(
-            races=[race_response(r) for r in races],
+            races=[race_response(r, _user) for r in races],
             total=total,
             has_more=(offset + limit) < total,
         )
 
     result = await db.execute(query)
     races = list(result.scalars().all())
-    return RaceListResponse(races=[race_response(r) for r in races])
+    return RaceListResponse(races=[race_response(r, _user) for r in races])
 
 
 @router.get("/{race_id}", response_model=RaceDetailResponse)
@@ -548,7 +548,7 @@ async def update_race(
         ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     race = await _get_race_or_404(db, race_id, load_participants=True)
-    return race_response(race)
+    return race_response(race, user)
 
 
 @router.post("/{race_id}/participants", response_model=AddParticipantResponse)
@@ -1160,7 +1160,7 @@ async def start_race(
         ev_task = asyncio.create_task(set_event_status(race.discord_event_id, 2))
         ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
-    return race_response(race)
+    return race_response(race, user)
 
 
 @router.post("/{race_id}/reroll-seed", response_model=RaceDetailResponse)
@@ -1307,7 +1307,7 @@ async def reset_race(
     # Re-query with eager-loaded relationships (refresh only reloads columns)
     race = await _get_race_or_404(db, race.id, load_participants=True)
 
-    return race_response(race)
+    return race_response(race, user)
 
 
 @router.post("/{race_id}/finish", response_model=RaceResponse)
@@ -1349,7 +1349,7 @@ async def finish_race(
 
     fire_race_finished_notifications(race)
 
-    return race_response(race)
+    return race_response(race, user)
 
 
 @router.post("/{race_id}/abandon", response_model=RaceResponse)
@@ -1404,7 +1404,7 @@ async def abandon_race(
         await manager.broadcast_race_status(race_id, "finished")
         fire_race_finished_notifications(race)
 
-    return race_response(race)
+    return race_response(race, user)
 
 
 @router.delete("/{race_id}", status_code=status.HTTP_204_NO_CONTENT)
