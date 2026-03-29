@@ -41,7 +41,7 @@ async def _handle_component(data: dict) -> dict:  # type: ignore[type-arg]
         await assign_runner_role(user_id)
         return {
             "type": 4,
-            "data": {"content": "You now have the **Runner** role!", "flags": 64},
+            "data": {"content": "**Runner** role granted.", "flags": 64},
         }
     if custom_id == "remove_runner" and user_id:
         await remove_runner_role(user_id)
