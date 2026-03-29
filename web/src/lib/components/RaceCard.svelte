@@ -58,7 +58,9 @@
 	href="/race/{race.id}"
 	class="race-card {statusBorderClass(race.status)}"
 	class:compact={variant === 'compact'}
+	class:joinable={race.can_join}
 >
+	<div class="card-content">
 	<div class="race-header">
 		<div class="race-title">
 			{#if isRunning}
@@ -107,17 +109,12 @@
 					{/if}
 					<span class="winner-name">{winner.twitch_display_name || winner.twitch_username}</span>
 				</div>
-			{:else if race.can_join}
-				<span class="join-cta">Join</span>
 			{/if}
 			<span class="relative-time">{relativeTime}</span>
 		</div>
 	{:else}
 		<div class="avatar-row">
 			<span class="no-participants">No players yet</span>
-			{#if race.can_join}
-				<span class="join-cta">Join</span>
-			{/if}
 			<span class="relative-time">{relativeTime}</span>
 		</div>
 	{/if}
@@ -169,6 +166,12 @@
 			</span>
 		{/if}
 	</div>
+	</div>
+	{#if race.can_join}
+		<div class="join-strip">
+			<span class="join-strip-text">Join</span>
+		</div>
+	{/if}
 </a>
 
 <style>
@@ -367,14 +370,42 @@
 		text-overflow: ellipsis;
 	}
 
-	.join-cta {
-		border: 1px solid var(--color-success);
+	/* Joinable card layout */
+	.race-card.joinable {
+		display: flex;
+		padding: 0;
+		overflow: hidden;
+	}
+
+	.card-content {
+		min-width: 0;
+	}
+
+	.joinable .card-content {
+		flex: 1;
+		padding: 1rem 1.25rem;
+	}
+
+	.joinable.compact .card-content {
+		padding: 0.75rem 1rem;
+	}
+
+	.join-strip {
+		width: 64px;
+		background: rgba(16, 185, 129, 0.12);
+		border-left: 1px solid rgba(16, 185, 129, 0.25);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.join-strip-text {
 		color: var(--color-success);
-		font-weight: 600;
-		font-size: var(--font-size-xs);
-		padding: 0.2rem 0.65rem;
-		border-radius: var(--radius-sm);
-		letter-spacing: 0.03em;
+		font-weight: 700;
+		font-size: var(--font-size-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
 	}
 
 	/* Meta row */
