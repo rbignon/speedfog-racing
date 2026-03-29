@@ -749,6 +749,7 @@
 						graphJson={liveSeed.graph_json}
 						participants={raceStore.leaderboard}
 						focusNodeId={highlightFocusNodeId}
+						highlightIds={selectedParticipantIds}
 					/>
 				{/if}
 			{:else if liveSeed?.graph_json && myWsParticipantId && !forceFullDag}

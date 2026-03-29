@@ -20,6 +20,8 @@
 		onleaderchange: (newLeaderId: string | null) => void;
 		/** IDs of ghost participants (rendered with reduced opacity) */
 		ghostIds?: Set<string>;
+		/** IDs of selected participants to highlight (empty = show all) */
+		highlightIds?: Set<string>;
 	}
 
 	let {
@@ -33,8 +35,11 @@
 		leaderId,
 		previousLeader,
 		onleaderchange,
-		ghostIds
+		ghostIds,
+		highlightIds
 	}: Props = $props();
+
+	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
 
 	// Compute player snapshots (single source of truth for positions)
 	let snapshots: PlayerSnapshot[] = $derived.by(() => {
@@ -68,8 +73,16 @@
 
 	let leaderChanged = $derived(leaderId !== previousLeader && previousLeader !== null);
 
-	// Node heat
+	// Node heat (filtered by selected players)
 	let nodeHeat = $derived(computeNodeHeat(skullEvents, currentIgt));
+	let filteredNodeHeat = $derived.by(() => {
+		if (!hasHighlight) return nodeHeat;
+		const filtered = computeNodeHeat(
+			skullEvents.filter((ev) => highlightIds!.has(ev.participantId)),
+			currentIgt
+		);
+		return filtered;
+	});
 
 	// Active skulls: show skulls that are within SKULL_ANIM_MS of current replay time
 	let activeSkulls = $derived.by(() => {
@@ -112,7 +125,7 @@
 </script>
 
 <!-- Node heat overlay -->
-{#each [...nodeHeat.entries()] as [nodeId, deaths]}
+{#each [...filteredNodeHeat.entries()] as [nodeId, deaths]}
 	{@const pos = nodePositions.get(nodeId)}
 	{#if pos}
 		<circle
@@ -131,20 +144,21 @@
 	{@const rp = replayParticipants.find((r) => r.id === snap.participantId)}
 	{@const isGhost = ghostIds?.has(snap.participantId) ?? false}
 	{@const isFrozen = snap.frozen ?? false}
+	{@const isHidden = hasHighlight && !highlightIds!.has(snap.participantId)}
 	{#if rp}
 		<circle
 			cx={snap.x}
 			cy={snap.y}
 			r={RACER_DOT_RADIUS}
 			fill={rp.color}
-			opacity={isFrozen ? 0.35 : isGhost ? 0.5 : 1}
+			opacity={isHidden ? 0 : isFrozen ? 0.35 : isGhost ? 0.5 : 1}
 			class="replay-dot"
-			filter={isGhost || isFrozen ? undefined : 'url(#replay-player-glow)'}
+			filter={isHidden || isGhost || isFrozen ? undefined : 'url(#replay-player-glow)'}
 		>
 			<title>{rp.displayName}</title>
 		</circle>
-		<!-- Leader star (never on ghosts or frozen/abandoned players) -->
-		{#if snap.participantId === leaderId && !isGhost && !isFrozen}
+		<!-- Leader star (never on ghosts, frozen, or hidden players) -->
+		{#if snap.participantId === leaderId && !isGhost && !isFrozen && !isHidden}
 			<text
 				x={snap.x}
 				y={snap.y - RACER_DOT_RADIUS - 5}
@@ -162,7 +176,8 @@
 {#each activeSkulls as skull}
 	{@const pos = nodePositions.get(skull.nodeId)}
 	{@const isGhostSkull = ghostIds?.has(skull.participantId) ?? false}
-	{#if pos}
+	{@const isHiddenSkull = hasHighlight && !highlightIds!.has(skull.participantId)}
+	{#if pos && !isHiddenSkull}
 		<text
 			x={pos.x}
 			y={pos.y}
@@ -178,6 +193,7 @@
 <style>
 	.replay-dot {
 		pointer-events: none;
+		transition: opacity 200ms ease;
 	}
 
 	.heat-glow {

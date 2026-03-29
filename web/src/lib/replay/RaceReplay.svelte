@@ -32,9 +32,10 @@
 		graphJson: Record<string, unknown>;
 		participants: WsParticipant[];
 		focusNodeId?: string | null;
+		highlightIds?: Set<string>;
 	}
 
-	let { graphJson, participants, focusNodeId = null }: Props = $props();
+	let { graphJson, participants, focusNodeId = null, highlightIds }: Props = $props();
 
 	// Pre-compute all replay data (runs once, memoized via $derived)
 	let graph = $derived(parseDagGraph(graphJson));
@@ -343,6 +344,7 @@
 							{leaderId}
 							{previousLeader}
 							onleaderchange={handleLeaderChange}
+							{highlightIds}
 						/>
 					{/if}
 				</ZoomableSvg>
