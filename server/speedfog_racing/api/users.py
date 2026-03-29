@@ -163,7 +163,7 @@ async def get_my_races(
 
     race_responses = []
     for r in races:
-        resp = race_response(r)
+        resp = race_response(r, user)
         my_participant = next((p for p in r.participants if p.user_id == user.id), None)
         if my_participant:
             resp.my_current_layer = my_participant.current_layer
