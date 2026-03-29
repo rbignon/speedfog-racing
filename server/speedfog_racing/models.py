@@ -84,7 +84,7 @@ class User(Base):
     api_token: Mapped[str] = mapped_column(
         String(100), unique=True, nullable=False, default=generate_token
     )
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.USER)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.ORGANIZER)
     locale: Mapped[str | None] = mapped_column(String(10), nullable=True)
     overlay_settings: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
