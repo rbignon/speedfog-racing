@@ -212,8 +212,7 @@ def parse_zone_query_input(msg: dict[str, Any]) -> ZoneQueryInput | None:
     position = tuple(raw_pos) if isinstance(raw_pos, list) and len(raw_pos) == 3 else None
     raw_pr = msg.get("play_region_id")
     play_region_id = raw_pr if isinstance(raw_pr, int) else None
-    raw_igt = msg.get("igt_ms")
-    igt_ms = raw_igt if isinstance(raw_igt, int) else None
+    igt_ms = clamp_igt(msg.get("igt_ms"))
 
     return ZoneQueryInput(
         grace_entity_id=grace_entity_id,

@@ -238,7 +238,7 @@ async def _send_webhook(
         logger.warning("Discord webhook error: %s", e)
 
 
-_DISCORD_MD_RE = re.compile(r"([*_~|>`])")
+_DISCORD_MD_RE = re.compile(r"([*_~|>`\[\]()])")
 
 
 def _escape_discord_md(text: str) -> str:
