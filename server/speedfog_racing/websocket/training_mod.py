@@ -433,7 +433,8 @@ async def _handle_event_flag(
     if not isinstance(flag_id, int):
         return
 
-    igt = clamp_igt(msg.get("igt_ms")) or 0
+    raw_igt = clamp_igt(msg.get("igt_ms"))
+    igt = raw_igt if raw_igt is not None else 0
     node_id = None
     seed_graph = None
 
@@ -570,6 +571,9 @@ async def _handle_zone_query(
             igt = zq.igt_ms if zq.igt_ms is not None else session.igt_ms
             old_history = session.zone_history or []
 
+            # Cap zone_history but still update current_zone below
+            # (unlike event_flag which early-returns, zone_query must
+            # keep tracking position for overlay display)
             if len(old_history) >= MAX_ZONE_HISTORY:
                 logger.warning("zone_history cap reached for training session %s", session_id)
             else:

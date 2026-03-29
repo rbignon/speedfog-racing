@@ -34,7 +34,7 @@ class MessageRateLimiter:
 
     window: float = MSG_RATE_WINDOW
     limit: int = MSG_RATE_LIMIT
-    _timestamps: deque[float] = field(default_factory=deque)
+    _timestamps: deque[float] = field(init=False, default_factory=deque)
 
     def check(self) -> bool:
         """Record a message and return True if within limit, False if exceeded."""

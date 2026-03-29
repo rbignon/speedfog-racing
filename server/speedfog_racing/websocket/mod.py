@@ -547,7 +547,8 @@ async def handle_event_flag(
         finish_event = seed_graph.get("finish_event")
 
         # Update IGT
-        igt = clamp_igt(msg.get("igt_ms")) or 0
+        raw_igt = clamp_igt(msg.get("igt_ms"))
+        igt = raw_igt if raw_igt is not None else 0
 
         # Check finish event first (not in event_map, it's a boss kill, not a fog gate)
         if flag_id == finish_event:
@@ -692,6 +693,9 @@ async def handle_zone_query(
             igt = zq.igt_ms if zq.igt_ms is not None else participant.igt_ms
             old_history = participant.zone_history or []
 
+            # Cap zone_history but still update current_zone below
+            # (unlike event_flag which early-returns, zone_query must
+            # keep tracking position for overlay display)
             if len(old_history) >= MAX_ZONE_HISTORY:
                 logger.warning("zone_history cap reached for participant %s", participant_id)
             else:
