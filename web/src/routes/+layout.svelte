@@ -4,13 +4,15 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { getTwitchLoginUrl } from '$lib/api';
+	import { getTwitchLoginUrl, fetchJoinableRaces } from '$lib/api';
 	import NavUserSearch from '$lib/components/NavUserSearch.svelte';
 
 	let { children } = $props();
 
 	let isOverlay = $derived(page.url.pathname.startsWith('/overlay/'));
 	let isRaceDetailPage = $derived(page.route.id === '/race/[id]');
+
+	let joinableCount = $state(0);
 
 	let userMenuOpen = $state(false);
 	let userMenuEl: HTMLDivElement | undefined = $state();
@@ -37,6 +39,16 @@
 
 	onMount(() => {
 		auth.init();
+	});
+
+	$effect(() => {
+		if (auth.isLoggedIn) {
+			fetchJoinableRaces()
+				.then((races) => { joinableCount = races.length; })
+				.catch(() => { joinableCount = 0; });
+		} else {
+			joinableCount = 0;
+		}
 	});
 </script>
 
@@ -79,7 +91,12 @@
 							<a href="/admin" class="btn btn-secondary">Admin</a>
 						{/if}
 						<a href="/training" class="btn btn-secondary">Solo</a>
-						<a href="/races" class="btn btn-secondary">Races</a>
+						<a href="/races" class="btn btn-secondary btn-with-badge">
+							Races
+							{#if joinableCount > 0}
+								<span class="nav-badge">{joinableCount}</span>
+							{/if}
+						</a>
 						{#if auth.canCreateRace}
 							<a href="/race/new" class="btn btn-primary">Create Race</a>
 						{/if}
@@ -235,6 +252,28 @@
 	.discord-nav-icon:hover {
 		border-color: #5865f2;
 		color: #5865f2;
+	}
+
+	.btn-with-badge {
+		position: relative;
+	}
+
+	.nav-badge {
+		position: absolute;
+		top: -7px;
+		right: -7px;
+		background: var(--color-success);
+		color: var(--color-bg);
+		font-size: 0.6rem;
+		font-weight: 700;
+		min-width: 16px;
+		height: 16px;
+		border-radius: 8px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0 4px;
+		line-height: 1;
 	}
 
 	.user-menu {
