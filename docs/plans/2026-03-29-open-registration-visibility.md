@@ -35,14 +35,24 @@ Two additions to the RaceCard component when a race is joinable:
 - Outlined button with green border and text (`border: 1px solid var(--color-success); color: var(--color-success)`), text "Join" (no arrow)
 - Positioned in the avatar row, center (same position as the winner trophy+name on finished cards)
 - Purely a visual CTA; clicking it navigates to the race detail page (same as clicking anywhere on the card)
-- Shown only when the user is logged in, the race is joinable (open, setup, not full), and the user is not already organizer/participant/caster
+- Shown when `race.can_join` is true (computed server-side, see API section)
 - When `max_participants` is set, the player count in the meta row shows "3/8 players" format instead of "3 players"
 
-**New props on RaceCard:**
+The "Open" badge does not need special data; it derives from `race.open_registration && race.status === 'setup'`.
 
-- `canJoin?: boolean` (default `false`): whether to show the Join button. Computed by the parent based on the user's involvement.
+The "Join" button uses `race.can_join` from the API response (no prop needed). This means it works automatically on all pages: `/`, `/races`, `/dashboard`.
 
-The "Open" badge does not need a prop; it derives from `race.open_registration && race.status === 'setup'`.
+## `can_join` Field on `RaceResponse`
+
+New boolean field on the `RaceResponse` schema, computed server-side in `race_response()`.
+
+**Rules:**
+
+- Authenticated user: `open_registration && status == setup && not full && user is not organizer/participant/caster`
+- Unauthenticated user: `open_registration && status == setup && not full` (natural CTA on the home page, leads to login)
+- "Not full" = `max_participants is None` or `participant_count < max_participants`
+
+`race_response()` gains an optional `user` parameter. All callers (`list_races`, `list_joinable_races`, etc.) pass the current user through.
 
 ## Feature 3: Dashboard "Races to Join" Section
 
@@ -78,14 +88,17 @@ New endpoint on the races router. Requires authentication.
 
 ## Component Changes Summary
 
-| Component                | Change                                                                            |
-| ------------------------ | --------------------------------------------------------------------------------- |
-| `+layout.svelte`         | Fetch joinable count on mount (logged-in only), render pill badge on "Races" link |
-| `RaceCard.svelte`        | Add "Open" badge, "Join" outlined button (conditional), "x/max players" format    |
-| `dashboard/+page.svelte` | New "Races to Join" section after "Active Now"                                    |
-| `api.ts`                 | New `fetchJoinableRaces()` function                                               |
-| `api/races.py`           | New `GET /api/races/joinable` endpoint                                            |
-| `app.css`                | New `.badge-open` class (green, matching success color)                           |
+| Component                | Change                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------- |
+| `schemas.py`             | Add `can_join: bool` to `RaceResponse`                                                  |
+| `api/helpers.py`         | `race_response()` gains optional `user` param, computes `can_join`                      |
+| `api/races.py`           | Pass user to `race_response()` calls; new `GET /api/races/joinable` endpoint            |
+| `api.ts` (types)         | Add `can_join: boolean` to `Race` interface                                             |
+| `api.ts` (client)        | New `fetchJoinableRaces()` function                                                     |
+| `+layout.svelte`         | Fetch joinable count on mount (logged-in only), render pill badge on "Races" link       |
+| `RaceCard.svelte`        | Add "Open" badge, "Join" outlined button (from `race.can_join`), "x/max players" format |
+| `dashboard/+page.svelte` | New "Races to Join" section after "Active Now"                                          |
+| `app.css`                | New `.badge-open` class (green, matching success color)                                 |
 
 ## Non-Goals
 
