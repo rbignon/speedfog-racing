@@ -7,6 +7,7 @@
 		fetchUserPoolStats,
 		fetchMyRaces,
 		fetchTrainingSessions,
+		fetchJoinableRaces,
 		type UserProfile,
 		type UserPoolStats,
 		type ActivityItem,
@@ -19,12 +20,14 @@
 	import { statusLabel } from '$lib/format';
 	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
 	import PoolStatsTable from '$lib/components/PoolStatsTable.svelte';
+	import RaceCard from '$lib/components/RaceCard.svelte';
 
 	let profile: UserProfile | null = $state(null);
 	let poolStats: UserPoolStats | null = $state(null);
 	let activity: ActivityItem[] = $state([]);
 	let myRaces: Race[] = $state([]);
 	let trainingSessions: TrainingSession[] = $state([]);
+	let joinableRaces: Race[] = $state([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let fetched = $state(false);
@@ -62,13 +65,15 @@
 			fetchMyRaces(),
 			fetchTrainingSessions(),
 			fetchUserPoolStats(username),
+			fetchJoinableRaces(),
 		])
-			.then(([p, a, r, t, ps]) => {
+			.then(([p, a, r, t, ps, jr]) => {
 				profile = p;
 				activity = a.items;
 				myRaces = r;
 				trainingSessions = t;
 				poolStats = ps;
+				joinableRaces = jr;
 			})
 			.catch((e) => {
 				console.error('Dashboard fetch error:', e);
@@ -308,6 +313,21 @@
 				</div>
 			{/if}
 		</section>
+
+		<!-- Races to Join Section -->
+		{#if joinableRaces.length > 0}
+			<section class="joinable-section">
+				<h2>Races to Join</h2>
+				<div class="joinable-cards">
+					{#each joinableRaces as race}
+						<RaceCard {race} />
+					{/each}
+				</div>
+				<div class="joinable-footer">
+					<a href="/races" class="joinable-more">Browse all races</a>
+				</div>
+			</section>
+		{/if}
 
 		<!-- Recent Activity Section -->
 		{#if activity.length > 0}
@@ -719,6 +739,32 @@
 		background: var(--color-purple);
 	}
 
+	/* Races to Join */
+	.joinable-section {
+		margin-bottom: 2rem;
+	}
+
+	.joinable-cards {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 0.75rem;
+	}
+
+	.joinable-footer {
+		padding-top: 0.75rem;
+		text-align: center;
+	}
+
+	.joinable-more {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		text-decoration: none;
+	}
+
+	.joinable-more:hover {
+		color: var(--color-gold);
+	}
+
 	/* Recent Activity */
 	.activity-section {
 		margin-bottom: 2rem;
@@ -819,6 +865,10 @@
 
 		.active-card {
 			padding: 0.75rem 1rem;
+		}
+
+		.joinable-cards {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>
