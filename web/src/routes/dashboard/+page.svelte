@@ -35,6 +35,25 @@
 	let activeRaces = $derived(myRaces.filter((r) => r.status !== 'finished'));
 	let activeTraining = $derived(trainingSessions.filter((s) => s.status === 'active'));
 
+	// New user detection: no races and no training sessions ever
+	let isNewUser = $derived.by(() => {
+		const p = profile;
+		if (!p) return false;
+		return p.stats.race_count + p.stats.training_count === 0;
+	});
+
+	// Welcome card dismissal
+	const WELCOME_CARD_KEY = 'speedfog_welcome_dismissed';
+	let welcomeDismissed = $state(
+		typeof localStorage !== 'undefined' && localStorage.getItem(WELCOME_CARD_KEY) === '1',
+	);
+	let showWelcome = $derived(isNewUser && !welcomeDismissed);
+
+	function dismissWelcome() {
+		welcomeDismissed = true;
+		localStorage.setItem(WELCOME_CARD_KEY, '1');
+	}
+
 	// One-time settings banner
 	const SETTINGS_BANNER_KEY = 'speedfog_settings_banner_dismissed';
 	let bannerDismissed = $state(
@@ -155,8 +174,47 @@
 			</div>
 		{/if}
 
-		<!-- Stats Section -->
-		{#if profile}
+		<!-- Welcome Card (new users) OR Stats Section (returning users) -->
+		{#if showWelcome}
+			<section class="welcome-section">
+				<div class="welcome-card">
+					<div class="welcome-header">
+						<div>
+							<h2 class="welcome-title">Get started</h2>
+							<p class="welcome-subtitle">Play your first seed in minutes. No setup, no configuration.</p>
+						</div>
+						<button class="welcome-dismiss" onclick={dismissWelcome} aria-label="Dismiss">Dismiss</button>
+					</div>
+					<div class="welcome-steps">
+						<div class="welcome-step">
+							<div class="welcome-step-icon">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
+							</div>
+							<div class="welcome-step-label">1. Start a solo</div>
+							<div class="welcome-step-desc">Pick a seed pool and generate your run</div>
+						</div>
+						<div class="welcome-step">
+							<div class="welcome-step-icon">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+							</div>
+							<div class="welcome-step-label">2. Download</div>
+							<div class="welcome-step-desc">Get the seed pack, a single zip file</div>
+						</div>
+						<div class="welcome-step">
+							<div class="welcome-step-icon">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+							</div>
+							<div class="welcome-step-label">3. Run and play</div>
+							<div class="welcome-step-desc">Launch the bat file, done</div>
+						</div>
+					</div>
+					<div class="welcome-actions">
+						<a href="/training" class="btn btn-primary">Play Solo</a>
+						<a href="/help" class="welcome-link">How it works &rarr;</a>
+					</div>
+				</div>
+			</section>
+		{:else if profile}
 			<section class="stats-section">
 				<div class="stats-grid">
 					<div class="stat-card">
@@ -179,46 +237,10 @@
 			</section>
 		{/if}
 
-		<!-- Pool Stats Section -->
-		{#if poolStats && poolStats.pools.length > 0}
-			<section class="pool-stats-section">
-				<h2>Pool Stats</h2>
-				<PoolStatsTable pools={poolStats.pools} />
-			</section>
-		{/if}
-
-		<!-- Active Now Section -->
-		<section class="active-section">
-			<h2>Active Now</h2>
-			{#if activeRaces.length === 0 && activeTraining.length === 0}
-				<div class="empty-state">
-					<p>No active sessions</p>
-					<div class="empty-actions">
-						<a href="/training" class="btn btn-secondary">Play Solo</a>
-						{#if auth.canCreateRace}
-							<a href="/race/new" class="btn btn-primary">Create Race</a>
-						{/if}
-						<a href="/races" class="btn btn-secondary">Browse Races</a>
-					</div>
-					<a
-						href="https://discord.gg/Qmw67J3mR9"
-						class="discord-link"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"
-							><path
-								d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"
-							/></svg
-						>
-						{#if auth.canCreateRace}
-							Find players on Discord
-						{:else}
-							Find players or request race creation rights on Discord
-						{/if}
-					</a>
-				</div>
-			{:else}
+		<!-- Active Now Section (hidden when empty) -->
+		{#if activeRaces.length > 0 || activeTraining.length > 0}
+			<section class="active-section">
+				<h2>Active Now</h2>
 				<div class="active-cards">
 					{#each activeRaces as race}
 						{@const overflowCount = Math.max(0, race.participant_count - race.participant_previews.length)}
@@ -311,8 +333,8 @@
 						</a>
 					{/each}
 				</div>
-			{/if}
-		</section>
+			</section>
+		{/if}
 
 		<!-- Races to Join Section -->
 		{#if joinableRaces.length > 0}
@@ -326,6 +348,14 @@
 				<div class="joinable-footer">
 					<a href="/races" class="joinable-more">Browse all races</a>
 				</div>
+			</section>
+		{/if}
+
+		<!-- Pool Stats Section -->
+		{#if poolStats && poolStats.pools.length > 0}
+			<section class="pool-stats-section">
+				<h2>Pool Stats</h2>
+				<PoolStatsTable pools={poolStats.pools} />
 			</section>
 		{/if}
 
@@ -451,6 +481,105 @@
 		color: var(--color-text);
 	}
 
+	/* Welcome card */
+	.welcome-section {
+		margin-bottom: 2rem;
+	}
+
+	.welcome-card {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		padding: 2rem;
+	}
+
+	.welcome-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 1.5rem;
+	}
+
+	.welcome-title {
+		margin: 0 0 0.25rem;
+		color: var(--color-text);
+		font-size: var(--font-size-xl);
+		font-weight: 600;
+	}
+
+	.welcome-subtitle {
+		margin: 0;
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+	}
+
+	.welcome-dismiss {
+		background: none;
+		border: none;
+		color: var(--color-text-disabled);
+		font-size: var(--font-size-sm);
+		cursor: pointer;
+		padding: 0;
+		flex-shrink: 0;
+	}
+
+	.welcome-dismiss:hover {
+		color: var(--color-text-secondary);
+	}
+
+	.welcome-steps {
+		display: flex;
+		gap: 1.5rem;
+		margin-bottom: 1.75rem;
+	}
+
+	.welcome-step {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		gap: 0.5rem;
+	}
+
+	.welcome-step-icon {
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		background: rgba(196, 166, 111, 0.15);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-gold);
+	}
+
+	.welcome-step-label {
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+		color: var(--color-gold);
+	}
+
+	.welcome-step-desc {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+	}
+
+	.welcome-actions {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.welcome-link {
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+		text-decoration: none;
+	}
+
+	.welcome-link:hover {
+		color: var(--color-gold);
+	}
+
 	/* Stats */
 	.stats-section {
 		margin-bottom: 2rem;
@@ -498,41 +627,6 @@
 	/* Active Now */
 	.active-section {
 		margin-bottom: 2rem;
-	}
-
-	.empty-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 1rem;
-		padding: 2rem;
-		background: var(--color-surface);
-		border-radius: var(--radius-lg);
-		color: var(--color-text-secondary);
-	}
-
-	.empty-state p {
-		margin: 0;
-	}
-
-	.empty-actions {
-		display: flex;
-		gap: 0.75rem;
-	}
-
-	.discord-link {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-		color: var(--color-text-secondary);
-		text-decoration: none;
-		font-size: var(--font-size-sm);
-		transition:
-			color 0.15s ease;
-	}
-
-	.discord-link:hover {
-		color: #5865f2;
 	}
 
 	.active-cards {
@@ -853,6 +947,25 @@
 	@media (max-width: 640px) {
 		.dashboard {
 			padding: 1rem;
+		}
+
+		.welcome-card {
+			padding: 1.25rem;
+		}
+
+		.welcome-steps {
+			flex-direction: column;
+			gap: 1rem;
+		}
+
+		.welcome-step {
+			flex-direction: row;
+			text-align: left;
+			gap: 0.75rem;
+		}
+
+		.welcome-step-icon {
+			flex-shrink: 0;
 		}
 
 		.stats-grid {
