@@ -2,6 +2,34 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.3] - 2026-03-30
+
+### Stats
+
+- Private races are now excluded from ELO calculations
+
+### Seeds
+
+- Starting weapons upgraded to +25 on Expedition, Chill, Sprint, Standard, and Boss Shuffle pools
+- Starting runes increased to 40k on Expedition, Sprint, Standard, and Boss Shuffle pools
+- Reworked item distribution: ashes of war, and crystal tears now placed at key locations
+- Golden Trees and Marika Churches are now key item locations
+- Dragonkin Soldier of Nokstella classified as major boss
+- Added conflict between Radahn and Redmane Castle boss to reduce the risk of Radahn's festival being active
+- Fix: custom weapons with ashes of war now upgrade correctly
+
+### In-game
+
+- Fix: run complete banner no longer replays when warping between zones
+- Fix: burning the Erdtree no longer disrupts zone tracking for the rest of the run
+
+### Website
+
+- Open registration visibility: joinable races badge in navbar, "Open" badge and Join button on race cards, "Races to Join" section on dashboard
+- Replay Metro map respects player selection filter
+- Improved Metro map label contrast for accessibility and @Mitchriz
+- Fix: entrance nodes hidden correctly in progressive Metro map visibility
+
 ## [1.5.2] - 2026-03-28
 
 ### Stats
