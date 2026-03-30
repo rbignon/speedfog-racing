@@ -126,6 +126,8 @@
 
 <svelte:head>
 	<title>How to Play – SpeedFog Racing</title>
+	<meta name="description" content="How to play SpeedFog Racing. Setup guide, pool descriptions, and instructions for joining competitive Elden Ring fog gate races." />
+	<link rel="canonical" href="https://speedfog.malenia.win/help" />
 </svelte:head>
 
 <main class="help">

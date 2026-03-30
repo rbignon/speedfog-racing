@@ -61,6 +61,8 @@
 
 <svelte:head>
 	<title>SpeedFog Racing</title>
+	<meta name="description" content="Competitive Elden Ring Fog Randomizer racing platform. Race against other players through randomized fog gates in real time." />
+	<link rel="canonical" href="https://speedfog.malenia.win/" />
 </svelte:head>
 
 {#if errorMessage}

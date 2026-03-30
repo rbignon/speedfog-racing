@@ -68,6 +68,8 @@
 
 <svelte:head>
 	<title>Changelog – SpeedFog Racing</title>
+	<meta name="description" content="Latest updates and changes to SpeedFog Racing. New features, bug fixes, and improvements." />
+	<link rel="canonical" href="https://speedfog.malenia.win/changelog" />
 </svelte:head>
 
 <main class="changelog">
