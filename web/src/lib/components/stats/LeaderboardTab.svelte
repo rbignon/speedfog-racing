@@ -143,7 +143,7 @@
 						<dd>1500</dd>
 					</div>
 					<div class="elo-detail-row">
-						<dt>Min. races to rank</dt>
+						<dt>Min. public races</dt>
 						<dd>3</dd>
 					</div>
 				</dl>
