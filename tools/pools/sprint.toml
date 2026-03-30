@@ -34,7 +34,7 @@ stonesword_keys = 6
 
 [care_package]
 enabled = true
-weapon_upgrade = 24
+weapon_upgrade = 25
 weapons = 5
 shields = 2
 catalysts = 2
