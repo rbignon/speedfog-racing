@@ -32,6 +32,7 @@ dev = [
 
 [project.scripts]
 speedfog-racing = "speedfog_racing.main:main"
+speedfog-scan-seeds = "speedfog_racing.scan_seeds:main"
 
 [build-system]
 requires = ["hatchling"]

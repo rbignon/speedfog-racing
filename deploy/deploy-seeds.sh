@@ -24,7 +24,6 @@ COUNT=""
 GAME_DIR=""
 SEEDS_DIR="${SEEDS_DIR:-/data/SpeedFog/racing/seeds}"
 UPLOAD_ONLY=false
-NO_RESTART=false
 DISCARD=false
 VERBOSE=""
 JOBS=""
@@ -44,8 +43,7 @@ Options:
   --seeds-dir PATH  Remote seed directory on VPS (default: $SEEDS_DIR or /data/SpeedFog/racing/seeds)
   --upload-only     Skip generation, upload existing tools/output/
   --output DIR      Local output directory (default: tools/output)
-  --no-restart      Upload without restarting the service
-  --discard         Mark old AVAILABLE/CONSUMED seeds as DISCARDED (after extract, before restart)
+  --discard         Mark old AVAILABLE/CONSUMED seeds as DISCARDED (after extract, before scan)
   -j, --jobs N      Parallel workers per pool (default: 1, sequential)
   -v, --verbose     Pass -v to generate_pool.py
   -h, --help        Show this help
@@ -66,7 +64,7 @@ Examples:
   # Just upload what's already in tools/output/
   deploy/deploy-seeds.sh --upload-only
 
-  # Upload new seeds and discard old ones just before restart (minimal downtime)
+  # Upload new seeds and discard old ones before scanning
   deploy/deploy-seeds.sh --discard --pool standard --count 10 --game-dir "/path/to/game"
 EOF
     exit 0
@@ -81,7 +79,6 @@ while [[ $# -gt 0 ]]; do
         --seeds-dir) SEEDS_DIR="$2"; shift 2 ;;
         --upload-only) UPLOAD_ONLY=true; shift ;;
         --output) OUTPUT_DIR="$2"; shift 2 ;;
-        --no-restart) NO_RESTART=true; shift ;;
         --discard) DISCARD=true; shift ;;
         -j|--jobs) JOBS="$2"; shift 2 ;;
         -v|--verbose) VERBOSE="-v"; shift ;;
@@ -277,29 +274,18 @@ if [[ "$DISCARD" == true ]]; then
     discard_seeds
 fi
 
-# --- Restart phase ---
+# --- Scan phase (insert new seeds into database without restarting the server) ---
 
-if [[ "$NO_RESTART" == true ]]; then
-    echo "==> Skipping restart (--no-restart)"
-    echo "    Run 'sudo systemctl restart speedfog-racing' on the server to pick up new seeds."
-else
-    echo "==> Restarting service..."
-    # shellcheck disable=SC2087
-    ssh "$SERVER" bash <<'ENDSSH'
-        set -e
-        sudo systemctl restart speedfog-racing
-
-        echo "  Waiting for health check..."
-        sleep 2
-        if curl -sf http://127.0.0.1:8000/health > /dev/null; then
-            echo "  Service healthy!"
-        else
-            echo "  WARNING: Health check failed. Check logs:"
-            echo "    journalctl -u speedfog-racing -n 50 --no-pager"
-            exit 1
-        fi
+echo "==> Scanning seed pools into database..."
+ssh "$SERVER" bash -s "${POOLS[@]}" <<'ENDSSH'
+    set -e
+    cd /opt/speedfog-racing/server
+    pool_args=""
+    for pool in "$@"; do
+        pool_args="$pool_args --pool $pool"
+    done
+    sudo -u speedfog uv run speedfog-scan-seeds $pool_args
 ENDSSH
-fi
 
 if [[ ${#FAILED_POOLS[@]} -gt 0 ]]; then
     echo ""

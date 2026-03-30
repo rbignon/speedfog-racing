@@ -63,6 +63,11 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
         logger.warning(f"Pool directory does not exist: {pool_dir}")
         return 0
 
+    # Pre-fetch all known seed numbers for this pool to avoid per-file queries
+    # and, more importantly, skip zip I/O for seeds already in the database.
+    result = await db.execute(select(Seed.seed_number).where(Seed.pool_name == pool_name))
+    existing_numbers: set[str] = set(result.scalars().all())
+
     added = 0
 
     for entry in sorted(pool_dir.iterdir()):
@@ -77,11 +82,8 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
             logger.warning(f"Invalid seed zip name: {entry.name}")
             continue
 
-        # Check if already in database
-        result = await db.execute(
-            select(Seed).where(Seed.seed_number == seed_number, Seed.pool_name == pool_name)
-        )
-        if result.scalar_one_or_none():
+        # Skip seeds already in database (no zip I/O needed)
+        if seed_number in existing_numbers:
             continue
 
         # Read graph.json from inside the zip

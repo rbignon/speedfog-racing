@@ -17,9 +17,8 @@ from slowapi.middleware import SlowAPIMiddleware
 from speedfog_racing import __version__
 from speedfog_racing.api import api_router
 from speedfog_racing.config import settings
-from speedfog_racing.database import async_session_maker, get_db_context, init_db
+from speedfog_racing.database import async_session_maker, init_db
 from speedfog_racing.rate_limit import limiter
-from speedfog_racing.services import scan_pool
 from speedfog_racing.services.i18n import load_translations
 from speedfog_racing.services.inactivity_monitor import inactivity_monitor_loop
 from speedfog_racing.services.twitch_live import twitch_live_poll_loop
@@ -59,17 +58,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Loaded %d translation locale(s)", len(translations))
     except Exception as e:
         logger.warning(f"i18n loading failed: {e}")
-
-    # Scan all seed pools
-    try:
-        pool_base = Path(settings.seeds_pool_dir)
-        async with get_db_context() as db:
-            for subdir in sorted(pool_base.iterdir()):
-                if subdir.is_dir() and (subdir / "config.toml").exists():
-                    added = await scan_pool(db, subdir.name)
-                    logger.info(f"Pool '{subdir.name}' scanned: {added} new seeds added")
-    except Exception as e:
-        logger.warning(f"Seed pool scan failed: {e}")
 
     # Start inactivity monitor
     monitor_task = asyncio.create_task(inactivity_monitor_loop(async_session_maker))

@@ -5,8 +5,8 @@ End-to-end flow from seed generation to player download, covering batch generati
 ## Overview
 
 ```
-generate_pool.py        Server startup           Player download
-(batch, offline)        (scan_pool)              (on-demand)
+generate_pool.py        speedfog-scan-seeds      Player download
+(batch, offline)        (CLI or admin API)       (on-demand)
       │                       │                        │
       ▼                       ▼                        ▼
   speedfog CLI           Read seed_*.zip          Copy base zip
@@ -73,7 +73,7 @@ Pool configs live at `tools/pools/<pool>.toml`. Each TOML file contains:
 
 ### Pool Scanning (`scan_pool()`)
 
-Called during server startup (lifespan). For each pool directory configured in `SEEDS_POOL_DIR`:
+Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For each pool directory configured in `SEEDS_POOL_DIR`:
 
 1. Walk the pool directory for `seed_*.zip` files.
 2. For each zip, extract `graph.json` (root-level or `*/graph.json`).
