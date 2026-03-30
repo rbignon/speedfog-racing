@@ -14,8 +14,8 @@ cd "$REPO_DIR/web"
 rm -rf build/
 npm run build
 
-if [ ! -f build/index.html ]; then
-    echo "==> ERROR: Build failed (build/index.html not found)"
+if [ ! -f build/200.html ]; then
+    echo "==> ERROR: Build failed (build/200.html not found)"
     exit 1
 fi
 

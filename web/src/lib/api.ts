@@ -153,6 +153,7 @@ export interface ApiError {
 // =============================================================================
 
 const TOKEN_KEY = "speedfog_token";
+const USER_KEY = "speedfog_user";
 
 export function getStoredToken(): string | null {
   if (typeof localStorage === "undefined") return null;
@@ -167,6 +168,33 @@ export function setStoredToken(token: string): void {
 export function clearStoredToken(): void {
   if (typeof localStorage === "undefined") return;
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+export function getStoredUser(): AuthUser | null {
+  if (typeof localStorage === "undefined") return null;
+  const raw = localStorage.getItem(USER_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed ||
+      typeof parsed.id !== "string" ||
+      typeof parsed.twitch_username !== "string"
+    ) {
+      localStorage.removeItem(USER_KEY);
+      return null;
+    }
+    return parsed as AuthUser;
+  } catch {
+    localStorage.removeItem(USER_KEY);
+    return null;
+  }
+}
+
+export function setStoredUser(user: AuthUser): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
 // =============================================================================
@@ -250,20 +278,16 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   const token = getStoredToken();
   if (!token) return null;
 
-  try {
-    const response = await fetch(`${API_BASE}/auth/me`, {
-      headers: getAuthHeaders(),
-    });
+  const response = await fetch(`${API_BASE}/auth/me`, {
+    headers: getAuthHeaders(),
+  });
 
-    if (response.status === 401) {
-      clearStoredToken();
-      return null;
-    }
-
-    return await handleResponse<AuthUser>(response);
-  } catch {
+  if (response.status === 401) {
+    clearStoredToken();
     return null;
   }
+
+  return await handleResponse<AuthUser>(response);
 }
 
 /**
@@ -285,10 +309,10 @@ export async function exchangeAuthCode(code: string): Promise<string> {
  * Redirects to /auth/callback after successful authentication.
  */
 export function getTwitchLoginUrl(): string {
+  if (typeof window === "undefined") return "#";
   const callbackUrl = `${window.location.origin}/auth/callback`;
-  const lang =
-    typeof navigator !== "undefined" ? navigator.language?.split("-")[0] : "en";
-  return `${API_BASE}/auth/twitch?redirect_url=${encodeURIComponent(callbackUrl)}&locale=${encodeURIComponent(lang || "en")}`;
+  const lang = navigator.language?.split("-")[0] || "en";
+  return `${API_BASE}/auth/twitch?redirect_url=${encodeURIComponent(callbackUrl)}&locale=${encodeURIComponent(lang)}`;
 }
 
 /**

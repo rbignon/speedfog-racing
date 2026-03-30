@@ -85,9 +85,7 @@
 						</svg>
 					</a>
 					<a href="/help" class="nav-icon" aria-label="Help">?</a>
-					{#if auth.loading}
-						<span class="loading">Loading...</span>
-					{:else if auth.isLoggedIn}
+					{#if auth.isLoggedIn}
 						<NavUserSearch />
 						{#if auth.isAdmin}
 							<a href="/admin" class="btn btn-secondary">Admin</a>
@@ -347,11 +345,6 @@
 		margin: 0;
 		border: none;
 		border-top: 1px solid var(--color-border);
-	}
-
-	.loading {
-		color: var(--color-text-disabled);
-		font-style: italic;
 	}
 
 	.content {

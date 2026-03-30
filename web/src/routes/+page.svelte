@@ -104,9 +104,7 @@
 </div>
 
 <main class="public-section">
-		{#if loadingRaces}
-			<p class="loading">Loading races...</p>
-		{:else}
+		{#if !loadingRaces}
 			{#if liveRaces.length > 0}
 				<section class="public-races">
 					<h2><LiveIndicator dotOnly /> Live Races</h2>
@@ -148,9 +146,7 @@
 			{/if}
 		{/if}
 
-		{#if loadingRecent}
-			<p class="loading">Loading recent results...</p>
-		{:else if recentRaces.length > 0}
+		{#if !loadingRecent && recentRaces.length > 0}
 			<section class="public-races">
 				<h2>Recent Results</h2>
 				<div class="race-grid">
@@ -290,12 +286,6 @@
 		display: grid;
 		grid-template-columns: repeat(2, 1fr);
 		gap: 1rem;
-	}
-
-	/* States */
-	.loading {
-		color: var(--color-text-disabled);
-		font-style: italic;
 	}
 
 	.empty-hero {
