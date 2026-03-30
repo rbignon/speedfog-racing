@@ -133,6 +133,10 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
     if race is None:
         return
 
+    # Private races don't affect ELO (not verifiable by the community)
+    if not race.is_public:
+        return
+
     players: list[dict[str, Any]] = []
     for participant in race.participants:
         if participant.status == ParticipantStatus.FINISHED:
