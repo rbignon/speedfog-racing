@@ -7,6 +7,7 @@
 # Usage:
 #   deploy/deploy-seeds.sh --count 10 --game-dir "/path/to/ELDEN RING/Game"
 #   deploy/deploy-seeds.sh --pool standard --count 5 --game-dir "/path/to/game"
+#   deploy/deploy-seeds.sh --pool sprint --pool standard --count 5 --game-dir "/path/to/game"
 #   deploy/deploy-seeds.sh --upload-only
 #   deploy/deploy-seeds.sh --upload-only --pool sprint
 #   deploy/deploy-seeds.sh --discard --pool standard
@@ -18,7 +19,7 @@ TOOLS_DIR="$REPO_DIR/tools"
 OUTPUT_DIR="$TOOLS_DIR/output"
 
 # Defaults
-POOL=""
+POOLS_ARG=()
 COUNT=""
 GAME_DIR=""
 SEEDS_DIR="${SEEDS_DIR:-/data/SpeedFog/racing/seeds}"
@@ -37,7 +38,7 @@ Usage: deploy/deploy-seeds.sh [OPTIONS]
 Generate seed pools and upload them to the VPS.
 
 Options:
-  --pool POOL       Pool name (sprint, standard, hardcore). Default: all pools.
+  --pool POOL       Pool name (repeatable, e.g. --pool sprint --pool standard). Default: all pools.
   --count N         Number of seeds per pool (required unless --upload-only)
   --game-dir PATH   Path to Elden Ring Game directory (required unless --upload-only)
   --seeds-dir PATH  Remote seed directory on VPS (default: $SEEDS_DIR or /data/SpeedFog/racing/seeds)
@@ -58,8 +59,9 @@ Examples:
   # Generate 10 seeds per pool and upload
   deploy/deploy-seeds.sh --count 10 --game-dir "/mnt/games/ELDEN RING/Game"
 
-  # Generate 5 seeds for standard pool only
+  # Generate 5 seeds for specific pools
   deploy/deploy-seeds.sh --pool standard --count 5 --game-dir "/path/to/game"
+  deploy/deploy-seeds.sh --pool sprint --pool standard --count 5 --game-dir "/path/to/game"
 
   # Just upload what's already in tools/output/
   deploy/deploy-seeds.sh --upload-only
@@ -73,7 +75,7 @@ EOF
 # Parse args
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --pool) POOL="$2"; shift 2 ;;
+        --pool) POOLS_ARG+=("$2"); shift 2 ;;
         --count) COUNT="$2"; shift 2 ;;
         --game-dir) GAME_DIR="$2"; shift 2 ;;
         --seeds-dir) SEEDS_DIR="$2"; shift 2 ;;
@@ -101,21 +103,22 @@ if [[ "$UPLOAD_ONLY" == false ]]; then
     fi
 fi
 
-# Validate pool name (prevent SQL injection, same as cleanup-seeds.sh)
-if [[ -n "$POOL" ]] && [[ ! "$POOL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-    echo "Error: invalid pool name '$POOL' (only alphanumeric, underscore, hyphen allowed)"
-    exit 1
-fi
-
-# Reject _-prefixed names (templates, not pools)
-if [[ -n "$POOL" ]] && [[ "$POOL" == _* ]]; then
-    echo "Error: '$POOL' is a template, not a pool (names starting with _ are excluded)"
-    exit 1
-fi
+# Validate pool names (prevent SQL injection, same as cleanup-seeds.sh)
+for p in "${POOLS_ARG[@]}"; do
+    if [[ ! "$p" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "Error: invalid pool name '$p' (only alphanumeric, underscore, hyphen allowed)"
+        exit 1
+    fi
+    # Reject _-prefixed names (templates, not pools)
+    if [[ "$p" == _* ]]; then
+        echo "Error: '$p' is a template, not a pool (names starting with _ are excluded)"
+        exit 1
+    fi
+done
 
 # Determine pools to process
-if [[ -n "$POOL" ]]; then
-    POOLS=("$POOL")
+if [[ ${#POOLS_ARG[@]} -gt 0 ]]; then
+    POOLS=("${POOLS_ARG[@]}")
 else
     # Discover from pool configs (skip _base.toml and other _-prefixed templates)
     POOLS=()
