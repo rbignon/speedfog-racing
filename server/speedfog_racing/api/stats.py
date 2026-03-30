@@ -128,11 +128,11 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
             )
         )
 
-    # Community stats
+    # Community stats (public races only)
+    public_finished = (Race.status == RaceStatus.FINISHED) & (Race.is_public == True)  # noqa: E712
+
     total_races = (
-        await db.execute(
-            select(func.count()).select_from(Race).where(Race.status == RaceStatus.FINISHED)
-        )
+        await db.execute(select(func.count()).select_from(Race).where(public_finished))
     ).scalar() or 0
 
     cutoff = datetime.now(UTC) - timedelta(days=30)
@@ -142,7 +142,7 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
             .select_from(Participant)
             .join(Race, Participant.race_id == Race.id)
             .where(
-                Race.status == RaceStatus.FINISHED,
+                public_finished,
                 Race.started_at >= cutoff,
             )
         )
@@ -157,13 +157,17 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
         await db.execute(
             select(func.sum(Participant.death_count))
             .select_from(Participant)
-            .where(participated_filter)
+            .join(Race, Participant.race_id == Race.id)
+            .where(participated_filter, public_finished)
         )
     ).scalar() or 0
 
     total_igt_ms = (
         await db.execute(
-            select(func.sum(Participant.igt_ms)).select_from(Participant).where(participated_filter)
+            select(func.sum(Participant.igt_ms))
+            .select_from(Participant)
+            .join(Race, Participant.race_id == Race.id)
+            .where(participated_filter, public_finished)
         )
     ).scalar() or 0
 
