@@ -284,7 +284,7 @@ ssh "$SERVER" bash -s "${POOLS[@]}" <<'ENDSSH'
     for pool in "$@"; do
         pool_args="$pool_args --pool $pool"
     done
-    sudo -u speedfog uv run speedfog-scan-seeds $pool_args
+    sudo -H -u speedfog .venv/bin/speedfog-scan-seeds $pool_args
 ENDSSH
 
 if [[ ${#FAILED_POOLS[@]} -gt 0 ]]; then
