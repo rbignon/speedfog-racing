@@ -4,6 +4,8 @@ import pytest
 
 from speedfog_racing.services.stats_service import (
     DIFFICULTY_INJECTION,
+    K_FACTOR,
+    K_FACTOR_PROVISIONAL,
     REFERENCE_ELO,
     apply_difficulty_bonus,
     apply_field_strength_weight,
@@ -147,8 +149,10 @@ class TestProvisionalConfidence:
         delta_full = compute_elo_deltas(players_full)
         # Established player gets less delta from partially provisional opponent
         assert 0 < delta_half["a"] < delta_full["a"]
-        # Provisional player gets full delta regardless
-        assert delta_half["b"] == pytest.approx(delta_full["b"])
+        # Provisional player uses higher K factor, so loses more than established
+        assert delta_half["b"] < delta_full["b"]
+        k_ratio = K_FACTOR_PROVISIONAL / K_FACTOR
+        assert delta_half["b"] == pytest.approx(delta_full["b"] * k_ratio)
 
     def test_asymmetric_confidence(self):
         """Provisional player gets full delta, established gets reduced delta."""
@@ -184,6 +188,67 @@ class TestProvisionalConfidence:
         # Provisionals still get deltas (bootstrapping)
         assert delta_mixed["c"] != 0.0
         assert delta_mixed["d"] != 0.0
+
+
+class TestAdaptiveK:
+    """Test adaptive K factor: provisional players move faster."""
+
+    def test_provisional_uses_higher_k(self):
+        """Provisional player (< 10 races) gets K=48 instead of K=32."""
+        players_prov = [
+            {"user_id": "a", "elo": 1500.0, "igt_ms": 2_000_000, "finished": True, "elo_races": 3},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 3_000_000, "finished": True, "elo_races": 3},
+        ]
+        players_est = [
+            {"user_id": "a", "elo": 1500.0, "igt_ms": 2_000_000, "finished": True, "elo_races": 10},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 3_000_000, "finished": True, "elo_races": 10},
+        ]
+        delta_prov = compute_elo_deltas(players_prov)
+        delta_est = compute_elo_deltas(players_est)
+        # Provisional players move more than established
+        assert abs(delta_prov["a"]) > abs(delta_est["a"])
+        assert abs(delta_prov["a"]) == pytest.approx(
+            abs(delta_est["a"]) * K_FACTOR_PROVISIONAL / K_FACTOR
+        )
+
+    def test_established_uses_standard_k(self):
+        """Established player (>= 10 races) uses K=32."""
+        players = [
+            {"user_id": "a", "elo": 1500.0, "igt_ms": 2_000_000, "finished": True, "elo_races": 10},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 3_000_000, "finished": True, "elo_races": 10},
+        ]
+        # Without elo_races, defaults to PROVISIONAL_THRESHOLD (= established)
+        players_default = [
+            {"user_id": "a", "elo": 1500.0, "igt_ms": 2_000_000, "finished": True},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 3_000_000, "finished": True},
+        ]
+        deltas = compute_elo_deltas(players)
+        deltas_default = compute_elo_deltas(players_default)
+        assert deltas["a"] == pytest.approx(deltas_default["a"])
+
+    def test_mixed_k_provisional_vs_established(self):
+        """Provisional player uses K=48, established player uses K=32 in same race."""
+        players = [
+            {
+                "user_id": "prov",
+                "elo": 1500.0,
+                "igt_ms": 2_000_000,
+                "finished": True,
+                "elo_races": 2,
+            },
+            {
+                "user_id": "est",
+                "elo": 1500.0,
+                "igt_ms": 3_000_000,
+                "finished": True,
+                "elo_races": 15,
+            },
+        ]
+        deltas = compute_elo_deltas(players)
+        # Both gain/lose, but provisional moves more per unit of actual-expected
+        # Note: established player's delta is also affected by confidence weighting
+        assert deltas["prov"] > 0
+        assert deltas["est"] < 0
 
 
 class TestDifficultyBonus:

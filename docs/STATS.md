@@ -12,7 +12,8 @@ Pairwise ELO with margin-of-victory scoring. After each finished race, every pai
 
 **Constants:**
 
-- `K_FACTOR = 32`
+- `K_FACTOR = 32` (established players, >= 10 rated races)
+- `K_FACTOR_PROVISIONAL = 48` (provisional players, < 10 rated races)
 - `STARTING_ELO = 1500.0`
 - Minimum 3 rated races to appear on leaderboard
 
@@ -27,7 +28,7 @@ For each pair (A, B):
    - Both finished: `0.5 +/- 0.5 * margin`, where `margin = min(|igt_A - igt_B| / ref_time, 1.0)` and `ref_time = median(finisher_igts) * 0.3`
    - One finished, one abandoned: `(1.0, 0.0)`
    - Both abandoned: `(0.5, 0.5)` (draw)
-3. Delta: `K_FACTOR * (actual - expected)`, weighted and normalized per player (see below)
+3. Delta: `K * (actual - expected)`, weighted and normalized per player (see below). K is 48 for provisional players (< 10 races) and 32 for established players, so new players' ratings converge faster.
 
 **Provisional confidence (`PROVISIONAL_THRESHOLD = 10`):**
 

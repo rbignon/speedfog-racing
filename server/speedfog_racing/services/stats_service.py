@@ -26,6 +26,7 @@ from speedfog_racing.models import (
 logger = logging.getLogger(__name__)
 
 K_FACTOR = 32
+K_FACTOR_PROVISIONAL = 48  # Higher K for players still calibrating
 DIFFICULTY_INJECTION = 5.0  # Max ELO bonus/penalty per race from seed difficulty
 REFERENCE_ELO = 1500.0  # Baseline for field strength weighting
 STARTING_ELO = 1500.0
@@ -42,7 +43,7 @@ def compute_elo_deltas(
     """Compute ELO rating changes for all players in a race.
 
     Each player dict must have: user_id, elo, igt_ms, finished (bool).
-    Optional: elo_races (int) for provisional confidence weighting.
+    Optional: elo_races (int) for provisional confidence weighting and adaptive K factor.
     Players with finished=False are treated as abandoned (S=0 against finishers).
     Returns a dict mapping user_id to delta (float).
     """
@@ -75,8 +76,10 @@ def compute_elo_deltas(
             b_is_established = b.get("elo_races", PROVISIONAL_THRESHOLD) >= PROVISIONAL_THRESHOLD
             weight_a = conf_b if a_is_established else 1.0
             weight_b = conf_a if b_is_established else 1.0
-            deltas[a["user_id"]] += K_FACTOR * (sa - ea) * weight_a
-            deltas[b["user_id"]] += K_FACTOR * (sb - eb) * weight_b
+            k_a = K_FACTOR_PROVISIONAL if not a_is_established else K_FACTOR
+            k_b = K_FACTOR_PROVISIONAL if not b_is_established else K_FACTOR
+            deltas[a["user_id"]] += k_a * (sa - ea) * weight_a
+            deltas[b["user_id"]] += k_b * (sb - eb) * weight_b
 
     # Normalize: established players by sum of opponent confidences
     # (prevents dilution from provisionals), others by n-1
