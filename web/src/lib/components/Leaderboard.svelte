@@ -302,8 +302,8 @@
 		font-style: italic;
 	}
 
-	.abandoned-label {
-		color: var(--color-text-disabled);
+	.zone.abandoned-label {
+		color: var(--color-text-secondary);
 	}
 
 	.name-row {
