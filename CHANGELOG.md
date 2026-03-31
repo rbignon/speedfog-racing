@@ -2,6 +2,21 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.4] - 2026-03-31
+
+### Stats
+
+- ELO fairness: rating changes against provisional players are now weighted by their confidence, and race winners can no longer lose ELO
+
+### Seeds
+
+- Fix: Colosseum fogs no longer incorrectly grouped with Godfrey/Gideon fogs in Leyndell
+
+### In-game
+
+- "Heavy door opened" text popup no longer appears when opening doors in catacombs
+- Fix: "Repeat warp" grace menu works correctly again for Maliketh
+
 ## [1.5.3] - 2026-03-30
 
 ### Stats
