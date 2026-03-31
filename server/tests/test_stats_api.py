@@ -228,6 +228,152 @@ class TestUpdateEloRatings:
             assert finished_user.elo_races == 0
             assert abandoned_user.elo_races == 0
 
+    async def test_difficulty_injection_uses_race_seeds_not_consumed_status(self, async_session):
+        """Difficulty average must include DISCARDED seeds from past races.
+
+        Pool rotation marks consumed seeds as DISCARDED. If the average only
+        considers CONSUMED seeds, it excludes most historical data and skews
+        the difficulty factor. This test uses asymmetric difficulty scores
+        so it would fail if the query filtered by SeedStatus.CONSUMED only.
+
+        Setup:
+        - Past race seed (DISCARDED, difficulty=50)
+        - Current race seed (CONSUMED, difficulty=150)
+        - Correct global avg = (50 + 150) / 2 = 100
+        - Buggy avg (CONSUMED only) = 150
+
+        For the current race (difficulty=150):
+        - Correct factor: 150/100 = 1.5, bonus = 5.0 * 0.5 = +2.5 per player
+        - Buggy factor: 150/150 = 1.0, bonus = 0
+        """
+        async with async_session() as db:
+            org = User(
+                twitch_id="diff_org",
+                twitch_username="diff_org",
+                api_token="diff_org_t",
+                role=UserRole.ORGANIZER,
+            )
+            users = [
+                User(
+                    twitch_id=f"diff_u{i}",
+                    twitch_username=f"diff_p{i}",
+                    api_token=f"diff_tok{i}",
+                    role=UserRole.USER,
+                )
+                for i in range(4)
+            ]
+            db.add_all([org, *users])
+            await db.flush()
+
+            # Past race seed: DISCARDED (pool was rotated), easy seed
+            seed_past = Seed(
+                seed_number="past1",
+                pool_name="standard",
+                graph_json={"nodes": {}, "total_layers": 2},
+                total_layers=2,
+                folder_path="/test/past1",
+                status=SeedStatus.DISCARDED,
+                difficulty_score=50.0,
+            )
+            # Current race seed: CONSUMED, hard seed
+            seed_current = Seed(
+                seed_number="curr1",
+                pool_name="standard",
+                graph_json={"nodes": {}, "total_layers": 5},
+                total_layers=5,
+                folder_path="/test/curr1",
+                status=SeedStatus.CONSUMED,
+                difficulty_score=150.0,
+            )
+            db.add_all([seed_past, seed_current])
+            await db.flush()
+
+            # Past finished race with the DISCARDED seed
+            race_past = Race(
+                name="Past Race",
+                organizer_id=org.id,
+                seed_id=seed_past.id,
+                status=RaceStatus.FINISHED,
+                is_public=True,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race_past)
+            await db.flush()
+            db.add_all(
+                [
+                    Participant(
+                        race_id=race_past.id,
+                        user_id=users[0].id,
+                        mod_token="dp0",
+                        status=ParticipantStatus.FINISHED,
+                        igt_ms=2_000_000,
+                    ),
+                    Participant(
+                        race_id=race_past.id,
+                        user_id=users[1].id,
+                        mod_token="dp1",
+                        status=ParticipantStatus.FINISHED,
+                        igt_ms=3_000_000,
+                    ),
+                ]
+            )
+            await db.commit()
+            past_id = race_past.id
+
+        async with async_session() as db:
+            await update_elo_ratings(past_id, db)
+
+        # Create current race with the harder seed
+        async with async_session() as db:
+            race_current = Race(
+                name="Current Race",
+                organizer_id=org.id,
+                seed_id=seed_current.id,
+                status=RaceStatus.FINISHED,
+                is_public=True,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race_current)
+            await db.flush()
+            db.add_all(
+                [
+                    Participant(
+                        race_id=race_current.id,
+                        user_id=users[2].id,
+                        mod_token="dc0",
+                        status=ParticipantStatus.FINISHED,
+                        igt_ms=2_000_000,
+                    ),
+                    Participant(
+                        race_id=race_current.id,
+                        user_id=users[3].id,
+                        mod_token="dc1",
+                        status=ParticipantStatus.FINISHED,
+                        igt_ms=3_000_000,
+                    ),
+                ]
+            )
+            await db.commit()
+            current_id = race_current.id
+
+        async with async_session() as db:
+            await update_elo_ratings(current_id, db)
+
+        # The current race (difficulty=150) should get a positive bonus
+        # because 150 > global avg of 100, giving factor=1.5.
+        # Both players should receive bonus = 5.0 * (1.5 - 1.0) = +2.5
+        async with async_session() as db:
+            current_entries = (
+                (await db.execute(select(EloHistory).where(EloHistory.race_id == current_id)))
+                .scalars()
+                .all()
+            )
+            current_sum = sum(e.delta for e in current_entries)
+            # Sum of deltas must be positive (difficulty bonus injected).
+            # If the query only looked at CONSUMED seeds, avg=150,
+            # factor=1.0, bonus=0, and sum would be ~0 (zero-sum pairwise).
+            assert current_sum > 2.0
+
 
 @pytest.fixture
 async def three_races_with_zone_history(async_session):

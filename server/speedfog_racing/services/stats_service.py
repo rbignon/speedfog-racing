@@ -19,7 +19,6 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
     Seed,
-    SeedStatus,
     User,
 )
 
@@ -150,8 +149,19 @@ def _actual_scores(a: dict[str, Any], b: dict[str, Any], ref_time: float) -> tup
         return 0.5, 0.5
 
 
-async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
-    """Compute and persist ELO changes for a finished race. Idempotent."""
+async def update_elo_ratings(
+    race_id: Any,
+    db: AsyncSession,
+    *,
+    global_avg_difficulty: float | None = None,
+) -> None:
+    """Compute and persist ELO changes for a finished race. Idempotent.
+
+    Args:
+        global_avg_difficulty: Pre-computed global average seed difficulty.
+            When provided (e.g. during full recalculation), skips the DB
+            query so that all races use the same stable baseline.
+    """
     existing = await db.execute(select(EloHistory.id).where(EloHistory.race_id == race_id).limit(1))
     if existing.scalar_one_or_none() is not None:
         return
@@ -206,17 +216,41 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
     player_elos = {p["user_id"]: p["elo"] for p in players}
     deltas = apply_field_strength_weight(deltas, player_elos)
 
+    # --- Zero-sum enforcement ---
+    # The asymmetric confidence weighting (established players shielded from
+    # provisionals) and adaptive K factor create a systematic leak: when
+    # established players beat provisionals, less positive ELO is awarded
+    # than negative ELO is removed. Redistribute the excess proportionally
+    # to each player's absolute delta so that players with zero delta
+    # (fully shielded) stay unaffected.
+    total = sum(deltas.values())
+    abs_total = sum(abs(d) for d in deltas.values())
+    if abs_total > 0 and abs(total) > 1e-10:
+        for uid in deltas:
+            deltas[uid] -= total * abs(deltas[uid]) / abs_total
+
     # --- Difficulty injection ---
-    # Average only over seeds consumed by finished races (excludes training
-    # pools which inflate the global average but never participate in ELO).
+    # Average over seeds actually used in finished public races. We join
+    # through Race.seed_id rather than filtering by SeedStatus because
+    # pool rotation marks consumed seeds as DISCARDED.
     seed = await db.get(Seed, race.seed_id) if race.seed_id else None
     if seed and seed.difficulty_score > 0:
-        avg_result = await db.execute(
-            select(func.avg(Seed.difficulty_score)).where(
-                Seed.difficulty_score > 0, Seed.status == SeedStatus.CONSUMED
+        if global_avg_difficulty is not None:
+            global_avg = global_avg_difficulty
+        else:
+            avg_result = await db.execute(
+                select(func.avg(Seed.difficulty_score)).where(
+                    Seed.difficulty_score > 0,
+                    Seed.id.in_(
+                        select(Race.seed_id).where(
+                            Race.is_public.is_(True),
+                            Race.status == RaceStatus.FINISHED,
+                            Race.seed_id.is_not(None),
+                        )
+                    ),
+                )
             )
-        )
-        global_avg = avg_result.scalar() or seed.difficulty_score
+            global_avg = avg_result.scalar() or seed.difficulty_score
         difficulty_factor = seed.difficulty_score / global_avg
         deltas = apply_difficulty_bonus(deltas, difficulty_factor)
 
@@ -659,8 +693,25 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
         .all()
     )
 
+    # Pre-compute global average seed difficulty across all finished public
+    # races so every replayed race uses the same stable baseline, avoiding
+    # temporal distortion from an evolving rolling average.
+    avg_result = await db.execute(
+        select(func.avg(Seed.difficulty_score)).where(
+            Seed.difficulty_score > 0,
+            Seed.id.in_(
+                select(Race.seed_id).where(
+                    Race.is_public.is_(True),
+                    Race.status == RaceStatus.FINISHED,
+                    Race.seed_id.is_not(None),
+                )
+            ),
+        )
+    )
+    global_avg_diff = avg_result.scalar()
+
     for race_id in race_ids:
-        await update_elo_ratings(race_id, db)
+        await update_elo_ratings(race_id, db, global_avg_difficulty=global_avg_diff)
         await update_player_traits(race_id, db)
 
     # After all per-user raw scores are computed, resolve dominant traits
