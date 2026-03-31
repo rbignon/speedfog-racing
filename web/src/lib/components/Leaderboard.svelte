@@ -100,18 +100,20 @@
 							>{index + 1}</span
 						>
 					<div class="info">
-						{#if participant.status === 'playing'}
-							{@const zone = zoneName(participant.current_zone)}
+						{#if participant.status === 'playing' || participant.status === 'abandoned'}
+							{@const zone = participant.status === 'playing' ? zoneName(participant.current_zone) : null}
 							<div class="name-row">
 								<a href="/user/{participant.twitch_username}" class="name name-link" style="color: {color};" onclick={(e) => e.stopPropagation()}>
-									{#if mode === 'running'}
+									{#if mode === 'running' && participant.status === 'playing'}
 										<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
 									{/if}
 									{participant.twitch_display_name || participant.twitch_username}
 								</a>
 								<span class="layer-fraction">{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers ? `/${totalLayers}` : ''}</span>
 							</div>
-							{#if zone}
+							{#if participant.status === 'abandoned'}
+								<span class="zone abandoned-label">Abandoned</span>
+							{:else if zone}
 								<span class="zone" title={zoneNames?.get(participant.current_zone ?? '') ?? ''}>{zone}</span>
 							{/if}
 							<span class="stats">
@@ -128,19 +130,7 @@
 								{participant.twitch_display_name || participant.twitch_username}
 							</a>
 							<span class="stats">
-								{#if mode === 'finished' && participant.status === 'finished'}
-									<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
-									{#if participant.death_count > 0}
-										<span class="death-count">{participant.death_count}</span>
-									{/if}
-								{:else if mode === 'finished' && participant.status === 'abandoned'}
-									<span class="dnf"
-										>DNF (L{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers ? `/${totalLayers}` : ''})</span
-									>
-									{#if participant.death_count > 0}
-										<span class="death-count">{participant.death_count}</span>
-									{/if}
-								{:else if participant.status === 'finished'}
+								{#if participant.status === 'finished'}
 									<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
 									{#if participant.death_count > 0}
 										<span class="death-count">{participant.death_count}</span>
@@ -234,7 +224,6 @@
 		background: var(--color-surface-elevated);
 	}
 
-
 	.participant.abandoned {
 		opacity: 0.5;
 	}
@@ -311,6 +300,10 @@
 	.dnf {
 		color: var(--color-text-disabled);
 		font-style: italic;
+	}
+
+	.abandoned-label {
+		color: var(--color-text-disabled);
 	}
 
 	.name-row {
