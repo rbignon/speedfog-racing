@@ -27,7 +27,20 @@ For each pair (A, B):
    - Both finished: `0.5 +/- 0.5 * margin`, where `margin = min(|igt_A - igt_B| / ref_time, 1.0)` and `ref_time = median(finisher_igts) * 0.3`
    - One finished, one abandoned: `(1.0, 0.0)`
    - Both abandoned: `(0.5, 0.5)` (draw)
-3. Delta: `K_FACTOR * (actual - expected)`, normalized by `/ (n - 1)` to avoid over-rewarding large fields
+3. Delta: `K_FACTOR * (actual - expected)`, weighted and normalized per player (see below)
+
+**Provisional confidence (`PROVISIONAL_THRESHOLD = 10`):**
+
+Players with fewer than 10 rated races have a provisional rating. The confidence of a player's rating is `min(elo_races / 10, 1.0)`.
+
+- **Established players** (>= 10 races): pairwise delta is scaled by the opponent's confidence. Matches against provisional opponents contribute less (or nothing). Normalization divides by the sum of opponent confidences (not n-1), so provisional opponents don't dilute established matchups in large races.
+- **Provisional players** (< 10 races): always receive full pairwise delta regardless of opponent confidence, enabling bootstrapping. Normalization divides by n-1.
+
+This is asymmetric by design: an established player beating two provisionals gets ~0 delta, but the provisionals' ratings still converge based on the race result.
+
+**Winner floor:**
+
+After all adjustments (field strength, difficulty injection), the race winner's delta is clamped to `max(delta, 0)`. The 1st place finisher never loses ELO. This is a second intentional zero-sum break (alongside difficulty injection).
 
 **Seed difficulty scoring:**
 

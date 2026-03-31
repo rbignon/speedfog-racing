@@ -95,6 +95,97 @@ class TestComputeEloDeltas:
         assert abs(deltas["b"]) < 0.01
 
 
+class TestProvisionalConfidence:
+    """Test ELO confidence weighting for provisional players."""
+
+    def test_fully_provisional_opponent_zero_delta(self):
+        """Established player vs fully provisional: no delta for established player."""
+        players = [
+            {"user_id": "a", "elo": 1600.0, "igt_ms": 2_500_000, "finished": True, "elo_races": 10},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 2_600_000, "finished": True, "elo_races": 0},
+        ]
+        deltas = compute_elo_deltas(players)
+        assert deltas["a"] == 0.0
+        # Provisional player still gets full delta (opponent is established)
+        assert deltas["b"] != 0.0
+
+    def test_both_provisional_still_move(self):
+        """Two fully provisional players: both get delta (bootstrapping)."""
+        players = [
+            {"user_id": "a", "elo": 1500.0, "igt_ms": 2_500_000, "finished": True, "elo_races": 0},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 3_000_000, "finished": True, "elo_races": 0},
+        ]
+        deltas = compute_elo_deltas(players)
+        assert deltas["a"] > 0
+        assert deltas["b"] < 0
+
+    def test_established_players_full_confidence(self):
+        """Both established: confidence = 1.0, behaves like classic ELO."""
+        players_with = [
+            {"user_id": "a", "elo": 1800.0, "igt_ms": 2_000_000, "finished": True, "elo_races": 10},
+            {"user_id": "b", "elo": 1200.0, "igt_ms": 3_500_000, "finished": True, "elo_races": 10},
+        ]
+        players_without = [
+            {"user_id": "a", "elo": 1800.0, "igt_ms": 2_000_000, "finished": True},
+            {"user_id": "b", "elo": 1200.0, "igt_ms": 3_500_000, "finished": True},
+        ]
+        deltas_with = compute_elo_deltas(players_with)
+        deltas_without = compute_elo_deltas(players_without)
+        assert deltas_with["a"] == pytest.approx(deltas_without["a"])
+
+    def test_partial_confidence_scales_established_delta(self):
+        """Partially provisional opponent: established player's delta is reduced."""
+        players_half = [
+            {"user_id": "a", "elo": 1500.0, "igt_ms": 2_000_000, "finished": True, "elo_races": 10},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 3_000_000, "finished": True, "elo_races": 5},
+        ]
+        players_full = [
+            {"user_id": "a", "elo": 1500.0, "igt_ms": 2_000_000, "finished": True, "elo_races": 10},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 3_000_000, "finished": True, "elo_races": 10},
+        ]
+        delta_half = compute_elo_deltas(players_half)
+        delta_full = compute_elo_deltas(players_full)
+        # Established player gets less delta from partially provisional opponent
+        assert 0 < delta_half["a"] < delta_full["a"]
+        # Provisional player gets full delta regardless
+        assert delta_half["b"] == pytest.approx(delta_full["b"])
+
+    def test_asymmetric_confidence(self):
+        """Provisional player gets full delta, established gets reduced delta."""
+        players = [
+            {"user_id": "a", "elo": 1500.0, "igt_ms": 2_000_000, "finished": True, "elo_races": 10},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 3_000_000, "finished": True, "elo_races": 0},
+        ]
+        deltas = compute_elo_deltas(players)
+        # a's delta is 0 (opponent is provisional)
+        assert deltas["a"] == 0.0
+        # b's delta is full (opponent is established)
+        assert deltas["b"] < 0
+
+    def test_mixed_race_no_dilution(self):
+        """Established player in mixed race: provisionals don't dilute established matchups."""
+        # 4-player race: 1 established opponent + 2 provisionals
+        players_mixed = [
+            {"user_id": "a", "elo": 1500.0, "igt_ms": 2_000_000, "finished": True, "elo_races": 10},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 3_000_000, "finished": True, "elo_races": 10},
+            {"user_id": "c", "elo": 1500.0, "igt_ms": 2_500_000, "finished": True, "elo_races": 0},
+            {"user_id": "d", "elo": 1500.0, "igt_ms": 3_500_000, "finished": True, "elo_races": 0},
+        ]
+        # Same matchup as a 1v1 between the two established players
+        players_1v1 = [
+            {"user_id": "a", "elo": 1500.0, "igt_ms": 2_000_000, "finished": True, "elo_races": 10},
+            {"user_id": "b", "elo": 1500.0, "igt_ms": 3_000_000, "finished": True, "elo_races": 10},
+        ]
+        delta_mixed = compute_elo_deltas(players_mixed)
+        delta_1v1 = compute_elo_deltas(players_1v1)
+        # Established player's delta should be the same regardless of provisionals
+        assert delta_mixed["a"] == pytest.approx(delta_1v1["a"])
+        assert delta_mixed["b"] == pytest.approx(delta_1v1["b"])
+        # Provisionals still get deltas (bootstrapping)
+        assert delta_mixed["c"] != 0.0
+        assert delta_mixed["d"] != 0.0
+
+
 class TestDifficultyBonus:
     """Test the difficulty injection that breaks zero-sum."""
 

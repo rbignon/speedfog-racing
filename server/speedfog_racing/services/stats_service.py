@@ -29,6 +29,7 @@ K_FACTOR = 32
 DIFFICULTY_INJECTION = 5.0  # Max ELO bonus/penalty per race from seed difficulty
 REFERENCE_ELO = 1500.0  # Baseline for field strength weighting
 STARTING_ELO = 1500.0
+PROVISIONAL_THRESHOLD = 10  # Races needed for full ELO confidence
 MIN_RACES_FOR_DISPLAY = 3
 DOMINANT_PERCENTILE_THRESHOLD = 0.5  # Must be in top 50% on at least one trait
 BOSS_NODE_TYPES = {"boss_arena", "major_boss", "final_boss"}
@@ -41,6 +42,7 @@ def compute_elo_deltas(
     """Compute ELO rating changes for all players in a race.
 
     Each player dict must have: user_id, elo, igt_ms, finished (bool).
+    Optional: elo_races (int) for provisional confidence weighting.
     Players with finished=False are treated as abandoned (S=0 against finishers).
     Returns a dict mapping user_id to delta (float).
     """
@@ -64,11 +66,33 @@ def compute_elo_deltas(
 
             sa, sb = _actual_scores(a, b, ref_time)
 
-            deltas[a["user_id"]] += K_FACTOR * (sa - ea)
-            deltas[b["user_id"]] += K_FACTOR * (sb - eb)
+            # Established players: scale by opponent confidence so that
+            # matches against provisional players count less.
+            # Provisional players: always get full delta (bootstrapping).
+            conf_a = min(a.get("elo_races", PROVISIONAL_THRESHOLD) / PROVISIONAL_THRESHOLD, 1.0)
+            conf_b = min(b.get("elo_races", PROVISIONAL_THRESHOLD) / PROVISIONAL_THRESHOLD, 1.0)
+            a_is_established = a.get("elo_races", PROVISIONAL_THRESHOLD) >= PROVISIONAL_THRESHOLD
+            b_is_established = b.get("elo_races", PROVISIONAL_THRESHOLD) >= PROVISIONAL_THRESHOLD
+            weight_a = conf_b if a_is_established else 1.0
+            weight_b = conf_a if b_is_established else 1.0
+            deltas[a["user_id"]] += K_FACTOR * (sa - ea) * weight_a
+            deltas[b["user_id"]] += K_FACTOR * (sb - eb) * weight_b
 
-    for uid in deltas:
-        deltas[uid] /= n - 1
+    # Normalize: established players by sum of opponent confidences
+    # (prevents dilution from provisionals), others by n-1
+    for p in players:
+        uid = p["user_id"]
+        is_established = p.get("elo_races", PROVISIONAL_THRESHOLD) >= PROVISIONAL_THRESHOLD
+        if is_established:
+            conf_sum = sum(
+                min(other.get("elo_races", PROVISIONAL_THRESHOLD) / PROVISIONAL_THRESHOLD, 1.0)
+                for other in players
+                if other["user_id"] != uid
+            )
+            if conf_sum > 0:
+                deltas[uid] /= max(conf_sum, 1.0)
+        else:
+            deltas[uid] /= n - 1
 
     return deltas
 
@@ -169,7 +193,9 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
         return
 
     for p in players:
-        p["elo"] = users_by_id[p["user_id"]].elo_rating
+        user = users_by_id[p["user_id"]]
+        p["elo"] = user.elo_rating
+        p["elo_races"] = user.elo_races
 
     deltas = compute_elo_deltas(players)
 
@@ -190,6 +216,14 @@ async def update_elo_ratings(race_id: Any, db: AsyncSession) -> None:
         global_avg = avg_result.scalar() or seed.difficulty_score
         difficulty_factor = seed.difficulty_score / global_avg
         deltas = apply_difficulty_bonus(deltas, difficulty_factor)
+
+    # Winner floor: 1st place never loses ELO
+    finishers = [p for p in players if p["finished"]]
+    if finishers:
+        winner = min(finishers, key=lambda p: p["igt_ms"])
+        winner_id = winner["user_id"]
+        if deltas[winner_id] < 0:
+            deltas[winner_id] = 0.0
 
     logger.debug("ELO update for race %s: %d players", race_id, len(players))
 
