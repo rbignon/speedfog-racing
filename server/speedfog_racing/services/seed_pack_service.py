@@ -326,6 +326,7 @@ border_color = "#404040"
 
 [keybindings]
 toggle_ui = "f9"
+toggle_leaderboard = "f10"
 """
 
 
@@ -350,5 +351,7 @@ show_border = false
 border_color = "#404040"
 
 [keybindings]
+toggle_debug = "f3"
 toggle_ui = "f9"
+toggle_leaderboard = "f10"
 """
