@@ -17,6 +17,8 @@ from speedfog_racing.models import (
     Participant,
     ParticipantStatus,
     Race,
+    Seed,
+    SeedStatus,
     TrainingSession,
     User,
     UserRole,
@@ -386,3 +388,89 @@ async def get_global_activity(
     has_more = (offset + limit) < total
 
     return ActivityTimelineResponse(items=paginated, total=total, has_more=has_more)
+
+
+# =============================================================================
+# Reported Seed Management
+# =============================================================================
+
+
+class ReportedSeedResponse(BaseModel):
+    """A reported seed for admin review."""
+
+    id: uuid.UUID
+    seed_number: str
+    pool_name: str
+    difficulty_score: float
+    reported_by: str
+    reported_reason: str | None
+    reported_at: datetime | None
+
+
+class ResolveSeedRequest(BaseModel):
+    """Request to resolve a reported seed."""
+
+    action: str  # "discard" or "restore"
+
+
+@router.get("/reported-seeds", response_model=list[ReportedSeedResponse])
+async def list_reported_seeds(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> list[ReportedSeedResponse]:
+    """List all seeds with REPORTED status. Requires admin role."""
+    result = await db.execute(
+        select(Seed)
+        .where(Seed.status == SeedStatus.REPORTED)
+        .options(selectinload(Seed.reported_by))
+        .order_by(Seed.reported_at.desc())
+    )
+    seeds = result.scalars().all()
+    return [
+        ReportedSeedResponse(
+            id=s.id,
+            seed_number=s.seed_number,
+            pool_name=s.pool_name,
+            difficulty_score=s.difficulty_score,
+            reported_by=s.reported_by.twitch_username if s.reported_by else "unknown",
+            reported_reason=s.reported_reason,
+            reported_at=s.reported_at,
+        )
+        for s in seeds
+    ]
+
+
+@router.post("/seeds/{seed_id}/resolve")
+async def resolve_reported_seed(
+    seed_id: uuid.UUID,
+    request: ResolveSeedRequest,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> dict[str, str]:
+    """Discard or restore a reported seed. Requires admin role."""
+    if request.action not in ("discard", "restore"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="action must be 'discard' or 'restore'",
+        )
+
+    result = await db.execute(select(Seed).where(Seed.id == seed_id))
+    seed = result.scalar_one_or_none()
+    if not seed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seed not found")
+    if seed.status != SeedStatus.REPORTED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seed is not in REPORTED status",
+        )
+
+    if request.action == "discard":
+        seed.status = SeedStatus.DISCARDED
+    else:
+        seed.status = SeedStatus.AVAILABLE
+        seed.reported_by_id = None
+        seed.reported_reason = None
+        seed.reported_at = None
+
+    await db.commit()
+    return {"status": "ok"}

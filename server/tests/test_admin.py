@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base, get_db
@@ -552,3 +553,124 @@ async def test_activity_pagination(test_client, admin_user, activity_data):
         data2 = response2.json()
         assert len(data2["items"]) == 2
         assert data2["has_more"] is False
+
+
+# =============================================================================
+# Reported Seed Management Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_reported_seeds_list(test_client, admin_user, organizer_user, async_session):
+    """Admin can list reported seeds."""
+    async with async_session() as db:
+        db.add(
+            Seed(
+                seed_number="rep001",
+                pool_name="standard",
+                graph_json={"total_layers": 5, "nodes": {}},
+                total_layers=5,
+                folder_path="/test/rep001",
+                status=SeedStatus.REPORTED,
+                reported_by_id=organizer_user.id,
+                reported_reason="broken fog gate",
+                reported_at=datetime.now(UTC),
+            )
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/reported-seeds",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["seed_number"] == "rep001"
+        assert data[0]["reported_reason"] == "broken fog gate"
+        assert data[0]["reported_by"] == "organizer_user"
+
+
+@pytest.mark.asyncio
+async def test_reported_seeds_requires_admin(test_client, regular_user):
+    """Non-admin cannot list reported seeds."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/reported-seeds",
+            headers={"Authorization": f"Bearer {regular_user.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_resolve_seed_discard(test_client, admin_user, organizer_user, async_session):
+    """Admin can discard a reported seed."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="resolve_d",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/resolve_d",
+            status=SeedStatus.REPORTED,
+            reported_by_id=organizer_user.id,
+            reported_at=datetime.now(UTC),
+        )
+        db.add(seed)
+        await db.commit()
+        seed_id = str(seed.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/admin/seeds/{seed_id}/resolve",
+            headers={
+                "Authorization": f"Bearer {admin_user.api_token}",
+                "Content-Type": "application/json",
+            },
+            json={"action": "discard"},
+        )
+        assert response.status_code == 200
+
+    async with async_session() as db:
+        result = await db.execute(select(Seed).where(Seed.seed_number == "resolve_d"))
+        assert result.scalar_one().status == SeedStatus.DISCARDED
+
+
+@pytest.mark.asyncio
+async def test_resolve_seed_restore(test_client, admin_user, organizer_user, async_session):
+    """Admin can restore a reported seed to AVAILABLE."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="resolve_r",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/resolve_r",
+            status=SeedStatus.REPORTED,
+            reported_by_id=organizer_user.id,
+            reported_reason="false alarm",
+            reported_at=datetime.now(UTC),
+        )
+        db.add(seed)
+        await db.commit()
+        seed_id = str(seed.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/admin/seeds/{seed_id}/resolve",
+            headers={
+                "Authorization": f"Bearer {admin_user.api_token}",
+                "Content-Type": "application/json",
+            },
+            json={"action": "restore"},
+        )
+        assert response.status_code == 200
+
+    async with async_session() as db:
+        result = await db.execute(select(Seed).where(Seed.seed_number == "resolve_r"))
+        seed = result.scalar_one()
+        assert seed.status == SeedStatus.AVAILABLE
+        assert seed.reported_by_id is None
+        assert seed.reported_reason is None
+        assert seed.reported_at is None
