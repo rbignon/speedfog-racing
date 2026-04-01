@@ -357,7 +357,7 @@
 										<td class="mono">{seed.seed_number}</td>
 										<td>{formatPoolName(seed.pool_name)}</td>
 										<td>{seed.reported_by}</td>
-										<td class="reason-cell">{seed.reported_reason || '-'}</td>
+										<td class="reason-cell" title={seed.reported_reason || ''}>{seed.reported_reason || '-'}</td>
 										<td class="date-cell">{formatDate(seed.reported_at)}</td>
 										<td class="actions-cell">
 											<button
