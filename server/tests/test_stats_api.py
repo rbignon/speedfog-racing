@@ -1111,3 +1111,208 @@ class TestBossStatsFiltering:
         # These should NOT appear
         assert "Godskin Noble Boss" not in boss_names
         assert "Gideon" not in boss_names
+
+
+class TestAbandonCountsAsBack:
+    """Abandoning a race should count as a backtrack for the last zone/boss."""
+
+    GRAPH_JSON = {
+        "nodes": {
+            "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+            "stormveil_c3d4": {
+                "type": "legacy_dungeon",
+                "display_name": "Stormveil Castle",
+                "layer": 1,
+            },
+            "raya_i9j0": {
+                "type": "legacy_dungeon",
+                "display_name": "Raya Lucaria",
+                "layer": 2,
+            },
+            "godrick_m1n2": {
+                "type": "major_boss",
+                "display_name": "Godrick",
+                "layer": 3,
+            },
+        },
+        "total_layers": 4,
+    }
+
+    async def _make_participant(self, db, *, status, zone_history, igt_ms=1_000_000, suffix="ab"):
+        """Helper: create user + seed + race + participant."""
+        user = User(
+            twitch_id=f"ab_{suffix}",
+            twitch_username=f"ab_{suffix}",
+            api_token=f"abt_{suffix}",
+            role=UserRole.USER,
+        )
+        org = User(
+            twitch_id=f"aborg_{suffix}",
+            twitch_username=f"aborg_{suffix}",
+            api_token=f"aborgt_{suffix}",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, org])
+        await db.flush()
+
+        seed = Seed(
+            seed_number=f"abs_{suffix}",
+            pool_name="standard",
+            graph_json=self.GRAPH_JSON,
+            total_layers=4,
+            folder_path=f"/t/abs_{suffix}",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name=f"Abandon Race {suffix}",
+            organizer_id=org.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            mod_token=f"abmod_{suffix}",
+            status=status,
+            igt_ms=igt_ms,
+            death_count=sum(e.get("deaths", 0) for e in zone_history),
+            zone_history=zone_history,
+        )
+        db.add(participant)
+        await db.commit()
+        return participant
+
+    async def test_zone_abandon_first_visit_counts_as_backtrack(self, async_session):
+        """Abandon on a first-visit zone should add +1 backtrack."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                status=ParticipantStatus.ABANDONED,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 300_000, "deaths": 2},
+                    {"node_id": "raya_i9j0", "igt_ms": 700_000, "deaths": 1},
+                ],
+                suffix="z1",
+            )
+
+        async with async_session() as db:
+            participants = (
+                (
+                    await db.execute(
+                        select(Participant).options(
+                            selectinload(Participant.race).selectinload(Race.seed),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            seeds_by_id = {
+                p.race.seed_id: p.race.seed for p in participants if p.race and p.race.seed
+            }
+            node_display = _resolve_node_display(seeds_by_id)
+            zone_data = _aggregate_zone_stats(
+                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+
+            raya = next((d for n, d in zone_data.items() if "Raya" in n), None)
+            assert raya is not None
+            assert raya["backtrack_count"] == 1
+
+    async def test_zone_abandon_revisit_no_double_count(self, async_session):
+        """Abandon on a revisited zone should NOT add an extra backtrack."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                status=ParticipantStatus.ABANDONED,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 300_000, "deaths": 2},
+                    {"node_id": "raya_i9j0", "igt_ms": 700_000, "deaths": 1},
+                    # Backtrack to stormveil, then abandon there
+                    {"node_id": "stormveil_c3d4", "igt_ms": 1_000_000, "deaths": 0},
+                ],
+                suffix="z2",
+            )
+
+        async with async_session() as db:
+            participants = (
+                (
+                    await db.execute(
+                        select(Participant).options(
+                            selectinload(Participant.race).selectinload(Race.seed),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            seeds_by_id = {
+                p.race.seed_id: p.race.seed for p in participants if p.race and p.race.seed
+            }
+            node_display = _resolve_node_display(seeds_by_id)
+            zone_data = _aggregate_zone_stats(
+                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+
+            stormveil = next((d for n, d in zone_data.items() if "Stormveil" in n), None)
+            assert stormveil is not None
+            # Only 1 backtrack (the revisit), not 2
+            assert stormveil["backtrack_count"] == 1
+
+    async def test_boss_abandon_counts_as_back(self, async_session):
+        """Abandon on a boss (last entry) should set backed_last_visit=True."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                status=ParticipantStatus.ABANDONED,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 300_000, "deaths": 2},
+                    {"node_id": "godrick_m1n2", "igt_ms": 700_000, "deaths": 5},
+                ],
+                suffix="b1",
+            )
+
+        from speedfog_racing.api.stats import get_boss_stats
+
+        async with async_session() as db:
+            result = await get_boss_stats(pool=None, db=db)
+
+        godrick = next((b for b in result.bosses if b.display_name == "Godrick"), None)
+        assert godrick is not None
+        assert godrick.encounters == 1
+        assert godrick.back_ratio == 1.0
+
+    async def test_boss_abandon_not_last_entry_uses_normal_logic(self, async_session):
+        """If abandoned but boss is NOT the last entry, normal backtrack logic applies."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                status=ParticipantStatus.ABANDONED,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "godrick_m1n2", "igt_ms": 300_000, "deaths": 5},
+                    # Moved to a new zone (raya), then abandoned there
+                    {"node_id": "raya_i9j0", "igt_ms": 700_000, "deaths": 1},
+                ],
+                suffix="b2",
+            )
+
+        from speedfog_racing.api.stats import get_boss_stats
+
+        async with async_session() as db:
+            result = await get_boss_stats(pool=None, db=db)
+
+        godrick = next((b for b in result.bosses if b.display_name == "Godrick"), None)
+        assert godrick is not None
+        # raya_i9j0 was NOT visited before godrick, so no backtrack
+        assert godrick.back_ratio == 0.0

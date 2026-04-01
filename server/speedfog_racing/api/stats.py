@@ -275,6 +275,16 @@ def _aggregate_zone_stats(
                 if current_igt > 0 and final_igt > current_igt:
                     zone_times.setdefault(nid, []).append(final_igt - current_igt)
 
+        # Count abandon as backtrack for the participant's last zone, but
+        # only if it was a first visit (revisits already counted above).
+        if participant.status == ParticipantStatus.ABANDONED and history:
+            last_nid = history[-1].get("node_id", "")
+            if last_nid and last_nid in nodes:
+                resolved_type = node_display.get(last_nid, ("", ""))[1]
+                is_first_visit = sum(1 for e in history if e.get("node_id") == last_nid) == 1
+                if resolved_type in node_types and is_first_visit:
+                    zone_backtracks[last_nid] = zone_backtracks.get(last_nid, 0) + 1
+
     # Merge clusters sharing the same display_name. This happens when the same
     # physical location produces different cluster_ids due to asymmetric drop
     # connectivity in the zone graph (different entry points yield different
@@ -487,7 +497,8 @@ async def get_boss_stats(
             last_idx, last_entry = visits[-1]
 
             # back_ratio: did the player backtrack on their last visit?
-            # Check if the node after the last visit was already visited
+            # Check if the node after the last visit was already visited.
+            # An abandon at the boss also counts as a back.
             backed_last_visit = False
             if last_idx + 1 < len(history):
                 next_nid = history[last_idx + 1].get("node_id", "")
@@ -498,6 +509,8 @@ async def get_boss_stats(
                     if prev_nid:
                         visited_before.add(prev_nid)
                 backed_last_visit = next_nid in visited_before
+            elif participant.status == ParticipantStatus.ABANDONED:
+                backed_last_visit = True
 
             # Collect deaths from all visits, excluding 0-death backtracks
             # (those don't represent actual combat)
