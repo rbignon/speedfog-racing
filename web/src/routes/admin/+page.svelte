@@ -9,9 +9,12 @@
 		adminScanPool,
 		fetchAdminActivity,
 		adminRecalculateStats,
+		fetchReportedSeeds,
+		resolveReportedSeed,
 		type AdminUser,
 		type AdminPoolStats,
-		type ActivityTimeline
+		type ActivityTimeline,
+		type ReportedSeed
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
 	import { formatPoolName } from '$lib/utils/format';
@@ -34,6 +37,9 @@
 
 	let recalcLoading = $state(false);
 	let recalcMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
+
+	let reportedSeeds: ReportedSeed[] = $state([]);
+	let reportedLoading = $state(false);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -86,7 +92,7 @@
 			activity = {
 				items: [...activity.items, ...more.items],
 				total: more.total,
-				has_more: more.has_more,
+				has_more: more.has_more
 			};
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load more activity.';
@@ -99,9 +105,34 @@
 		activeTab = tab;
 		if (tab === 'seeds' && !seedStats) {
 			loadSeedStats();
+			loadReportedSeeds();
 		}
 		if (tab === 'activity' && !activity) {
 			loadActivity();
+		}
+	}
+
+	async function loadReportedSeeds() {
+		reportedLoading = true;
+		try {
+			reportedSeeds = await fetchReportedSeeds();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load reported seeds.';
+		} finally {
+			reportedLoading = false;
+		}
+	}
+
+	async function handleResolve(seedId: string, action: 'discard' | 'restore') {
+		actionLoading = { ...actionLoading, [`resolve_${seedId}`]: true };
+		try {
+			await resolveReportedSeed(seedId, action);
+			reportedSeeds = reportedSeeds.filter((s) => s.id !== seedId);
+			await loadSeedStats();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to resolve seed.';
+		} finally {
+			actionLoading = { ...actionLoading, [`resolve_${seedId}`]: false };
 		}
 	}
 
@@ -110,12 +141,12 @@
 		const date = d.toLocaleDateString('en-US', {
 			month: 'short',
 			day: 'numeric',
-			year: 'numeric',
+			year: 'numeric'
 		});
 		const time = d.toLocaleTimeString('en-US', {
 			hour: '2-digit',
 			minute: '2-digit',
-			hour12: false,
+			hour12: false
 		});
 		return `${date} ${time}`;
 	}
@@ -156,7 +187,12 @@
 	}
 
 	async function handleDiscard(poolName: string) {
-		if (!confirm(`Discard all available seeds in "${formatPoolName(poolName)}"? This cannot be undone.`)) return;
+		if (
+			!confirm(
+				`Discard all available seeds in "${formatPoolName(poolName)}"? This cannot be undone.`
+			)
+		)
+			return;
 		actionLoading = { ...actionLoading, [`discard_${poolName}`]: true };
 		try {
 			const result = await adminDiscardPool(poolName);
@@ -192,7 +228,10 @@
 			await adminRecalculateStats();
 			recalcMessage = { type: 'success', text: 'Stats recalculated successfully.' };
 		} catch (e) {
-			recalcMessage = { type: 'error', text: e instanceof Error ? e.message : 'Failed to recalculate stats.' };
+			recalcMessage = {
+				type: 'error',
+				text: e instanceof Error ? e.message : 'Failed to recalculate stats.'
+			};
 		} finally {
 			recalcLoading = false;
 		}
@@ -220,7 +259,11 @@
 		<button class="tab" class:active={activeTab === 'seeds'} onclick={() => switchTab('seeds')}>
 			Seeds
 		</button>
-		<button class="tab" class:active={activeTab === 'activity'} onclick={() => switchTab('activity')}>
+		<button
+			class="tab"
+			class:active={activeTab === 'activity'}
+			onclick={() => switchTab('activity')}
+		>
 			Activity
 		</button>
 	</div>
@@ -285,11 +328,57 @@
 			</div>
 		{/if}
 	{:else if activeTab === 'seeds'}
-		{#if seedsLoading}
+		{#if seedsLoading || reportedLoading}
 			<p class="loading">Loading seed stats...</p>
 		{:else if !seedStats || Object.keys(seedStats.pools).length === 0}
 			<p class="empty">No seed pools found.</p>
 		{:else}
+			{#if reportedSeeds.length > 0}
+				<div class="reported-section">
+					<h2>Reported Seeds</h2>
+					<div class="table-wrapper">
+						<table>
+							<thead>
+								<tr>
+									<th>Seed</th>
+									<th>Pool</th>
+									<th>Reporter</th>
+									<th>Reason</th>
+									<th>Date</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each reportedSeeds as seed (seed.id)}
+									<tr>
+										<td class="mono">{seed.seed_number}</td>
+										<td>{formatPoolName(seed.pool_name)}</td>
+										<td>{seed.reported_by}</td>
+										<td class="reason-cell">{seed.reported_reason || '-'}</td>
+										<td class="date-cell">{formatDate(seed.reported_at)}</td>
+										<td class="actions-cell">
+											<button
+												class="action-btn discard"
+												disabled={actionLoading[`resolve_${seed.id}`]}
+												onclick={() => handleResolve(seed.id, 'discard')}
+											>
+												Discard
+											</button>
+											<button
+												class="action-btn scan"
+												disabled={actionLoading[`resolve_${seed.id}`]}
+												onclick={() => handleResolve(seed.id, 'restore')}
+											>
+												Restore
+											</button>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			{/if}
 			<div class="table-wrapper">
 				<table>
 					<thead>
@@ -297,16 +386,18 @@
 							<th>Pool Name</th>
 							<th class="num-col">Available</th>
 							<th class="num-col">Consumed</th>
+							<th class="num-col">Reported</th>
 							<th class="num-col">Discarded</th>
 							<th>Actions</th>
 						</tr>
 					</thead>
 					<tbody>
-						{#each Object.entries(seedStats.pools).sort(([a], [b]) => a.localeCompare(b)) as [poolName, stats] (poolName)}
+						{#each Object.entries(seedStats.pools).sort( ([a], [b]) => a.localeCompare(b) ) as [poolName, stats] (poolName)}
 							<tr>
 								<td class="pool-name">{formatPoolName(poolName)}</td>
 								<td class="num-cell">{stats.available}</td>
 								<td class="num-cell">{stats.consumed}</td>
+								<td class="num-cell">{stats.reported ?? 0}</td>
 								<td class="num-cell">{stats.discarded}</td>
 								<td class="actions-cell">
 									<button
@@ -332,13 +423,11 @@
 		{/if}
 		<div class="stats-section">
 			<h2>Stats</h2>
-			<p class="stats-description">Recompute cached statistics for all users and participants from raw race data.</p>
+			<p class="stats-description">
+				Recompute cached statistics for all users and participants from raw race data.
+			</p>
 			<div class="stats-actions">
-				<button
-					class="action-btn recalc"
-					disabled={recalcLoading}
-					onclick={handleRecalculateStats}
-				>
+				<button class="action-btn recalc" disabled={recalcLoading} onclick={handleRecalculateStats}>
 					{recalcLoading ? 'Recalculating...' : 'Recalculate Stats'}
 				</button>
 				{#if recalcMessage}
@@ -361,7 +450,9 @@
 									{#if item.user.twitch_avatar_url}
 										<img src={item.user.twitch_avatar_url} alt="" class="activity-avatar" />
 									{/if}
-									<span class="activity-username">{item.user.twitch_display_name || item.user.twitch_username}</span>
+									<span class="activity-username"
+										>{item.user.twitch_display_name || item.user.twitch_username}</span
+									>
 								</a>
 							{/if}
 							<span class="activity-date">{formatFullDate(item.date)}</span>
@@ -370,7 +461,9 @@
 							{#if item.type === 'race_participant' || item.type === 'race_organizer' || item.type === 'race_caster'}
 								<a href="/race/{item.race_id}" class="activity-title">{item.race_name}</a>
 							{:else if item.type === 'training'}
-								<a href="/training/{item.session_id}" class="activity-title">{item.pool_display_name || formatPoolName(item.pool_name)}</a>
+								<a href="/training/{item.session_id}" class="activity-title"
+									>{item.pool_display_name || formatPoolName(item.pool_name)}</a
+								>
 							{/if}
 						</div>
 						<div class="col-context">
@@ -865,6 +958,23 @@
 
 	.recalc-message.error {
 		color: var(--color-danger, #ef4444);
+	}
+
+	.reported-section {
+		margin-bottom: 2rem;
+	}
+
+	.reported-section h2 {
+		color: var(--color-warning, #f59e0b);
+		font-size: var(--font-size-lg);
+		margin-bottom: 0.75rem;
+	}
+
+	.reason-cell {
+		max-width: 250px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	@media (max-width: 640px) {
