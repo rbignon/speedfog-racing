@@ -495,12 +495,24 @@ export async function startRace(raceId: string): Promise<Race> {
 }
 
 /**
- * Re-roll the seed for a SETUP race.
+ * Re-roll the seed for a SETUP race, optionally reporting it as buggy.
  */
-export async function rerollSeed(raceId: string): Promise<RaceDetail> {
+export async function rerollSeed(
+  raceId: string,
+  reportBuggy?: boolean,
+  reportReason?: string,
+): Promise<RaceDetail> {
+  const body =
+    reportBuggy != null && reportBuggy
+      ? { report_buggy: true, report_reason: reportReason || null }
+      : undefined;
   const response = await fetch(`${API_BASE}/races/${raceId}/reroll-seed`, {
     method: "POST",
-    headers: getAuthHeaders(),
+    headers: {
+      ...getAuthHeaders(),
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
   });
   return handleResponse<RaceDetail>(response);
 }
@@ -949,7 +961,7 @@ export async function updateAdminUserRole(
 export interface AdminPoolStats {
   pools: Record<
     string,
-    { available: number; consumed: number; discarded: number }
+    { available: number; consumed: number; discarded: number; reported: number }
   >;
 }
 
@@ -995,6 +1007,44 @@ export async function adminScanPool(
     body: JSON.stringify({ pool_name: poolName }),
   });
   return handleResponse<{ added: number; pool_name: string }>(response);
+}
+
+export interface ReportedSeed {
+  id: string;
+  seed_number: string;
+  pool_name: string;
+  difficulty_score: number;
+  reported_by: string;
+  reported_reason: string | null;
+  reported_at: string;
+}
+
+/**
+ * Fetch reported seeds (admin only).
+ */
+export async function fetchReportedSeeds(): Promise<ReportedSeed[]> {
+  const response = await fetch(`${API_BASE}/admin/reported-seeds`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<ReportedSeed[]>(response);
+}
+
+/**
+ * Resolve a reported seed (admin only).
+ */
+export async function resolveReportedSeed(
+  seedId: string,
+  action: "discard" | "restore",
+): Promise<{ status: string }> {
+  const response = await fetch(`${API_BASE}/admin/seeds/${seedId}/resolve`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action }),
+  });
+  return handleResponse<{ status: string }>(response);
 }
 
 /**
