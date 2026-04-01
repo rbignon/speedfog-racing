@@ -2,7 +2,9 @@
 
 import json
 import tempfile
+import uuid
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -357,3 +359,187 @@ async def test_reroll_after_discard_keeps_seed_discarded(async_db):
     assert result.id == new_seed.id
     assert result.status == SeedStatus.CONSUMED
     assert old_seed.status == SeedStatus.DISCARDED  # NOT AVAILABLE
+
+
+# =============================================================================
+# Reporting Tests
+# =============================================================================
+
+# These tests use isolated fixtures with NullPool to avoid async teardown issues.
+
+
+@pytest.fixture
+async def reporting_engine():
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        echo=False,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+async def reporting_session(reporting_engine):
+    return async_sessionmaker(reporting_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture
+async def reporter_user(reporting_session):
+    async with reporting_session() as db:
+        user = User(
+            twitch_id="reporter1",
+            twitch_username="reporter",
+            api_token="reporter_token",
+            role=UserRole.ORGANIZER,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+def _make_seed(
+    pool_name: str = "standard",
+    status: SeedStatus = SeedStatus.AVAILABLE,
+    seed_number: str | None = None,
+) -> Seed:
+    return Seed(
+        seed_number=seed_number or uuid.uuid4().hex[:8],
+        pool_name=pool_name,
+        graph_json={"nodes": [], "edges": [], "total_layers": 5},
+        total_layers=5,
+        difficulty_score=1.0,
+        folder_path="/tmp/fake",
+        status=status,
+    )
+
+
+@pytest.mark.asyncio
+async def test_reported_seeds_excluded_from_available(reporting_session):
+    """REPORTED seeds must not be returned by get_available_seed."""
+    async with reporting_session() as db:
+        seed = _make_seed(status=SeedStatus.REPORTED)
+        db.add(seed)
+        await db.commit()
+
+    async with reporting_session() as db:
+        result = await get_available_seed(db, pool_name="standard")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_reroll_with_report(reporting_session, reporter_user):
+    """Re-rolling with reporter_id sets old seed to REPORTED with correct fields."""
+    async with reporting_session() as db:
+        old_seed = _make_seed(seed_number="oldseed1", status=SeedStatus.CONSUMED)
+        new_seed = _make_seed(seed_number="newseed1", status=SeedStatus.AVAILABLE)
+        db.add(old_seed)
+        db.add(new_seed)
+        await db.commit()
+        await db.refresh(old_seed)
+        await db.refresh(new_seed)
+
+        race = Race(name="Test Race", organizer_id=reporter_user.id, seed_id=old_seed.id)
+        race.seed = old_seed
+        db.add(race)
+        await db.commit()
+        await db.refresh(race)
+
+        before = datetime.now(UTC)
+        result = await reroll_seed_for_race(
+            db,
+            race,
+            reporter_id=reporter_user.id,
+            report_reason="Bad seed",
+        )
+        after = datetime.now(UTC)
+        await db.commit()
+        await db.refresh(old_seed)
+
+        assert result.seed_number == "newseed1"
+        assert old_seed.status == SeedStatus.REPORTED
+        assert old_seed.reported_by_id == reporter_user.id
+        assert old_seed.reported_reason == "Bad seed"
+        assert old_seed.reported_at is not None
+        reported_at = old_seed.reported_at
+        if reported_at.tzinfo is None:
+            reported_at = reported_at.replace(tzinfo=UTC)
+        assert before <= reported_at <= after
+
+
+@pytest.mark.asyncio
+async def test_reroll_without_report(reporting_session):
+    """Re-rolling without reporter_id sets old seed back to AVAILABLE (backward compat)."""
+    async with reporting_session() as db:
+        organizer = User(twitch_id="org1", twitch_username="organizer", role=UserRole.ORGANIZER)
+        db.add(organizer)
+        old_seed = _make_seed(seed_number="oldseed2", status=SeedStatus.CONSUMED)
+        new_seed = _make_seed(seed_number="newseed2", status=SeedStatus.AVAILABLE)
+        db.add(old_seed)
+        db.add(new_seed)
+        await db.commit()
+        await db.refresh(organizer)
+        await db.refresh(old_seed)
+        await db.refresh(new_seed)
+
+        race = Race(name="Test Race 2", organizer_id=organizer.id, seed_id=old_seed.id)
+        race.seed = old_seed
+        db.add(race)
+        await db.commit()
+        await db.refresh(race)
+
+        result = await reroll_seed_for_race(db, race)
+        await db.commit()
+        await db.refresh(old_seed)
+
+        assert result.seed_number == "newseed2"
+        assert old_seed.status == SeedStatus.AVAILABLE
+        assert old_seed.reported_by_id is None
+        assert old_seed.reported_reason is None
+        assert old_seed.reported_at is None
+
+
+@pytest.mark.asyncio
+async def test_discard_pool_includes_reported(reporting_session):
+    """discard_pool must mark REPORTED seeds as DISCARDED."""
+    async with reporting_session() as db:
+        reported_seed = _make_seed(seed_number="rep1", status=SeedStatus.REPORTED)
+        available_seed = _make_seed(seed_number="avail1", status=SeedStatus.AVAILABLE)
+        db.add(reported_seed)
+        db.add(available_seed)
+        await db.commit()
+        reported_id = reported_seed.id
+        available_id = available_seed.id
+
+    async with reporting_session() as db:
+        count = await discard_pool(db, "standard")
+
+    assert count == 2
+
+    async with reporting_session() as db:
+        result = await db.execute(select(Seed).where(Seed.id.in_([reported_id, available_id])))
+        seeds = {s.id: s for s in result.scalars().all()}
+
+    assert seeds[reported_id].status == SeedStatus.DISCARDED
+    assert seeds[available_id].status == SeedStatus.DISCARDED
+
+
+@pytest.mark.asyncio
+async def test_get_pool_stats_includes_reported(reporting_session):
+    """get_pool_stats must include a 'reported' key in the stats dict."""
+    async with reporting_session() as db:
+        db.add(_make_seed(status=SeedStatus.AVAILABLE))
+        db.add(_make_seed(status=SeedStatus.REPORTED))
+        await db.commit()
+
+    async with reporting_session() as db:
+        stats = await get_pool_stats(db)
+
+    assert "standard" in stats
+    pool = stats["standard"]
+    assert "reported" in pool
+    assert pool["reported"] == 1
+    assert pool["available"] == 1

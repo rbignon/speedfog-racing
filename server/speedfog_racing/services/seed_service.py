@@ -6,6 +6,7 @@ import random
 import tomllib
 import uuid
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -171,10 +172,18 @@ async def assign_seed_to_race(db: AsyncSession, race: Race, pool_name: str = "st
     return seed
 
 
-async def reroll_seed_for_race(db: AsyncSession, race: Race) -> Seed:
+async def reroll_seed_for_race(
+    db: AsyncSession,
+    race: Race,
+    reporter_id: uuid.UUID | None = None,
+    report_reason: str | None = None,
+) -> Seed:
     """Re-roll the seed for a race, releasing the old one.
 
     Picks a new available seed from the same pool, excluding the current seed.
+
+    When ``reporter_id`` is provided, the old seed is marked as REPORTED
+    (instead of AVAILABLE) and the report fields are populated.
 
     Note: ``race.seed`` must be eager-loaded (selectinload) before calling.
 
@@ -193,7 +202,13 @@ async def reroll_seed_for_race(db: AsyncSession, race: Race) -> Seed:
 
     # Release old seed (keep DISCARDED if pool was discarded)
     if old_seed.status != SeedStatus.DISCARDED:
-        old_seed.status = SeedStatus.AVAILABLE
+        if reporter_id is not None:
+            old_seed.status = SeedStatus.REPORTED
+            old_seed.reported_by_id = reporter_id
+            old_seed.reported_reason = report_reason
+            old_seed.reported_at = datetime.now(UTC)
+        else:
+            old_seed.status = SeedStatus.AVAILABLE
 
     # Assign new seed
     new_seed.status = SeedStatus.CONSUMED
@@ -222,7 +237,7 @@ async def get_pool_stats(db: AsyncSession) -> dict[str, dict[str, int]]:
 
     for pool_name, status, count in result:
         if pool_name not in stats:
-            stats[pool_name] = {"available": 0, "consumed": 0, "discarded": 0}
+            stats[pool_name] = {"available": 0, "consumed": 0, "discarded": 0, "reported": 0}
         stats[pool_name][status.value] = count
 
     return stats
@@ -245,7 +260,7 @@ async def discard_pool(db: AsyncSession, pool_name: str) -> int:
         update(Seed)
         .where(
             Seed.pool_name == pool_name,
-            Seed.status.in_([SeedStatus.AVAILABLE, SeedStatus.CONSUMED]),
+            Seed.status.in_([SeedStatus.AVAILABLE, SeedStatus.CONSUMED, SeedStatus.REPORTED]),
         )
         .values(status=SeedStatus.DISCARDED)
     )
