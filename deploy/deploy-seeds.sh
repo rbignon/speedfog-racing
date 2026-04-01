@@ -139,7 +139,7 @@ discard_seeds() {
         cd /tmp
         for pool in "$@"; do
             result=$(sudo -u speedfog psql -t -A speedfog_racing -c \
-                "UPDATE seeds SET status = 'DISCARDED' WHERE status IN ('AVAILABLE', 'CONSUMED') AND pool_name = '$pool'" </dev/null) || {
+                "UPDATE seeds SET status = 'DISCARDED' WHERE status IN ('AVAILABLE', 'CONSUMED', 'REPORTED') AND pool_name = '$pool'" </dev/null) || {
                 echo "  ERROR: psql failed for pool $pool"
                 exit 1
             }

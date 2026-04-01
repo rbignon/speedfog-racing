@@ -69,6 +69,7 @@ class PoolStats(BaseModel):
     available: int
     consumed: int
     discarded: int = 0
+    reported: int = 0
 
 
 class StatsResponse(BaseModel):
