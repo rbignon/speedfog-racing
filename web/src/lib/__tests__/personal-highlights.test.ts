@@ -143,6 +143,37 @@ describe("combat detectors", () => {
     expect(descriptionText(h!)).toContain("1");
   });
 
+  it("does not detect boss_slayer when average deaths rounds to zero", () => {
+    const me = participant("me", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "boss", igt_ms: 100000, deaths: 0 },
+      ],
+    });
+    const p2 = participant("p2", {
+      igt_ms: 400000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "boss", igt_ms: 200000, deaths: 0 },
+      ],
+    });
+    const p3 = participant("p3", {
+      igt_ms: 350000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "boss", igt_ms: 150000, deaths: 0 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      boss: { layer: 1, type: "boss" },
+    });
+    const result = computePersonalHighlights("me", [me, p2, p3], graph);
+    const h = findHighlight(result, "boss_slayer");
+    expect(h).toBeUndefined();
+  });
+
   it("detects boss_wall when player has many more deaths than average on a boss", () => {
     const me = participant("me", {
       igt_ms: 400000,
@@ -262,15 +293,18 @@ describe("combat detectors", () => {
       ],
     });
     const graph = graphJson({
-      a: { layer: 0 },
-      b: { layer: 1 },
-      c: { layer: 2 },
-      d: { layer: 3 },
+      a: { layer: 0, display_name: "Zone A" },
+      b: { layer: 1, display_name: "Zone B" },
+      c: { layer: 2, display_name: "Zone C" },
+      d: { layer: 3, display_name: "Zone D" },
     });
     const result = computePersonalHighlights("me", [me, other], graph);
     const h = findHighlight(result, "clean_streak");
     expect(h).toBeDefined();
     expect(h!.category).toBe("combat");
+    const text = descriptionText(h!);
+    expect(text).toContain("Zone A");
+    expect(text).toContain("Zone D");
   });
 });
 
@@ -542,7 +576,41 @@ describe("competitive detectors", () => {
   });
 
   it("detects lead_lost when player was leading then lost the lead", () => {
-    // me leads at layer 1 (arrives first), p2 leads at layer 2 (arrives first)
+    // me leads at layer 2 (arrives first), p2 overtakes at layer 3
+    const me = participant("me", {
+      igt_ms: 300000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "zone_a", igt_ms: 30000 },
+        { node_id: "zone_b", igt_ms: 60000 },
+        { node_id: "zone_c", igt_ms: 200000 },
+      ],
+    });
+    const p2 = participant("p2", {
+      igt_ms: 250000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "zone_a", igt_ms: 50000 },
+        { node_id: "zone_b", igt_ms: 80000 },
+        { node_id: "zone_c", igt_ms: 100000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      zone_a: { layer: 1 },
+      zone_b: { layer: 2 },
+      zone_c: { layer: 3 },
+    });
+    const result = computePersonalHighlights("me", [me, p2], graph);
+    const h = findHighlight(result, "lead_lost");
+    expect(h).toBeDefined();
+    const text = descriptionText(h!);
+    expect(text).toContain("zone_c");
+    expect(text).toContain("layer 3");
+  });
+
+  it("does not detect lead_lost when lead was only at the starting layer", () => {
+    // me leads at layer 1 but loses at layer 2, not meaningful
     const me = participant("me", {
       igt_ms: 300000,
       zone_history: [
@@ -566,10 +634,7 @@ describe("competitive detectors", () => {
     });
     const result = computePersonalHighlights("me", [me, p2], graph);
     const h = findHighlight(result, "lead_lost");
-    expect(h).toBeDefined();
-    const text = descriptionText(h!);
-    expect(text).toContain("zone_b");
-    expect(text).toContain("layer 2");
+    expect(h).toBeUndefined();
   });
 
   it("detects comeback when player improves rank by 2+ positions", () => {

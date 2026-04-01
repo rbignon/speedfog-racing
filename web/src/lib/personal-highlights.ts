@@ -79,7 +79,7 @@ function detectBossSlayer(
     const othersDeaths = entries.filter((e) => e.playerId !== myId);
     const avgDeaths =
       othersDeaths.reduce((s, e) => s + e.deaths, 0) / othersDeaths.length;
-    if (avgDeaths <= 0) continue;
+    if (avgDeaths < 1) continue;
 
     const ratio = myEntry.deaths / avgDeaths;
     if (ratio >= 0.5) continue;
@@ -300,14 +300,19 @@ function detectCleanStreak(
 
   const score = bestLen * 25 + othersDeaths * 5;
 
+  const firstZoneId = streakZoneIds[0];
+  const lastZoneId = streakZoneIds[streakZoneIds.length - 1];
+
   return {
     type: "clean_streak",
     category: "combat" as PersonalHighlightCategory,
     title: "Clean Streak",
     segments: [
-      tSeg(
-        `You cleared ${bestLen} zones in a row without dying, while others lost ${othersDeaths} lives there`,
-      ),
+      tSeg(`You cleared ${bestLen} zones in a row without dying, from `),
+      zSeg(firstZoneId, nodeInfo),
+      tSeg(" to "),
+      zSeg(lastZoneId, nodeInfo),
+      tSeg(`, while others lost ${othersDeaths} lives there`),
     ],
     playerIds: [myId],
     score,
@@ -847,7 +852,12 @@ function detectLeadLost(
     const myRankNow = curRanks.get(myId);
     const myRankNext = nextRanks.get(myId);
 
-    if (myRankNow === 1 && myRankNext !== undefined && myRankNext > 1) {
+    if (
+      myRankNow === 1 &&
+      myRankNext !== undefined &&
+      myRankNext > 1 &&
+      layers[i] >= 2
+    ) {
       const me = participants.find((p) => p.id === myId);
       const zoneId = me ? firstZoneAtLayer(me, layers[i + 1], nodeInfo) : null;
       const segments: DescriptionSegment[] = zoneId
