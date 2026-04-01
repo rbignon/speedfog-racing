@@ -60,6 +60,7 @@ from speedfog_racing.schemas import (
     RaceDetailResponse,
     RaceListResponse,
     RaceResponse,
+    RerollSeedRequest,
     UpdateRaceRequest,
 )
 from speedfog_racing.services import (
@@ -1215,6 +1216,7 @@ async def start_race(
 @router.post("/{race_id}/reroll-seed", response_model=RaceDetailResponse)
 async def reroll_seed(
     race_id: UUID,
+    body: RerollSeedRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RaceDetailResponse:
@@ -1230,9 +1232,20 @@ async def reroll_seed(
             detail="Can only re-roll seed for setup races",
         )
 
-    logger.info("Seed reroll requested: race=%s, by=%s", race_id, user.twitch_username)
+    report_buggy = body.report_buggy if body else False
+    logger.info(
+        "Seed reroll requested: race=%s, by=%s, report=%s",
+        race_id,
+        user.twitch_username,
+        report_buggy,
+    )
     try:
-        await reroll_seed_for_race(db, race)
+        await reroll_seed_for_race(
+            db,
+            race,
+            reporter_id=user.id if report_buggy else None,
+            report_reason=body.report_reason if body and report_buggy else None,
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

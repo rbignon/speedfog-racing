@@ -1412,6 +1412,109 @@ async def test_reroll_seed_no_available_seeds(test_client, organizer, async_sess
         assert "No available seeds" in response.json()["detail"]
 
 
+@pytest.mark.asyncio
+async def test_reroll_seed_with_report(test_client, organizer, async_session):
+    """Re-rolling with report_buggy=True quarantines the old seed."""
+    async with async_session() as db:
+        seed_a = Seed(
+            seed_number="report_a",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/report_a",
+            status=SeedStatus.CONSUMED,
+        )
+        seed_b = Seed(
+            seed_number="report_b",
+            pool_name="standard",
+            graph_json={"total_layers": 7, "nodes": {}},
+            total_layers=7,
+            folder_path="/test/report_b",
+            status=SeedStatus.AVAILABLE,
+        )
+        db.add_all([seed_a, seed_b])
+        await db.flush()
+
+        race = Race(
+            name="Report Reroll Test",
+            organizer_id=organizer.id,
+            seed_id=seed_a.id,
+            status=RaceStatus.SETUP,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+        seed_a_id = seed_a.id
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reroll-seed",
+            headers={
+                "Authorization": f"Bearer {organizer.api_token}",
+                "Content-Type": "application/json",
+            },
+            json={"report_buggy": True, "report_reason": "fog gate broken"},
+        )
+        assert response.status_code == 200
+
+    async with async_session() as db:
+        from sqlalchemy import select
+
+        result = await db.execute(select(Seed).where(Seed.id == seed_a_id))
+        old_seed = result.scalar_one()
+        assert old_seed.status == SeedStatus.REPORTED
+        assert old_seed.reported_reason == "fog gate broken"
+        assert old_seed.reported_by_id == organizer.id
+
+
+@pytest.mark.asyncio
+async def test_reroll_seed_without_report_body(test_client, organizer, async_session):
+    """Re-rolling without body preserves backward compatibility."""
+    async with async_session() as db:
+        seed_a = Seed(
+            seed_number="noreport_a",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/noreport_a",
+            status=SeedStatus.CONSUMED,
+        )
+        seed_b = Seed(
+            seed_number="noreport_b",
+            pool_name="standard",
+            graph_json={"total_layers": 7, "nodes": {}},
+            total_layers=7,
+            folder_path="/test/noreport_b",
+            status=SeedStatus.AVAILABLE,
+        )
+        db.add_all([seed_a, seed_b])
+        await db.flush()
+
+        race = Race(
+            name="No Report Reroll Test",
+            organizer_id=organizer.id,
+            seed_id=seed_a.id,
+            status=RaceStatus.SETUP,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+        seed_a_id = seed_a.id
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reroll-seed",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+
+    async with async_session() as db:
+        from sqlalchemy import select
+
+        result = await db.execute(select(Seed).where(Seed.id == seed_a_id))
+        assert result.scalar_one().status == SeedStatus.AVAILABLE
+
+
 # =============================================================================
 # Private races
 # =============================================================================
