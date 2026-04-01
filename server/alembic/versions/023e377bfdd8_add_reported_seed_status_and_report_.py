@@ -20,8 +20,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Add REPORTED to seedstatus enum
-    op.execute("ALTER TYPE seedstatus ADD VALUE IF NOT EXISTS 'REPORTED'")
+    # ALTER TYPE ... ADD VALUE cannot run inside a transaction block in PostgreSQL.
+    # Commit the current transaction, add the enum value, then re-open for the rest.
+    op.execute(sa.text("COMMIT"))
+    op.execute(sa.text("ALTER TYPE seedstatus ADD VALUE IF NOT EXISTS 'REPORTED'"))
+    op.execute(sa.text("BEGIN"))
 
     op.add_column("seeds", sa.Column("reported_by_id", sa.UUID(), nullable=True))
     op.add_column("seeds", sa.Column("reported_reason", sa.Text(), nullable=True))
