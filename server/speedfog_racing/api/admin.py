@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -411,7 +412,7 @@ class ReportedSeedResponse(BaseModel):
 class ResolveSeedRequest(BaseModel):
     """Request to resolve a reported seed."""
 
-    action: str  # "discard" or "restore"
+    action: Literal["discard", "restore"]
 
 
 @router.get("/reported-seeds", response_model=list[ReportedSeedResponse])
@@ -449,12 +450,6 @@ async def resolve_reported_seed(
     _admin: User = Depends(require_admin),
 ) -> dict[str, str]:
     """Discard or restore a reported seed. Requires admin role."""
-    if request.action not in ("discard", "restore"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="action must be 'discard' or 'restore'",
-        )
-
     result = await db.execute(select(Seed).where(Seed.id == seed_id))
     seed = result.scalar_one_or_none()
     if not seed:

@@ -66,7 +66,7 @@ class RerollSeedRequest(BaseModel):
     """Optional request body for re-rolling a seed with bug report."""
 
     report_buggy: bool = False
-    report_reason: str | None = None
+    report_reason: str | None = Field(None, max_length=500)
 
 
 # =============================================================================
