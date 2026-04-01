@@ -9,7 +9,7 @@ Usage:
 
 Requires:
     - SPEEDFOG_PATH environment variable or --speedfog-path argument
-    - speedfog_race_mod.dll in tools/assets/
+    - speedfog_racing.dll in tools/assets/
     - uv installed (to run speedfog)
 """
 
@@ -37,7 +37,7 @@ import tomli_w
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 POOLS_DIR = SCRIPT_DIR / "pools"
-DLL_NAME = "speedfog_race_mod.dll"
+DLL_NAME = "speedfog_racing.dll"
 
 
 def deep_merge(base: dict, override: dict) -> dict:

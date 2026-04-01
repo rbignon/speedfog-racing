@@ -52,7 +52,7 @@ def _create_seed_zip(pool_dir: Path, name: str, graph: dict) -> Path:
     top_dir = f"speedfog_{slug}"
     with zipfile.ZipFile(zip_path, "w") as zf:
         zf.writestr(f"{top_dir}/graph.json", json.dumps(graph))
-        zf.writestr(f"{top_dir}/lib/speedfog_race_mod.dll", "mock dll")
+        zf.writestr(f"{top_dir}/lib/speedfog_racing.dll", "mock dll")
     return zip_path
 
 

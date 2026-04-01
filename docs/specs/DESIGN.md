@@ -306,7 +306,7 @@ Rust Mod <--WebSocket--> FastAPI Server <--WebSocket--> Svelte Frontend
 
 - `launcher/`: No GUI launcher
 
-**Config (speedfog_race.toml):**
+**Config (speedfog_racing.toml):**
 
 ```toml
 [server]
@@ -330,7 +330,7 @@ Via ModEngine2 (included in .zip):
 ```toml
 # config_speedfog/config.toml (ModEngine2)
 [modengine]
-external_dlls = ["speedfog_race.dll"]
+external_dlls = ["speedfog_racing.dll"]
 ```
 
 ---
@@ -567,8 +567,8 @@ python tools/generate_pool.py --pool standard --count 10
 # Workflow:
 # 1. Load /data/seeds/standard/config.toml
 # 2. Call speedfog via CLI (cwd=SPEEDFOG_PATH)
-# 3. Add speedfog_race.dll to output
-# 4. Create speedfog_race.toml template
+# 3. Add speedfog_racing.dll to output
+# 4. Create speedfog_racing.toml template
 # 5. Place in standard/available/
 ```
 
@@ -584,11 +584,11 @@ async def generate_player_zips(race: Race) -> dict[UUID, Path]:
         shutil.copytree(seed_dir, player_dir)
 
         # Modify config with player's token
-        config = toml.load(player_dir / "speedfog_race.toml")
+        config = toml.load(player_dir / "speedfog_racing.toml")
         config["server"]["mod_token"] = participant.mod_token
         config["server"]["race_id"] = str(race.id)
         config["server"]["url"] = settings.websocket_url
-        toml.dump(config, player_dir / "speedfog_race.toml")
+        toml.dump(config, player_dir / "speedfog_racing.toml")
 
         # Create zip
         shutil.make_archive(...)

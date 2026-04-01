@@ -1,6 +1,6 @@
 //! Configuration for SpeedFog Racing mod
 //!
-//! Loads settings from speedfog_race.toml next to the DLL.
+//! Loads settings from speedfog_racing.toml next to the DLL.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -200,7 +200,7 @@ pub struct RaceConfig {
 }
 
 impl RaceConfig {
-    pub const CONFIG_FILENAME: &'static str = "speedfog_race.toml";
+    pub const CONFIG_FILENAME: &'static str = "speedfog_racing.toml";
 
     /// Get DLL directory path
     pub fn get_dll_directory(hmodule: HINSTANCE) -> Option<PathBuf> {

@@ -1,5 +1,5 @@
 [package]
-name = "speedfog-race-mod"
+name = "speedfog-racing-mod"
 version = "1.5.4"
 edition = "2021"
 authors = ["wospins"]
@@ -9,7 +9,7 @@ description = "SpeedFog Racing mod for Elden Ring"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
-name = "speedfog_race_mod"
+name = "speedfog_racing"
 
 # =============================================================================
 # CROSS-PLATFORM DEPENDENCIES (work on Linux and Windows)

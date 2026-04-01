@@ -1,5 +1,5 @@
 # SpeedFog Racing Mod Configuration
-# Copy this file to speedfog_race.toml and fill in your race details
+# Copy this file to speedfog_racing.toml and fill in your race details
 
 [server]
 # Server URL (provided in your race zip)

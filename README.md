@@ -122,7 +122,7 @@ cd mod
 cargo build --lib --release
 ```
 
-The DLL will be at `target/release/speedfog_race_mod.dll`.
+The DLL will be at `target/release/speedfog_racing.dll`.
 
 On Linux, you can check syntax but not build:
 

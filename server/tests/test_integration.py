@@ -222,7 +222,7 @@ def seed_folder():
         zip_path = Path(tmpdir) / "seed_a1b2c3d4.zip"
         top = "speedfog_a1b2c3d4"
         with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr(f"{top}/lib/speedfog_race_mod.dll", "mock dll")
+            zf.writestr(f"{top}/lib/speedfog_racing.dll", "mock dll")
             zf.writestr(f"{top}/ModEngine/config.toml", "[config]")
             zf.writestr(f"{top}/graph.json", json.dumps(graph_json))
             zf.writestr(f"{top}/launch_speedfog.bat", "@echo off")
@@ -662,7 +662,7 @@ def test_seed_pack_contains_player_specific_config(integration_client, race_with
     This verifies the full API flow:
     1. Seed packs are generated via API
     2. Each player can download their own seed pack via /my-seed-pack
-    3. The seed pack contains speedfog_race.toml with their unique mod_token and race_id
+    3. The seed pack contains speedfog_racing.toml with their unique mod_token and race_id
     """
     race_id = race_with_participants["race_id"]
     players = race_with_participants["players"]
@@ -683,8 +683,8 @@ def test_seed_pack_contains_player_specific_config(integration_client, race_with
         # Extract and verify the config file
         zip_content = io.BytesIO(download_response.content)
         with zipfile.ZipFile(zip_content, "r") as zf:
-            # Find the config file (speedfog_race.toml)
-            config_files = [n for n in zf.namelist() if n.endswith("speedfog_race.toml")]
+            # Find the config file (speedfog_racing.toml)
+            config_files = [n for n in zf.namelist() if n.endswith("speedfog_racing.toml")]
             assert len(config_files) == 1, f"Expected 1 config file, found {config_files}"
 
             config_content = zf.read(config_files[0]).decode("utf-8")

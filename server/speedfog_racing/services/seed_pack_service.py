@@ -210,7 +210,7 @@ def stream_seed_pack_with_config(
     """Stream a seed zip with an injected per-participant config.
 
     Reads the original zip structure, appends the config as
-    ``{top_dir}/lib/speedfog_race.toml``, and streams the result
+    ``{top_dir}/lib/speedfog_racing.toml``, and streams the result
     in 64 KB chunks.  No temp files, no full-file copy.
 
     Args:
@@ -232,7 +232,7 @@ def stream_seed_pack_with_config(
         cd_bytes = f.read(cd_size)
 
     top_dir = _top_dir_from_cd(cd_bytes)
-    config_name = f"{top_dir}/lib/speedfog_race.toml" if top_dir else "lib/speedfog_race.toml"
+    config_name = f"{top_dir}/lib/speedfog_racing.toml" if top_dir else "lib/speedfog_racing.toml"
 
     config_data = config_content.encode("utf-8")
     fname_bytes, crc, data_size = _prepare_entry(config_name, config_data)

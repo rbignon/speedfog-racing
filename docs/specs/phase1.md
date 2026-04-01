@@ -469,7 +469,7 @@ The mod must detect when the player completes the race:
 ### 5.3 Config
 
 ```toml
-# speedfog_race.toml
+# speedfog_racing.toml
 [server]
 url = "wss://speedfog-racing.example.com"
 mod_token = "PLAYER_TOKEN_HERE"
@@ -552,7 +552,7 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
     shutil.copytree(seed_dir, player_dir)
 
     # Add mod DLL (from our assets)
-    shutil.copy(ASSETS_DIR / "speedfog_race.dll", player_dir)
+    shutil.copy(ASSETS_DIR / "speedfog_racing.dll", player_dir)
 
     # Create config with player's token
     config = {
@@ -565,7 +565,7 @@ async def generate_player_zip(race: Race, participant: Participant) -> Path:
         "keybindings": {"toggle_ui": "f9"},
     }
 
-    with open(player_dir / "speedfog_race.toml", "w") as f:
+    with open(player_dir / "speedfog_racing.toml", "w") as f:
         toml.dump(config, f)
 
     # Create zip

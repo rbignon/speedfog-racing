@@ -41,7 +41,7 @@ python tools/generate_pool.py \
 2. **Run speedfog**: subprocess call via `uv run speedfog <config> -o <temp_dir> --spoiler --game-dir <path>`. Each seed gets its own temp directory. Output is streamed to `<temp>/generation.log` (and optionally to stdout with `--verbose`).
 
 3. **Post-process the seed directory**:
-   - Copy `speedfog_race_mod.dll` from `tools/assets/` to `<seed_dir>/lib/`.
+   - Copy `speedfog_racing.dll` from `tools/assets/` to `<seed_dir>/lib/`.
    - Inject DLL path into `config_speedfog.toml`'s `external_dlls` array via regex replacement.
    - Ensure `RandomizerHelper_config.ini` exists in `lib/` with safe racing defaults (no auto-equip, auto-upgrade enabled). This covers the case where item randomizer was disabled, as the DLL is always present but may lack config.
 
@@ -151,7 +151,7 @@ When a participant downloads their seed pack (`GET /races/{id}/my-seed-pack`), t
    toggle_ui = "f9"
    ```
 
-4. **Inject config**: writes `speedfog_race.toml` into `<top_dir>/lib/speedfog_race.toml` within the zip.
+4. **Inject config**: writes `speedfog_racing.toml` into `<top_dir>/lib/speedfog_racing.toml` within the zip.
 
 5. **Serve response**: FastAPI `FileResponse` streams the temp file. A `BackgroundTask` deletes the temp file after the response completes.
 
@@ -214,7 +214,7 @@ tools/
 │   ├── sprint.toml
 │   └── training.toml
 ├── assets/
-│   └── speedfog_race_mod.dll
+│   └── speedfog_racing.dll
 └── generate_pool.py
 ```
 
@@ -227,9 +227,9 @@ seed_a1b2c3d4e5f6.zip
     ├── config_speedfog.toml     # ModEngine config (includes racing DLL)
     ├── regulation.bin           # Game data overrides
     ├── lib/
-    │   ├── speedfog_race_mod.dll    # Racing overlay mod
+    │   ├── speedfog_racing.dll    # Racing overlay mod
     │   ├── RandomizerHelper.dll     # Item rando helper
     │   ├── RandomizerHelper_config.ini
-    │   └── speedfog_race.toml       # ← injected per-participant at download time
+    │   └── speedfog_racing.toml       # ← injected per-participant at download time
     └── event/                   # EMEVD scripts with custom event flags
 ```

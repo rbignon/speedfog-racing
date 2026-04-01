@@ -79,7 +79,7 @@ def seed_zip_context():
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "seed_abc123.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr("speedfog_abc123/lib/speedfog_race_mod.dll", "mock dll")
+            zf.writestr("speedfog_abc123/lib/speedfog_racing.dll", "mock dll")
             zf.writestr("speedfog_abc123/ModEngine/config.toml", "[config]")
             zf.writestr(
                 "speedfog_abc123/graph.json",

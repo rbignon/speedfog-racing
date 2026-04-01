@@ -983,7 +983,7 @@ def generate_seed_pack_on_demand_training(session: "TrainingSession") -> Path:
         top_dir = _get_top_dir(temp_path)
 
         config_content = generate_training_config(session)
-        config_path = f"{top_dir}/lib/speedfog_race.toml" if top_dir else "lib/speedfog_race.toml"
+        config_path = f"{top_dir}/lib/speedfog_racing.toml" if top_dir else "lib/speedfog_racing.toml"
         with zipfile.ZipFile(temp_path, "a") as zf:
             zf.writestr(config_path, config_content)
 

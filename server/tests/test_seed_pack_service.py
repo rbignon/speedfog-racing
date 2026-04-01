@@ -77,7 +77,7 @@ def seed_zip():
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "seed_abc123.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr("speedfog_abc123/lib/speedfog_race_mod.dll", "mock dll")
+            zf.writestr("speedfog_abc123/lib/speedfog_racing.dll", "mock dll")
             zf.writestr("speedfog_abc123/ModEngine/config_eldenring.toml", "[config]")
             zf.writestr(
                 "speedfog_abc123/graph.json",
@@ -184,7 +184,7 @@ def test_stream_contains_original_files(seed_zip):
     data, _ = _collect_stream(seed_zip, "[server]\ntest = true\n")
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = zf.namelist()
-        assert "speedfog_abc123/lib/speedfog_race_mod.dll" in names
+        assert "speedfog_abc123/lib/speedfog_racing.dll" in names
         assert "speedfog_abc123/ModEngine/config_eldenring.toml" in names
         assert "speedfog_abc123/graph.json" in names
         assert "speedfog_abc123/launch_speedfog.bat" in names
@@ -195,8 +195,8 @@ def test_stream_contains_injected_config(seed_zip):
     config = '[server]\nmod_token = "abc123"\n'
     data, _ = _collect_stream(seed_zip, config)
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        assert "speedfog_abc123/lib/speedfog_race.toml" in zf.namelist()
-        content = zf.read("speedfog_abc123/lib/speedfog_race.toml").decode()
+        assert "speedfog_abc123/lib/speedfog_racing.toml" in zf.namelist()
+        content = zf.read("speedfog_abc123/lib/speedfog_racing.toml").decode()
         assert 'mod_token = "abc123"' in content
 
 
@@ -204,7 +204,7 @@ def test_stream_original_file_contents_intact(seed_zip):
     """Original file contents should be preserved byte-for-byte."""
     data, _ = _collect_stream(seed_zip, "[server]\n")
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        assert zf.read("speedfog_abc123/lib/speedfog_race_mod.dll") == b"mock dll"
+        assert zf.read("speedfog_abc123/lib/speedfog_racing.dll") == b"mock dll"
         graph = json.loads(zf.read("speedfog_abc123/graph.json"))
         assert graph == {"total_layers": 10, "nodes": []}
 
@@ -239,7 +239,7 @@ def test_stream_invalid_zip_raises():
 
 
 def test_stream_zip_without_top_dir():
-    """Config should be at lib/speedfog_race.toml when zip has no top dir."""
+    """Config should be at lib/speedfog_racing.toml when zip has no top dir."""
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "flat.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
@@ -248,7 +248,7 @@ def test_stream_zip_without_top_dir():
 
         data, _ = _collect_stream(zip_path, "[server]\n")
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            assert "lib/speedfog_race.toml" in zf.namelist()
+            assert "lib/speedfog_racing.toml" in zf.namelist()
 
 
 def test_stream_larger_config(seed_zip):
@@ -259,7 +259,7 @@ def test_stream_larger_config(seed_zip):
 
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         assert zf.testzip() is None
-        stored = zf.read("speedfog_abc123/lib/speedfog_race.toml").decode()
+        stored = zf.read("speedfog_abc123/lib/speedfog_racing.toml").decode()
         assert stored == config
 
 
@@ -277,4 +277,4 @@ def test_stream_with_deflated_entries():
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             assert zf.testzip() is None
             assert zf.read("top/lib/mod.dll") == b"x" * 10000
-            assert "top/lib/speedfog_race.toml" in zf.namelist()
+            assert "top/lib/speedfog_racing.toml" in zf.namelist()

@@ -14,7 +14,7 @@
 /// # Examples
 ///
 /// ```
-/// use speedfog_race_mod::core::map_utils::format_map_id;
+/// use speedfog_racing::core::map_utils::format_map_id;
 ///
 /// assert_eq!(format_map_id(0x3C2C2400), "m60_44_36_00");
 /// ```
@@ -33,7 +33,7 @@ pub fn format_map_id(map_id: u32) -> String {
 /// # Examples
 ///
 /// ```
-/// use speedfog_race_mod::core::map_utils::parse_map_id;
+/// use speedfog_racing::core::map_utils::parse_map_id;
 ///
 /// assert_eq!(parse_map_id("m60_44_36_00"), Some(0x3C2C2400));
 /// assert_eq!(parse_map_id("invalid"), None);

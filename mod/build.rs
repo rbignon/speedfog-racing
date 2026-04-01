@@ -7,12 +7,12 @@ use std::path::Path;
 
 fn main() {
     // Tell Cargo to rerun this script if the config file changes
-    println!("cargo:rerun-if-changed=speedfog_race.toml");
+    println!("cargo:rerun-if-changed=speedfog_racing.toml");
 
     // Get the output directory from Cargo
     let out_dir = env::var("OUT_DIR").unwrap();
 
-    // The OUT_DIR is something like target/release/build/speedfog-race-mod-xxx/out
+    // The OUT_DIR is something like target/release/build/speedfog-racing-mod-xxx/out
     // We need to go up to target/release or target/debug
     let out_path = Path::new(&out_dir);
 
@@ -24,8 +24,8 @@ fn main() {
         .expect("Could not find target directory");
 
     // Copy config file
-    let config_src = Path::new("speedfog_race.toml");
-    let config_dst = target_dir.join("speedfog_race.toml");
+    let config_src = Path::new("speedfog_racing.toml");
+    let config_dst = target_dir.join("speedfog_racing.toml");
 
     if config_src.exists() {
         fs::copy(config_src, &config_dst).expect("Failed to copy config file");

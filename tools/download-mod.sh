@@ -11,7 +11,7 @@ set -euo pipefail
 REPO="rbignon/speedfog-racing"
 WORKFLOW="build-mod.yml"
 DEST_DIR="$(cd "$(dirname "$0")/assets" && pwd)"
-DLL_NAME="speedfog_race_mod.dll"
+DLL_NAME="speedfog_racing.dll"
 
 if ! command -v gh &>/dev/null; then
     echo "Error: gh (GitHub CLI) is required. Install it from https://cli.github.com/" >&2
@@ -47,10 +47,10 @@ fi
 # List artifacts for this run via the REST API
 ARTIFACT_NAME=$(gh api \
     "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
-    --jq '.artifacts[] | select(.name | startswith("speedfog-race-mod-v")) | .name')
+    --jq '.artifacts[] | select(.name | startswith("speedfog-racing-mod-v")) | .name')
 
 if [[ -z "$ARTIFACT_NAME" ]]; then
-    echo "Error: no speedfog-race-mod artifact found in run $RUN_ID." >&2
+    echo "Error: no speedfog-racing-mod artifact found in run $RUN_ID." >&2
     echo "Available artifacts:" >&2
     gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[].name' >&2
     exit 1
@@ -77,5 +77,5 @@ fi
 mv "$TMPDIR/$DLL_NAME" "$DEST_DIR/$DLL_NAME"
 
 # Extract version from artifact name
-VERSION="${ARTIFACT_NAME#speedfog-race-mod-}"
+VERSION="${ARTIFACT_NAME#speedfog-racing-mod-}"
 echo "Done! $DLL_NAME ($VERSION) -> $DEST_DIR/$DLL_NAME"
