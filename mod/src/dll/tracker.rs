@@ -317,24 +317,30 @@ impl RaceTracker {
         begin_hotkey_frame();
 
         // Check toggle_ui hotkey
-        if self.config.keybindings.toggle_ui.is_just_pressed() {
-            self.show_ui = !self.show_ui;
-            info!(show_ui = self.show_ui, "[HOTKEY] Toggle UI");
+        if let Some(ref hotkey) = self.config.keybindings.toggle_ui {
+            if hotkey.is_just_pressed() {
+                self.show_ui = !self.show_ui;
+                info!(show_ui = self.show_ui, "[HOTKEY] Toggle UI");
+            }
         }
 
         // Check toggle_debug hotkey
-        if self.config.keybindings.toggle_debug.is_just_pressed() {
-            self.show_debug = !self.show_debug;
-            info!(show_debug = self.show_debug, "[HOTKEY] Toggle debug");
+        if let Some(ref hotkey) = self.config.keybindings.toggle_debug {
+            if hotkey.is_just_pressed() {
+                self.show_debug = !self.show_debug;
+                info!(show_debug = self.show_debug, "[HOTKEY] Toggle debug");
+            }
         }
 
         // Check toggle_leaderboard hotkey
-        if self.config.keybindings.toggle_leaderboard.is_just_pressed() {
-            self.show_leaderboard = !self.show_leaderboard;
-            info!(
-                show_leaderboard = self.show_leaderboard,
-                "[HOTKEY] Toggle leaderboard"
-            );
+        if let Some(ref hotkey) = self.config.keybindings.toggle_leaderboard {
+            if hotkey.is_just_pressed() {
+                self.show_leaderboard = !self.show_leaderboard;
+                info!(
+                    show_leaderboard = self.show_leaderboard,
+                    "[HOTKEY] Toggle leaderboard"
+                );
+            }
         }
 
         // Poll WebSocket

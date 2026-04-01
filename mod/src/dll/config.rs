@@ -9,7 +9,7 @@ use tracing::info;
 use windows::Win32::Foundation::HINSTANCE;
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 
-use super::hotkey::Hotkey;
+use super::hotkey::{deserialize_optional_hotkey, serialize_optional_hotkey, Hotkey};
 
 /// Server connection settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,31 +139,49 @@ impl Default for OverlaySettings {
 }
 
 /// Keybindings
+///
+/// Each key can be set to a key name (e.g. "f9") or "none" to disable.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyBindings {
-    /// Toggle UI visibility
-    #[serde(default)]
-    pub toggle_ui: Hotkey,
-    /// Toggle debug overlay section
-    #[serde(default = "default_toggle_debug")]
-    pub toggle_debug: Hotkey,
-    /// Toggle leaderboard visibility
-    #[serde(default = "default_toggle_leaderboard")]
-    pub toggle_leaderboard: Hotkey,
+    /// Toggle UI visibility (default: F9, "none" to disable)
+    #[serde(
+        default = "default_toggle_ui",
+        deserialize_with = "deserialize_optional_hotkey",
+        serialize_with = "serialize_optional_hotkey"
+    )]
+    pub toggle_ui: Option<Hotkey>,
+    /// Toggle debug overlay section (default: none)
+    #[serde(
+        default = "default_toggle_debug",
+        deserialize_with = "deserialize_optional_hotkey",
+        serialize_with = "serialize_optional_hotkey"
+    )]
+    pub toggle_debug: Option<Hotkey>,
+    /// Toggle leaderboard visibility (default: F10, "none" to disable)
+    #[serde(
+        default = "default_toggle_leaderboard",
+        deserialize_with = "deserialize_optional_hotkey",
+        serialize_with = "serialize_optional_hotkey"
+    )]
+    pub toggle_leaderboard: Option<Hotkey>,
 }
 
-fn default_toggle_debug() -> Hotkey {
-    Hotkey { key: 0x72 } // F3
+fn default_toggle_ui() -> Option<Hotkey> {
+    Some(Hotkey::default()) // F9
 }
 
-fn default_toggle_leaderboard() -> Hotkey {
-    Hotkey { key: 0x79 } // F10
+fn default_toggle_debug() -> Option<Hotkey> {
+    None
+}
+
+fn default_toggle_leaderboard() -> Option<Hotkey> {
+    Some(Hotkey { key: 0x79 }) // F10
 }
 
 impl Default for KeyBindings {
     fn default() -> Self {
         Self {
-            toggle_ui: Hotkey::default(),
+            toggle_ui: default_toggle_ui(),
             toggle_debug: default_toggle_debug(),
             toggle_leaderboard: default_toggle_leaderboard(),
         }

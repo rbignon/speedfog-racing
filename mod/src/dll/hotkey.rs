@@ -241,6 +241,35 @@ impl<'de> Deserialize<'de> for Hotkey {
     }
 }
 
+/// Deserialize an optional hotkey: `"none"` or `""` means disabled (None).
+pub fn deserialize_optional_hotkey<'de, D>(deserializer: D) -> Result<Option<Hotkey>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    let trimmed = s.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("none") {
+        return Ok(None);
+    }
+    Hotkey::from_name(trimmed)
+        .map(Some)
+        .ok_or_else(|| serde::de::Error::custom(format!("Unknown key name: '{}'", s)))
+}
+
+/// Serialize an optional hotkey: None becomes "none".
+pub fn serialize_optional_hotkey<S>(
+    value: &Option<Hotkey>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match value {
+        Some(hotkey) => hotkey.serialize(serializer),
+        None => serializer.serialize_str("none"),
+    }
+}
+
 impl Default for Hotkey {
     fn default() -> Self {
         Hotkey { key: 0x78 } // F9

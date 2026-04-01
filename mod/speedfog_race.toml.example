@@ -16,9 +16,9 @@ enabled = true
 font_size = 16
 
 [keybindings]
-# Key to toggle UI visibility
+# Key to toggle UI visibility (set to "none" to disable)
 toggle_ui = "f9"
-# Key to toggle debug section (zones, last sent/recv messages)
-toggle_debug = "f3"
-# Key to toggle leaderboard visibility
+# Key to toggle debug section (set to "none" to disable)
+toggle_debug = "none"
+# Key to toggle leaderboard visibility (set to "none" to disable)
 toggle_leaderboard = "f10"
