@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	interface Props {
 		title: string;
 		message: string;
@@ -9,6 +11,7 @@
 		error?: string | null;
 		onConfirm: () => void;
 		onCancel: () => void;
+		children?: Snippet;
 	}
 
 	let {
@@ -20,7 +23,8 @@
 		loading = false,
 		error = null,
 		onConfirm,
-		onCancel
+		onCancel,
+		children
 	}: Props = $props();
 </script>
 
@@ -35,6 +39,10 @@
 		</div>
 
 		<p class="message">{message}</p>
+
+		{#if children}
+			{@render children()}
+		{/if}
 
 		{#if error}
 			<p class="error">{error}</p>

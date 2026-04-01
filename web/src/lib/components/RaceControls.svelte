@@ -27,6 +27,9 @@
 	let seedsReleased = $derived(race.seeds_released_at !== null);
 	let canStart = $derived(race.participants.length >= 2 || auth.isAdmin);
 
+	let reportBuggy = $state(false);
+	let reportReason = $state('');
+
 	// Registration settings inline editing
 	let editingRegistration = $state(false);
 	let regOpen = $state(false);
@@ -70,6 +73,8 @@
 	}
 
 	function handleReroll() {
+		reportBuggy = false;
+		reportReason = '';
 		requestConfirm({
 			title: 'Re-roll Seed',
 			message: seedsReleased
@@ -80,7 +85,11 @@
 				loading = true;
 				error = null;
 				try {
-					const updated = await rerollSeed(race.id);
+					const updated = await rerollSeed(
+						race.id,
+						reportBuggy || undefined,
+						reportReason.trim() || undefined
+					);
 					onRaceUpdated(updated);
 				} catch (e) {
 					error = e instanceof Error ? e.message : 'Failed to re-roll seed';
@@ -248,7 +257,16 @@
 				{/if}
 				{#if seedsReleased}
 					<span class="seeds-badge">
-						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+						<svg
+							width="12"
+							height="12"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="3"
+							stroke-linecap="round"
+							stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg
+						>
 						Seeds ready
 					</span>
 				{/if}
@@ -317,15 +335,27 @@
 						{#if registrationError}
 							<span class="toolbar-error">{registrationError}</span>
 						{/if}
-						<button class="btn btn-primary btn-sm" onclick={saveRegistration} disabled={savingRegistration}>
+						<button
+							class="btn btn-primary btn-sm"
+							onclick={saveRegistration}
+							disabled={savingRegistration}
+						>
 							{savingRegistration ? 'Saving...' : 'Save'}
 						</button>
-						<button class="btn btn-secondary btn-sm" onclick={cancelRegistrationEdit} disabled={savingRegistration}>
+						<button
+							class="btn btn-secondary btn-sm"
+							onclick={cancelRegistrationEdit}
+							disabled={savingRegistration}
+						>
 							Cancel
 						</button>
 					</div>
 				{:else}
-					<button class="btn-icon-label" onclick={openRegistrationEdit} title="Edit registration settings">
+					<button
+						class="btn-icon-label"
+						onclick={openRegistrationEdit}
+						title="Edit registration settings"
+					>
 						<svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
 							<path
 								fill-rule="evenodd"
@@ -351,7 +381,23 @@
 		danger={pendingConfirm.danger ?? false}
 		onConfirm={executeConfirm}
 		onCancel={() => (pendingConfirm = null)}
-	/>
+	>
+		{#if pendingConfirm.title === 'Re-roll Seed'}
+			<label class="report-check">
+				<input type="checkbox" bind:checked={reportBuggy} />
+				Report this seed as buggy
+			</label>
+			{#if reportBuggy}
+				<input
+					class="report-reason"
+					type="text"
+					placeholder="Describe the issue..."
+					bind:value={reportReason}
+					maxlength="500"
+				/>
+			{/if}
+		{/if}
+	</ConfirmModal>
 {/if}
 
 <style>
@@ -470,4 +516,36 @@
 		font-size: var(--font-size-xs);
 	}
 
+	.report-check {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		margin-bottom: 0.5rem;
+	}
+
+	.report-check input[type='checkbox'] {
+		accent-color: var(--color-gold);
+		cursor: pointer;
+	}
+
+	.report-reason {
+		width: 100%;
+		padding: 0.4rem 0.6rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		margin-bottom: 0.75rem;
+		box-sizing: border-box;
+	}
+
+	.report-reason:focus {
+		outline: none;
+		border-color: var(--color-gold);
+	}
 </style>
