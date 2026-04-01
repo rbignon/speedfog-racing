@@ -1,6 +1,6 @@
 [package]
 name = "speedfog-racing-mod"
-version = "1.5.4"
+version = "1.5.5"
 edition = "2021"
 authors = ["wospins"]
 license = "AGPL-3.0"

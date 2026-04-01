@@ -2,6 +2,24 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.5] - 2026-04-01
+
+### Stats
+
+- Fixed systematic ELO deflation that unfairly penalized active players
+- New players now calibrate faster with adaptive K factor during their first 10 races
+- Zone and boss stats count abandoned runs as backtracks at the player's last visited location
+
+### In-game
+
+- Grace sit animation is now faster
+- Standup animation is now instant
+
+### Website
+
+- Seed reporting: re-rolling a seed now lets you flag it as buggy with an optional reason
+- Improved personal highlight detection (Boss Slayer, Clean Streak, Lead Lost)
+
 ## [1.5.4] - 2026-03-31
 
 ### Stats
