@@ -19,7 +19,7 @@
 	import { statusLabel } from '$lib/format';
 	import { formatPoolName } from '$lib/utils/format';
 
-	type Tab = 'users' | 'seeds' | 'activity';
+	type Tab = 'users' | 'seeds' | 'stats' | 'activity';
 	let activeTab: Tab = $state('users');
 
 	let users: AdminUser[] = $state([]);
@@ -103,7 +103,7 @@
 
 	function switchTab(tab: Tab) {
 		activeTab = tab;
-		if (tab === 'seeds' && !seedStats) {
+		if ((tab === 'seeds' || tab === 'stats') && !seedStats) {
 			loadSeedStats();
 			loadReportedSeeds();
 		}
@@ -259,6 +259,9 @@
 		<button class="tab" class:active={activeTab === 'seeds'} onclick={() => switchTab('seeds')}>
 			Seeds
 		</button>
+		<button class="tab" class:active={activeTab === 'stats'} onclick={() => switchTab('stats')}>
+			Stats
+		</button>
 		<button
 			class="tab"
 			class:active={activeTab === 'activity'}
@@ -333,9 +336,9 @@
 		{:else if !seedStats || Object.keys(seedStats.pools).length === 0}
 			<p class="empty">No seed pools found.</p>
 		{:else}
-			{#if reportedSeeds.length > 0}
-				<div class="reported-section">
-					<h2>Reported Seeds</h2>
+			<div class="reported-section">
+				<h2 class="section-title">Reported Seeds</h2>
+				{#if reportedSeeds.length > 0}
 					<div class="table-wrapper">
 						<table>
 							<thead>
@@ -377,8 +380,11 @@
 							</tbody>
 						</table>
 					</div>
-				</div>
-			{/if}
+				{:else}
+					<p class="empty">No reported seeds.</p>
+				{/if}
+			</div>
+			<h2 class="section-title">Seed Pools</h2>
 			<div class="table-wrapper">
 				<table>
 					<thead>
@@ -421,8 +427,9 @@
 				</table>
 			</div>
 		{/if}
+	{:else if activeTab === 'stats'}
 		<div class="stats-section">
-			<h2>Stats</h2>
+			<h2 class="section-title">Recalculate</h2>
 			<p class="stats-description">
 				Recompute cached statistics for all users and participants from raw race data.
 			</p>
@@ -913,17 +920,11 @@
 		cursor: not-allowed;
 	}
 
-	.stats-section {
-		margin-top: 2rem;
-		padding-top: 1.5rem;
-		border-top: 1px solid var(--color-border);
-	}
-
-	.stats-section h2 {
+	.section-title {
 		font-size: var(--font-size-lg);
 		font-weight: 600;
 		color: var(--color-text);
-		margin-bottom: 0.5rem;
+		margin-bottom: 0.75rem;
 	}
 
 	.stats-description {
@@ -962,12 +963,6 @@
 
 	.reported-section {
 		margin-bottom: 2rem;
-	}
-
-	.reported-section h2 {
-		color: var(--color-warning, #f59e0b);
-		font-size: var(--font-size-lg);
-		margin-bottom: 0.75rem;
 	}
 
 	.reason-cell {
