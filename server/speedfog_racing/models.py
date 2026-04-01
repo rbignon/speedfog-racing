@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -55,6 +56,7 @@ class SeedStatus(enum.Enum):
     AVAILABLE = "available"
     CONSUMED = "consumed"
     DISCARDED = "discarded"
+    REPORTED = "reported"
 
 
 class TrainingSessionStatus(enum.Enum):
@@ -112,9 +114,15 @@ class Seed(Base):
     folder_path: Mapped[str] = mapped_column(String(500), nullable=False)
     status: Mapped[SeedStatus] = mapped_column(Enum(SeedStatus), default=SeedStatus.AVAILABLE)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reported_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    reported_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     races: Mapped[list["Race"]] = relationship(back_populates="seed")
+    reported_by: Mapped["User | None"] = relationship(foreign_keys=[reported_by_id])
 
 
 class Race(Base):
