@@ -73,7 +73,7 @@
 							<div class="avatar-placeholder"></div>
 						{/if}
 						<div class="meta">
-							<span class="display-name">{msg.display_name ?? msg.username}</span>
+							<a href="/user/{msg.username}" target="_blank" rel="noopener noreferrer" class="display-name">{msg.display_name ?? msg.username}</a>
 							{#if msg.role === 'organizer'}
 								<span class="badge badge-organizer">ORG</span>
 							{:else if msg.role === 'caster'}
@@ -196,10 +196,15 @@
 		font-size: var(--font-size-sm);
 		font-weight: 600;
 		color: var(--color-text);
+		text-decoration: none;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		min-width: 0;
+	}
+
+	.display-name:hover {
+		color: var(--color-purple-hover);
 	}
 
 	.timestamp {
@@ -212,7 +217,7 @@
 		margin: 0;
 		padding-left: calc(24px + 0.5rem);
 		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
+		color: var(--color-text);
 		word-break: break-word;
 		line-height: 1.4;
 	}
