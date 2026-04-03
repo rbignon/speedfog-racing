@@ -20,41 +20,43 @@ depends_on: Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Create ChatChannel enum type if it does not already exist
-    op.execute("""
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'chatchannel') THEN
-                CREATE TYPE chatchannel AS ENUM ('participants', 'public');
-            END IF;
-        END
-        $$
-    """)
+    chatchannel_enum = sa.Enum("participants", "public", name="chatchannel")
+    chatchannel_enum.create(op.get_bind(), checkfirst=True)
 
-    # Create chat_messages table
-    op.execute("""
-        CREATE TABLE IF NOT EXISTS chat_messages (
-            id UUID NOT NULL,
-            race_id UUID NOT NULL REFERENCES races(id) ON DELETE CASCADE,
-            channel chatchannel NOT NULL,
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            message VARCHAR(500) NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            PRIMARY KEY (id)
-        )
-    """)
-
-    # Create composite index for efficient channel history queries
-    op.execute("""
-        CREATE INDEX IF NOT EXISTS ix_chat_messages_race_channel_created
-        ON chat_messages (race_id, channel, created_at)
-    """)
-
-    # Add finished_at to races
+    op.create_table(
+        "chat_messages",
+        sa.Column("id", sa.UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "race_id",
+            sa.UUID(as_uuid=True),
+            sa.ForeignKey("races.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column("channel", chatchannel_enum, nullable=False),
+        sa.Column(
+            "user_id",
+            sa.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column("message", sa.String(500), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+    )
+    op.create_index(
+        "ix_chat_messages_race_channel_created",
+        "chat_messages",
+        ["race_id", "channel", "created_at"],
+    )
     op.add_column("races", sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:
     op.drop_column("races", "finished_at")
+    op.drop_index("ix_chat_messages_race_channel_created", table_name="chat_messages")
     op.drop_table("chat_messages")
     op.execute("DROP TYPE IF EXISTS chatchannel")
