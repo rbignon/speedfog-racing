@@ -68,6 +68,13 @@ class TrainingSessionStatus(enum.Enum):
     CANCELLED = "cancelled"
 
 
+class ChatChannel(enum.StrEnum):
+    """Chat channel types."""
+
+    PARTICIPANTS = "participants"
+    PUBLIC = "public"
+
+
 def generate_token() -> str:
     """Generate a secure random token."""
     return secrets.token_urlsafe(32)
@@ -155,6 +162,7 @@ class Race(Base):
     )
     max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
     discord_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     organizer: Mapped["User"] = relationship(back_populates="organized_races")
@@ -310,3 +318,26 @@ class PlayerTraitScores(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class ChatMessage(Base):
+    """A persisted chat message in a race channel."""
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        Index("ix_chat_messages_race_channel_created", "race_id", "channel", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    race_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("races.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[ChatChannel] = mapped_column(Enum(ChatChannel), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    message: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    race: Mapped["Race"] = relationship()
+    user: Mapped["User"] = relationship()
