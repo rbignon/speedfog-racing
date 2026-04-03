@@ -41,6 +41,9 @@ class SpectatorConnection:
     websocket: WebSocket
     user_id: uuid.UUID | None = None
     locale: str = "en"
+    role: str | None = None  # "organizer" | "admin" | "caster" | "participant"
+    participant_id: uuid.UUID | None = None
+    is_playing: bool = False  # True if participant currently in PLAYING status during RUNNING
 
 
 @dataclass
@@ -110,6 +113,62 @@ class RaceRoom:
             self.broadcast_to_mods(message),
             self.broadcast_to_spectators(message),
         )
+
+    async def broadcast_chat_participants(self, message: str) -> None:
+        """Broadcast to spectator connections with a race role (participant/organizer/caster/admin).
+
+        Only sends to connections where role is not None.
+        """
+        snapshot = [c for c in self.spectators if c.role is not None]
+        if not snapshot:
+            return
+        failed: list[SpectatorConnection] = []
+
+        async def _send(conn: SpectatorConnection) -> None:
+            try:
+                await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
+            except Exception:
+                failed.append(conn)
+
+        await asyncio.gather(*(_send(c) for c in snapshot))
+        for conn in failed:
+            try:
+                self.spectators.remove(conn)
+            except ValueError:
+                pass
+
+    async def broadcast_chat_public(self, message: str) -> None:
+        """Broadcast to authenticated spectators, excluding playing participants."""
+        snapshot = [c for c in self.spectators if c.user_id is not None and not c.is_playing]
+        if not snapshot:
+            return
+        failed: list[SpectatorConnection] = []
+
+        async def _send(conn: SpectatorConnection) -> None:
+            try:
+                await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
+            except Exception:
+                failed.append(conn)
+
+        await asyncio.gather(*(_send(c) for c in snapshot))
+        for conn in failed:
+            try:
+                self.spectators.remove(conn)
+            except ValueError:
+                pass
+
+    def get_spectator_by_user_id(self, user_id: uuid.UUID) -> SpectatorConnection | None:
+        """Find a spectator connection by user ID."""
+        for conn in self.spectators:
+            if conn.user_id == user_id:
+                return conn
+        return None
+
+    def mark_participants_playing(self) -> None:
+        """Set is_playing=True on all participant spectator connections."""
+        for conn in self.spectators:
+            if conn.role == "participant":
+                conn.is_playing = True
 
 
 class ConnectionManager:
