@@ -289,9 +289,7 @@
 	let isParticipantPlaying = $derived(
 		!!myParticipant && raceStatus === 'running' && !myParticipantFinished
 	);
-	let publicEnabled = $derived(
-		!isParticipantPlaying || !myParticipant || isOrganizer || auth.isAdmin || isCaster
-	);
+	let publicEnabled = $derived(!isParticipantPlaying);
 	let effectiveActiveTab = $derived(hasParticipantsAccess ? chatActiveTab : 'public');
 	let canSendChat = $derived(
 		effectiveActiveTab === 'participants'
