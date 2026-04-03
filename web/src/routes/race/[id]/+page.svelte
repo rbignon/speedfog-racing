@@ -388,6 +388,7 @@
 		try {
 			await joinRace(initialRace.id);
 			initialRace = await fetchRace(initialRace.id);
+			raceStore.reconnect();
 			joinableStore.invalidate();
 		} catch (e) {
 			joinLeaveError = e instanceof Error ? e.message : 'Failed to join';
@@ -402,6 +403,7 @@
 		try {
 			await leaveRace(initialRace.id);
 			initialRace = await fetchRace(initialRace.id);
+			raceStore.reconnect();
 			joinableStore.invalidate();
 		} catch (e) {
 			joinLeaveError = e instanceof Error ? e.message : 'Failed to leave';

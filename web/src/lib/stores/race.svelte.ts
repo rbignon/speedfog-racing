@@ -231,6 +231,16 @@ class RaceStore {
   }
 
   /**
+   * Force a WebSocket reconnect (e.g. after role change from joining a race).
+   */
+  reconnect(): void {
+    if (this.ws && this.currentRaceId) {
+      this.ws.disconnect();
+      this.ws.connect();
+    }
+  }
+
+  /**
    * Send a message via the WebSocket connection.
    */
   send(data: Record<string, unknown>): void {
