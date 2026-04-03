@@ -39,8 +39,6 @@
 		activeTab === 'participants' ? messagesParticipants : messagesPublic
 	);
 
-	let totalUnread = $derived(unreadParticipants + unreadPublic);
-
 	// Track unread for collapsed state
 	$effect(() => {
 		const total = messagesParticipants.length + messagesPublic.length;
