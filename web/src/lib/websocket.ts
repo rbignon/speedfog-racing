@@ -74,6 +74,7 @@ export interface SpectatorCountMessage {
 
 export interface ChatMessage {
   type: "chat_message";
+  channel: "participants" | "public";
   username: string;
   display_name: string | null;
   avatar_url: string | null;
@@ -83,13 +84,20 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+export interface ChatHistoryMessage {
+  type: "chat_history";
+  channel: "participants" | "public";
+  messages: ChatMessage[];
+}
+
 export type ServerMessage =
   | RaceStateMessage
   | LeaderboardUpdateMessage
   | PlayerUpdateMessage
   | RaceStatusChangeMessage
   | SpectatorCountMessage
-  | ChatMessage;
+  | ChatMessage
+  | ChatHistoryMessage;
 
 const VALID_SERVER_MESSAGE_TYPES = new Set([
   "race_state",
@@ -98,6 +106,7 @@ const VALID_SERVER_MESSAGE_TYPES = new Set([
   "race_status_change",
   "spectator_count",
   "chat_message",
+  "chat_history",
 ]);
 
 function isServerMessage(data: unknown): data is ServerMessage {
@@ -121,6 +130,7 @@ export interface RaceWebSocketOptions {
   onRaceStatusChange?: (msg: RaceStatusChangeMessage) => void;
   onSpectatorCount?: (msg: SpectatorCountMessage) => void;
   onChatMessage?: (msg: ChatMessage) => void;
+  onChatHistory?: (msg: ChatHistoryMessage) => void;
   onConnect?: () => void;
   onDisconnect?: (code?: number, reason?: string) => void;
   onError?: (error: Event) => void;
@@ -284,6 +294,9 @@ export class RaceWebSocket {
         break;
       case "chat_message":
         this.options.onChatMessage?.(msg);
+        break;
+      case "chat_history":
+        this.options.onChatHistory?.(msg);
         break;
       default:
         if (import.meta.env.DEV)

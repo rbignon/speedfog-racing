@@ -15,7 +15,8 @@ class RaceStore {
   race = $state<WsRaceInfo | null>(null);
   seed = $state<WsSeedInfo | null>(null);
   participants = $state<WsParticipant[]>([]);
-  chatMessages = $state<ChatMessage[]>([]);
+  chatMessagesParticipants = $state<ChatMessage[]>([]);
+  chatMessagesPublic = $state<ChatMessage[]>([]);
   spectatorCount = $state(0);
   connected = $state(false);
   loading = $state(true);
@@ -81,7 +82,8 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
-    this.chatMessages = [];
+    this.chatMessagesParticipants = [];
+    this.chatMessagesPublic = [];
     this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;
@@ -169,7 +171,22 @@ class RaceStore {
         },
 
         onChatMessage: (msg) => {
-          this.chatMessages = [...this.chatMessages, msg];
+          if (msg.channel === "participants") {
+            this.chatMessagesParticipants = [
+              ...this.chatMessagesParticipants,
+              msg,
+            ];
+          } else {
+            this.chatMessagesPublic = [...this.chatMessagesPublic, msg];
+          }
+        },
+
+        onChatHistory: (msg) => {
+          if (msg.channel === "participants") {
+            this.chatMessagesParticipants = [...msg.messages];
+          } else {
+            this.chatMessagesPublic = [...msg.messages];
+          }
         },
       },
       locale,
@@ -195,7 +212,8 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
-    this.chatMessages = [];
+    this.chatMessagesParticipants = [];
+    this.chatMessagesPublic = [];
     this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;
