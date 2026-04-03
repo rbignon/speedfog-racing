@@ -111,6 +111,13 @@ async def inactivity_monitor_loop(
                         )
                         race = result.scalar_one_or_none()
                         if race:
+                            # Clear is_playing for abandoned participants
+                            room = manager.get_room(race_id)
+                            if room:
+                                for p in race.participants:
+                                    if p.status == ParticipantStatus.ABANDONED:
+                                        room.clear_is_playing(p.user_id)
+
                             graph_json = race.seed.graph_json if race.seed else None
                             await manager.broadcast_leaderboard(
                                 race_id, race.participants, graph_json=graph_json

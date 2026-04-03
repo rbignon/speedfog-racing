@@ -1404,6 +1404,11 @@ async def finish_race(
 
     await db.commit()
 
+    # Clear is_playing on all spectator connections (race is finished)
+    room = manager.get_room(race_id)
+    if room:
+        room.clear_all_playing()
+
     # Re-query with eager-loaded relationships (refresh only reloads columns)
     race = await _get_race_or_404(db, race.id, load_participants=True, load_casters=True)
 
@@ -1459,6 +1464,11 @@ async def abandon_race(
 
     # Re-query with eager-loaded relationships
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+
+    # Unlock PUBLIC chat channel for abandoned participant
+    room = manager.get_room(race_id)
+    if room:
+        room.clear_is_playing(user.id)
 
     # Broadcast updates
     graph_json = race.seed.graph_json if race.seed else None

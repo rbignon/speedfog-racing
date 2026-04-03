@@ -292,8 +292,9 @@
 	let publicEnabled = $derived(
 		!isParticipantPlaying || !myParticipant || isOrganizer || auth.isAdmin || isCaster
 	);
+	let effectiveActiveTab = $derived(hasParticipantsAccess ? chatActiveTab : 'public');
 	let canSendChat = $derived(
-		chatActiveTab === 'participants'
+		effectiveActiveTab === 'participants'
 			? hasParticipantsAccess
 			: auth.isLoggedIn && !isParticipantPlaying
 	);
@@ -891,7 +892,7 @@
 				collapsed={chatCollapsed}
 				showParticipants={hasParticipantsAccess}
 				{publicEnabled}
-				activeTab={hasParticipantsAccess ? chatActiveTab : 'public'}
+				activeTab={effectiveActiveTab}
 				onSend={sendChatMessage}
 				onToggle={() => (chatCollapsed = !chatCollapsed)}
 				onTabChange={(tab) => (chatActiveTab = tab)}

@@ -170,6 +170,17 @@ class RaceRoom:
             if conn.role == "participant":
                 conn.is_playing = True
 
+    def clear_is_playing(self, user_id: uuid.UUID) -> None:
+        """Clear is_playing for a specific user's spectator connection."""
+        conn = self.get_spectator_by_user_id(user_id)
+        if conn:
+            conn.is_playing = False
+
+    def clear_all_playing(self) -> None:
+        """Clear is_playing on all spectator connections."""
+        for conn in self.spectators:
+            conn.is_playing = False
+
 
 class ConnectionManager:
     """Manages all WebSocket connections across races."""
