@@ -9,6 +9,7 @@ Create Date: 2026-04-03 16:29:25.325020
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -20,8 +21,12 @@ depends_on: Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    chatchannel_enum = sa.Enum("participants", "public", name="chatchannel")
+    op.execute(sa.text("COMMIT"))
+    chatchannel_enum = postgresql.ENUM(
+        "PARTICIPANTS", "PUBLIC", name="chatchannel", create_type=False
+    )
     chatchannel_enum.create(op.get_bind(), checkfirst=True)
+    op.execute(sa.text("BEGIN"))
 
     op.create_table(
         "chat_messages",
