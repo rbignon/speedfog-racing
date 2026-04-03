@@ -221,6 +221,7 @@ class SendChatMessage(BaseModel):
     """Chat message from authenticated spectator/caster."""
 
     type: Literal["chat"] = "chat"
+    channel: str = Field(pattern=r"^(participants|public)$")
     message: str = Field(max_length=500)
 
 
@@ -231,10 +232,19 @@ class ChatBroadcastMessage(BaseModel):
     """Chat message broadcast to room."""
 
     type: Literal["chat_message"] = "chat_message"
+    channel: str  # "participants" | "public"
     username: str
     display_name: str | None
     avatar_url: str | None
     role: str  # "organizer" | "admin" | "caster" | "participant"
     dominant_trait: str | None  # e.g. "rusher", "explorer", null
     message: str
-    timestamp: str
+    timestamp: str  # ISO format from server
+
+
+class ChatHistoryMessage(BaseModel):
+    """Chat history sent on connection for a specific channel."""
+
+    type: Literal["chat_history"] = "chat_history"
+    channel: str  # "participants" | "public"
+    messages: list[ChatBroadcastMessage]
