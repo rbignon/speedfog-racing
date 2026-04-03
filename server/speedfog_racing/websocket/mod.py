@@ -14,7 +14,14 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.config import settings
 from speedfog_racing.discord import fire_race_finished_notifications
-from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
+from speedfog_racing.models import (
+    Caster,
+    ChatChannel,
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+)
 from speedfog_racing.services.grace_service import resolve_zone_query
 from speedfog_racing.services.layer_service import (
     get_layer_for_node,
@@ -51,7 +58,7 @@ from speedfog_racing.websocket.schemas import (
     SeedInfo,
     extract_spawn_items,
 )
-from speedfog_racing.websocket.spectator import broadcast_race_state_update
+from speedfog_racing.websocket.spectator import _send_chat_history, broadcast_race_state_update
 
 logger = logging.getLogger(__name__)
 
@@ -806,6 +813,23 @@ async def handle_finished(
         participant.race.participants,
         graph_json=_get_graph_json(participant),
     )
+
+    # Unlock PUBLIC channel for finished participant's spectator connection
+    room = manager.get_room(participant.race_id)
+    if room:
+        spec_conn = room.get_spectator_by_user_id(participant.user_id)
+        if spec_conn and spec_conn.is_playing:
+            spec_conn.is_playing = False
+            try:
+                await _send_chat_history(
+                    spec_conn.websocket,
+                    session_maker,
+                    participant.race_id,
+                    participant.race,
+                    ChatChannel.PUBLIC,
+                )
+            except Exception:
+                logger.warning("Failed to send public chat history to finished participant")
 
 
 async def broadcast_race_start(

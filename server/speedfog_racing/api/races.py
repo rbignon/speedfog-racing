@@ -1191,6 +1191,11 @@ async def start_race(
     )
     await broadcast_race_state_update(race_id, race)
 
+    # Mark participant spectator connections as playing
+    room = manager.get_room(race_id)
+    if room:
+        room.mark_participants_playing()
+
     # Fire-and-forget Discord notification (public races only)
     if race.is_public:
         task = asyncio.create_task(
