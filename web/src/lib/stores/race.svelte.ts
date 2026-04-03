@@ -17,6 +17,7 @@ class RaceStore {
   participants = $state<WsParticipant[]>([]);
   chatMessagesParticipants = $state<ChatMessage[]>([]);
   chatMessagesPublic = $state<ChatMessage[]>([]);
+  chatHistoryVersion = $state(0);
   spectatorCount = $state(0);
   connected = $state(false);
   loading = $state(true);
@@ -187,6 +188,7 @@ class RaceStore {
           } else {
             this.chatMessagesPublic = [...msg.messages];
           }
+          this.chatHistoryVersion++;
         },
       },
       locale,
@@ -214,6 +216,7 @@ class RaceStore {
     this.participants = [];
     this.chatMessagesParticipants = [];
     this.chatMessagesPublic = [];
+    this.chatHistoryVersion = 0;
     this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;

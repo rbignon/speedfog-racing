@@ -886,6 +886,7 @@
 			<ChatSidebar
 				messagesParticipants={raceStore.chatMessagesParticipants}
 				messagesPublic={raceStore.chatMessagesPublic}
+				historyVersion={raceStore.chatHistoryVersion}
 				canSend={canSendChat}
 				collapsed={chatCollapsed}
 				showParticipants={hasParticipantsAccess}

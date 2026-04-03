@@ -10,6 +10,7 @@
 		showParticipants: boolean;
 		publicEnabled: boolean;
 		activeTab: 'participants' | 'public';
+		historyVersion: number;
 		onSend: (message: string, channel: 'participants' | 'public') => void;
 		onToggle: () => void;
 		onTabChange: (tab: 'participants' | 'public') => void;
@@ -23,6 +24,7 @@
 		showParticipants,
 		publicEnabled,
 		activeTab,
+		historyVersion,
 		onSend,
 		onToggle,
 		onTabChange
@@ -38,6 +40,17 @@
 	let activeMessages = $derived(
 		activeTab === 'participants' ? messagesParticipants : messagesPublic
 	);
+
+	// When chat history is loaded (initial connect or reconnect), treat all messages as seen
+	let lastHistoryVersion = $state(0);
+	$effect(() => {
+		if (historyVersion !== lastHistoryVersion) {
+			lastSeenParticipants = messagesParticipants.length;
+			lastSeenPublic = messagesPublic.length;
+			lastSeenCount = messagesParticipants.length + messagesPublic.length;
+			lastHistoryVersion = historyVersion;
+		}
+	});
 
 	// Track unread for collapsed state
 	$effect(() => {
