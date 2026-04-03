@@ -13,7 +13,19 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.config import settings
-from speedfog_racing.models import Caster, Participant, PlayerTraitScores, Race, UserRole
+from speedfog_racing.models import (
+    Caster,
+    ChatChannel,
+    Participant,
+    ParticipantStatus,
+    PlayerTraitScores,
+    Race,
+    RaceStatus,
+    UserRole,
+)
+from speedfog_racing.models import (
+    ChatMessage as ChatMessageModel,
+)
 from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.websocket.common import heartbeat_loop
 from speedfog_racing.websocket.manager import (
@@ -89,7 +101,7 @@ async def handle_spectator_websocket(
 
     conn = SpectatorConnection(websocket=websocket, locale=query_locale)
 
-    # chat_info is set only for users with a role (organizer/caster/participant)
+    # chat_info is set for all authenticated users (role or spectator)
     chat_info: dict[str, str | None] | None = None
 
     try:
@@ -123,7 +135,21 @@ async def handle_spectator_websocket(
                 elif any(p.user_id == user_id for p in race.participants):
                     role = "participant"
 
-                if role is not None and user_obj is not None:
+                if user_obj is not None:
+                    if role is not None:
+                        conn.role = role
+
+                        if role == "participant":
+                            participant = next(
+                                (p for p in race.participants if p.user_id == user_id), None
+                            )
+                            if participant:
+                                conn.participant_id = participant.id
+                                conn.is_playing = (
+                                    race.status == RaceStatus.RUNNING
+                                    and participant.status == ParticipantStatus.PLAYING
+                                )
+
                     # Load dominant_trait from PlayerTraitScores
                     trait_scores = await db.get(PlayerTraitScores, user_id)
                     dominant_trait = trait_scores.dominant_trait if trait_scores else None
@@ -132,7 +158,7 @@ async def handle_spectator_websocket(
                         "username": user_obj.twitch_username,
                         "display_name": user_obj.twitch_display_name,
                         "avatar_url": user_obj.twitch_avatar_url,
-                        "role": role,
+                        "role": role or "spectator",
                         "dominant_trait": dominant_trait,
                     }
 
@@ -166,18 +192,26 @@ async def handle_spectator_websocket(
 
                 if msg_type == "chat":
                     if chat_info is None:
-                        # Silently ignore: spectator-only connections cannot chat
-                        continue
+                        continue  # Not authenticated
+
                     try:
                         chat_msg = SendChatMessage.model_validate(msg)
                     except Exception:
                         continue
+
+                    # Validate channel access
+                    channel = chat_msg.channel
+                    if channel == "participants" and conn.role is None:
+                        continue  # Spectators cannot write to participants channel
+                    if channel == "public" and conn.is_playing:
+                        continue  # Playing participants cannot write to public
 
                     room = manager.get_room(race_id)
                     if room is None:
                         continue
 
                     broadcast = ChatBroadcastMessage(
+                        channel=channel,
                         username=chat_info["username"],  # type: ignore[arg-type]
                         display_name=chat_info["display_name"],
                         avatar_url=chat_info["avatar_url"],
@@ -186,7 +220,24 @@ async def handle_spectator_websocket(
                         message=chat_msg.message,
                         timestamp=datetime.now(UTC).isoformat(),
                     )
-                    await room.broadcast_to_all(broadcast.model_dump_json())
+
+                    # Persist to DB
+                    async with session_maker() as db:
+                        db_msg = ChatMessageModel(
+                            race_id=race_id,
+                            channel=ChatChannel(channel),
+                            user_id=conn.user_id,
+                            message=chat_msg.message,
+                        )
+                        db.add(db_msg)
+                        await db.commit()
+
+                    # Broadcast to appropriate connections
+                    msg_json = broadcast.model_dump_json()
+                    if channel == "participants":
+                        await room.broadcast_chat_participants(msg_json)
+                    else:
+                        await room.broadcast_chat_public(msg_json)
         finally:
             heartbeat_task.cancel()
             try:
