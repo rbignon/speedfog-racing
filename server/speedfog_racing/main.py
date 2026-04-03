@@ -19,6 +19,7 @@ from speedfog_racing.api import api_router
 from speedfog_racing.config import settings
 from speedfog_racing.database import async_session_maker, init_db
 from speedfog_racing.rate_limit import limiter
+from speedfog_racing.services.chat_cleanup import chat_cleanup_loop
 from speedfog_racing.services.i18n import load_translations
 from speedfog_racing.services.inactivity_monitor import inactivity_monitor_loop
 from speedfog_racing.services.twitch_live import twitch_live_poll_loop
@@ -69,9 +70,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             twitch_live_poll_loop(async_session_maker, ws_manager=ws_manager)
         )
 
+    # Start chat cleanup background task
+    chat_cleanup_task = asyncio.create_task(chat_cleanup_loop(async_session_maker))
+
     yield
 
     # Shutdown
+    chat_cleanup_task.cancel()
+    try:
+        await chat_cleanup_task
+    except asyncio.CancelledError:
+        pass
     if twitch_live_task:
         twitch_live_task.cancel()
         try:

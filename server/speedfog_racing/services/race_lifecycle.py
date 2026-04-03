@@ -1,6 +1,7 @@
 """Race lifecycle helpers (auto-finish, abandon)."""
 
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +31,7 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     if not all_done:
         return False
 
+    now = datetime.now(UTC)
     result = await db.execute(
         update(Race)
         .where(
@@ -37,7 +39,7 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
             Race.status == RaceStatus.RUNNING,
             Race.version == race.version,
         )
-        .values(status=RaceStatus.FINISHED, version=race.version + 1)
+        .values(status=RaceStatus.FINISHED, version=race.version + 1, finished_at=now)
     )
     if result.rowcount == 0:  # type: ignore[attr-defined]
         logger.warning("Race %s already transitioned (concurrent update)", race.id)
@@ -46,6 +48,7 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
 
     race.status = RaceStatus.FINISHED
     race.version += 1
+    race.finished_at = now
     await db.commit()
 
     logger.info("Race %s auto-finished (all participants done)", race.id)

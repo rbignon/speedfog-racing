@@ -1393,7 +1393,9 @@ async def finish_race(
             detail="Can only force-finish a running race",
         )
 
-    await _transition_status(db, race, [RaceStatus.RUNNING], RaceStatus.FINISHED)
+    await _transition_status(
+        db, race, [RaceStatus.RUNNING], RaceStatus.FINISHED, finished_at=datetime.now(UTC)
+    )
 
     # Mark remaining playing participants as abandoned
     for p in race.participants:
