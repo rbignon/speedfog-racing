@@ -71,6 +71,7 @@
 	let highlightFocusNodeId = $state<string | null>(null);
 	let dagView = $state<'map' | 'replay'>('map');
 	let chatCollapsed = $state(typeof window !== 'undefined' ? window.innerWidth < 1600 : true);
+	let chatActiveTab = $state<'participants' | 'public'>('participants');
 	function handleHighlightZoneClick(nodeId: string) {
 		// Reset first so re-clicking the same zone re-triggers the $effect
 		highlightFocusNodeId = null;
@@ -79,8 +80,8 @@
 		});
 	}
 
-	function sendChatMessage(message: string) {
-		raceStore.send({ type: 'chat', message });
+	function sendChatMessage(message: string, channel: 'participants' | 'public') {
+		raceStore.send({ type: 'chat', channel, message });
 	}
 
 	async function handleDownload() {
@@ -284,6 +285,27 @@
 		myWsParticipant?.status === 'finished' || myWsParticipant?.status === 'abandoned'
 	);
 
+	let hasParticipantsAccess = $derived(isOrganizer || auth.isAdmin || isCaster || !!myParticipant);
+	let isParticipantPlaying = $derived(
+		!!myParticipant && raceStatus === 'running' && !myParticipantFinished
+	);
+	let publicEnabled = $derived(
+		!isParticipantPlaying || !myParticipant || isOrganizer || auth.isAdmin || isCaster
+	);
+	let canSendChat = $derived(
+		chatActiveTab === 'participants'
+			? hasParticipantsAccess
+			: auth.isLoggedIn && !isParticipantPlaying
+	);
+
+	let prevFinished = $state(false);
+	$effect(() => {
+		if (myParticipantFinished && !prevFinished) {
+			chatActiveTab = 'public';
+		}
+		prevFinished = myParticipantFinished;
+	});
+
 	// Debug: force full DAG view even as participant (call __debugDagFull() in console)
 	let forceFullDag = $state(false);
 	if (typeof window !== 'undefined') {
@@ -467,156 +489,55 @@
 		<a href="/" class="btn btn-primary">Back to races</a>
 	</div>
 {:else}
-<div class="race-page">
-	<aside class="sidebar">
-		{#if raceStatus === 'finished'}
-			<div class="sidebar-section">
-				<Leaderboard
-					participants={raceStore.leaderboard}
-					{totalLayers}
-					mode="finished"
-					{zoneNames}
-					selectedIds={selectedParticipantIds}
-					onToggle={handleLeaderboardToggle}
-					onClearSelection={clearSelection}
-				/>
-			</div>
-
-			<CasterList
-				casters={initialRace.casters}
-				currentUserId={auth.user?.id ?? null}
-				raceId={initialRace.id}
-				onRaceUpdated={handleRaceUpdated}
-			/>
-		{:else if raceStatus === 'running'}
-			<WatchLive casters={initialRace.casters.filter((c) => c.is_live)} />
-
-			<div class="sidebar-section">
-				<Leaderboard
-					participants={raceStore.leaderboard}
-					{totalLayers}
-					zoneNames={myWsParticipantId && !myParticipantFinished && !forceFullDag
-						? null
-						: zoneNames}
-					selectedIds={selectedParticipantIds}
-					onToggle={handleLeaderboardToggle}
-					onClearSelection={clearSelection}
-				/>
-			</div>
-
-			{#if canAbandon}
-				<div class="abandon-section">
-					<button class="abandon-btn" onclick={() => (showAbandonConfirm = true)}>
-						Rage quit
-					</button>
-					{#if abandonError}
-						<p class="abandon-error">{abandonError}</p>
-					{/if}
-				</div>
-			{/if}
-
-			{#if myParticipant && seedsReleased}
-				<button
-					class="sidebar-download-btn"
-					onclick={() => {
-						downloadError = null;
-						showDownloadModal = true;
-					}}
-					disabled={downloading}
-				>
-					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-						<path
-							d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
-							stroke="currentColor"
-							stroke-width="1.5"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							fill="none"
-						/>
-					</svg>
-					{downloading ? 'Preparing...' : 'Download Race Package'}
-				</button>
-			{/if}
-		{:else}
-			<div class="sidebar-section">
-				<h2>
-					Participants ({mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
-						/{initialRace.max_participants}{/if})
-				</h2>
-				<div class="participant-list">
-					{#each mergedParticipants as mp (mp.id)}
-						<ParticipantCard
-							participant={mp}
-							liveStatus={mp.liveStatus}
-							isOrganizer={mp.user.id === initialRace.organizer.id}
-							isCurrentUser={auth.user?.id === mp.user.id}
-							isLive={mp.isLive}
-							streamUrl={mp.streamUrl}
-							canRemove={isOrganizer && mp.user.id !== initialRace.organizer.id}
-							onRemove={() => handleRemoveParticipant(mp.id, mp.user.twitch_username)}
-						/>
-					{/each}
-
-					{#if initialRace.pending_invites.length > 0}
-						{#each initialRace.pending_invites as invite (invite.id)}
-							<InviteCard
-								{invite}
-								canRemove={isOrganizer}
-								onRemove={() => handleRevokeInvite(invite.id, invite.twitch_username)}
-							/>
-						{/each}
-					{/if}
+	<div class="race-page">
+		<aside class="sidebar">
+			{#if raceStatus === 'finished'}
+				<div class="sidebar-section">
+					<Leaderboard
+						participants={raceStore.leaderboard}
+						{totalLayers}
+						mode="finished"
+						{zoneNames}
+						selectedIds={selectedParticipantIds}
+						onToggle={handleLeaderboardToggle}
+						onClearSelection={clearSelection}
+					/>
 				</div>
 
-				{#if isOrganizer}
-					{#if showInviteSearch}
-						<div class="invite-search">
-							<ParticipantSearch
-								mode="participant"
-								raceId={initialRace.id}
-								onAdded={handleParticipantAdded}
-								onCancel={() => (showInviteSearch = false)}
-							/>
-						</div>
-					{:else}
-						<button class="invite-btn" onclick={() => (showInviteSearch = true)}> + Invite </button>
-					{/if}
+				<CasterList
+					casters={initialRace.casters}
+					currentUserId={auth.user?.id ?? null}
+					raceId={initialRace.id}
+					onRaceUpdated={handleRaceUpdated}
+				/>
+			{:else if raceStatus === 'running'}
+				<WatchLive casters={initialRace.casters.filter((c) => c.is_live)} />
+
+				<div class="sidebar-section">
+					<Leaderboard
+						participants={raceStore.leaderboard}
+						{totalLayers}
+						zoneNames={myWsParticipantId && !myParticipantFinished && !forceFullDag
+							? null
+							: zoneNames}
+						selectedIds={selectedParticipantIds}
+						onToggle={handleLeaderboardToggle}
+						onClearSelection={clearSelection}
+					/>
+				</div>
+
+				{#if canAbandon}
+					<div class="abandon-section">
+						<button class="abandon-btn" onclick={() => (showAbandonConfirm = true)}>
+							Rage quit
+						</button>
+						{#if abandonError}
+							<p class="abandon-error">{abandonError}</p>
+						{/if}
+					</div>
 				{/if}
 
-				{#if initialRace.open_registration && raceStatus === 'setup'}
-					{#if canJoin}
-						<button class="join-btn" onclick={handleJoin} disabled={joining}>
-							{joining ? 'Joining...' : 'Join Race'}
-						</button>
-					{:else if raceFull && !myParticipant}
-						<button class="join-btn disabled" disabled> Race Full </button>
-					{/if}
-					{#if canLeave}
-						<button class="leave-btn" onclick={handleLeave} disabled={leaving}>
-							{leaving ? 'Leaving...' : 'Leave Race'}
-						</button>
-					{/if}
-					{#if !auth.isLoggedIn}
-						<p class="login-hint">
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<!-- svelte-ignore a11y_click_events_have_key_events -->
-							<a
-								href={getTwitchLoginUrl()}
-								data-sveltekit-reload
-								onclick={() =>
-									sessionStorage.setItem('redirect_after_login', window.location.pathname)}
-								>Log in</a
-							> to join this race
-						</p>
-					{/if}
-					{#if joinLeaveError}
-						<p class="join-leave-error">{joinLeaveError}</p>
-					{/if}
-				{/if}
-			</div>
-
-			{#if myParticipant}
-				{#if seedsReleased}
+				{#if myParticipant && seedsReleased}
 					<button
 						class="sidebar-download-btn"
 						onclick={() => {
@@ -637,275 +558,386 @@
 						</svg>
 						{downloading ? 'Preparing...' : 'Download Race Package'}
 					</button>
-				{:else}
-					<p class="waiting-seeds">Waiting for seeds...</p>
 				{/if}
-			{/if}
+			{:else}
+				<div class="sidebar-section">
+					<h2>
+						Participants ({mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
+							/{initialRace.max_participants}{/if})
+					</h2>
+					<div class="participant-list">
+						{#each mergedParticipants as mp (mp.id)}
+							<ParticipantCard
+								participant={mp}
+								liveStatus={mp.liveStatus}
+								isOrganizer={mp.user.id === initialRace.organizer.id}
+								isCurrentUser={auth.user?.id === mp.user.id}
+								isLive={mp.isLive}
+								streamUrl={mp.streamUrl}
+								canRemove={isOrganizer && mp.user.id !== initialRace.organizer.id}
+								onRemove={() => handleRemoveParticipant(mp.id, mp.user.twitch_username)}
+							/>
+						{/each}
 
-			<CasterList
-				casters={initialRace.casters}
-				editable={isOrganizer}
-				canCast={auth.isLoggedIn && !myParticipant && !isCaster}
-				{isCaster}
-				currentUserId={auth.user?.id ?? null}
-				raceId={initialRace.id}
-				onRaceUpdated={handleRaceUpdated}
-			/>
+						{#if initialRace.pending_invites.length > 0}
+							{#each initialRace.pending_invites as invite (invite.id)}
+								<InviteCard
+									{invite}
+									canRemove={isOrganizer}
+									onRemove={() => handleRevokeInvite(invite.id, invite.twitch_username)}
+								/>
+							{/each}
+						{/if}
+					</div>
 
-			{#if isOrganizer || auth.isAdmin || isCaster || myParticipant}
-				<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}>OBS Overlays</button>
-			{/if}
-		{/if}
+					{#if isOrganizer}
+						{#if showInviteSearch}
+							<div class="invite-search">
+								<ParticipantSearch
+									mode="participant"
+									raceId={initialRace.id}
+									onAdded={handleParticipantAdded}
+									onCancel={() => (showInviteSearch = false)}
+								/>
+							</div>
+						{:else}
+							<button class="invite-btn" onclick={() => (showInviteSearch = true)}>
+								+ Invite
+							</button>
+						{/if}
+					{/if}
 
-		<div class="sidebar-footer">
-			<SpectatorCount count={spectatorCount} />
-		</div>
-	</aside>
-
-	<main class="main-content">
-		<header class="race-header">
-			<div>
-				<h1>{raceName}</h1>
-				<p class="organizer">
-					Organized by {initialRace.organizer.twitch_display_name ||
-						initialRace.organizer.twitch_username}
-				</p>
-			</div>
-			<div class="header-right">
-				<ShareButtons />
-				{#if initialRace.scheduled_at}
-					<AddToCalendar
-						scheduledAt={initialRace.scheduled_at}
-						{raceName}
-						raceUrl={window.location.href}
-					/>
-				{/if}
-				{#if !initialRace.is_public}
-					<span class="visibility-badge">Private</span>
-				{/if}
-				{#if initialRace.seed_number}
-					<span class="seed-badge">Seed {initialRace.seed_number}</span>
-				{/if}
-				<RaceStatus status={raceStatus} />
-				{#if raceStatus === 'running'}
-					<span class="elapsed-clock">{formatElapsed(elapsedSeconds)}</span>
-				{/if}
-			</div>
-		</header>
-
-		{#if liveSeed?.graph_json && raceStatus === 'finished'}
-			<Podium participants={raceStore.leaderboard} />
-			<div class="dag-view-toggle">
-				<button
-					class="toggle-btn"
-					class:active={dagView === 'map'}
-					onclick={() => (dagView = 'map')}>Map</button
-				>
-				<button
-					class="toggle-btn"
-					class:active={dagView === 'replay'}
-					onclick={() => (dagView = 'replay')}>Replay</button
-				>
-			</div>
-		{/if}
-
-		<div class="dag-wrapper">
-			{#if countdownRemaining !== null}
-				<div class="go-overlay countdown-overlay">
-					<span class="countdown-text">{countdownRemaining}</span>
+					{#if initialRace.open_registration && raceStatus === 'setup'}
+						{#if canJoin}
+							<button class="join-btn" onclick={handleJoin} disabled={joining}>
+								{joining ? 'Joining...' : 'Join Race'}
+							</button>
+						{:else if raceFull && !myParticipant}
+							<button class="join-btn disabled" disabled> Race Full </button>
+						{/if}
+						{#if canLeave}
+							<button class="leave-btn" onclick={handleLeave} disabled={leaving}>
+								{leaving ? 'Leaving...' : 'Leave Race'}
+							</button>
+						{/if}
+						{#if !auth.isLoggedIn}
+							<p class="login-hint">
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
+								<a
+									href={getTwitchLoginUrl()}
+									data-sveltekit-reload
+									onclick={() =>
+										sessionStorage.setItem('redirect_after_login', window.location.pathname)}
+									>Log in</a
+								> to join this race
+							</p>
+						{/if}
+						{#if joinLeaveError}
+							<p class="join-leave-error">{joinLeaveError}</p>
+						{/if}
+					{/if}
 				</div>
-			{:else if showGo}
-				<div class="go-overlay">
-					<span class="go-text">GO!</span>
+
+				{#if myParticipant}
+					{#if seedsReleased}
+						<button
+							class="sidebar-download-btn"
+							onclick={() => {
+								downloadError = null;
+								showDownloadModal = true;
+							}}
+							disabled={downloading}
+						>
+							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+								<path
+									d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
+									stroke="currentColor"
+									stroke-width="1.5"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									fill="none"
+								/>
+							</svg>
+							{downloading ? 'Preparing...' : 'Download Race Package'}
+						</button>
+					{:else}
+						<p class="waiting-seeds">Waiting for seeds...</p>
+					{/if}
+				{/if}
+
+				<CasterList
+					casters={initialRace.casters}
+					editable={isOrganizer}
+					canCast={auth.isLoggedIn && !myParticipant && !isCaster}
+					{isCaster}
+					currentUserId={auth.user?.id ?? null}
+					raceId={initialRace.id}
+					onRaceUpdated={handleRaceUpdated}
+				/>
+
+				{#if isOrganizer || auth.isAdmin || isCaster || myParticipant}
+					<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}>OBS Overlays</button
+					>
+				{/if}
+			{/if}
+
+			<div class="sidebar-footer">
+				<SpectatorCount count={spectatorCount} />
+			</div>
+		</aside>
+
+		<main class="main-content">
+			<header class="race-header">
+				<div>
+					<h1>{raceName}</h1>
+					<p class="organizer">
+						Organized by {initialRace.organizer.twitch_display_name ||
+							initialRace.organizer.twitch_username}
+					</p>
+				</div>
+				<div class="header-right">
+					<ShareButtons />
+					{#if initialRace.scheduled_at}
+						<AddToCalendar
+							scheduledAt={initialRace.scheduled_at}
+							{raceName}
+							raceUrl={window.location.href}
+						/>
+					{/if}
+					{#if !initialRace.is_public}
+						<span class="visibility-badge">Private</span>
+					{/if}
+					{#if initialRace.seed_number}
+						<span class="seed-badge">Seed {initialRace.seed_number}</span>
+					{/if}
+					<RaceStatus status={raceStatus} />
+					{#if raceStatus === 'running'}
+						<span class="elapsed-clock">{formatElapsed(elapsedSeconds)}</span>
+					{/if}
+				</div>
+			</header>
+
+			{#if liveSeed?.graph_json && raceStatus === 'finished'}
+				<Podium participants={raceStore.leaderboard} />
+				<div class="dag-view-toggle">
+					<button
+						class="toggle-btn"
+						class:active={dagView === 'map'}
+						onclick={() => (dagView = 'map')}>Map</button
+					>
+					<button
+						class="toggle-btn"
+						class:active={dagView === 'replay'}
+						onclick={() => (dagView = 'replay')}>Replay</button
+					>
 				</div>
 			{/if}
 
-			{#if liveSeed?.graph_json && raceStatus === 'running'}
-				{#if myWsParticipantId && !myParticipantFinished && !forceFullDag}
+			<div class="dag-wrapper">
+				{#if countdownRemaining !== null}
+					<div class="go-overlay countdown-overlay">
+						<span class="countdown-text">{countdownRemaining}</span>
+					</div>
+				{:else if showGo}
+					<div class="go-overlay">
+						<span class="go-text">GO!</span>
+					</div>
+				{/if}
+
+				{#if liveSeed?.graph_json && raceStatus === 'running'}
+					{#if myWsParticipantId && !myParticipantFinished && !forceFullDag}
+						<MetroDagProgressive
+							graphJson={liveSeed.graph_json}
+							participants={raceStore.participants}
+							myParticipantId={myWsParticipantId}
+						/>
+					{:else}
+						<MetroDagFull
+							graphJson={liveSeed.graph_json}
+							participants={raceStore.leaderboard}
+							{raceStatus}
+							highlightIds={selectedParticipantIds}
+						/>
+					{/if}
+				{:else if liveSeed?.graph_json && raceStatus === 'finished'}
+					{#if dagView === 'map'}
+						<MetroDagFull
+							graphJson={liveSeed.graph_json}
+							participants={raceStore.leaderboard}
+							{raceStatus}
+							highlightIds={selectedParticipantIds}
+							focusNodeId={highlightFocusNodeId}
+						/>
+					{:else}
+						<RaceReplay
+							graphJson={liveSeed.graph_json}
+							participants={raceStore.leaderboard}
+							focusNodeId={highlightFocusNodeId}
+							highlightIds={selectedParticipantIds}
+						/>
+					{/if}
+				{:else if liveSeed?.graph_json && myWsParticipantId && !forceFullDag}
 					<MetroDagProgressive
 						graphJson={liveSeed.graph_json}
 						participants={raceStore.participants}
 						myParticipantId={myWsParticipantId}
 					/>
-				{:else}
-					<MetroDagFull
-						graphJson={liveSeed.graph_json}
-						participants={raceStore.leaderboard}
-						{raceStatus}
-						highlightIds={selectedParticipantIds}
-					/>
-				{/if}
-			{:else if liveSeed?.graph_json && raceStatus === 'finished'}
-				{#if dagView === 'map'}
-					<MetroDagFull
-						graphJson={liveSeed.graph_json}
-						participants={raceStore.leaderboard}
-						{raceStatus}
-						highlightIds={selectedParticipantIds}
-						focusNodeId={highlightFocusNodeId}
-					/>
-				{:else}
-					<RaceReplay
-						graphJson={liveSeed.graph_json}
-						participants={raceStore.leaderboard}
-						focusNodeId={highlightFocusNodeId}
-						highlightIds={selectedParticipantIds}
-					/>
-				{/if}
-			{:else if liveSeed?.graph_json && myWsParticipantId && !forceFullDag}
-				<MetroDagProgressive
-					graphJson={liveSeed.graph_json}
-					participants={raceStore.participants}
-					myParticipantId={myWsParticipantId}
-				/>
-			{:else if liveSeed?.graph_json && (isOrganizer || forceFullDag)}
-				<MetroDag graphJson={liveSeed.graph_json} />
-			{:else if totalLayers}
-				<div class="dag-placeholder">
-					<p class="dag-note">Map revealed at race start</p>
-				</div>
-			{/if}
-		</div>
-
-		{#if isOrganizer}
-			<RaceControls
-				race={initialRace}
-				{raceStatus}
-				onRaceUpdated={handleRaceUpdated}
-				onDeleteRace={handleDeleteRace}
-			/>
-		{/if}
-
-		{#if liveSeed?.graph_json && raceStatus === 'finished'}
-			<RaceStats participants={raceStore.leaderboard} />
-			<RaceHighlights
-				participants={raceStore.leaderboard}
-				graphJson={liveSeed.graph_json}
-				myParticipantId={myWsParticipant?.id}
-				onzoneclick={handleHighlightZoneClick}
-			/>
-		{/if}
-
-		<div class="race-info">
-			<div class="info-grid">
-				<div class="info-item">
-					<span class="label">Participants</span>
-					<span class="value"
-						>{mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
-							/{initialRace.max_participants}{/if}</span
-					>
-				</div>
-				<div class="info-item">
-					<span class="label">Created</span>
-					<span class="value">{formatDate(initialRace.created_at)}</span>
-				</div>
-				<div class="info-item">
-					<span class="label">Scheduled</span>
-					{#if editingSchedule}
-						<div class="schedule-edit">
-							<DateTimePicker
-								value={scheduleInput}
-								onchange={(iso) => (scheduleInput = iso)}
-								min={new Date()}
-								disabled={scheduleSaving}
-							/>
-							<div class="schedule-edit-actions">
-								<button class="btn-inline" onclick={saveSchedule} disabled={scheduleSaving}>
-									{scheduleSaving ? '...' : 'Save'}
-								</button>
-								<button
-									class="btn-inline btn-inline-secondary"
-									onclick={() => (editingSchedule = false)}
-									disabled={scheduleSaving}
-								>
-									Cancel
-								</button>
-							</div>
-							{#if scheduleError}
-								<span class="schedule-error">{scheduleError}</span>
-							{/if}
-						</div>
-					{:else if initialRace.scheduled_at}
-						<span class="value">
-							{formatDate(initialRace.scheduled_at)}
-							{#if isOrganizer && raceStatus === 'setup'}
-								<button class="btn-edit" onclick={startEditSchedule}>Edit</button>
-							{/if}
-						</span>
-					{:else if isOrganizer && raceStatus === 'setup'}
-						<span class="value">
-							To be defined
-							<button class="btn-edit" onclick={startEditSchedule}>Set time</button>
-						</span>
-					{:else}
-						<span class="value">To be defined</span>
-					{/if}
-				</div>
-				{#if initialRace.started_at}
-					<div class="info-item">
-						<span class="label">Started</span>
-						<span class="value">{formatDate(initialRace.started_at)}</span>
+				{:else if liveSeed?.graph_json && (isOrganizer || forceFullDag)}
+					<MetroDag graphJson={liveSeed.graph_json} />
+				{:else if totalLayers}
+					<div class="dag-placeholder">
+						<p class="dag-note">Map revealed at race start</p>
 					</div>
 				{/if}
 			</div>
-		</div>
 
-		{#if initialRace.pool_config}
-			<PoolSettingsCard
-				poolName={initialRace.pool_name || 'standard'}
-				poolConfig={initialRace.pool_config}
+			{#if isOrganizer}
+				<RaceControls
+					race={initialRace}
+					{raceStatus}
+					onRaceUpdated={handleRaceUpdated}
+					onDeleteRace={handleDeleteRace}
+				/>
+			{/if}
+
+			{#if liveSeed?.graph_json && raceStatus === 'finished'}
+				<RaceStats participants={raceStore.leaderboard} />
+				<RaceHighlights
+					participants={raceStore.leaderboard}
+					graphJson={liveSeed.graph_json}
+					myParticipantId={myWsParticipant?.id}
+					onzoneclick={handleHighlightZoneClick}
+				/>
+			{/if}
+
+			<div class="race-info">
+				<div class="info-grid">
+					<div class="info-item">
+						<span class="label">Participants</span>
+						<span class="value"
+							>{mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
+								/{initialRace.max_participants}{/if}</span
+						>
+					</div>
+					<div class="info-item">
+						<span class="label">Created</span>
+						<span class="value">{formatDate(initialRace.created_at)}</span>
+					</div>
+					<div class="info-item">
+						<span class="label">Scheduled</span>
+						{#if editingSchedule}
+							<div class="schedule-edit">
+								<DateTimePicker
+									value={scheduleInput}
+									onchange={(iso) => (scheduleInput = iso)}
+									min={new Date()}
+									disabled={scheduleSaving}
+								/>
+								<div class="schedule-edit-actions">
+									<button class="btn-inline" onclick={saveSchedule} disabled={scheduleSaving}>
+										{scheduleSaving ? '...' : 'Save'}
+									</button>
+									<button
+										class="btn-inline btn-inline-secondary"
+										onclick={() => (editingSchedule = false)}
+										disabled={scheduleSaving}
+									>
+										Cancel
+									</button>
+								</div>
+								{#if scheduleError}
+									<span class="schedule-error">{scheduleError}</span>
+								{/if}
+							</div>
+						{:else if initialRace.scheduled_at}
+							<span class="value">
+								{formatDate(initialRace.scheduled_at)}
+								{#if isOrganizer && raceStatus === 'setup'}
+									<button class="btn-edit" onclick={startEditSchedule}>Edit</button>
+								{/if}
+							</span>
+						{:else if isOrganizer && raceStatus === 'setup'}
+							<span class="value">
+								To be defined
+								<button class="btn-edit" onclick={startEditSchedule}>Set time</button>
+							</span>
+						{:else}
+							<span class="value">To be defined</span>
+						{/if}
+					</div>
+					{#if initialRace.started_at}
+						<div class="info-item">
+							<span class="label">Started</span>
+							<span class="value">{formatDate(initialRace.started_at)}</span>
+						</div>
+					{/if}
+				</div>
+			</div>
+
+			{#if initialRace.pool_config}
+				<PoolSettingsCard
+					poolName={initialRace.pool_name || 'standard'}
+					poolConfig={initialRace.pool_config}
+				/>
+			{/if}
+		</main>
+
+		{#if auth.isLoggedIn}
+			<ChatSidebar
+				messagesParticipants={raceStore.chatMessagesParticipants}
+				messagesPublic={raceStore.chatMessagesPublic}
+				canSend={canSendChat}
+				collapsed={chatCollapsed}
+				showParticipants={hasParticipantsAccess}
+				{publicEnabled}
+				activeTab={hasParticipantsAccess ? chatActiveTab : 'public'}
+				onSend={sendChatMessage}
+				onToggle={() => (chatCollapsed = !chatCollapsed)}
+				onTabChange={(tab) => (chatActiveTab = tab)}
 			/>
 		{/if}
-	</main>
 
-	<ChatSidebar
-		messages={raceStore.chatMessages}
-		canSend={isOrganizer || auth.isAdmin || isCaster || !!myParticipant}
-		collapsed={chatCollapsed}
-		onSend={sendChatMessage}
-		onToggle={() => (chatCollapsed = !chatCollapsed)}
-	/>
+		{#if showObsModal}
+			<ObsOverlayModal raceId={initialRace.id} onClose={() => (showObsModal = false)} />
+		{/if}
 
-	{#if showObsModal}
-		<ObsOverlayModal raceId={initialRace.id} onClose={() => (showObsModal = false)} />
-	{/if}
+		{#if showDownloadModal}
+			<DownloadModal
+				{downloading}
+				error={downloadError}
+				onClose={() => (showDownloadModal = false)}
+				onDownload={handleDownload}
+			/>
+		{/if}
 
-	{#if showDownloadModal}
-		<DownloadModal
-			{downloading}
-			error={downloadError}
-			onClose={() => (showDownloadModal = false)}
-			onDownload={handleDownload}
-		/>
-	{/if}
+		{#if pendingConfirm}
+			<ConfirmModal
+				title={pendingConfirm.title}
+				message={pendingConfirm.message}
+				confirmLabel={pendingConfirm.confirmLabel}
+				danger={pendingConfirm.danger ?? false}
+				onConfirm={async () => {
+					const action = pendingConfirm?.action;
+					pendingConfirm = null;
+					if (action) await action();
+				}}
+				onCancel={() => (pendingConfirm = null)}
+			/>
+		{/if}
 
-	{#if pendingConfirm}
-		<ConfirmModal
-			title={pendingConfirm.title}
-			message={pendingConfirm.message}
-			confirmLabel={pendingConfirm.confirmLabel}
-			danger={pendingConfirm.danger ?? false}
-			onConfirm={async () => {
-				const action = pendingConfirm?.action;
-				pendingConfirm = null;
-				if (action) await action();
-			}}
-			onCancel={() => (pendingConfirm = null)}
-		/>
-	{/if}
-
-	{#if showAbandonConfirm}
-		<ConfirmModal
-			title="Rage Quit"
-			message="Are you sure? This is irreversible."
-			confirmLabel="Rage quit"
-			danger
-			loading={abandoning}
-			onConfirm={handleAbandon}
-			onCancel={() => (showAbandonConfirm = false)}
-		/>
-	{/if}
-</div>
+		{#if showAbandonConfirm}
+			<ConfirmModal
+				title="Rage Quit"
+				message="Are you sure? This is irreversible."
+				confirmLabel="Rage quit"
+				danger
+				loading={abandoning}
+				onConfirm={handleAbandon}
+				onCancel={() => (showAbandonConfirm = false)}
+			/>
+		{/if}
+	</div>
 {/if}
 
 <style>
