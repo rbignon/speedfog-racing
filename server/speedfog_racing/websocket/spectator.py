@@ -21,6 +21,7 @@ from speedfog_racing.models import (
     PlayerTraitScores,
     Race,
     RaceStatus,
+    User,
     UserRole,
 )
 from speedfog_racing.models import (
@@ -37,6 +38,7 @@ from speedfog_racing.websocket.manager import (
 )
 from speedfog_racing.websocket.schemas import (
     ChatBroadcastMessage,
+    ChatHistoryMessage,
     ParticipantInfo,
     RaceInfo,
     RaceStateMessage,
@@ -90,6 +92,73 @@ def build_seed_info(
     )
 
 
+async def _send_chat_history(
+    websocket: WebSocket,
+    session_maker: async_sessionmaker[AsyncSession],
+    race_id: uuid.UUID,
+    race: Race,
+    channel: ChatChannel,
+) -> None:
+    """Load chat history from DB and send to client."""
+    async with session_maker() as db:
+        result = await db.execute(
+            select(ChatMessageModel, User)
+            .join(User, ChatMessageModel.user_id == User.id)
+            .where(
+                ChatMessageModel.race_id == race_id,
+                ChatMessageModel.channel == channel,
+            )
+            .order_by(ChatMessageModel.created_at.asc())
+        )
+        rows = result.all()
+
+        if not rows:
+            history = ChatHistoryMessage(channel=channel.value, messages=[])
+            await websocket.send_text(history.model_dump_json())
+            return
+
+        # Batch-load trait scores for all unique users
+        user_ids = list({chat_msg.user_id for chat_msg, _ in rows})
+        trait_results = await db.execute(
+            select(PlayerTraitScores).where(PlayerTraitScores.user_id.in_(user_ids))
+        )
+        traits_by_user = {t.user_id: t.dominant_trait for t in trait_results.scalars()}
+
+    # Build role lookup from race relationships
+    # (already loaded, detached with expire_on_commit=False)
+    participant_user_ids = {p.user_id for p in race.participants}
+    caster_user_ids = {c.user_id for c in race.casters}
+
+    def _resolve_role(user: User) -> str:
+        if race.organizer_id == user.id:
+            return "organizer"
+        if user.role == UserRole.ADMIN:
+            return "admin"
+        if user.id in caster_user_ids:
+            return "caster"
+        if user.id in participant_user_ids:
+            return "participant"
+        return "spectator"
+
+    messages = []
+    for chat_msg, user in rows:
+        messages.append(
+            ChatBroadcastMessage(
+                channel=channel.value,
+                username=user.twitch_username,
+                display_name=user.twitch_display_name,
+                avatar_url=user.twitch_avatar_url,
+                role=_resolve_role(user),
+                dominant_trait=traits_by_user.get(chat_msg.user_id),
+                message=chat_msg.message,
+                timestamp=chat_msg.created_at.isoformat(),
+            )
+        )
+
+    history = ChatHistoryMessage(channel=channel.value, messages=messages)
+    await websocket.send_text(history.model_dump_json())
+
+
 async def handle_spectator_websocket(
     websocket: WebSocket, race_id: uuid.UUID, session_maker: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -117,8 +186,6 @@ async def handle_spectator_websocket(
 
             # Prefer user's DB locale over query param if set
             if user_id:
-                from speedfog_racing.models import User
-
                 user_result = await db.execute(select(User).where(User.id == user_id))
                 user_obj = user_result.scalar_one_or_none()
                 if user_obj and user_obj.locale:
@@ -168,6 +235,14 @@ async def handle_spectator_websocket(
 
         # Register connection
         await manager.connect_spectator(race_id, conn)
+
+        # Send chat history for accessible channels
+        if conn.role is not None:
+            await _send_chat_history(
+                websocket, session_maker, race_id, race, ChatChannel.PARTICIPANTS
+            )
+        if conn.user_id is not None and not conn.is_playing:
+            await _send_chat_history(websocket, session_maker, race_id, race, ChatChannel.PUBLIC)
 
         # Start heartbeat in background
         heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
