@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,6 +78,17 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
     )
 
     # ------------------------------------------------------------------
+    # Shared derived data (used by KPIs, weekly, and heatmaps)
+    # ------------------------------------------------------------------
+    # Participant count per race_id (str key for UUID compatibility)
+    race_participant_counts: dict[str, int] = {}
+    for p in participants:
+        key = str(p.race_id)
+        race_participant_counts[key] = race_participant_counts.get(key, 0) + 1
+
+    finished_races = [r for r in races if r.status == RaceStatus.FINISHED]
+
+    # ------------------------------------------------------------------
     # KPIs
     # ------------------------------------------------------------------
     total_users = len(users)
@@ -93,14 +104,9 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
     )
     active_users_pct = round(active_users_30d / total_users * 100, 1) if total_users > 0 else 0.0
 
-    finished_races = [r for r in races if r.status == RaceStatus.FINISHED]
     total_races_finished = len(finished_races)
 
     if finished_races:
-        race_participant_counts: dict[str, int] = {}
-        for p in participants:
-            key = str(p.race_id)
-            race_participant_counts[key] = race_participant_counts.get(key, 0) + 1
         finished_ids = {str(r.id) for r in finished_races}
         counts_for_finished = [race_participant_counts.get(rid, 0) for rid in finished_ids]
         avg_participants = (
@@ -153,18 +159,12 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
             if wk in week_set:
                 week_new_users[wk] += 1
 
-    # Build participant count per race for weekly avg
-    race_participant_counts_all: dict[str, int] = {}
-    for p in participants:
-        key = str(p.race_id)
-        race_participant_counts_all[key] = race_participant_counts_all.get(key, 0) + 1
-
     for r in races:
         if r.started_at is not None and r.status in (RaceStatus.RUNNING, RaceStatus.FINISHED):
             wk = _iso_week_key(_ensure_utc(r.started_at))
             if wk in week_set:
                 week_races[wk] += 1
-                week_race_participant_sum[wk] += race_participant_counts_all.get(str(r.id), 0)
+                week_race_participant_sum[wk] += race_participant_counts.get(str(r.id), 0)
                 week_race_count[wk] += 1
 
     for ts in training_sessions:
@@ -207,7 +207,7 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
         if bucket is None:
             continue
         col = started.weekday()
-        race_grid[bucket][col] += race_participant_counts_all.get(str(r.id), 0)
+        race_grid[bucket][col] += race_participant_counts.get(str(r.id), 0)
 
     for ts in training_sessions:
         if ts.created_at is None:
@@ -238,7 +238,7 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
             tz = ZoneInfo(tz_name)
             offset = datetime.now(tz).utcoffset()
             offset_minutes = int(offset.total_seconds() // 60) if offset is not None else 0
-        except (ZoneInfoNotFoundError, Exception):
+        except Exception:
             offset_minutes = 0
         tz_list.append({"timezone": tz_name, "offset_minutes": offset_minutes, "count": count})
 
