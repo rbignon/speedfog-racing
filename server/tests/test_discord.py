@@ -147,7 +147,7 @@ async def test_race_created_mentions_runner_role(created_kwargs):
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
         mock_settings.discord_runner_role_id = "999"
 
         mock_client = AsyncMock()
@@ -172,7 +172,7 @@ async def test_race_created_no_mention_without_role(created_kwargs):
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
         mock_settings.discord_runner_role_id = None
 
         mock_client = AsyncMock()
@@ -200,7 +200,7 @@ async def test_sends_created_notification(created_kwargs):
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -215,7 +215,7 @@ async def test_sends_created_notification(created_kwargs):
         assert "New Race" in embed["title"]
         assert "Sunday Sprint #3" in embed["title"]
         assert embed["color"] == 0xF97316  # orange
-        assert embed["url"] == "https://speedfog.malenia.win/race/abc-123"
+        assert embed["url"] == "https://speedfog.racing/race/abc-123"
 
         fields = {f["name"]: f["value"] for f in embed["fields"]}
         assert fields["Pool"] == "Sprint"
@@ -236,7 +236,7 @@ async def test_created_with_scheduled_at(created_kwargs):
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -265,7 +265,7 @@ async def test_created_training_notification(created_kwargs):
         ),
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -293,7 +293,7 @@ async def test_sends_race_notification(race_kwargs):
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -308,7 +308,7 @@ async def test_sends_race_notification(race_kwargs):
         embed = payload["embeds"][0]
         assert "Started" in embed["title"]
         assert embed["color"] == 0xF97316  # orange
-        assert embed["url"] == "https://speedfog.malenia.win/race/abc-123"
+        assert embed["url"] == "https://speedfog.racing/race/abc-123"
         assert embed["thumbnail"]["url"] == "https://example.com/avatar.png"
 
         fields = {f["name"]: f["value"] for f in embed["fields"]}
@@ -333,7 +333,7 @@ async def test_sends_training_notification(race_kwargs):
         ),
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -361,7 +361,7 @@ async def test_no_avatar(race_kwargs):
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -388,7 +388,7 @@ async def test_sends_finished_notification(finished_kwargs):
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -422,7 +422,7 @@ async def test_finished_no_finishers(finished_kwargs):
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -451,7 +451,7 @@ async def test_rate_limit_logged(race_kwargs):
         patch("speedfog_racing.discord.logger") as mock_logger,
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -471,7 +471,7 @@ async def test_http_error_suppressed(race_kwargs):
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
 
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.ConnectError("Connection refused")
@@ -600,7 +600,7 @@ async def test_create_scheduled_event():
 
         with patch("speedfog_racing.discord.settings") as mock_settings:
             mock_settings.discord_guild_id = "guild-456"
-            mock_settings.base_url = "https://speedfog.malenia.win"
+            mock_settings.base_url = "https://speedfog.racing"
 
             result = await create_scheduled_event(
                 race_name="Sunday Sprint",
@@ -616,10 +616,7 @@ async def test_create_scheduled_event():
             payload = call_args[1]["json"]
             assert payload["name"] == "Sunday Sprint"
             assert payload["entity_type"] == 3
-            assert (
-                payload["entity_metadata"]["location"]
-                == "https://speedfog.malenia.win/race/race-789"
-            )
+            assert payload["entity_metadata"]["location"] == "https://speedfog.racing/race/race-789"
 
 
 @pytest.mark.asyncio

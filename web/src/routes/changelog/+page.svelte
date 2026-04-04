@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PUBLIC_BASE_URL } from '$env/static/public';
 	import changelogRaw from '../../../../CHANGELOG.md?raw';
 
 	interface ChangelogItem {
@@ -69,7 +70,7 @@
 <svelte:head>
 	<title>Changelog – SpeedFog Racing</title>
 	<meta name="description" content="Latest updates and changes to SpeedFog Racing. New features, bug fixes, and improvements." />
-	<link rel="canonical" href="https://speedfog.malenia.win/changelog" />
+	<link rel="canonical" href="{PUBLIC_BASE_URL}/changelog" />
 </svelte:head>
 
 <main class="changelog">

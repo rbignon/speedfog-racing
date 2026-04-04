@@ -1,27 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://speedfog.malenia.win</loc>
+    <loc>https://speedfog.racing</loc>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://speedfog.malenia.win/races</loc>
+    <loc>https://speedfog.racing/races</loc>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://speedfog.malenia.win/about</loc>
+    <loc>https://speedfog.racing/about</loc>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://speedfog.malenia.win/stats</loc>
+    <loc>https://speedfog.racing/stats</loc>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://speedfog.malenia.win/help</loc>
+    <loc>https://speedfog.racing/help</loc>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://speedfog.malenia.win/changelog</loc>
+    <loc>https://speedfog.racing/changelog</loc>
     <priority>0.3</priority>
   </url>
 </urlset>

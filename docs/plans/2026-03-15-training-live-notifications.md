@@ -133,7 +133,7 @@ async def test_sends_notification_when_live():
         patch("speedfog_racing.discord._send_training_webhook", mock_send),
     ):
         mock_settings.discord_training_webhook_url = "https://discord.com/api/webhooks/training"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
         mock_live.check_live_status = AsyncMock(return_value={"testplayer"})
 
         await send_training_live_notification(
@@ -185,7 +185,7 @@ async def test_cooldown_allows_after_expiry():
         patch("speedfog_racing.discord._send_training_webhook", mock_send),
     ):
         mock_settings.discord_training_webhook_url = "https://discord.com/api/webhooks/training"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
         mock_live.check_live_status = AsyncMock(return_value={"testplayer"})
 
         await send_training_live_notification(
@@ -208,7 +208,7 @@ async def test_embed_contains_pool_and_links():
         patch("speedfog_racing.discord._send_training_webhook", mock_send),
     ):
         mock_settings.discord_training_webhook_url = "https://discord.com/api/webhooks/training"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
         mock_live.check_live_status = AsyncMock(return_value={"testplayer"})
 
         await send_training_live_notification(
@@ -235,7 +235,7 @@ async def test_embed_has_avatar_thumbnail():
         patch("speedfog_racing.discord._send_training_webhook", mock_send),
     ):
         mock_settings.discord_training_webhook_url = "https://discord.com/api/webhooks/training"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
         mock_live.check_live_status = AsyncMock(return_value={"testplayer"})
 
         await send_training_live_notification(
@@ -259,7 +259,7 @@ async def test_no_thumbnail_without_avatar():
         patch("speedfog_racing.discord._send_training_webhook", mock_send),
     ):
         mock_settings.discord_training_webhook_url = "https://discord.com/api/webhooks/training"
-        mock_settings.base_url = "https://speedfog.malenia.win"
+        mock_settings.base_url = "https://speedfog.racing"
         mock_live.check_live_status = AsyncMock(return_value={"testplayer"})
 
         await send_training_live_notification(

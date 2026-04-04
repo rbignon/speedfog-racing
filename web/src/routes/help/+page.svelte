@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PUBLIC_BASE_URL } from '$env/static/public';
 	import MetroDag from '$lib/dag/MetroDag.svelte';
 	import heroSeed from '$lib/data/hero-seed.json';
 
@@ -127,7 +128,7 @@
 <svelte:head>
 	<title>How to Play – SpeedFog Racing</title>
 	<meta name="description" content="How to play SpeedFog Racing. Setup guide, pool descriptions, and instructions for joining competitive Elden Ring fog gate races." />
-	<link rel="canonical" href="https://speedfog.malenia.win/help" />
+	<link rel="canonical" href="{PUBLIC_BASE_URL}/help" />
 </svelte:head>
 
 <main class="help">

@@ -90,7 +90,7 @@ BASE_URL=https://your-domain.com
 | `DISCORD_RUNNER_ROLE_ID`       | Role management | The Runner role ID to assign/remove                                 |
 | `DISCORD_PUBLIC_KEY`           | Interactions    | Ed25519 public key for signature verification                       |
 | `DISCORD_CHANNEL_ID`           | Runner message  | Channel for the Runner button message                               |
-| `BASE_URL`                     | URLs            | Base URL for race links (default: `https://speedfog.malenia.win`)   |
+| `BASE_URL`                     | URLs            | Base URL for race links (default: `https://speedfog.racing`)        |
 
 ## 8. Post the Runner Button Message
 

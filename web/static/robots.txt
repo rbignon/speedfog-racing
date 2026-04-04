@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://speedfog.malenia.win/sitemap.xml
+Sitemap: https://speedfog.racing/sitemap.xml

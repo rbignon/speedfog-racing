@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { PUBLIC_BASE_URL } from '$env/static/public';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { fetchRaces, fetchRacesPaginated, getTwitchLoginUrl, type Race } from '$lib/api';
 	import MetroDagAnimated from '$lib/dag/MetroDagAnimated.svelte';
@@ -62,7 +63,7 @@
 <svelte:head>
 	<title>SpeedFog Racing</title>
 	<meta name="description" content="Competitive Elden Ring Fog Randomizer racing platform. Race against other players through randomized fog gates in real time." />
-	<link rel="canonical" href="https://speedfog.malenia.win/" />
+	<link rel="canonical" href="{PUBLIC_BASE_URL}/" />
 </svelte:head>
 
 {#if errorMessage}
