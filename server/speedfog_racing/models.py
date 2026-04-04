@@ -96,6 +96,7 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.ORGANIZER)
     locale: Mapped[str | None] = mapped_column(String(10), nullable=True)
     overlay_settings: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     elo_rating: Mapped[float] = mapped_column(default=1500.0)
