@@ -975,6 +975,43 @@ export interface AdminPoolStats {
   >;
 }
 
+export interface AnalyticsKpis {
+  total_users: number;
+  new_users_this_month: number;
+  active_users_30d: number;
+  active_users_pct: number;
+  total_races_finished: number;
+  avg_participants: number;
+  total_solo: number;
+  solo_completion_pct: number;
+}
+
+export interface AnalyticsWeekly {
+  weeks: string[];
+  new_users: number[];
+  races: number[];
+  solo: number[];
+  solo_finished: number[];
+  solo_abandoned: number[];
+  avg_participants: number[];
+}
+
+export interface AnalyticsTimezone {
+  timezone: string;
+  offset_minutes: number;
+  count: number;
+}
+
+export interface AdminAnalytics {
+  kpis: AnalyticsKpis;
+  weekly: AnalyticsWeekly;
+  heatmaps: {
+    race_players: number[][];
+    solo: number[][];
+  };
+  timezones: AnalyticsTimezone[];
+}
+
 /**
  * Fetch seed pool statistics (admin only).
  */
@@ -983,6 +1020,16 @@ export async function fetchAdminSeedStats(): Promise<AdminPoolStats> {
     headers: getAuthHeaders(),
   });
   return handleResponse<AdminPoolStats>(response);
+}
+
+/**
+ * Fetch admin analytics data (admin only).
+ */
+export async function fetchAdminAnalytics(): Promise<AdminAnalytics> {
+  const response = await fetch(`${API_BASE}/admin/analytics`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<AdminAnalytics>(response);
 }
 
 /**
