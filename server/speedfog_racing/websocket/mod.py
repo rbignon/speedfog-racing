@@ -57,6 +57,7 @@ from speedfog_racing.websocket.schemas import (
     RaceStartMessage,
     SeedInfo,
     extract_spawn_items,
+    system_chat_message,
 )
 from speedfog_racing.websocket.spectator import broadcast_race_state_update, load_chat_history
 
@@ -853,9 +854,13 @@ async def handle_finished(
         graph_json=_get_graph_json(participant),
     )
 
-    # Unlock PUBLIC channel for finished participant's spectator connection
+    # Notify public chat + unlock PUBLIC channel for finished participant
+    display = participant.user.twitch_display_name or participant.user.twitch_username
     room = manager.get_room(participant.race_id)
     if room:
+        await room.broadcast_chat_public(
+            system_chat_message("public", f"{display} has finished the race!")
+        )
         spec_conn = room.get_spectator_by_user_id(participant.user_id)
         if spec_conn and spec_conn.is_playing:
             spec_conn.is_playing = False

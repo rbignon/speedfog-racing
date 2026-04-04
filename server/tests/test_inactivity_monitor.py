@@ -84,8 +84,9 @@ async def test_abandons_stale_participant(async_session):
         await db.commit()
         p_id = p.id
 
-    abandoned_race_ids = await abandon_inactive_participants(async_session)
+    abandoned_race_ids, abandoned_pids = await abandon_inactive_participants(async_session)
     assert len(abandoned_race_ids) == 1
+    assert p_id in abandoned_pids
 
     async with async_session() as db:
         p = await db.get(Participant, p_id)
@@ -144,8 +145,9 @@ async def test_abandons_noshow_participant(async_session, noshow_status):
         await db.commit()
         p_id = p.id
 
-    abandoned_race_ids = await abandon_inactive_participants(async_session)
+    abandoned_race_ids, abandoned_pids = await abandon_inactive_participants(async_session)
     assert len(abandoned_race_ids) == 1
+    assert p_id in abandoned_pids
 
     async with async_session() as db:
         p = await db.get(Participant, p_id)
@@ -203,7 +205,7 @@ async def test_does_not_abandon_recent_noshow(async_session):
         await db.commit()
         p_id = p.id
 
-    abandoned_race_ids = await abandon_inactive_participants(async_session)
+    abandoned_race_ids, _ = await abandon_inactive_participants(async_session)
     assert len(abandoned_race_ids) == 0
 
     async with async_session() as db:
@@ -262,7 +264,7 @@ async def test_does_not_abandon_active_participant(async_session):
         await db.commit()
         p_id = p.id
 
-    abandoned_race_ids = await abandon_inactive_participants(async_session)
+    abandoned_race_ids, _ = await abandon_inactive_participants(async_session)
     assert len(abandoned_race_ids) == 0
 
     async with async_session() as db:
@@ -321,7 +323,7 @@ async def test_does_not_abandon_null_last_igt(async_session):
         await db.commit()
         p_id = p.id
 
-    abandoned_race_ids = await abandon_inactive_participants(async_session)
+    abandoned_race_ids, _ = await abandon_inactive_participants(async_session)
     assert len(abandoned_race_ids) == 0
 
     async with async_session() as db:

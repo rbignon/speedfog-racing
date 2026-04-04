@@ -81,6 +81,7 @@ from speedfog_racing.services.stats_service import (
 )
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 from speedfog_racing.websocket.manager import manager
+from speedfog_racing.websocket.schemas import system_chat_message
 
 logger = logging.getLogger(__name__)
 
@@ -1469,6 +1470,13 @@ async def abandon_race(
     room = manager.get_room(race_id)
     if room:
         room.clear_is_playing(user.id)
+
+    # Notify public chat
+    display = user.twitch_display_name or user.twitch_username
+    if room:
+        await room.broadcast_chat_public(
+            system_chat_message("public", f"{display} has abandoned the race.")
+        )
 
     # Broadcast updates
     graph_json = race.seed.graph_json if race.seed else None

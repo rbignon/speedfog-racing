@@ -1,5 +1,6 @@
 """WebSocket message schemas."""
 
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -248,3 +249,17 @@ class ChatHistoryMessage(BaseModel):
     type: Literal["chat_history"] = "chat_history"
     channel: str  # "participants" | "public"
     messages: list[ChatBroadcastMessage]
+
+
+def system_chat_message(channel: str, message: str) -> str:
+    """Build a system chat message JSON string for broadcasting (not persisted)."""
+    return ChatBroadcastMessage(
+        channel=channel,
+        username="",
+        display_name=None,
+        avatar_url=None,
+        role="system",
+        dominant_trait=None,
+        message=message,
+        timestamp=datetime.now(UTC).isoformat(),
+    ).model_dump_json()

@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.discord import fire_race_finished_notifications
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
+from speedfog_racing.websocket.schemas import system_chat_message
 
 logger = logging.getLogger(__name__)
 
@@ -21,17 +22,18 @@ POLL_INTERVAL = 60  # seconds
 
 async def abandon_inactive_participants(
     session_maker: async_sessionmaker[AsyncSession],
-) -> list[uuid.UUID]:
+) -> tuple[list[uuid.UUID], set[uuid.UUID]]:
     """Find and abandon inactive participants in running races.
 
     Covers two cases:
     - PLAYING participants whose IGT hasn't changed in INACTIVITY_TIMEOUT
     - REGISTERED/READY participants who never connected after race started
 
-    Returns list of race IDs that had abandonments (for broadcasting).
+    Returns (race_ids with abandonments, participant_ids that were just abandoned).
     """
     cutoff = datetime.now(UTC) - INACTIVITY_TIMEOUT
     affected_race_ids: list[uuid.UUID] = []
+    abandoned_participant_ids: set[uuid.UUID] = set()
 
     async with session_maker() as db:
         result = await db.execute(
@@ -62,6 +64,7 @@ async def abandon_inactive_participants(
             )
             logger.info("Auto-abandoning participant %s (%s)", p.id, reason)
             p.status = ParticipantStatus.ABANDONED
+            abandoned_participant_ids.add(p.id)
             if p.race_id not in affected_race_ids:
                 affected_race_ids.append(p.race_id)
 
@@ -79,7 +82,7 @@ async def abandon_inactive_participants(
             if isinstance(race_obj, Race) and race_obj.status == RaceStatus.RUNNING:
                 await check_race_auto_finish(db, race_obj)
 
-    return affected_race_ids
+    return affected_race_ids, abandoned_participant_ids
 
 
 async def inactivity_monitor_loop(
@@ -93,7 +96,7 @@ async def inactivity_monitor_loop(
     )
     while True:
         try:
-            affected = await abandon_inactive_participants(session_maker)
+            affected, abandoned_ids = await abandon_inactive_participants(session_maker)
             if affected:
                 from speedfog_racing.websocket.manager import manager
                 from speedfog_racing.websocket.spectator import broadcast_race_state_update
@@ -111,12 +114,24 @@ async def inactivity_monitor_loop(
                         )
                         race = result.scalar_one_or_none()
                         if race:
-                            # Clear is_playing for abandoned participants
                             room = manager.get_room(race_id)
                             if room:
                                 for p in race.participants:
                                     if p.status == ParticipantStatus.ABANDONED:
                                         room.clear_is_playing(p.user_id)
+
+                                # Notify public chat for newly abandoned participants only
+                                for p in race.participants:
+                                    if p.id in abandoned_ids:
+                                        display = (
+                                            p.user.twitch_display_name or p.user.twitch_username
+                                        )
+                                        await room.broadcast_chat_public(
+                                            system_chat_message(
+                                                "public",
+                                                f"{display} has been removed due to inactivity.",
+                                            )
+                                        )
 
                             graph_json = race.seed.graph_json if race.seed else None
                             await manager.broadcast_leaderboard(

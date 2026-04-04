@@ -78,7 +78,7 @@ export interface ChatMessage {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
-  role: string; // "organizer" | "admin" | "caster" | "participant"
+  role: string; // "organizer" | "admin" | "caster" | "participant" | "system"
   dominant_trait: string | null;
   message: string;
   timestamp: string;

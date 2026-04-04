@@ -65,32 +65,39 @@
 			<p class="empty">No messages yet</p>
 		{:else}
 			{#each messages as msg, i (msg.timestamp + msg.username + i)}
-				<div class="message">
-					<div class="message-header">
-						{#if msg.avatar_url}
-							<img src={msg.avatar_url} alt="" class="avatar" />
-						{:else}
-							<div class="avatar-placeholder"></div>
-						{/if}
-						<div class="meta">
-							<a href="/user/{msg.username}" target="_blank" rel="noopener noreferrer" class="display-name">{msg.display_name ?? msg.username}</a>
-							{#if msg.role === 'organizer'}
-								<span class="badge badge-organizer">ORG</span>
-							{:else if msg.role === 'caster'}
-								<span class="badge badge-caster">CAST</span>
-							{/if}
-							{#if msg.dominant_trait && TRAIT_META[msg.dominant_trait]}
-								{@const trait = TRAIT_META[msg.dominant_trait]}
-								<span
-									class="badge badge-trait"
-									style="background: {trait.color}20; color: {trait.color}"
-								>{trait.icon}</span>
-							{/if}
-							<span class="timestamp">{formatTime(msg.timestamp)}</span>
-						</div>
+				{#if msg.role === 'system'}
+					<div class="system-message">
+						<span class="system-text">{msg.message}</span>
+						<span class="timestamp">{formatTime(msg.timestamp)}</span>
 					</div>
-					<p class="message-text">{msg.message}</p>
-				</div>
+				{:else}
+					<div class="message">
+						<div class="message-header">
+							{#if msg.avatar_url}
+								<img src={msg.avatar_url} alt="" class="avatar" />
+							{:else}
+								<div class="avatar-placeholder"></div>
+							{/if}
+							<div class="meta">
+								<a href="/user/{msg.username}" target="_blank" rel="noopener noreferrer" class="display-name">{msg.display_name ?? msg.username}</a>
+								{#if msg.role === 'organizer'}
+									<span class="badge badge-organizer">ORG</span>
+								{:else if msg.role === 'caster'}
+									<span class="badge badge-caster">CAST</span>
+								{/if}
+								{#if msg.dominant_trait && TRAIT_META[msg.dominant_trait]}
+									{@const trait = TRAIT_META[msg.dominant_trait]}
+									<span
+										class="badge badge-trait"
+										style="background: {trait.color}20; color: {trait.color}"
+									>{trait.icon}</span>
+								{/if}
+								<span class="timestamp">{formatTime(msg.timestamp)}</span>
+							</div>
+						</div>
+						<p class="message-text">{msg.message}</p>
+					</div>
+				{/if}
 			{/each}
 		{/if}
 	</div>
@@ -133,6 +140,19 @@
 		font-style: italic;
 		text-align: center;
 		margin: auto;
+	}
+
+	.system-message {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.25rem 0;
+	}
+
+	.system-text {
+		font-size: var(--font-size-sm);
+		font-style: italic;
+		color: var(--color-text-secondary);
 	}
 
 	.message {
