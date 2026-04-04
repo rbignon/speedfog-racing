@@ -11,8 +11,8 @@ description = "Balanced race with legacy dungeons and bosses"
 [requirements]
 legacy_dungeons = 2
 bosses = 7
-mini_dungeons = 8
-major_bosses = 8
+mini_dungeons = 6
+major_bosses = 10
 
 [structure]
 min_layers = 25
