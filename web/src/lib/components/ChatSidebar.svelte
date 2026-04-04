@@ -135,7 +135,7 @@
 							onclick={() => publicEnabled && onTabChange('public')}
 							title={!publicEnabled ? 'Available after finishing the race' : ''}
 						>
-							Public
+							Spoilers
 							{#if unreadPublic > 0 && activeTab !== 'public'}
 								<span class="tab-badge"
 									>{unreadPublic > 99 ? '99+' : unreadPublic}</span
