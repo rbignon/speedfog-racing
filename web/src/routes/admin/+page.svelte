@@ -440,7 +440,7 @@
 
 	$effect(() => {
 		if (analytics && newUsersCanvas) {
-			renderCharts(analytics);
+			renderCharts($state.snapshot(analytics));
 		}
 		return () => destroyCharts();
 	});
