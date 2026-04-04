@@ -1,6 +1,11 @@
 """Shared API response helpers."""
 
+import uuid
+from collections.abc import Sequence
 from datetime import datetime
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus, User
 from speedfog_racing.schemas import (
@@ -134,3 +139,44 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         can_join=can_join,
         my_role=my_role,
     )
+
+
+async def compute_race_stats(
+    db: AsyncSession, race_ids: Sequence[uuid.UUID]
+) -> tuple[dict[uuid.UUID, int], dict[tuple[uuid.UUID, uuid.UUID], int]]:
+    """Compute participant counts and placements for a batch of races.
+
+    Returns:
+        total_by_race: {race_id: total_participant_count}
+        placements: {(race_id, participant_id): 1-based placement}
+                    Only includes finished participants.
+    """
+    if not race_ids:
+        return {}, {}
+
+    count_q = await db.execute(
+        select(Participant.race_id, func.count().label("total"))
+        .where(Participant.race_id.in_(race_ids))
+        .group_by(Participant.race_id)
+    )
+    total_by_race = {row.race_id: row.total for row in count_q}
+
+    finished_q = await db.execute(
+        select(Participant.race_id, Participant.id)
+        .where(
+            Participant.race_id.in_(race_ids),
+            Participant.status == ParticipantStatus.FINISHED,
+        )
+        .order_by(Participant.race_id, Participant.igt_ms)
+    )
+    placements: dict[tuple[uuid.UUID, uuid.UUID], int] = {}
+    current_race_id: uuid.UUID | None = None
+    rank = 0
+    for row in finished_q:
+        if row.race_id != current_race_id:
+            current_race_id = row.race_id
+            rank = 0
+        rank += 1
+        placements[(row.race_id, row.id)] = rank
+
+    return total_by_race, placements

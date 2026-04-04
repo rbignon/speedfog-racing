@@ -10,13 +10,17 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import format_pool_display_name, race_date, user_response
+from speedfog_racing.api.helpers import (
+    compute_race_stats,
+    format_pool_display_name,
+    race_date,
+    user_response,
+)
 from speedfog_racing.auth import require_admin
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
     Caster,
     Participant,
-    ParticipantStatus,
     Race,
     Seed,
     SeedStatus,
@@ -287,28 +291,27 @@ async def get_global_activity(
 
     Requires admin role.
     """
-    # TODO: optimize with SQL-level pagination when dataset grows
     items: list[ActivityItem] = []
 
-    # 1. Race participations (all users)
+    # 1. Race participations (all users, no Race.participants loaded)
     part_q = await db.execute(
         select(Participant).options(
             selectinload(Participant.user),
-            selectinload(Participant.race).selectinload(Race.participants),
+            selectinload(Participant.race),
         )
     )
-    for p in part_q.scalars().all():
-        race = p.race
-        finished_participants = sorted(
-            [pp for pp in race.participants if pp.status == ParticipantStatus.FINISHED],
-            key=lambda pp: pp.igt_ms,
-        )
-        placement = None
-        for idx, fp in enumerate(finished_participants):
-            if fp.id == p.id:
-                placement = idx + 1
-                break
+    all_participants = part_q.scalars().all()
 
+    # 2. Organized races (all users)
+    org_q = await db.execute(select(Race).options(selectinload(Race.organizer)))
+    all_races = org_q.scalars().all()
+
+    # Batch-compute counts and placements for all races
+    all_race_ids = list({p.race_id for p in all_participants} | {r.id for r in all_races})
+    total_by_race, placements = await compute_race_stats(db, all_race_ids)
+
+    for p in all_participants:
+        race = p.race
         items.append(
             RaceParticipantActivity(
                 date=race_date(race),
@@ -316,21 +319,14 @@ async def get_global_activity(
                 race_id=race.id,
                 race_name=race.name,
                 status=race.status.value,
-                placement=placement,
-                total_participants=len(race.participants),
+                placement=placements.get((race.id, p.id)),
+                total_participants=total_by_race.get(race.id, 0),
                 igt_ms=p.igt_ms,
                 death_count=p.death_count,
             )
         )
 
-    # 2. Organized races (all users)
-    org_q = await db.execute(
-        select(Race).options(
-            selectinload(Race.organizer),
-            selectinload(Race.participants),
-        )
-    )
-    for race in org_q.scalars().all():
+    for race in all_races:
         items.append(
             RaceOrganizerActivity(
                 date=race_date(race),
@@ -338,7 +334,7 @@ async def get_global_activity(
                 race_id=race.id,
                 race_name=race.name,
                 status=race.status.value,
-                participant_count=len(race.participants),
+                participant_count=total_by_race.get(race.id, 0),
             )
         )
 

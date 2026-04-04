@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.api.helpers import (
+    compute_race_stats,
     format_pool_display_name,
     race_date,
     race_response,
@@ -305,48 +306,36 @@ async def get_user_activity(
     user_id = user.id
     items: list[ActivityItem] = []
 
-    # 1. Race participations
+    # 1. Race participations (no Race.participants loaded, use batch stats)
     part_q = await db.execute(
         select(Participant)
         .where(Participant.user_id == user_id)
-        .options(
-            selectinload(Participant.race).selectinload(Race.participants),
-        )
-        .join(Race, Participant.race_id == Race.id)
+        .options(selectinload(Participant.race))
     )
     participations = part_q.scalars().all()
 
+    # 2. Organized races
+    org_q = await db.execute(select(Race).where(Race.organizer_id == user_id))
+    organized_races = org_q.scalars().all()
+
+    # Batch-compute counts and placements for all relevant races
+    all_race_ids = list({p.race_id for p in participations} | {r.id for r in organized_races})
+    total_by_race, placements = await compute_race_stats(db, all_race_ids)
+
     for p in participations:
         race = p.race
-        # Compute placement: rank finished participants by IGT
-        finished_participants = sorted(
-            [pp for pp in race.participants if pp.status == ParticipantStatus.FINISHED],
-            key=lambda pp: pp.igt_ms,
-        )
-        placement = None
-        for idx, fp in enumerate(finished_participants):
-            if fp.id == p.id:
-                placement = idx + 1
-                break
-
         items.append(
             RaceParticipantActivity(
                 date=race_date(race),
                 race_id=race.id,
                 race_name=race.name,
                 status=race.status.value,
-                placement=placement,
-                total_participants=len(race.participants),
+                placement=placements.get((race.id, p.id)),
+                total_participants=total_by_race.get(race.id, 0),
                 igt_ms=p.igt_ms,
                 death_count=p.death_count,
             )
         )
-
-    # 2. Organized races
-    org_q = await db.execute(
-        select(Race).where(Race.organizer_id == user_id).options(selectinload(Race.participants))
-    )
-    organized_races = org_q.scalars().all()
 
     for race in organized_races:
         items.append(
@@ -355,7 +344,7 @@ async def get_user_activity(
                 race_id=race.id,
                 race_name=race.name,
                 status=race.status.value,
-                participant_count=len(race.participants),
+                participant_count=total_by_race.get(race.id, 0),
             )
         )
 
