@@ -291,6 +291,7 @@ async def get_global_activity(
 
     Requires admin role.
     """
+    # TODO: optimize with SQL-level pagination when dataset grows
     items: list[ActivityItem] = []
 
     # 1. Race participations (all users, no Race.participants loaded)

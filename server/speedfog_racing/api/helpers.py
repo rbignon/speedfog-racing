@@ -167,7 +167,7 @@ async def compute_race_stats(
             Participant.race_id.in_(race_ids),
             Participant.status == ParticipantStatus.FINISHED,
         )
-        .order_by(Participant.race_id, Participant.igt_ms)
+        .order_by(Participant.race_id, Participant.igt_ms, Participant.finished_at)
     )
     placements: dict[tuple[uuid.UUID, uuid.UUID], int] = {}
     current_race_id: uuid.UUID | None = None
