@@ -213,8 +213,13 @@ async def exchange_auth_code(request: Request, body: CodeExchangeRequest) -> Cod
 @router.get("/me", response_model=UserPublicResponse)
 async def get_me(
     user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+    timezone: Annotated[str | None, Query(max_length=50)] = None,
 ) -> User:
-    """Get current authenticated user info."""
+    """Get current authenticated user info. Optionally updates timezone."""
+    if timezone is not None:
+        user.timezone = timezone
+        await db.commit()
     return user
 
 

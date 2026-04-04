@@ -278,7 +278,17 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   const token = getStoredToken();
   if (!token) return null;
 
-  const response = await fetch(`${API_BASE}/auth/me`, {
+  let url = `${API_BASE}/auth/me`;
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz) {
+      url += `?timezone=${encodeURIComponent(tz)}`;
+    }
+  } catch {
+    // Intl API unavailable, proceed without timezone
+  }
+
+  const response = await fetch(url, {
     headers: getAuthHeaders(),
   });
 
