@@ -282,14 +282,8 @@ class ConnectionManager:
         if not room:
             return
 
-        sorted_participants = sort_leaderboard(participants, graph_json=graph_json)
+        sorted_participants, entry_igts = sort_leaderboard(participants, graph_json=graph_json)
         connected_ids = set(room.mods.keys())
-
-        # Pre-compute layer entry IGTs once (avoids repeated zone_history walks)
-        entry_igts: dict[uuid.UUID, int | None] = {}
-        if graph_json:
-            for p in sorted_participants:
-                entry_igts[p.id] = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
 
         # Compute leader splits for gap timing
         leader_splits: dict[int, int] = {}
@@ -518,8 +512,12 @@ def sort_leaderboard(
     participants: list[Participant],
     *,
     graph_json: dict[str, Any] | None = None,
-) -> list[Participant]:
+) -> tuple[list[Participant], dict[uuid.UUID, int | None]]:
     """Sort participants for leaderboard display.
+
+    Returns (sorted_participants, entry_igts) where entry_igts maps each
+    participant ID to their layer entry IGT (None if unavailable).
+    The caller can reuse entry_igts instead of recomputing it.
 
     Priority:
     1. Finished players first, sorted by IGT (lowest first)
@@ -536,13 +534,11 @@ def sort_leaderboard(
         "abandoned": 4,
     }
 
-    # Pre-compute layer entry IGTs for playing participants
-    entry_igts: dict[uuid.UUID, int] = {}
+    # Pre-compute layer entry IGTs for all participants (shared with caller)
+    entry_igts: dict[uuid.UUID, int | None] = {}
     if graph_json:
         for p in participants:
-            if p.status.value == "playing":
-                entry = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
-                entry_igts[p.id] = entry if entry is not None else p.igt_ms
+            entry_igts[p.id] = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
 
     def sort_key(p: Participant) -> tuple[int, int, int]:
         status = p.status.value
@@ -551,14 +547,14 @@ def sort_leaderboard(
         if status == "finished":
             return (priority, p.igt_ms, 0)
         elif status == "playing":
-            entry_igt = entry_igts.get(p.id, p.igt_ms)
+            entry_igt = entry_igts.get(p.id) or p.igt_ms
             return (priority, -p.current_layer, entry_igt)
         elif status == "abandoned":
             return (priority, -p.current_layer, p.igt_ms)
         else:
             return (priority, 0, 0)
 
-    return sorted(participants, key=sort_key)
+    return sorted(participants, key=sort_key), entry_igts
 
 
 # Global connection manager instance

@@ -374,7 +374,7 @@ async def send_race_state(
     room = manager.get_room(race.id)
     connected_ids = set(room.mods.keys()) if room else set()
     graph = race.seed.graph_json if race.seed else None
-    sorted_participants = sort_leaderboard(race.participants)
+    sorted_participants, _ = sort_leaderboard(race.participants)
     participant_infos: list[ParticipantInfo] = [
         participant_to_info(p, connected_ids=connected_ids, graph_json=graph)
         for p in sorted_participants

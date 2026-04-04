@@ -107,11 +107,37 @@ def _participant_load_options() -> list[Any]:
     ]
 
 
+def _participant_light_load_options() -> list[Any]:
+    """Eager-load options for participant without other participants/casters.
+
+    Sufficient for processing a single message and broadcasting a
+    player_update. Handlers that need the full participant list (for
+    leaderboard broadcasts or death aggregation) should call
+    _load_participant instead.
+    """
+    return [
+        selectinload(Participant.user),
+        selectinload(Participant.race).selectinload(Race.seed),
+    ]
+
+
 async def _load_participant(db: AsyncSession, participant_id: uuid.UUID) -> Participant | None:
     """Load participant with all relationships needed for broadcast."""
     result = await db.execute(
         select(Participant)
         .options(*_participant_load_options())
+        .where(Participant.id == participant_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _load_participant_light(
+    db: AsyncSession, participant_id: uuid.UUID
+) -> Participant | None:
+    """Load participant with minimal relationships (no other participants/casters)."""
+    result = await db.execute(
+        select(Participant)
+        .options(*_participant_light_load_options())
         .where(Participant.id == participant_id)
     )
     return result.scalar_one_or_none()
@@ -220,14 +246,11 @@ async def handle_mod_websocket(
         # Register connection (includes locale)
         await manager.connect_mod(race_id, participant_id, user_id, websocket, mod_locale)
 
-        # Broadcast updated connection status to all clients
+        # Broadcast updated connection status (reuse detached objects from auth session)
         try:
-            async with session_maker() as db:
-                p = await _load_participant(db, participant_id)
-                if p:
-                    await manager.broadcast_leaderboard(
-                        race_id, p.race.participants, graph_json=_get_graph_json(p)
-                    )
+            await manager.broadcast_leaderboard(
+                race_id, participant.race.participants, graph_json=_get_graph_json(participant)
+            )
         except Exception:
             logger.warning(f"Failed to broadcast connect: race={race_id}")
 
@@ -333,7 +356,7 @@ async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
     room = manager.get_room(race.id)
     connected_ids = set(room.mods.keys()) if room else set()
     graph = seed.graph_json if seed else None
-    sorted_participants = sort_leaderboard(race.participants)
+    sorted_participants, _ = sort_leaderboard(race.participants)
     participant_infos: list[ParticipantInfo] = [
         participant_to_info(p, connected_ids=connected_ids, graph_json=graph)
         for p in sorted_participants
@@ -396,10 +419,17 @@ async def handle_status_update(
     participant_id: uuid.UUID,
     msg: dict[str, Any],
 ) -> None:
-    """Handle periodic status update from mod."""
+    """Handle periodic status update from mod.
+
+    Uses a light DB load (no other participants/casters) for the common
+    path. Only reloads with full relationships when a leaderboard
+    broadcast or death aggregation is needed.
+    """
     delta = 0
+    became_playing = False
+
     async with session_maker() as db:
-        participant = await _load_participant(db, participant_id)
+        participant = await _load_participant_light(db, participant_id)
         if not participant:
             return
 
@@ -442,7 +472,6 @@ async def handle_status_update(
         # Transition READY→PLAYING first so current_zone/zone_history are
         # set before death attribution (handles reconnect with deaths > 0).
         race = participant.race
-        became_playing = False
         if race.status == RaceStatus.RUNNING and participant.status == ParticipantStatus.READY:
             participant.status = ParticipantStatus.PLAYING
             became_playing = True
@@ -475,20 +504,30 @@ async def handle_status_update(
 
         await db.commit()
 
+    # Common path: only a player_update (no full participant list needed)
+    if not became_playing and delta <= 0:
+        await manager.broadcast_player_update(
+            participant.race_id, participant, graph_json=_get_graph_json(participant)
+        )
+        return
+
+    # Uncommon path: reload with full relationships for leaderboard/death broadcasts
+    async with session_maker() as db:
+        participant = await _load_participant(db, participant_id)
+        if not participant:
+            return
+
     if became_playing:
-        # READY→PLAYING: broadcast full leaderboard so all clients see the transition
         await manager.broadcast_leaderboard(
             participant.race_id,
             participant.race.participants,
             graph_json=_get_graph_json(participant),
         )
     else:
-        # Broadcast player update to all (mods + spectators, detached objects)
         await manager.broadcast_player_update(
             participant.race_id, participant, graph_json=_get_graph_json(participant)
         )
 
-    # Broadcast death counts to all mods when deaths are attributed
     if delta > 0:
         counts = aggregate_death_counts(participant.race.participants)
         logger.info(

@@ -504,7 +504,7 @@ class TestLeaderboard:
         p2 = MockParticipant(status=ParticipantStatus.FINISHED, igt_ms=50000)
         p3 = MockParticipant(status=ParticipantStatus.REGISTERED)
 
-        sorted_list = sort_leaderboard([p1, p2, p3])
+        sorted_list, _ = sort_leaderboard([p1, p2, p3])
 
         assert sorted_list[0].status == ParticipantStatus.FINISHED
         assert sorted_list[1].status == ParticipantStatus.PLAYING
@@ -516,7 +516,7 @@ class TestLeaderboard:
         p2 = MockParticipant(status=ParticipantStatus.FINISHED, igt_ms=50000)
         p3 = MockParticipant(status=ParticipantStatus.FINISHED, igt_ms=70000)
 
-        sorted_list = sort_leaderboard([p1, p2, p3])
+        sorted_list, _ = sort_leaderboard([p1, p2, p3])
 
         assert sorted_list[0].igt_ms == 50000
         assert sorted_list[1].igt_ms == 60000
@@ -528,7 +528,7 @@ class TestLeaderboard:
         p2 = MockParticipant(status=ParticipantStatus.PLAYING, current_layer=5, igt_ms=50000)
         p3 = MockParticipant(status=ParticipantStatus.PLAYING, current_layer=5, igt_ms=40000)
 
-        sorted_list = sort_leaderboard([p1, p2, p3])
+        sorted_list, _ = sort_leaderboard([p1, p2, p3])
 
         # Layer 5 players first, sorted by IGT
         assert sorted_list[0].current_layer == 5
@@ -543,7 +543,7 @@ class TestLeaderboard:
         p2 = MockParticipant(status=ParticipantStatus.REGISTERED)
         p3 = MockParticipant(status=ParticipantStatus.READY)
 
-        sorted_list = sort_leaderboard([p1, p2, p3])
+        sorted_list, _ = sort_leaderboard([p1, p2, p3])
 
         assert sorted_list[0].status == ParticipantStatus.READY
         assert sorted_list[1].status == ParticipantStatus.REGISTERED
@@ -581,7 +581,7 @@ class TestLeaderboard:
             ],
         )
 
-        sorted_list = sort_leaderboard([p2, p1], graph_json=graph)
+        sorted_list, _ = sort_leaderboard([p2, p1], graph_json=graph)
 
         # Player A should be first (entered layer 2 at 100000 < 110000)
         assert sorted_list[0].igt_ms == 120000  # p1
@@ -593,7 +593,7 @@ class TestLeaderboard:
         p2 = MockParticipant(status=ParticipantStatus.ABANDONED, current_layer=5, igt_ms=120000)
         p3 = MockParticipant(status=ParticipantStatus.ABANDONED, current_layer=5, igt_ms=80000)
 
-        sorted_list = sort_leaderboard([p1, p2, p3])
+        sorted_list, _ = sort_leaderboard([p1, p2, p3])
 
         # Layer 5 players first, sorted by IGT
         assert sorted_list[0].current_layer == 5
