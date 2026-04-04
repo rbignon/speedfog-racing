@@ -103,7 +103,7 @@
 						{#if participant.status === 'playing' || participant.status === 'abandoned'}
 							{@const zone = participant.status === 'playing' ? zoneName(participant.current_zone) : null}
 							<div class="name-row">
-								<a href="/user/{participant.twitch_username}" class="name name-link" style="color: {color};" onclick={(e) => e.stopPropagation()}>
+								<a href="/user/{participant.twitch_username}" target="_blank" class="name name-link" style="color: {color};" onclick={(e) => e.stopPropagation()}>
 									{#if mode === 'running' && participant.status === 'playing'}
 										<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
 									{/if}
@@ -123,7 +123,7 @@
 								{/if}
 							</span>
 						{:else}
-							<a href="/user/{participant.twitch_username}" class="name name-link" style="color: {color};" onclick={(e) => e.stopPropagation()}>
+							<a href="/user/{participant.twitch_username}" target="_blank" class="name name-link" style="color: {color};" onclick={(e) => e.stopPropagation()}>
 								{#if mode === 'running' && (participant.status === 'ready' || participant.status === 'registered')}
 									<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
 								{/if}
