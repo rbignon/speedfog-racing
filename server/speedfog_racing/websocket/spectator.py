@@ -92,7 +92,7 @@ def build_seed_info(
     )
 
 
-async def _load_chat_history(
+async def load_chat_history(
     session_maker: async_sessionmaker[AsyncSession],
     race_id: uuid.UUID,
     race: Race,
@@ -234,10 +234,10 @@ async def handle_spectator_websocket(
         chat_loads = []
         if conn.role is not None:
             chat_loads.append(
-                _load_chat_history(session_maker, race_id, race, ChatChannel.PARTICIPANTS)
+                load_chat_history(session_maker, race_id, race, ChatChannel.PARTICIPANTS)
             )
         if conn.user_id is not None and not conn.is_playing:
-            chat_loads.append(_load_chat_history(session_maker, race_id, race, ChatChannel.PUBLIC))
+            chat_loads.append(load_chat_history(session_maker, race_id, race, ChatChannel.PUBLIC))
         if chat_loads:
             histories = await asyncio.gather(*chat_loads)
             for hist in histories:

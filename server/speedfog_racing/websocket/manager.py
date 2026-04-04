@@ -537,7 +537,7 @@ def sort_leaderboard(
     }
 
     # Pre-compute layer entry IGTs for playing participants
-    entry_igts: dict[Any, int] = {}
+    entry_igts: dict[uuid.UUID, int] = {}
     if graph_json:
         for p in participants:
             if p.status.value == "playing":

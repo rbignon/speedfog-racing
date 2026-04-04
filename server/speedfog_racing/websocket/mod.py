@@ -58,7 +58,7 @@ from speedfog_racing.websocket.schemas import (
     SeedInfo,
     extract_spawn_items,
 )
-from speedfog_racing.websocket.spectator import _load_chat_history, broadcast_race_state_update
+from speedfog_racing.websocket.spectator import broadcast_race_state_update, load_chat_history
 
 logger = logging.getLogger(__name__)
 
@@ -821,7 +821,7 @@ async def handle_finished(
         if spec_conn and spec_conn.is_playing:
             spec_conn.is_playing = False
             try:
-                hist = await _load_chat_history(
+                hist = await load_chat_history(
                     session_maker,
                     participant.race_id,
                     participant.race,
