@@ -286,7 +286,7 @@ class ConnectionManager:
         connected_ids = set(room.mods.keys())
 
         # Pre-compute layer entry IGTs once (avoids repeated zone_history walks)
-        entry_igts: dict[Any, int | None] = {}
+        entry_igts: dict[uuid.UUID, int | None] = {}
         if graph_json:
             for p in sorted_participants:
                 entry_igts[p.id] = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)

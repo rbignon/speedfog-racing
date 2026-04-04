@@ -58,7 +58,7 @@ from speedfog_racing.websocket.schemas import (
     SeedInfo,
     extract_spawn_items,
 )
-from speedfog_racing.websocket.spectator import _send_chat_history, broadcast_race_state_update
+from speedfog_racing.websocket.spectator import _load_chat_history, broadcast_race_state_update
 
 logger = logging.getLogger(__name__)
 
@@ -821,13 +821,13 @@ async def handle_finished(
         if spec_conn and spec_conn.is_playing:
             spec_conn.is_playing = False
             try:
-                await _send_chat_history(
-                    spec_conn.websocket,
+                hist = await _load_chat_history(
                     session_maker,
                     participant.race_id,
                     participant.race,
                     ChatChannel.PUBLIC,
                 )
+                await spec_conn.websocket.send_text(hist.model_dump_json())
             except Exception:
                 logger.warning("Failed to send public chat history to finished participant")
 

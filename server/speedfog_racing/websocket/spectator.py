@@ -92,14 +92,13 @@ def build_seed_info(
     )
 
 
-async def _send_chat_history(
-    websocket: WebSocket,
+async def _load_chat_history(
     session_maker: async_sessionmaker[AsyncSession],
     race_id: uuid.UUID,
     race: Race,
     channel: ChatChannel,
-) -> None:
-    """Load chat history from DB and send to client."""
+) -> ChatHistoryMessage:
+    """Load chat history from DB and return the message (does not send)."""
     async with session_maker() as db:
         result = await db.execute(
             select(ChatMessageModel, User)
@@ -113,9 +112,7 @@ async def _send_chat_history(
         rows = result.all()
 
         if not rows:
-            history = ChatHistoryMessage(channel=channel.value, messages=[])
-            await websocket.send_text(history.model_dump_json())
-            return
+            return ChatHistoryMessage(channel=channel.value, messages=[])
 
         # Batch-load trait scores for all unique users
         user_ids = list({chat_msg.user_id for chat_msg, _ in rows})
@@ -155,8 +152,7 @@ async def _send_chat_history(
             )
         )
 
-    history = ChatHistoryMessage(channel=channel.value, messages=messages)
-    await websocket.send_text(history.model_dump_json())
+    return ChatHistoryMessage(channel=channel.value, messages=messages)
 
 
 async def handle_spectator_websocket(
@@ -234,20 +230,18 @@ async def handle_spectator_websocket(
         # Register connection
         await manager.connect_spectator(race_id, conn)
 
-        # Send chat history for accessible channels (parallel)
-        chat_tasks = []
+        # Load chat history in parallel, send sequentially (safe for single WS)
+        chat_loads = []
         if conn.role is not None:
-            chat_tasks.append(
-                _send_chat_history(
-                    websocket, session_maker, race_id, race, ChatChannel.PARTICIPANTS
-                )
+            chat_loads.append(
+                _load_chat_history(session_maker, race_id, race, ChatChannel.PARTICIPANTS)
             )
         if conn.user_id is not None and not conn.is_playing:
-            chat_tasks.append(
-                _send_chat_history(websocket, session_maker, race_id, race, ChatChannel.PUBLIC)
-            )
-        if chat_tasks:
-            await asyncio.gather(*chat_tasks)
+            chat_loads.append(_load_chat_history(session_maker, race_id, race, ChatChannel.PUBLIC))
+        if chat_loads:
+            histories = await asyncio.gather(*chat_loads)
+            for hist in histories:
+                await websocket.send_text(hist.model_dump_json())
 
         # Start heartbeat in background
         heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
