@@ -633,7 +633,11 @@
 	{:else if activeTab === 'stats'}
 		{#if analyticsLoading}
 			<p class="loading">Loading analytics...</p>
-		{:else if analytics}
+		{:else if !analytics}
+			<p class="empty">
+				Failed to load analytics. <button class="link-btn" onclick={loadAnalytics}>Retry</button>
+			</p>
+		{:else}
 			<div class="kpi-grid">
 				<div class="kpi-card">
 					<div class="kpi-label">Total Users</div>
@@ -1287,6 +1291,17 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.link-btn {
+		background: none;
+		border: none;
+		color: var(--color-purple);
+		font-family: var(--font-family);
+		font-size: inherit;
+		cursor: pointer;
+		padding: 0;
+		text-decoration: underline;
 	}
 
 	.kpi-grid {
