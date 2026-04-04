@@ -11,13 +11,17 @@
 		adminRecalculateStats,
 		fetchReportedSeeds,
 		resolveReportedSeed,
+		fetchAdminAnalytics,
 		type AdminUser,
 		type AdminPoolStats,
 		type ActivityTimeline,
-		type ReportedSeed
+		type ReportedSeed,
+		type AdminAnalytics
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
 	import { formatPoolName } from '$lib/utils/format';
+	import { Chart, registerables } from 'chart.js';
+	Chart.register(...registerables);
 
 	type Tab = 'users' | 'seeds' | 'stats' | 'activity';
 	let activeTab: Tab = $state('users');
@@ -40,6 +44,9 @@
 
 	let reportedSeeds: ReportedSeed[] = $state([]);
 	let reportedLoading = $state(false);
+
+	let analytics: AdminAnalytics | null = $state(null);
+	let analyticsLoading = $state(false);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -103,9 +110,12 @@
 
 	function switchTab(tab: Tab) {
 		activeTab = tab;
-		if ((tab === 'seeds' || tab === 'stats') && !seedStats) {
+		if (tab === 'seeds' && !seedStats) {
 			loadSeedStats();
 			loadReportedSeeds();
+		}
+		if (tab === 'stats' && !analytics) {
+			loadAnalytics();
 		}
 		if (tab === 'activity' && !activity) {
 			loadActivity();
@@ -120,6 +130,17 @@
 			error = e instanceof Error ? e.message : 'Failed to load reported seeds.';
 		} finally {
 			reportedLoading = false;
+		}
+	}
+
+	async function loadAnalytics() {
+		analyticsLoading = true;
+		try {
+			analytics = await fetchAdminAnalytics();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load analytics.';
+		} finally {
+			analyticsLoading = false;
 		}
 	}
 
@@ -243,6 +264,186 @@
 		const pad = (n: number) => String(n).padStart(2, '0');
 		return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 	}
+
+	let newUsersCanvas: HTMLCanvasElement = $state() as HTMLCanvasElement;
+	let raceSoloCanvas: HTMLCanvasElement = $state() as HTMLCanvasElement;
+	let soloCompletionCanvas: HTMLCanvasElement = $state() as HTMLCanvasElement;
+	let avgParticipantsCanvas: HTMLCanvasElement = $state() as HTMLCanvasElement;
+	let timezoneCanvas: HTMLCanvasElement = $state() as HTMLCanvasElement;
+	let charts: Chart[] = [];
+
+	function destroyCharts() {
+		charts.forEach((c) => c.destroy());
+		charts = [];
+	}
+
+	function renderCharts(data: AdminAnalytics) {
+		destroyCharts();
+		const gridColor = 'rgba(255,255,255,0.06)';
+		const tickColor = '#888';
+		const defaultScales = {
+			x: { grid: { display: false }, ticks: { color: tickColor, font: { size: 10 } } },
+			y: {
+				beginAtZero: true,
+				grid: { color: gridColor },
+				ticks: { color: tickColor, font: { size: 10 } }
+			}
+		};
+		const defaultPlugins = { legend: { display: false } };
+
+		charts.push(
+			new Chart(newUsersCanvas, {
+				type: 'bar',
+				data: {
+					labels: data.weekly.weeks,
+					datasets: [
+						{
+							data: data.weekly.new_users,
+							backgroundColor: 'rgba(139,92,246,0.6)',
+							borderColor: '#8b5cf6',
+							borderWidth: 1
+						}
+					]
+				},
+				options: { responsive: true, plugins: defaultPlugins, scales: defaultScales }
+			})
+		);
+
+		charts.push(
+			new Chart(raceSoloCanvas, {
+				type: 'bar',
+				data: {
+					labels: data.weekly.weeks,
+					datasets: [
+						{
+							label: 'Races',
+							data: data.weekly.races,
+							backgroundColor: 'rgba(200,164,78,0.6)',
+							borderColor: '#c8a44e',
+							borderWidth: 1
+						},
+						{
+							label: 'Solo',
+							data: data.weekly.solo,
+							backgroundColor: 'rgba(139,92,246,0.6)',
+							borderColor: '#8b5cf6',
+							borderWidth: 1
+						}
+					]
+				},
+				options: {
+					responsive: true,
+					scales: {
+						x: { ...defaultScales.x, stacked: true },
+						y: { ...defaultScales.y, stacked: true }
+					},
+					plugins: {
+						legend: {
+							display: true,
+							labels: { color: tickColor, font: { size: 10 }, boxWidth: 12 }
+						}
+					}
+				}
+			})
+		);
+
+		charts.push(
+			new Chart(soloCompletionCanvas, {
+				type: 'bar',
+				data: {
+					labels: data.weekly.weeks,
+					datasets: [
+						{
+							label: 'Finished',
+							data: data.weekly.solo_finished,
+							backgroundColor: 'rgba(34,197,94,0.5)',
+							borderColor: '#22c55e',
+							borderWidth: 1
+						},
+						{
+							label: 'Abandoned',
+							data: data.weekly.solo_abandoned,
+							backgroundColor: 'rgba(239,68,68,0.5)',
+							borderColor: '#ef4444',
+							borderWidth: 1
+						}
+					]
+				},
+				options: {
+					responsive: true,
+					scales: {
+						x: { ...defaultScales.x, stacked: true },
+						y: { ...defaultScales.y, stacked: true }
+					},
+					plugins: {
+						legend: {
+							display: true,
+							labels: { color: tickColor, font: { size: 10 }, boxWidth: 12 }
+						}
+					}
+				}
+			})
+		);
+
+		charts.push(
+			new Chart(avgParticipantsCanvas, {
+				type: 'bar',
+				data: {
+					labels: data.weekly.weeks,
+					datasets: [
+						{
+							data: data.weekly.avg_participants,
+							backgroundColor: 'rgba(200,164,78,0.6)',
+							borderColor: '#c8a44e',
+							borderWidth: 1
+						}
+					]
+				},
+				options: { responsive: true, plugins: defaultPlugins, scales: defaultScales }
+			})
+		);
+
+		if (data.timezones.length > 0) {
+			charts.push(
+				new Chart(timezoneCanvas, {
+					type: 'bar',
+					data: {
+						labels: data.timezones.map((t) => t.timezone.replace(/_/g, ' ')),
+						datasets: [
+							{
+								data: data.timezones.map((t) => t.count),
+								backgroundColor: 'rgba(139,92,246,0.6)',
+								borderColor: '#8b5cf6',
+								borderWidth: 1
+							}
+						]
+					},
+					options: {
+						responsive: true,
+						plugins: defaultPlugins,
+						scales: {
+							x: {
+								grid: { display: false },
+								ticks: { color: tickColor, font: { size: 9 }, maxRotation: 45 }
+							},
+							y: {
+								beginAtZero: true,
+								grid: { color: gridColor },
+								ticks: { color: tickColor, font: { size: 10 }, stepSize: 1 }
+							}
+						}
+					}
+				})
+			);
+		}
+	}
+
+	$effect(() => {
+		if (analytics && newUsersCanvas) {
+			renderCharts(analytics);
+		}
+		return () => destroyCharts();
+	});
 </script>
 
 <svelte:head>
@@ -357,7 +558,9 @@
 										<td class="mono">{seed.seed_number}</td>
 										<td>{formatPoolName(seed.pool_name)}</td>
 										<td>{seed.reported_by}</td>
-										<td class="reason-cell" title={seed.reported_reason || ''}>{seed.reported_reason || '-'}</td>
+										<td class="reason-cell" title={seed.reported_reason || ''}
+											>{seed.reported_reason || '-'}</td
+										>
 										<td class="date-cell">{formatDate(seed.reported_at)}</td>
 										<td class="actions-cell">
 											<button
@@ -428,20 +631,134 @@
 			</div>
 		{/if}
 	{:else if activeTab === 'stats'}
-		<div class="stats-section">
-			<h2 class="section-title">Recalculate</h2>
-			<p class="stats-description">
-				Recompute cached statistics for all users and participants from raw race data.
-			</p>
-			<div class="stats-actions">
-				<button class="action-btn recalc" disabled={recalcLoading} onclick={handleRecalculateStats}>
-					{recalcLoading ? 'Recalculating...' : 'Recalculate Stats'}
-				</button>
-				{#if recalcMessage}
-					<span class="recalc-message {recalcMessage.type}">{recalcMessage.text}</span>
-				{/if}
+		{#if analyticsLoading}
+			<p class="loading">Loading analytics...</p>
+		{:else if analytics}
+			<div class="kpi-grid">
+				<div class="kpi-card">
+					<div class="kpi-label">Total Users</div>
+					<div class="kpi-value">{analytics.kpis.total_users}</div>
+					<div class="kpi-sub">+{analytics.kpis.new_users_this_month} this month</div>
+				</div>
+				<div class="kpi-card">
+					<div class="kpi-label">Active (30d)</div>
+					<div class="kpi-value">{analytics.kpis.active_users_30d}</div>
+					<div class="kpi-sub">{analytics.kpis.active_users_pct}% of total</div>
+				</div>
+				<div class="kpi-card">
+					<div class="kpi-label">Races (finished)</div>
+					<div class="kpi-value kpi-gold">{analytics.kpis.total_races_finished}</div>
+					<div class="kpi-sub">avg {analytics.kpis.avg_participants} players</div>
+				</div>
+				<div class="kpi-card">
+					<div class="kpi-label">Solo Sessions</div>
+					<div class="kpi-value kpi-purple">{analytics.kpis.total_solo}</div>
+					<div class="kpi-sub">{analytics.kpis.solo_completion_pct}% finished</div>
+				</div>
 			</div>
-		</div>
+
+			<div class="charts-grid">
+				<div class="chart-box">
+					<div class="chart-title">New Users per Week</div>
+					<canvas bind:this={newUsersCanvas}></canvas>
+				</div>
+				<div class="chart-box">
+					<div class="chart-title">Races & Solo per Week</div>
+					<canvas bind:this={raceSoloCanvas}></canvas>
+				</div>
+				<div class="chart-box">
+					<div class="chart-title">Solo Completion Rate</div>
+					<canvas bind:this={soloCompletionCanvas}></canvas>
+				</div>
+				<div class="chart-box">
+					<div class="chart-title">Avg Participants per Race</div>
+					<canvas bind:this={avgParticipantsCanvas}></canvas>
+				</div>
+			</div>
+
+			{@const raceMax = Math.max(1, ...analytics.heatmaps.race_players.flat())}
+			{@const soloMax = Math.max(1, ...analytics.heatmaps.solo.flat())}
+			{@const hours = ['10h', '12h', '14h', '16h', '18h', '20h', '22h', '00h']}
+			{@const days = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']}
+
+			<div class="heatmaps-row">
+				<div class="heatmap-box">
+					<div class="heatmap-title heatmap-gold">Race Players</div>
+					<div class="heatmap-grid">
+						<div class="heatmap-corner"></div>
+						{#each days as day}
+							<div class="heatmap-day">{day}</div>
+						{/each}
+						{#each hours as hour, rowIdx}
+							<div class="heatmap-hour">{hour}</div>
+							{#each analytics.heatmaps.race_players[rowIdx] as val}
+								<div
+									class="heatmap-cell"
+									style="background: rgba(200,164,78,{(val / raceMax) * 0.9})"
+									title={String(val)}
+								></div>
+							{/each}
+						{/each}
+					</div>
+					<div class="heatmap-legend">
+						<span>0</span>
+						<div class="heatmap-legend-bar heatmap-legend-gold"></div>
+						<span>{raceMax}</span>
+					</div>
+				</div>
+
+				<div class="heatmap-box">
+					<div class="heatmap-title heatmap-purple">Solo</div>
+					<div class="heatmap-grid">
+						<div class="heatmap-corner"></div>
+						{#each days as day}
+							<div class="heatmap-day">{day}</div>
+						{/each}
+						{#each hours as hour, rowIdx}
+							<div class="heatmap-hour">{hour}</div>
+							{#each analytics.heatmaps.solo[rowIdx] as val}
+								<div
+									class="heatmap-cell"
+									style="background: rgba(139,92,246,{(val / soloMax) * 0.9})"
+									title={String(val)}
+								></div>
+							{/each}
+						{/each}
+					</div>
+					<div class="heatmap-legend">
+						<span>0</span>
+						<div class="heatmap-legend-bar heatmap-legend-purple"></div>
+						<span>{soloMax}</span>
+					</div>
+				</div>
+			</div>
+
+			{#if analytics.timezones.length > 0}
+				<div class="chart-box chart-full">
+					<div class="chart-title">Players by Timezone</div>
+					<canvas bind:this={timezoneCanvas}></canvas>
+				</div>
+			{/if}
+
+			<div class="stats-section">
+				<h2 class="section-title">Recalculate</h2>
+				<p class="stats-description">
+					Recompute cached statistics for all users and participants from raw race data.
+				</p>
+				<div class="stats-actions">
+					<button
+						class="action-btn recalc"
+						disabled={recalcLoading}
+						onclick={handleRecalculateStats}
+					>
+						{recalcLoading ? 'Recalculating...' : 'Recalculate Stats'}
+					</button>
+					{#if recalcMessage}
+						<span class="recalc-message {recalcMessage.type}">{recalcMessage.text}</span>
+					{/if}
+				</div>
+			</div>
+		{/if}
 	{:else if activeTab === 'activity'}
 		{#if activityLoading}
 			<p class="loading">Loading activity...</p>
@@ -972,6 +1289,157 @@
 		white-space: nowrap;
 	}
 
+	.kpi-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 0.75rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.kpi-card {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		padding: 1rem;
+		text-align: center;
+	}
+
+	.kpi-label {
+		font-size: var(--font-size-xs);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-text-secondary);
+	}
+
+	.kpi-value {
+		font-size: 1.75rem;
+		font-weight: 700;
+		color: var(--color-text);
+		margin: 0.25rem 0;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.kpi-gold {
+		color: var(--color-gold);
+	}
+
+	.kpi-purple {
+		color: var(--color-purple);
+	}
+
+	.kpi-sub {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+	}
+
+	.charts-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.75rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.chart-box {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		padding: 1rem;
+	}
+
+	.chart-full {
+		margin-bottom: 1.5rem;
+	}
+
+	.chart-title {
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+		color: var(--color-text);
+		margin-bottom: 0.75rem;
+	}
+
+	.heatmaps-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.75rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.heatmap-box {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		padding: 1rem;
+	}
+
+	.heatmap-title {
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+		margin-bottom: 0.75rem;
+	}
+
+	.heatmap-gold {
+		color: var(--color-gold);
+	}
+
+	.heatmap-purple {
+		color: var(--color-purple);
+	}
+
+	.heatmap-grid {
+		display: grid;
+		grid-template-columns: 2.5rem repeat(7, 1fr);
+		gap: 3px;
+	}
+
+	.heatmap-corner {
+		display: block;
+	}
+
+	.heatmap-day {
+		text-align: center;
+		font-size: 0.6rem;
+		color: var(--color-text-secondary);
+		padding-bottom: 2px;
+	}
+
+	.heatmap-hour {
+		text-align: right;
+		padding-right: 4px;
+		font-size: 0.6rem;
+		color: var(--color-text-secondary);
+		line-height: 1.5rem;
+	}
+
+	.heatmap-cell {
+		height: 1.5rem;
+		border-radius: 2px;
+		background: var(--color-bg, #0d1117);
+	}
+
+	.heatmap-legend {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: 0.5rem;
+		font-size: 0.6rem;
+		color: var(--color-text-secondary);
+	}
+
+	.heatmap-legend-bar {
+		flex: 1;
+		height: 8px;
+		border-radius: 4px;
+		max-width: 120px;
+	}
+
+	.heatmap-legend-gold {
+		background: linear-gradient(to right, #0d1117, rgba(200, 164, 78, 0.9));
+	}
+
+	.heatmap-legend-purple {
+		background: linear-gradient(to right, #0d1117, rgba(139, 92, 246, 0.9));
+	}
+
 	@media (max-width: 640px) {
 		main {
 			padding: 1rem;
@@ -998,6 +1466,15 @@
 
 		.col-context {
 			align-items: flex-start;
+		}
+
+		.kpi-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
+
+		.charts-grid,
+		.heatmaps-row {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>
