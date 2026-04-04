@@ -2,6 +2,26 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.6] - 2026-04-04
+
+### Chat
+
+- Dual-channel chat: racers coordinate in a private Participants channel during the race, then unlock Spoilers on finish to discuss freely without spoiling others still playing. Messages are persistent and restored on reconnect
+
+### Seeds
+
+- Mimic Tear and Ancestor Spirit classified as major bosses
+- Castle Sol now uses its main entrance only
+- Godskin Duo arena restricted to front left exit
+- Bayle's arena entry can no longer be used as an exit
+- Grafted Scion boss arena entry can no longer be used as an exit
+- Leyndell Colosseum no longer grouped with Gideon entrances on the bedroom cluster
+- Standard pool rebalanced: more major bosses (10, up from 8), fewer mini dungeons (6, down from 8)
+
+### Website
+
+- The website URL is now <https://speedfog.racing>
+
 ## [1.5.5] - 2026-04-01
 
 ### Stats
