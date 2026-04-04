@@ -328,7 +328,12 @@ async def handle_spectator_websocket(
 
 
 async def _try_auth(websocket: WebSocket, db: AsyncSession) -> User | None:
-    """Wait briefly for an auth message. Returns User or None."""
+    """Wait briefly for an auth message. Returns User or None.
+
+    Clients should send either ``{"type": "auth", "token": "..."}`` or
+    ``{"type": "no_auth"}`` immediately after connect so the server does
+    not have to wait for the full grace period before sending race_state.
+    """
     try:
         data = await asyncio.wait_for(websocket.receive_text(), timeout=AUTH_GRACE_PERIOD)
         msg = json.loads(data)

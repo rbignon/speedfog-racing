@@ -457,12 +457,22 @@ No authentication required (public), but optional auth within a 2-second grace p
 
 #### `auth` (optional)
 
-Sent within 2 seconds of connecting. If not sent, connection proceeds as anonymous.
+Sent immediately after connecting. If the user is not logged in, send `no_auth` instead so the server can skip the grace period and deliver `race_state` without delay.
 
 ```json
 {
   "type": "auth",
   "token": "user_api_token"
+}
+```
+
+#### `no_auth`
+
+Sent immediately after connecting when the user is not logged in. Signals the server to skip the auth grace period timeout (2s) and proceed to sending `race_state` right away. If neither `auth` nor `no_auth` is sent, the server waits the full grace period before proceeding.
+
+```json
+{
+  "type": "no_auth"
 }
 ```
 
@@ -747,7 +757,7 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 
 ### Security Notes
 
-**Spectator WebSocket authentication (M9):** Spectator connections (`/ws/race/{race_id}`) are intentionally unauthenticated by default. Race leaderboard data is public by design. Optional auth within a 2-second grace period enables role-based DAG visibility during SETUP, which prevents anonymous viewers from seeing the graph before the race starts. During `running` and `finished`, all spectators see the DAG. This is an accepted design trade-off.
+**Spectator WebSocket authentication (M9):** Spectator connections (`/ws/race/{race_id}`) are intentionally unauthenticated by default. Race leaderboard data is public by design. Optional auth within a 2-second grace period enables role-based DAG visibility during SETUP, which prevents anonymous viewers from seeing the graph before the race starts. During `running` and `finished`, all spectators see the DAG. Clients should send `no_auth` when not logged in to skip the grace period. This is an accepted design trade-off.
 
 **CSRF (M5):** Auth tokens are stored in `localStorage` and sent via `Authorization` header, not auto-attached cookies. This makes CSRF attacks infeasible since the token is never sent automatically. If token storage changes to cookies in the future, CSRF protection must be added.
 

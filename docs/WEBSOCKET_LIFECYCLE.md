@@ -168,9 +168,10 @@ Client connects
   accept TCP
        │
        ▼
-  wait 2s for optional auth
+  wait for auth or no_auth (2s timeout)
        │
        ├──auth received──→ set conn.user_id
+       ├──no_auth received──→ anonymous (user_id=None)
        ├──timeout──→ anonymous (user_id=None)
        │
        ▼
@@ -191,7 +192,7 @@ Client connects
 
 ### Auth Grace Period
 
-Spectator connections wait `AUTH_GRACE_PERIOD = 2.0s` for an optional `auth` message. If received and valid, `conn.user_id` is set. This gates DAG visibility for SETUP races (only organizer/participants see the graph before the race starts). Anonymous connections always see the graph once the race is RUNNING.
+Spectator connections wait `AUTH_GRACE_PERIOD = 2.0s` for an `auth` or `no_auth` message. If `auth` is received and valid, `conn.user_id` is set. If `no_auth` is received (or any non-auth message), the server proceeds immediately as anonymous. The timeout is a fallback for clients that send neither message. This gates DAG visibility for SETUP races (only organizer/participants see the graph before the race starts). Anonymous connections always see the graph once the race is RUNNING.
 
 ### Per-Connection State
 

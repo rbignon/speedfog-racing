@@ -181,10 +181,14 @@ export class RaceWebSocket {
         console.log(`[WS] Connected to race ${this.raceId}`);
       this.reconnectAttempt = 0;
 
-      // Send auth message if logged in (optional auth per spec Section 9.1)
+      // Send auth or no_auth so the server can skip the auth grace period
       const token = getStoredToken();
-      if (token && this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ type: "auth", token }));
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        if (token) {
+          this.ws.send(JSON.stringify({ type: "auth", token }));
+        } else {
+          this.ws.send(JSON.stringify({ type: "no_auth" }));
+        }
       }
 
       this.options.onConnect?.();
