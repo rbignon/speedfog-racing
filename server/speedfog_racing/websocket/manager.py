@@ -547,7 +547,8 @@ def sort_leaderboard(
         if status == "finished":
             return (priority, p.igt_ms, 0)
         elif status == "playing":
-            entry_igt = entry_igts.get(p.id) or p.igt_ms
+            raw = entry_igts.get(p.id)
+            entry_igt = raw if raw is not None else p.igt_ms
             return (priority, -p.current_layer, entry_igt)
         elif status == "abandoned":
             return (priority, -p.current_layer, p.igt_ms)
