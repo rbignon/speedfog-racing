@@ -218,8 +218,15 @@ async def get_me(
 ) -> User:
     """Get current authenticated user info. Optionally updates timezone."""
     if timezone is not None:
-        user.timezone = timezone
-        await db.commit()
+        from zoneinfo import ZoneInfo
+
+        try:
+            ZoneInfo(timezone)
+        except (KeyError, Exception):
+            pass
+        else:
+            user.timezone = timezone
+            await db.commit()
     return user
 
 

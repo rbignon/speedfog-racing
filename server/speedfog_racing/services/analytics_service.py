@@ -200,7 +200,7 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
     solo_grid = [[0] * 7 for _ in range(8)]
 
     for r in races:
-        if r.started_at is None:
+        if r.started_at is None or r.status not in (RaceStatus.RUNNING, RaceStatus.FINISHED):
             continue
         started = _ensure_utc(r.started_at)
         bucket = _hour_to_bucket(started.hour)
