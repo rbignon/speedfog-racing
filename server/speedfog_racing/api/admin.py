@@ -146,7 +146,7 @@ async def recalculate_stats(
 async def get_analytics(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
-) -> dict:
+) -> dict[str, object]:
     """Get analytics dashboard data. Requires admin role."""
     return await compute_analytics(db)
 
