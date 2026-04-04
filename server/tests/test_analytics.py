@@ -347,3 +347,45 @@ async def test_compute_analytics_heatmaps(analytics_data, async_session):
     total_solo = sum(cell for row in solo_grid for cell in row)
     assert total_race == 2  # 2 participants in the one race
     assert total_solo == 2  # 2 training sessions
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoint tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_analytics_endpoint_returns_200_for_admin(test_client, admin_user, analytics_data):
+    """GET /api/admin/analytics returns 200 with expected keys for admin user."""
+    _, token = admin_user
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/analytics",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert "kpis" in data
+    assert "weekly" in data
+    assert "heatmaps" in data
+    assert "timezones" in data
+
+
+@pytest.mark.asyncio
+async def test_analytics_endpoint_returns_403_for_non_admin(test_client, regular_user):
+    """GET /api/admin/analytics returns 403 for a non-admin user."""
+    _, token = regular_user
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/analytics",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_analytics_endpoint_returns_401_without_auth(test_client):
+    """GET /api/admin/analytics returns 401 when no auth header is provided."""
+    async with test_client as client:
+        response = await client.get("/api/admin/analytics")
+    assert response.status_code == 401

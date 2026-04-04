@@ -37,6 +37,7 @@ from speedfog_racing.schemas import (
     TrainingActivity,
 )
 from speedfog_racing.services import discard_pool, get_pool_stats, scan_pool
+from speedfog_racing.services.analytics_service import compute_analytics
 from speedfog_racing.services.stats_service import recalculate_all_stats
 
 router = APIRouter()
@@ -139,6 +140,15 @@ async def recalculate_stats(
     """Clear all ELO/trait data and replay from scratch. Requires admin role."""
     await recalculate_all_stats(db)
     return {"status": "ok"}
+
+
+@router.get("/analytics")
+async def get_analytics(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> dict:
+    """Get analytics dashboard data. Requires admin role."""
+    return await compute_analytics(db)
 
 
 # =============================================================================
