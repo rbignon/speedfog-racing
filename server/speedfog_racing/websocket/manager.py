@@ -285,6 +285,12 @@ class ConnectionManager:
         sorted_participants = sort_leaderboard(participants, graph_json=graph_json)
         connected_ids = set(room.mods.keys())
 
+        # Pre-compute layer entry IGTs once (avoids repeated zone_history walks)
+        entry_igts: dict[Any, int | None] = {}
+        if graph_json:
+            for p in sorted_participants:
+                entry_igts[p.id] = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
+
         # Compute leader splits for gap timing
         leader_splits: dict[int, int] = {}
         leader_igt_ms = 0
@@ -305,9 +311,7 @@ class ConnectionManager:
                     p.status.value,
                     igt_ms=p.igt_ms,
                     current_layer=p.current_layer,
-                    player_layer_entry_igt=get_layer_entry_igt(
-                        p.zone_history, p.current_layer, graph_json
-                    ),
+                    player_layer_entry_igt=entry_igts.get(p.id),
                     leader_splits=leader_splits,
                     leader_igt_ms=leader_igt_ms,
                     is_leader=(has_leader and i == 0),
@@ -317,9 +321,7 @@ class ConnectionManager:
                 )
                 if has_leader and graph_json
                 else None,
-                layer_entry_igt=get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
-                if graph_json
-                else None,
+                layer_entry_igt=entry_igts.get(p.id) if graph_json else None,
             )
             for i, p in enumerate(sorted_participants)
         ]

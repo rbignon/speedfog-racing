@@ -181,53 +181,51 @@ async def handle_spectator_websocket(
                 await websocket.close(code=4004, reason="Race not found")
                 return
 
-            user_id = await _try_auth(websocket, db)
+            user_obj = await _try_auth(websocket, db)
+            user_id = user_obj.id if user_obj else None
             conn.user_id = user_id
 
             # Prefer user's DB locale over query param if set
-            if user_id:
-                user_result = await db.execute(select(User).where(User.id == user_id))
-                user_obj = user_result.scalar_one_or_none()
-                if user_obj and user_obj.locale:
+            if user_obj:
+                if user_obj.locale:
                     conn.locale = user_obj.locale
 
                 # Determine role in this race
                 role: str | None = None
                 if race.organizer_id == user_id:
                     role = "organizer"
-                elif user_obj and user_obj.role == UserRole.ADMIN:
+                elif user_obj.role == UserRole.ADMIN:
                     role = "admin"
                 elif any(c.user_id == user_id for c in race.casters):
                     role = "caster"
                 elif any(p.user_id == user_id for p in race.participants):
                     role = "participant"
 
-                if user_obj is not None:
-                    if role is not None:
-                        conn.role = role
+                if role is not None:
+                    conn.role = role
 
-                        if role == "participant":
-                            participant = next(
-                                (p for p in race.participants if p.user_id == user_id), None
+                    if role == "participant":
+                        participant = next(
+                            (p for p in race.participants if p.user_id == user_id), None
+                        )
+                        if participant:
+                            conn.participant_id = participant.id
+                            conn.is_playing = (
+                                race.status == RaceStatus.RUNNING
+                                and participant.status == ParticipantStatus.PLAYING
                             )
-                            if participant:
-                                conn.participant_id = participant.id
-                                conn.is_playing = (
-                                    race.status == RaceStatus.RUNNING
-                                    and participant.status == ParticipantStatus.PLAYING
-                                )
 
-                    # Load dominant_trait from PlayerTraitScores
-                    trait_scores = await db.get(PlayerTraitScores, user_id)
-                    dominant_trait = trait_scores.dominant_trait if trait_scores else None
+                # Load dominant_trait from PlayerTraitScores
+                trait_scores = await db.get(PlayerTraitScores, user_id)
+                dominant_trait = trait_scores.dominant_trait if trait_scores else None
 
-                    chat_info = {
-                        "username": user_obj.twitch_username,
-                        "display_name": user_obj.twitch_display_name,
-                        "avatar_url": user_obj.twitch_avatar_url,
-                        "role": role or "spectator",
-                        "dominant_trait": dominant_trait,
-                    }
+                chat_info = {
+                    "username": user_obj.twitch_username,
+                    "display_name": user_obj.twitch_display_name,
+                    "avatar_url": user_obj.twitch_avatar_url,
+                    "role": role or "spectator",
+                    "dominant_trait": dominant_trait,
+                }
 
             # Send initial race state (session still open for lazy access)
             await send_race_state(websocket, race, locale=conn.locale)
@@ -236,13 +234,20 @@ async def handle_spectator_websocket(
         # Register connection
         await manager.connect_spectator(race_id, conn)
 
-        # Send chat history for accessible channels
+        # Send chat history for accessible channels (parallel)
+        chat_tasks = []
         if conn.role is not None:
-            await _send_chat_history(
-                websocket, session_maker, race_id, race, ChatChannel.PARTICIPANTS
+            chat_tasks.append(
+                _send_chat_history(
+                    websocket, session_maker, race_id, race, ChatChannel.PARTICIPANTS
+                )
             )
         if conn.user_id is not None and not conn.is_playing:
-            await _send_chat_history(websocket, session_maker, race_id, race, ChatChannel.PUBLIC)
+            chat_tasks.append(
+                _send_chat_history(websocket, session_maker, race_id, race, ChatChannel.PUBLIC)
+            )
+        if chat_tasks:
+            await asyncio.gather(*chat_tasks)
 
         # Start heartbeat in background
         heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
@@ -328,8 +333,8 @@ async def handle_spectator_websocket(
         await manager.disconnect_spectator(race_id, conn)
 
 
-async def _try_auth(websocket: WebSocket, db: AsyncSession) -> uuid.UUID | None:
-    """Wait briefly for an auth message. Returns user_id or None."""
+async def _try_auth(websocket: WebSocket, db: AsyncSession) -> User | None:
+    """Wait briefly for an auth message. Returns User or None."""
     try:
         data = await asyncio.wait_for(websocket.receive_text(), timeout=AUTH_GRACE_PERIOD)
         msg = json.loads(data)
@@ -338,7 +343,7 @@ async def _try_auth(websocket: WebSocket, db: AsyncSession) -> uuid.UUID | None:
             if user:
                 user.last_seen = datetime.now(UTC)
                 await db.commit()
-                return user.id
+                return user
     except TimeoutError:
         pass
     except (json.JSONDecodeError, WebSocketDisconnect):
