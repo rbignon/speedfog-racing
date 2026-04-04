@@ -33,7 +33,7 @@
 	// Registration settings inline editing
 	let editingRegistration = $state(false);
 	let regOpen = $state(false);
-	let regMax = $state<number | ''>('');
+	let regMax = $state<number | ''>(2);
 	let savingRegistration = $state(false);
 	let registrationError = $state<string | null>(null);
 
@@ -192,7 +192,7 @@
 
 	function openRegistrationEdit() {
 		regOpen = race.open_registration;
-		regMax = race.max_participants ?? '';
+		regMax = race.max_participants ?? 2;
 		registrationError = null;
 		editingRegistration = true;
 	}
@@ -206,7 +206,16 @@
 		savingRegistration = true;
 		registrationError = null;
 		try {
-			const maxVal = regMax === '' ? null : Number(regMax);
+			let maxVal: number | null = null;
+			if (regOpen) {
+				const n = Number(regMax);
+				if (!Number.isInteger(n) || n < 2 || n > 100) {
+					registrationError = 'Max participants must be between 2 and 100';
+					savingRegistration = false;
+					return;
+				}
+				maxVal = n;
+			}
 			await updateRace(race.id, {
 				open_registration: regOpen,
 				max_participants: maxVal
@@ -328,7 +337,8 @@
 								class="reg-max-input"
 								type="number"
 								min="2"
-								placeholder="No limit"
+								max="100"
+								placeholder="2-100"
 								bind:value={regMax}
 							/>
 						{/if}
