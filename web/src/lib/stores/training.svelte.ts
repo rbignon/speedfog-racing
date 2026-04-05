@@ -13,17 +13,21 @@ import type {
   RaceStateMessage,
   LeaderboardUpdateMessage,
   RaceStatusChangeMessage,
+  ZoneEnteredMessage,
 } from "$lib/websocket";
+import { upsertZoneHistoryEntry } from "$lib/zone-history";
 
 type TrainingServerMessage =
   | RaceStateMessage
   | LeaderboardUpdateMessage
-  | RaceStatusChangeMessage;
+  | RaceStatusChangeMessage
+  | ZoneEnteredMessage;
 
 const VALID_TYPES = new Set([
   "race_state",
   "leaderboard_update",
   "race_status_change",
+  "zone_entered",
 ]);
 
 function isTrainingMessage(data: unknown): data is TrainingServerMessage {
@@ -208,8 +212,31 @@ class TrainingStore {
         this.participant = msg.participants[0] ?? null;
         this.loading = false;
         break;
-      case "leaderboard_update":
-        this.participant = msg.participants[0] ?? null;
+      case "leaderboard_update": {
+        // Server no longer retransmits zone_history in leaderboard_update
+        // (it arrives via race_state initially + zone_entered incrementally).
+        // Preserve the locally-held history when the message carries none.
+        const next = msg.participants[0] ?? null;
+        if (next && !next.zone_history && this.participant?.zone_history) {
+          this.participant = {
+            ...next,
+            zone_history: this.participant.zone_history,
+          };
+        } else {
+          this.participant = next;
+        }
+        break;
+      }
+      case "zone_entered":
+        if (this.participant && this.participant.id === msg.participant_id) {
+          this.participant = {
+            ...this.participant,
+            zone_history: upsertZoneHistoryEntry(
+              this.participant.zone_history,
+              msg.entry,
+            ),
+          };
+        }
         break;
       case "race_status_change":
         if (this.race) {
