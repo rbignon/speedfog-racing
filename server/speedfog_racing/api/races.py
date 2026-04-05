@@ -75,9 +75,8 @@ from speedfog_racing.services.seed_pack_service import (
     stream_seed_pack_with_config,
 )
 from speedfog_racing.services.stats_service import (
-    resolve_dominant_traits,
+    recompute_traits_for_race_async,
     update_elo_ratings,
-    update_player_traits,
 )
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 from speedfog_racing.websocket.manager import manager
@@ -1425,8 +1424,9 @@ async def finish_race(
     race = await _get_race_or_404(db, race.id, load_participants=True, load_casters=True)
 
     await update_elo_ratings(race_id, db)
-    await update_player_traits(race_id, db)
-    await resolve_dominant_traits(db)
+    # Trait recomputation rescans each finisher's full race history, so
+    # run it in the background to keep the request responsive.
+    asyncio.create_task(recompute_traits_for_race_async(race_id))
 
     # Push full race_state (status + zone_history) before status change
     # so spectators get everything atomically in one message.

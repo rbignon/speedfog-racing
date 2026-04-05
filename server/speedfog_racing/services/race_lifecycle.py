@@ -1,5 +1,6 @@
 """Race lifecycle helpers (auto-finish, abandon)."""
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 
@@ -8,9 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import ParticipantStatus, Race, RaceStatus
 from speedfog_racing.services.stats_service import (
-    resolve_dominant_traits,
+    recompute_traits_for_race_async,
     update_elo_ratings,
-    update_player_traits,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,8 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     logger.info("Race %s auto-finished (all participants done)", race.id)
 
     await update_elo_ratings(race.id, db)
-    await update_player_traits(race.id, db)
-    await resolve_dominant_traits(db)
+    # Trait recomputation rescans each finisher's full race history, so
+    # run it in the background to keep the request/tick responsive.
+    asyncio.create_task(recompute_traits_for_race_async(race.id))
 
     return True

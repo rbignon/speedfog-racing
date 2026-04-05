@@ -11,6 +11,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.database import async_session_maker
 from speedfog_racing.models import (
     EloHistory,
     Participant,
@@ -717,3 +718,19 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
     # After all per-user raw scores are computed, resolve dominant traits
     # using percentile ranking across all players
     await resolve_dominant_traits(db)
+
+
+async def recompute_traits_for_race_async(race_id: Any) -> None:
+    """Recompute trait scores for a finished race in its own DB session.
+
+    Intended for fire-and-forget use via ``asyncio.create_task`` from the
+    request-path race-finish handlers: the full history rescan would
+    otherwise block the HTTP response for seconds on large histories.
+    Errors are logged and swallowed.
+    """
+    try:
+        async with async_session_maker() as db:
+            await update_player_traits(race_id, db)
+            await resolve_dominant_traits(db)
+    except Exception:
+        logger.exception("Background trait recomputation failed for race %s", race_id)
