@@ -22,6 +22,8 @@ class TrainingModConnection:
 class TrainingSpectatorConnection:
     websocket: WebSocket
     user_id: uuid.UUID
+    # Unique id for O(1) removal from TrainingRoom.spectators dict.
+    connection_id: uuid.UUID = field(default_factory=uuid.uuid4)
 
 
 @dataclass
@@ -30,14 +32,15 @@ class TrainingRoom:
 
     session_id: uuid.UUID
     mod: TrainingModConnection | None = None
-    spectators: list[TrainingSpectatorConnection] = field(default_factory=list)
+    # connection_id -> connection (dict for O(1) removal during broadcasts)
+    spectators: dict[uuid.UUID, TrainingSpectatorConnection] = field(default_factory=dict)
 
     async def broadcast_to_spectators(self, message: str) -> None:
         """Send message to all connected spectators concurrently with timeout."""
         if not self.spectators:
             return
 
-        snapshot = list(self.spectators)
+        snapshot = list(self.spectators.values())
 
         async def _send(
             conn: TrainingSpectatorConnection,
@@ -51,10 +54,7 @@ class TrainingRoom:
         results = await asyncio.gather(*(_send(c) for c in snapshot))
         for conn in results:
             if conn is not None:
-                try:
-                    self.spectators.remove(conn)
-                except ValueError:
-                    pass  # Already removed by disconnect handler
+                self.spectators.pop(conn.connection_id, None)
 
     async def broadcast_to_mod(self, message: str) -> None:
         """Send message to mod if connected."""
@@ -141,19 +141,18 @@ class TrainingConnectionManager:
         websocket: WebSocket,
     ) -> None:
         room = self.get_or_create_room(session_id)
-        room.spectators.append(TrainingSpectatorConnection(websocket=websocket, user_id=user_id))
+        conn = TrainingSpectatorConnection(websocket=websocket, user_id=user_id)
+        room.spectators[conn.connection_id] = conn
         logger.info(f"Spectator connected to training session {session_id}")
 
     async def disconnect_spectator(self, session_id: uuid.UUID, websocket: WebSocket) -> None:
         room = self.rooms.get(session_id)
         if room:
-            # Remove matching connection by websocket identity
-            for conn in room.spectators:
+            # Find matching connection by websocket identity, then O(1) pop.
+            # Training sessions have few spectators, so the linear scan is fine.
+            for conn in list(room.spectators.values()):
                 if conn.websocket is websocket:
-                    try:
-                        room.spectators.remove(conn)
-                    except ValueError:
-                        pass
+                    room.spectators.pop(conn.connection_id, None)
                     logger.info(f"Spectator disconnected from training session {session_id}")
                     break
             if room.mod is None and not room.spectators:

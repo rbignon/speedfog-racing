@@ -483,7 +483,7 @@ class TestConnectionManager:
 
         await manager.connect_spectator(race_id, conn)
         room = manager.get_room(race_id)
-        assert conn in room.spectators
+        assert conn.connection_id in room.spectators
 
         await manager.disconnect_spectator(race_id, conn)
         # Room should be cleaned up when empty
@@ -511,10 +511,8 @@ class TestConnectionManager:
         ws1 = AsyncMock()
         ws2 = AsyncMock()
 
-        room.spectators = [
-            SpectatorConnection(websocket=ws1),
-            SpectatorConnection(websocket=ws2),
-        ]
+        specs = [SpectatorConnection(websocket=ws1), SpectatorConnection(websocket=ws2)]
+        room.spectators = {c.connection_id: c for c in specs}
 
         await room.broadcast_to_spectators('{"type": "test"}')
 
@@ -531,13 +529,13 @@ class TestConnectionManager:
 
         conn_bad = SpectatorConnection(websocket=ws_bad)
         conn_good = SpectatorConnection(websocket=ws_good)
-        room.spectators = [conn_bad, conn_good]
+        room.spectators = {conn_bad.connection_id: conn_bad, conn_good.connection_id: conn_good}
 
         await room.broadcast_to_spectators('{"type": "test"}')
 
         # Bad connection should be removed
-        assert conn_bad not in room.spectators
-        assert conn_good in room.spectators
+        assert conn_bad.connection_id not in room.spectators
+        assert conn_good.connection_id in room.spectators
 
 
 # --- Leaderboard Tests ---

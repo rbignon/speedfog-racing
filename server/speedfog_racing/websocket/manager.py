@@ -44,6 +44,8 @@ class SpectatorConnection:
     role: str | None = None  # "organizer" | "admin" | "caster" | "participant"
     participant_id: uuid.UUID | None = None
     is_playing: bool = False  # True if participant currently in PLAYING status during RUNNING
+    # Unique id for O(1) removal from RaceRoom.spectators dict.
+    connection_id: uuid.UUID = field(default_factory=uuid.uuid4)
 
 
 @dataclass
@@ -53,7 +55,8 @@ class RaceRoom:
     race_id: uuid.UUID
     # participant_id -> connection
     mods: dict[uuid.UUID, ModConnection] = field(default_factory=dict)
-    spectators: list[SpectatorConnection] = field(default_factory=list)
+    # connection_id -> connection (dict for O(1) add/remove during broadcasts)
+    spectators: dict[uuid.UUID, SpectatorConnection] = field(default_factory=dict)
 
     async def broadcast_to_mods(self, message: str) -> None:
         """Send message to all connected mods concurrently with timeout."""
@@ -85,11 +88,10 @@ class RaceRoom:
         if not self.spectators:
             return
 
-        # Snapshot to avoid issues with concurrent list modification.
+        # Snapshot to avoid issues with concurrent dict modification.
         # During the gather, connect_spectator/disconnect_spectator can
-        # modify self.spectators; index-based removal would then pop the
-        # wrong connection, silently orphaning innocent spectators.
-        snapshot = list(self.spectators)
+        # modify self.spectators.
+        snapshot = list(self.spectators.values())
 
         async def _send(conn: SpectatorConnection) -> SpectatorConnection | None:
             try:
@@ -102,10 +104,7 @@ class RaceRoom:
         results = await asyncio.gather(*(_send(c) for c in snapshot))
         for conn in results:
             if conn is not None:
-                try:
-                    self.spectators.remove(conn)
-                except ValueError:
-                    pass  # Already removed by disconnect handler
+                self.spectators.pop(conn.connection_id, None)
 
     async def broadcast_to_all(self, message: str) -> None:
         """Send message to all connections (mods + spectators) concurrently."""
@@ -119,7 +118,7 @@ class RaceRoom:
 
         Only sends to connections where role is not None.
         """
-        snapshot = [c for c in self.spectators if c.role is not None]
+        snapshot = [c for c in self.spectators.values() if c.role is not None]
         if not snapshot:
             return
         failed: list[SpectatorConnection] = []
@@ -132,14 +131,13 @@ class RaceRoom:
 
         await asyncio.gather(*(_send(c) for c in snapshot))
         for conn in failed:
-            try:
-                self.spectators.remove(conn)
-            except ValueError:
-                pass
+            self.spectators.pop(conn.connection_id, None)
 
     async def broadcast_chat_public(self, message: str) -> None:
         """Broadcast to authenticated spectators, excluding playing participants."""
-        snapshot = [c for c in self.spectators if c.user_id is not None and not c.is_playing]
+        snapshot = [
+            c for c in self.spectators.values() if c.user_id is not None and not c.is_playing
+        ]
         if not snapshot:
             return
         failed: list[SpectatorConnection] = []
@@ -152,21 +150,18 @@ class RaceRoom:
 
         await asyncio.gather(*(_send(c) for c in snapshot))
         for conn in failed:
-            try:
-                self.spectators.remove(conn)
-            except ValueError:
-                pass
+            self.spectators.pop(conn.connection_id, None)
 
     def get_spectator_by_user_id(self, user_id: uuid.UUID) -> SpectatorConnection | None:
         """Find a spectator connection by user ID."""
-        for conn in self.spectators:
+        for conn in self.spectators.values():
             if conn.user_id == user_id:
                 return conn
         return None
 
     def mark_participants_playing(self) -> None:
         """Set is_playing=True on all participant spectator connections."""
-        for conn in self.spectators:
+        for conn in self.spectators.values():
             if conn.role == "participant":
                 conn.is_playing = True
 
@@ -178,7 +173,7 @@ class RaceRoom:
 
     def clear_all_playing(self) -> None:
         """Clear is_playing on all spectator connections."""
-        for conn in self.spectators:
+        for conn in self.spectators.values():
             conn.is_playing = False
 
 
@@ -265,7 +260,7 @@ class ConnectionManager:
     async def connect_spectator(self, race_id: uuid.UUID, conn: SpectatorConnection) -> None:
         """Register a spectator connection."""
         room = self.get_or_create_room(race_id)
-        room.spectators.append(conn)
+        room.spectators[conn.connection_id] = conn
         logger.info(f"Spectator connected: race={race_id}")
         await self._broadcast_spectator_count(room)
 
@@ -273,10 +268,7 @@ class ConnectionManager:
         """Remove a spectator connection."""
         room = self.get_room(race_id)
         if room:
-            try:
-                room.spectators.remove(conn)
-            except ValueError:
-                pass
+            room.spectators.pop(conn.connection_id, None)
             logger.info(f"Spectator disconnected: race={race_id}")
             await self._broadcast_spectator_count(room)
             if not room.mods and not room.spectators:
@@ -294,7 +286,7 @@ class ConnectionManager:
             except Exception:
                 logger.debug("Failed to close mod connection in room %s", race_id)
 
-        for spec_conn in room.spectators:
+        for spec_conn in room.spectators.values():
             try:
                 await spec_conn.websocket.close(code=code, reason=reason)
             except Exception:

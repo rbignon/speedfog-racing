@@ -403,8 +403,8 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
     if not room:
         return
 
-    # Snapshot to avoid issues with concurrent list modification
-    snapshot = list(room.spectators)
+    # Snapshot to avoid issues with concurrent dict modification
+    snapshot = list(room.spectators.values())
 
     async def _send_to(conn: SpectatorConnection) -> SpectatorConnection | None:
         try:
@@ -422,7 +422,4 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
     results = await asyncio.gather(*(_send_to(conn) for conn in snapshot))
     for conn in results:
         if conn is not None:
-            try:
-                room.spectators.remove(conn)
-            except ValueError:
-                pass  # Already removed by disconnect handler
+            room.spectators.pop(conn.connection_id, None)
