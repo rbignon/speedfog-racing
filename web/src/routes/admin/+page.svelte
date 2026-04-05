@@ -682,12 +682,27 @@
 
 			{@const raceMax = Math.max(1, ...analytics.heatmaps.race_players.flat())}
 			{@const soloMax = Math.max(1, ...analytics.heatmaps.solo.flat())}
-			{@const hours = ['10h', '12h', '14h', '16h', '18h', '20h', '22h', '00h']}
+			{@const hours = [
+				'00h',
+				'02h',
+				'04h',
+				'06h',
+				'08h',
+				'10h',
+				'12h',
+				'14h',
+				'16h',
+				'18h',
+				'20h',
+				'22h'
+			]}
 			{@const days = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']}
 
 			<div class="heatmaps-row">
 				<div class="heatmap-box">
-					<div class="heatmap-title heatmap-gold">Race Players</div>
+					<div class="heatmap-title heatmap-gold">
+						Race Players <span class="heatmap-tz">(UTC)</span>
+					</div>
 					<div class="heatmap-grid">
 						<div class="heatmap-corner"></div>
 						{#each days as day}
@@ -712,7 +727,9 @@
 				</div>
 
 				<div class="heatmap-box">
-					<div class="heatmap-title heatmap-purple">Solo</div>
+					<div class="heatmap-title heatmap-purple">
+						Solo <span class="heatmap-tz">(UTC)</span>
+					</div>
 					<div class="heatmap-grid">
 						<div class="heatmap-corner"></div>
 						{#each days as day}
@@ -1398,6 +1415,13 @@
 
 	.heatmap-purple {
 		color: var(--color-purple);
+	}
+
+	.heatmap-tz {
+		font-size: 0.65rem;
+		font-weight: 400;
+		color: var(--color-text-secondary);
+		margin-left: 0.25rem;
 	}
 
 	.heatmap-grid {

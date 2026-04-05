@@ -326,7 +326,7 @@ async def test_compute_analytics_weekly(analytics_data, async_session):
 
 @pytest.mark.asyncio
 async def test_compute_analytics_heatmaps(analytics_data, async_session):
-    """Heatmap grids must be 8 rows x 7 cols and contain fixture race/solo data."""
+    """Heatmap grids must be 12 rows x 7 cols and contain fixture race/solo data."""
     async with async_session() as db:
         result = await compute_analytics(db)
 
@@ -334,8 +334,8 @@ async def test_compute_analytics_heatmaps(analytics_data, async_session):
     race_grid = heatmaps["race_players"]
     solo_grid = heatmaps["solo"]
 
-    assert len(race_grid) == 8
-    assert len(solo_grid) == 8
+    assert len(race_grid) == 12
+    assert len(solo_grid) == 12
     for row in race_grid:
         assert len(row) == 7
     for row in solo_grid:

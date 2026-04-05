@@ -22,25 +22,16 @@ from speedfog_racing.models import (
 logger = logging.getLogger(__name__)
 
 
-def _hour_to_bucket(hour: int) -> int | None:
-    """Map an hour (0-23) to a heatmap row index (0-7), or None if outside tracked hours.
+def _hour_to_bucket(hour: int) -> int:
+    """Map an hour (0-23, UTC) to a heatmap row index (0-11).
 
-    Buckets:
-      row 0: 10-11
-      row 1: 12-13
-      row 2: 14-15
-      row 3: 16-17
-      row 4: 18-19
-      row 5: 20-21
-      row 6: 22-23
-      row 7: 00-01
-    Hours 2-9 are not tracked (return None).
+    Buckets cover the full 24h day in 2-hour slices:
+      row 0: 00-01   row 4: 08-09   row 8:  16-17
+      row 1: 02-03   row 5: 10-11   row 9:  18-19
+      row 2: 04-05   row 6: 12-13   row 10: 20-21
+      row 3: 06-07   row 7: 14-15   row 11: 22-23
     """
-    if 10 <= hour <= 23:
-        return (hour - 10) // 2
-    if hour <= 1:
-        return 7
-    return None
+    return hour // 2
 
 
 def _iso_week_key(dt: datetime) -> tuple[int, int]:
@@ -193,19 +184,17 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
     }
 
     # ------------------------------------------------------------------
-    # Heatmaps (8 rows x 7 cols)
+    # Heatmaps (12 rows x 7 cols, UTC)
     # ------------------------------------------------------------------
-    # row = hour bucket, col = weekday (0=Mon, 6=Sun)
-    race_grid = [[0] * 7 for _ in range(8)]
-    solo_grid = [[0] * 7 for _ in range(8)]
+    # row = 2-hour bucket (00-01 ... 22-23), col = weekday (0=Mon, 6=Sun)
+    race_grid = [[0] * 7 for _ in range(12)]
+    solo_grid = [[0] * 7 for _ in range(12)]
 
     for r in races:
         if r.started_at is None or r.status not in (RaceStatus.RUNNING, RaceStatus.FINISHED):
             continue
         started = _ensure_utc(r.started_at)
         bucket = _hour_to_bucket(started.hour)
-        if bucket is None:
-            continue
         col = started.weekday()
         race_grid[bucket][col] += race_participant_counts.get(str(r.id), 0)
 
@@ -214,8 +203,6 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
             continue
         created = _ensure_utc(ts.created_at)
         bucket = _hour_to_bucket(created.hour)
-        if bucket is None:
-            continue
         col = created.weekday()
         solo_grid[bucket][col] += 1
 
