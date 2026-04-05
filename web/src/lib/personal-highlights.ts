@@ -735,7 +735,7 @@ function detectFasterThanAll(
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes, true);
+  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes);
 
   let bestScore = 0;
   let bestHighlight: Highlight | null = null;
@@ -745,20 +745,16 @@ function detectFasterThanAll(
     const info = nodeInfo.get(zoneId);
     if (info?.type === "start") continue;
 
-    const myTime = times.find((t) => t.playerId === myId);
-    if (!myTime || myTime.timeMs <= 0) continue;
+    // Sort ascending and require me to be strictly fastest.
+    const sorted = [...times].sort((a, b) => a.timeMs - b.timeMs);
+    const fastest = sorted[0];
+    const runnerUp = sorted[1];
+    if (fastest.playerId !== myId) continue;
+    if (fastest.timeMs <= 0 || runnerUp.timeMs <= 0) continue;
 
-    const avg = times.reduce((s, t) => s + t.timeMs, 0) / times.length;
-    if (avg <= 0) continue;
-
-    const ratio = myTime.timeMs / avg;
-    if (ratio >= 0.6) continue;
-
-    // Check we're actually the fastest
-    const isFastest = times.every(
-      (t) => t.playerId === myId || t.timeMs >= myTime.timeMs,
-    );
-    if (!isFastest) continue;
+    // ratio < 1 means I'm faster. Require a 30% lead over the runner-up.
+    const ratio = fastest.timeMs / runnerUp.timeMs;
+    if (ratio > 1 / 1.3) continue;
 
     const tierMult = info?.tier ?? 1;
     const score = (1 - ratio) * 100 * tierMult;
@@ -772,7 +768,9 @@ function detectFasterThanAll(
         segments: [
           tSeg("You were the fastest through "),
           zSeg(zoneId, nodeInfo),
-          tSeg(`: ${formatTime(myTime.timeMs)} (average: ${formatTime(avg)})`),
+          tSeg(
+            `: ${formatTime(fastest.timeMs)} (runner-up: ${formatTime(runnerUp.timeMs)})`,
+          ),
         ],
         playerIds: [myId],
         score,
@@ -788,7 +786,7 @@ function detectSlowerThanAll(
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes, true);
+  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes);
 
   let bestScore = 0;
   let bestHighlight: Highlight | null = null;
@@ -798,20 +796,16 @@ function detectSlowerThanAll(
     const info = nodeInfo.get(zoneId);
     if (info?.type === "start") continue;
 
-    const myTime = times.find((t) => t.playerId === myId);
-    if (!myTime || myTime.timeMs <= 0) continue;
+    // Sort descending and require me to be strictly slowest.
+    const sorted = [...times].sort((a, b) => b.timeMs - a.timeMs);
+    const slowest = sorted[0];
+    const nextSlowest = sorted[1];
+    if (slowest.playerId !== myId) continue;
+    if (nextSlowest.timeMs <= 0) continue;
 
-    const avg = times.reduce((s, t) => s + t.timeMs, 0) / times.length;
-    if (avg <= 0) continue;
-
-    const ratio = myTime.timeMs / avg;
-    if (ratio <= 1.5) continue;
-
-    // Check we're actually the slowest
-    const isSlowest = times.every(
-      (t) => t.playerId === myId || t.timeMs <= myTime.timeMs,
-    );
-    if (!isSlowest) continue;
+    // ratio > 1 means I'm slower. Require a 50% gap over the next-slowest.
+    const ratio = slowest.timeMs / nextSlowest.timeMs;
+    if (ratio < 1.5) continue;
 
     const score = (ratio - 1) * 50;
 
@@ -824,7 +818,7 @@ function detectSlowerThanAll(
         segments: [
           zSeg(zoneId, nodeInfo),
           tSeg(
-            ` slowed you down: last with ${formatTime(myTime.timeMs)} (average: ${formatTime(avg)})`,
+            ` slowed you down: last with ${formatTime(slowest.timeMs)} (next: ${formatTime(nextSlowest.timeMs)})`,
           ),
         ],
         playerIds: [myId],

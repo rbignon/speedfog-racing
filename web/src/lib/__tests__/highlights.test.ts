@@ -779,7 +779,7 @@ describe("outcome-based highlights", () => {
 
 describe("community highlight boost", () => {
   it("community highlights beat individual ones with 1.5x scoring boost", () => {
-    // Speed Demon: ratio = avg/fastest = 60s/30s = 2.0, tierMult = 1
+    // Speed Demon: ratio = 2ndFastest/fastest = 60s/30s = 2.0, tierMult = 1
     //   → raw score = 2.0 * 20 = 40
     // Graveyard: 4 total deaths in zone_a
     //   → raw score = 4 * 8 = 32, boosted = 32 * 1.5 = 48
@@ -807,7 +807,7 @@ describe("community highlight boost", () => {
         zone_history: [
           { node_id: "start", igt_ms: 0 },
           { node_id: "zone_a", igt_ms: 10000, deaths: 2 },
-          { node_id: "zone_b", igt_ms: 100000 }, // 90s in zone_a (slow)
+          { node_id: "zone_b", igt_ms: 70000 }, // 60s in zone_a (slow)
         ],
       }),
     ];
@@ -823,10 +823,10 @@ describe("community highlight boost", () => {
   });
 
   it("individual highlight still wins when score difference is large", () => {
-    // Speed Demon: ratio = avg/fastest = 55s/10s = 5.5, tierMult = 3
-    //   → raw score = 5.5 * 3 * 20 = 330
+    // Speed Demon: ratio = 2ndFastest/fastest = 100s/10s = 10, tierMult = 3
+    //   → raw score = 10 * 3 * 20 = 600
     // Graveyard: 3 deaths → raw = 24, boosted = 36
-    // Speed Demon wins (330 >> 36): extreme exploits beat weak community.
+    // Speed Demon wins (600 >> 36): extreme exploits beat weak community.
     const graph = graphJson({
       start: { tier: 1, layer: 0, type: "start" },
       zone_a: { tier: 3, layer: 1 },

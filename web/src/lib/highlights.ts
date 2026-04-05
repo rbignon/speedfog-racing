@@ -223,17 +223,16 @@ export function computeOutcome(
 }
 
 /**
- * Build a map of zoneId → list of player times (only cleared zones).
- * Shared by detectSpeedDemon and detectZoneWall.
+ * Build a map of zoneId → list of player times, counting only cleared visits.
+ * A player who backed out or abandoned the zone isn't a valid reference time.
  */
 export function buildZonePlayerTimes(
   allZoneTimes: Map<string, ZoneTime[]>,
-  clearedOnly: boolean,
 ): Map<string, { playerId: string; timeMs: number }[]> {
   const map = new Map<string, { playerId: string; timeMs: number }[]>();
   for (const [pid, zones] of allZoneTimes) {
     for (const zt of zones) {
-      if (clearedOnly && zt.outcome !== "cleared") continue;
+      if (zt.outcome !== "cleared") continue;
       if (!map.has(zt.nodeId)) map.set(zt.nodeId, []);
       map.get(zt.nodeId)!.push({ playerId: pid, timeMs: zt.timeMs });
     }
@@ -281,9 +280,13 @@ function detectSpeedDemon(
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes, true);
+  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes);
 
-  let bestRatio = 0;
+  // Minimum ratio (2nd-fastest / fastest) to qualify as a "blitz".
+  // A real exploit beats the closest competitor by a clear margin.
+  const MIN_RATIO = 1.3;
+
+  let bestScore = 0;
   let bestPlayerId = "";
   let bestZone = "";
   let bestTime = 0;
@@ -293,24 +296,26 @@ function detectSpeedDemon(
     const info = nodeInfo.get(zoneId);
     if (info?.type === "start" || info?.type === "final_boss") continue;
 
-    const avg = times.reduce((s, t) => s + t.timeMs, 0) / times.length;
-    if (avg <= 0) continue;
+    // Sort ascending: fastest first.
+    const sorted = [...times].sort((a, b) => a.timeMs - b.timeMs);
+    const fastest = sorted[0];
+    const secondFastest = sorted[1];
+    if (fastest.timeMs <= 0) continue;
 
-    for (const t of times) {
-      if (t.timeMs <= 0) continue;
-      const ratio = avg / t.timeMs;
-      const tierMult = info ? info.tier : 1;
-      const score = ratio * tierMult;
-      if (score > bestRatio) {
-        bestRatio = score;
-        bestPlayerId = t.playerId;
-        bestZone = zoneId;
-        bestTime = t.timeMs;
-      }
+    const ratio = secondFastest.timeMs / fastest.timeMs;
+    if (ratio < MIN_RATIO) continue;
+
+    const tierMult = info ? info.tier : 1;
+    const score = ratio * tierMult;
+    if (score > bestScore) {
+      bestScore = score;
+      bestPlayerId = fastest.playerId;
+      bestZone = zoneId;
+      bestTime = fastest.timeMs;
     }
   }
 
-  if (bestRatio < 1.5) return null;
+  if (bestScore === 0) return null;
 
   const p = participants.find((pp) => pp.id === bestPlayerId);
   if (!p) return null;
@@ -326,7 +331,7 @@ function detectSpeedDemon(
       tSeg(` in ${formatTime(bestTime)}`),
     ],
     playerIds: [bestPlayerId],
-    score: bestRatio * 20,
+    score: bestScore * 20,
   };
 }
 
@@ -335,9 +340,16 @@ function detectZoneWall(
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
-  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes, false);
+  // Only count cleared times. A player who backed out or abandoned isn't
+  // a "fast reference": they chose to leave, they weren't competing in
+  // the zone. Including them would deflate the comparison baseline.
+  const zonePlayerTimes = buildZonePlayerTimes(allZoneTimes);
 
-  let bestRatio = 0;
+  // Minimum ratio (slowest / 2nd-slowest) to qualify as a "wall".
+  // A real wall stands out vs. the next-slowest player who also cleared.
+  const MIN_RATIO = 1.5;
+
+  let bestScore = 0;
   let bestPlayerId = "";
   let bestZone = "";
   let bestTime = 0;
@@ -347,23 +359,26 @@ function detectZoneWall(
     const info = nodeInfo.get(zoneId);
     if (info?.type === "start" || info?.type === "final_boss") continue;
 
-    const avg = times.reduce((s, t) => s + t.timeMs, 0) / times.length;
-    if (avg <= 0) continue;
+    // Sort descending: slowest first.
+    const sorted = [...times].sort((a, b) => b.timeMs - a.timeMs);
+    const slowest = sorted[0];
+    const secondSlowest = sorted[1];
+    if (secondSlowest.timeMs <= 0) continue;
 
-    for (const t of times) {
-      const ratio = t.timeMs / avg;
-      const tierMult = info ? info.tier : 1;
-      const score = ratio * tierMult;
-      if (score > bestRatio) {
-        bestRatio = score;
-        bestPlayerId = t.playerId;
-        bestZone = zoneId;
-        bestTime = t.timeMs;
-      }
+    const ratio = slowest.timeMs / secondSlowest.timeMs;
+    if (ratio < MIN_RATIO) continue;
+
+    const tierMult = info ? info.tier : 1;
+    const score = ratio * tierMult;
+    if (score > bestScore) {
+      bestScore = score;
+      bestPlayerId = slowest.playerId;
+      bestZone = zoneId;
+      bestTime = slowest.timeMs;
     }
   }
 
-  if (bestRatio < 2.0) return null;
+  if (bestScore === 0) return null;
 
   const p = participants.find((pp) => pp.id === bestPlayerId);
   if (!p) return null;
@@ -379,7 +394,7 @@ function detectZoneWall(
       tSeg(`'s nemesis, stuck for ${formatTime(bestTime)}`),
     ],
     playerIds: [bestPlayerId],
-    score: bestRatio * 15,
+    score: bestScore * 15,
   };
 }
 

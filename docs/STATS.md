@@ -293,18 +293,18 @@ Computed client-side in `web/src/lib/highlights.ts`. Detects race-wide moments f
 
 #### Speed Demon
 
-Player cleared a zone significantly faster than average.
+Player cleared a zone much faster than the next-fastest competitor. Compared against the 2nd-fastest (not the mean) so a close runner-up prevents the highlight from firing.
 
-- **Condition:** `avg_time / player_time >= 1.5`, player is objectively fastest, zone type is not start or final_boss, at least 2 players cleared the zone
-- **Score:** `(avg / player_time) * tier * 20`
+- **Condition:** `second_fastest_time / fastest_time >= 1.3`, zone type is not start or final_boss, at least 2 players cleared the zone
+- **Score:** `(second_fastest / fastest) * tier * 20`
 - **Text:** "[Player] blitzed through [Zone] in [Time]"
 
 #### Zone Wall
 
-Player was stuck on a zone far longer than average.
+Player was stuck on a zone far longer than the next-slowest player who also cleared. Only counts cleared times: a player who backed out or abandoned isn't a "fast reference" because they chose to leave the zone, not because they breezed through it.
 
-- **Condition:** `player_time / avg_time >= 2.0`, player is objectively slowest, zone type is not start or final_boss, at least 2 players on the zone
-- **Score:** `(player_time / avg) * tier * 15`
+- **Condition:** `slowest_time / second_slowest_time >= 1.5`, zone type is not start or final_boss, at least 2 players cleared the zone
+- **Score:** `(slowest / second_slowest) * tier * 15`
 - **Text:** "[Zone] was [Player]'s nemesis, stuck for [Time]"
 
 #### Sprint Final
@@ -513,19 +513,19 @@ Player took a branch that cost time compared to players who skipped it.
 
 #### Faster Than All
 
-Player was the fastest through a zone.
+Player was the fastest through a zone, comfortably ahead of the runner-up.
 
-- **Condition:** `time / avg_time <= 0.6`, player is objectively fastest, at least 2 players cleared the zone
+- **Condition:** `time / runner_up_time <= 1/1.3`, player is strictly fastest, at least 2 players cleared the zone
 - **Score:** `(1 - ratio) * 100 * tier`
-- **Text:** "You were the fastest through [Zone]: [Time] (average: [AvgTime])"
+- **Text:** "You were the fastest through [Zone]: [Time] (runner-up: [RunnerUpTime])"
 
 #### Rough Zone (Slower Than All)
 
-Player was the slowest through a zone.
+Player was the slowest through a zone, noticeably behind the next-slowest.
 
-- **Condition:** `time / avg_time >= 1.5`, player is objectively slowest
+- **Condition:** `time / next_slowest_time >= 1.5`, player is strictly slowest, at least 2 players cleared the zone
 - **Score:** `(ratio - 1) * 50`
-- **Text:** "[Zone] slowed you down: last with [Time] (average: [AvgTime])"
+- **Text:** "[Zone] slowed you down: last with [Time] (next: [NextTime])"
 
 #### Lead Lost
 
