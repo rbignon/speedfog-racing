@@ -54,4 +54,3 @@ nerf_gargoyles = true
 
 [enemy]
 randomize_bosses = "minor"
-ignore_arena_size = true

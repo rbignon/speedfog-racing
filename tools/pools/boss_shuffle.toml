@@ -38,4 +38,3 @@ final_boss_candidates = [
 
 [enemy]
 randomize_bosses = "all"
-ignore_arena_size = true
