@@ -235,6 +235,26 @@ RaceRoom:
 
 ---
 
+## Scaling
+
+The `ConnectionManager` (`websocket/manager.py`) is a **single-process, in-memory singleton**. `manager.rooms: dict[uuid.UUID, RaceRoom]` holds every active connection for the entire server.
+
+**Implications:**
+
+- The server currently runs as a **single uvicorn worker**. Adding `--workers N` will break broadcasts: a status update arriving on worker A will only reach spectators whose WebSockets landed on worker A.
+- Horizontal scaling (multiple server instances behind a load balancer) has the same constraint, amplified.
+- In-process rate limits (`rate_limit.py`) have the same property.
+
+**Path forward when horizontal scaling becomes necessary:**
+
+1. Introduce Redis pub/sub. Connections stay local to each worker; broadcasts are published to a Redis channel keyed by `race_id`, and each worker subscribes and forwards to its local sockets.
+2. Move rate limit state to a Redis-backed token bucket.
+3. Keep the existing `ConnectionManager` API surface — the Redis layer sits between `broadcast_*` methods and the socket sends.
+
+Not worth doing before the platform actually needs it: single-worker uvicorn can handle thousands of WebSocket connections, and we are nowhere near that.
+
+---
+
 ## Constants Summary
 
 | Constant             | Value | Location                  | Purpose                                     |
