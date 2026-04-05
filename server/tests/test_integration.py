@@ -595,8 +595,15 @@ def test_malformed_json_ignored(integration_client, race_with_participants):
         assert response["type"] == "leaderboard_update"
 
 
-def test_duplicate_connection_rejected(integration_client, race_with_participants):
-    """Test that duplicate connection for same participant is rejected."""
+def test_duplicate_connection_replaces_old(integration_client, race_with_participants):
+    """A second connection for the same participant replaces the first.
+
+    The server closes the old socket with code 4000 and accepts the new one.
+    This avoids trapping a player behind a ghost connection after a network
+    drop or crash.
+    """
+    from starlette.websockets import WebSocketDisconnect
+
     race_id = race_with_participants["race_id"]
     players = race_with_participants["players"]
     mod_token = players[0]["mod_token"]
@@ -606,12 +613,17 @@ def test_duplicate_connection_rejected(integration_client, race_with_participant
         mod1 = ModTestClient(ws1, mod_token)
         assert mod1.auth()["type"] == "auth_ok"
 
-        # Second connection with same token
+        # Second connection with same token - accepted, first is closed
         with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws2:
             mod2 = ModTestClient(ws2, mod_token)
-            response = mod2.auth()
-            assert response["type"] == "auth_error"
-            assert "Already connected" in response["message"]
+            assert mod2.auth()["type"] == "auth_ok"
+
+            # First connection should now be closed by the server
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                # Drain any buffered messages, then hit the close frame
+                for _ in range(10):
+                    mod1.receive(timeout=2)
+            assert exc_info.value.code == 4000
 
 
 def test_connect_broadcasts_leaderboard(integration_client, race_with_participants):

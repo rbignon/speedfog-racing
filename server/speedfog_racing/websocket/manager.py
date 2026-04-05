@@ -206,24 +206,61 @@ class ConnectionManager:
         websocket: WebSocket,
         locale: str = "en",
     ) -> None:
-        """Register a mod connection."""
+        """Register a mod connection, replacing any existing one for this participant.
+
+        If a previous connection exists (likely a ghost after a network drop),
+        it is closed with code 4000 so the old handler's receive loop exits.
+        """
         room = self.get_or_create_room(race_id)
+        existing = room.mods.get(participant_id)
         room.mods[participant_id] = ModConnection(
             websocket=websocket,
             participant_id=participant_id,
             user_id=user_id,
             locale=locale,
         )
-        logger.info(f"Mod connected: race={race_id}, participant={participant_id}")
+        if existing is not None:
+            logger.info(f"Mod replaced: race={race_id}, participant={participant_id}")
+            try:
+                await existing.websocket.close(code=4000, reason="replaced by new connection")
+            except Exception:
+                logger.debug(
+                    "Failed to close replaced mod connection: race=%s, participant=%s",
+                    race_id,
+                    participant_id,
+                )
+        else:
+            logger.info(f"Mod connected: race={race_id}, participant={participant_id}")
 
-    async def disconnect_mod(self, race_id: uuid.UUID, participant_id: uuid.UUID) -> None:
-        """Remove a mod connection."""
+    async def disconnect_mod(
+        self,
+        race_id: uuid.UUID,
+        participant_id: uuid.UUID,
+        websocket: WebSocket | None = None,
+    ) -> None:
+        """Remove a mod connection.
+
+        If ``websocket`` is provided, only removes the entry when it still
+        refers to that websocket. This prevents an old handler from
+        inadvertently removing a newer connection that has replaced it.
+        """
         room = self.get_room(race_id)
-        if room:
-            room.mods.pop(participant_id, None)
-            logger.info(f"Mod disconnected: race={race_id}, participant={participant_id}")
-            if not room.mods and not room.spectators:
-                self.rooms.pop(race_id, None)
+        if not room:
+            return
+        current = room.mods.get(participant_id)
+        if current is None:
+            return
+        if websocket is not None and current.websocket is not websocket:
+            logger.debug(
+                "Stale mod disconnect ignored: race=%s, participant=%s",
+                race_id,
+                participant_id,
+            )
+            return
+        room.mods.pop(participant_id, None)
+        logger.info(f"Mod disconnected: race={race_id}, participant={participant_id}")
+        if not room.mods and not room.spectators:
+            self.rooms.pop(race_id, None)
 
     async def connect_spectator(self, race_id: uuid.UUID, conn: SpectatorConnection) -> None:
         """Register a spectator connection."""

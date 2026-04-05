@@ -797,6 +797,37 @@ def test_training_mod_websocket_auth(training_ws_client, training_session_data):
         assert start["type"] == "race_start"
 
 
+def test_training_mod_duplicate_connection_replaces_old(training_ws_client, training_session_data):
+    """A second training mod connection replaces the first.
+
+    The server closes the old socket with code 4000 and accepts the new one,
+    so a player whose previous connection went ghost is not stuck waiting
+    for a heartbeat timeout.
+    """
+    from starlette.websockets import WebSocketDisconnect
+
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws1:
+        ws1.send_json({"type": "auth", "mod_token": token})
+        auth_ok_1 = ws1.receive_json()
+        assert auth_ok_1["type"] == "auth_ok"
+        assert ws1.receive_json()["type"] == "race_start"
+
+        # Second connection with same token: accepted, first is closed.
+        with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws2:
+            ws2.send_json({"type": "auth", "mod_token": token})
+            auth_ok_2 = ws2.receive_json()
+            assert auth_ok_2["type"] == "auth_ok"
+
+            # First connection should now be closed by the server
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                for _ in range(10):
+                    ws1.receive_json()
+            assert exc_info.value.code == 4000
+
+
 def test_training_mod_auth_ok_includes_spawn_items(async_session):
     """Training mod WS: auth_ok includes spawn_items for type-4 (gem) care package items."""
     from starlette.testclient import TestClient

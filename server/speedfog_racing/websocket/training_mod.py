@@ -131,10 +131,6 @@ async def handle_training_mod_websocket(
                 await send_auth_error(websocket, "Solo session is not active")
                 return
 
-            if training_manager.is_mod_connected(session_id):
-                await send_auth_error(websocket, "Already connected from another client")
-                return
-
             user_id = session.user_id
             mod_locale = session.user.locale or "en"
 

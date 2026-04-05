@@ -422,7 +422,55 @@ class TestConnectionManager:
         await manager.connect_mod(race_id, participant_id, user_id, websocket)
         assert manager.is_mod_connected(race_id, participant_id)
 
-        await manager.disconnect_mod(race_id, participant_id)
+        await manager.disconnect_mod(race_id, participant_id, websocket)
+        assert not manager.is_mod_connected(race_id, participant_id)
+
+    @pytest.mark.asyncio
+    async def test_connect_mod_replaces_existing(self):
+        """A second connect_mod closes the old websocket and installs the new one."""
+        manager = ConnectionManager()
+        race_id = uuid.uuid4()
+        participant_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        ws_old = AsyncMock()
+        ws_new = AsyncMock()
+
+        await manager.connect_mod(race_id, participant_id, user_id, ws_old)
+        await manager.connect_mod(race_id, participant_id, user_id, ws_new)
+
+        # Old websocket got closed with the replacement code
+        ws_old.close.assert_awaited_once_with(code=4000, reason="replaced by new connection")
+        ws_new.close.assert_not_awaited()
+
+        # Room now points at the new connection
+        room = manager.get_room(race_id)
+        assert room is not None
+        assert room.mods[participant_id].websocket is ws_new
+
+    @pytest.mark.asyncio
+    async def test_disconnect_mod_stale_websocket_ignored(self):
+        """A stale disconnect (from the old handler) must not remove the new connection."""
+        manager = ConnectionManager()
+        race_id = uuid.uuid4()
+        participant_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        ws_old = AsyncMock()
+        ws_new = AsyncMock()
+
+        await manager.connect_mod(race_id, participant_id, user_id, ws_old)
+        await manager.connect_mod(race_id, participant_id, user_id, ws_new)
+
+        # Old handler's finally block fires with its own websocket reference
+        await manager.disconnect_mod(race_id, participant_id, ws_old)
+
+        # New connection is still registered
+        assert manager.is_mod_connected(race_id, participant_id)
+        room = manager.get_room(race_id)
+        assert room is not None
+        assert room.mods[participant_id].websocket is ws_new
+
+        # But disconnecting with the correct websocket reference works
+        await manager.disconnect_mod(race_id, participant_id, ws_new)
         assert not manager.is_mod_connected(race_id, participant_id)
 
     @pytest.mark.asyncio

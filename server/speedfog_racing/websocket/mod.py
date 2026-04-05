@@ -206,13 +206,6 @@ async def handle_mod_websocket(
                 await send_auth_error(websocket, "Race has already finished")
                 return
 
-            if manager.is_mod_connected(race_id, participant.id):
-                logger.warning(
-                    f"Mod duplicate connection: race={race_id}, participant={participant.id}"
-                )
-                await send_auth_error(websocket, "Already connected from another client")
-                return
-
             # Keep IDs for use after session closes
             participant_id = participant.id
             user_id = participant.user_id
@@ -310,7 +303,7 @@ async def handle_mod_websocket(
         logger.exception(f"Error in mod websocket: race={race_id}")
     finally:
         if participant_id:
-            await manager.disconnect_mod(race_id, participant_id)
+            await manager.disconnect_mod(race_id, participant_id, websocket)
             # Broadcast updated connection status to remaining clients
             try:
                 async with session_maker() as db:
