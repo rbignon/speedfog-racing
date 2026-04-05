@@ -677,6 +677,7 @@
 		border-radius: var(--radius-lg);
 		text-decoration: none;
 		color: inherit;
+		min-width: 0;
 		transition:
 			border-color var(--transition),
 			box-shadow var(--transition);
