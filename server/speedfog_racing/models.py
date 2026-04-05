@@ -112,6 +112,10 @@ class Seed(Base):
     """A SpeedFog seed available for racing."""
 
     __tablename__ = "seeds"
+    __table_args__ = (
+        # Seed selection (pool + availability) in seed_service.
+        Index("ix_seeds_pool_status", "pool_name", "status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     seed_number: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -165,6 +169,15 @@ class Race(Base):
     discord_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    __table_args__ = (
+        # Organizer dashboard (races listed by organizer).
+        Index("ix_races_organizer", "organizer_id"),
+        # Running-race lookups (WS handlers, inactivity monitor).
+        Index("ix_races_status", "status"),
+        # Date-range filters in analytics and stats endpoints.
+        Index("ix_races_started_at", "started_at"),
+    )
+
     # Relationships
     organizer: Mapped["User"] = relationship(back_populates="organized_races")
     seed: Mapped["Seed | None"] = relationship(back_populates="races")
@@ -183,7 +196,15 @@ class Participant(Base):
     """A user participating in a race."""
 
     __tablename__ = "participants"
-    __table_args__ = (UniqueConstraint("race_id", "user_id", name="uq_participants_race_user"),)
+    __table_args__ = (
+        UniqueConstraint("race_id", "user_id", name="uq_participants_race_user"),
+        # Per-user trait recomputation and abandon checks.
+        Index("ix_participants_user_race_status", "user_id", "race_id", "status"),
+        # Leaderboard lookups and Race.participants selectinload cascades.
+        Index("ix_participants_race_user", "race_id", "user_id"),
+        # Inactivity monitor (runs every 60s) filters by status + last_igt_change_at.
+        Index("ix_participants_status_igt_change", "status", "last_igt_change_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     race_id: Mapped[uuid.UUID] = mapped_column(
@@ -259,6 +280,10 @@ class TrainingSession(Base):
     """A solo training session."""
 
     __tablename__ = "training_sessions"
+    __table_args__ = (
+        # User profile page (sessions filtered by status).
+        Index("ix_training_sessions_user_status", "user_id", "status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -327,6 +352,8 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
     __table_args__ = (
         Index("ix_chat_messages_race_channel_created", "race_id", "channel", "created_at"),
+        # User-scoped access (moderation, cascade on user deletion).
+        Index("ix_chat_messages_user", "user_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
