@@ -188,6 +188,20 @@ class SpectatorCountMessage(BaseModel):
     count: int
 
 
+class ZoneEnteredMessage(BaseModel):
+    """Incremental zone_history update for a single participant.
+
+    Emitted when a new zone entry is appended, or when an existing entry's
+    deaths count is updated via death attribution. The client upserts the
+    entry in its local zone_history keyed by (node_id, igt_ms), which is
+    unique per entry since igt_ms strictly increases.
+    """
+
+    type: Literal["zone_entered"] = "zone_entered"
+    participant_id: str
+    entry: dict[str, object]
+
+
 class ExitInfo(BaseModel):
     """Exit info for zone_update message."""
 

@@ -537,6 +537,33 @@ class TestConnectionManager:
         assert conn_bad.connection_id not in room.spectators
         assert conn_good.connection_id in room.spectators
 
+    @pytest.mark.asyncio
+    async def test_broadcast_zone_entered_spectators_only(self):
+        """zone_entered events go to spectators but not to mods."""
+        mgr = ConnectionManager()
+        race_id = uuid.uuid4()
+        participant_id = uuid.uuid4()
+
+        spec_ws = AsyncMock()
+        mgr.rooms[race_id] = RaceRoom(race_id=race_id)
+        conn = SpectatorConnection(websocket=spec_ws)
+        mgr.rooms[race_id].spectators[conn.connection_id] = conn
+
+        mod_ws = AsyncMock()
+        mgr.rooms[race_id].mods[participant_id] = MagicMock(websocket=mod_ws)
+
+        entry = {"node_id": "zone_a", "igt_ms": 1000, "type": "fog"}
+        await mgr.broadcast_zone_entered(race_id, participant_id, entry)
+
+        spec_ws.send_text.assert_called_once()
+        sent = json.loads(spec_ws.send_text.call_args[0][0])
+        assert sent["type"] == "zone_entered"
+        assert sent["participant_id"] == str(participant_id)
+        assert sent["entry"] == entry
+
+        # Mods do not consume zone_history, so they should not receive this.
+        mod_ws.send_text.assert_not_called()
+
 
 # --- Leaderboard Tests ---
 
@@ -683,13 +710,22 @@ class TestParticipantToInfo:
 
         assert info.twitch_display_name is None
 
-    def test_participant_info_always_includes_zone_history(self):
-        """Test participant_to_info always includes zone_history."""
+    def test_participant_info_omits_zone_history_by_default(self):
+        """Test participant_to_info omits zone_history unless explicitly asked.
+
+        Broadcasts rely on incremental zone_entered events rather than
+        retransmitting the full history each time; only race_state carries
+        the full history (include_zone_history=True).
+        """
         user = MockUser(twitch_username="p1")
         history = [{"node_id": "node_a", "igt_ms": 1000}]
         participant = MockParticipant(user=user, zone_history=history)
-        info = participant_to_info(participant)
-        assert info.zone_history == history
+
+        info_default = participant_to_info(participant)
+        assert info_default.zone_history is None
+
+        info_full = participant_to_info(participant, include_zone_history=True)
+        assert info_full.zone_history == history
 
 
 class TestGapComputation:

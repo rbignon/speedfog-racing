@@ -17,6 +17,7 @@ from speedfog_racing.websocket.schemas import (
     PlayerUpdateMessage,
     RaceStatusChangeMessage,
     SpectatorCountMessage,
+    ZoneEnteredMessage,
 )
 
 logger = logging.getLogger(__name__)
@@ -409,6 +410,28 @@ class ConnectionManager:
         )
         await room.broadcast_to_all(message.model_dump_json())
 
+    async def broadcast_zone_entered(
+        self,
+        race_id: uuid.UUID,
+        participant_id: uuid.UUID,
+        entry: dict[str, Any],
+    ) -> None:
+        """Broadcast an incremental zone_history entry to spectators.
+
+        Sent on new-zone appends AND on death-attribution updates (the
+        client upserts by (node_id, igt_ms)). Spectators only: mods do
+        not consume zone_history.
+        """
+        room = self.get_room(race_id)
+        if not room:
+            return
+
+        message = ZoneEnteredMessage(
+            participant_id=str(participant_id),
+            entry=entry,
+        )
+        await room.broadcast_to_spectators(message.model_dump_json())
+
 
 def build_leader_splits(
     zone_history: list[dict[str, Any]] | None,
@@ -510,8 +533,16 @@ def participant_to_info(
     graph_json: dict[str, Any] | None = None,
     gap_ms: int | None = None,
     layer_entry_igt: int | None = None,
+    include_zone_history: bool = False,
 ) -> ParticipantInfo:
-    """Convert a Participant model to ParticipantInfo schema."""
+    """Convert a Participant model to ParticipantInfo schema.
+
+    zone_history is omitted by default (saves ~50 KB per broadcast with
+    10 participants). Callers sending the initial race state to a
+    spectator should pass include_zone_history=True; high-frequency
+    broadcasts (leaderboard_update, player_update) rely on incremental
+    ZoneEnteredMessage events instead.
+    """
     # Compute tier on the fly from current_zone + graph_json
     tier: int | None = None
     if graph_json and participant.current_zone:
@@ -529,7 +560,7 @@ def participant_to_info(
         death_count=participant.death_count,
         color_index=participant.color_index,
         mod_connected=participant.id in connected_ids if connected_ids else False,
-        zone_history=participant.zone_history,
+        zone_history=participant.zone_history if include_zone_history else None,
         gap_ms=gap_ms,
         layer_entry_igt=layer_entry_igt,
         is_live=twitch_live_service.is_live(participant.user.twitch_username),

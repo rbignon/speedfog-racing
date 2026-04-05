@@ -376,7 +376,9 @@ async def send_race_state(
     graph = race.seed.graph_json if race.seed else None
     sorted_participants, _ = sort_leaderboard(race.participants)
     participant_infos: list[ParticipantInfo] = [
-        participant_to_info(p, connected_ids=connected_ids, graph_json=graph)
+        participant_to_info(
+            p, connected_ids=connected_ids, graph_json=graph, include_zone_history=True
+        )
         for p in sorted_participants
     ]
 
