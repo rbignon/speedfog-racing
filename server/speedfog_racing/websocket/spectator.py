@@ -108,9 +108,12 @@ async def load_chat_history(
     async with session_maker() as db:
         # Fetch the most recent N messages via created_at DESC + LIMIT, then
         # reverse in-memory so the client still receives them chronologically.
+        # Outer-join PlayerTraitScores so users without scored races still
+        # appear (trait = None).
         result = await db.execute(
-            select(ChatMessageModel, User)
+            select(ChatMessageModel, User, PlayerTraitScores)
             .join(User, ChatMessageModel.user_id == User.id)
+            .outerjoin(PlayerTraitScores, PlayerTraitScores.user_id == User.id)
             .where(
                 ChatMessageModel.race_id == race_id,
                 ChatMessageModel.channel == channel,
@@ -123,12 +126,9 @@ async def load_chat_history(
         if not rows:
             return ChatHistoryMessage(channel=channel.value, messages=[])
 
-        # Batch-load trait scores for all unique users
-        user_ids = list({chat_msg.user_id for chat_msg, _ in rows})
-        trait_results = await db.execute(
-            select(PlayerTraitScores).where(PlayerTraitScores.user_id.in_(user_ids))
-        )
-        traits_by_user = {t.user_id: t.dominant_trait for t in trait_results.scalars()}
+        traits_by_user = {
+            user.id: traits.dominant_trait for _, user, traits in rows if traits is not None
+        }
 
     # Build role lookup from race relationships
     # (already loaded, detached with expire_on_commit=False)
@@ -147,7 +147,7 @@ async def load_chat_history(
         return "spectator"
 
     messages = []
-    for chat_msg, user in rows:
+    for chat_msg, user, _traits in rows:
         messages.append(
             ChatBroadcastMessage(
                 channel=channel.value,
