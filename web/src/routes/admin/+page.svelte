@@ -31,6 +31,46 @@
 	let error = $state<string | null>(null);
 	let authChecked = $state(false);
 
+	type UserSortKey = 'username' | 'training_count' | 'race_count' | 'last_seen' | 'created_at';
+	let userSortKey = $state<UserSortKey>('last_seen');
+	let userSortAsc = $state(false);
+
+	let sortedUsers = $derived.by(() => {
+		const list = [...users];
+		list.sort((a, b) => {
+			let cmp = 0;
+			if (userSortKey === 'username') {
+				const nameA = (a.twitch_display_name || a.twitch_username).toLowerCase();
+				const nameB = (b.twitch_display_name || b.twitch_username).toLowerCase();
+				cmp = nameA.localeCompare(nameB);
+			} else if (userSortKey === 'training_count' || userSortKey === 'race_count') {
+				cmp = a[userSortKey] - b[userSortKey];
+			} else {
+				const va = a[userSortKey];
+				const vb = b[userSortKey];
+				const ta = va ? new Date(va).getTime() : 0;
+				const tb = vb ? new Date(vb).getTime() : 0;
+				cmp = ta - tb;
+			}
+			return userSortAsc ? cmp : -cmp;
+		});
+		return list;
+	});
+
+	function handleUserSort(key: UserSortKey) {
+		if (userSortKey === key) {
+			userSortAsc = !userSortAsc;
+		} else {
+			userSortKey = key;
+			userSortAsc = key === 'username';
+		}
+	}
+
+	function userSortIndicator(key: UserSortKey): string {
+		if (userSortKey !== key) return '';
+		return userSortAsc ? ' \u25B2' : ' \u25BC';
+	}
+
 	let seedStats: AdminPoolStats | null = $state(null);
 	let seedsLoading = $state(false);
 	let actionLoading = $state<Record<string, boolean>>({});
@@ -489,16 +529,36 @@
 				<table>
 					<thead>
 						<tr>
-							<th>User</th>
+							<th>
+								<button class="sort-btn" onclick={() => handleUserSort('username')}>
+									User{userSortIndicator('username')}
+								</button>
+							</th>
 							<th>Role</th>
-							<th class="num-col">Solo</th>
-							<th class="num-col">Races</th>
-							<th>Last Seen</th>
-							<th>Joined</th>
+							<th class="num-col">
+								<button class="sort-btn" onclick={() => handleUserSort('training_count')}>
+									Solo{userSortIndicator('training_count')}
+								</button>
+							</th>
+							<th class="num-col">
+								<button class="sort-btn" onclick={() => handleUserSort('race_count')}>
+									Races{userSortIndicator('race_count')}
+								</button>
+							</th>
+							<th>
+								<button class="sort-btn" onclick={() => handleUserSort('last_seen')}>
+									Last Seen{userSortIndicator('last_seen')}
+								</button>
+							</th>
+							<th>
+								<button class="sort-btn" onclick={() => handleUserSort('created_at')}>
+									Joined{userSortIndicator('created_at')}
+								</button>
+							</th>
 						</tr>
 					</thead>
 					<tbody>
-						{#each users as user (user.id)}
+						{#each sortedUsers as user (user.id)}
 							<tr>
 								<td class="user-cell">
 									{#if user.twitch_avatar_url}
@@ -952,6 +1012,28 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		border-bottom: 1px solid var(--color-border);
+	}
+
+	.sort-btn {
+		background: none;
+		border: none;
+		color: inherit;
+		font: inherit;
+		text-transform: inherit;
+		letter-spacing: inherit;
+		cursor: pointer;
+		padding: 0;
+		transition: color var(--transition);
+		white-space: nowrap;
+	}
+
+	.sort-btn:hover {
+		color: var(--color-purple);
+	}
+
+	.num-col .sort-btn {
+		width: 100%;
+		text-align: center;
 	}
 
 	td {
