@@ -132,6 +132,22 @@ async def _load_participant(db: AsyncSession, participant_id: uuid.UUID) -> Part
     return result.scalar_one_or_none()
 
 
+async def _load_race_participants(db: AsyncSession, race_id: uuid.UUID) -> list[Participant]:
+    """Load a race's participants (with users) for leaderboard broadcast.
+
+    Cheaper than _load_participant: skips the disconnecting participant's
+    own eager tree, the seed, and the casters. The caller must supply
+    graph_json from an earlier load (it does not change during a race).
+    """
+    result = await db.execute(
+        select(Race)
+        .where(Race.id == race_id)
+        .options(selectinload(Race.participants).selectinload(Participant.user))
+    )
+    race = result.scalar_one_or_none()
+    return list(race.participants) if race else []
+
+
 async def _load_participant_light(
     db: AsyncSession, participant_id: uuid.UUID
 ) -> Participant | None:
@@ -168,6 +184,9 @@ async def handle_mod_websocket(
     participant_id: uuid.UUID | None = None
     user_id: uuid.UUID | None = None
     mod_locale: str = "en"
+    # graph_json is immutable during a race; cache at connect time so the
+    # disconnect broadcast does not need to reload the seed.
+    connect_graph_json: dict[str, Any] | None = None
 
     try:
         # Wait for auth message with timeout
@@ -237,13 +256,17 @@ async def handle_mod_websocket(
                     await websocket.send_text(DeathCountsMessage(counts=counts).model_dump_json())
         # Session closed, released back to pool
 
+        # Cache graph_json (immutable during a race) for later reuse in
+        # the disconnect broadcast, avoiding a seed reload.
+        connect_graph_json = _get_graph_json(participant)
+
         # Register connection (includes locale)
         await manager.connect_mod(race_id, participant_id, user_id, websocket, mod_locale)
 
         # Broadcast updated connection status (reuse detached objects from auth session)
         try:
             await manager.broadcast_leaderboard(
-                race_id, participant.race.participants, graph_json=_get_graph_json(participant)
+                race_id, participant.race.participants, graph_json=connect_graph_json
             )
         except Exception:
             logger.warning(f"Failed to broadcast connect: race={race_id}")
@@ -304,13 +327,15 @@ async def handle_mod_websocket(
     finally:
         if participant_id:
             await manager.disconnect_mod(race_id, participant_id, websocket)
-            # Broadcast updated connection status to remaining clients
+            # Broadcast updated connection status to remaining clients.
+            # Reload only Race.participants (+users), reuse the cached
+            # graph_json; skip the seed and casters eager loads.
             try:
                 async with session_maker() as db:
-                    p = await _load_participant(db, participant_id)
-                    if p:
+                    participants = await _load_race_participants(db, race_id)
+                    if participants:
                         await manager.broadcast_leaderboard(
-                            race_id, p.race.participants, graph_json=_get_graph_json(p)
+                            race_id, participants, graph_json=connect_graph_json
                         )
             except Exception:
                 logger.warning(f"Failed to broadcast disconnect: race={race_id}")
