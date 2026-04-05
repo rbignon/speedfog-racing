@@ -421,8 +421,7 @@ async def handle_status_update(
     """
     delta = 0
     became_playing = False
-    spawn_entry: dict[str, Any] | None = None
-    death_entry: dict[str, Any] | None = None
+    history_changed = False
 
     async with session_maker() as db:
         participant = await _load_participant_light(db, participant_id)
@@ -478,9 +477,9 @@ async def handle_status_update(
                     participant.current_zone = start_node
                     participant.current_layer = 0
                     history = participant.zone_history or []
-                    spawn_entry = {"node_id": start_node, "igt_ms": 0, "type": "spawn"}
-                    history.append(spawn_entry)
+                    history.append({"node_id": start_node, "igt_ms": 0, "type": "spawn"})
                     participant.zone_history = history
+                    history_changed = True
 
         new_death_count = clamp_death_count(msg.get("death_count"))
         if new_death_count is not None:
@@ -498,13 +497,7 @@ async def handle_status_update(
                     participant.zone_history, participant.current_zone, delta
                 )
                 participant.zone_history = new_history
-                # Capture the updated entry so spectators can refresh their
-                # local zone_history (same (node_id, igt_ms) key, new deaths).
-                current_zone = participant.current_zone
-                death_entry = next(
-                    (dict(e) for e in reversed(new_history) if e.get("node_id") == current_zone),
-                    None,
-                )
+                history_changed = True
             participant.death_count = new_death_count
 
         await db.commit()
@@ -533,10 +526,10 @@ async def handle_status_update(
             participant.race_id, participant, graph_json=_get_graph_json(participant)
         )
 
-    if spawn_entry is not None:
-        await manager.broadcast_zone_entered(participant.race_id, participant.id, spawn_entry)
-    if death_entry is not None:
-        await manager.broadcast_zone_entered(participant.race_id, participant.id, death_entry)
+    if history_changed:
+        await manager.broadcast_zone_history(
+            participant.race_id, participant.id, participant.zone_history or []
+        )
 
     if delta > 0:
         counts = aggregate_death_counts(participant.race.participants)
@@ -567,7 +560,7 @@ async def handle_event_flag(
     igt = 0
     node_id: str | None = None
     seed_graph: dict[str, Any] | None = None
-    emitted_entry: dict[str, Any] | None = None
+    history_changed = False
 
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
@@ -643,7 +636,7 @@ async def handle_event_flag(
             participant.current_zone = node_id
             new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt, "type": "fog"}
             participant.zone_history = [*old_history, new_entry]
-            emitted_entry = new_entry
+            history_changed = True
 
             # current_layer is a high watermark (used for ranking), never regress
             if node_layer > participant.current_layer:
@@ -670,8 +663,10 @@ async def handle_event_flag(
             participant.race_id, participant, graph_json=seed_graph
         )
 
-    if emitted_entry is not None:
-        await manager.broadcast_zone_entered(participant.race_id, participant.id, emitted_entry)
+    if history_changed:
+        await manager.broadcast_zone_history(
+            participant.race_id, participant.id, participant.zone_history or []
+        )
 
     # Unicast zone_update to originating mod
     if node_id and seed_graph:
@@ -704,7 +699,7 @@ async def handle_zone_query(
         return
 
     is_first_visit = False
-    emitted_entry: dict[str, Any] | None = None
+    history_changed = False
 
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
@@ -771,7 +766,7 @@ async def handle_zone_query(
                     "type": "backtrack",
                 }
                 participant.zone_history = [*old_history, new_entry]
-                emitted_entry = new_entry
+                history_changed = True
 
             # current_layer is a high watermark, never regress
             node_layer = get_layer_for_node(node_id, graph_json)
@@ -805,8 +800,10 @@ async def handle_zone_query(
             participant.race_id, participant, graph_json=graph_json
         )
 
-    if emitted_entry is not None:
-        await manager.broadcast_zone_entered(participant.race_id, participant.id, emitted_entry)
+    if history_changed:
+        await manager.broadcast_zone_history(
+            participant.race_id, participant.id, participant.zone_history or []
+        )
 
 
 async def handle_finished(

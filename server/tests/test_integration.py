@@ -2880,8 +2880,8 @@ def test_items_spawned_flag_default_none_in_auth_ok(integration_client, race_wit
         assert auth["seed"]["items_spawned_flag"] is None
 
 
-def test_spectator_receives_zone_entered_events(integration_client, race_with_participants):
-    """Race spectator receives zone_entered on spawn, event_flag, and death attribution."""
+def test_spectator_receives_zone_history_snapshots(integration_client, race_with_participants):
+    """Race spectator receives zone_history on spawn, event_flag, and death attribution."""
     race_id = race_with_participants["race_id"]
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
@@ -2923,36 +2923,41 @@ def test_spectator_receives_zone_entered_events(integration_client, race_with_pa
 
             # Spawn: first status_update transitions READY -> PLAYING and records
             # the spawn entry. Spectator sees leaderboard_update then
-            # zone_entered(type=spawn).
+            # zone_history with the spawn entry.
             mod.send_status_update(igt_ms=1000, death_count=0)
             mod.receive_until_type("leaderboard_update")
             lb_spawn = spec_receive_until(ws_spec, "leaderboard_update")
             assert lb_spawn["participants"][0]["zone_history"] is None
-            spawn_msg = spec_receive_until(ws_spec, "zone_entered")
+            spawn_msg = spec_receive_until(ws_spec, "zone_history")
             assert spawn_msg["participant_id"] == target_id
-            assert spawn_msg["entry"]["type"] == "spawn"
-            assert spawn_msg["entry"]["igt_ms"] == 0
-            spawn_node_id = spawn_msg["entry"]["node_id"]
+            assert len(spawn_msg["history"]) == 1
+            assert spawn_msg["history"][0]["type"] == "spawn"
+            assert spawn_msg["history"][0]["igt_ms"] == 0
+            spawn_node_id = spawn_msg["history"][0]["node_id"]
 
-            # Fog gate: event_flag appends a fog entry.
+            # Fog gate: event_flag appends a fog entry. The snapshot now
+            # carries both spawn and fog entries.
             mod.send_event_flag(9000000, igt_ms=10000)
             mod.receive_until_type("leaderboard_update")
             spec_receive_until(ws_spec, "leaderboard_update")
-            fog_msg = spec_receive_until(ws_spec, "zone_entered")
-            assert fog_msg["entry"]["type"] == "fog"
-            assert fog_msg["entry"]["igt_ms"] == 10000
-            assert fog_msg["entry"]["node_id"] == "node_a"
+            fog_msg = spec_receive_until(ws_spec, "zone_history")
+            assert len(fog_msg["history"]) == 2
+            assert fog_msg["history"][0]["type"] == "spawn"
+            assert fog_msg["history"][1]["type"] == "fog"
+            assert fog_msg["history"][1]["igt_ms"] == 10000
+            assert fog_msg["history"][1]["node_id"] == "node_a"
             assert spawn_node_id != "node_a"
 
-            # Death attribution: status_update with death_count delta re-emits
-            # the current_zone entry (node_a, igt_ms=10000) with bumped deaths.
+            # Death attribution: status_update with death_count delta bumps
+            # the current_zone entry's deaths count (node_a, igt_ms=10000).
             mod.send_status_update(igt_ms=15000, death_count=3)
             mod.receive_until_type("player_update")
             spec_receive_until(ws_spec, "player_update")
-            death_msg = spec_receive_until(ws_spec, "zone_entered")
+            death_msg = spec_receive_until(ws_spec, "zone_history")
             assert death_msg["participant_id"] == target_id
-            # Same (node_id, igt_ms) key as the fog entry (upsert preserves it).
-            assert death_msg["entry"]["node_id"] == "node_a"
-            assert death_msg["entry"]["igt_ms"] == 10000
-            assert death_msg["entry"]["deaths"] == 3
-            assert death_msg["entry"]["type"] == "fog"
+            assert len(death_msg["history"]) == 2
+            # Same entry as before, deaths bumped to 3.
+            assert death_msg["history"][1]["node_id"] == "node_a"
+            assert death_msg["history"][1]["igt_ms"] == 10000
+            assert death_msg["history"][1]["deaths"] == 3
+            assert death_msg["history"][1]["type"] == "fog"

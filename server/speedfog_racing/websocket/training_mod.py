@@ -47,7 +47,7 @@ from speedfog_racing.websocket.schemas import (
     RaceStartMessage,
     RaceStatusChangeMessage,
     SeedInfo,
-    ZoneEnteredMessage,
+    ZoneHistoryMessage,
     extract_spawn_items,
 )
 from speedfog_racing.websocket.training_manager import training_manager
@@ -271,7 +271,7 @@ def build_training_participant_info(
     zone_history is omitted by default (saves bandwidth in high-frequency
     leaderboard_update broadcasts). The spectator bootstrap (_send_initial_state)
     passes include_zone_history=True to seed the client's local store; subsequent
-    changes arrive as incremental zone_entered events.
+    changes arrive as zone_history snapshots.
     """
     seed = session.seed
 
@@ -361,8 +361,7 @@ async def _handle_status_update(
 ) -> None:
     """Update IGT and death count."""
     delta = 0
-    spawn_entry: dict[str, Any] | None = None
-    death_entry: dict[str, Any] | None = None
+    history_changed = False
     async with session_maker() as db:
         session = await _load_session(db, session_id)
         if not session or session.status != TrainingSessionStatus.ACTIVE:
@@ -391,9 +390,9 @@ async def _handle_status_update(
             if seed and seed.graph_json:
                 start_node = get_start_node(seed.graph_json)
                 if start_node:
-                    spawn_entry = {"node_id": start_node, "igt_ms": 0, "type": "spawn"}
-                    session.zone_history = [spawn_entry]
+                    session.zone_history = [{"node_id": start_node, "igt_ms": 0, "type": "spawn"}]
                     session.current_zone = start_node
+                    history_changed = True
 
         new_death_count = clamp_death_count(msg.get("death_count"))
         if new_death_count is not None:
@@ -409,11 +408,7 @@ async def _handle_status_update(
             if delta > 0 and session.current_zone and session.zone_history:
                 new_history = attribute_deaths(session.zone_history, session.current_zone, delta)
                 session.zone_history = new_history
-                current_zone = session.current_zone
-                death_entry = next(
-                    (dict(e) for e in reversed(new_history) if e.get("node_id") == current_zone),
-                    None,
-                )
+                history_changed = True
             session.death_count = new_death_count
 
         await db.commit()
@@ -422,10 +417,8 @@ async def _handle_status_update(
     # were eagerly loaded and expire_on_commit=False keeps attributes accessible)
     await _broadcast_participant_update(session)
 
-    if spawn_entry is not None:
-        await _broadcast_zone_entered(session_id, spawn_entry)
-    if death_entry is not None:
-        await _broadcast_zone_entered(session_id, death_entry)
+    if history_changed:
+        await _broadcast_zone_history(session_id, session.zone_history or [])
 
     # Send death counts to mod when deaths are attributed
     if delta > 0:
@@ -516,7 +509,7 @@ async def _handle_event_flag(
     # Broadcast to spectators (session is detached; expire_on_commit=False keeps attrs)
     if session:
         await _broadcast_participant_update(session)
-        await _broadcast_zone_entered(session_id, new_entry)
+        await _broadcast_zone_history(session_id, session.zone_history or [])
 
     # Send zone_update to mod
     if node_id and seed_graph:
@@ -543,7 +536,7 @@ async def _handle_zone_query(
     if zq is None:
         return
 
-    emitted_entry: dict[str, Any] | None = None
+    history_changed = False
 
     async with session_maker() as db:
         session = await _load_session(db, session_id)
@@ -604,7 +597,7 @@ async def _handle_zone_query(
                     "type": "backtrack",
                 }
                 session.zone_history = [*old_history, new_entry]
-                emitted_entry = new_entry
+                history_changed = True
 
         session.current_zone = node_id
         await db.commit()
@@ -623,8 +616,8 @@ async def _handle_zone_query(
     # (mod already got the unicast zone_update above)
     await _broadcast_participant_update(session, spectator_only=True)
 
-    if emitted_entry is not None:
-        await _broadcast_zone_entered(session_id, emitted_entry)
+    if history_changed:
+        await _broadcast_zone_history(session_id, session.zone_history or [])
 
 
 async def _broadcast_participant_update(
@@ -654,16 +647,17 @@ async def _broadcast_status_change(session_id: uuid.UUID, new_status: str) -> No
     await room.broadcast_to_all(message.model_dump_json())
 
 
-async def _broadcast_zone_entered(session_id: uuid.UUID, entry: dict[str, Any]) -> None:
-    """Broadcast an incremental zone_history entry to spectators only.
+async def _broadcast_zone_history(session_id: uuid.UUID, history: list[dict[str, Any]]) -> None:
+    """Broadcast a full zone_history snapshot to spectators only.
 
-    Emitted on new-zone appends AND on death-attribution updates (the
-    client upserts by (node_id, igt_ms)). Mods are skipped: they do not
-    consume zone_history.
+    Emitted whenever the server's view of the session's zone_history
+    changes. Sending the full list is self-healing: a client that missed
+    an earlier message still ends up with the correct state on the next
+    emission. Mods are skipped: they do not consume zone_history.
     """
     room = training_manager.get_room(session_id)
     if not room:
         return
 
-    message = ZoneEnteredMessage(participant_id=str(session_id), entry=entry)
+    message = ZoneHistoryMessage(participant_id=str(session_id), history=history)
     await room.broadcast_to_spectators(message.model_dump_json())

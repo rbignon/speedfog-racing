@@ -538,8 +538,8 @@ class TestConnectionManager:
         assert conn_good.connection_id in room.spectators
 
     @pytest.mark.asyncio
-    async def test_broadcast_zone_entered_spectators_only(self):
-        """zone_entered events go to spectators but not to mods."""
+    async def test_broadcast_zone_history_spectators_only(self):
+        """zone_history snapshots go to spectators but not to mods."""
         mgr = ConnectionManager()
         race_id = uuid.uuid4()
         participant_id = uuid.uuid4()
@@ -552,14 +552,17 @@ class TestConnectionManager:
         mod_ws = AsyncMock()
         mgr.rooms[race_id].mods[participant_id] = MagicMock(websocket=mod_ws)
 
-        entry = {"node_id": "zone_a", "igt_ms": 1000, "type": "fog"}
-        await mgr.broadcast_zone_entered(race_id, participant_id, entry)
+        history = [
+            {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "zone_a", "igt_ms": 1000, "type": "fog"},
+        ]
+        await mgr.broadcast_zone_history(race_id, participant_id, history)
 
         spec_ws.send_text.assert_called_once()
         sent = json.loads(spec_ws.send_text.call_args[0][0])
-        assert sent["type"] == "zone_entered"
+        assert sent["type"] == "zone_history"
         assert sent["participant_id"] == str(participant_id)
-        assert sent["entry"] == entry
+        assert sent["history"] == history
 
         # Mods do not consume zone_history, so they should not receive this.
         mod_ws.send_text.assert_not_called()
@@ -713,9 +716,9 @@ class TestParticipantToInfo:
     def test_participant_info_omits_zone_history_by_default(self):
         """Test participant_to_info omits zone_history unless explicitly asked.
 
-        Broadcasts rely on incremental zone_entered events rather than
-        retransmitting the full history each time; only race_state carries
-        the full history (include_zone_history=True).
+        Broadcasts rely on separate zone_history snapshot messages rather
+        than embedding the full history in every leaderboard/player update;
+        only race_state carries the full history (include_zone_history=True).
         """
         user = MockUser(twitch_username="p1")
         history = [{"node_id": "node_a", "igt_ms": 1000}]

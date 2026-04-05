@@ -71,10 +71,10 @@ export interface SpectatorCountMessage {
   count: number;
 }
 
-export interface ZoneEnteredMessage {
-  type: "zone_entered";
+export interface ZoneHistoryMessage {
+  type: "zone_history";
   participant_id: string;
-  entry: ZoneHistoryEntry;
+  history: ZoneHistoryEntry[];
 }
 
 export interface ChatMessage {
@@ -101,7 +101,7 @@ export type ServerMessage =
   | PlayerUpdateMessage
   | RaceStatusChangeMessage
   | SpectatorCountMessage
-  | ZoneEnteredMessage
+  | ZoneHistoryMessage
   | ChatMessage
   | ChatHistoryMessage;
 
@@ -111,7 +111,7 @@ const VALID_SERVER_MESSAGE_TYPES = new Set([
   "player_update",
   "race_status_change",
   "spectator_count",
-  "zone_entered",
+  "zone_history",
   "chat_message",
   "chat_history",
 ]);
@@ -136,7 +136,7 @@ export interface RaceWebSocketOptions {
   onPlayerUpdate?: (msg: PlayerUpdateMessage) => void;
   onRaceStatusChange?: (msg: RaceStatusChangeMessage) => void;
   onSpectatorCount?: (msg: SpectatorCountMessage) => void;
-  onZoneEntered?: (msg: ZoneEnteredMessage) => void;
+  onZoneHistory?: (msg: ZoneHistoryMessage) => void;
   onChatMessage?: (msg: ChatMessage) => void;
   onChatHistory?: (msg: ChatHistoryMessage) => void;
   onConnect?: () => void;
@@ -304,8 +304,8 @@ export class RaceWebSocket {
       case "spectator_count":
         this.options.onSpectatorCount?.(msg);
         break;
-      case "zone_entered":
-        this.options.onZoneEntered?.(msg);
+      case "zone_history":
+        this.options.onZoneHistory?.(msg);
         break;
       case "chat_message":
         this.options.onChatMessage?.(msg);

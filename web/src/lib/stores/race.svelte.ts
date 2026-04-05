@@ -10,7 +10,7 @@ import {
   type WsRaceInfo,
   type WsSeedInfo,
 } from "$lib/websocket";
-import { preserveZoneHistory, upsertZoneHistoryEntry } from "$lib/zone-history";
+import { preserveZoneHistory } from "$lib/zone-history";
 
 class RaceStore {
   race = $state<WsRaceInfo | null>(null);
@@ -120,7 +120,7 @@ class RaceStore {
 
         onLeaderboardUpdate: (msg) => {
           // Server no longer retransmits zone_history in leaderboard_update
-          // (it arrives via race_state initially + zone_entered incrementally).
+          // (it arrives via race_state initially + zone_history snapshots).
           // Always preserve the locally-held history when the message carries
           // none, so the DAG keeps its trail.
           const historyById = new Map(
@@ -146,12 +146,12 @@ class RaceStore {
           );
         },
 
-        onZoneEntered: (msg) => {
-          this.participants = this.participants.map((p) => {
-            if (p.id !== msg.participant_id) return p;
-            const next = upsertZoneHistoryEntry(p.zone_history, msg.entry);
-            return { ...p, zone_history: next };
-          });
+        onZoneHistory: (msg) => {
+          this.participants = this.participants.map((p) =>
+            p.id === msg.participant_id
+              ? { ...p, zone_history: msg.history }
+              : p,
+          );
         },
 
         onRaceStatusChange: (msg) => {

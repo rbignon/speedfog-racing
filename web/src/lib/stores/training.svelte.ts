@@ -13,21 +13,21 @@ import type {
   RaceStateMessage,
   LeaderboardUpdateMessage,
   RaceStatusChangeMessage,
-  ZoneEnteredMessage,
+  ZoneHistoryMessage,
 } from "$lib/websocket";
-import { preserveZoneHistory, upsertZoneHistoryEntry } from "$lib/zone-history";
+import { preserveZoneHistory } from "$lib/zone-history";
 
 type TrainingServerMessage =
   | RaceStateMessage
   | LeaderboardUpdateMessage
   | RaceStatusChangeMessage
-  | ZoneEnteredMessage;
+  | ZoneHistoryMessage;
 
 const VALID_TYPES = new Set([
   "race_state",
   "leaderboard_update",
   "race_status_change",
-  "zone_entered",
+  "zone_history",
 ]);
 
 function isTrainingMessage(data: unknown): data is TrainingServerMessage {
@@ -214,7 +214,7 @@ class TrainingStore {
         break;
       case "leaderboard_update": {
         // Server no longer retransmits zone_history in leaderboard_update
-        // (it arrives via race_state initially + zone_entered incrementally).
+        // (it arrives via race_state initially + zone_history snapshots).
         // Preserve the locally-held history when the message carries none.
         const next = msg.participants[0] ?? null;
         this.participant = next
@@ -222,14 +222,11 @@ class TrainingStore {
           : null;
         break;
       }
-      case "zone_entered":
+      case "zone_history":
         if (this.participant && this.participant.id === msg.participant_id) {
           this.participant = {
             ...this.participant,
-            zone_history: upsertZoneHistoryEntry(
-              this.participant.zone_history,
-              msg.entry,
-            ),
+            zone_history: msg.history,
           };
         }
         break;

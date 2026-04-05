@@ -1610,7 +1610,7 @@ def test_training_stale_save_self_heals(training_ws_client, training_session_dat
         resp = ws.receive_json()
         assert resp["type"] == "leaderboard_update"
         # zone_history is intentionally omitted from leaderboard_update
-        # broadcasts (delivered separately via zone_entered events). The
+        # broadcasts (delivered separately via zone_history snapshots). The
         # spawn entry is verified directly in the session's DB state.
         assert resp["participants"][0]["zone_history"] is None
 
@@ -1709,8 +1709,8 @@ def test_training_event_flag_before_status_update_dropped(
     asyncio.run(_check())
 
 
-def test_training_spectator_receives_zone_entered(training_ws_client, training_session_data):
-    """Training spectator receives zone_entered events for spawn and event_flag."""
+def test_training_spectator_receives_zone_history(training_ws_client, training_session_data):
+    """Training spectator receives zone_history snapshots for spawn, event_flag, deaths."""
     sid = training_session_data["session_id"]
     token = training_session_data["mod_token"]
 
@@ -1734,17 +1734,19 @@ def test_training_spectator_receives_zone_entered(training_ws_client, training_s
             ws_mod.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
             ws_mod.receive_json()  # leaderboard_update echoed to mod
 
-            # Spectator should now observe leaderboard_update then zone_entered (spawn).
+            # Spectator sees leaderboard_update then zone_history (spawn only).
             lb = ws_spec.receive_json()
             assert lb["type"] == "leaderboard_update"
             assert lb["participants"][0]["zone_history"] is None  # stripped
             spawn_msg = ws_spec.receive_json()
-            assert spawn_msg["type"] == "zone_entered"
+            assert spawn_msg["type"] == "zone_history"
             assert spawn_msg["participant_id"] == sid
-            assert spawn_msg["entry"]["type"] == "spawn"
-            assert spawn_msg["entry"]["igt_ms"] == 0
+            assert len(spawn_msg["history"]) == 1
+            assert spawn_msg["history"][0]["type"] == "spawn"
+            assert spawn_msg["history"][0]["igt_ms"] == 0
 
-            # Fog gate traversal: event_flag should emit a fog zone_entered.
+            # Fog gate traversal: event_flag appends a fog entry. The next
+            # snapshot carries both spawn and fog entries.
             event_ids = auth_ok["seed"]["event_ids"]
             ws_mod.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 5000})
             ws_mod.receive_json()  # leaderboard_update echoed to mod
@@ -1753,15 +1755,16 @@ def test_training_spectator_receives_zone_entered(training_ws_client, training_s
             lb2 = ws_spec.receive_json()
             assert lb2["type"] == "leaderboard_update"
             fog_msg = ws_spec.receive_json()
-            assert fog_msg["type"] == "zone_entered"
+            assert fog_msg["type"] == "zone_history"
             assert fog_msg["participant_id"] == sid
-            assert fog_msg["entry"]["type"] == "fog"
-            assert fog_msg["entry"]["igt_ms"] == 5000
-            fog_node_id = fog_msg["entry"]["node_id"]
+            assert len(fog_msg["history"]) == 2
+            assert fog_msg["history"][0]["type"] == "spawn"
+            assert fog_msg["history"][1]["type"] == "fog"
+            assert fog_msg["history"][1]["igt_ms"] == 5000
+            fog_node_id = fog_msg["history"][1]["node_id"]
 
-            # Death attribution: status_update with death_count delta should
-            # re-emit the fog entry with bumped deaths count, preserving the
-            # (node_id, igt_ms) key.
+            # Death attribution: status_update with death_count delta bumps
+            # the current_zone entry's deaths count.
             ws_mod.send_json({"type": "status_update", "igt_ms": 8000, "death_count": 2})
             ws_mod.receive_json()  # leaderboard_update echoed to mod
             ws_mod.receive_json()  # death_counts unicast to mod
@@ -1769,12 +1772,13 @@ def test_training_spectator_receives_zone_entered(training_ws_client, training_s
             lb3 = ws_spec.receive_json()
             assert lb3["type"] == "leaderboard_update"
             death_msg = ws_spec.receive_json()
-            assert death_msg["type"] == "zone_entered"
+            assert death_msg["type"] == "zone_history"
             assert death_msg["participant_id"] == sid
-            assert death_msg["entry"]["node_id"] == fog_node_id
-            assert death_msg["entry"]["igt_ms"] == 5000
-            assert death_msg["entry"]["deaths"] == 2
-            assert death_msg["entry"]["type"] == "fog"
+            assert len(death_msg["history"]) == 2
+            assert death_msg["history"][1]["node_id"] == fog_node_id
+            assert death_msg["history"][1]["igt_ms"] == 5000
+            assert death_msg["history"][1]["deaths"] == 2
+            assert death_msg["history"][1]["type"] == "fog"
 
 
 def test_training_spectator_anonymous_invalid_session(training_ws_client, training_session_data):

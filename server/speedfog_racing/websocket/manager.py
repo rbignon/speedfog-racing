@@ -17,7 +17,7 @@ from speedfog_racing.websocket.schemas import (
     PlayerUpdateMessage,
     RaceStatusChangeMessage,
     SpectatorCountMessage,
-    ZoneEnteredMessage,
+    ZoneHistoryMessage,
 )
 
 logger = logging.getLogger(__name__)
@@ -410,25 +410,26 @@ class ConnectionManager:
         )
         await room.broadcast_to_all(message.model_dump_json())
 
-    async def broadcast_zone_entered(
+    async def broadcast_zone_history(
         self,
         race_id: uuid.UUID,
         participant_id: uuid.UUID,
-        entry: dict[str, Any],
+        history: list[dict[str, Any]],
     ) -> None:
-        """Broadcast an incremental zone_history entry to spectators.
+        """Broadcast a full zone_history snapshot for a single participant.
 
-        Sent on new-zone appends AND on death-attribution updates (the
-        client upserts by (node_id, igt_ms)). Spectators only: mods do
-        not consume zone_history.
+        Sent on new-zone appends AND on death-attribution updates. The
+        full list is transmitted each time so clients can self-heal from
+        any missed message. Spectators only: mods do not consume
+        zone_history.
         """
         room = self.get_room(race_id)
         if not room:
             return
 
-        message = ZoneEnteredMessage(
+        message = ZoneHistoryMessage(
             participant_id=str(participant_id),
-            entry=entry,
+            history=history,
         )
         await room.broadcast_to_spectators(message.model_dump_json())
 
@@ -540,8 +541,8 @@ def participant_to_info(
     zone_history is omitted by default (saves ~50 KB per broadcast with
     10 participants). Callers sending the initial race state to a
     spectator should pass include_zone_history=True; high-frequency
-    broadcasts (leaderboard_update, player_update) rely on incremental
-    ZoneEnteredMessage events instead.
+    broadcasts (leaderboard_update, player_update) rely on
+    ZoneHistoryMessage snapshots instead.
     """
     # Compute tier on the fly from current_zone + graph_json
     tier: int | None = None

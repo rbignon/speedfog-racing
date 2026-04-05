@@ -188,18 +188,21 @@ class SpectatorCountMessage(BaseModel):
     count: int
 
 
-class ZoneEnteredMessage(BaseModel):
-    """Incremental zone_history update for a single participant.
+class ZoneHistoryMessage(BaseModel):
+    """Full zone_history snapshot for a single participant.
 
-    Emitted when a new zone entry is appended, or when an existing entry's
-    deaths count is updated via death attribution. The client upserts the
-    entry in its local zone_history keyed by (node_id, igt_ms), which is
-    unique per entry since igt_ms strictly increases.
+    Emitted whenever the server's view of a participant's zone_history
+    changes: new entry appended (spawn, fog gate, zone_query backtrack)
+    or an existing entry's deaths count updated via death attribution.
+    The client replaces its locally-held history for this participant
+    with the payload. Sending the full list is self-healing: a client
+    that missed an earlier message still ends up with the correct state
+    on the next emission.
     """
 
-    type: Literal["zone_entered"] = "zone_entered"
+    type: Literal["zone_history"] = "zone_history"
     participant_id: str
-    entry: dict[str, object]
+    history: list[dict[str, object]]
 
 
 class ExitInfo(BaseModel):

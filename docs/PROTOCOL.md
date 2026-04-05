@@ -146,7 +146,7 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 
 Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)).
 
-**Revisited nodes:** Multiple flags can map to the same DAG node (e.g., shared entrance merges where several branches connect to a single cluster). When a player backtracks and re-enters a previously visited node, a new entry is appended to `zone_history` with the current `igt_ms`. This enables accurate per-visit time and death attribution. Only first visits trigger a `leaderboard_update` broadcast; revisits trigger a `player_update` instead. In both cases a `zone_entered` event is also emitted to spectators so they can grow their local `zone_history` store.
+**Revisited nodes:** Multiple flags can map to the same DAG node (e.g., shared entrance merges where several branches connect to a single cluster). When a player backtracks and re-enters a previously visited node, a new entry is appended to `zone_history` with the current `igt_ms`. This enables accurate per-visit time and death attribution. Only first visits trigger a `leaderboard_update` broadcast; revisits trigger a `player_update` instead. In both cases a `zone_history` snapshot is also emitted to spectators so they can update their local store.
 
 **Timing:** Regular event flags (fog gate traversals) are detected immediately by polling but deferred until loading screen exit. This ensures spectators see progress updates in sync with the player's arrival, and prevents zone name spoilers during loading screens. The `finish_event` (boss kill) is an exception: it is sent immediately since boss kills don't trigger a loading screen.
 
@@ -183,7 +183,7 @@ Sent at loading screen exit when no event_flag was detected (death, respawn, fas
 
 **Response:** The server sends a `zone_update` (unicast) if the query resolves to a node in the current seed's graph. No response if unresolvable or ambiguous.
 
-**Backtrack recording:** When the resolved node differs from `current_zone`, the server appends a new `zone_history` entry (recording the backtrack via death/teleport/quit-out) and emits a `zone_entered` event to spectators. First visits trigger `leaderboard_update`; revisits trigger `player_update`. If the resolved node matches `current_zone`, only `current_zone` is refreshed (no history append, no `zone_entered`).
+**Backtrack recording:** When the resolved node differs from `current_zone`, the server appends a new `zone_history` entry (recording the backtrack via death/teleport/quit-out) and emits a `zone_history` snapshot to spectators. First visits trigger `leaderboard_update`; revisits trigger `player_update`. If the resolved node matches `current_zone`, only `current_zone` is refreshed (no history append, no `zone_history` snapshot).
 
 #### `finished`
 
@@ -327,7 +327,7 @@ Broadcast to all mods and spectators when any player's state changes (ready, new
 
 `leader_splits` maps layer index → IGT at which the leader first entered that layer. Used by the mod for client-side LiveSplit gap computation. Keys are serialized as strings in JSON.
 
-`zone_history` is always `null` in `leaderboard_update` broadcasts (and in `player_update`). Clients bootstrap the full history from `race_state` on the spectator endpoint, then apply incremental `zone_entered` events to track new visits and death attribution. Mods don't consume `zone_history`, so they never need a fresh copy. See [Incremental zone_history updates](#incremental-zone_history-updates).
+`zone_history` is always `null` in `leaderboard_update` broadcasts (and in `player_update`). Clients bootstrap the full history from `race_state` on the spectator endpoint, then apply `zone_history` snapshots to track new visits and death attribution. Mods don't consume `zone_history`, so they never need a fresh copy. See [zone_history updates](#zone_history-updates).
 
 #### `race_status_change`
 
@@ -539,11 +539,11 @@ Sent immediately on connection (after optional auth). Full race state. Also re-s
 
 `seed.graph_json` is `null` if the viewer lacks DAG access (see [DAG Access Rules](#dag-access-rules)). `total_nodes` and `total_paths` are always included. `event_ids`, `finish_event`, and `spawn_items` are **not** included for spectators (mod-only).
 
-`zone_history` is always included (as a list, possibly empty) in `race_state` for every participant. It seeds the client's local history store, which is then kept in sync via `zone_entered` events. See [Incremental zone_history updates](#incremental-zone_history-updates).
+`zone_history` is always included (as a list, possibly empty) in `race_state` for every participant. It seeds the client's local history store, which is then kept in sync via `zone_history` snapshot messages. See [zone_history updates](#zone_history-updates).
 
 #### `player_update`
 
-Single player update. **Broadcast to all connections** (mods + spectators). Triggered by periodic `status_update` from mod, revisited nodes, or `zone_query` resolution. Includes `layer_entry_igt` so mods can recompute gaps client-side. `zone_history` is always `null` in this message (see [Incremental zone_history updates](#incremental-zone_history-updates)).
+Single player update. **Broadcast to all connections** (mods + spectators). Triggered by periodic `status_update` from mod, revisited nodes, or `zone_query` resolution. Includes `layer_entry_igt` so mods can recompute gaps client-side. `zone_history` is always `null` in this message (see [zone_history updates](#zone_history-updates)).
 
 ```json
 {
@@ -586,34 +586,27 @@ Broadcast to all spectators when spectator count changes (connect/disconnect).
 }
 ```
 
-#### `zone_entered`
+#### `zone_history`
 
-Incremental zone_history update for a single participant. Broadcast to spectators only (mods don't consume `zone_history`). Emitted whenever the server appends a new `zone_history` entry (spawn, fog gate, zone_query backtrack) or updates an existing entry's `deaths` count via death attribution.
+Full `zone_history` snapshot for a single participant. Broadcast to spectators only (mods don't consume `zone_history`). Emitted whenever the server's view of a participant's `zone_history` changes: new entry appended (spawn, fog gate, zone_query backtrack) or existing entry's `deaths` count updated via death attribution.
 
 ```json
 {
-  "type": "zone_entered",
+  "type": "zone_history",
   "participant_id": "uuid",
-  "entry": {
-    "node_id": "m60_51_36_00",
-    "igt_ms": 123456,
-    "type": "fog",
-    "deaths": 0
-  }
+  "history": [
+    { "node_id": "start_node", "igt_ms": 0, "type": "spawn" },
+    { "node_id": "m60_51_36_00", "igt_ms": 123456, "type": "fog", "deaths": 2 }
+  ]
 }
 ```
 
-| Field            | Type     | Description                                                 |
-| ---------------- | -------- | ----------------------------------------------------------- |
-| `participant_id` | `string` | Participant UUID (or training session UUID)                 |
-| `entry`          | `object` | A single zone_history entry (same shape as in `race_state`) |
+| Field            | Type     | Description                                                                      |
+| ---------------- | -------- | -------------------------------------------------------------------------------- |
+| `participant_id` | `string` | Participant UUID (or training session UUID)                                      |
+| `history`        | `array`  | Full current `zone_history` for this participant (same shape as in `race_state`) |
 
-Clients upsert the entry into their local `zone_history[participant_id]` keyed by `(node_id, igt_ms)`:
-
-- If no entry with the same `(node_id, igt_ms)` exists, append it.
-- If one exists, replace it in place (this handles death attribution updates, where the server re-emits the original entry with a bumped `deaths` count).
-
-The `(node_id, igt_ms)` pair is unique per entry: `igt_ms` strictly increases for fresh zone entries, and death attribution re-emits the matched entry with its original `igt_ms` unchanged.
+Clients replace their local `zone_history[participant_id]` with the payload. Sending the full list is self-healing: a client that missed an earlier message still ends up with the correct state on the next emission (no per-entry upsert or sequence tracking needed).
 
 #### `chat_message`
 
@@ -756,7 +749,7 @@ Live web UI updates during training. Accepts both authenticated and anonymous sp
 - **Auth handshake required**: An `auth` message must be sent within 5 seconds (connection closed with code 4001 otherwise), but the `token` field is optional (omit it for anonymous access)
 - **`race_state`**: Sent on connect with full graph (always included for training), seed info, and participant state (including full `zone_history`)
 - **`leaderboard_update`**: Single-participant update on status/zone changes (with `zone_history` omitted)
-- **`zone_entered`**: Incremental zone_history updates (same shape as the race spectator endpoint)
+- **`zone_history`**: Full zone_history snapshots for the session (same shape as the race spectator endpoint)
 - **`race_status_change`**: Sent when session finishes or is abandoned
 - **`ping`**: Heartbeat every 30 seconds
 
@@ -776,22 +769,22 @@ Live web UI updates during training. Accepts both authenticated and anonymous sp
 
 Shared schema across all WebSocket messages:
 
-| Field                 | Type      | Description                                                                                                                                                                                   |
-| --------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                  | `string`  | Participant UUID                                                                                                                                                                              |
-| `twitch_username`     | `string`  | Twitch login name                                                                                                                                                                             |
-| `twitch_display_name` | `string?` | Twitch display name                                                                                                                                                                           |
-| `status`              | `string`  | Participant status (see above)                                                                                                                                                                |
-| `current_zone`        | `string?` | Current DAG node ID (e.g. `m60_51_36_00`)                                                                                                                                                     |
-| `current_layer`       | `int`     | Current layer in the DAG (0 = start)                                                                                                                                                          |
-| `current_layer_tier`  | `int?`    | Tier of the current node (computed from graph)                                                                                                                                                |
-| `igt_ms`              | `int`     | In-game time in milliseconds                                                                                                                                                                  |
-| `death_count`         | `int`     | Total deaths                                                                                                                                                                                  |
-| `color_index`         | `int`     | Player color assignment (0-indexed)                                                                                                                                                           |
-| `mod_connected`       | `bool`    | Whether the mod client is currently connected                                                                                                                                                 |
-| `zone_history`        | `list?`   | Zone visit history: included in `race_state` bootstrap, `null` in `leaderboard_update`/`player_update` broadcasts (see [Incremental zone_history updates](#incremental-zone_history-updates)) |
-| `gap_ms`              | `int?`    | Gap to the leader in milliseconds (see below)                                                                                                                                                 |
-| `layer_entry_igt`     | `int?`    | Player's IGT when entering their current layer                                                                                                                                                |
+| Field                 | Type      | Description                                                                                                                                                           |
+| --------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                  | `string`  | Participant UUID                                                                                                                                                      |
+| `twitch_username`     | `string`  | Twitch login name                                                                                                                                                     |
+| `twitch_display_name` | `string?` | Twitch display name                                                                                                                                                   |
+| `status`              | `string`  | Participant status (see above)                                                                                                                                        |
+| `current_zone`        | `string?` | Current DAG node ID (e.g. `m60_51_36_00`)                                                                                                                             |
+| `current_layer`       | `int`     | Current layer in the DAG (0 = start)                                                                                                                                  |
+| `current_layer_tier`  | `int?`    | Tier of the current node (computed from graph)                                                                                                                        |
+| `igt_ms`              | `int`     | In-game time in milliseconds                                                                                                                                          |
+| `death_count`         | `int`     | Total deaths                                                                                                                                                          |
+| `color_index`         | `int`     | Player color assignment (0-indexed)                                                                                                                                   |
+| `mod_connected`       | `bool`    | Whether the mod client is currently connected                                                                                                                         |
+| `zone_history`        | `list?`   | Zone visit history: included in `race_state` bootstrap, `null` in `leaderboard_update`/`player_update` broadcasts (see [zone_history updates](#zone_history-updates)) |
+| `gap_ms`              | `int?`    | Gap to the leader in milliseconds (see below)                                                                                                                         |
+| `layer_entry_igt`     | `int?`    | Player's IGT when entering their current layer                                                                                                                        |
 
 `zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack" }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). Entries without `type` are treated as `"fog"` for backward compatibility.
 
@@ -838,28 +831,28 @@ Participants in `leaderboard_update` are pre-sorted by priority:
 4. **Registered**
 5. **Abandoned**
 
-### Incremental zone_history updates
+### zone_history updates
 
-`zone_history` can grow to ~50 KB per participant (up to 1000 entries × ~50 bytes), which made full-state rebroadcast in every `leaderboard_update` / `player_update` a dominant bandwidth cost. The protocol delivers the history incrementally instead:
+`zone_history` can grow to ~50 KB per participant (up to 1000 entries × ~50 bytes), which made full-state rebroadcast in every `leaderboard_update` / `player_update` a dominant bandwidth cost. The protocol carves `zone_history` out into its own dedicated snapshot message instead:
 
 - **Bootstrap**: `race_state` (spectator) carries the full `zone_history` for every participant. Sent on initial connection, on race status transitions, on seed release, and on participant add/remove. Clients copy this into a local `zoneHistoryByParticipant` store.
 - **Broadcasts**: `leaderboard_update` and `player_update` always carry `zone_history: null`. When a client receives one, it must preserve the locally-held `zone_history` rather than overwriting it with `null`.
-- **Deltas**: each server-side append to `zone_history` (and each death attribution that updates an existing entry) emits a `zone_entered` message to spectators. The client upserts the entry keyed by `(node_id, igt_ms)`.
+- **Snapshots**: each server-side change to a participant's `zone_history` (append or death-attribution update) emits a `zone_history` message carrying the full current list. The client replaces its local copy. Because the payload is the full list each time, a client that missed an earlier message self-heals on the next emission.
 
-Delta emission sites (server-side):
+Emission sites (server-side):
 
-| Trigger                                              | Entry `type` field                 | Notes                                                       |
-| ---------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------- |
-| First `status_update` (READY → PLAYING, spawn node)  | `spawn`                            | `igt_ms = 0`, appends a new entry                           |
-| `status_update` with `delta > 0` (death attribution) | preserves the matched entry's type | Re-emits the existing entry with a new `deaths` count       |
-| `event_flag` (fog gate traversal)                    | `fog`                              | Appends a new entry (first visit and revisit alike)         |
-| `zone_query` (backtrack via death/teleport/quit-out) | `backtrack`                        | Appends a new entry when resolved node differs from current |
+| Trigger                                              | Change                                                      |
+| ---------------------------------------------------- | ----------------------------------------------------------- |
+| First `status_update` (READY → PLAYING, spawn node)  | Appends `{type: "spawn", igt_ms: 0, …}`                     |
+| `status_update` with `delta > 0` (death attribution) | Bumps `deaths` on the most recent entry at `current_zone`   |
+| `event_flag` (fog gate traversal)                    | Appends `{type: "fog", …}` (first visit and revisit alike)  |
+| `zone_query` (backtrack via death/teleport/quit-out) | Appends `{type: "backtrack", …}` when resolved node differs |
 
-Mods never receive `zone_entered` (they don't consume `zone_history`). The training spectator endpoint (`/ws/training/{id}/spectate`) uses the same delta pattern with the training session UUID as `participant_id`.
+Mods never receive `zone_history` snapshots (they don't consume `zone_history`). The training spectator endpoint (`/ws/training/{id}/spectate`) uses the same pattern with the training session UUID as `participant_id`.
 
-**No-ops**: mod reconnects don't emit any `zone_entered` event (the zone_history state is unchanged, the reconnecting mod gets a unicast `zone_update` and `death_counts`). Race/training finish also does not emit a delta: instead the server re-broadcasts a fresh `race_state` with the full `zone_history`, which lets any client missing a prior delta catch up.
+**No-ops**: mod reconnects don't emit any `zone_history` event (the state is unchanged, the reconnecting mod gets a unicast `zone_update` and `death_counts`). Race/training finish also does not emit a snapshot: instead the server re-broadcasts a fresh `race_state` with the full `zone_history`.
 
-**Rollout caveat**: old clients running against a new backend see `null` `zone_history` in high-frequency broadcasts and ignore unknown `zone_entered` messages. Their local DAG view freezes at pre-deploy state, while the rest of the UI (IGT, deaths, layer, gaps) keeps updating. A page reload restores full behavior. Backend and frontend must ship together.
+**Rollout caveat**: old clients running against a new backend see `null` `zone_history` in high-frequency broadcasts and ignore unknown `zone_history` messages. Their local DAG view freezes at pre-deploy state, while the rest of the UI (IGT, deaths, layer, gaps) keeps updating. A page reload restores full behavior. Backend and frontend must ship together.
 
 ### Gap Timing
 
@@ -954,13 +947,13 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 | Mod connects/disconnects       | `leaderboard_update`                                              | `leaderboard_update`                                                 |
 | `ready`                        | `leaderboard_update`                                              | `leaderboard_update`                                                 |
 | `status_update` (periodic)     | `player_update`                                                   | `player_update`                                                      |
-| `status_update` (READY→PLAY)   | `leaderboard_update`                                              | `leaderboard_update` + `zone_entered` (spawn)                        |
-| `status_update` (death delta)  | `player_update` + `death_counts`                                  | `player_update` + `zone_entered` (deaths update)                     |
-| `event_flag` (new node)        | `leaderboard_update`                                              | `leaderboard_update` + `zone_entered` (fog)                          |
-| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                         | `player_update` + `zone_entered` (fog)                               |
+| `status_update` (READY→PLAY)   | `leaderboard_update`                                              | `leaderboard_update` + `zone_history` (spawn)                        |
+| `status_update` (death delta)  | `player_update` + `death_counts`                                  | `player_update` + `zone_history` (deaths update)                     |
+| `event_flag` (new node)        | `leaderboard_update`                                              | `leaderboard_update` + `zone_history` (fog)                          |
+| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                         | `player_update` + `zone_history` (fog)                               |
 | `event_flag` (finish)          | `leaderboard_update`                                              | `race_state` + status change + `chat_message` (system)               |
 | `zone_query` (same zone)       | `zone_update` (unicast) + `player_update`                         | `player_update`                                                      |
-| `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update` | `leaderboard_update` or `player_update` + `zone_entered` (backtrack) |
+| `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update` | `leaderboard_update` or `player_update` + `zone_history` (backtrack) |
 | Race starts                    | `race_start` + `zone_update` + `race_status_change`               | `race_state` + `race_status_change`                                  |
 | Race finishes                  | `race_status_change`                                              | `race_state` + `race_status_change`                                  |
 | Seeds released                 | (none)                                                            | `race_state`                                                         |
@@ -969,4 +962,4 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 | Player auto-abandoned          | `leaderboard_update`                                              | `leaderboard_update` + `chat_message` (system)                       |
 | Chat message sent              | (none)                                                            | `chat_message` (to channel subscribers)                              |
 
-Note: `zone_entered` events are emitted only to spectators (mods don't consume `zone_history`). `leaderboard_update` and `player_update` carry `zone_history: null` in every broadcast; the full history is only seeded via `race_state` on connect, plus these incremental deltas. See [Incremental zone_history updates](#incremental-zone_history-updates).
+Note: `zone_history` snapshots are emitted only to spectators (mods don't consume `zone_history`). `leaderboard_update` and `player_update` carry `zone_history: null` in every broadcast; the full history is only seeded via `race_state` on connect, plus these snapshot messages. See [zone_history updates](#zone_history-updates).
