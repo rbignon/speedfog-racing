@@ -1757,6 +1757,24 @@ def test_training_spectator_receives_zone_entered(training_ws_client, training_s
             assert fog_msg["participant_id"] == sid
             assert fog_msg["entry"]["type"] == "fog"
             assert fog_msg["entry"]["igt_ms"] == 5000
+            fog_node_id = fog_msg["entry"]["node_id"]
+
+            # Death attribution: status_update with death_count delta should
+            # re-emit the fog entry with bumped deaths count, preserving the
+            # (node_id, igt_ms) key.
+            ws_mod.send_json({"type": "status_update", "igt_ms": 8000, "death_count": 2})
+            ws_mod.receive_json()  # leaderboard_update echoed to mod
+            ws_mod.receive_json()  # death_counts unicast to mod
+
+            lb3 = ws_spec.receive_json()
+            assert lb3["type"] == "leaderboard_update"
+            death_msg = ws_spec.receive_json()
+            assert death_msg["type"] == "zone_entered"
+            assert death_msg["participant_id"] == sid
+            assert death_msg["entry"]["node_id"] == fog_node_id
+            assert death_msg["entry"]["igt_ms"] == 5000
+            assert death_msg["entry"]["deaths"] == 2
+            assert death_msg["entry"]["type"] == "fog"
 
 
 def test_training_spectator_anonymous_invalid_session(training_ws_client, training_session_data):

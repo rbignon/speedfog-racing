@@ -2878,3 +2878,81 @@ def test_items_spawned_flag_default_none_in_auth_ok(integration_client, race_wit
         auth = mod.auth(drain=False)
         assert auth["type"] == "auth_ok"
         assert auth["seed"]["items_spawned_flag"] is None
+
+
+def test_spectator_receives_zone_entered_events(integration_client, race_with_participants):
+    """Race spectator receives zone_entered on spawn, event_flag, and death attribution."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Ready player 0 and start the race before opening the spectator WS.
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws_prep:
+        mod_prep = ModTestClient(ws_prep, players[0]["mod_token"])
+        assert mod_prep.auth()["type"] == "auth_ok"
+        mod_prep.send_ready()
+        mod_prep.receive()  # leaderboard_update
+
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    target_id = players[0]["participant_id"]
+
+    def spec_receive_until(ws, msg_type: str, max_messages: int = 10) -> dict:
+        """Drain spectator messages until the expected type is seen."""
+        for _ in range(max_messages):
+            m = ws.receive_json()
+            if m.get("type") == msg_type:
+                return m
+        raise AssertionError(f"Did not receive {msg_type} from spectator")
+
+    with integration_client.websocket_connect(f"/ws/race/{race_id}") as ws_spec:
+        # Anonymous spectator: send no_auth to skip the grace period.
+        ws_spec.send_json({"type": "no_auth"})
+        race_state = ws_spec.receive_json()
+        assert race_state["type"] == "race_state"
+
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws_mod:
+            mod = ModTestClient(ws_mod, players[0]["mod_token"])
+            assert mod.auth()["type"] == "auth_ok"
+            # spectator observes the mod_connected leaderboard_update
+            # (skipping any interleaved spectator_count)
+            spec_receive_until(ws_spec, "leaderboard_update")
+
+            # Spawn: first status_update transitions READY -> PLAYING and records
+            # the spawn entry. Spectator sees leaderboard_update then
+            # zone_entered(type=spawn).
+            mod.send_status_update(igt_ms=1000, death_count=0)
+            mod.receive_until_type("leaderboard_update")
+            lb_spawn = spec_receive_until(ws_spec, "leaderboard_update")
+            assert lb_spawn["participants"][0]["zone_history"] is None
+            spawn_msg = spec_receive_until(ws_spec, "zone_entered")
+            assert spawn_msg["participant_id"] == target_id
+            assert spawn_msg["entry"]["type"] == "spawn"
+            assert spawn_msg["entry"]["igt_ms"] == 0
+            spawn_node_id = spawn_msg["entry"]["node_id"]
+
+            # Fog gate: event_flag appends a fog entry.
+            mod.send_event_flag(9000000, igt_ms=10000)
+            mod.receive_until_type("leaderboard_update")
+            spec_receive_until(ws_spec, "leaderboard_update")
+            fog_msg = spec_receive_until(ws_spec, "zone_entered")
+            assert fog_msg["entry"]["type"] == "fog"
+            assert fog_msg["entry"]["igt_ms"] == 10000
+            assert fog_msg["entry"]["node_id"] == "node_a"
+            assert spawn_node_id != "node_a"
+
+            # Death attribution: status_update with death_count delta re-emits
+            # the current_zone entry (node_a, igt_ms=10000) with bumped deaths.
+            mod.send_status_update(igt_ms=15000, death_count=3)
+            mod.receive_until_type("player_update")
+            spec_receive_until(ws_spec, "player_update")
+            death_msg = spec_receive_until(ws_spec, "zone_entered")
+            assert death_msg["participant_id"] == target_id
+            # Same (node_id, igt_ms) key as the fog entry (upsert preserves it).
+            assert death_msg["entry"]["node_id"] == "node_a"
+            assert death_msg["entry"]["igt_ms"] == 10000
+            assert death_msg["entry"]["deaths"] == 3
+            assert death_msg["entry"]["type"] == "fog"
