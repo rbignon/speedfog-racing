@@ -13,6 +13,8 @@ from speedfog_racing.schemas import (
     AcceptInviteResponse,
     InviteInfoResponse,
 )
+from speedfog_racing.websocket import broadcast_race_state_update
+from speedfog_racing.websocket.manager import manager
 
 router = APIRouter()
 
@@ -119,6 +121,21 @@ async def accept_invite(
 
     await db.commit()
     await db.refresh(participant)
+
+    # Broadcast updated state to spectators and mods
+    race_result = await db.execute(
+        select(Race)
+        .where(Race.id == invite.race_id)
+        .options(
+            selectinload(Race.organizer),
+            selectinload(Race.seed),
+            selectinload(Race.participants).selectinload(Participant.user),
+        )
+    )
+    race = race_result.scalar_one()
+    graph_json = race.seed.graph_json if race.seed else None
+    await manager.broadcast_leaderboard(invite.race_id, race.participants, graph_json=graph_json)
+    await broadcast_race_state_update(invite.race_id, race)
 
     return AcceptInviteResponse(
         participant=participant_response(participant),

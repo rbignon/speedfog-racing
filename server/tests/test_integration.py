@@ -19,6 +19,7 @@ from starlette.testclient import TestClient
 from speedfog_racing.database import Base
 from speedfog_racing.main import app
 from speedfog_racing.models import (
+    Invite,
     Participant,
     ParticipantStatus,
     Race,
@@ -643,6 +644,125 @@ def test_connect_broadcasts_leaderboard(integration_client, race_with_participan
         # Other players not connected
         others = [p for p in lb["participants"] if p["twitch_username"] != "player0"]
         assert all(p["mod_connected"] is False for p in others)
+
+
+def test_mod_receives_leaderboard_on_participant_added(
+    integration_client, race_with_participants, integration_db
+):
+    """Mods connected during setup receive leaderboard_update when a participant joins."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Create a new user (not yet a participant)
+    async def create_user():
+        async with integration_db() as db:
+            user = User(
+                twitch_id="new_player_integration",
+                twitch_username="newcomer",
+                twitch_display_name="Newcomer",
+                api_token="newcomer_token_integration",
+                role=UserRole.USER,
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+            return user
+
+    asyncio.run(create_user())
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        assert mod.auth()["type"] == "auth_ok"
+
+        # Organizer adds a new participant
+        response = integration_client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "newcomer"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+
+        # The mod should receive a leaderboard_update reflecting the new participant
+        lb = mod.receive_until_type("leaderboard_update")
+        assert len(lb["participants"]) == 4
+        assert any(p["twitch_username"] == "newcomer" for p in lb["participants"])
+
+
+def test_mod_receives_leaderboard_on_invite_accepted(
+    integration_client, race_with_participants, integration_db
+):
+    """Mods connected during setup receive leaderboard_update when an invite is accepted."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    # Create a new user and an invite for them
+    async def create_user_and_invite():
+        async with integration_db() as db:
+            user = User(
+                twitch_id="invited_player_integration",
+                twitch_username="invitee",
+                twitch_display_name="Invitee",
+                api_token="invitee_token_integration",
+                role=UserRole.USER,
+            )
+            db.add(user)
+            invite = Invite(
+                race_id=uuid.UUID(race_id),
+                twitch_username="invitee",
+                token="integration_invite_token",
+            )
+            db.add(invite)
+            await db.commit()
+            await db.refresh(user)
+            return user
+
+    invitee = asyncio.run(create_user_and_invite())
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        assert mod.auth()["type"] == "auth_ok"
+
+        # Invitee accepts the invite
+        response = integration_client.post(
+            "/api/invite/integration_invite_token/accept",
+            headers={"Authorization": f"Bearer {invitee.api_token}"},
+        )
+        assert response.status_code == 200
+
+        # The mod should receive a leaderboard_update reflecting the new participant
+        lb = mod.receive_until_type("leaderboard_update")
+        assert len(lb["participants"]) == 4
+        assert any(p["twitch_username"] == "invitee" for p in lb["participants"])
+
+
+def test_mod_receives_leaderboard_on_participant_removed(
+    integration_client, race_with_participants
+):
+    """Mods connected during setup receive leaderboard_update when a participant is removed."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        assert mod.auth()["type"] == "auth_ok"
+
+        # Organizer removes player2
+        response = integration_client.delete(
+            f"/api/races/{race_id}/participants/{players[2]['participant_id']}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 204
+
+        # The mod should receive a leaderboard_update reflecting the removal
+        lb = mod.receive_until_type("leaderboard_update")
+        assert len(lb["participants"]) == 2
+        assert not any(p["twitch_username"] == "player2" for p in lb["participants"])
 
 
 def test_unknown_message_type_ignored(integration_client, race_with_participants):

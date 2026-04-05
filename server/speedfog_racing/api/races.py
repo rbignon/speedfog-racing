@@ -691,8 +691,10 @@ async def add_participant(
 
         logger.info("Participant added: race=%s, user=%s", race_id, target_user.twitch_username)
 
-        # Broadcast updated state to spectators
+        # Broadcast updated state to spectators and mods
         race = await _get_race_or_404(db, race_id, load_participants=True)
+        graph_json = race.seed.graph_json if race.seed else None
+        await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
         await broadcast_race_state_update(race_id, race)
 
         return AddParticipantResponse(participant=participant_response(participant))
@@ -772,8 +774,10 @@ async def remove_participant(
     await db.commit()
     logger.info("Participant removed: race=%s, participant=%s", race_id, participant_id)
 
-    # Broadcast updated state to spectators
+    # Broadcast updated state to spectators and mods
     race = await _get_race_or_404(db, race_id, load_participants=True)
+    graph_json = race.seed.graph_json if race.seed else None
+    await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
     await broadcast_race_state_update(race_id, race)
 
 
@@ -1008,8 +1012,10 @@ async def join_race(
         )
     await db.refresh(participant)
 
-    # Broadcast updated state to spectators
+    # Broadcast updated state to spectators and mods
     race = await _get_race_or_404(db, race_id, load_participants=True)
+    graph_json = race.seed.graph_json if race.seed else None
+    await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
     await broadcast_race_state_update(race_id, race)
 
     return participant_response(participant)
@@ -1055,8 +1061,10 @@ async def leave_race(
     await db.delete(participant)
     await db.commit()
 
-    # Broadcast updated state to spectators
+    # Broadcast updated state to spectators and mods
     race = await _get_race_or_404(db, race_id, load_participants=True)
+    graph_json = race.seed.graph_json if race.seed else None
+    await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
     await broadcast_race_state_update(race_id, race)
 
 
