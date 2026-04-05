@@ -3,7 +3,10 @@
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
-		<link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
+		<link rel="icon" type="image/png" sizes="192x192" href="%sveltekit.assets%/favicon-192.png" />
+		<link rel="icon" type="image/png" sizes="96x96" href="%sveltekit.assets%/favicon-96.png" />
+		<link rel="icon" type="image/png" sizes="48x48" href="%sveltekit.assets%/favicon-48.png" />
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/favicon-192.png" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -11,12 +14,22 @@
 			href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
 			rel="stylesheet"
 		/>
+		<meta property="og:site_name" content="SpeedFog Racing" />
 		<meta property="og:title" content="SpeedFog Racing" />
 		<meta property="og:description" content="Competitive Elden Ring Fog Randomizer racing platform. Race against other players through randomized fog gates in real time." />
 		<meta property="og:url" content="%sveltekit.env.PUBLIC_BASE_URL%" />
 		<meta property="og:image" content="%sveltekit.env.PUBLIC_BASE_URL%/og-image.png" />
 		<meta property="og:type" content="website" />
 		<meta name="twitter:card" content="summary_large_image" />
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@type": "WebSite",
+				"name": "SpeedFog Racing",
+				"alternateName": "SpeedFog",
+				"url": "https://speedfog.racing"
+			}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
