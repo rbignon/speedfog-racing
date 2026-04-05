@@ -28,7 +28,7 @@ from speedfog_racing.models import (
     ChatMessage as ChatMessageModel,
 )
 from speedfog_racing.services.i18n import translate_graph_json
-from speedfog_racing.websocket.common import heartbeat_loop
+from speedfog_racing.websocket.common import MAX_CHAT_HISTORY_MESSAGES, heartbeat_loop
 from speedfog_racing.websocket.manager import (
     SEND_TIMEOUT,
     SpectatorConnection,
@@ -98,8 +98,16 @@ async def load_chat_history(
     race: Race,
     channel: ChatChannel,
 ) -> ChatHistoryMessage:
-    """Load chat history from DB and return the message (does not send)."""
+    """Load the most recent chat messages from DB and return the message.
+
+    Capped at MAX_CHAT_HISTORY_MESSAGES (most recent). This keeps the
+    payload and DB load bounded when a long-running race accumulates
+    hundreds of messages and many spectators connect in rapid succession.
+    The chat is ephemeral; older messages are not exposed to new viewers.
+    """
     async with session_maker() as db:
+        # Fetch the most recent N messages via created_at DESC + LIMIT, then
+        # reverse in-memory so the client still receives them chronologically.
         result = await db.execute(
             select(ChatMessageModel, User)
             .join(User, ChatMessageModel.user_id == User.id)
@@ -107,9 +115,10 @@ async def load_chat_history(
                 ChatMessageModel.race_id == race_id,
                 ChatMessageModel.channel == channel,
             )
-            .order_by(ChatMessageModel.created_at.asc())
+            .order_by(ChatMessageModel.created_at.desc())
+            .limit(MAX_CHAT_HISTORY_MESSAGES)
         )
-        rows = result.all()
+        rows = list(reversed(result.all()))
 
         if not rows:
             return ChatHistoryMessage(channel=channel.value, messages=[])

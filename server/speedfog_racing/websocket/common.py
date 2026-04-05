@@ -24,6 +24,7 @@ MAX_FRESH_IGT_MS = 15_000  # 15s: fresh save reaches first load screen at ~3-5s
 MAX_IGT_MS = 86_400_000  # 24 hours
 MAX_DEATH_COUNT = 10_000
 MAX_ZONE_HISTORY = 1000  # 1000 event flags allocated per seed
+MAX_CHAT_HISTORY_MESSAGES = 50  # recent messages sent to each new spectator
 MSG_RATE_WINDOW = 10.0  # sliding window in seconds
 MSG_RATE_LIMIT = 200  # max messages per window (normal mod sends ~2/s)
 

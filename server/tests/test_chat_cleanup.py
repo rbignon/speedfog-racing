@@ -182,3 +182,66 @@ async def test_cleanup_returns_zero_when_nothing_to_clean(async_session):
     """Returns 0 when there are no races matching the cleanup criteria."""
     count = await cleanup_old_chat_messages(async_session)
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_load_chat_history_caps_at_most_recent_messages(async_session):
+    """load_chat_history returns at most MAX_CHAT_HISTORY_MESSAGES, most recent first wins."""
+    from sqlalchemy.orm import selectinload
+
+    from speedfog_racing.websocket.common import MAX_CHAT_HISTORY_MESSAGES
+    from speedfog_racing.websocket.spectator import load_chat_history
+
+    async with async_session() as db:
+        organizer = User(
+            twitch_id="cap_org",
+            twitch_username="cap_organizer",
+            api_token=uuid.uuid4().hex,
+            role=UserRole.ORGANIZER,
+        )
+        player = User(
+            twitch_id="cap_player",
+            twitch_username="cap_player",
+            api_token=uuid.uuid4().hex,
+            role=UserRole.USER,
+        )
+        db.add_all([organizer, player])
+        await db.flush()
+
+        race = Race(name="Chat Cap Race", organizer_id=organizer.id, status=RaceStatus.RUNNING)
+        db.add(race)
+        await db.flush()
+
+        # Insert MAX + 10 messages with explicit increasing timestamps so the
+        # DESC ordering is unambiguous (SQLite has seconds granularity).
+        total = MAX_CHAT_HISTORY_MESSAGES + 10
+        base = datetime.now(UTC) - timedelta(seconds=total)
+        for i in range(total):
+            db.add(
+                ChatMessage(
+                    race_id=race.id,
+                    channel=ChatChannel.PUBLIC,
+                    user_id=player.id,
+                    message=f"msg-{i:03d}",
+                    created_at=base + timedelta(seconds=i),
+                )
+            )
+        await db.commit()
+        race_id = race.id
+
+    # Re-fetch with relationships needed by load_chat_history
+    async with async_session() as db:
+        loaded_race = (
+            await db.execute(
+                select(Race)
+                .where(Race.id == race_id)
+                .options(selectinload(Race.participants), selectinload(Race.casters))
+            )
+        ).scalar_one()
+
+    hist = await load_chat_history(async_session, race_id, loaded_race, ChatChannel.PUBLIC)
+
+    assert len(hist.messages) == MAX_CHAT_HISTORY_MESSAGES
+    # Chronological order preserved (oldest-of-the-kept-set first)
+    assert hist.messages[0].message == f"msg-{total - MAX_CHAT_HISTORY_MESSAGES:03d}"
+    assert hist.messages[-1].message == f"msg-{total - 1:03d}"
