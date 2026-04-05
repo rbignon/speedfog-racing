@@ -10,6 +10,7 @@ import {
   type WsRaceInfo,
   type WsSeedInfo,
 } from "$lib/websocket";
+import { upsertZoneHistoryEntry } from "$lib/zone-history";
 
 class RaceStore {
   race = $state<WsRaceInfo | null>(null);
@@ -118,27 +119,26 @@ class RaceStore {
         },
 
         onLeaderboardUpdate: (msg) => {
-          // When race is finished, preserve zone_history from existing data
-          // in case this update doesn't include it (race condition defense).
-          if (this.race?.status === "finished") {
-            const historyMap = new Map(
-              this.participants
-                .filter((p) => p.zone_history)
-                .map((p) => [p.id, p.zone_history]),
-            );
-            this.participants = msg.participants.map((p) => ({
-              ...p,
-              zone_history: p.zone_history ?? historyMap.get(p.id) ?? null,
-            }));
-          } else {
-            this.participants = msg.participants;
-          }
+          // Server no longer retransmits zone_history in leaderboard_update
+          // (it arrives via race_state initially + zone_entered incrementally).
+          // Always preserve the locally-held history when the message carries
+          // none, so the DAG keeps its trail.
+          const historyMap = new Map(
+            this.participants
+              .filter((p) => p.zone_history)
+              .map((p) => [p.id, p.zone_history]),
+          );
+          this.participants = msg.participants.map((p) => ({
+            ...p,
+            zone_history: p.zone_history ?? historyMap.get(p.id) ?? null,
+          }));
         },
 
         onPlayerUpdate: (msg) => {
-          // Preserve zone_history when race is finished
+          // Same as leaderboard_update: preserve existing zone_history when
+          // the message does not carry one (which is now the default).
           let player = msg.player;
-          if (this.race?.status === "finished" && !player.zone_history) {
+          if (!player.zone_history) {
             const existing = this.participants.find((p) => p.id === player.id);
             if (existing?.zone_history) {
               player = { ...player, zone_history: existing.zone_history };
@@ -147,6 +147,14 @@ class RaceStore {
           this.participants = this.participants.map((p) =>
             p.id === player.id ? player : p,
           );
+        },
+
+        onZoneEntered: (msg) => {
+          this.participants = this.participants.map((p) => {
+            if (p.id !== msg.participant_id) return p;
+            const next = upsertZoneHistoryEntry(p.zone_history, msg.entry);
+            return { ...p, zone_history: next };
+          });
         },
 
         onRaceStatusChange: (msg) => {

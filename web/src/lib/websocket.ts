@@ -3,6 +3,7 @@
  */
 
 import { getStoredToken } from "$lib/api";
+import type { ZoneHistoryEntry } from "$lib/zone-history";
 
 // =============================================================================
 // Types (matching backend WebSocket schemas)
@@ -19,9 +20,7 @@ export interface WsParticipant {
   death_count: number;
   color_index: number;
   mod_connected: boolean;
-  zone_history:
-    | { node_id: string; igt_ms: number; deaths?: number; type?: string }[]
-    | null;
+  zone_history: ZoneHistoryEntry[] | null;
   is_live?: boolean;
   stream_url?: string | null;
 }
@@ -72,6 +71,12 @@ export interface SpectatorCountMessage {
   count: number;
 }
 
+export interface ZoneEnteredMessage {
+  type: "zone_entered";
+  participant_id: string;
+  entry: ZoneHistoryEntry;
+}
+
 export interface ChatMessage {
   type: "chat_message";
   channel: "participants" | "public";
@@ -96,6 +101,7 @@ export type ServerMessage =
   | PlayerUpdateMessage
   | RaceStatusChangeMessage
   | SpectatorCountMessage
+  | ZoneEnteredMessage
   | ChatMessage
   | ChatHistoryMessage;
 
@@ -105,6 +111,7 @@ const VALID_SERVER_MESSAGE_TYPES = new Set([
   "player_update",
   "race_status_change",
   "spectator_count",
+  "zone_entered",
   "chat_message",
   "chat_history",
 ]);
@@ -129,6 +136,7 @@ export interface RaceWebSocketOptions {
   onPlayerUpdate?: (msg: PlayerUpdateMessage) => void;
   onRaceStatusChange?: (msg: RaceStatusChangeMessage) => void;
   onSpectatorCount?: (msg: SpectatorCountMessage) => void;
+  onZoneEntered?: (msg: ZoneEnteredMessage) => void;
   onChatMessage?: (msg: ChatMessage) => void;
   onChatHistory?: (msg: ChatHistoryMessage) => void;
   onConnect?: () => void;
@@ -295,6 +303,9 @@ export class RaceWebSocket {
         break;
       case "spectator_count":
         this.options.onSpectatorCount?.(msg);
+        break;
+      case "zone_entered":
+        this.options.onZoneEntered?.(msg);
         break;
       case "chat_message":
         this.options.onChatMessage?.(msg);
