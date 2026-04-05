@@ -10,7 +10,7 @@ import {
   type WsRaceInfo,
   type WsSeedInfo,
 } from "$lib/websocket";
-import { upsertZoneHistoryEntry } from "$lib/zone-history";
+import { preserveZoneHistory, upsertZoneHistoryEntry } from "$lib/zone-history";
 
 class RaceStore {
   race = $state<WsRaceInfo | null>(null);
@@ -123,27 +123,24 @@ class RaceStore {
           // (it arrives via race_state initially + zone_entered incrementally).
           // Always preserve the locally-held history when the message carries
           // none, so the DAG keeps its trail.
-          const historyMap = new Map(
-            this.participants
-              .filter((p) => p.zone_history)
-              .map((p) => [p.id, p.zone_history]),
+          const historyById = new Map(
+            this.participants.map((p) => [p.id, p.zone_history]),
           );
-          this.participants = msg.participants.map((p) => ({
-            ...p,
-            zone_history: p.zone_history ?? historyMap.get(p.id) ?? null,
-          }));
+          this.participants = msg.participants.map((p) =>
+            preserveZoneHistory(p, historyById.get(p.id)),
+          );
         },
 
         onPlayerUpdate: (msg) => {
           // Same as leaderboard_update: preserve existing zone_history when
           // the message does not carry one (which is now the default).
-          let player = msg.player;
-          if (!player.zone_history) {
-            const existing = this.participants.find((p) => p.id === player.id);
-            if (existing?.zone_history) {
-              player = { ...player, zone_history: existing.zone_history };
-            }
-          }
+          const existing = this.participants.find(
+            (p) => p.id === msg.player.id,
+          );
+          const player = preserveZoneHistory(
+            msg.player,
+            existing?.zone_history,
+          );
           this.participants = this.participants.map((p) =>
             p.id === player.id ? player : p,
           );

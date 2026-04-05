@@ -15,7 +15,7 @@ import type {
   RaceStatusChangeMessage,
   ZoneEnteredMessage,
 } from "$lib/websocket";
-import { upsertZoneHistoryEntry } from "$lib/zone-history";
+import { preserveZoneHistory, upsertZoneHistoryEntry } from "$lib/zone-history";
 
 type TrainingServerMessage =
   | RaceStateMessage
@@ -217,14 +217,9 @@ class TrainingStore {
         // (it arrives via race_state initially + zone_entered incrementally).
         // Preserve the locally-held history when the message carries none.
         const next = msg.participants[0] ?? null;
-        if (next && !next.zone_history && this.participant?.zone_history) {
-          this.participant = {
-            ...next,
-            zone_history: this.participant.zone_history,
-          };
-        } else {
-          this.participant = next;
-        }
+        this.participant = next
+          ? preserveZoneHistory(next, this.participant?.zone_history)
+          : null;
         break;
       }
       case "zone_entered":
