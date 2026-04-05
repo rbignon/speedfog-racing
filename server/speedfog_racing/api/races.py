@@ -1285,6 +1285,9 @@ async def reroll_seed(
     race.seeds_released_at = None
     await db.commit()
 
+    # Notify connected clients
+    await broadcast_race_state_update(race_id, race)
+
     # Re-fetch with all relationships
     race = await _get_race_or_404(
         db, race_id, load_participants=True, load_casters=True, load_invites=True

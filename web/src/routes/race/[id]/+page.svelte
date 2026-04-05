@@ -133,7 +133,9 @@
 	let totalNodes = $derived(liveSeed?.total_nodes ?? initialRace.seed_total_nodes);
 	let totalPaths = $derived(liveSeed?.total_paths ?? initialRace.seed_total_paths);
 	let seedsReleased = $derived(
-		(liveRace?.seeds_released_at ?? initialRace.seeds_released_at) !== null
+		liveRace
+			? liveRace.seeds_released_at !== null
+			: initialRace.seeds_released_at !== null
 	);
 
 	// Build node ID → display name map for leaderboard zone labels
