@@ -29,7 +29,9 @@ async def abandon_inactive_participants(
     - PLAYING participants whose IGT hasn't changed in INACTIVITY_TIMEOUT
     - REGISTERED/READY participants who never connected after race started
 
-    Returns (race_ids with abandonments, participant_ids that were just abandoned).
+    Returns (race_ids with abandonments, participant_ids that were just
+    abandoned). The caller is responsible for the follow-up auto-finish
+    check and broadcasts.
     """
     cutoff = datetime.now(UTC) - INACTIVITY_TIMEOUT
     affected_race_ids: list[uuid.UUID] = []
@@ -52,7 +54,6 @@ async def abandon_inactive_participants(
                     & (Race.started_at < cutoff),
                 ),
             )
-            .options(selectinload(Participant.race).selectinload(Race.participants))
         )
         stale_participants = result.scalars().unique().all()
 
@@ -70,17 +71,6 @@ async def abandon_inactive_participants(
 
         if stale_participants:
             await db.commit()
-
-    # Check auto-finish for each affected race
-    for race_id in list(affected_race_ids):
-        async with session_maker() as db:
-            race_query = (
-                select(Race).where(Race.id == race_id).options(selectinload(Race.participants))
-            )
-            race_result = await db.execute(race_query)
-            race_obj = race_result.scalar_one_or_none()
-            if isinstance(race_obj, Race) and race_obj.status == RaceStatus.RUNNING:
-                await check_race_auto_finish(db, race_obj)
 
     return affected_race_ids, abandoned_participant_ids
 
@@ -102,6 +92,9 @@ async def inactivity_monitor_loop(
                 from speedfog_racing.websocket.spectator import broadcast_race_state_update
 
                 for race_id in affected:
+                    # One session per affected race: load Race with the full
+                    # option chain (participants+users, casters, seed), run
+                    # the auto-finish check, then broadcast.
                     async with session_maker() as db:
                         result = await db.execute(
                             select(Race)
@@ -113,34 +106,37 @@ async def inactivity_monitor_loop(
                             )
                         )
                         race = result.scalar_one_or_none()
-                        if race:
-                            room = manager.get_room(race_id)
-                            if room:
-                                for p in race.participants:
-                                    if p.status == ParticipantStatus.ABANDONED:
-                                        room.clear_is_playing(p.user_id)
+                        if race is None:
+                            continue
 
-                                # Notify public chat for newly abandoned participants only
-                                for p in race.participants:
-                                    if p.id in abandoned_ids:
-                                        display = (
-                                            p.user.twitch_display_name or p.user.twitch_username
-                                        )
-                                        await room.broadcast_chat_public(
-                                            system_chat_message(
-                                                "public",
-                                                f"{display} has been removed due to inactivity.",
-                                            )
-                                        )
+                        if race.status == RaceStatus.RUNNING:
+                            await check_race_auto_finish(db, race)
 
-                            graph_json = race.seed.graph_json if race.seed else None
-                            await manager.broadcast_leaderboard(
-                                race_id, race.participants, graph_json=graph_json
-                            )
-                            await broadcast_race_state_update(race_id, race)
-                            if race.status == RaceStatus.FINISHED:
-                                await manager.broadcast_race_status(race_id, "finished")
-                                fire_race_finished_notifications(race)
+                        room = manager.get_room(race_id)
+                        if room:
+                            for p in race.participants:
+                                if p.status == ParticipantStatus.ABANDONED:
+                                    room.clear_is_playing(p.user_id)
+
+                            # Notify public chat for newly abandoned participants only
+                            for p in race.participants:
+                                if p.id in abandoned_ids:
+                                    display = p.user.twitch_display_name or p.user.twitch_username
+                                    await room.broadcast_chat_public(
+                                        system_chat_message(
+                                            "public",
+                                            f"{display} has been removed due to inactivity.",
+                                        )
+                                    )
+
+                        graph_json = race.seed.graph_json if race.seed else None
+                        await manager.broadcast_leaderboard(
+                            race_id, race.participants, graph_json=graph_json
+                        )
+                        await broadcast_race_state_update(race_id, race)
+                        if race.status == RaceStatus.FINISHED:
+                            await manager.broadcast_race_status(race_id, "finished")
+                            fire_race_finished_notifications(race)
         except Exception:
             logger.exception("Inactivity monitor error")
 
