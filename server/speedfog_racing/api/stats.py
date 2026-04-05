@@ -328,11 +328,19 @@ def _aggregate_zone_stats(
 @router.get("/zones", response_model=ZoneStatsResponse)
 async def get_zone_stats(
     pool: str | None = Query(default=None),
+    days: int | None = Query(default=90, ge=1, le=3650),
     db: AsyncSession = Depends(get_db),
 ) -> ZoneStatsResponse:
-    """Zone analytics: deadliest dungeons and most visited nodes."""
+    """Zone analytics: deadliest dungeons and most visited nodes.
+
+    ``days`` restricts the input to races started within the last N days
+    (default 90). Pass ``days=null`` (or omit by sending an empty value)
+    to disable the filter. The output is always capped at 5 entries per
+    category (deadliest, backtracked, slowest, fastest).
+    """
     query = (
         select(Participant)
+        .join(Race, Participant.race_id == Race.id)
         .where(
             or_(
                 Participant.status == ParticipantStatus.FINISHED,
@@ -343,12 +351,11 @@ async def get_zone_stats(
             selectinload(Participant.race).selectinload(Race.seed),
         )
     )
+    if days is not None:
+        cutoff = datetime.now(tz=UTC) - timedelta(days=days)
+        query = query.where(Race.started_at >= cutoff)
     if pool is not None:
-        query = (
-            query.join(Race, Participant.race_id == Race.id)
-            .join(Seed, Race.seed_id == Seed.id)
-            .where(Seed.pool_name == pool)
-        )
+        query = query.join(Seed, Race.seed_id == Seed.id).where(Seed.pool_name == pool)
 
     participants = (await db.execute(query)).scalars().all()
 
