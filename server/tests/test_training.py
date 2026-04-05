@@ -974,6 +974,8 @@ def test_training_zone_history_includes_start_node(
     training_ws_client, training_session_data, async_session
 ):
     """Training mod WS: zone_history includes start node after first status_update."""
+    import uuid as _uuid
+
     sid = training_session_data["session_id"]
     token = training_session_data["mod_token"]
 
@@ -986,23 +988,28 @@ def test_training_zone_history_includes_start_node(
         ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
         msg = ws.receive_json()
         assert msg["type"] == "leaderboard_update"
-        p = msg["participants"][0]
-        assert p["zone_history"] is not None
-        assert len(p["zone_history"]) == 1
-        start_node_id = p["zone_history"][0]["node_id"]
-        assert start_node_id  # non-empty
-        assert p["zone_history"][0]["igt_ms"] == 0
 
         # Send event_flag for the second event (first gate after start node)
         event_ids = auth_ok["seed"]["event_ids"]
         ws.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 5000})
         msg = ws.receive_json()
         assert msg["type"] == "leaderboard_update"
-        p = msg["participants"][0]
-        assert len(p["zone_history"]) == 2
-        assert p["zone_history"][0]["node_id"] == start_node_id
-        assert p["zone_history"][1]["node_id"]  # non-empty, mapped from event_ids[1]
-        assert p["zone_history"][1]["node_id"] != start_node_id
+        ws.receive_json()  # zone_update (unicast after first visit)
+
+    # zone_history is omitted from leaderboard_update broadcasts, so verify in DB
+    async def _check():
+        async with async_session() as db:
+            result = await db.execute(
+                select(TrainingSession).where(TrainingSession.id == _uuid.UUID(sid))
+            )
+            s = result.scalar_one()
+            assert s.zone_history is not None
+            assert len(s.zone_history) == 2
+            assert s.zone_history[0]["igt_ms"] == 0
+            assert s.zone_history[0]["node_id"]  # non-empty
+            assert s.zone_history[1]["node_id"] != s.zone_history[0]["node_id"]
+
+    asyncio.run(_check())
 
 
 def test_training_per_zone_death_tracking(training_ws_client, training_session_data, async_session):
@@ -1024,7 +1031,6 @@ def test_training_per_zone_death_tracking(training_ws_client, training_session_d
         ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
         msg = ws.receive_json()
         assert msg["type"] == "leaderboard_update"
-        start_node_id = msg["participants"][0]["zone_history"][0]["node_id"]
 
         # Die twice in start zone
         ws.send_json({"type": "status_update", "igt_ms": 5000, "death_count": 2})
@@ -1038,8 +1044,6 @@ def test_training_per_zone_death_tracking(training_ws_client, training_session_d
         ws.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 10000})
         msg = ws.receive_json()
         assert msg["type"] == "leaderboard_update"
-        second_node_id = msg["participants"][0]["zone_history"][-1]["node_id"]
-        assert second_node_id != start_node_id
         ws.receive_json()  # consume zone_update
 
         # Die three more times in second zone
@@ -1056,10 +1060,13 @@ def test_training_per_zone_death_tracking(training_ws_client, training_session_d
             assert s.death_count == 5
             assert len(s.zone_history) == 2
 
-            start_entry = next(e for e in s.zone_history if e["node_id"] == start_node_id)
+            # First entry is the spawn (igt_ms=0), second is the event_flag at 10000.
+            start_entry = s.zone_history[0]
+            second_entry = s.zone_history[1]
+            assert start_entry["igt_ms"] == 0
+            assert second_entry["igt_ms"] == 10000
+            assert start_entry["node_id"] != second_entry["node_id"]
             assert start_entry["deaths"] == 2
-
-            second_entry = next(e for e in s.zone_history if e["node_id"] == second_node_id)
             assert second_entry["deaths"] == 3
 
     asyncio.run(_check())
@@ -1335,7 +1342,6 @@ def test_training_event_flag_revisit_appends_to_zone_history(
         ws.send_json({"type": "event_flag", "flag_id": fog_event_ids[1], "igt_ms": 5000})
         lb = ws.receive_json()
         assert lb["type"] == "leaderboard_update"
-        first_node_id = lb["participants"][0]["zone_history"][-1]["node_id"]
         ws.receive_json()  # zone_update
 
         # Discover second zone (if available)
@@ -1354,13 +1360,15 @@ def test_training_event_flag_revisit_appends_to_zone_history(
 
         time.sleep(0.1)
 
-    # Verify: first_node_id appears twice in zone_history
+    # Verify: the first discovered node appears twice in zone_history (re-traversal).
     async def _check():
         async with async_session() as db:
             result = await db.execute(
                 select(TrainingSession).where(TrainingSession.id == _uuid.UUID(sid))
             )
             s = result.scalar_one()
+            # first_node_id is the node visited at igt_ms=5000 (first event_flag)
+            first_node_id = next(e["node_id"] for e in s.zone_history if e.get("igt_ms") == 5000)
             entries_for_node = [e for e in s.zone_history if e.get("node_id") == first_node_id]
             assert len(entries_for_node) == 2
             assert entries_for_node[0]["igt_ms"] == 5000
@@ -1396,7 +1404,6 @@ def test_training_deaths_attributed_to_last_visit_after_backtrack(
         ws.send_json({"type": "event_flag", "flag_id": fog_event_ids[1], "igt_ms": 5000})
         lb = ws.receive_json()
         assert lb["type"] == "leaderboard_update"
-        zone_a_id = lb["participants"][0]["zone_history"][-1]["node_id"]
         ws.receive_json()  # zone_update
 
         # Discover zone B
@@ -1420,6 +1427,8 @@ def test_training_deaths_attributed_to_last_visit_after_backtrack(
                 select(TrainingSession).where(TrainingSession.id == _uuid.UUID(sid))
             )
             s = result.scalar_one()
+            # zone_a_id is the node visited at igt_ms=5000 (first event_flag)
+            zone_a_id = next(e["node_id"] for e in s.zone_history if e.get("igt_ms") == 5000)
             entries_for_a = [e for e in s.zone_history if e.get("node_id") == zone_a_id]
             assert len(entries_for_a) == 2
             # First entry (discovery) should have NO deaths
@@ -1600,8 +1609,10 @@ def test_training_stale_save_self_heals(training_ws_client, training_session_dat
         ws.send_json({"type": "status_update", "igt_ms": 500, "death_count": 0})
         resp = ws.receive_json()
         assert resp["type"] == "leaderboard_update"
-        assert resp["participants"][0]["zone_history"] is not None
-        assert len(resp["participants"][0]["zone_history"]) == 1
+        # zone_history is intentionally omitted from leaderboard_update
+        # broadcasts (delivered separately via zone_entered events). The
+        # spawn entry is verified directly in the session's DB state.
+        assert resp["participants"][0]["zone_history"] is None
 
 
 def test_training_resumed_session_not_blocked(
@@ -1682,13 +1693,8 @@ def test_training_event_flag_before_status_update_dropped(
         ws.send_json({"type": "status_update", "igt_ms": 500, "death_count": 0})
         resp = ws.receive_json()
         assert resp["type"] == "leaderboard_update"
-
-        # zone_history should have only the spawn entry from status_update,
-        # NOT the stale event_flag entry
-        p = resp["participants"][0]
-        assert p["zone_history"] is not None
-        assert len(p["zone_history"]) == 1
-        assert p["zone_history"][0]["type"] == "spawn"
+        # zone_history is not carried in leaderboard_update broadcasts;
+        # it's verified via DB state below.
 
     # Double-check in DB
     async def _check():
@@ -1701,6 +1707,56 @@ def test_training_event_flag_before_status_update_dropped(
             assert s.zone_history[0]["type"] == "spawn"
 
     asyncio.run(_check())
+
+
+def test_training_spectator_receives_zone_entered(training_ws_client, training_session_data):
+    """Training spectator receives zone_entered events for spawn and event_flag."""
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}/spectate") as ws_spec:
+        ws_spec.send_json({"type": "auth"})
+        race_state = ws_spec.receive_json()
+        assert race_state["type"] == "race_state"
+        # Initial state carries the full zone_history (empty at this point).
+        initial_participant = race_state["participants"][0]
+        assert "zone_history" in initial_participant
+
+        with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws_mod:
+            ws_mod.send_json({"type": "auth", "mod_token": token})
+            auth_ok = ws_mod.receive_json()
+            ws_mod.receive_json()  # race_start
+
+            # mod connection broadcasts leaderboard_update to spectators
+            ws_spec.receive_json()  # leaderboard_update (mod_connected=True)
+
+            # Spawn: first status_update initializes zone_history with a spawn entry.
+            ws_mod.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+            ws_mod.receive_json()  # leaderboard_update echoed to mod
+
+            # Spectator should now observe leaderboard_update then zone_entered (spawn).
+            lb = ws_spec.receive_json()
+            assert lb["type"] == "leaderboard_update"
+            assert lb["participants"][0]["zone_history"] is None  # stripped
+            spawn_msg = ws_spec.receive_json()
+            assert spawn_msg["type"] == "zone_entered"
+            assert spawn_msg["participant_id"] == sid
+            assert spawn_msg["entry"]["type"] == "spawn"
+            assert spawn_msg["entry"]["igt_ms"] == 0
+
+            # Fog gate traversal: event_flag should emit a fog zone_entered.
+            event_ids = auth_ok["seed"]["event_ids"]
+            ws_mod.send_json({"type": "event_flag", "flag_id": event_ids[1], "igt_ms": 5000})
+            ws_mod.receive_json()  # leaderboard_update echoed to mod
+            ws_mod.receive_json()  # zone_update unicast to mod
+
+            lb2 = ws_spec.receive_json()
+            assert lb2["type"] == "leaderboard_update"
+            fog_msg = ws_spec.receive_json()
+            assert fog_msg["type"] == "zone_entered"
+            assert fog_msg["participant_id"] == sid
+            assert fog_msg["entry"]["type"] == "fog"
+            assert fog_msg["entry"]["igt_ms"] == 5000
 
 
 def test_training_spectator_anonymous_invalid_session(training_ws_client, training_session_data):

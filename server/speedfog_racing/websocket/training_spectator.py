@@ -127,7 +127,9 @@ async def _send_initial_state(
     seed = session.seed
     room = training_manager.get_room(session.id)
     mod_connected = room is not None and room.mod is not None
-    participant = build_training_participant_info(session, mod_connected=mod_connected)
+    participant = build_training_participant_info(
+        session, mod_connected=mod_connected, include_zone_history=True
+    )
 
     graph_json = seed.graph_json if seed else None
     if graph_json is not None and locale != "en":
