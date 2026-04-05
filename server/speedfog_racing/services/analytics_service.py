@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
@@ -57,66 +57,102 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
     Uses Python-side aggregation to stay compatible with SQLite (test) and PostgreSQL (prod).
     """
     now = datetime.now(tz=UTC)
-
-    # ------------------------------------------------------------------
-    # Load raw data
-    # ------------------------------------------------------------------
-    users: list[User] = list((await db.execute(select(User))).scalars().all())
-    races: list[Race] = list((await db.execute(select(Race))).scalars().all())
-    participants: list[Participant] = list((await db.execute(select(Participant))).scalars().all())
-    training_sessions: list[TrainingSession] = list(
-        (await db.execute(select(TrainingSession))).scalars().all()
-    )
-
-    # ------------------------------------------------------------------
-    # Shared derived data (used by KPIs, weekly, and heatmaps)
-    # ------------------------------------------------------------------
-    # Participant count per race_id (str key for UUID compatibility)
-    race_participant_counts: dict[str, int] = {}
-    for p in participants:
-        key = str(p.race_id)
-        race_participant_counts[key] = race_participant_counts.get(key, 0) + 1
-
-    finished_races = [r for r in races if r.status == RaceStatus.FINISHED]
-
-    # ------------------------------------------------------------------
-    # KPIs
-    # ------------------------------------------------------------------
-    total_users = len(users)
-
     first_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    new_users_this_month = sum(
-        1 for u in users if u.created_at is not None and _ensure_utc(u.created_at) >= first_of_month
-    )
-
     cutoff_30d = now - timedelta(days=30)
-    active_users_30d = sum(
-        1 for u in users if u.last_seen is not None and _ensure_utc(u.last_seen) >= cutoff_30d
-    )
+    # Weekly and heatmap sections look back 12 ISO weeks; use 13 weeks as
+    # the load cutoff so week boundary rounding never excludes data.
+    window_cutoff = now - timedelta(weeks=13)
+
+    # ------------------------------------------------------------------
+    # KPIs via aggregate queries (all-time counts, O(1) via index)
+    # ------------------------------------------------------------------
+    total_users = (await db.execute(select(func.count(User.id)))).scalar_one()
+    new_users_this_month = (
+        await db.execute(select(func.count(User.id)).where(User.created_at >= first_of_month))
+    ).scalar_one()
+    active_users_30d = (
+        await db.execute(select(func.count(User.id)).where(User.last_seen >= cutoff_30d))
+    ).scalar_one()
     active_users_pct = round(active_users_30d / total_users * 100, 1) if total_users > 0 else 0.0
 
-    total_races_finished = len(finished_races)
+    total_races_finished = (
+        await db.execute(select(func.count(Race.id)).where(Race.status == RaceStatus.FINISHED))
+    ).scalar_one()
 
-    if finished_races:
-        finished_ids = {str(r.id) for r in finished_races}
-        counts_for_finished = [race_participant_counts.get(rid, 0) for rid in finished_ids]
-        avg_participants = (
-            round(sum(counts_for_finished) / len(counts_for_finished), 1)
-            if counts_for_finished
-            else 0.0
+    # Average participants across all finished races: GROUP BY in SQL,
+    # average in Python (avoids dialect differences for AVG over counts).
+    per_race_counts = (
+        (
+            await db.execute(
+                select(func.count(Participant.id))
+                .join(Race, Participant.race_id == Race.id)
+                .where(Race.status == RaceStatus.FINISHED)
+                .group_by(Participant.race_id)
+            )
         )
-    else:
-        avg_participants = 0.0
+        .scalars()
+        .all()
+    )
+    avg_participants = (
+        round(sum(per_race_counts) / len(per_race_counts), 1) if per_race_counts else 0.0
+    )
 
-    total_solo = len(training_sessions)
-    solo_finished = sum(
-        1 for ts in training_sessions if ts.status == TrainingSessionStatus.FINISHED
-    )
-    solo_abandoned = sum(
-        1 for ts in training_sessions if ts.status == TrainingSessionStatus.ABANDONED
-    )
+    total_solo = (await db.execute(select(func.count(TrainingSession.id)))).scalar_one()
+    solo_finished = (
+        await db.execute(
+            select(func.count(TrainingSession.id)).where(
+                TrainingSession.status == TrainingSessionStatus.FINISHED
+            )
+        )
+    ).scalar_one()
+    solo_abandoned = (
+        await db.execute(
+            select(func.count(TrainingSession.id)).where(
+                TrainingSession.status == TrainingSessionStatus.ABANDONED
+            )
+        )
+    ).scalar_one()
     denom = solo_finished + solo_abandoned
     solo_completion_pct = round(solo_finished / denom * 100, 1) if denom > 0 else 0.0
+
+    # ------------------------------------------------------------------
+    # Load windowed raw data for weekly / heatmap / timezone sections
+    # ------------------------------------------------------------------
+    users: list[User] = list(
+        (
+            await db.execute(
+                select(User).where((User.created_at >= window_cutoff) | (User.timezone.isnot(None)))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    races: list[Race] = list(
+        (await db.execute(select(Race).where(Race.started_at >= window_cutoff))).scalars().all()
+    )
+    training_sessions: list[TrainingSession] = list(
+        (
+            await db.execute(
+                select(TrainingSession).where(TrainingSession.created_at >= window_cutoff)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Participant counts for the windowed races only
+    race_ids_window = [r.id for r in races]
+    race_participant_counts: dict[str, int] = {}
+    if race_ids_window:
+        windowed_counts = (
+            await db.execute(
+                select(Participant.race_id, func.count(Participant.id))
+                .where(Participant.race_id.in_(race_ids_window))
+                .group_by(Participant.race_id)
+            )
+        ).all()
+        for race_id, count in windowed_counts:
+            race_participant_counts[str(race_id)] = count
 
     kpis = {
         "total_users": total_users,
