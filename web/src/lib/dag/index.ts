@@ -19,7 +19,6 @@ export type {
 export {
   enumerateAllPaths,
   pickRacerPaths,
-  bfsShortestPath,
   pathToWaypoints,
   buildRacerPath,
   computeEdgeDrawTimings,
@@ -59,7 +58,14 @@ export {
   PARALLEL_PATH_SPACING,
   MAX_PARALLEL,
 } from "./constants";
-export { expandNodePath, buildPlayerWaypoints, computeSlot } from "./parallel";
+export {
+  expandNodePath,
+  buildPlayerWaypoints,
+  computeSlot,
+  buildDirectedAdjacency,
+  gameplayValidBridge,
+} from "./parallel";
+export type { DirectedAdjacency } from "./parallel";
 export {
   computeNodeVisibility,
   filterVisibleNodes,

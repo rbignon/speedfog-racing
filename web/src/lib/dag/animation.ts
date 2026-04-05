@@ -9,7 +9,7 @@ import type {
   RoutedEdge,
   EdgeSegment,
 } from "./types";
-import { expandNodePath } from "./parallel";
+import { buildDirectedAdjacency, expandNodePath } from "./parallel";
 
 // =============================================================================
 // Types
@@ -141,51 +141,11 @@ export function segmentLength(seg: EdgeSegment): number {
 }
 
 /**
- * BFS shortest path between two nodes in the DAG.
- * Returns the full path including start and end, or null if unreachable.
- */
-export function bfsShortestPath(
-  from: string,
-  to: string,
-  adjacency: Map<string, string[]>,
-): string[] | null {
-  if (from === to) return [from];
-
-  const visited = new Set<string>([from]);
-  const parent = new Map<string, string>();
-  const queue: string[] = [from];
-
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const neighbors = adjacency.get(current);
-    if (!neighbors) continue;
-
-    for (const neighbor of neighbors) {
-      if (visited.has(neighbor)) continue;
-      visited.add(neighbor);
-      parent.set(neighbor, current);
-
-      if (neighbor === to) {
-        const path: string[] = [to];
-        let node = to;
-        while (node !== from) {
-          node = parent.get(node)!;
-          path.unshift(node);
-        }
-        return path;
-      }
-
-      queue.push(neighbor);
-    }
-  }
-
-  return null;
-}
-
-/**
  * Convert a node path to waypoints following edge segments.
- * When consecutive visited nodes have no direct edge, BFS fills in
- * intermediate nodes so the path follows the graph topology.
+ * When consecutive visited nodes have no direct edge, gap-filling fills in
+ * intermediate nodes so the path follows the graph topology. The paths
+ * consumed here come from `enumerateAllPaths` (forward-only full traversals),
+ * so an empty `visited` set is sufficient.
  */
 export function pathToWaypoints(
   nodeIds: string[],
@@ -204,20 +164,10 @@ export function pathToWaypoints(
     edgeMap.set(`${edge.fromId}->${edge.toId}`, edge);
   }
 
-  // Build bidirectional adjacency list for BFS gap-filling
-  // (bidirectional so expandNodePath can handle backtracking paths)
-  const adjacency = new Map<string, string[]>();
-  for (const edge of layout.edges) {
-    const fwd = adjacency.get(edge.fromId);
-    if (fwd) fwd.push(edge.toId);
-    else adjacency.set(edge.fromId, [edge.toId]);
-    const rev = adjacency.get(edge.toId);
-    if (rev) rev.push(edge.fromId);
-    else adjacency.set(edge.toId, [edge.fromId]);
-  }
+  const adj = buildDirectedAdjacency(layout.edges);
 
-  // Expand path: fill gaps between non-adjacent nodes with BFS
-  const expanded = expandNodePath(nodeIds, edgeMap, adjacency);
+  // Expand path: fill gaps between non-adjacent nodes with gap-filling BFS.
+  const expanded = expandNodePath(nodeIds, edgeMap, adj, new Set());
 
   const waypoints: AnimationWaypoint[] = [];
   let cumDist = 0;

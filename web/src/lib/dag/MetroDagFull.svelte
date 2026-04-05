@@ -5,8 +5,15 @@
 	import LivePlayerDots from './LivePlayerDots.svelte';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
-	import { bfsShortestPath } from './animation';
-	import { expandNodePath, buildPlayerWaypoints, computeSlot, canonicalEdgeKey } from './parallel';
+	import {
+		buildDirectedAdjacency,
+		expandNodePath,
+		gameplayValidBridge,
+		buildPlayerWaypoints,
+		computeSlot,
+		canonicalEdgeKey
+	} from './parallel';
+	import type { DirectedAdjacency } from './parallel';
 	import {
 		NODE_RADIUS,
 		NODE_COLORS,
@@ -90,21 +97,23 @@
 		return map;
 	});
 
-	// Build bidirectional adjacency list for BFS gap-filling.
-	// Players can backtrack through fog gates, so BFS needs reverse edges.
-	let adjacency: Map<string, string[]> = $derived.by(() => {
-		const adj = new Map<string, string[]>();
-		for (const edge of layout.edges) {
-			// Forward
-			const fwd = adj.get(edge.fromId);
-			if (fwd) fwd.push(edge.toId);
-			else adj.set(edge.fromId, [edge.toId]);
-			// Reverse (backtracking)
-			const rev = adj.get(edge.toId);
-			if (rev) rev.push(edge.fromId);
-			else adj.set(edge.toId, [edge.fromId]);
+	// Forward + reverse adjacency for gameplay-valid gap-filling.
+	// Forward edges are always walkable; reverse edges are only walkable
+	// between already-visited nodes (enforced by gameplayValidBridge).
+	let adjacency: DirectedAdjacency = $derived(buildDirectedAdjacency(layout.edges));
+
+	// Per-participant visited set (node_ids seen in zone_history + current_zone).
+	let visitedByParticipant: Map<string, Set<string>> = $derived.by(() => {
+		const map = new Map<string, Set<string>>();
+		for (const p of participants) {
+			const set = new Set<string>();
+			if (p.zone_history) {
+				for (const entry of p.zone_history) set.add(entry.node_id);
+			}
+			if (p.current_zone) set.add(p.current_zone);
+			map.set(p.id, set);
 		}
-		return adj;
+		return map;
 	});
 
 	// Compute player path polylines with parallel offset on shared edges
@@ -138,7 +147,8 @@
 			}
 
 			if (deduped.length === 0) continue;
-			expandedMap.set(p.id, expandNodePath(deduped, edgeMap, adjacency, dedupedTypes));
+			const visited = visitedByParticipant.get(p.id) ?? new Set<string>();
+			expandedMap.set(p.id, expandNodePath(deduped, edgeMap, adjacency, visited, dedupedTypes));
 		}
 
 		// Step 2: Build edge usage map (which participants traverse each edge)
@@ -412,6 +422,7 @@
 		for (const p of participants) {
 			if (!p.zone_history || p.zone_history.length < 2) continue;
 			const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length];
+			const visited = visitedByParticipant.get(p.id) ?? new Set<string>();
 
 			// Take last TRAIL_LENGTH+1 zone entries, dedup consecutive same-node
 			const recent = p.zone_history.slice(-TRAIL_LENGTH - 1);
@@ -436,12 +447,12 @@
 				const toType = deduped[t + 1].type;
 				const isFog = toType === undefined || toType === 'fog';
 
-				// Expand transition: direct edge, BFS bridge, or teleport (skip)
+				// Expand transition: direct edge, gameplay-valid bridge, or teleport (skip)
 				let expanded: string[];
 				if (edgeMap.has(`${from}->${to}`) || edgeMap.has(`${to}->${from}`)) {
 					expanded = [from, to];
 				} else if (isFog) {
-					const bridge = bfsShortestPath(from, to, adjacency);
+					const bridge = gameplayValidBridge(from, to, adjacency, visited);
 					if (!bridge) continue;
 					expanded = bridge;
 				} else {

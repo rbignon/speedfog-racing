@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { expandNodePath, buildPlayerWaypoints, computeSlot } from "../parallel";
+import {
+  buildDirectedAdjacency,
+  buildPlayerWaypoints,
+  computeSlot,
+  expandNodePath,
+  gameplayValidBridge,
+} from "../parallel";
+import type { DirectedAdjacency } from "../parallel";
 import type { PositionedNode, RoutedEdge, DagLayout } from "../types";
 
 // =============================================================================
@@ -34,7 +41,7 @@ function buildMaps(
 ): {
   nodeMap: Map<string, PositionedNode>;
   edgeMap: Map<string, RoutedEdge>;
-  adjacency: Map<string, string[]>;
+  adjacency: DirectedAdjacency;
 } {
   const nodeMap = new Map<string, PositionedNode>();
   for (const n of nodes) nodeMap.set(n.id, n);
@@ -42,14 +49,19 @@ function buildMaps(
   const edgeMap = new Map<string, RoutedEdge>();
   for (const e of edges) edgeMap.set(`${e.fromId}->${e.toId}`, e);
 
-  const adjacency = new Map<string, string[]>();
-  for (const e of edges) {
-    const list = adjacency.get(e.fromId);
-    if (list) list.push(e.toId);
-    else adjacency.set(e.fromId, [e.toId]);
-  }
+  const adjacency = buildDirectedAdjacency(edges);
 
   return { nodeMap, edgeMap, adjacency };
+}
+
+/** All node ids from every edge - convenience for "assume everything visited". */
+function allVisited(edges: RoutedEdge[]): Set<string> {
+  const s = new Set<string>();
+  for (const e of edges) {
+    s.add(e.fromId);
+    s.add(e.toId);
+  }
+  return s;
 }
 
 // =============================================================================
@@ -90,10 +102,12 @@ describe("expandNodePath", () => {
     const edges = [makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }])];
     const { edgeMap, adjacency } = buildMaps(nodes, edges);
 
-    expect(expandNodePath(["a", "b"], edgeMap, adjacency)).toEqual(["a", "b"]);
+    expect(
+      expandNodePath(["a", "b"], edgeMap, adjacency, allVisited(edges)),
+    ).toEqual(["a", "b"]);
   });
 
-  it("fills gap through intermediate nodes", () => {
+  it("fills gap through intermediate nodes (forward chain)", () => {
     const nodes = [
       makeNode("a", 0, 0),
       makeNode("b", 100, 0),
@@ -105,8 +119,10 @@ describe("expandNodePath", () => {
     ];
     const { edgeMap, adjacency } = buildMaps(nodes, edges);
 
-    // Skip b: a -> c should expand to a -> b -> c
-    expect(expandNodePath(["a", "c"], edgeMap, adjacency)).toEqual([
+    // a → c expands to a → b → c via the forward chain. Intermediate `b` can
+    // be non-visited (inferred fog gate).
+    const visited = new Set(["a", "c"]);
+    expect(expandNodePath(["a", "c"], edgeMap, adjacency, visited)).toEqual([
       "a",
       "b",
       "c",
@@ -115,13 +131,15 @@ describe("expandNodePath", () => {
 
   it("returns empty for empty input", () => {
     const { edgeMap, adjacency } = buildMaps([], []);
-    expect(expandNodePath([], edgeMap, adjacency)).toEqual([]);
+    expect(expandNodePath([], edgeMap, adjacency, new Set())).toEqual([]);
   });
 
   it("handles single node", () => {
     const nodes = [makeNode("a", 0, 0)];
     const { edgeMap, adjacency } = buildMaps(nodes, []);
-    expect(expandNodePath(["a"], edgeMap, adjacency)).toEqual(["a"]);
+    expect(expandNodePath(["a"], edgeMap, adjacency, new Set(["a"]))).toEqual([
+      "a",
+    ]);
   });
 
   it("keeps target node when unreachable", () => {
@@ -129,7 +147,9 @@ describe("expandNodePath", () => {
     const { edgeMap, adjacency } = buildMaps(nodes, []);
 
     // No edges: a -> z is unreachable, but we keep z
-    expect(expandNodePath(["a", "z"], edgeMap, adjacency)).toEqual(["a", "z"]);
+    expect(
+      expandNodePath(["a", "z"], edgeMap, adjacency, new Set(["a", "z"])),
+    ).toEqual(["a", "z"]);
   });
 
   it("recognizes reverse (backtrack) edge as direct connection", () => {
@@ -138,12 +158,14 @@ describe("expandNodePath", () => {
     const edges = [makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }])];
     const { edgeMap, adjacency } = buildMaps(nodes, edges);
 
-    expect(expandNodePath(["b", "a"], edgeMap, adjacency)).toEqual(["b", "a"]);
+    expect(
+      expandNodePath(["b", "a"], edgeMap, adjacency, new Set(["a", "b"])),
+    ).toEqual(["b", "a"]);
   });
 
   it("skips BFS for backtrack entry type (fast-travel)", () => {
-    // Graph: a→b→c→d→e, a is also connected nowhere near e
-    // Player at e fast-travels to a (backtrack), then fog-traverses to b
+    // Graph: a→b→c→d→e. Player at e fast-travels to a (backtrack),
+    // then fog-traverses to b.
     const nodes = [
       makeNode("a", 0, 0),
       makeNode("b", 100, 0),
@@ -157,35 +179,32 @@ describe("expandNodePath", () => {
       makeEdge("c", "d", [{ x1: 200, y1: 0, x2: 300, y2: 0 }]),
       makeEdge("d", "e", [{ x1: 300, y1: 0, x2: 400, y2: 0 }]),
     ];
-    const { edgeMap } = buildMaps(nodes, edges);
+    const { edgeMap, adjacency } = buildMaps(nodes, edges);
+    const visited = allVisited(edges);
 
-    // Build bidirectional adjacency
-    const biAdj = new Map<string, string[]>();
-    for (const e of edges) {
-      const fwd = biAdj.get(e.fromId);
-      if (fwd) fwd.push(e.toId);
-      else biAdj.set(e.fromId, [e.toId]);
-      const rev = biAdj.get(e.toId);
-      if (rev) rev.push(e.fromId);
-      else biAdj.set(e.toId, [e.fromId]);
-    }
+    // Without entry types: e→a fills via reverse chain through visited nodes,
+    // then a→b via direct forward edge.
+    const defaultTypes = expandNodePath(
+      ["e", "a", "b"],
+      edgeMap,
+      adjacency,
+      visited,
+    );
+    expect(defaultTypes).toEqual(["e", "d", "c", "b", "a", "b"]);
 
-    // Without entry types (backward compat): BFS fills e→d→c→b→a then a→b
-    const withBfs = expandNodePath(["e", "a", "b"], edgeMap, biAdj);
-    expect(withBfs).toEqual(["e", "d", "c", "b", "a", "b"]);
-
-    // With entry types: "a" is a backtrack (fast-travel), "b" is fog traversal
-    // e→a should NOT BFS (backtrack), a→b should use direct edge (fog)
-    const withTypes = expandNodePath(["e", "a", "b"], edgeMap, biAdj, [
-      undefined,
-      "backtrack",
-      "fog",
-    ]);
+    // With entry types: "a" is a backtrack (fast-travel, teleport gap),
+    // "b" is fog traversal with direct edge.
+    const withTypes = expandNodePath(
+      ["e", "a", "b"],
+      edgeMap,
+      adjacency,
+      visited,
+      [undefined, "backtrack", "fog"],
+    );
     expect(withTypes).toEqual(["e", "a", "b"]);
   });
 
-  it("still BFS-fills gaps between fog entries", () => {
-    // Tracking missed node b: player fog-traversed a→c but b was skipped
+  it("treats undefined entry types as fog", () => {
     const nodes = [
       makeNode("a", 0, 0),
       makeNode("b", 100, 0),
@@ -197,33 +216,18 @@ describe("expandNodePath", () => {
     ];
     const { edgeMap, adjacency } = buildMaps(nodes, edges);
 
-    const result = expandNodePath(["a", "c"], edgeMap, adjacency, [
-      "spawn",
-      "fog",
-    ]);
+    // No entryTypes param: gap filled by forward chain through unvisited b.
+    const result = expandNodePath(
+      ["a", "c"],
+      edgeMap,
+      adjacency,
+      new Set(["a", "c"]),
+    );
     expect(result).toEqual(["a", "b", "c"]);
   });
 
-  it("treats undefined entry types as fog for backward compatibility", () => {
-    const nodes = [
-      makeNode("a", 0, 0),
-      makeNode("b", 100, 0),
-      makeNode("c", 200, 0),
-    ];
-    const edges = [
-      makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }]),
-      makeEdge("b", "c", [{ x1: 100, y1: 0, x2: 200, y2: 0 }]),
-    ];
-    const { edgeMap, adjacency } = buildMaps(nodes, edges);
-
-    // No entryTypes param at all, same as today (BFS fills gaps)
-    const result = expandNodePath(["a", "c"], edgeMap, adjacency);
-    expect(result).toEqual(["a", "b", "c"]);
-  });
-
-  it("fills backtracking path with bidirectional adjacency", () => {
+  it("fills a full backtracking path when all nodes visited", () => {
     // Graph: a→b→c, a→d. Player goes a→b→c then backtracks to a→d
-    // With bidirectional adjacency, BFS from c to d finds c→b→a→d
     const nodes = [
       makeNode("a", 0, 0),
       makeNode("b", 100, 0),
@@ -235,22 +239,212 @@ describe("expandNodePath", () => {
       makeEdge("b", "c", [{ x1: 100, y1: 0, x2: 200, y2: 0 }]),
       makeEdge("a", "d", [{ x1: 0, y1: 0, x2: 100, y2: 50 }]),
     ];
-    const { edgeMap } = buildMaps(nodes, edges);
+    const { edgeMap, adjacency } = buildMaps(nodes, edges);
 
-    // Build bidirectional adjacency (like MetroDagFull does)
-    const biAdj = new Map<string, string[]>();
-    for (const e of edges) {
-      const fwd = biAdj.get(e.fromId);
-      if (fwd) fwd.push(e.toId);
-      else biAdj.set(e.fromId, [e.toId]);
-      const rev = biAdj.get(e.toId);
-      if (rev) rev.push(e.fromId);
-      else biAdj.set(e.toId, [e.fromId]);
-    }
-
-    // Zone history: a, b, c, d. Player explored c then backtracked to d
-    const result = expandNodePath(["a", "b", "c", "d"], edgeMap, biAdj);
+    // Zone history: a, b, c, d. c→d bridges via reverse through visited
+    // nodes (c→b→a→d).
+    const result = expandNodePath(
+      ["a", "b", "c", "d"],
+      edgeMap,
+      adjacency,
+      allVisited(edges),
+    );
     expect(result).toEqual(["a", "b", "c", "b", "a", "d"]);
+  });
+
+  it("gameplay-valid bridge mixes reverse-through-visited + forward", () => {
+    // Layered DAG:
+    //   a (L0) → b (L1) → c (L2)
+    //   a (L0) → d (L1) → e (L2)
+    // Zone history: a, b, e. Player went a→b, then somehow reached e.
+    // Reverse b→a allowed (both visited); forward a→d→e allowed (d/e can
+    // be non-visited since they're discovered via forward edges).
+    const nodes = [
+      makeNode("a", 0, 0, 0),
+      makeNode("b", 100, 0, 1),
+      makeNode("c", 200, 0, 2),
+      makeNode("d", 100, 50, 1),
+      makeNode("e", 200, 50, 2),
+    ];
+    const edges = [
+      makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }]),
+      makeEdge("b", "c", [{ x1: 100, y1: 0, x2: 200, y2: 0 }]),
+      makeEdge("a", "d", [{ x1: 0, y1: 0, x2: 100, y2: 50 }]),
+      makeEdge("d", "e", [{ x1: 100, y1: 50, x2: 200, y2: 50 }]),
+    ];
+    const { edgeMap, adjacency } = buildMaps(nodes, edges);
+
+    // Only a, b, e visited. d is not visited but can be inferred via
+    // forward edges (missed fog gate).
+    const visited = new Set(["a", "b", "e"]);
+    const result = expandNodePath(
+      ["a", "b", "e"],
+      edgeMap,
+      adjacency,
+      visited,
+      ["spawn", "fog", "fog"],
+    );
+    expect(result).toEqual(["a", "b", "a", "d", "e"]);
+  });
+
+  it("does not walk reverse through non-visited nodes", () => {
+    // Layered DAG: a (L0) → b (L1) → c (L2), a (L0) → d (L1) → c (L2).
+    // Zone history: a, c. b and d both unvisited.
+    // There is no valid forward-only chain a→c (a→b→c or a→d→c would
+    // require traversing through a layer-1 node, which is fine — they
+    // are forward transitions). Both paths are equally short; BFS picks
+    // whichever it finds first, but both are gameplay-valid because the
+    // intermediate is reached via forward edges.
+    const nodes = [
+      makeNode("a", 0, 0, 0),
+      makeNode("b", 100, 0, 1),
+      makeNode("c", 200, 0, 2),
+      makeNode("d", 100, 50, 1),
+    ];
+    const edges = [
+      makeEdge("a", "b", [{ x1: 0, y1: 0, x2: 100, y2: 0 }]),
+      makeEdge("b", "c", [{ x1: 100, y1: 0, x2: 200, y2: 0 }]),
+      makeEdge("a", "d", [{ x1: 0, y1: 0, x2: 100, y2: 50 }]),
+      makeEdge("d", "c", [{ x1: 100, y1: 50, x2: 200, y2: 0 }]),
+    ];
+    const { edgeMap, adjacency } = buildMaps(nodes, edges);
+
+    const visited = new Set(["a", "c"]);
+    const result = expandNodePath(["a", "c"], edgeMap, adjacency, visited, [
+      "spawn",
+      "fog",
+    ]);
+    // Either a→b→c or a→d→c is gameplay-valid. BFS deterministic on
+    // edge insertion order ⇒ a→b→c (b enqueued first).
+    expect(result).toEqual(["a", "b", "c"]);
+  });
+});
+
+// =============================================================================
+// gameplayValidBridge
+// =============================================================================
+
+describe("gameplayValidBridge", () => {
+  function adjFromEdges(
+    edges: { fromId: string; toId: string }[],
+  ): DirectedAdjacency {
+    return buildDirectedAdjacency(edges);
+  }
+
+  it("returns [from] when from === to", () => {
+    const adj = adjFromEdges([]);
+    expect(gameplayValidBridge("a", "a", adj, new Set(["a"]))).toEqual(["a"]);
+  });
+
+  it("walks a forward edge to a non-visited node", () => {
+    const adj = adjFromEdges([{ fromId: "a", toId: "b" }]);
+    expect(gameplayValidBridge("a", "b", adj, new Set(["a"]))).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("walks a forward chain through non-visited intermediates", () => {
+    const adj = adjFromEdges([
+      { fromId: "a", toId: "b" },
+      { fromId: "b", toId: "c" },
+    ]);
+    // b is not visited, but allowed because we reach it by a forward edge.
+    expect(gameplayValidBridge("a", "c", adj, new Set(["a", "c"]))).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  it("walks a reverse edge between two visited nodes", () => {
+    const adj = adjFromEdges([{ fromId: "a", toId: "b" }]);
+    expect(gameplayValidBridge("b", "a", adj, new Set(["a", "b"]))).toEqual([
+      "b",
+      "a",
+    ]);
+  });
+
+  it("blocks reverse edge when neighbor is not visited", () => {
+    // a → b, a → c. from=c (visited), to=b (NOT visited).
+    // Reverse c→a would require a visited (ok), then a→b forward allowed.
+    // So path c→a→b (length 2) should exist.
+    const adj = adjFromEdges([
+      { fromId: "a", toId: "b" },
+      { fromId: "a", toId: "c" },
+    ]);
+    expect(gameplayValidBridge("c", "b", adj, new Set(["a", "c"]))).toEqual([
+      "c",
+      "a",
+      "b",
+    ]);
+  });
+
+  it("blocks reverse edge when *from* is not visited (hypothetical)", () => {
+    // a → b. from=b not visited. Can't reverse b→a.
+    // But forward from b to ... nothing.
+    const adj = adjFromEdges([{ fromId: "a", toId: "b" }]);
+    expect(gameplayValidBridge("b", "a", adj, new Set(["a"]))).toBeNull();
+  });
+
+  it("mixes reverse-through-visited + forward chain (Roger's scenario)", () => {
+    // Mimics Roger's scenario:
+    //   - Visited: chapel, cemetery, royal, death_knight, fissure.
+    //   - Dragon Temple Lift (lift) is NOT visited.
+    //   - The only forward path reaching fissure goes through lift.
+    //   - death_knight has NO forward-only path to fissure (its only
+    //     downstream chain reaches godskinduo via belurat).
+    //
+    // Expected bridge: death_knight → (reverse) cemetery → (forward)
+    // royal → (forward) lift → (forward) fissure. lift is non-visited
+    // but walked via forward edges (inferred missed fog gate).
+    const adj = adjFromEdges([
+      // L0 → L1
+      { fromId: "chapel", toId: "cemetery" },
+      { fromId: "chapel", toId: "redmane" },
+      // L1 → L2
+      { fromId: "cemetery", toId: "royal" },
+      { fromId: "cemetery", toId: "death_knight" },
+      { fromId: "redmane", toId: "leyndell" },
+      // L2 → L3
+      { fromId: "royal", toId: "lift" },
+      { fromId: "death_knight", toId: "belurat" },
+      { fromId: "leyndell", toId: "belurat" },
+      // L3 → L4
+      { fromId: "lift", toId: "fissure" },
+      { fromId: "belurat", toId: "godskinduo" },
+    ]);
+    const visited = new Set([
+      "chapel",
+      "cemetery",
+      "royal",
+      "death_knight",
+      "fissure",
+    ]);
+
+    const bridge = gameplayValidBridge("death_knight", "fissure", adj, visited);
+
+    expect(bridge).toEqual([
+      "death_knight",
+      "cemetery",
+      "royal",
+      "lift",
+      "fissure",
+    ]);
+    // leyndell (Ashen Leyndell analogue) must NOT appear: reverse edges
+    // into it are blocked because it's not visited.
+    expect(bridge).not.toContain("leyndell");
+  });
+
+  it("returns null when no gameplay-valid bridge exists", () => {
+    // a → b (visited), c → d (isolated). from=b, to=d, nothing connects.
+    const adj = adjFromEdges([
+      { fromId: "a", toId: "b" },
+      { fromId: "c", toId: "d" },
+    ]);
+    expect(
+      gameplayValidBridge("b", "d", adj, new Set(["a", "b", "d"])),
+    ).toBeNull();
   });
 });
 

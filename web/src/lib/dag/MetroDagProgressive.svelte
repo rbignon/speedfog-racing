@@ -6,7 +6,8 @@
 	import type { NodePopupData } from './popupData';
 	import { parseDagGraph } from './types';
 	import { computeLayout } from './layout';
-	import { expandNodePath, buildPlayerWaypoints } from './parallel';
+	import { buildDirectedAdjacency, expandNodePath, buildPlayerWaypoints } from './parallel';
+	import type { DirectedAdjacency } from './parallel';
 	import {
 		computeNodeVisibility,
 		filterVisibleNodes,
@@ -90,19 +91,8 @@
 		return map;
 	});
 
-	// Bidirectional adjacency for BFS gap-filling (backtracking through fog gates)
-	let adjacency: Map<string, string[]> = $derived.by(() => {
-		const adj = new Map<string, string[]>();
-		for (const edge of layout.edges) {
-			const fwd = adj.get(edge.fromId);
-			if (fwd) fwd.push(edge.toId);
-			else adj.set(edge.fromId, [edge.toId]);
-			const rev = adj.get(edge.toId);
-			if (rev) rev.push(edge.fromId);
-			else adj.set(edge.toId, [edge.fromId]);
-		}
-		return adj;
-	});
+	// Forward + reverse adjacency for gameplay-valid gap-filling.
+	let adjacency: DirectedAdjacency = $derived(buildDirectedAdjacency(layout.edges));
 
 	// Progression polyline: my participant's path through discovered nodes
 	let playerPath = $derived.by(() => {
@@ -122,7 +112,7 @@
 		}
 		if (deduped.length < 2) return null;
 
-		const expanded = expandNodePath(deduped, edgeMap, adjacency, dedupedTypes);
+		const expanded = expandNodePath(deduped, edgeMap, adjacency, discoveredIds, dedupedTypes);
 		// Single player: slot is always 0, count always 1
 		const waypointSegments = buildPlayerWaypoints(
 			expanded,

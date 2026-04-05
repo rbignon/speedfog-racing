@@ -6,7 +6,6 @@ import { computeLayout } from "../layout";
 import {
   enumerateAllPaths,
   pickRacerPaths,
-  bfsShortestPath,
   pathToWaypoints,
   buildRacerPath,
   computeEdgeDrawTimings,
@@ -136,52 +135,6 @@ describe("pickRacerPaths", () => {
     // At least some paths should differ
     const unique = new Set(selected.map((p) => p.join(",")));
     expect(unique.size).toBeGreaterThan(1);
-  });
-});
-
-// =============================================================================
-// bfsShortestPath
-// =============================================================================
-
-describe("bfsShortestPath", () => {
-  it("returns single-element path when from === to", () => {
-    const adj = new Map([["a", ["b"]]]);
-    expect(bfsShortestPath("a", "a", adj)).toEqual(["a"]);
-  });
-
-  it("finds direct neighbor", () => {
-    const adj = new Map([["a", ["b"]]]);
-    expect(bfsShortestPath("a", "b", adj)).toEqual(["a", "b"]);
-  });
-
-  it("finds shortest path through intermediates", () => {
-    // a → b → c → d
-    const adj = new Map([
-      ["a", ["b"]],
-      ["b", ["c"]],
-      ["c", ["d"]],
-    ]);
-    expect(bfsShortestPath("a", "d", adj)).toEqual(["a", "b", "c", "d"]);
-  });
-
-  it("picks shortest when multiple paths exist", () => {
-    // a → b → d (length 2)
-    // a → b → c → d (length 3)
-    const adj = new Map([
-      ["a", ["b"]],
-      ["b", ["c", "d"]],
-      ["c", ["d"]],
-    ]);
-    expect(bfsShortestPath("a", "d", adj)).toEqual(["a", "b", "d"]);
-  });
-
-  it("returns null when unreachable", () => {
-    const adj = new Map([["a", ["b"]]]);
-    expect(bfsShortestPath("a", "z", adj)).toBeNull();
-  });
-
-  it("returns null with empty adjacency", () => {
-    expect(bfsShortestPath("a", "b", new Map())).toBeNull();
   });
 });
 
