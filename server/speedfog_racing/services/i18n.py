@@ -244,22 +244,18 @@ def _apply_postprocess(text: str, data: TranslationData) -> str:
 # Text translation (overrides → patterns → fallback)
 # ---------------------------------------------------------------------------
 
-# Cache compiled regexes keyed by English pattern template.
-# Bounded by the number of patterns in the TOML files (currently ~30).
-_pattern_regex_cache: dict[str, re.Pattern[str]] = {}
-
 # Placeholder names used in the TOML pattern templates.
 _PLACEHOLDER_NAMES = {"boss", "zone", "zone1", "zone2", "location", "direction", "name"}
 
 
+@lru_cache(maxsize=256)
 def _build_pattern_regex(en_template: str) -> re.Pattern[str]:
     """Convert a pattern template like ``"{boss} front"`` into a regex.
 
     Named capture groups match the entity names to extract.
+    Cache bound: the TOML files define ~30 patterns, 256 leaves generous
+    headroom for future templates.
     """
-    if en_template in _pattern_regex_cache:
-        return _pattern_regex_cache[en_template]
-
     # Escape regex-special characters except our placeholders.
     # We temporarily replace placeholders, escape, then put groups back.
     placeholder_map: dict[str, str] = {}
@@ -284,9 +280,7 @@ def _build_pattern_regex(en_template: str) -> re.Pattern[str]:
     # (e.g. "after Godskin Duo arena" instead of "after Godskin Duo's arena").
     escaped = escaped.replace("'s", "(?:'s|')?")
 
-    regex = re.compile(f"^{escaped}$", re.IGNORECASE)
-    _pattern_regex_cache[en_template] = regex
-    return regex
+    return re.compile(f"^{escaped}$", re.IGNORECASE)
 
 
 def _translate_text(
