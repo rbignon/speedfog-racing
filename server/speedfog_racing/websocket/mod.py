@@ -174,6 +174,25 @@ async def _load_participant_light(
     return result.scalar_one_or_none()
 
 
+async def _load_participant_no_seed(
+    db: AsyncSession, participant_id: uuid.UUID
+) -> Participant | None:
+    """Load participant with User + Race (without seed/casters).
+
+    Callers that already hold a cached graph_json do not need race.seed.
+    This saves one selectinload chain compared to _load_participant_light.
+    """
+    result = await db.execute(
+        select(Participant)
+        .options(
+            selectinload(Participant.user),
+            selectinload(Participant.race),
+        )
+        .where(Participant.id == participant_id)
+    )
+    return result.scalar_one_or_none()
+
+
 def aggregate_death_counts(participants: list[Participant]) -> dict[str, int]:
     """Aggregate deaths per node_id across all participants' zone_history."""
     counts: dict[str, int] = {}
@@ -314,7 +333,13 @@ async def handle_mod_websocket(
                 elif msg_type == "ready":
                     await handle_ready(session_maker, participant_id)
                 elif msg_type == "status_update":
-                    await handle_status_update(websocket, session_maker, participant_id, msg)
+                    await handle_status_update(
+                        websocket,
+                        session_maker,
+                        participant_id,
+                        msg,
+                        cached_graph_json=connect_graph_json,
+                    )
                 elif msg_type == "event_flag":
                     await handle_event_flag(
                         websocket, session_maker, participant_id, msg, mod_locale
@@ -451,19 +476,26 @@ async def handle_status_update(
     session_maker: async_sessionmaker[AsyncSession],
     participant_id: uuid.UUID,
     msg: dict[str, Any],
+    *,
+    cached_graph_json: dict[str, Any] | None = None,
 ) -> None:
     """Handle periodic status update from mod.
 
-    Uses a light DB load (no other participants/casters) for the common
-    path. Only reloads with full relationships when a leaderboard
-    broadcast or death aggregation is needed.
+    Uses a minimal DB load (participant + user only) for the common path
+    when ``cached_graph_json`` is supplied (saves the race.seed eager
+    load on every tick). Falls back to the light load when no cache.
+    Only reloads with full relationships when a leaderboard broadcast or
+    death aggregation is needed.
     """
     delta = 0
     became_playing = False
     history_changed = False
 
     async with session_maker() as db:
-        participant = await _load_participant_light(db, participant_id)
+        if cached_graph_json is not None:
+            participant = await _load_participant_no_seed(db, participant_id)
+        else:
+            participant = await _load_participant_light(db, participant_id)
         if not participant:
             return
 
@@ -509,7 +541,7 @@ async def handle_status_update(
         if race.status == RaceStatus.RUNNING and participant.status == ParticipantStatus.READY:
             participant.status = ParticipantStatus.PLAYING
             became_playing = True
-            graph_json = _get_graph_json(participant)
+            graph_json = cached_graph_json or _get_graph_json(participant)
             if graph_json:
                 start_node = get_start_node(graph_json)
                 if start_node:
@@ -541,10 +573,13 @@ async def handle_status_update(
 
         await db.commit()
 
-    # Common path: only a player_update (no full participant list needed)
+    # Common path: only a player_update (no full participant list needed).
+    # Use the cached graph_json so the common path never touches race.seed.
+    # cached_graph_json was captured at connect time and is immutable during
+    # the session (None when no seed is assigned, stable too).
     if not became_playing and delta <= 0:
         await manager.broadcast_player_update(
-            participant.race_id, participant, graph_json=_get_graph_json(participant)
+            participant.race_id, participant, graph_json=cached_graph_json
         )
         return
 
