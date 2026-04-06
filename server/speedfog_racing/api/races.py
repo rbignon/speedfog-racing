@@ -1426,7 +1426,8 @@ async def finish_race(
     await update_elo_ratings(race_id, db)
     # Trait recomputation rescans each finisher's full race history, so
     # run it in the background to keep the request responsive.
-    asyncio.create_task(recompute_traits_for_race_async(race_id))
+    task = asyncio.create_task(recompute_traits_for_race_async(race_id))
+    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     # Push full race_state (status + zone_history) before status change
     # so spectators get everything atomically in one message.

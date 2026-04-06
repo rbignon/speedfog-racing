@@ -141,6 +141,14 @@ class Race(Base):
     """A race event with participants."""
 
     __tablename__ = "races"
+    __table_args__ = (
+        # Organizer dashboard (races listed by organizer).
+        Index("ix_races_organizer", "organizer_id"),
+        # Running-race lookups (WS handlers, inactivity monitor).
+        Index("ix_races_status", "status"),
+        # Date-range filters in analytics and stats endpoints.
+        Index("ix_races_started_at", "started_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -168,15 +176,6 @@ class Race(Base):
     max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
     discord_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    __table_args__ = (
-        # Organizer dashboard (races listed by organizer).
-        Index("ix_races_organizer", "organizer_id"),
-        # Running-race lookups (WS handlers, inactivity monitor).
-        Index("ix_races_status", "status"),
-        # Date-range filters in analytics and stats endpoints.
-        Index("ix_races_started_at", "started_at"),
-    )
 
     # Relationships
     organizer: Mapped["User"] = relationship(back_populates="organized_races")

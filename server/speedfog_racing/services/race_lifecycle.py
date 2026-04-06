@@ -56,6 +56,7 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     await update_elo_ratings(race.id, db)
     # Trait recomputation rescans each finisher's full race history, so
     # run it in the background to keep the request/tick responsive.
-    asyncio.create_task(recompute_traits_for_race_async(race.id))
+    task = asyncio.create_task(recompute_traits_for_race_async(race.id))
+    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     return True

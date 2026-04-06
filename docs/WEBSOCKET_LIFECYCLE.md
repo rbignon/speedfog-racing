@@ -249,7 +249,7 @@ The `ConnectionManager` (`websocket/manager.py`) is a **single-process, in-memor
 
 1. Introduce Redis pub/sub. Connections stay local to each worker; broadcasts are published to a Redis channel keyed by `race_id`, and each worker subscribes and forwards to its local sockets.
 2. Move rate limit state to a Redis-backed token bucket.
-3. Keep the existing `ConnectionManager` API surface — the Redis layer sits between `broadcast_*` methods and the socket sends.
+3. Keep the existing `ConnectionManager` API surface: the Redis layer sits between `broadcast_*` methods and the socket sends.
 
 Not worth doing before the platform actually needs it: single-worker uvicorn can handle thousands of WebSocket connections, and we are nowhere near that.
 
