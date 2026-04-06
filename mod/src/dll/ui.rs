@@ -219,21 +219,21 @@ impl RaceTracker {
                         buf_right.push_str("GO!");
                         green
                     } else {
-                        self.write_igt(&mut buf_right);
+                        self.write_igt(buf_right);
                         blue
                     }
                 } else {
                     // Reconnect: no race_start received, skip GO! phase
-                    self.write_igt(&mut buf_right);
+                    self.write_igt(buf_right);
                     blue
                 }
             }
             "finished" => {
-                self.write_igt(&mut buf_right);
+                self.write_igt(buf_right);
                 green
             }
             _ => {
-                self.write_igt(&mut buf_right);
+                self.write_igt(buf_right);
                 blue
             }
         };
@@ -563,14 +563,14 @@ impl RaceTracker {
         let mut max_right_width: f32 = 0.0;
         for (i, p) in participants.iter().enumerate() {
             buf_right.clear();
-            write_right_text(&mut buf_right, p, total_layers, is_setup);
+            write_right_text(buf_right, p, total_layers, is_setup);
             let rw = ui.calc_text_size(&buf_right)[0];
             if rw > max_right_width {
                 max_right_width = rw;
             }
             if let Some(gap_ms) = gaps[i] {
                 buf_gap.clear();
-                crate::core::format_gap_into(&mut buf_gap, gap_ms);
+                crate::core::format_gap_into(buf_gap, gap_ms);
                 let gw = ui.calc_text_size(&buf_gap)[0];
                 if gw > max_gap_width {
                     max_gap_width = gw;
