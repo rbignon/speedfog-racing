@@ -1,11 +1,9 @@
 """Extract zone timing statistics from production race data.
 
 Compares observed cluster traversal times with current zone_metadata.toml
-weights and suggests updates to defaults and zone-specific overrides.
-
-For multi-zone clusters, applies the inverse of the logarithmic aggregation
-formula to back-calculate estimated per-zone weights:
-    avg_zone_weight = cluster_time / (1 + 0.5 * ln(n_zones))
+weights and suggests updates. For single-zone clusters, suggests zone-level
+overrides. For multi-zone clusters, suggests cluster-level weight overrides
+(bypassing the logarithmic aggregation formula entirely).
 
 Usage:
     cd server && uv run python ../tools/extract_zone_times.py
@@ -39,14 +37,6 @@ ZONE_METADATA_PATH = (
     / "data"
     / "zone_metadata.toml"
 )
-
-
-def _log_factor(n_zones: int) -> float:
-    """Logarithmic aggregation factor from generate_clusters.py.
-
-    cluster_weight = avg_zone_weight * (1 + 0.5 * ln(n_zones))
-    """
-    return 1 + 0.5 * math.log(n_zones) if n_zones > 1 else 1.0
 
 
 def _round_half(value: float) -> float:
@@ -142,7 +132,7 @@ def load_zone_metadata(path: Path) -> dict:
     """Load current zone_metadata.toml."""
     if not path.exists():
         print(f"WARNING: {path} not found, using empty metadata", file=sys.stderr)
-        return {"defaults": {}, "zones": {}}
+        return {"defaults": {}, "zones": {}, "clusters": {}}
     with open(path, "rb") as f:
         return tomllib.load(f)
 
@@ -171,51 +161,66 @@ def _compute_outcome(
     return "abandoned"
 
 
-def compute_zone_durations(
+def compute_cluster_durations(
     participants: list[ParticipantData],
     node_mapping: dict[str, dict],
 ) -> dict[str, list[float]]:
-    """Compute estimated per-zone durations in minutes, excluding backtracks.
+    """Compute cluster traversal durations in minutes.
 
-    Only includes zones with outcome "cleared" (player progressed past them).
-    Backtracks, abandoned zones, and zones still being played are excluded.
+    For each participant, accumulates total time spent in each node across
+    all visits (including re-traversals after deaths or backtracks), then
+    produces one duration per participant per node. Only nodes where the
+    player eventually progressed past (last visit outcome is "cleared")
+    are included.
 
-    For multi-zone clusters, applies the inverse log formula to estimate
-    the average per-zone weight:
-        zone_weight = cluster_time / (1 + 0.5 * ln(n_zones))
+    This aggregation correctly accounts for deaths and roundtable detours:
+    time before death + time on re-traversal = total effort to clear the
+    cluster. Since there is one value per participant per cluster, the
+    median across participants smooths out occasional double-traversals.
 
-    For the last zone of a finished participant, uses participant.igt_ms
-    as the end time (since there's no next zone_history entry).
+    Durations are raw cluster traversal times (not decomposed per zone).
 
-    Returns: {primary_zone: [estimated_zone_duration_minutes, ...]}
+    Returns: {node_id: [cluster_duration_minutes, ...]}
     """
-    zone_durations: dict[str, list[float]] = defaultdict(list)
+    cluster_durations: dict[str, list[float]] = defaultdict(list)
     skipped_backed = 0
     skipped_other = 0
 
     for p in participants:
         history = p.zone_history
+
+        # First pass: accumulate time per node across all visits.
+        # Each entry's duration (until the next entry) is attributed to
+        # the node the player was in at the time.
+        node_total_ms: dict[str, float] = defaultdict(float)
+        node_last_index: dict[str, int] = {}
+
         for i in range(len(history)):
             entry = history[i]
             node_id = entry["node_id"]
             is_last = i >= len(history) - 1
 
-            # Determine end time
             if is_last:
                 end_ms = p.igt_ms
             else:
                 end_ms = history[i + 1]["igt_ms"]
 
             duration_ms = end_ms - entry["igt_ms"]
-            if duration_ms <= 0:
-                continue
+            if duration_ms > 0:
+                node_total_ms[node_id] += duration_ms
 
-            # Determine outcome using layer comparison
+            node_last_index[node_id] = i
+
+        # Second pass: check outcome of each node's last visit.
+        for node_id, total_ms in node_total_ms.items():
+            last_i = node_last_index[node_id]
+            is_last = last_i >= len(history) - 1
+
             cur_info = node_mapping.get(node_id)
             cur_layer = cur_info["layer"] if cur_info else 0
 
             if not is_last:
-                next_node_id = history[i + 1]["node_id"]
+                next_node_id = history[last_i + 1]["node_id"]
                 next_info = node_mapping.get(next_node_id)
                 next_layer: int | None = next_info["layer"] if next_info else 0
             else:
@@ -230,24 +235,14 @@ def compute_zone_durations(
                 skipped_other += 1
                 continue
 
-            # Only "cleared" zones reach here
-            cluster_time_min = duration_ms / 1000.0 / 60.0
-
-            if cur_info and cur_info["zones"]:
-                primary_zone = cur_info["zones"][0]
-                n_zones = len(cur_info["zones"])
-                zone_time_min = cluster_time_min / _log_factor(n_zones)
-                zone_durations[primary_zone].append(zone_time_min)
-            else:
-                zone_name = node_id.rsplit("_", 1)[0] if len(node_id) > 5 else node_id
-                zone_durations[zone_name].append(cluster_time_min)
+            cluster_durations[node_id].append(total_ms / 1000.0 / 60.0)
 
     print(
         f"  Filtered: {skipped_backed} backed, {skipped_other} playing/abandoned",
         file=sys.stderr,
     )
 
-    return zone_durations
+    return cluster_durations
 
 
 def compute_zone_stats(durations: list[float]) -> dict:
@@ -265,34 +260,28 @@ def compute_zone_stats(durations: list[float]) -> dict:
     }
 
 
-def build_zone_type_map(node_mapping: dict[str, dict]) -> dict[str, str]:
-    """Build primary_zone -> cluster_type mapping."""
-    zone_types: dict[str, str] = {}
-    for node_info in node_mapping.values():
-        zones = node_info["zones"]
-        if zones:
-            primary = zones[0]
-            if primary not in zone_types:
-                zone_types[primary] = node_info["type"]
-    return zone_types
+def build_cluster_info(node_mapping: dict[str, dict]) -> dict[str, dict]:
+    """Build node_id -> cluster info from node mapping.
 
-
-def build_zone_cluster_size(node_mapping: dict[str, dict]) -> dict[str, int]:
-    """Build primary_zone -> cluster_size (number of zones in the cluster)."""
-    sizes: dict[str, int] = {}
-    for node_info in node_mapping.values():
-        zones = node_info["zones"]
-        if zones:
-            primary = zones[0]
-            if primary not in sizes:
-                sizes[primary] = len(zones)
-    return sizes
+    Returns: {node_id: {type, zones, n_zones, primary_zone, graph_weight, display_name}}
+    """
+    info: dict[str, dict] = {}
+    for node_id, node_data in node_mapping.items():
+        zones = node_data.get("zones", [])
+        info[node_id] = {
+            "type": node_data["type"],
+            "zones": zones,
+            "n_zones": len(zones),
+            "primary_zone": zones[0] if zones else node_id,
+            "graph_weight": node_data.get("weight"),
+            "display_name": node_data.get("display_name", ""),
+        }
+    return info
 
 
 def compute_type_defaults(
-    zone_durations: dict[str, list[float]],
-    zone_types: dict[str, str],
-    cluster_sizes: dict[str, int],
+    cluster_durations: dict[str, list[float]],
+    cluster_info: dict[str, dict],
 ) -> dict[str, dict]:
     """Compute new default weights per zone type from observed data.
 
@@ -303,49 +292,64 @@ def compute_type_defaults(
     """
     type_durations: dict[str, list[float]] = defaultdict(list)
 
-    for zone_name, durations in zone_durations.items():
-        zone_type = zone_types.get(zone_name)
-        if not zone_type:
+    for node_id, durations in cluster_durations.items():
+        info = cluster_info.get(node_id)
+        if not info or info["n_zones"] != 1:
             continue
-        if cluster_sizes.get(zone_name, 1) == 1:
-            type_durations[zone_type].extend(durations)
+        type_durations[info["type"]].extend(durations)
 
     result = {}
     for type_name, all_durations in type_durations.items():
         if not all_durations:
             continue
-        # Median of per-zone medians (avoids high-sample zones dominating)
-        zone_medians = []
-        for zone_name, durations in zone_durations.items():
-            if (
-                zone_types.get(zone_name) == type_name
-                and cluster_sizes.get(zone_name, 1) == 1
-            ):
-                zone_medians.append(statistics.median(durations))
+        # Median of per-cluster medians (avoids high-sample clusters dominating)
+        cluster_medians = []
+        for node_id, durations in cluster_durations.items():
+            info = cluster_info.get(node_id)
+            if info and info["type"] == type_name and info["n_zones"] == 1:
+                cluster_medians.append(statistics.median(durations))
 
-        med = _floor_half(statistics.median(zone_medians))
+        med = _floor_half(statistics.median(cluster_medians))
         if med < 0.5:
             med = 0.5
 
         result[type_name] = {
             "median": med,
-            "avg": round(statistics.mean(zone_medians), 1),
-            "n_zones": len(zone_medians),
+            "avg": round(statistics.mean(cluster_medians), 1),
+            "n_zones": len(cluster_medians),
             "n_samples": len(all_durations),
         }
 
     return result
 
 
-def get_current_weight(zone_name: str, zone_type: str, metadata: dict) -> int | float:
-    """Get the current weight from zone_metadata.toml."""
-    zones_meta = metadata.get("zones", {})
-    if zone_name in zones_meta:
-        zm = zones_meta[zone_name]
-        if isinstance(zm, dict) and "weight" in zm:
-            return zm["weight"]
-    defaults = metadata.get("defaults", {})
-    return defaults.get(zone_type, 2)
+def get_current_weight(
+    node_id: str,
+    info: dict,
+    metadata: dict,
+) -> int | float:
+    """Get the current effective weight for a cluster.
+
+    Single-zone: zone override from [zones.*] or type default.
+    Multi-zone: cluster override from [clusters.*] or graph_json weight.
+    """
+    if info["n_zones"] == 1:
+        zone_name = info["primary_zone"]
+        zones_meta = metadata.get("zones", {})
+        if zone_name in zones_meta:
+            zm = zones_meta[zone_name]
+            if isinstance(zm, dict) and "weight" in zm:
+                return zm["weight"]
+        defaults = metadata.get("defaults", {})
+        return defaults.get(info["type"], 2)
+
+    # Multi-zone: cluster override takes precedence over graph_json weight
+    clusters_meta = metadata.get("clusters", {})
+    if node_id in clusters_meta:
+        cm = clusters_meta[node_id]
+        if isinstance(cm, dict) and "weight" in cm:
+            return cm["weight"]
+    return info["graph_weight"] or 2
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +372,7 @@ def format_defaults_comparison(
     lines = []
     lines.append("=" * 80)
     lines.append(
-        "TYPE DEFAULTS (median of per-zone medians, single-zone clusters only)"
+        "TYPE DEFAULTS (median of per-cluster medians, single-zone clusters only)"
     )
     lines.append("=" * 80)
     lines.append(
@@ -404,71 +408,84 @@ def format_defaults_comparison(
     return lines
 
 
-def format_zone_overrides(
-    zone_durations: dict[str, list[float]],
-    zone_types: dict[str, str],
-    cluster_sizes: dict[str, int],
+def format_overrides(
+    cluster_durations: dict[str, list[float]],
+    cluster_info: dict[str, dict],
     new_defaults: dict[str, dict],
     current_metadata: dict,
     deviation_pct: float,
     min_samples: int,
 ) -> list[str]:
-    """Format suggested zone overrides where observed median deviates from current weight.
+    """Format suggested overrides where observed median deviates from current weight.
 
-    Compares the proposed weight (derived from observed data) against the zone's
-    current effective weight (explicit override or current type default from
-    zone_metadata.toml). This makes the tool iterative: adjust the TOML, re-run,
-    and zones that are now calibrated disappear from the list.
+    For single-zone clusters, suggests [zones.*] overrides.
+    For multi-zone clusters, suggests [clusters.*] weight overrides.
     """
     lines = []
     lines.append("")
     lines.append("=" * 80)
     lines.append(
-        f"ZONE OVERRIDES (deviation > {deviation_pct:.0f}% from current weight, "
+        f"OVERRIDES (deviation > {deviation_pct:.0f}% from current weight, "
         f"N >= {min_samples})"
     )
     lines.append("=" * 80)
 
     current_defaults = current_metadata.get("defaults", {})
     zones_meta = current_metadata.get("zones", {})
+    clusters_meta = current_metadata.get("clusters", {})
     suggestions: list[dict] = []
 
-    for zone_name, durations in zone_durations.items():
+    for node_id, durations in cluster_durations.items():
         n = len(durations)
         if n < min_samples:
             continue
 
-        zone_type = zone_types.get(zone_name, "other")
+        info = cluster_info.get(node_id)
+        if not info:
+            continue
+
+        cluster_type = info["type"]
+        n_zones = info["n_zones"]
+        primary_zone = info["primary_zone"]
         median = statistics.median(durations)
-        n_zones = cluster_sizes.get(zone_name, 1)
         proposed = _round_half(median)
         if proposed < 0.5:
             proposed = 0.5
 
-        # Current effective weight: explicit override or current type default
-        current_override = None
-        if zone_name in zones_meta:
-            zm = zones_meta[zone_name]
-            if isinstance(zm, dict) and "weight" in zm:
-                current_override = zm["weight"]
-
-        cur_type_default = current_defaults.get(zone_type, 2)
-        effective_weight = (
-            current_override if current_override is not None else cur_type_default
-        )
+        effective_weight = get_current_weight(node_id, info, current_metadata)
 
         if effective_weight == 0:
             continue
 
+        # For multi-zone clusters, round proposed to int (cluster weights are ints)
+        if n_zones > 1:
+            proposed = round(proposed)
+            if proposed < 1:
+                proposed = 1
+
         deviation = abs(proposed - effective_weight) / effective_weight * 100
 
-        # Also check what the proposed type default would be (for context)
-        proposed_type_default = new_defaults.get(zone_type, {}).get("median")
+        # Current override source
+        current_override = None
+        if n_zones == 1:
+            zone_name = primary_zone
+            if zone_name in zones_meta:
+                zm = zones_meta[zone_name]
+                if isinstance(zm, dict) and "weight" in zm:
+                    current_override = zm["weight"]
+        else:
+            if node_id in clusters_meta:
+                cm = clusters_meta[node_id]
+                if isinstance(cm, dict) and "weight" in cm:
+                    current_override = cm["weight"]
+
+        cur_type_default = current_defaults.get(cluster_type, 2)
 
         suggestions.append(
             {
-                "zone": zone_name,
-                "type": zone_type,
+                "node_id": node_id,
+                "primary_zone": primary_zone,
+                "type": cluster_type,
                 "n": n,
                 "n_zones": n_zones,
                 "median": median,
@@ -477,14 +494,13 @@ def format_zone_overrides(
                 "deviation": deviation,
                 "current_override": current_override,
                 "cur_type_default": cur_type_default,
-                "proposed_type_default": proposed_type_default,
             }
         )
 
-    suggestions.sort(key=lambda s: (-s["deviation"], s["zone"]))
+    suggestions.sort(key=lambda s: (-s["deviation"], s["primary_zone"]))
 
     lines.append(
-        f"  {'Zone':<36} {'Type':<14} {'N':>3} {'Clu':>3} {'Med':>6} "
+        f"  {'Cluster':<36} {'Type':<14} {'N':>3} {'Clu':>3} {'Med':>6} "
         f"{'CurWt':>5} {'Prop':>5} {'Dev%':>5}  Action"
     )
     lines.append("  " + "-" * 96)
@@ -498,21 +514,36 @@ def format_zone_overrides(
             continue
 
         # Determine action
-        if s["current_override"] is not None:
-            if s["proposed"] == s["cur_type_default"]:
-                action = "REMOVE override (matches type default)"
+        if s["n_zones"] == 1:
+            # Single-zone: suggest [zones.*] override
+            if s["current_override"] is not None:
+                if s["proposed"] == s["cur_type_default"]:
+                    action = "REMOVE override (matches type default)"
+                else:
+                    action = (
+                        f"UPDATE [zones] {_fmt_wt(s['current_override'])} "
+                        f"-> {_fmt_wt(s['proposed'])}"
+                    )
             else:
                 action = (
-                    f"UPDATE {_fmt_wt(s['current_override'])} "
-                    f"-> {_fmt_wt(s['proposed'])}"
+                    f"ADD [zones.{s['primary_zone']}] weight = {_fmt_wt(s['proposed'])}"
                 )
         else:
-            action = f"ADD weight = {_fmt_wt(s['proposed'])}"
+            # Multi-zone: suggest [clusters.*] override
+            if s["current_override"] is not None:
+                action = (
+                    f"UPDATE [clusters] {_fmt_wt(s['current_override'])} "
+                    f"-> {_fmt_wt(s['proposed'])}"
+                )
+            else:
+                action = (
+                    f"ADD [clusters.{s['node_id']}] weight = {_fmt_wt(s['proposed'])}"
+                )
         n_changes += 1
 
         clu_str = f"x{s['n_zones']}" if s["n_zones"] > 1 else ""
         lines.append(
-            f"  {s['zone']:<36} {s['type']:<14} {s['n']:>3} {clu_str:>3} "
+            f"  {s['primary_zone']:<36} {s['type']:<14} {s['n']:>3} {clu_str:>3} "
             f"{s['median']:>5.1f}m {_fmt_wt(s['effective_weight']):>5} "
             f"{_fmt_wt(s['proposed']):>5} {s['deviation']:>4.0f}%  {action}"
         )
@@ -523,46 +554,48 @@ def format_zone_overrides(
 
 
 def format_full_report(
-    zone_durations: dict[str, list[float]],
-    zone_types: dict[str, str],
-    cluster_sizes: dict[str, int],
+    cluster_durations: dict[str, list[float]],
+    cluster_info: dict[str, dict],
     current_metadata: dict,
 ) -> list[str]:
-    """Format a full report of all zone timing data."""
+    """Format a full report of all cluster timing data."""
     lines = []
     lines.append("")
     lines.append("=" * 80)
-    lines.append("FULL ZONE TIMING DATA (durations adjusted for cluster size)")
+    lines.append("FULL CLUSTER TIMING DATA")
     lines.append("=" * 80)
     lines.append(
-        f"  {'Zone':<36} {'Type':<14} {'Clu':>3} {'N':>4} {'Avg':>6} "
+        f"  {'Cluster':<36} {'Type':<14} {'Clu':>3} {'N':>4} {'Avg':>6} "
         f"{'Med':>6} {'Min':>6} {'Max':>6} {'Std':>6} {'CurWt':>6}"
     )
     lines.append("  " + "-" * 104)
 
     rows = []
-    for zone_name, durations in zone_durations.items():
+    for node_id, durations in cluster_durations.items():
+        info = cluster_info.get(node_id)
+        if not info:
+            continue
         stats = compute_zone_stats(durations)
-        zone_type = zone_types.get(zone_name, "?")
-        current_wt = get_current_weight(zone_name, zone_type, current_metadata)
-        n_zones = cluster_sizes.get(zone_name, 1)
-        rows.append((zone_name, zone_type, n_zones, stats, current_wt))
+        current_wt = get_current_weight(node_id, info, current_metadata)
+        rows.append(
+            (info["primary_zone"], info["type"], info["n_zones"], stats, current_wt)
+        )
 
     rows.sort(key=lambda r: (-r[3]["n"], r[0]))
 
-    for zone_name, zone_type, n_zones, stats, current_wt in rows:
+    for primary_zone, cluster_type, n_zones, stats, current_wt in rows:
         n = stats["n"]
         if n == 0:
             continue
         clu_str = f"x{n_zones}" if n_zones > 1 else ""
         lines.append(
-            f"  {zone_name:<36} {zone_type:<14} {clu_str:>3} {n:>4} "
+            f"  {primary_zone:<36} {cluster_type:<14} {clu_str:>3} {n:>4} "
             f"{stats['avg']:>5.1f}m {stats['median']:>5.1f}m "
             f"{stats['min']:>5.1f}m {stats['max']:>5.1f}m "
             f"{stats['std']:>5.1f}m {_fmt_wt(current_wt):>6}"
         )
 
-    lines.append(f"\n  Total zones: {len(rows)}")
+    lines.append(f"\n  Total clusters: {len(rows)}")
     lines.append(f"  Total samples: {sum(r[3]['n'] for r in rows)}")
 
     return lines
@@ -619,12 +652,11 @@ async def main():
             file=sys.stderr,
         )
 
-        zone_durations = compute_zone_durations(participants, node_mapping)
-        zone_types = build_zone_type_map(node_mapping)
-        cluster_sizes = build_zone_cluster_size(node_mapping)
+        cluster_durations = compute_cluster_durations(participants, node_mapping)
+        cluster_info = build_cluster_info(node_mapping)
         current_metadata = load_zone_metadata(args.metadata)
 
-        new_defaults = compute_type_defaults(zone_durations, zone_types, cluster_sizes)
+        new_defaults = compute_type_defaults(cluster_durations, cluster_info)
 
         output: list[str] = []
 
@@ -632,16 +664,13 @@ async def main():
 
         if args.report_only:
             output.extend(
-                format_full_report(
-                    zone_durations, zone_types, cluster_sizes, current_metadata
-                )
+                format_full_report(cluster_durations, cluster_info, current_metadata)
             )
         else:
             output.extend(
-                format_zone_overrides(
-                    zone_durations,
-                    zone_types,
-                    cluster_sizes,
+                format_overrides(
+                    cluster_durations,
+                    cluster_info,
                     new_defaults,
                     current_metadata,
                     args.deviation,
@@ -649,9 +678,7 @@ async def main():
                 )
             )
             output.extend(
-                format_full_report(
-                    zone_durations, zone_types, cluster_sizes, current_metadata
-                )
+                format_full_report(cluster_durations, cluster_info, current_metadata)
             )
 
         print("\n".join(output))
