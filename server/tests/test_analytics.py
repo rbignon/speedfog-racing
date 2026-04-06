@@ -149,10 +149,11 @@ async def analytics_data(async_session):
     - 2 training sessions: 1 finished, 1 abandoned (created this week)
     """
     now = datetime.now(tz=UTC)
-    this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     async with async_session() as db:
-        # Users
+        # Users — created_at must be in the current ISO week so that the
+        # weekly test assertions hold regardless of which day of the month
+        # or week the test runs on.
         user1 = User(
             twitch_id="tz_user1",
             twitch_username="tzuser1",
@@ -160,7 +161,7 @@ async def analytics_data(async_session):
             api_token=generate_token(),
             role=UserRole.USER,
             timezone="Europe/Paris",
-            created_at=this_month_start + timedelta(hours=1),
+            created_at=now - timedelta(hours=6),
             last_seen=now - timedelta(days=5),
         )
         user2 = User(
@@ -170,7 +171,7 @@ async def analytics_data(async_session):
             api_token=generate_token(),
             role=UserRole.USER,
             timezone="America/New_York",
-            created_at=this_month_start + timedelta(hours=2),
+            created_at=now - timedelta(hours=5),
             last_seen=now - timedelta(days=10),
         )
         user3 = User(
@@ -180,7 +181,7 @@ async def analytics_data(async_session):
             api_token=generate_token(),
             role=UserRole.USER,
             timezone="Asia/Tokyo",
-            created_at=this_month_start + timedelta(hours=3),
+            created_at=now - timedelta(hours=4),
             last_seen=now - timedelta(days=35),
         )
         db.add_all([user1, user2, user3])
