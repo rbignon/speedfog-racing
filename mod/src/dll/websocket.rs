@@ -68,7 +68,7 @@ pub enum IncomingMessage {
     RaceStart(u32),
     LeaderboardUpdate {
         participants: Vec<ParticipantInfo>,
-        leader_splits: Option<HashMap<String, i32>>,
+        leader_splits: Option<HashMap<i32, i32>>,
     },
     RaceStatusChange(String),
     PlayerUpdate(ParticipantInfo),
@@ -577,7 +577,7 @@ fn message_loop(
                         } => {
                             let _ = incoming_tx.send(IncomingMessage::LeaderboardUpdate {
                                 participants,
-                                leader_splits,
+                                leader_splits: leader_splits.map(crate::core::parse_splits),
                             });
                         }
                         ServerMessage::RaceStatusChange { status } => {

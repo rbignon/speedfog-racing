@@ -49,11 +49,32 @@ pub struct RaceState {
     pub race: Option<RaceInfo>,
     pub seed: Option<SeedInfo>,
     pub participants: Vec<ParticipantInfo>,
-    pub leader_splits: Option<HashMap<String, i32>>,
+    pub leader_splits: Option<HashMap<i32, i32>>,
     pub race_started_at: Option<Instant>,
     pub countdown_end: Option<Instant>,
     pub current_zone: Option<ZoneUpdateData>,
     pub death_counts: HashMap<String, u32>,
+}
+
+/// Pre-allocated buffers reused across frames to avoid per-frame heap allocations.
+pub(crate) struct RenderBuffers {
+    pub buf_right: String,
+    pub buf_left: String,
+    pub buf_gap: String,
+    pub buf_footer: String,
+    pub gaps: Vec<Option<i32>>,
+}
+
+impl Default for RenderBuffers {
+    fn default() -> Self {
+        Self {
+            buf_right: String::with_capacity(16),
+            buf_left: String::with_capacity(48),
+            buf_gap: String::with_capacity(16),
+            buf_footer: String::with_capacity(16),
+            gaps: Vec::with_capacity(16),
+        }
+    }
 }
 
 /// Result of reading a single flag for debug display
@@ -188,6 +209,9 @@ pub struct RaceTracker {
     // finished. The mod's local participant igt_ms is stale (only updated via
     // leaderboard_update on events), so we freeze the live game IGT instead.
     pub(crate) frozen_igt_ms: Option<u32>,
+
+    // Pre-allocated render buffers (reused across frames)
+    pub(crate) render_bufs: RenderBuffers,
 }
 
 impl RaceTracker {
@@ -284,6 +308,7 @@ impl RaceTracker {
             last_auth_error: None,
             permanent_error: None,
             frozen_igt_ms: None,
+            render_bufs: RenderBuffers::default(),
         })
     }
 

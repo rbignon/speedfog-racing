@@ -1,6 +1,7 @@
 //! Race UI - ImGui overlay for SpeedFog Racing
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::time::Duration;
 
@@ -11,11 +12,9 @@ use hudhook::{ImguiRenderLoop, RenderContext};
 use tracing::{error, info};
 
 use super::death_icon::DeathIcon;
-
-use crate::eldenring::FlagReaderStatus;
-
-use super::tracker::{FlagReadResult, RaceTracker};
+use super::tracker::{FlagReadResult, RaceTracker, RenderBuffers};
 use super::websocket::ConnectionStatus;
+use crate::eldenring::FlagReaderStatus;
 
 impl ImguiRenderLoop for RaceTracker {
     fn initialize<'a>(
@@ -82,6 +81,10 @@ impl ImguiRenderLoop for RaceTracker {
             return;
         }
 
+        // Take pre-allocated buffers out of self so sub-methods can borrow
+        // self immutably while mutating the buffers.
+        let mut bufs = std::mem::take(&mut self.render_bufs);
+
         let c = &self.cached_colors;
 
         // Push style colors (auto-popped when tokens drop)
@@ -108,11 +111,11 @@ impl ImguiRenderLoop for RaceTracker {
             .flags(flags)
             .build(|| {
                 self.render_seed_mismatch_warning(ui);
-                self.render_player_status(ui, max_width);
+                self.render_player_status(ui, max_width, &mut bufs);
                 self.render_exits(ui, max_width);
                 if !self.config.server.training && self.show_leaderboard {
                     ui.separator();
-                    self.render_leaderboard(ui, max_width);
+                    self.render_leaderboard(ui, max_width, &mut bufs);
                 }
                 self.render_status_message(ui);
                 if self.show_debug {
@@ -120,6 +123,9 @@ impl ImguiRenderLoop for RaceTracker {
                     self.render_debug(ui);
                 }
             });
+
+        // Put buffers back (preserves capacity for next frame)
+        self.render_bufs = bufs;
     }
 }
 
@@ -158,10 +164,16 @@ impl RaceTracker {
     ///         Right side shows: WAITING (setup), countdown/GO! (start), IGT (running)
     /// Line 2: `  ZoneName                    X/Y` (X yellow→green on finish, /Y white)
     /// Line 3: `  tier X, normally Y   [☠]N`          (tier yellow, deaths white)
-    fn render_player_status(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
-        // Reusable buffers for text formatting (cleared between each line)
-        let mut buf_right = String::with_capacity(16);
-        let mut buf_left = String::with_capacity(48);
+    fn render_player_status(
+        &self,
+        ui: &hudhook::imgui::Ui,
+        max_width: f32,
+        bufs: &mut RenderBuffers,
+    ) {
+        let buf_right = &mut bufs.buf_right;
+        let buf_left = &mut bufs.buf_left;
+        buf_right.clear();
+        buf_left.clear();
 
         let blue = [0.4, 0.6, 1.0, 1.0];
         let yellow = [1.0, 1.0, 0.0, 1.0];
@@ -460,18 +472,22 @@ impl RaceTracker {
     /// real-time game memory IGT; other players use the server's latest snapshot.
     /// Always shows the local player: if ranked beyond top 10, anchors them
     /// at the bottom with a `···` separator and their real rank.
-    fn render_leaderboard(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
+    fn render_leaderboard(
+        &self,
+        ui: &hudhook::imgui::Ui,
+        max_width: f32,
+        bufs: &mut RenderBuffers,
+    ) {
         let participants = self.participants();
         if participants.is_empty() {
             ui.text_disabled("No participants");
             return;
         }
 
-        // Reusable buffers for text formatting (cleared between each row)
-        let mut buf_right = String::with_capacity(16);
-        let mut buf_gap = String::with_capacity(16);
-        let mut buf_left = String::with_capacity(32);
-        let mut buf_footer = String::with_capacity(16);
+        let buf_right = &mut bufs.buf_right;
+        let buf_gap = &mut bufs.buf_gap;
+        let buf_left = &mut bufs.buf_left;
+        let buf_footer = &mut bufs.buf_footer;
 
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let is_setup = self
@@ -480,7 +496,8 @@ impl RaceTracker {
         let spacing = ui.calc_text_size(" ")[0];
 
         // Get leader_splits and leader IGT for gap computation
-        let empty_splits = std::collections::HashMap::new();
+        // Empty HashMap doesn't allocate until first insert, so this is free.
+        let empty_splits = HashMap::new();
         let leader_splits = self
             .race_state
             .leader_splits
@@ -507,22 +524,20 @@ impl RaceTracker {
             || participants.first().is_some_and(|p| p.status == "finished");
         let leader_finished = participants.first().is_some_and(|p| p.status == "finished");
 
-        // Pre-compute gaps for all participants
+        // Pre-compute gaps for all participants (reuse pre-allocated Vec)
         let race_finished = self
             .race_info()
             .is_some_and(|r| r.status.as_str() == "finished");
 
-        let gaps: Vec<Option<i32>> = participants
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                if !has_leader {
-                    return None;
-                }
+        let gaps = &mut bufs.gaps;
+        gaps.clear();
+        for (i, p) in participants.iter().enumerate() {
+            let gap = if !has_leader {
+                None
+            } else if p.status == "finished" || race_finished {
                 // Finished players or race ended: use server-computed gap (frozen)
-                if p.status == "finished" || race_finished {
-                    return p.gap_ms;
-                }
+                p.gap_ms
+            } else {
                 // Use real-time game IGT for self, server snapshot for others
                 let igt = if my_id.is_some_and(|id| id == &p.id) {
                     local_igt.unwrap_or(p.igt_ms)
@@ -539,8 +554,9 @@ impl RaceTracker {
                     leader_igt_ms,
                     leader_finished,
                 )
-            })
-            .collect();
+            };
+            gaps.push(gap);
+        }
 
         // Pre-compute column widths using reusable buffers
         let mut max_gap_width: f32 = 0.0;
@@ -643,8 +659,9 @@ impl RaceTracker {
             top_count
         };
         if participants.len() > displayed {
+            buf_footer.clear();
             write!(buf_footer, "  + {} more", participants.len() - displayed).ok();
-            ui.text_disabled(&buf_footer);
+            ui.text_disabled(buf_footer);
         }
     }
 
