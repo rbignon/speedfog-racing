@@ -77,6 +77,7 @@ class MockParticipant:
         finished_at: datetime | None = None,
         color_index: int = 0,
         zone_history: list[dict] | None = None,
+        layer_entry_igts: dict[str, int] | None = None,
     ):
         self.id = id or uuid.uuid4()
         self.race_id = race_id or uuid.uuid4()
@@ -91,6 +92,7 @@ class MockParticipant:
         self.finished_at = finished_at
         self.color_index = color_index
         self.zone_history = zone_history
+        self.layer_entry_igts = layer_entry_igts or {}
 
 
 class MockRace:
@@ -662,6 +664,37 @@ class TestLeaderboard:
         # Player A should be first (entered layer 2 at 100000 < 110000)
         assert sorted_list[0].igt_ms == 120000  # p1
         assert sorted_list[1].igt_ms == 115000  # p2
+
+    def test_sort_uses_cached_layer_entry_igts(self):
+        """sort_leaderboard prefers layer_entry_igts over zone_history scan."""
+        graph = {
+            "nodes": {
+                "start": {"layer": 0, "tier": 1},
+                "zone_a": {"layer": 1, "tier": 2},
+                "zone_b": {"layer": 2, "tier": 3},
+            }
+        }
+        # Both participants are on layer 2; the cache disagrees with the
+        # zone_history to prove the cache is the source of truth.
+        p1 = MockParticipant(
+            status=ParticipantStatus.PLAYING,
+            current_layer=2,
+            igt_ms=120000,
+            zone_history=[{"node_id": "zone_b", "igt_ms": 999999}],
+            layer_entry_igts={"2": 50000},
+        )
+        p2 = MockParticipant(
+            status=ParticipantStatus.PLAYING,
+            current_layer=2,
+            igt_ms=115000,
+            zone_history=[{"node_id": "zone_b", "igt_ms": 999999}],
+            layer_entry_igts={"2": 60000},
+        )
+
+        _sorted, entry_igts = sort_leaderboard([p1, p2], graph_json=graph)
+
+        assert entry_igts[p1.id] == 50000
+        assert entry_igts[p2.id] == 60000
 
     def test_sort_abandoned_by_layer_then_igt(self):
         """Abandoned (DNF) players sorted by layer (highest first), then IGT."""

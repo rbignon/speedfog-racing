@@ -96,6 +96,20 @@ def _get_graph_json(participant: Participant) -> dict[str, Any] | None:
     return seed.graph_json if seed else None
 
 
+def _set_layer(participant: Participant, new_layer: int, entry_igt: int) -> None:
+    """Set current_layer and record its entry IGT (first-write-wins).
+
+    A fresh dict is assigned so SQLAlchemy picks up the change on JSON
+    columns (in-place mutation is not auto-tracked).
+    """
+    participant.current_layer = new_layer
+    entries = dict(participant.layer_entry_igts or {})
+    key = str(new_layer)
+    if key not in entries:
+        entries[key] = entry_igt
+        participant.layer_entry_igts = entries
+
+
 def _participant_load_options() -> list[Any]:
     """Eager-load options for loading a participant with all broadcast data."""
     return [
@@ -500,7 +514,7 @@ async def handle_status_update(
                 start_node = get_start_node(graph_json)
                 if start_node:
                     participant.current_zone = start_node
-                    participant.current_layer = 0
+                    _set_layer(participant, 0, 0)
                     history = participant.zone_history or []
                     history.append({"node_id": start_node, "igt_ms": 0, "type": "spawn"})
                     participant.zone_history = history
@@ -629,7 +643,7 @@ async def handle_event_flag(
         if flag_id == finish_event:
             participant.last_igt_change_at = datetime.now(UTC)
             participant.igt_ms = igt
-            participant.current_layer = seed.total_layers
+            _set_layer(participant, seed.total_layers, igt)
             await db.commit()
             is_finish = True
             # Exit session block before calling handle_finished to avoid
@@ -665,7 +679,7 @@ async def handle_event_flag(
 
             # current_layer is a high watermark (used for ranking), never regress
             if node_layer > participant.current_layer:
-                participant.current_layer = node_layer
+                _set_layer(participant, node_layer, igt)
 
             await db.commit()
 
@@ -796,7 +810,7 @@ async def handle_zone_query(
             # current_layer is a high watermark, never regress
             node_layer = get_layer_for_node(node_id, graph_json)
             if node_layer > participant.current_layer:
-                participant.current_layer = node_layer
+                _set_layer(participant, node_layer, igt)
 
         participant.current_zone = node_id
         await db.commit()
@@ -866,7 +880,7 @@ async def handle_finished(
         # Bump current_layer to total_layers so progress displays N/N
         seed = participant.race.seed
         if seed:
-            participant.current_layer = seed.total_layers
+            _set_layer(participant, seed.total_layers, participant.igt_ms)
 
         await db.commit()
         logger.info(f"Participant finished: {participant.id}, igt={participant.igt_ms}ms")

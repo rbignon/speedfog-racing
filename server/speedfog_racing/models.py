@@ -231,6 +231,12 @@ class Participant(Base):
     )
     color_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     zone_history: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # IGT at first entry into each layer, keyed by layer number (string).
+    # Maintained at runtime as current_layer advances; read by
+    # sort_leaderboard for gap computation.
+    layer_entry_igts: Mapped[dict[str, int]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
 
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="participants")

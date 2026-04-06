@@ -595,11 +595,19 @@ def sort_leaderboard(
         "abandoned": 4,
     }
 
-    # Pre-compute layer entry IGTs for all participants (shared with caller)
+    # Pre-compute layer entry IGTs for all participants (shared with caller).
+    # Fast path: read the per-participant cache populated at layer advance.
+    # Fallback: scan zone_history via get_layer_entry_igt for rows migrated
+    # before the cache existed (or when the cache misses for any reason).
     entry_igts: dict[uuid.UUID, int | None] = {}
     if graph_json:
         for p in participants:
-            entry_igts[p.id] = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
+            key = str(p.current_layer)
+            cached = (p.layer_entry_igts or {}).get(key)
+            if cached is not None:
+                entry_igts[p.id] = cached
+            else:
+                entry_igts[p.id] = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
 
     def sort_key(p: Participant) -> tuple[int, int, int]:
         status = p.status.value
