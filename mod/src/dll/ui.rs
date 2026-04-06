@@ -589,47 +589,15 @@ impl RaceTracker {
             10.min(participants.len())
         };
 
-        // Render top rows (buffers reused across iterations)
-        for (i, p) in participants.iter().take(top_count).enumerate() {
-            buf_right.clear();
-            write_right_text(&mut buf_right, p, total_layers, is_setup);
-
-            let gap_str = if let Some(gap_ms) = gaps[i] {
-                buf_gap.clear();
-                crate::core::format_gap_into(&mut buf_gap, gap_ms);
-                Some(buf_gap.as_str())
-            } else {
-                None
-            };
-
-            self.render_participant_row(
-                ui,
-                p,
-                i + 1,
-                max_width,
-                spacing,
-                my_index == Some(i),
-                max_gap_width,
-                max_right_width,
-                &buf_right,
-                gap_str,
-                gaps[i],
-                &mut buf_left,
-            );
-        }
-
-        // Anchor: separator + self row
-        if need_anchor {
-            if let Some(idx) = my_index {
-                ui.text_disabled("  \u{00B7}\u{00B7}\u{00B7}");
-                let p = &participants[idx];
-
+        // Helper: prepare buffers and render one participant row
+        let mut emit_row =
+            |idx: usize, rank: usize, is_self: bool, p: &crate::core::protocol::ParticipantInfo| {
                 buf_right.clear();
-                write_right_text(&mut buf_right, p, total_layers, is_setup);
+                write_right_text(buf_right, p, total_layers, is_setup);
 
                 let gap_str = if let Some(gap_ms) = gaps[idx] {
                     buf_gap.clear();
-                    crate::core::format_gap_into(&mut buf_gap, gap_ms);
+                    crate::core::format_gap_into(buf_gap, gap_ms);
                     Some(buf_gap.as_str())
                 } else {
                     None
@@ -638,17 +606,29 @@ impl RaceTracker {
                 self.render_participant_row(
                     ui,
                     p,
-                    idx + 1,
+                    rank,
                     max_width,
                     spacing,
-                    true,
+                    is_self,
                     max_gap_width,
                     max_right_width,
-                    &buf_right,
+                    buf_right,
                     gap_str,
                     gaps[idx],
-                    &mut buf_left,
+                    buf_left,
                 );
+            };
+
+        // Render top rows
+        for (i, p) in participants.iter().take(top_count).enumerate() {
+            emit_row(i, i + 1, my_index == Some(i), p);
+        }
+
+        // Anchor: separator + self row
+        if need_anchor {
+            if let Some(idx) = my_index {
+                ui.text_disabled("  \u{00B7}\u{00B7}\u{00B7}");
+                emit_row(idx, idx + 1, true, &participants[idx]);
             }
         }
 
