@@ -20,7 +20,7 @@ All notable changes to SpeedFog Racing are documented in this file.
 
 ### Website
 
-- The website URL is now <https://speedfog.racing>
+- The website URL is now [https://speedfog.racing](https://speedfog.racing)
 
 ## [1.5.5] - 2026-04-01
 
