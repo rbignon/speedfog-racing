@@ -541,7 +541,9 @@ async def handle_status_update(
         if race.status == RaceStatus.RUNNING and participant.status == ParticipantStatus.READY:
             participant.status = ParticipantStatus.PLAYING
             became_playing = True
-            graph_json = cached_graph_json or _get_graph_json(participant)
+            graph_json = (
+                cached_graph_json if cached_graph_json is not None else _get_graph_json(participant)
+            )
             if graph_json:
                 start_node = get_start_node(graph_json)
                 if start_node:

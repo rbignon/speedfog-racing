@@ -1,5 +1,6 @@
 """Stats computation: ELO ratings and behavioral traits."""
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from difflib import SequenceMatcher
@@ -720,17 +721,25 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
     await resolve_dominant_traits(db)
 
 
+# Serialize concurrent trait recomputations. resolve_dominant_traits
+# recalculates percentiles globally; two concurrent calls would each
+# read partial data and overwrite each other's results.
+_trait_lock = asyncio.Lock()
+
+
 async def recompute_traits_for_race_async(race_id: Any) -> None:
     """Recompute trait scores for a finished race in its own DB session.
 
     Intended for fire-and-forget use via ``asyncio.create_task`` from the
     request-path race-finish handlers: the full history rescan would
     otherwise block the HTTP response for seconds on large histories.
-    Errors are logged and swallowed.
+    Errors are logged and swallowed. Serialized via ``_trait_lock`` so
+    concurrent finishes do not corrupt dominant_trait percentiles.
     """
     try:
-        async with async_session_maker() as db:
-            await update_player_traits(race_id, db)
-            await resolve_dominant_traits(db)
+        async with _trait_lock:
+            async with async_session_maker() as db:
+                await update_player_traits(race_id, db)
+                await resolve_dominant_traits(db)
     except Exception:
         logger.exception("Background trait recomputation failed for race %s", race_id)
