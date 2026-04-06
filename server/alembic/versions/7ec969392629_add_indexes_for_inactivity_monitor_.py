@@ -24,19 +24,15 @@ def upgrade() -> None:
         "participants",
         ["status", "last_igt_change_at"],
     )
-    # Running-race lookups (WebSocket handlers, inactivity monitor, admin panel).
-    op.create_index("ix_races_status", "races", ["status"])
+    # ix_races_status already exists (initial_schema f14cb23163f8).
+    # ix_seeds_pool_status already exists (initial_schema f14cb23163f8).
     # Date-range filters in analytics and stats endpoints.
     op.create_index("ix_races_started_at", "races", ["started_at"])
-    # Seed selection: filters on (pool_name, status) in seed_service.
-    op.create_index("ix_seeds_pool_status", "seeds", ["pool_name", "status"])
     # User-scoped chat access (moderation, cascade on user deletion).
     op.create_index("ix_chat_messages_user", "chat_messages", ["user_id"])
 
 
 def downgrade() -> None:
     op.drop_index("ix_chat_messages_user", table_name="chat_messages")
-    op.drop_index("ix_seeds_pool_status", table_name="seeds")
     op.drop_index("ix_races_started_at", table_name="races")
-    op.drop_index("ix_races_status", table_name="races")
     op.drop_index("ix_participants_status_igt_change", table_name="participants")
