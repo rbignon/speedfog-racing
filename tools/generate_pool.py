@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Generate seed pool for SpeedFog Racing.
+"""Generate seed pools for SpeedFog Racing.
 
 Calls the speedfog tool to generate seeds, then adds the racing mod DLL
-to each seed's ModEngine configuration.
+to each seed's ModEngine configuration. Supports generating multiple pools
+in parallel via a shared thread pool.
 
 Usage:
     python generate_pool.py --pool standard --count 10 --game-dir "/path/to/ELDEN RING/Game"
+    python generate_pool.py --pool sprint --pool standard --count 5 -j 3 --game-dir "/path"
 
 Requires:
     - SPEEDFOG_PATH environment variable or --speedfog-path argument
@@ -124,9 +126,37 @@ def validate_pool_config(config: dict, pool_name: str) -> list[str]:
 
 
 class SeedResult(NamedTuple):
+    pool: str
     slug: str
     ok: bool
     duration: float  # seconds
+
+
+class PoolSetup(NamedTuple):
+    name: str
+    config_path: Path
+    output_dir: Path
+    failed_dir: Path
+
+
+def prepare_pool(pool_name: str, output_base: Path) -> PoolSetup:
+    """Resolve config, create output dir, write config.toml for one pool."""
+    output_pool_dir = output_base / pool_name
+    output_pool_dir.mkdir(parents=True, exist_ok=True)
+
+    resolved = resolve_pool_config(pool_name)
+    for err in validate_pool_config(resolved, pool_name):
+        print(f"Warning: {err}")
+    resolved_config = output_pool_dir / "config.toml"
+    with open(resolved_config, "wb") as f:
+        tomli_w.dump(resolved, f)
+
+    return PoolSetup(
+        name=pool_name,
+        config_path=resolved_config,
+        output_dir=output_pool_dir,
+        failed_dir=output_base / f"{pool_name}_failed",
+    )
 
 
 def discover_pools() -> list[str]:
@@ -148,15 +178,16 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 Examples:
     python generate_pool.py --pool standard --count 10 --game-dir "/mnt/games/ELDEN RING/Game"
-    python generate_pool.py --pool sprint --count 5 --game-dir "C:/Games/ELDEN RING/Game" \\
-        --output ./seeds
+    python generate_pool.py --pool sprint --pool standard --count 5 --game-dir "/path/to/game"
+    python generate_pool.py --pool standard --dump
         """,
     )
     parser.add_argument(
         "--pool",
         required=True,
+        action="append",
         choices=available_pools,
-        help=f"Pool name ({', '.join(available_pools)})",
+        help=f"Pool name, repeatable ({', '.join(available_pools)})",
     )
     parser.add_argument(
         "--count",
@@ -438,6 +469,7 @@ def process_seed(
 def generate_one_seed(
     index: int,
     total: int,
+    pool_name: str,
     speedfog_path: Path,
     pool_config: Path,
     game_dir: Path,
@@ -449,7 +481,7 @@ def generate_one_seed(
 ) -> SeedResult:
     """Generate and process a single seed."""
     seed_slug = uuid.uuid4().hex[:12]
-    prefix = f"[{index}/{total}]"
+    prefix = f"[{pool_name} {index}/{total}]"
     print(f"{prefix} Generating seed_{seed_slug}...")
 
     t0 = time.monotonic()
@@ -467,15 +499,15 @@ def generate_one_seed(
         )
         if seed_dir is None:
             print(f"{prefix} Failed: speedfog generation error")
-            return SeedResult(seed_slug, False, time.monotonic() - t0)
+            return SeedResult(pool_name, seed_slug, False, time.monotonic() - t0)
 
         if process_seed(seed_dir, dll_source, output_pool_dir, seed_slug):
             print(f"{prefix} Success: seed_{seed_slug}.zip")
             ok = True
-            return SeedResult(seed_slug, True, time.monotonic() - t0)
+            return SeedResult(pool_name, seed_slug, True, time.monotonic() - t0)
         else:
             print(f"{prefix} Failed: post-processing error")
-            return SeedResult(seed_slug, False, time.monotonic() - t0)
+            return SeedResult(pool_name, seed_slug, False, time.monotonic() - t0)
     finally:
         if ok:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -500,10 +532,18 @@ def main() -> int:
     """
     args = parse_args()
 
+    # Deduplicate pools preserving order
+    args.pool = list(dict.fromkeys(args.pool))
+
     # --dump: resolve and print pool config, then exit
     if args.dump:
-        resolved = resolve_pool_config(args.pool)
-        sys.stdout.buffer.write(tomli_w.dumps(resolved).encode())
+        for i, pool_name in enumerate(args.pool):
+            if len(args.pool) > 1:
+                print(f"# --- {pool_name} ---")
+            resolved = resolve_pool_config(pool_name)
+            sys.stdout.buffer.write(tomli_w.dumps(resolved).encode())
+            if i < len(args.pool) - 1:
+                print()
         return 0
 
     # Validate required args for generation mode
@@ -539,82 +579,120 @@ def main() -> int:
         print(f"Error: Game directory does not exist: {args.game_dir}")
         return 1
 
-    # Create output directory
-    output_pool_dir = args.output / args.pool
-    output_pool_dir.mkdir(parents=True, exist_ok=True)
+    # Prepare all pools (resolve configs, create output dirs)
+    pools = [prepare_pool(pool_name, args.output) for pool_name in args.pool]
 
-    # Resolve inheritance and write fully-merged config to output dir
-    resolved = resolve_pool_config(args.pool)
-    for err in validate_pool_config(resolved, args.pool):
-        print(f"Warning: {err}")
-    resolved_config = output_pool_dir / "config.toml"
-    with open(resolved_config, "wb") as f:
-        tomli_w.dump(resolved, f)
+    # Build flat list of work items across all pools
+    work_items = [
+        (pool_setup, i + 1) for pool_setup in pools for i in range(args.count)
+    ]
+    total_seeds = len(work_items)
+    jobs = min(args.jobs, total_seeds)
 
-    jobs = min(args.jobs, args.count)
-    print(f"Generating {args.count} seeds for pool '{args.pool}' ({jobs} workers)")
+    if len(pools) == 1:
+        print(
+            f"Generating {args.count} seeds for pool '{pools[0].name}' ({jobs} workers)"
+        )
+    else:
+        print(
+            f"Generating {args.count} seeds x {len(pools)} pools"
+            f" = {total_seeds} total ({jobs} workers)"
+        )
+        print(f"  Pools: {', '.join(p.name for p in pools)}")
     print(f"  Speedfog: {speedfog_path}")
-    print(f"  Config: {resolved_config}")
     print(f"  Game: {args.game_dir}")
-    print(f"  Output: {output_pool_dir}")
+    print(f"  Output: {args.output}")
     print()
 
     results: list[SeedResult] = []
-    failed_dir = args.output / f"{args.pool}_failed"
-
-    common_kwargs = dict(
-        total=args.count,
-        speedfog_path=speedfog_path,
-        pool_config=resolved_config,
-        game_dir=args.game_dir,
-        dll_source=dll_source,
-        output_pool_dir=output_pool_dir,
-        failed_dir=failed_dir,
-        verbose=args.verbose,
-    )
 
     t_start = time.monotonic()
 
     if jobs == 1:
-        for i in range(args.count):
-            results.append(generate_one_seed(index=i + 1, **common_kwargs))
+        for pool_setup, idx in work_items:
+            results.append(
+                generate_one_seed(
+                    index=idx,
+                    total=args.count,
+                    pool_name=pool_setup.name,
+                    speedfog_path=speedfog_path,
+                    pool_config=pool_setup.config_path,
+                    game_dir=args.game_dir,
+                    dll_source=dll_source,
+                    output_pool_dir=pool_setup.output_dir,
+                    failed_dir=pool_setup.failed_dir,
+                    verbose=args.verbose,
+                )
+            )
     else:
         if args.verbose:
             print("Warning: --verbose output may interleave with multiple jobs")
 
         with ThreadPoolExecutor(max_workers=jobs) as executor:
-            futures = {
-                executor.submit(generate_one_seed, index=i + 1, **common_kwargs): i
-                for i in range(args.count)
-            }
+            futures = {}
+            for pool_setup, idx in work_items:
+                fut = executor.submit(
+                    generate_one_seed,
+                    index=idx,
+                    total=args.count,
+                    pool_name=pool_setup.name,
+                    speedfog_path=speedfog_path,
+                    pool_config=pool_setup.config_path,
+                    game_dir=args.game_dir,
+                    dll_source=dll_source,
+                    output_pool_dir=pool_setup.output_dir,
+                    failed_dir=pool_setup.failed_dir,
+                    verbose=args.verbose,
+                )
+                futures[fut] = (pool_setup.name, idx)
             for future in as_completed(futures):
                 try:
                     results.append(future.result())
                 except Exception as e:
-                    idx = futures[future]
-                    print(f"Unexpected error in seed worker {idx + 1}: {e}")
-                    results.append(SeedResult(slug="error", ok=False, duration=0.0))
+                    pname, idx = futures[future]
+                    print(f"Unexpected error in seed worker [{pname} {idx}]: {e}")
+                    results.append(SeedResult(pname, "error", False, 0.0))
 
     total_time = time.monotonic() - t_start
-    succeeded = sum(1 for r in results if r.ok)
-    failed = args.count - succeeded
 
-    # Summary
-    print()
-    print(f"  {'Seed':<20} {'Status':<10} {'Time':>6}")
-    print("  " + "-" * 38)
+    # Group results by pool
+    pool_results: dict[str, list[SeedResult]] = {p.name: [] for p in pools}
     for r in results:
-        status = "OK" if r.ok else "FAILED"
-        print(f"  seed_{r.slug:<14} {status:<10} {_fmt_duration(r.duration):>6}")
-    print("  " + "-" * 38)
-    summary = f"{succeeded} succeeded, {failed} failed"
-    print(f"  {summary:<30} {_fmt_duration(total_time):>6}")
-    if failed > 0 and failed_dir.exists():
-        print(f"  Failed seeds preserved in: {failed_dir}")
+        pool_results[r.pool].append(r)
 
-    if failed > 0 and succeeded == 0:
+    all_succeeded = 0
+    all_failed = 0
+
+    print()
+    for pool_name in args.pool:
+        pr = pool_results[pool_name]
+        succeeded = sum(1 for r in pr if r.ok)
+        failed = len(pr) - succeeded
+        all_succeeded += succeeded
+        all_failed += failed
+
+        print(f"  Pool: {pool_name}")
+        print(f"  {'Seed':<20} {'Status':<10} {'Time':>6}")
+        print("  " + "-" * 38)
+        for r in pr:
+            status = "OK" if r.ok else "FAILED"
+            print(f"  seed_{r.slug:<14} {status:<10} {_fmt_duration(r.duration):>6}")
+        print(f"  {succeeded} succeeded, {failed} failed")
+        failed_dir = args.output / f"{pool_name}_failed"
+        if failed > 0 and failed_dir.exists():
+            print(f"  Failed seeds preserved in: {failed_dir}")
+        print()
+
+    if len(pools) > 1:
+        print("  " + "=" * 38)
+        print(
+            f"  Total: {all_succeeded} succeeded, {all_failed} failed"
+            f" in {_fmt_duration(total_time)}"
+        )
+
+    if all_failed > 0 and all_succeeded == 0:
         return 1  # total failure
-    if failed > 0:
+    if all_failed > 0:
         return 2  # partial failure (some seeds generated)
     return 0
 

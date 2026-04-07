@@ -44,7 +44,7 @@ Options:
   --upload-only     Skip generation, upload existing tools/output/
   --output DIR      Local output directory (default: tools/output)
   --discard         Mark old AVAILABLE/CONSUMED seeds as DISCARDED (after extract, before scan)
-  -j, --jobs N      Parallel workers per pool (default: 1, sequential)
+  -j, --jobs N      Parallel workers across all pools (default: 1, sequential)
   -v, --verbose     Pass -v to generate_pool.py
   -h, --help        Show this help
 
@@ -171,31 +171,46 @@ if [[ "$UPLOAD_ONLY" == false ]]; then
     done
 
     echo "==> Generating seeds..."
+
+    # Build --pool args for single invocation
+    POOL_ARGS=()
     for pool in "${POOLS[@]}"; do
-        echo ""
-        echo "--- Pool: $pool ($COUNT seeds) ---"
-        python3 "$TOOLS_DIR/generate_pool.py" \
-            --pool "$pool" \
-            --count "$COUNT" \
-            --game-dir "$GAME_DIR" \
-            --output "$OUTPUT_DIR" \
-            ${JOBS:+--jobs "$JOBS"} \
-            $VERBOSE \
-            && rc=0 || rc=$?
-        if [[ $rc -eq 1 ]]; then
-            echo "  ERROR: Generation failed for pool '$pool', skipping."
-            rm -rf "${OUTPUT_DIR:?}/$pool"
+        POOL_ARGS+=(--pool "$pool")
+    done
+
+    python3 "$TOOLS_DIR/generate_pool.py" \
+        "${POOL_ARGS[@]}" \
+        --count "$COUNT" \
+        --game-dir "$GAME_DIR" \
+        --output "$OUTPUT_DIR" \
+        ${JOBS:+--jobs "$JOBS"} \
+        $VERBOSE \
+        && rc=0 || rc=$?
+
+    if [[ $rc -eq 1 ]]; then
+        echo "ERROR: Total generation failure across all pools."
+        exit 1
+    elif [[ $rc -ne 0 && $rc -ne 2 ]]; then
+        echo "ERROR: Unexpected exit code $rc."
+        exit 1
+    fi
+    echo ""
+
+    # Detect per-pool success by checking for seed_*.zip files
+    # (dirs were cleaned before generation, so no zips = pool failed)
+    for pool in "${POOLS[@]}"; do
+        pool_dir="$OUTPUT_DIR/$pool"
+        if [[ ! -d "$pool_dir" ]]; then
             FAILED_POOLS+=("$pool")
-        elif [[ $rc -eq 2 ]]; then
-            echo "  WARNING: Some seeds failed for pool '$pool', uploading successful ones."
+            continue
+        fi
+        local_count=$(find "$pool_dir" -maxdepth 1 -type f -name 'seed_*.zip' | wc -l)
+        if [[ "$local_count" -eq 0 ]]; then
+            FAILED_POOLS+=("$pool")
+        elif [[ "$local_count" -lt "$COUNT" ]]; then
             PARTIAL_POOLS+=("$pool")
-        elif [[ $rc -ne 0 ]]; then
-            echo "  ERROR: Unexpected exit code $rc for pool '$pool', treating as failure."
-            rm -rf "${OUTPUT_DIR:?}/$pool"
-            FAILED_POOLS+=("$pool")
         fi
     done
-    echo ""
 
     # Remove failed pools from upload list
     if [[ ${#FAILED_POOLS[@]} -gt 0 ]]; then
