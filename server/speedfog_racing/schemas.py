@@ -253,10 +253,11 @@ class PoolConfig(BaseModel):
     sort_order: int = 99
     estimated_duration: str | None = None
     description: str | None = None
-    legacy_dungeons: int | None = None
     min_layers: int | None = None
     max_layers: int | None = None
     final_tier: int | None = None
+    starting_runes: int | None = None
+    starting_upgrades: list[str] | None = None
     starting_items: list[str] | None = None
     care_package: bool | None = None
     weapon_upgrade: int | None = None
@@ -266,7 +267,6 @@ class PoolConfig(BaseModel):
     remove_requirements: bool | None = None
     major_boss_ratio: str | None = None
     randomize_bosses: str | None = None
-    item_difficulty: str | None = None
     difficulty_curve: str | None = None
     nerf_gargoyles: bool | None = None
     nerf_malenia: bool | None = None

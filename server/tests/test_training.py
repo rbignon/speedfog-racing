@@ -249,14 +249,17 @@ def test_pool_config_starting_items_and_care_package(tmp_path, monkeypatch):
     config = get_pool_config("test_pool")
     assert config is not None
 
+    su = config["starting_upgrades"]
+    assert "3 Talisman Pouches" in su
+    assert "7 Golden Seeds" in su
+    assert "4 Sacred Tears" in su
+    assert "3 Larval Tears" in su
+
     si = config["starting_items"]
-    assert "Academy Key" in si
     assert "Lantern" in si
-    assert "3 Talisman Pouches" in si
-    assert "7 Golden Seeds" in si
-    assert "4 Sacred Tears" in si
-    assert "100k Runes" in si
-    assert "3 Larval Tears" in si
+    assert "Academy Key" not in si  # anti-softlock keys excluded
+
+    assert config["starting_runes"] == 100000
 
     cp = config["care_package_items"]
     assert "5 Weapons" in cp
@@ -287,9 +290,9 @@ def test_pool_config_singular_items(tmp_path, monkeypatch):
     )
     config = get_pool_config("test_pool")
     assert config is not None
-    si = config["starting_items"]
-    assert "1 Talisman Pouch" in si
-    assert "1 Larval Tear" in si
+    su = config["starting_upgrades"]
+    assert "1 Talisman Pouch" in su
+    assert "1 Larval Tear" in su
 
 
 def test_pool_config_defaults_to_race(tmp_path, monkeypatch):

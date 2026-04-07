@@ -87,10 +87,11 @@ export interface PoolConfig {
   sort_order: number;
   estimated_duration: string | null;
   description: string | null;
-  legacy_dungeons: number | null;
   min_layers: number | null;
   max_layers: number | null;
   final_tier: number | null;
+  starting_runes: number | null;
+  starting_upgrades: string[] | null;
   starting_items: string[] | null;
   care_package: boolean | null;
   weapon_upgrade: number | null;
@@ -100,7 +101,6 @@ export interface PoolConfig {
   remove_requirements: boolean | null;
   major_boss_ratio: string | null;
   randomize_bosses: string | null;
-  item_difficulty: string | null;
   difficulty_curve: string | null;
   nerf_gargoyles: boolean | null;
   nerf_malenia: boolean | null;

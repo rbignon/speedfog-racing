@@ -307,38 +307,31 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
     enemy = data.get("enemy", {})
     starting_items_raw = data.get("starting_items", {})
 
-    # Build human-readable starting items list
-    item_names = {
-        "academy_key": "Academy Key",
-        "rusty_key": "Rusty Key",
-        "pureblood_medal": "Pureblood Medal",
-        "drawing_room_key": "Drawing Room Key",
+    # Build starting upgrades (quantified resources that affect progression)
+    starting_upgrades: list[str] = []
+    if tp := starting_items_raw.get("talisman_pouches"):
+        starting_upgrades.append(f"{tp} Talisman Pouches" if tp > 1 else "1 Talisman Pouch")
+    if gs := starting_items_raw.get("golden_seeds"):
+        starting_upgrades.append(f"{gs} Golden Seeds")
+    if st := starting_items_raw.get("sacred_tears"):
+        starting_upgrades.append(f"{st} Sacred Tears")
+    if lt := starting_items_raw.get("larval_tears"):
+        starting_upgrades.append(f"{lt} Larval Tears" if lt > 1 else "1 Larval Tear")
+
+    starting_runes = starting_items_raw.get("starting_runes")
+
+    # Build starting items (utility items, excluding anti-softlock keys)
+    utility_items = {
         "lantern": "Lantern",
         "spirit_calling_bell": "Spirit Calling Bell",
         "physick_flask": "Physick Flask",
-        "great_runes": "Great Runes",
+        "great_runes": "Restored Great Runes",
         "whetblades": "Whetblades",
-        "omother": "O, Mother",
-        "welldepthskey": "Well Depths Key",
-        "gaolupperlevelkey": "Gaol Upper Level Key",
-        "gaollowerlevelkey": "Gaol Lower Level Key",
-        "holeladennecklace": "Hole-Laden Necklace",
-        "messmerskindling": "Messmer's Kindling",
     }
     starting_items: list[str] = []
-    for key, label in item_names.items():
+    for key, label in utility_items.items():
         if starting_items_raw.get(key):
             starting_items.append(label)
-    if tp := starting_items_raw.get("talisman_pouches"):
-        starting_items.append(f"{tp} Talisman Pouches" if tp > 1 else "1 Talisman Pouch")
-    if gs := starting_items_raw.get("golden_seeds"):
-        starting_items.append(f"{gs} Golden Seeds")
-    if st := starting_items_raw.get("sacred_tears"):
-        starting_items.append(f"{st} Sacred Tears")
-    if sr := starting_items_raw.get("starting_runes"):
-        starting_items.append(f"{sr // 1000}k Runes" if sr >= 1000 else f"{sr} Runes")
-    if lt := starting_items_raw.get("larval_tears"):
-        starting_items.append(f"{lt} Larval Tears" if lt > 1 else "1 Larval Tear")
     if sk := starting_items_raw.get("stonesword_keys"):
         starting_items.append(f"{sk} Stonesword Keys" if sk > 1 else "1 Stonesword Key")
 
@@ -374,13 +367,6 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
     else:
         major_boss_label = None
 
-    # Convert item difficulty to human label
-    diff = item_randomizer.get("difficulty")
-    if diff is not None:
-        item_diff_label = "Hard" if diff >= 65 else ("Normal" if diff >= 45 else "Easy")
-    else:
-        item_diff_label = None
-
     # Derive difficulty curve label from tier_curve + tier_curve_exponent
     tier_curve = structure.get("tier_curve", "linear")
     tier_curve_exponent = structure.get("tier_curve_exponent", 1.0)
@@ -400,10 +386,11 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "sort_order": display.get("sort_order", 99),
         "estimated_duration": display.get("estimated_duration"),
         "description": display.get("description") or None,
-        "legacy_dungeons": requirements.get("legacy_dungeons"),
         "final_tier": structure.get("final_tier"),
         "min_layers": structure.get("min_layers"),
         "max_layers": structure.get("max_layers"),
+        "starting_runes": starting_runes,
+        "starting_upgrades": starting_upgrades or None,
         "starting_items": starting_items or None,
         "care_package": care_package.get("enabled"),
         "weapon_upgrade": care_package.get("weapon_upgrade"),
@@ -413,7 +400,6 @@ def get_pool_config(pool_name: str) -> dict[str, Any] | None:
         "remove_requirements": item_randomizer.get("remove_requirements"),
         "major_boss_ratio": major_boss_label,
         "randomize_bosses": _normalize_randomize_bosses(enemy.get("randomize_bosses")),
-        "item_difficulty": item_diff_label,
         "difficulty_curve": difficulty_curve_label,
         "nerf_gargoyles": item_randomizer.get("nerf_gargoyles"),
         "nerf_malenia": item_randomizer.get("nerf_malenia"),

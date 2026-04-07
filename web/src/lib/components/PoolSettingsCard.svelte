@@ -44,12 +44,6 @@
 				<span class="value">{poolConfig.estimated_duration}</span>
 			</div>
 		{/if}
-		{#if poolConfig.legacy_dungeons != null && poolConfig.legacy_dungeons > 0}
-			<div class="info-item">
-				<span class="label">Legacy Dungeons</span>
-				<span class="value">{poolConfig.legacy_dungeons}</span>
-			</div>
-		{/if}
 		{#if poolConfig.min_layers != null && poolConfig.max_layers != null}
 			<div class="info-item">
 				<span class="label">Layers</span>
@@ -62,10 +56,16 @@
 				<span class="value">{poolConfig.final_tier}</span>
 			</div>
 		{/if}
+		{#if poolConfig.starting_runes != null}
+			<div class="info-item">
+				<span class="label">Starting Runes</span>
+				<span class="value">{poolConfig.starting_runes >= 1000 ? `${poolConfig.starting_runes / 1000}k` : poolConfig.starting_runes}</span>
+			</div>
+		{/if}
 		{#if poolConfig.care_package && poolConfig.weapon_upgrade != null}
 			<div class="info-item">
 				<span class="label">Care Package</span>
-				<span class="value">{poolConfig.weapon_upgrade === 0 ? 'Yes' : `+${poolConfig.weapon_upgrade} upgrade`}</span>
+				<span class="value">{poolConfig.weapon_upgrade === 0 ? 'Yes' : `+${poolConfig.weapon_upgrade} weapons`}</span>
 			</div>
 		{/if}
 		{#if poolConfig.items_randomized != null}
@@ -92,12 +92,6 @@
 				<span class="value">{poolConfig.difficulty_curve}</span>
 			</div>
 		{/if}
-		{#if poolConfig.item_difficulty}
-			<div class="info-item">
-				<span class="label">Item Difficulty</span>
-				<span class="value">{poolConfig.item_difficulty}</span>
-			</div>
-		{/if}
 		{#if poolConfig.major_boss_ratio}
 			<div class="info-item">
 				<span class="label">Major Bosses</span>
@@ -111,6 +105,20 @@
 			</div>
 		{/if}
 	</div>
+	{#if poolConfig.starting_upgrades}
+		<div class="item-section">
+			<span class="label">Starting Upgrades</span>
+			{#if compact}
+				<span class="item-section-text">{poolConfig.starting_upgrades.join(', ')}</span>
+			{:else}
+				<ul class="item-section-list">
+					{#each poolConfig.starting_upgrades as item}
+						<li>{item}</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{/if}
 	{#if poolConfig.starting_items}
 		<div class="item-section">
 			<span class="label">Starting Items</span>
