@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.discord import fire_race_finished_notifications
-from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus
+from speedfog_racing.models import ChatChannel, Participant, ParticipantStatus, Race, RaceStatus
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
-from speedfog_racing.websocket.schemas import system_chat_message
+from speedfog_racing.websocket.schemas import persist_system_chat
 
 logger = logging.getLogger(__name__)
 
@@ -122,12 +122,14 @@ async def inactivity_monitor_loop(
                             for p in race.participants:
                                 if p.id in abandoned_ids:
                                     display = p.user.twitch_display_name or p.user.twitch_username
-                                    await room.broadcast_chat_public(
-                                        system_chat_message(
-                                            "public",
-                                            f"{display} has been removed due to inactivity.",
-                                        )
+                                    sys_json = await persist_system_chat(
+                                        db,
+                                        race_id,
+                                        ChatChannel.PUBLIC,
+                                        f"{display} has been removed due to inactivity.",
                                     )
+                                    await room.broadcast_chat_public(sys_json)
+                            await db.commit()
 
                         graph_json = race.seed.graph_json if race.seed else None
                         await manager.broadcast_leaderboard(
