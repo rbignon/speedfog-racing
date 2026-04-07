@@ -607,8 +607,8 @@ async def main():
     parser.add_argument(
         "--deviation",
         type=float,
-        default=100,
-        help="Min deviation %% from current weight to suggest override (default: 100)",
+        default=75,
+        help="Min deviation %% from current weight to suggest override (default: 75)",
     )
     parser.add_argument(
         "--min-samples",
