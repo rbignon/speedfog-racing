@@ -11,8 +11,8 @@
 	let poolName = $state('standard');
 	let organizerParticipates = $state(true);
 	let isPublic = $state(true);
-	let openRegistration = $state(false);
-	let maxParticipants = $state(8);
+	let openRegistration = $state(true);
+	let maxParticipants = $state(20);
 	let pools: PoolStats = $state({});
 	let loading = $state(true);
 	let creating = $state(false);
@@ -234,8 +234,8 @@
 					</label>
 				</div>
 				<p class="hint">
-					Private races won't appear on the homepage. Players can still join via direct link
-					or invite.
+					Private races won't appear on the homepage and don't count towards rankings. Players
+					can still join via direct link or invite.
 				</p>
 			</div>
 

@@ -452,6 +452,7 @@
 				{/if}
 			</div>
 		{/if}
+		<span class="timezone-label">{timezone}</span>
 	</div>
 
 	{#if open}
@@ -489,15 +490,11 @@
 		</div>
 	{/if}
 
-	<span class="timezone-label">{timezone}</span>
 </div>
 
 <style>
 	.datetime-picker {
 		position: relative;
-		display: inline-flex;
-		flex-direction: column;
-		gap: 0.25rem;
 	}
 
 	.datetime-inputs {
