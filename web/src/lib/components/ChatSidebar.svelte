@@ -168,9 +168,9 @@
 			{#if showParticipants}
 				<div class="channel-hint">
 					{#if activeTab === 'participants'}
-						Private chat between participants. Avoid sharing spoilers here.{#if !publicEnabled} The Spoilers tab unlocks once you finish the race.{/if}
+						Private chat between participants. Avoid sharing spoilers here. {#if !publicEnabled} The Spoilers tab unlocks once you finish the race.{/if}
 					{:else}
-						Open discussion, spoilers allowed. Visible to everyone.{#if publicWillLockDuringRace} This tab will be locked during the race until you finish.{/if}
+						Open discussion, spoilers allowed. Visible to everyone. {#if publicWillLockDuringRace} This tab will be locked during the race until you finish.{/if}
 					{/if}
 				</div>
 			{/if}
