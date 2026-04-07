@@ -1,7 +1,13 @@
 """WebSocket message schemas."""
 
+import uuid
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from speedfog_racing.models import ChatChannel
 
 from pydantic import BaseModel, Field
 
@@ -280,3 +286,29 @@ def system_chat_message(channel: str, message: str) -> str:
         message=message,
         timestamp=datetime.now(UTC).isoformat(),
     ).model_dump_json()
+
+
+async def persist_system_chat(
+    db: "AsyncSession",
+    race_id: uuid.UUID,
+    channel: "ChatChannel",
+    message: str,
+) -> str:
+    """Persist a system chat message to DB and return the broadcast JSON.
+
+    The caller is responsible for broadcasting the returned JSON string
+    to the appropriate room channel.
+    """
+    from speedfog_racing.models import ChatChannel as ChatChannelModel
+    from speedfog_racing.models import ChatMessage
+
+    db_msg = ChatMessage(
+        race_id=race_id,
+        channel=ChatChannelModel(channel) if isinstance(channel, str) else channel,
+        user_id=None,
+        message=message,
+    )
+    db.add(db_msg)
+    await db.flush()
+
+    return system_chat_message(channel if isinstance(channel, str) else channel.value, message)

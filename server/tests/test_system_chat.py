@@ -15,6 +15,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.websocket.schemas import persist_system_chat
 
 
 @pytest.fixture
@@ -96,4 +97,24 @@ async def test_system_chat_message_persists_with_null_user(async_session, race):
         row = result.scalar_one()
         assert row.user_id is None
         assert row.message == "Seed has been rerolled"
+        assert row.channel == ChatChannel.PARTICIPANTS
+
+
+@pytest.mark.asyncio
+async def test_persist_system_chat_creates_db_row(async_session, race):
+    """persist_system_chat stores the message in the database."""
+    async with async_session() as db:
+        await persist_system_chat(
+            db=db,
+            race_id=race.id,
+            channel=ChatChannel.PARTICIPANTS,
+            message="Seeds have been released",
+        )
+        await db.commit()
+
+    async with async_session() as db:
+        result = await db.execute(select(ChatMessage).where(ChatMessage.race_id == race.id))
+        row = result.scalar_one()
+        assert row.user_id is None
+        assert row.message == "Seeds have been released"
         assert row.channel == ChatChannel.PARTICIPANTS
