@@ -82,14 +82,13 @@ def build_node_mapping(seed_graphs: dict[str, dict]) -> dict[str, dict]:
     for graph in seed_graphs.values():
         nodes = graph.get("nodes", {})
         for node_id, node_data in nodes.items():
-            if node_id not in mapping:
-                mapping[node_id] = {
-                    "zones": node_data.get("zones", []),
-                    "type": node_data.get("type", "other"),
-                    "weight": node_data.get("weight"),
-                    "display_name": node_data.get("display_name", ""),
-                    "layer": node_data.get("layer", 0),
-                }
+            mapping[node_id] = {
+                "zones": node_data.get("zones", []),
+                "type": node_data.get("type", "other"),
+                "weight": node_data.get("weight"),
+                "display_name": node_data.get("display_name", ""),
+                "layer": node_data.get("layer", 0),
+            }
     return mapping
 
 
@@ -256,7 +255,7 @@ def compute_cluster_durations(
     return cluster_durations
 
 
-def compute_zone_stats(durations: list[float]) -> dict:
+def compute_duration_stats(durations: list[float]) -> dict:
     """Compute stats for a list of durations."""
     n = len(durations)
     if n == 0:
@@ -358,7 +357,8 @@ def get_current_weight(
         cm = clusters_meta[node_id]
         if isinstance(cm, dict) and "weight" in cm:
             return cm["weight"], cm["weight"]
-    return info["weight"] or 2, None
+    w = info["weight"]
+    return (w if w is not None else 2), None
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +569,7 @@ def format_full_report(
         info = cluster_info.get(node_id)
         if not info:
             continue
-        stats = compute_zone_stats(durations)
+        stats = compute_duration_stats(durations)
         current_wt, _ = get_current_weight(node_id, info, current_metadata)
         rows.append((node_id, info["type"], info["n_zones"], stats, current_wt))
 
@@ -618,7 +618,7 @@ async def main():
         "--deviation",
         type=float,
         default=100,
-        help="Min deviation %% from type default to suggest override (default: 100)",
+        help="Min deviation %% from current weight to suggest override (default: 100)",
     )
     parser.add_argument(
         "--min-samples",
