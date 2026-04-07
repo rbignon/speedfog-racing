@@ -2,6 +2,34 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.7] - 2026-04-07
+
+### Seeds
+
+- Bosses in multi-boss fights are now swapped between each other on Boss Shuffle, Expedition, Sprint, and Standard pools
+- Chill seeds now feature more major bosses and fewer mini dungeons
+- Arena size is now taken into account when randomizing bosses
+- Recalibrated zone weights from observed race data (797 participants, 153 seeds)
+- Rebalanced item distribution: reduce ashes of war to 35, added staves, seals, shields and 51 melee weapons
+- Sainted Hero's Grave excluded from mini dungeon candidates
+- Well Depths Key and Hole-Laden Necklace removed from guaranteed key items
+- Seeds now always branch when only one path exists, improving topology variety
+- Fix: Gideon can no longer be skipped via side exits in his arena
+- Fix: save file backup no longer interferes with Elden Ring's autosave during compression
+
+### Website
+
+- Welcome panel now shows gameplay tips, Sprint is pre-selected and marked "Recommended" on the training page for new players
+- Improved race creation form defaults and UX
+- Redesigned pool settings display on race pages
+- System messages now appear in public chat when a player finishes or abandons
+- Fix: personal highlights (Speed Demon, Zone Wall) now compare against the runner-up instead of the mean, reducing false positives
+- Fix: seed reroll now properly broadcasts the updated race state
+
+### Performance
+
+- Multiple server and database optimizations for higher spectator concurrency
+
 ## [1.5.6] - 2026-04-04
 
 ### Chat
