@@ -141,11 +141,11 @@
 							class:disabled
 							onclick={() => { if (!disabled && !startingPool) selectedPool = pool; }}
 						>
+							{#if isNewPlayer && pool === sprintPool}
+								<span class="badge-recommended">Recommended</span>
+							{/if}
 							<span class="pool-name">
 								{info.pool_config?.name || formatPoolName(pool)}
-								{#if isNewPlayer && pool === sprintPool}
-									<span class="badge-recommended">Recommended</span>
-								{/if}
 							</span>
 							{#if info.pool_config?.estimated_duration}
 								<span class="pool-duration">{info.pool_config.estimated_duration}</span>
@@ -326,6 +326,7 @@
 	}
 
 	.pool-card {
+		position: relative;
 		flex: 1;
 		min-width: 140px;
 		display: flex;
@@ -361,18 +362,19 @@
 	.pool-name {
 		font-weight: 600;
 		font-size: var(--font-size-lg);
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
 	}
 
 	.badge-recommended {
+		position: absolute;
+		top: -0.65em;
+		right: 0.75rem;
 		font-size: var(--font-size-xs);
 		font-weight: 600;
 		color: var(--color-gold);
-		background: rgba(234, 179, 8, 0.12);
+		background: var(--color-surface-elevated);
 		padding: 0.1em 0.5em;
 		border-radius: var(--radius-sm);
+		border: 1px solid var(--color-gold);
 		white-space: nowrap;
 	}
 
