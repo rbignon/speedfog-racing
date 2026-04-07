@@ -366,11 +366,11 @@ class ChatMessage(Base):
         UUID(as_uuid=True), ForeignKey("races.id", ondelete="CASCADE"), nullable=False
     )
     channel: Mapped[ChatChannel] = mapped_column(Enum(ChatChannel), nullable=False)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     message: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     race: Mapped["Race"] = relationship()
-    user: Mapped["User"] = relationship()
+    user: Mapped["User | None"] = relationship()
