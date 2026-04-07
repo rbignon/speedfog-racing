@@ -705,8 +705,7 @@
 				</p>
 				<ol>
 					<li>
-						Run <code>recovery.bat</code> (Windows) or
-						<code>linux/recovery.sh</code> (Linux) from your seed pack folder.
+						Run <code>recovery.bat</code> from your seed pack folder.
 					</li>
 					<li>Pick a backup from the list (the most recent is selected by default).</li>
 					<li>Relaunch with <code>launch_speedfog.bat</code>.</li>

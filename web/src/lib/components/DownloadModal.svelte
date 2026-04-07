@@ -46,8 +46,7 @@
 			<h3>Save Recovery</h3>
 			<p>
 				Save backups are created automatically every minute while you play. If a crash
-				corrupts your save, run <code>recovery.bat</code> (Windows) or
-				<code>linux/recovery.sh</code> (Linux).
+				corrupts your save, run <code>recovery.bat</code>.
 			</p>
 		</div>
 
