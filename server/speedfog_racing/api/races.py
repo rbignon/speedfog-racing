@@ -1002,6 +1002,10 @@ async def join_race(
         color_index=next_color,
     )
     db.add(participant)
+    display = user.twitch_display_name or user.twitch_username
+    sys_json = await persist_system_chat(
+        db, race_id, ChatChannel.PARTICIPANTS, f"{display} has joined the race"
+    )
     try:
         await db.commit()
     except IntegrityError:
@@ -1012,12 +1016,6 @@ async def join_race(
         )
     await db.refresh(participant)
 
-    # System chat: notify participants channel
-    display = user.twitch_display_name or user.twitch_username
-    sys_json = await persist_system_chat(
-        db, race_id, ChatChannel.PARTICIPANTS, f"{display} has joined the race"
-    )
-    await db.commit()
     room = manager.get_room(race_id)
     if room:
         await room.broadcast_chat_participants(sys_json)
@@ -1301,9 +1299,6 @@ async def reroll_seed(
         )
     race.version = current_version + 1
     race.seeds_released_at = None
-    await db.commit()
-
-    # System chat: notify participants channel
     sys_json = await persist_system_chat(
         db, race_id, ChatChannel.PARTICIPANTS, "Seed has been rerolled"
     )
@@ -1361,9 +1356,6 @@ async def release_seeds(
         )
     race.seeds_released_at = now
     race.version = current_version + 1
-    await db.commit()
-
-    # System chat: notify participants channel
     sys_json = await persist_system_chat(
         db, race_id, ChatChannel.PARTICIPANTS, "Seeds have been released"
     )
@@ -1510,6 +1502,10 @@ async def abandon_race(
         )
 
     participant.status = ParticipantStatus.ABANDONED
+    display = user.twitch_display_name or user.twitch_username
+    sys_json = await persist_system_chat(
+        db, race_id, ChatChannel.PUBLIC, f"{display} has abandoned the race."
+    )
     await db.commit()
 
     # Re-query with eager-loaded relationships
@@ -1520,12 +1516,6 @@ async def abandon_race(
     if room:
         room.clear_is_playing(user.id)
 
-    # Notify public chat (persisted)
-    display = user.twitch_display_name or user.twitch_username
-    sys_json = await persist_system_chat(
-        db, race_id, ChatChannel.PUBLIC, f"{display} has abandoned the race."
-    )
-    await db.commit()
     if room:
         await room.broadcast_chat_public(sys_json)
 
