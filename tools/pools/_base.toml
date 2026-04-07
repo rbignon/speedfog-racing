@@ -34,10 +34,10 @@ stonesword_keys = 6
 
 # DLC key items (prevent softlocks in DLC areas)
 omother = true
-welldepthskey = true
+welldepthskey = false
 gaolupperlevelkey = true
 gaollowerlevelkey = true
-holeladennecklace = true
+holeladennecklace = false
 messmerskindling = true
 
 [enemy]
