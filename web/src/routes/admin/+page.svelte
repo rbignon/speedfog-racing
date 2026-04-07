@@ -24,7 +24,7 @@
 	Chart.register(...registerables);
 
 	type Tab = 'users' | 'seeds' | 'stats' | 'activity';
-	let activeTab: Tab = $state('users');
+	let activeTab: Tab = $state('stats');
 
 	let users: AdminUser[] = $state([]);
 	let loading = $state(true);
@@ -494,14 +494,14 @@
 	<h1>Admin</h1>
 
 	<div class="tabs">
+		<button class="tab" class:active={activeTab === 'stats'} onclick={() => switchTab('stats')}>
+			Stats
+		</button>
 		<button class="tab" class:active={activeTab === 'users'} onclick={() => switchTab('users')}>
 			Users
 		</button>
 		<button class="tab" class:active={activeTab === 'seeds'} onclick={() => switchTab('seeds')}>
 			Seeds
-		</button>
-		<button class="tab" class:active={activeTab === 'stats'} onclick={() => switchTab('stats')}>
-			Stats
 		</button>
 		<button
 			class="tab"
