@@ -112,7 +112,7 @@ async def load_chat_history(
         # appear (trait = None).
         result = await db.execute(
             select(ChatMessageModel, User, PlayerTraitScores)
-            .join(User, ChatMessageModel.user_id == User.id)
+            .outerjoin(User, ChatMessageModel.user_id == User.id)
             .outerjoin(PlayerTraitScores, PlayerTraitScores.user_id == User.id)
             .where(
                 ChatMessageModel.race_id == race_id,
@@ -127,7 +127,9 @@ async def load_chat_history(
             return ChatHistoryMessage(channel=channel.value, messages=[])
 
         traits_by_user = {
-            user.id: traits.dominant_trait for _, user, traits in rows if traits is not None
+            user.id: traits.dominant_trait
+            for _, user, traits in rows
+            if user is not None and traits is not None
         }
 
     # Build role lookup from race relationships
@@ -148,18 +150,33 @@ async def load_chat_history(
 
     messages = []
     for chat_msg, user, _traits in rows:
-        messages.append(
-            ChatBroadcastMessage(
-                channel=channel.value,
-                username=user.twitch_username,
-                display_name=user.twitch_display_name,
-                avatar_url=user.twitch_avatar_url,
-                role=_resolve_role(user),
-                dominant_trait=traits_by_user.get(chat_msg.user_id),
-                message=chat_msg.message,
-                timestamp=chat_msg.created_at.isoformat(),
+        if user is None:
+            # System message (no user)
+            messages.append(
+                ChatBroadcastMessage(
+                    channel=channel.value,
+                    username="",
+                    display_name=None,
+                    avatar_url=None,
+                    role="system",
+                    dominant_trait=None,
+                    message=chat_msg.message,
+                    timestamp=chat_msg.created_at.isoformat(),
+                )
             )
-        )
+        else:
+            messages.append(
+                ChatBroadcastMessage(
+                    channel=channel.value,
+                    username=user.twitch_username,
+                    display_name=user.twitch_display_name,
+                    avatar_url=user.twitch_avatar_url,
+                    role=_resolve_role(user),
+                    dominant_trait=traits_by_user.get(chat_msg.user_id),
+                    message=chat_msg.message,
+                    timestamp=chat_msg.created_at.isoformat(),
+                )
+            )
 
     return ChatHistoryMessage(channel=channel.value, messages=messages)
 
