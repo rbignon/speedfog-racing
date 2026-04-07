@@ -78,3 +78,4 @@ nerf_gargoyles = true
 
 [enemy]
 randomize_bosses = "minor"
+swap_boss = true

@@ -86,4 +86,4 @@ nerf_gargoyles = false
 allcraft = false
 
 [enemy]
-randomize_bosses = false
+randomize_bosses = "none"

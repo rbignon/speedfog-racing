@@ -38,3 +38,4 @@ final_boss_candidates = [
 
 [enemy]
 randomize_bosses = "all"
+swap_boss = true
