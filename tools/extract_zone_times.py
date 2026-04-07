@@ -76,22 +76,6 @@ async def load_seed_graphs(conn: asyncpg.Connection) -> dict[str, dict]:
     return graphs
 
 
-def build_node_mapping(seed_graphs: dict[str, dict]) -> dict[str, dict]:
-    """Build node_id -> {zones, type, weight, layer} from all seed graphs."""
-    mapping: dict[str, dict] = {}
-    for graph in seed_graphs.values():
-        nodes = graph.get("nodes", {})
-        for node_id, node_data in nodes.items():
-            mapping[node_id] = {
-                "zones": node_data.get("zones", []),
-                "type": node_data.get("type", "other"),
-                "weight": node_data.get("weight"),
-                "display_name": node_data.get("display_name", ""),
-                "layer": node_data.get("layer", 0),
-            }
-    return mapping
-
-
 @dataclass
 class ParticipantData:
     zone_history: list[dict]
@@ -173,7 +157,7 @@ def _compute_outcome(
 
 def compute_cluster_durations(
     participants: list[ParticipantData],
-    node_mapping: dict[str, dict],
+    seed_graphs: dict[str, dict],
 ) -> dict[str, list[float]]:
     """Compute cluster traversal durations in minutes.
 
@@ -188,6 +172,9 @@ def compute_cluster_durations(
     cluster. Since there is one value per participant per cluster, the
     median across participants smooths out occasional double-traversals.
 
+    Layers are resolved from the participant's own seed graph, since the
+    same cluster can appear at different layers across different seeds.
+
     Durations are raw cluster traversal times (not decomposed per zone).
 
     Returns: {node_id: [cluster_duration_minutes, ...]}
@@ -198,6 +185,7 @@ def compute_cluster_durations(
 
     for p in participants:
         history = p.zone_history
+        seed_nodes = seed_graphs.get(p.seed_id, {}).get("nodes", {})
 
         # First pass: accumulate time per node across all visits.
         # Each entry's duration (until the next entry) is attributed to
@@ -222,17 +210,18 @@ def compute_cluster_durations(
             node_last_index[node_id] = i
 
         # Second pass: check outcome of each node's last visit.
+        # Use layers from this participant's seed graph.
         for node_id, total_ms in node_total_ms.items():
             last_i = node_last_index[node_id]
             is_last = last_i >= len(history) - 1
 
-            cur_info = node_mapping.get(node_id)
-            cur_layer = cur_info["layer"] if cur_info else 0
+            cur_layer = seed_nodes.get(node_id, {}).get("layer", 0)
 
             if not is_last:
                 next_node_id = history[last_i + 1]["node_id"]
-                next_info = node_mapping.get(next_node_id)
-                next_layer: int | None = next_info["layer"] if next_info else 0
+                next_layer: int | None = seed_nodes.get(next_node_id, {}).get(
+                    "layer", 0
+                )
             else:
                 next_layer = None
 
@@ -420,7 +409,6 @@ def format_defaults_comparison(
 def format_overrides(
     cluster_durations: dict[str, list[float]],
     cluster_info: dict[str, dict],
-    new_defaults: dict[str, dict],
     current_metadata: dict,
     deviation_pct: float,
     min_samples: int,
@@ -494,7 +482,7 @@ def format_overrides(
     suggestions.sort(key=lambda s: (-s["deviation"], s["node_id"]))
 
     lines.append(
-        f"  {'Cluster':<36} {'Type':<14} {'N':>3} {'Clu':>3} {'Med':>6} "
+        f"  {'Cluster':<36} {'Type':<14} {'N':>3} {'Zones':>5} {'Med':>6} "
         f"{'CurWt':>5} {'Prop':>5} {'Dev%':>5}  Action"
     )
     lines.append("  " + "-" * 96)
@@ -537,7 +525,7 @@ def format_overrides(
 
         clu_str = f"x{s['n_zones']}" if s["n_zones"] > 1 else ""
         lines.append(
-            f"  {s['node_id']:<36} {s['type']:<14} {s['n']:>3} {clu_str:>3} "
+            f"  {s['node_id']:<36} {s['type']:<14} {s['n']:>3} {clu_str:>5} "
             f"{s['median']:>5.1f}m {_fmt_wt(s['effective_weight']):>5} "
             f"{_fmt_wt(s['proposed']):>5} {s['deviation']:>4.0f}%  {action}"
         )
@@ -559,7 +547,7 @@ def format_full_report(
     lines.append("FULL CLUSTER TIMING DATA")
     lines.append("=" * 80)
     lines.append(
-        f"  {'Cluster':<36} {'Type':<14} {'Clu':>3} {'N':>4} {'Avg':>6} "
+        f"  {'Cluster':<36} {'Type':<14} {'Zones':>5} {'N':>4} {'Avg':>6} "
         f"{'Med':>6} {'Min':>6} {'Max':>6} {'Std':>6} {'CurWt':>6}"
     )
     lines.append("  " + "-" * 104)
@@ -581,7 +569,7 @@ def format_full_report(
             continue
         clu_str = f"x{n_zones}" if n_zones > 1 else ""
         lines.append(
-            f"  {node_id:<36} {cluster_type:<14} {clu_str:>3} {n:>4} "
+            f"  {node_id:<36} {cluster_type:<14} {clu_str:>5} {n:>4} "
             f"{stats['avg']:>5.1f}m {stats['median']:>5.1f}m "
             f"{stats['min']:>5.1f}m {stats['max']:>5.1f}m "
             f"{stats['std']:>5.1f}m {_fmt_wt(current_wt):>6}"
@@ -642,17 +630,16 @@ async def main():
     try:
         print("Loading data...", file=sys.stderr)
         seed_graphs = await load_seed_graphs(conn)
-        node_mapping = build_node_mapping(seed_graphs)
         participants = await load_participants(conn)
         clusters_json = load_clusters_json(args.clusters)
         cluster_info = build_cluster_info(clusters_json)
         print(
-            f"  {len(node_mapping)} nodes, {len(participants)} participants, "
+            f"  {len(participants)} participants, "
             f"{len(seed_graphs)} seeds, {len(cluster_info)} current clusters",
             file=sys.stderr,
         )
 
-        all_cluster_durations = compute_cluster_durations(participants, node_mapping)
+        all_cluster_durations = compute_cluster_durations(participants, seed_graphs)
         current_metadata = load_zone_metadata(args.metadata)
 
         # Filter to current clusters only (ignore stale data from old seeds)
@@ -683,7 +670,6 @@ async def main():
                 format_overrides(
                     cluster_durations,
                     cluster_info,
-                    new_defaults,
                     current_metadata,
                     args.deviation,
                     args.min_samples,
