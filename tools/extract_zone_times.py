@@ -301,25 +301,19 @@ def compute_type_defaults(
 
     Returns: {type_name: {median, avg, n_zones, n_samples}}
     """
-    type_durations: dict[str, list[float]] = defaultdict(list)
+    # Single pass: collect per-cluster medians and sample counts by type
+    type_medians: dict[str, list[float]] = defaultdict(list)
+    type_samples: dict[str, int] = defaultdict(int)
 
     for node_id, durations in cluster_durations.items():
         info = cluster_info.get(node_id)
         if not info or info["n_zones"] != 1:
             continue
-        type_durations[info["type"]].extend(durations)
+        type_medians[info["type"]].append(statistics.median(durations))
+        type_samples[info["type"]] += len(durations)
 
     result = {}
-    for type_name, all_durations in type_durations.items():
-        if not all_durations:
-            continue
-        # Median of per-cluster medians (avoids high-sample clusters dominating)
-        cluster_medians = []
-        for node_id, durations in cluster_durations.items():
-            info = cluster_info.get(node_id)
-            if info and info["type"] == type_name and info["n_zones"] == 1:
-                cluster_medians.append(statistics.median(durations))
-
+    for type_name, cluster_medians in type_medians.items():
         med = _floor_half(statistics.median(cluster_medians))
         if med < 0.5:
             med = 0.5
@@ -328,7 +322,7 @@ def compute_type_defaults(
             "median": med,
             "avg": round(statistics.mean(cluster_medians), 1),
             "n_zones": len(cluster_medians),
-            "n_samples": len(all_durations),
+            "n_samples": type_samples[type_name],
         }
 
     return result
@@ -338,11 +332,13 @@ def get_current_weight(
     node_id: str,
     info: dict,
     metadata: dict,
-) -> int | float:
-    """Get the current effective weight for a cluster.
+) -> tuple[int | float, int | float | None]:
+    """Get the current effective weight and explicit override for a cluster.
 
     Single-zone: zone override from [zones.*] or type default.
-    Multi-zone: cluster override from [clusters.*] or graph_json weight.
+    Multi-zone: cluster override from [clusters.*] or clusters.json weight.
+
+    Returns: (effective_weight, override_value_or_None)
     """
     if info["n_zones"] == 1:
         zone_name = info["primary_zone"]
@@ -350,17 +346,19 @@ def get_current_weight(
         if zone_name in zones_meta:
             zm = zones_meta[zone_name]
             if isinstance(zm, dict) and "weight" in zm:
-                return zm["weight"]
+                return zm["weight"], zm["weight"]
+            if isinstance(zm, int | float):
+                return zm, zm
         defaults = metadata.get("defaults", {})
-        return defaults.get(info["type"], 2)
+        return defaults.get(info["type"], 2), None
 
     # Multi-zone: cluster override in TOML takes precedence, then clusters.json weight
     clusters_meta = metadata.get("clusters", {})
     if node_id in clusters_meta:
         cm = clusters_meta[node_id]
         if isinstance(cm, dict) and "weight" in cm:
-            return cm["weight"]
-    return info["weight"] or 2
+            return cm["weight"], cm["weight"]
+    return info["weight"] or 2, None
 
 
 # ---------------------------------------------------------------------------
@@ -442,8 +440,6 @@ def format_overrides(
     lines.append("=" * 80)
 
     current_defaults = current_metadata.get("defaults", {})
-    zones_meta = current_metadata.get("zones", {})
-    clusters_meta = current_metadata.get("clusters", {})
     suggestions: list[dict] = []
 
     for node_id, durations in cluster_durations.items():
@@ -463,7 +459,9 @@ def format_overrides(
         if proposed < 0.5:
             proposed = 0.5
 
-        effective_weight = get_current_weight(node_id, info, current_metadata)
+        effective_weight, current_override = get_current_weight(
+            node_id, info, current_metadata
+        )
 
         if effective_weight == 0:
             continue
@@ -475,21 +473,6 @@ def format_overrides(
                 proposed = 1
 
         deviation = abs(proposed - effective_weight) / effective_weight * 100
-
-        # Current override source
-        current_override = None
-        if n_zones == 1:
-            zone_name = primary_zone
-            if zone_name in zones_meta:
-                zm = zones_meta[zone_name]
-                if isinstance(zm, dict) and "weight" in zm:
-                    current_override = zm["weight"]
-        else:
-            if node_id in clusters_meta:
-                cm = clusters_meta[node_id]
-                if isinstance(cm, dict) and "weight" in cm:
-                    current_override = cm["weight"]
-
         cur_type_default = current_defaults.get(cluster_type, 2)
 
         suggestions.append(
@@ -587,7 +570,7 @@ def format_full_report(
         if not info:
             continue
         stats = compute_zone_stats(durations)
-        current_wt = get_current_weight(node_id, info, current_metadata)
+        current_wt, _ = get_current_weight(node_id, info, current_metadata)
         rows.append((node_id, info["type"], info["n_zones"], stats, current_wt))
 
     rows.sort(key=lambda r: (-r[3]["n"], r[0]))
