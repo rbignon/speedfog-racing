@@ -95,7 +95,7 @@
 				goto('/');
 				return;
 			}
-			loadUsers();
+			switchTab(activeTab);
 		}
 	});
 
@@ -150,6 +150,9 @@
 
 	function switchTab(tab: Tab) {
 		activeTab = tab;
+		if (tab === 'users' && users.length === 0 && loading) {
+			loadUsers();
+		}
 		if (tab === 'seeds' && !seedStats) {
 			loadSeedStats();
 			loadReportedSeeds();
