@@ -11,8 +11,8 @@ description = "Relaxed race with generous resources and loot"
 [requirements]
 legacy_dungeons = 3
 bosses = 5
-mini_dungeons = 8
-major_bosses = 5
+mini_dungeons = 5
+major_bosses = 9
 
 [structure]
 min_layers = 25
