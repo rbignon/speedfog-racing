@@ -35,6 +35,12 @@
 	let selectedInfo = $derived(selectedPool ? pools[selectedPool] ?? null : null);
 	let activeSessions = $derived(sessions.filter((s) => s.status === 'active'));
 
+	// Recommend Sprint to new players (no sessions yet)
+	let isNewPlayer = $derived(sessions.length === 0);
+	let sprintPool = $derived(
+		sortedPools.find(([, info]) => info.pool_config?.name === 'Sprint' && info.available > 0)?.[0] ?? null,
+	);
+
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
 			authChecked = true;
@@ -56,9 +62,13 @@
 			]);
 			pools = poolData;
 			sessions = sessionData;
-			// Default to first pool with available seeds
-			const available = sortedPools.find(([, info]) => info.available > 0);
-			if (available) selectedPool = available[0];
+			// Default to Sprint for new players, otherwise first available pool
+			if (sprintPool && sessions.length === 0) {
+				selectedPool = sprintPool;
+			} else {
+				const available = sortedPools.find(([, info]) => info.available > 0);
+				if (available) selectedPool = available[0];
+			}
 		} catch (e) {
 			console.error('Failed to load solo data:', e);
 			error = 'Failed to load solo data.';
@@ -131,7 +141,12 @@
 							class:disabled
 							onclick={() => { if (!disabled && !startingPool) selectedPool = pool; }}
 						>
-							<span class="pool-name">{info.pool_config?.name || formatPoolName(pool)}</span>
+							<span class="pool-name">
+								{info.pool_config?.name || formatPoolName(pool)}
+								{#if isNewPlayer && pool === sprintPool}
+									<span class="badge-recommended">Recommended</span>
+								{/if}
+							</span>
 							{#if info.pool_config?.estimated_duration}
 								<span class="pool-duration">{info.pool_config.estimated_duration}</span>
 							{/if}
@@ -346,6 +361,19 @@
 	.pool-name {
 		font-weight: 600;
 		font-size: var(--font-size-lg);
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.badge-recommended {
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+		color: var(--color-gold);
+		background: rgba(234, 179, 8, 0.12);
+		padding: 0.1em 0.5em;
+		border-radius: var(--radius-sm);
+		white-space: nowrap;
 	}
 
 	.pool-duration {

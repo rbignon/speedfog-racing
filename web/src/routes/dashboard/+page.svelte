@@ -193,6 +193,7 @@
 							<div class="welcome-step-text">
 								<div class="welcome-step-label">1. Start a solo</div>
 								<div class="welcome-step-desc">Pick a seed pool and generate your run</div>
+								<div class="welcome-step-hint">Sprint is a great start</div>
 							</div>
 						</div>
 						<div class="welcome-step">
@@ -213,6 +214,15 @@
 								<div class="welcome-step-desc">Launch the bat file, done</div>
 							</div>
 						</div>
+					</div>
+					<div class="welcome-tips">
+						<h3 class="welcome-tips-title">Tips</h3>
+						<ul class="welcome-tips-list">
+							<li><strong>Touch every grace</strong> you find, even if you don't plan to sit</li>
+							<li>If you're stuck, <strong>backtrack</strong> to a previous zone and try a different path</li>
+							<li>Use the <strong>metro map</strong> to plan your route and spot alternatives</li>
+							<li>Check the pool settings before starting to see your <strong>starting items and upgrades</strong></li>
+						</ul>
 					</div>
 					<div class="welcome-actions">
 						<a href="/training" class="btn btn-primary">Play Solo</a>
@@ -580,6 +590,41 @@
 	.welcome-step-desc {
 		font-size: var(--font-size-xs);
 		color: var(--color-text-secondary);
+	}
+
+	.welcome-step-hint {
+		font-size: var(--font-size-xs);
+		color: var(--color-gold);
+		font-style: italic;
+	}
+
+	.welcome-tips {
+		padding-top: 1.25rem;
+		margin-bottom: 1.75rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.welcome-tips-title {
+		margin: 0 0 0.5rem;
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.welcome-tips-list {
+		margin: 0;
+		padding-left: 1.25rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.welcome-tips-list li {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		line-height: 1.4;
 	}
 
 	.welcome-actions {
