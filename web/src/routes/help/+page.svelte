@@ -24,7 +24,7 @@
 			duration: string;
 			pitch: string;
 			layers: string;
-			majorBosses: number;
+			majorBosses: string;
 			finalTier: number;
 			startingRunes: string;
 			weaponUpgrade: number;
@@ -39,7 +39,7 @@
 			duration: '~1h',
 			pitch: 'The balanced format. Good variety of zones, fair resources, straightforward difficulty curve.',
 			layers: '25–30',
-			majorBosses: 8,
+			majorBosses: 'Medium',
 			finalTier: 18,
 			startingRunes: '25k',
 			weaponUpgrade: 24,
@@ -53,7 +53,7 @@
 			duration: '~30min',
 			pitch: 'Short and fast. Fewer layers, quicker to the final boss. Great for warmups or time-limited sessions.',
 			layers: '10–15',
-			majorBosses: 4,
+			majorBosses: 'Medium',
 			finalTier: 13,
 			startingRunes: '25k',
 			weaponUpgrade: 24,
@@ -68,7 +68,7 @@
 			pitch:
 				'Generous resources and a late difficulty spike. More legacy dungeons to explore, easier item drops. Good entry point.',
 			layers: '25–30',
-			majorBosses: 5,
+			majorBosses: 'Medium',
 			finalTier: 10,
 			startingRunes: '100k',
 			weaponUpgrade: 24,
@@ -83,7 +83,7 @@
 			pitch:
 				'Scarce resources, early difficulty spike, high boss density. No whetblades, minimal care package.',
 			layers: '25–30',
-			majorBosses: 12,
+			majorBosses: 'High',
 			finalTier: 28,
 			startingRunes: '50k',
 			weaponUpgrade: 0,
@@ -98,7 +98,7 @@
 			pitch:
 				'Same structure as Standard, but every boss is randomized, majors included.',
 			layers: '25–30',
-			majorBosses: 8,
+			majorBosses: 'Medium',
 			finalTier: 18,
 			startingRunes: '25k',
 			weaponUpgrade: 24,
@@ -113,7 +113,7 @@
 			pitch:
 				'Epic race through most of the Lands Between. Massive route with narrow paths, high boss count, and a long grind to the final boss.',
 			layers: '90–100',
-			majorBosses: 15,
+			majorBosses: 'Low',
 			finalTier: 28,
 			startingRunes: '25k',
 			weaponUpgrade: 24,
@@ -369,12 +369,12 @@
 								<span class="pool-stat-value">{pool.layers}</span>
 							</div>
 							<div class="pool-stat">
-								<span class="pool-stat-label">Major Bosses</span>
-								<span class="pool-stat-value">{pool.majorBosses}</span>
-							</div>
-							<div class="pool-stat">
 								<span class="pool-stat-label">Final Tier</span>
 								<span class="pool-stat-value">{pool.finalTier}</span>
+							</div>
+							<div class="pool-stat">
+								<span class="pool-stat-label">Major Bosses</span>
+								<span class="pool-stat-value">{pool.majorBosses}</span>
 							</div>
 							<div class="pool-stat">
 								<span class="pool-stat-label">Starting Runes</span>
