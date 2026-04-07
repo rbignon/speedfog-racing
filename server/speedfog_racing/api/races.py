@@ -37,6 +37,7 @@ from speedfog_racing.discord import (
 )
 from speedfog_racing.models import (
     Caster,
+    ChatChannel,
     Invite,
     Participant,
     ParticipantStatus,
@@ -80,7 +81,7 @@ from speedfog_racing.services.stats_service import (
 )
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 from speedfog_racing.websocket.manager import manager
-from speedfog_racing.websocket.schemas import system_chat_message
+from speedfog_racing.websocket.schemas import persist_system_chat, system_chat_message
 
 logger = logging.getLogger(__name__)
 
@@ -1011,6 +1012,16 @@ async def join_race(
         )
     await db.refresh(participant)
 
+    # System chat: notify participants channel
+    display = user.twitch_display_name or user.twitch_username
+    sys_json = await persist_system_chat(
+        db, race_id, ChatChannel.PARTICIPANTS, f"{display} has joined the race"
+    )
+    await db.commit()
+    room = manager.get_room(race_id)
+    if room:
+        await room.broadcast_chat_participants(sys_json)
+
     # Broadcast updated state to spectators and mods
     race = await _get_race_or_404(db, race_id, load_participants=True)
     graph_json = race.seed.graph_json if race.seed else None
@@ -1057,8 +1068,16 @@ async def leave_race(
             detail="Organizer cannot leave their own race",
         )
 
+    display = user.twitch_display_name or user.twitch_username
     await db.delete(participant)
+    sys_json = await persist_system_chat(
+        db, race_id, ChatChannel.PARTICIPANTS, f"{display} has left the race"
+    )
     await db.commit()
+
+    room = manager.get_room(race_id)
+    if room:
+        await room.broadcast_chat_participants(sys_json)
 
     # Broadcast updated state to spectators and mods
     race = await _get_race_or_404(db, race_id, load_participants=True)
@@ -1284,6 +1303,15 @@ async def reroll_seed(
     race.seeds_released_at = None
     await db.commit()
 
+    # System chat: notify participants channel
+    sys_json = await persist_system_chat(
+        db, race_id, ChatChannel.PARTICIPANTS, "Seed has been rerolled"
+    )
+    await db.commit()
+    room = manager.get_room(race_id)
+    if room:
+        await room.broadcast_chat_participants(sys_json)
+
     # Notify connected clients
     await broadcast_race_state_update(race_id, race)
 
@@ -1334,6 +1362,15 @@ async def release_seeds(
     race.seeds_released_at = now
     race.version = current_version + 1
     await db.commit()
+
+    # System chat: notify participants channel
+    sys_json = await persist_system_chat(
+        db, race_id, ChatChannel.PARTICIPANTS, "Seeds have been released"
+    )
+    await db.commit()
+    room = manager.get_room(race_id)
+    if room:
+        await room.broadcast_chat_participants(sys_json)
 
     # Notify connected clients
     await broadcast_race_state_update(race_id, race)
