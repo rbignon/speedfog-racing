@@ -31,12 +31,9 @@ except ImportError:
     import tomli as tomllib  # type: ignore[no-redef]
 
 DB_URL = "postgresql://speedfog:speedfog@localhost/speedfog_racing"
-ZONE_METADATA_PATH = (
-    Path(__file__).resolve().parent.parent.parent
-    / "speedfog"
-    / "data"
-    / "zone_metadata.toml"
-)
+_SPEEDFOG_DATA = Path(__file__).resolve().parent.parent.parent / "speedfog" / "data"
+ZONE_METADATA_PATH = _SPEEDFOG_DATA / "zone_metadata.toml"
+CLUSTERS_JSON_PATH = _SPEEDFOG_DATA / "clusters.json"
 
 
 def _round_half(value: float) -> float:
@@ -135,6 +132,20 @@ def load_zone_metadata(path: Path) -> dict:
         return {"defaults": {}, "zones": {}, "clusters": {}}
     with open(path, "rb") as f:
         return tomllib.load(f)
+
+
+def load_clusters_json(path: Path) -> dict[str, dict]:
+    """Load current clusters.json as {cluster_id: cluster_data}.
+
+    This is the source of truth for cluster composition (zones, type,
+    weight, display_name). Historical graph_json in the DB may be stale.
+    """
+    if not path.exists():
+        print(f"WARNING: {path} not found, cluster info will be empty", file=sys.stderr)
+        return {}
+    with open(path) as f:
+        data = json.load(f)
+    return {c["id"]: c for c in data["clusters"]}
 
 
 # ---------------------------------------------------------------------------
@@ -260,21 +271,21 @@ def compute_zone_stats(durations: list[float]) -> dict:
     }
 
 
-def build_cluster_info(node_mapping: dict[str, dict]) -> dict[str, dict]:
-    """Build node_id -> cluster info from node mapping.
+def build_cluster_info(clusters_json: dict[str, dict]) -> dict[str, dict]:
+    """Build node_id -> cluster info from clusters.json (source of truth).
 
-    Returns: {node_id: {type, zones, n_zones, primary_zone, graph_weight, display_name}}
+    Returns: {node_id: {type, zones, n_zones, primary_zone, weight, display_name}}
     """
     info: dict[str, dict] = {}
-    for node_id, node_data in node_mapping.items():
-        zones = node_data.get("zones", [])
-        info[node_id] = {
-            "type": node_data["type"],
+    for cluster_id, cdata in clusters_json.items():
+        zones = cdata.get("zones", [])
+        info[cluster_id] = {
+            "type": cdata.get("type", "other"),
             "zones": zones,
             "n_zones": len(zones),
-            "primary_zone": zones[0] if zones else node_id,
-            "graph_weight": node_data.get("weight"),
-            "display_name": node_data.get("display_name", ""),
+            "primary_zone": zones[0] if zones else cluster_id,
+            "weight": cdata.get("weight"),
+            "display_name": cdata.get("display_name", ""),
         }
     return info
 
@@ -343,13 +354,13 @@ def get_current_weight(
         defaults = metadata.get("defaults", {})
         return defaults.get(info["type"], 2)
 
-    # Multi-zone: cluster override takes precedence over graph_json weight
+    # Multi-zone: cluster override in TOML takes precedence, then clusters.json weight
     clusters_meta = metadata.get("clusters", {})
     if node_id in clusters_meta:
         cm = clusters_meta[node_id]
         if isinstance(cm, dict) and "weight" in cm:
             return cm["weight"]
-    return info["graph_weight"] or 2
+    return info["weight"] or 2
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +508,7 @@ def format_overrides(
             }
         )
 
-    suggestions.sort(key=lambda s: (-s["deviation"], s["primary_zone"]))
+    suggestions.sort(key=lambda s: (-s["deviation"], s["node_id"]))
 
     lines.append(
         f"  {'Cluster':<36} {'Type':<14} {'N':>3} {'Clu':>3} {'Med':>6} "
@@ -543,7 +554,7 @@ def format_overrides(
 
         clu_str = f"x{s['n_zones']}" if s["n_zones"] > 1 else ""
         lines.append(
-            f"  {s['primary_zone']:<36} {s['type']:<14} {s['n']:>3} {clu_str:>3} "
+            f"  {s['node_id']:<36} {s['type']:<14} {s['n']:>3} {clu_str:>3} "
             f"{s['median']:>5.1f}m {_fmt_wt(s['effective_weight']):>5} "
             f"{_fmt_wt(s['proposed']):>5} {s['deviation']:>4.0f}%  {action}"
         )
@@ -577,19 +588,17 @@ def format_full_report(
             continue
         stats = compute_zone_stats(durations)
         current_wt = get_current_weight(node_id, info, current_metadata)
-        rows.append(
-            (info["primary_zone"], info["type"], info["n_zones"], stats, current_wt)
-        )
+        rows.append((node_id, info["type"], info["n_zones"], stats, current_wt))
 
     rows.sort(key=lambda r: (-r[3]["n"], r[0]))
 
-    for primary_zone, cluster_type, n_zones, stats, current_wt in rows:
+    for node_id, cluster_type, n_zones, stats, current_wt in rows:
         n = stats["n"]
         if n == 0:
             continue
         clu_str = f"x{n_zones}" if n_zones > 1 else ""
         lines.append(
-            f"  {primary_zone:<36} {cluster_type:<14} {clu_str:>3} {n:>4} "
+            f"  {node_id:<36} {cluster_type:<14} {clu_str:>3} {n:>4} "
             f"{stats['avg']:>5.1f}m {stats['median']:>5.1f}m "
             f"{stats['min']:>5.1f}m {stats['max']:>5.1f}m "
             f"{stats['std']:>5.1f}m {_fmt_wt(current_wt):>6}"
@@ -615,6 +624,12 @@ async def main():
         type=Path,
         default=ZONE_METADATA_PATH,
         help=f"Path to zone_metadata.toml (default: {ZONE_METADATA_PATH})",
+    )
+    parser.add_argument(
+        "--clusters",
+        type=Path,
+        default=CLUSTERS_JSON_PATH,
+        help=f"Path to clusters.json (default: {CLUSTERS_JSON_PATH})",
     )
     parser.add_argument(
         "--deviation",
@@ -646,15 +661,29 @@ async def main():
         seed_graphs = await load_seed_graphs(conn)
         node_mapping = build_node_mapping(seed_graphs)
         participants = await load_participants(conn)
+        clusters_json = load_clusters_json(args.clusters)
+        cluster_info = build_cluster_info(clusters_json)
         print(
             f"  {len(node_mapping)} nodes, {len(participants)} participants, "
-            f"{len(seed_graphs)} seeds",
+            f"{len(seed_graphs)} seeds, {len(cluster_info)} current clusters",
             file=sys.stderr,
         )
 
-        cluster_durations = compute_cluster_durations(participants, node_mapping)
-        cluster_info = build_cluster_info(node_mapping)
+        all_cluster_durations = compute_cluster_durations(participants, node_mapping)
         current_metadata = load_zone_metadata(args.metadata)
+
+        # Filter to current clusters only (ignore stale data from old seeds)
+        cluster_durations = {
+            nid: durs
+            for nid, durs in all_cluster_durations.items()
+            if nid in cluster_info
+        }
+        n_stale = len(all_cluster_durations) - len(cluster_durations)
+        if n_stale:
+            print(
+                f"  Ignored {n_stale} stale cluster(s) not in clusters.json",
+                file=sys.stderr,
+            )
 
         new_defaults = compute_type_defaults(cluster_durations, cluster_info)
 
