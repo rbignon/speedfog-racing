@@ -9,6 +9,7 @@
 		collapsed: boolean;
 		showParticipants: boolean;
 		publicEnabled: boolean;
+		publicWillLockDuringRace: boolean;
 		activeTab: 'participants' | 'public';
 		historyVersion: number;
 		onSend: (message: string, channel: 'participants' | 'public') => void;
@@ -23,6 +24,7 @@
 		collapsed,
 		showParticipants,
 		publicEnabled,
+		publicWillLockDuringRace,
 		activeTab,
 		historyVersion,
 		onSend,
@@ -163,6 +165,15 @@
 					</svg>
 				</button>
 			</div>
+			{#if showParticipants}
+				<div class="channel-hint">
+					{#if activeTab === 'participants'}
+						Private chat between participants. Avoid sharing spoilers here.{#if !publicEnabled} The Spoilers tab unlocks once you finish the race.{/if}
+					{:else}
+						Open discussion, spoilers allowed. Visible to everyone.{#if publicWillLockDuringRace} This tab will be locked during the race until you finish.{/if}
+					{/if}
+				</div>
+			{/if}
 			<div class="chat-area">
 				<ChatPanel messages={activeMessages} {canSend} onSend={handleSend} />
 			</div>
@@ -323,6 +334,16 @@
 
 	.collapse-btn:hover {
 		color: var(--color-text);
+	}
+
+	.channel-hint {
+		padding: 0.35rem 0.75rem;
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+		background: var(--color-surface-elevated);
+		border-bottom: 1px solid var(--color-border);
+		line-height: 1.35;
+		flex-shrink: 0;
 	}
 
 	.chat-area {

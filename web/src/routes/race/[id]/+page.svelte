@@ -895,6 +895,7 @@
 				collapsed={chatCollapsed}
 				showParticipants={hasParticipantsAccess}
 				{publicEnabled}
+				publicWillLockDuringRace={!!myParticipant && publicEnabled && !myParticipantFinished}
 				activeTab={effectiveActiveTab}
 				onSend={sendChatMessage}
 				onToggle={() => (chatCollapsed = !chatCollapsed)}
