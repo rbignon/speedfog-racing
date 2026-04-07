@@ -460,7 +460,9 @@ def format_overrides(
             if proposed < 1:
                 proposed = 1
 
-        deviation = abs(proposed - effective_weight) / effective_weight * 100
+        deviation = (
+            abs(proposed - effective_weight) / ((proposed + effective_weight) / 2) * 100
+        )
         cur_type_default = current_defaults.get(cluster_type, 2)
 
         suggestions.append(
