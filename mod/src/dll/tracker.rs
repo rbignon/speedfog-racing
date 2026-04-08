@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
@@ -358,7 +358,10 @@ impl RaceTracker {
             triggered_flags: HashSet::new(),
             flag_buffer: FlagBuffer::default(),
             in_flight_event_flags: HashMap::new(),
-            next_event_message_id: 1,
+            next_event_message_id: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
             finish_event: None,
             last_status_update: Instant::now(),
             last_flag_poll: Instant::now(),
