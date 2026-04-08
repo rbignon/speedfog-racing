@@ -41,6 +41,7 @@ class EventFlagMessage(BaseModel):
     type: Literal["event_flag"] = "event_flag"
     flag_id: int
     igt_ms: int
+    message_id: int | None = None
 
 
 class PongMessage(BaseModel):
@@ -230,6 +231,13 @@ class ZoneUpdateMessage(BaseModel):
     layer: int | None = None
     is_first_visit: bool = False
     exits: list[ExitInfo]
+
+
+class EventFlagAckMessage(BaseModel):
+    """Acknowledges persistence of an event_flag message."""
+
+    type: Literal["event_flag_ack"] = "event_flag_ack"
+    message_id: int
 
 
 class PingMessage(BaseModel):

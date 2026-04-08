@@ -42,6 +42,7 @@ from speedfog_racing.websocket.common import (
     parse_zone_query_input,
     send_auth_error,
     send_error,
+    send_event_flag_ack,
     send_zone_update,
 )
 from speedfog_racing.websocket.manager import (
@@ -630,6 +631,8 @@ async def handle_event_flag(
     flag_id = msg.get("flag_id")
     if not isinstance(flag_id, int):
         return
+    raw_message_id = msg.get("message_id")
+    message_id = raw_message_id if isinstance(raw_message_id, int) else None
 
     is_finish = False
     is_first_visit = False
@@ -682,6 +685,8 @@ async def handle_event_flag(
             participant.igt_ms = igt
             _set_layer(participant, seed.total_layers, igt)
             await db.commit()
+            if message_id is not None:
+                await send_event_flag_ack(websocket, message_id)
             is_finish = True
             # Exit session block before calling handle_finished to avoid
             # nested sessions (deadlocks SQLite in tests)
@@ -697,6 +702,13 @@ async def handle_event_flag(
 
             old_history = participant.zone_history or []
 
+            if message_id is not None and any(
+                entry.get("type", "fog") == "fog" and entry.get("message_id") == message_id
+                for entry in old_history
+            ):
+                await send_event_flag_ack(websocket, message_id)
+                return
+
             if is_shared_entrance_duplicate(old_history, node_id, igt):
                 return
 
@@ -711,6 +723,8 @@ async def handle_event_flag(
             participant.igt_ms = igt
             participant.current_zone = node_id
             new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt, "type": "fog"}
+            if message_id is not None:
+                new_entry["message_id"] = message_id
             participant.zone_history = [*old_history, new_entry]
             history_changed = True
 
@@ -719,6 +733,8 @@ async def handle_event_flag(
                 _set_layer(participant, node_layer, igt)
 
             await db.commit()
+            if message_id is not None:
+                await send_event_flag_ack(websocket, message_id)
 
     # Session closed. Safe to open new sessions or broadcast.
 

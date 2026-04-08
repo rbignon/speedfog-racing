@@ -35,6 +35,7 @@ from speedfog_racing.websocket.common import (
     parse_zone_query_input,
     send_auth_error,
     send_error,
+    send_event_flag_ack,
     send_zone_update,
 )
 from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
@@ -443,6 +444,8 @@ async def _handle_event_flag(
     flag_id = msg.get("flag_id")
     if not isinstance(flag_id, int):
         return
+    raw_message_id = msg.get("message_id")
+    message_id = raw_message_id if isinstance(raw_message_id, int) else None
 
     raw_igt = clamp_igt(msg.get("igt_ms"))
     igt = raw_igt if raw_igt is not None else 0
@@ -476,6 +479,8 @@ async def _handle_event_flag(
             session.status = TrainingSessionStatus.FINISHED
             session.finished_at = datetime.now(UTC)
             await db.commit()
+            if message_id is not None:
+                await send_event_flag_ack(websocket, message_id)
 
             # Broadcast finish to spectators
             await _broadcast_participant_update(session)
@@ -491,6 +496,13 @@ async def _handle_event_flag(
         # Always append to zone_history (including revisits/backtracks)
         old_history = session.zone_history or []
 
+        if message_id is not None and any(
+            entry.get("type", "fog") == "fog" and entry.get("message_id") == message_id
+            for entry in old_history
+        ):
+            await send_event_flag_ack(websocket, message_id)
+            return
+
         if is_shared_entrance_duplicate(old_history, node_id, igt):
             return
 
@@ -503,8 +515,12 @@ async def _handle_event_flag(
         session.igt_ms = igt
         session.current_zone = node_id
         new_entry = {"node_id": node_id, "igt_ms": igt, "type": "fog"}
+        if message_id is not None:
+            new_entry["message_id"] = message_id
         session.zone_history = [*old_history, new_entry]
         await db.commit()
+        if message_id is not None:
+            await send_event_flag_ack(websocket, message_id)
 
     # Broadcast to spectators (session is detached; expire_on_commit=False keeps attrs)
     if session:

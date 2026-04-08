@@ -13,7 +13,12 @@ from fastapi import WebSocket
 from speedfog_racing.services.grace_service import load_graces_mapping
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import compute_zone_update
-from speedfog_racing.websocket.schemas import AuthErrorMessage, ErrorMessage, PingMessage
+from speedfog_racing.websocket.schemas import (
+    AuthErrorMessage,
+    ErrorMessage,
+    EventFlagAckMessage,
+    PingMessage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +110,19 @@ async def send_error(
     try:
         await asyncio.wait_for(
             websocket.send_text(ErrorMessage(message=message).model_dump_json()),
+            timeout=send_timeout,
+        )
+    except Exception:
+        pass
+
+
+async def send_event_flag_ack(
+    websocket: WebSocket, message_id: int, *, send_timeout: float = SEND_TIMEOUT
+) -> None:
+    """Acknowledge persistence of an event_flag message."""
+    try:
+        await asyncio.wait_for(
+            websocket.send_text(EventFlagAckMessage(message_id=message_id).model_dump_json()),
             timeout=send_timeout,
         )
     except Exception:

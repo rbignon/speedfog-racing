@@ -9,7 +9,7 @@ The mod reads event flags from Elden Ring's memory at 10Hz. When a flag is detec
 - **Fog gate flags** are deferred until the loading screen exits.
 - **Boss kill (finish_event)** is sent immediately (no loading screen on boss kill).
 
-The server maps `flag_id` → `node_id` via the seed's `event_map`, updates progression, and broadcasts leaderboard/zone updates.
+The server maps `flag_id` → `node_id` via the seed's `event_map`, updates progression, and broadcasts leaderboard/zone updates. Newer protocol versions also attach a client-local `message_id` to each `event_flag`, allowing ACK-based replay after reconnect without duplicating committed history.
 
 ## Mod-Side: Event Flag Polling
 
@@ -90,7 +90,7 @@ At the `position_readable` rising edge:
 
 1. **Forced rescan**: Immediately re-reads all `event_ids` to catch flags set during loading (e.g., Erdtree burn, Maliketh warp cutscene). Newly detected regular flags are cleared in game memory and added to `deferred_event_flags`. A `finish_event` caught here is sent **immediately** if connected (no deferral, since boss kills have no loading screen, but edge cases like Maliketh's cutscene can trigger both a flag and a loading screen).
 
-2. **Deferred flags exist** → send all deferred `event_flag` messages to server.
+2. **Deferred flags exist** → send all deferred `event_flag` messages to server. Each send gets a fresh `message_id` and remains in the mod's in-flight set until `event_flag_ack` arrives.
 
 3. **No deferred flags** → this is a death/respawn/quit-out/fast-travel:
    - Capture grace entity ID from warp hook (fast travel only).
@@ -118,29 +118,38 @@ The overlay keeps showing the old zone until the reveal. A `pre_reveal_layer` sn
 ### `handle_event_flag()` (`websocket/mod.py`)
 
 ```
-receive event_flag { flag_id, igt_ms }
+receive event_flag { flag_id, igt_ms, message_id? }
     │
     ├── flag_id == finish_event?
     │       ├── yes → update igt_ms + current_layer=total_layers, commit
+    │       │         ack(message_id) if present
     │       │         exit session, call handle_finished() in new session
     │       │
     │       └── no → look up event_map[str(flag_id)] → node_id
     │                  │
     │                  ├── not found → warn + return
     │                  │
+    │                  ├── message_id already present in prior fog entry?
+    │                  │       → ack(message_id)
+    │                  │       → return (idempotent replay)
+    │                  │
     │                  ├── node_id in zone_history? (revisit)
-    │                  │       → append to zone_history (with current igt_ms)
+    │                  │       → append to zone_history (with current igt_ms, message_id)
     │                  │       → update current_zone + igt_ms
     │                  │       → current_layer unchanged (high watermark)
+    │                  │       → ack(message_id) if present
     │                  │       → unicast zone_update to mod
     │                  │       → broadcast player_update to all
     │                  │
     │                  └── new discovery (first visit)
-    │                          → append to zone_history
+    │                          → append to zone_history (with message_id)
     │                          → update current_layer (high watermark, never regress)
+    │                          → ack(message_id) if present
     │                          → broadcast leaderboard_update to all
     │                          → unicast zone_update to mod
 ```
+
+`message_id` is optional for backward compatibility with older mods. When absent, the server behaves as before: no ACK and no idempotent replay protection for that message.
 
 ### Zone Query Resolution (`grace_service.py`)
 

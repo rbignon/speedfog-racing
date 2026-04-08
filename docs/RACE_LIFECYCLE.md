@@ -104,7 +104,7 @@ More broadly, `event_flag` and `zone_query` handlers require `status == PLAYING`
 
 **`current_layer`** is a **high watermark**: it tracks the furthest layer reached and never regresses, even if the player backtracks to an earlier zone. This ensures leaderboard stability.
 
-**`zone_history`** is a JSON array of `{"node_id": str, "igt_ms": int, "deaths"?: int}` entries. A new entry is appended on every zone transition, including backtracks (the same `node_id` may appear multiple times). The `deaths` key is added/incremented by `status_update` when the death count increases. Deaths are attributed to the **most recent** entry matching the player's current zone. Frontend consumers (popup, highlights, replay) aggregate time and deaths across all visits to the same node.
+**`zone_history`** is a JSON array of `{"node_id": str, "igt_ms": int, "deaths"?: int, "message_id"?: int}` entries. A new entry is appended on every zone transition, including backtracks (the same `node_id` may appear multiple times). The optional `message_id` is present on `fog` entries created from newer `event_flag` messages and is used for idempotent replay after reconnect. The `deaths` key is added/incremented by `status_update` when the death count increases. Deaths are attributed to the **most recent** entry matching the player's current zone. Frontend consumers (popup, highlights, replay) aggregate time and deaths across all visits to the same node.
 
 **`last_igt_change_at`** is updated on every `status_update` where `igt_ms` differs from the stored value. Used by the inactivity monitor. A quit-out (IGT=0) does not reset it since IGT doesn't change, it just becomes 0.
 

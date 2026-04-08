@@ -43,6 +43,12 @@ pub struct ZoneUpdateData {
     pub exits: Vec<ExitInfo>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct BufferedEventFlag {
+    flag_id: u32,
+    igt_ms: u32,
+}
+
 /// Current race state from server
 #[derive(Debug, Clone, Default)]
 pub struct RaceState {
@@ -150,6 +156,8 @@ pub struct RaceTracker {
     event_ids: Vec<u32>,
     pub(crate) triggered_flags: HashSet<u32>,
     flag_buffer: FlagBuffer,
+    in_flight_event_flags: HashMap<u64, BufferedEventFlag>,
+    next_event_message_id: u64,
     /// finish_event from server, sent immediately (no loading screen on boss kill)
     finish_event: Option<u32>,
 
@@ -291,6 +299,8 @@ impl RaceTracker {
             event_ids: Vec::new(),
             triggered_flags: HashSet::new(),
             flag_buffer: FlagBuffer::default(),
+            in_flight_event_flags: HashMap::new(),
+            next_event_message_id: 1,
             finish_event: None,
             last_status_update: Instant::now(),
             last_flag_poll: Instant::now(),
@@ -426,7 +436,7 @@ impl RaceTracker {
                                     && !self.am_i_finished()
                                     && !self.is_countdown_active()
                                 {
-                                    self.ws_client.send_event_flag(flag_id, igt_ms);
+                                    self.send_tracked_event_flag(flag_id, igt_ms);
                                     self.last_sent_debug = Some(format!(
                                         "event_flag({}, igt={}ms) [finish/loading-exit]",
                                         flag_id, igt_ms
@@ -454,7 +464,7 @@ impl RaceTracker {
                 if self.flag_buffer.has_deferred() {
                     // Fog gate traversal: send deferred flags now that loading is done
                     for (flag_id, igt_ms) in self.flag_buffer.drain_deferred() {
-                        self.ws_client.send_event_flag(flag_id, igt_ms);
+                        self.send_tracked_event_flag(flag_id, igt_ms);
                         self.last_sent_debug = Some(format!(
                             "event_flag({}, igt={}ms) [deferred]",
                             flag_id, igt_ms
@@ -549,7 +559,7 @@ impl RaceTracker {
                                 && !self.am_i_finished()
                                 && !self.is_countdown_active()
                             {
-                                self.ws_client.send_event_flag(flag_id, igt_ms);
+                                self.send_tracked_event_flag(flag_id, igt_ms);
                                 self.last_sent_debug = Some(format!(
                                     "event_flag({}, igt={}ms) [finish]",
                                     flag_id, igt_ms
@@ -594,7 +604,7 @@ impl RaceTracker {
             if self.is_race_running() && !self.am_i_finished() && !self.is_countdown_active() {
                 // Drain event flags buffered during disconnection
                 for (flag_id, flag_igt) in self.flag_buffer.drain_pending() {
-                    self.ws_client.send_event_flag(flag_id, flag_igt);
+                    self.send_tracked_event_flag(flag_id, flag_igt);
                     self.last_sent_debug =
                         Some(format!("event_flag({}, igt={})", flag_id, flag_igt));
                     info!(flag_id, "[RACE] Buffered event flag sent");
@@ -610,7 +620,7 @@ impl RaceTracker {
                                 self.event_flag_reader.is_flag_set_cached(flag_id, rp)
                             {
                                 self.triggered_flags.insert(flag_id);
-                                self.ws_client.send_event_flag(flag_id, igt_ms);
+                                self.send_tracked_event_flag(flag_id, igt_ms);
                                 self.last_sent_debug =
                                     Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
                                 info!(flag_id, "[RACE] Finish event re-sent after reconnect");
@@ -620,7 +630,7 @@ impl RaceTracker {
                         self.event_flag_reader.is_flag_set_cached(flag_id, rp)
                     {
                         self.event_flag_reader.set_flag_cached(flag_id, false, rp);
-                        self.ws_client.send_event_flag(flag_id, igt_ms);
+                        self.send_tracked_event_flag(flag_id, igt_ms);
                         self.last_sent_debug =
                             Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
                         info!(flag_id, "[RACE] Event flag re-sent after reconnect");
@@ -697,6 +707,28 @@ impl RaceTracker {
         }
     }
 
+    fn send_tracked_event_flag(&mut self, flag_id: u32, igt_ms: u32) {
+        let message_id = self.next_event_message_id;
+        self.next_event_message_id = self.next_event_message_id.wrapping_add(1);
+        self.in_flight_event_flags
+            .insert(message_id, BufferedEventFlag { flag_id, igt_ms });
+        self.ws_client.send_event_flag(flag_id, igt_ms, message_id);
+    }
+
+    fn requeue_in_flight_event_flags(&mut self) {
+        if self.in_flight_event_flags.is_empty() {
+            return;
+        }
+
+        let mut message_ids: Vec<u64> = self.in_flight_event_flags.keys().copied().collect();
+        message_ids.sort_unstable();
+        for message_id in message_ids {
+            if let Some(event) = self.in_flight_event_flags.remove(&message_id) {
+                self.flag_buffer.add_pending(event.flag_id, event.igt_ms);
+            }
+        }
+    }
+
     fn handle_ws_message(&mut self, msg: IncomingMessage) {
         match msg {
             IncomingMessage::StatusChanged(status) => {
@@ -708,6 +740,7 @@ impl RaceTracker {
                     }
                     ConnectionStatus::Reconnecting => {
                         self.flag_buffer.park_deferred();
+                        self.requeue_in_flight_event_flags();
                         self.set_status("Reconnecting to server...".to_string());
                     }
                     ConnectionStatus::Error => {
@@ -916,6 +949,17 @@ impl RaceTracker {
                     exits,
                 });
                 self.pending_zone_received_at = Some(Instant::now());
+            }
+            IncomingMessage::EventFlagAck { message_id } => {
+                if let Some(event) = self.in_flight_event_flags.remove(&message_id) {
+                    info!(
+                        message_id,
+                        flag_id = event.flag_id,
+                        "[WS] Event flag acknowledged"
+                    );
+                } else {
+                    warn!(message_id, "[WS] Ack for unknown event flag");
+                }
             }
             IncomingMessage::RequeueEventFlag { flag_id, igt_ms } => {
                 // Event flag was in the outgoing channel but never transmitted before

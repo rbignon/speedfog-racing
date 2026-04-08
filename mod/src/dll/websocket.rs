@@ -43,6 +43,7 @@ pub enum OutgoingMessage {
     EventFlag {
         flag_id: u32,
         igt_ms: u32,
+        message_id: u64,
     },
     ZoneQuery {
         igt_ms: u32,
@@ -87,6 +88,9 @@ pub enum IncomingMessage {
     RequeueEventFlag {
         flag_id: u32,
         igt_ms: u32,
+    },
+    EventFlagAck {
+        message_id: u64,
     },
     Error(String),
     /// Server rejected permanently (4xxx close code or auth failure). Stop reconnecting.
@@ -199,9 +203,13 @@ impl RaceWebSocketClient {
         }
     }
 
-    pub fn send_event_flag(&self, flag_id: u32, igt_ms: u32) {
+    pub fn send_event_flag(&self, flag_id: u32, igt_ms: u32, message_id: u64) {
         if let Some(tx) = &self.tx {
-            if let Err(e) = tx.try_send(OutgoingMessage::EventFlag { flag_id, igt_ms }) {
+            if let Err(e) = tx.try_send(OutgoingMessage::EventFlag {
+                flag_id,
+                igt_ms,
+                message_id,
+            }) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
         }
@@ -320,7 +328,11 @@ fn websocket_thread(
                             ));
                             return;
                         }
-                        OutgoingMessage::EventFlag { flag_id, igt_ms } => {
+                        OutgoingMessage::EventFlag {
+                            flag_id,
+                            igt_ms,
+                            message_id: _,
+                        } => {
                             // Re-queue event flags back to the tracker for re-buffering.
                             // These were queued but never transmitted before disconnect.
                             let _ = incoming_tx
@@ -513,9 +525,17 @@ fn message_loop(
                     .send(Message::Text(json))
                     .map_err(|e| e.to_string())?;
             }
-            Ok(OutgoingMessage::EventFlag { flag_id, igt_ms }) => {
-                info!(flag_id, igt_ms, "[WS] Sending: event_flag");
-                let msg = ClientMessage::EventFlag { flag_id, igt_ms };
+            Ok(OutgoingMessage::EventFlag {
+                flag_id,
+                igt_ms,
+                message_id,
+            }) => {
+                info!(flag_id, igt_ms, message_id, "[WS] Sending: event_flag");
+                let msg = ClientMessage::EventFlag {
+                    flag_id,
+                    igt_ms,
+                    message_id,
+                };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
                     .send(Message::Text(json))
@@ -616,6 +636,9 @@ fn message_loop(
                             {
                                 warn!("[WS] Incoming channel full/closed: zone_update dropped");
                             }
+                        }
+                        ServerMessage::EventFlagAck { message_id } => {
+                            let _ = incoming_tx.send(IncomingMessage::EventFlagAck { message_id });
                         }
                         ServerMessage::DeathCounts { counts } => {
                             let _ = incoming_tx.send(IncomingMessage::DeathCounts(counts));

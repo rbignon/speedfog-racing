@@ -21,7 +21,11 @@ pub enum ClientMessage {
     /// Periodic status update
     StatusUpdate { igt_ms: u32, death_count: u32 },
     /// EMEVD event flag triggered (fog gate traversal or boss kill)
-    EventFlag { flag_id: u32, igt_ms: u32 },
+    EventFlag {
+        flag_id: u32,
+        igt_ms: u32,
+        message_id: u64,
+    },
     /// Zone query at loading screen exit (server resolves to graph node)
     ZoneQuery {
         igt_ms: u32,
@@ -156,6 +160,8 @@ pub enum ServerMessage {
         #[serde(default)]
         exits: Vec<ExitInfo>,
     },
+    /// Acknowledges persistence of an event_flag message.
+    EventFlagAck { message_id: u64 },
     /// Aggregated death counts per zone (for conditional death markers)
     DeathCounts { counts: HashMap<String, u32> },
     /// Heartbeat ping
@@ -212,11 +218,23 @@ mod tests {
         let msg = ClientMessage::EventFlag {
             flag_id: 9000042,
             igt_ms: 60000,
+            message_id: 42,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"event_flag""#));
         assert!(json.contains(r#""flag_id":9000042"#));
         assert!(json.contains(r#""igt_ms":60000"#));
+        assert!(json.contains(r#""message_id":42"#));
+    }
+
+    #[test]
+    fn test_server_event_flag_ack_deserialize() {
+        let json = r#"{"type":"event_flag_ack","message_id":99}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::EventFlagAck { message_id } => assert_eq!(message_id, 99),
+            _ => panic!("Expected EventFlagAck"),
+        }
     }
 
     #[test]

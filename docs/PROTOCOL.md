@@ -146,17 +146,28 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 
 Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)).
 
+`message_id` is optional for backward compatibility. Newer mods attach a monotonically increasing client-local ID so the server can acknowledge persistence and deduplicate replayed `event_flag` messages after reconnect.
+
 **Revisited nodes:** Multiple flags can map to the same DAG node (e.g., shared entrance merges where several branches connect to a single cluster). When a player backtracks and re-enters a previously visited node, a new entry is appended to `zone_history` with the current `igt_ms`. This enables accurate per-visit time and death attribution. Only first visits trigger a `leaderboard_update` broadcast; revisits trigger a `player_update` instead. In both cases a `zone_history` snapshot is also emitted to spectators so they can update their local store.
 
 **Timing:** Regular event flags (fog gate traversals) are detected immediately by polling but deferred until loading screen exit. This ensures spectators see progress updates in sync with the player's arrival, and prevents zone name spoilers during loading screens. The `finish_event` (boss kill) is an exception: it is sent immediately since boss kills don't trigger a loading screen.
+
+**Acknowledgement:** On new protocol versions, the server sends `event_flag_ack` after the `event_flag` has been committed. The mod keeps the flag in an in-flight set until this ACK arrives. If the connection drops first, the mod replays the unacknowledged `event_flag` on reconnect. The server stores `message_id` in `zone_history` entries of type `"fog"` and treats replays with the same `message_id` as idempotent (ACK again, no second append).
 
 ```json
 {
   "type": "event_flag",
   "flag_id": 1040292842,
-  "igt_ms": 4532100
+  "igt_ms": 4532100,
+  "message_id": 17
 }
 ```
+
+| Field        | Type       | Description                                                       |
+| ------------ | ---------- | ----------------------------------------------------------------- |
+| `flag_id`    | `integer`  | Event flag ID set by the EMEVD script                             |
+| `igt_ms`     | `integer`  | In-game time in milliseconds at the moment of the transition      |
+| `message_id` | `integer?` | Optional client-generated idempotency key for ACK/replay handling |
 
 #### `zone_query`
 
@@ -390,6 +401,21 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
 | `exits[].text`       | `string` | Fog gate label text (may include `[Zone Name]` annotation after i18n)          |
 | `exits[].to_name`    | `string` | Display name of the destination zone                                           |
 | `exits[].discovered` | `bool`   | Whether the destination has been visited (in zone_history)                     |
+
+#### `event_flag_ack`
+
+Unicast ACK sent to the originating mod after an `event_flag` has been durably committed, or after a replay with the same `message_id` has been recognized as already committed.
+
+```json
+{
+  "type": "event_flag_ack",
+  "message_id": 17
+}
+```
+
+| Field        | Type      | Description                                 |
+| ------------ | --------- | ------------------------------------------- |
+| `message_id` | `integer` | Echo of the client-supplied `event_flag` id |
 
 #### `death_counts`
 
@@ -786,7 +812,7 @@ Shared schema across all WebSocket messages:
 | `gap_ms`              | `int?`    | Gap to the leader in milliseconds (see below)                                                                                                                         |
 | `layer_entry_igt`     | `int?`    | Player's IGT when entering their current layer                                                                                                                        |
 
-`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack" }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). Entries without `type` are treated as `"fog"` for backward compatibility.
+`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack", "message_id"?: 17 }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). `message_id` is optional and only present on newer `"fog"` entries; it is used server-side to make replayed `event_flag` messages idempotent after reconnect. Entries without `type` are treated as `"fog"` for backward compatibility.
 
 **Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`, `gap_ms`, `layer_entry_igt`). Extra fields like `color_index`, `mod_connected`, and `zone_history` are present on the wire but silently ignored by serde.
 
