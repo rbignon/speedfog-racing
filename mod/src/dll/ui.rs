@@ -479,8 +479,7 @@ impl RaceTracker {
         max_width: f32,
         bufs: &mut RenderBuffers,
     ) {
-        let participants = self.participants();
-        if participants.is_empty() {
+        if self.participants().is_empty() {
             ui.text_disabled("No participants");
             return;
         }
@@ -488,6 +487,7 @@ impl RaceTracker {
         let buf_left = &mut bufs.buf_left;
         let buf_footer = &mut bufs.buf_footer;
         self.refresh_leaderboard_cache(ui, max_width);
+        let participants = self.participants();
         let cache = &self.leaderboard_cache;
 
         let mut emit_row =
@@ -531,7 +531,6 @@ impl RaceTracker {
     }
 
     fn refresh_leaderboard_cache(&mut self, ui: &hudhook::imgui::Ui, max_width: f32) {
-        let participants = self.participants();
         let local_igt_bucket = self
             .read_igt()
             .map(|igt| igt / LEADERBOARD_REFRESH_INTERVAL_MS);
@@ -550,15 +549,18 @@ impl RaceTracker {
             .race_info()
             .is_some_and(|r| r.status.as_str() == "finished");
         let spacing = ui.calc_text_size(" ")[0];
+        // Access fields directly (not through &self methods) so the borrow
+        // checker can see they are disjoint from leaderboard_cache.
+        let participants = &self.race_state.participants;
         let leader_splits = self.race_state.leader_splits.as_ref();
         let local_igt = self.read_igt().map(|v| v as i32);
-        let my_id = self.my_participant_id();
+        let my_id = self.my_participant_id().cloned();
 
         let leader_igt_ms = participants
             .first()
             .filter(|p| p.status == "playing" || p.status == "finished")
             .map(|p| {
-                if my_id.is_some_and(|id| id == &p.id) {
+                if my_id.as_deref().is_some_and(|id| id == p.id) {
                     local_igt.unwrap_or(p.igt_ms)
                 } else {
                     p.igt_ms
@@ -580,7 +582,7 @@ impl RaceTracker {
             } else if p.status == "finished" || race_finished {
                 p.gap_ms
             } else {
-                let igt = if my_id.is_some_and(|id| id == &p.id) {
+                let igt = if my_id.as_deref().is_some_and(|id| id == p.id) {
                     local_igt.unwrap_or(p.igt_ms)
                 } else {
                     p.igt_ms

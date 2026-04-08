@@ -68,9 +68,7 @@ pub struct RaceState {
 pub(crate) struct RenderBuffers {
     pub buf_right: String,
     pub buf_left: String,
-    pub buf_gap: String,
     pub buf_footer: String,
-    pub gaps: Vec<Option<i32>>,
 }
 
 impl Default for RenderBuffers {
@@ -78,9 +76,7 @@ impl Default for RenderBuffers {
         Self {
             buf_right: String::with_capacity(16),
             buf_left: String::with_capacity(48),
-            buf_gap: String::with_capacity(16),
             buf_footer: String::with_capacity(16),
-            gaps: Vec::with_capacity(16),
         }
     }
 }
@@ -200,7 +196,7 @@ pub struct RaceTracker {
 
     // Identity (set from auth_ok)
     my_participant_id: Option<String>,
-    my_participant_index: Option<usize>,
+    pub(crate) my_participant_index: Option<usize>,
 
     // Event flag tracking
     event_ids: Vec<u32>,
@@ -277,7 +273,7 @@ pub struct RaceTracker {
 
     // Cached leaderboard layout invalidated by participant/status changes.
     pub(crate) leaderboard_cache: LeaderboardCache,
-    leaderboard_version: u64,
+    pub(crate) leaderboard_version: u64,
 
     // Pre-allocated render buffers (reused across frames)
     pub(crate) render_bufs: RenderBuffers,
@@ -506,9 +502,10 @@ impl RaceTracker {
             if !self.event_ids.is_empty() {
                 let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
                 // Resolve category page once (all event_ids share the same category)
-                let page = self.event_flag_reader.resolve_category(self.event_ids[0]);
+                let event_ids: Vec<u32> = self.event_ids.clone();
+                let page = self.event_flag_reader.resolve_category(event_ids[0]);
                 let page_ref = page.as_ref();
-                for &flag_id in &self.event_ids {
+                for &flag_id in &event_ids {
                     if let Some(true) = self.event_flag_reader.is_flag_set_cached(flag_id, page_ref)
                     {
                         if self.finish_event == Some(flag_id) {
@@ -546,7 +543,8 @@ impl RaceTracker {
             {
                 if self.flag_buffer.has_deferred() {
                     // Fog gate traversal: send deferred flags now that loading is done
-                    for (flag_id, igt_ms) in self.flag_buffer.drain_deferred() {
+                    let deferred: Vec<_> = self.flag_buffer.drain_deferred().collect();
+                    for (flag_id, igt_ms) in deferred {
                         self.send_tracked_event_flag(flag_id, igt_ms);
                         self.last_sent_debug = Some(format!(
                             "event_flag({}, igt={}ms) [deferred]",
@@ -628,9 +626,10 @@ impl RaceTracker {
             let igt_ms = self.game_state.read_igt().unwrap_or(0);
             self.frame_snapshot.igt_ms = Some(igt_ms);
             // Resolve category page once for all event_ids (same category)
-            let page = self.event_flag_reader.resolve_category(self.event_ids[0]);
+            let poll_ids: Vec<u32> = self.event_ids.clone();
+            let page = self.event_flag_reader.resolve_category(poll_ids[0]);
             let page_ref = page.as_ref();
-            for &flag_id in &self.event_ids {
+            for &flag_id in &poll_ids {
                 if self.finish_event == Some(flag_id) {
                     // finish_event: one-shot, use triggered_flags guard
                     if !self.triggered_flags.contains(&flag_id) {
@@ -699,7 +698,8 @@ impl RaceTracker {
                 self.replay_in_flight_event_flags();
 
                 // Drain event flags buffered during disconnection (never sent)
-                for (flag_id, flag_igt) in self.flag_buffer.drain_pending() {
+                let pending: Vec<_> = self.flag_buffer.drain_pending().collect();
+                for (flag_id, flag_igt) in pending {
                     self.send_tracked_event_flag(flag_id, flag_igt);
                     self.last_sent_debug =
                         Some(format!("event_flag({}, igt={})", flag_id, flag_igt));
@@ -707,9 +707,10 @@ impl RaceTracker {
                 }
 
                 // Safety-net rescan: catch any flags still set in memory that polling missed
-                let rescan_page = self.event_flag_reader.resolve_category(self.event_ids[0]);
+                let rescan_ids: Vec<u32> = self.event_ids.clone();
+                let rescan_page = self.event_flag_reader.resolve_category(rescan_ids[0]);
                 let rp = rescan_page.as_ref();
-                for &flag_id in &self.event_ids {
+                for &flag_id in &rescan_ids {
                     if self.finish_event == Some(flag_id) {
                         if !self.triggered_flags.contains(&flag_id) {
                             if let Some(true) =
