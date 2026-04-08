@@ -27,6 +27,7 @@ use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 /// (e.g., loading screen flag is unreadable), reveal anyway.
 const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(15);
 const DEBUG_REFRESH_INTERVAL: Duration = Duration::from_millis(250);
+pub(crate) const LEADERBOARD_REFRESH_INTERVAL_MS: u32 = 250;
 
 // =============================================================================
 // RACE STATE
@@ -126,6 +127,29 @@ impl Default for DebugInfo {
             sample_reads: Vec::new(),
         }
     }
+}
+
+#[derive(Default)]
+pub(crate) struct LeaderboardRowCache {
+    pub right_text: String,
+    pub gap_text: Option<String>,
+    pub computed_gap_ms: Option<i32>,
+}
+
+#[derive(Default)]
+pub(crate) struct LeaderboardCache {
+    pub rows: Vec<LeaderboardRowCache>,
+    pub max_gap_width: f32,
+    pub max_right_width: f32,
+    pub my_index: Option<usize>,
+    pub need_anchor: bool,
+    pub top_count: usize,
+    pub displayed: usize,
+    pub footer_more: usize,
+    pub version: u64,
+    pub local_igt_bucket: Option<u32>,
+    pub max_width: f32,
+    pub spacing: f32,
 }
 
 // =============================================================================
@@ -251,6 +275,10 @@ pub struct RaceTracker {
     debug_info: DebugInfo,
     last_debug_refresh: Option<Instant>,
 
+    // Cached leaderboard layout invalidated by participant/status changes.
+    pub(crate) leaderboard_cache: LeaderboardCache,
+    leaderboard_version: u64,
+
     // Pre-allocated render buffers (reused across frames)
     pub(crate) render_bufs: RenderBuffers,
 }
@@ -355,6 +383,8 @@ impl RaceTracker {
             frame_snapshot: FrameSnapshot::default(),
             debug_info: DebugInfo::default(),
             last_debug_refresh: None,
+            leaderboard_cache: LeaderboardCache::default(),
+            leaderboard_version: 0,
             render_bufs: RenderBuffers::default(),
         })
     }
@@ -917,6 +947,7 @@ impl RaceTracker {
                     }
                 }
                 self.race_state.participants = participants;
+                self.bump_leaderboard_version();
             }
             IncomingMessage::AuthError(msg) => {
                 self.last_received_debug = Some(format!("auth_error({})", msg));
@@ -939,6 +970,7 @@ impl RaceTracker {
                 if let Some(ref mut race) = self.race_state.race {
                     race.status = "running".to_string();
                 }
+                self.bump_leaderboard_version();
             }
             IncomingMessage::LeaderboardUpdate {
                 participants,
@@ -972,6 +1004,7 @@ impl RaceTracker {
                 self.race_state.participants = participants;
                 self.race_state.leader_splits = leader_splits;
                 self.refresh_my_participant_index();
+                self.bump_leaderboard_version();
             }
             IncomingMessage::RaceStatusChange(status) => {
                 self.last_received_debug = Some(format!("race_status_change({})", status));
@@ -987,6 +1020,7 @@ impl RaceTracker {
                 if let Some(ref mut race) = self.race_state.race {
                     race.status = status;
                 }
+                self.bump_leaderboard_version();
             }
             IncomingMessage::PlayerUpdate(player) => {
                 // Snapshot current_layer on increase (same rationale as LeaderboardUpdate).
@@ -1010,6 +1044,7 @@ impl RaceTracker {
                     *p = player;
                 }
                 self.refresh_my_participant_index();
+                self.bump_leaderboard_version();
             }
             IncomingMessage::ZoneUpdate {
                 node_id,
@@ -1168,6 +1203,10 @@ impl RaceTracker {
                 .iter()
                 .position(|p| &p.id == id)
         });
+    }
+
+    fn bump_leaderboard_version(&mut self) {
+        self.leaderboard_version = self.leaderboard_version.wrapping_add(1);
     }
 
     fn refresh_debug_info(&mut self) {

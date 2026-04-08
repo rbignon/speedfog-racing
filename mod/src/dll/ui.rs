@@ -1,7 +1,6 @@
 //! Race UI - ImGui overlay for SpeedFog Racing
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::fmt::Write;
 use std::time::Duration;
 
@@ -12,7 +11,10 @@ use hudhook::{ImguiRenderLoop, RenderContext};
 use tracing::{error, info};
 
 use super::death_icon::DeathIcon;
-use super::tracker::{FlagReadResult, RaceTracker, RenderBuffers};
+use super::tracker::{
+    FlagReadResult, LeaderboardRowCache, RaceTracker, RenderBuffers,
+    LEADERBOARD_REFRESH_INTERVAL_MS,
+};
 use super::websocket::ConnectionStatus;
 
 impl ImguiRenderLoop for RaceTracker {
@@ -472,7 +474,7 @@ impl RaceTracker {
     /// Always shows the local player: if ranked beyond top 10, anchors them
     /// at the bottom with a `···` separator and their real rank.
     fn render_leaderboard(
-        &self,
+        &mut self,
         ui: &hudhook::imgui::Ui,
         max_width: f32,
         bufs: &mut RenderBuffers,
@@ -483,27 +485,72 @@ impl RaceTracker {
             return;
         }
 
-        let buf_right = &mut bufs.buf_right;
-        let buf_gap = &mut bufs.buf_gap;
         let buf_left = &mut bufs.buf_left;
         let buf_footer = &mut bufs.buf_footer;
+        self.refresh_leaderboard_cache(ui, max_width);
+        let cache = &self.leaderboard_cache;
+
+        let mut emit_row =
+            |idx: usize, rank: usize, is_self: bool, p: &crate::core::protocol::ParticipantInfo| {
+                let row = &cache.rows[idx];
+                self.render_participant_row(
+                    ui,
+                    p,
+                    rank,
+                    max_width,
+                    cache.spacing,
+                    is_self,
+                    cache.max_gap_width,
+                    cache.max_right_width,
+                    &row.right_text,
+                    row.gap_text.as_deref(),
+                    row.computed_gap_ms,
+                    buf_left,
+                );
+            };
+
+        // Render top rows
+        for (i, p) in participants.iter().take(cache.top_count).enumerate() {
+            emit_row(i, i + 1, cache.my_index == Some(i), p);
+        }
+
+        // Anchor: separator + self row
+        if cache.need_anchor {
+            if let Some(idx) = cache.my_index {
+                ui.text_disabled("  \u{00B7}\u{00B7}\u{00B7}");
+                emit_row(idx, idx + 1, true, &participants[idx]);
+            }
+        }
+
+        // "+ N more" footer
+        if cache.footer_more > 0 {
+            buf_footer.clear();
+            write!(buf_footer, "  + {} more", cache.footer_more).ok();
+            ui.text_disabled(buf_footer);
+        }
+    }
+
+    fn refresh_leaderboard_cache(&mut self, ui: &hudhook::imgui::Ui, max_width: f32) {
+        let participants = self.participants();
+        let local_igt_bucket = self
+            .read_igt()
+            .map(|igt| igt / LEADERBOARD_REFRESH_INTERVAL_MS);
+        let should_refresh = self.leaderboard_cache.version != self.leaderboard_version
+            || self.leaderboard_cache.local_igt_bucket != local_igt_bucket
+            || (self.leaderboard_cache.max_width - max_width).abs() > f32::EPSILON;
+        if !should_refresh {
+            return;
+        }
 
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let is_setup = self
             .race_info()
             .is_some_and(|r| r.status.as_str() == "setup");
+        let race_finished = self
+            .race_info()
+            .is_some_and(|r| r.status.as_str() == "finished");
         let spacing = ui.calc_text_size(" ")[0];
-
-        // Get leader_splits and leader IGT for gap computation
-        // Empty HashMap doesn't allocate until first insert, so this is free.
-        let empty_splits = HashMap::new();
-        let leader_splits = self
-            .race_state
-            .leader_splits
-            .as_ref()
-            .unwrap_or(&empty_splits);
-
-        // Local IGT for self (real-time updates from game memory)
+        let leader_splits = self.race_state.leader_splits.as_ref();
         let local_igt = self.read_igt().map(|v| v as i32);
         let my_id = self.my_participant_id();
 
@@ -511,7 +558,6 @@ impl RaceTracker {
             .first()
             .filter(|p| p.status == "playing" || p.status == "finished")
             .map(|p| {
-                // Use real-time game IGT if we are the leader
                 if my_id.is_some_and(|id| id == &p.id) {
                     local_igt.unwrap_or(p.igt_ms)
                 } else {
@@ -519,129 +565,73 @@ impl RaceTracker {
                 }
             })
             .unwrap_or(0);
-        let has_leader = !leader_splits.is_empty()
+        let has_leader = leader_splits.is_some_and(|s| !s.is_empty())
             || participants.first().is_some_and(|p| p.status == "finished");
         let leader_finished = participants.first().is_some_and(|p| p.status == "finished");
 
-        // Pre-compute gaps for all participants (reuse pre-allocated Vec)
-        let race_finished = self
-            .race_info()
-            .is_some_and(|r| r.status.as_str() == "finished");
+        let cache = &mut self.leaderboard_cache;
+        cache.rows.clear();
+        cache.max_gap_width = 0.0;
+        cache.max_right_width = 0.0;
 
-        let gaps = &mut bufs.gaps;
-        gaps.clear();
         for (i, p) in participants.iter().enumerate() {
-            let gap = if !has_leader {
+            let computed_gap_ms = if !has_leader {
                 None
             } else if p.status == "finished" || race_finished {
-                // Finished players or race ended: use server-computed gap (frozen)
                 p.gap_ms
             } else {
-                // Use real-time game IGT for self, server snapshot for others
                 let igt = if my_id.is_some_and(|id| id == &p.id) {
                     local_igt.unwrap_or(p.igt_ms)
                 } else {
                     p.igt_ms
                 };
-                crate::core::compute_gap(
-                    igt,
-                    p.current_layer,
-                    p.layer_entry_igt,
-                    leader_splits,
-                    i == 0,
-                    &p.status,
-                    leader_igt_ms,
-                    leader_finished,
-                )
+                leader_splits.and_then(|splits| {
+                    crate::core::compute_gap(
+                        igt,
+                        p.current_layer,
+                        p.layer_entry_igt,
+                        splits,
+                        i == 0,
+                        &p.status,
+                        leader_igt_ms,
+                        leader_finished,
+                    )
+                })
             };
-            gaps.push(gap);
+
+            let mut row = LeaderboardRowCache::default();
+            write_right_text(&mut row.right_text, p, total_layers, is_setup);
+            cache.max_right_width = cache
+                .max_right_width
+                .max(ui.calc_text_size(&row.right_text)[0]);
+
+            if let Some(gap_ms) = computed_gap_ms {
+                let mut gap_text = String::with_capacity(16);
+                crate::core::format_gap_into(&mut gap_text, gap_ms);
+                cache.max_gap_width = cache.max_gap_width.max(ui.calc_text_size(&gap_text)[0]);
+                row.gap_text = Some(gap_text);
+            }
+            row.computed_gap_ms = computed_gap_ms;
+            cache.rows.push(row);
         }
 
-        // Pre-compute column widths using reusable buffers
-        let mut max_gap_width: f32 = 0.0;
-        let mut max_right_width: f32 = 0.0;
-        for (i, p) in participants.iter().enumerate() {
-            buf_right.clear();
-            write_right_text(buf_right, p, total_layers, is_setup);
-            let rw = ui.calc_text_size(&buf_right)[0];
-            if rw > max_right_width {
-                max_right_width = rw;
-            }
-            if let Some(gap_ms) = gaps[i] {
-                buf_gap.clear();
-                crate::core::format_gap_into(buf_gap, gap_ms);
-                let gw = ui.calc_text_size(&buf_gap)[0];
-                if gw > max_gap_width {
-                    max_gap_width = gw;
-                }
-            }
-        }
-
-        // Find local player's index in the (pre-sorted) participants list
-        let my_index = my_id.and_then(|my_id| participants.iter().position(|p| &p.id == my_id));
-
-        // Determine how many top rows to show and whether to anchor self
-        let need_anchor = participants.len() > 10 && my_index.map_or(false, |idx| idx >= 10);
-        let top_count = if need_anchor {
+        cache.my_index = self.my_participant_index;
+        cache.need_anchor = participants.len() > 10 && cache.my_index.is_some_and(|idx| idx >= 10);
+        cache.top_count = if cache.need_anchor {
             9
         } else {
             10.min(participants.len())
         };
-
-        // Helper: prepare buffers and render one participant row
-        let mut emit_row =
-            |idx: usize, rank: usize, is_self: bool, p: &crate::core::protocol::ParticipantInfo| {
-                buf_right.clear();
-                write_right_text(buf_right, p, total_layers, is_setup);
-
-                let gap_str = if let Some(gap_ms) = gaps[idx] {
-                    buf_gap.clear();
-                    crate::core::format_gap_into(buf_gap, gap_ms);
-                    Some(buf_gap.as_str())
-                } else {
-                    None
-                };
-
-                self.render_participant_row(
-                    ui,
-                    p,
-                    rank,
-                    max_width,
-                    spacing,
-                    is_self,
-                    max_gap_width,
-                    max_right_width,
-                    buf_right,
-                    gap_str,
-                    gaps[idx],
-                    buf_left,
-                );
-            };
-
-        // Render top rows
-        for (i, p) in participants.iter().take(top_count).enumerate() {
-            emit_row(i, i + 1, my_index == Some(i), p);
-        }
-
-        // Anchor: separator + self row
-        if need_anchor {
-            if let Some(idx) = my_index {
-                ui.text_disabled("  \u{00B7}\u{00B7}\u{00B7}");
-                emit_row(idx, idx + 1, true, &participants[idx]);
-            }
-        }
-
-        // "+ N more" footer
-        let displayed = if need_anchor {
-            top_count + if my_index.is_some() { 1 } else { 0 }
+        cache.displayed = if cache.need_anchor {
+            cache.top_count + usize::from(cache.my_index.is_some())
         } else {
-            top_count
+            cache.top_count
         };
-        if participants.len() > displayed {
-            buf_footer.clear();
-            write!(buf_footer, "  + {} more", participants.len() - displayed).ok();
-            ui.text_disabled(buf_footer);
-        }
+        cache.footer_more = participants.len().saturating_sub(cache.displayed);
+        cache.version = self.leaderboard_version;
+        cache.local_igt_bucket = local_igt_bucket;
+        cache.max_width = max_width;
+        cache.spacing = spacing;
     }
 
     /// Status message: persistent red for permanent errors, temporary yellow otherwise.
