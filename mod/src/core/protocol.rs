@@ -29,6 +29,7 @@ pub enum ClientMessage {
     /// Zone query at loading screen exit (server resolves to graph node)
     ZoneQuery {
         igt_ms: u32,
+        message_id: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
         grace_entity_id: Option<u32>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -159,9 +160,14 @@ pub enum ServerMessage {
         is_first_visit: bool,
         #[serde(default)]
         exits: Vec<ExitInfo>,
+        #[serde(default)]
+        message_id: Option<u64>,
     },
     /// Acknowledges persistence of an event_flag message.
     EventFlagAck { message_id: u64 },
+    /// Acknowledges a zone_query that could not produce a zone_update
+    /// (unresolved, wrong state, etc.) so the mod can clear in-flight tracking.
+    ZoneQueryAck { message_id: u64 },
     /// Aggregated death counts per zone (for conditional death markers)
     DeathCounts { counts: HashMap<String, u32> },
     /// Heartbeat ping
@@ -383,6 +389,7 @@ mod tests {
                 layer,
                 is_first_visit,
                 exits,
+                message_id,
             } => {
                 assert_eq!(node_id, "graveyard_cave_e235");
                 assert_eq!(display_name, "Cave of Knowledge");
@@ -395,6 +402,7 @@ mod tests {
                 assert_eq!(exits[0].to_name, "Road's End Catacombs");
                 assert!(!exits[0].discovered);
                 assert!(exits[1].discovered);
+                assert_eq!(message_id, None);
             }
             _ => panic!("Expected ZoneUpdate"),
         }
@@ -560,6 +568,7 @@ mod tests {
     fn test_client_zone_query_grace_only() {
         let msg = ClientMessage::ZoneQuery {
             igt_ms: 60000,
+            message_id: 42,
             grace_entity_id: Some(10002950),
             map_id: None,
             position: None,
@@ -568,6 +577,7 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"zone_query""#));
         assert!(json.contains(r#""igt_ms":60000"#));
+        assert!(json.contains(r#""message_id":42"#));
         assert!(json.contains(r#""grace_entity_id":10002950"#));
         assert!(!json.contains("map_id"));
     }
@@ -576,6 +586,7 @@ mod tests {
     fn test_client_zone_query_map_only() {
         let msg = ClientMessage::ZoneQuery {
             igt_ms: 120000,
+            message_id: 99,
             grace_entity_id: None,
             map_id: Some("m10_00_00_00".into()),
             position: Some([100.0, 50.0, 200.0]),
@@ -584,6 +595,7 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"zone_query""#));
         assert!(json.contains(r#""igt_ms":120000"#));
+        assert!(json.contains(r#""message_id":99"#));
         assert!(json.contains(r#""map_id":"m10_00_00_00""#));
         assert!(!json.contains("grace_entity_id"));
     }
@@ -834,6 +846,54 @@ mod tests {
         let json = r#"{"total_layers": 5}"#;
         let seed: SeedInfo = serde_json::from_str(json).unwrap();
         assert_eq!(seed.items_spawned_flag, None);
+    }
+
+    #[test]
+    fn test_server_zone_update_with_message_id() {
+        let json = r#"{
+            "type": "zone_update",
+            "node_id": "cave_e235",
+            "display_name": "Cave of Knowledge",
+            "tier": 5,
+            "exits": [],
+            "message_id": 42
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ZoneUpdate { message_id, .. } => {
+                assert_eq!(message_id, Some(42));
+            }
+            _ => panic!("Expected ZoneUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_server_zone_update_without_message_id() {
+        // Backward compat: old server sends no message_id field
+        let json = r#"{
+            "type": "zone_update",
+            "node_id": "cave_e235",
+            "display_name": "Cave of Knowledge",
+            "tier": 5,
+            "exits": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ZoneUpdate { message_id, .. } => {
+                assert_eq!(message_id, None);
+            }
+            _ => panic!("Expected ZoneUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_server_zone_query_ack_deserialize() {
+        let json = r#"{"type":"zone_query_ack","message_id":55}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::ZoneQueryAck { message_id } => assert_eq!(message_id, 55),
+            _ => panic!("Expected ZoneQueryAck"),
+        }
     }
 
     #[test]
