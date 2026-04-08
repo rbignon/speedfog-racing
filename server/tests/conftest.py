@@ -10,7 +10,6 @@ os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ.setdefault("COUNTDOWN_SECONDS", "0")
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -18,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.rate_limit import limiter
+from tests.asgi_testclient import TestClient
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -51,9 +51,11 @@ def sample_graph_json() -> dict:
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_db():
     """Create test database tables once per session."""
+    Base.metadata.drop_all(bind=sync_engine)
     Base.metadata.create_all(bind=sync_engine)
     yield
     Base.metadata.drop_all(bind=sync_engine)
+    sync_engine.dispose()
     # Clean up test.db file
     if os.path.exists("./test.db"):
         os.remove("./test.db")

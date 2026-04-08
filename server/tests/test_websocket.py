@@ -21,6 +21,7 @@ from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     AuthOkMessage,
     DeathCountsMessage,
+    EventFlagAckMessage,
     EventFlagMessage,
     ExitInfo,
     LeaderboardUpdateMessage,
@@ -237,11 +238,19 @@ class TestSchemas:
 
     def test_event_flag_message(self):
         """Test EventFlagMessage schema."""
-        msg = EventFlagMessage(flag_id=9000003, igt_ms=4532100)
+        msg = EventFlagMessage(flag_id=9000003, igt_ms=4532100, message_id=7)
         data = json.loads(msg.model_dump_json())
         assert data["type"] == "event_flag"
         assert data["flag_id"] == 9000003
         assert data["igt_ms"] == 4532100
+        assert data["message_id"] == 7
+
+    def test_event_flag_ack_message(self):
+        """Test EventFlagAckMessage serialization."""
+        msg = EventFlagAckMessage(message_id=7)
+        data = json.loads(msg.model_dump_json())
+        assert data["type"] == "event_flag_ack"
+        assert data["message_id"] == 7
 
     def test_seed_info_with_event_ids(self):
         """Test SeedInfo includes event_ids."""

@@ -7,14 +7,12 @@ import tempfile
 import time
 import uuid
 import zipfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
-from starlette.testclient import TestClient
 
 from speedfog_racing.database import Base
 from speedfog_racing.main import app
@@ -29,10 +27,8 @@ from speedfog_racing.models import (
     UserRole,
 )
 from speedfog_racing.websocket.manager import manager
-
-# Use a unique test database file for integration tests (cross-platform)
-INTEGRATION_TEST_DB = os.path.join(tempfile.gettempdir(), "speedfog_integration_test.db")
-
+from tests.asgi_testclient import TestClient
+from tests.sqlite_async_shim import create_sqlite_async_shim
 
 # =============================================================================
 # Helper Classes
@@ -74,15 +70,16 @@ class ModTestClient:
             }
         )
 
-    def send_event_flag(self, flag_id: int, igt_ms: int) -> None:
+    def send_event_flag(self, flag_id: int, igt_ms: int, *, message_id: int | None = None) -> None:
         """Send event flag trigger."""
-        self.ws.send_json(
-            {
-                "type": "event_flag",
-                "flag_id": flag_id,
-                "igt_ms": igt_ms,
-            }
-        )
+        payload = {
+            "type": "event_flag",
+            "flag_id": flag_id,
+            "igt_ms": igt_ms,
+        }
+        if message_id is not None:
+            payload["message_id"] = message_id
+        self.ws.send_json(payload)
 
     def send_finished(self, igt_ms: int) -> None:
         """Send finish event."""
@@ -145,45 +142,46 @@ def integration_db():
     This fixture patches the database module to use a file-based SQLite database,
     ensuring both the API routes and WebSocket handlers use the same database.
     """
-    import asyncio
 
+    import speedfog_racing.api.races as races_module
     import speedfog_racing.database as db_module
     import speedfog_racing.main as main_module
+    import speedfog_racing.services.stats_service as stats_service_module
 
-    # Clean up any existing test db
-    if os.path.exists(INTEGRATION_TEST_DB):
-        os.remove(INTEGRATION_TEST_DB)
+    fd, test_db_path = tempfile.mkstemp(prefix="speedfog_integration_", suffix=".db")
+    os.close(fd)
+    if os.path.exists(test_db_path):
+        os.remove(test_db_path)
 
-    # Create new engine and session maker for tests
-    # NullPool: each session creates/closes its own connection, no pool
-    # cleanup issues when the TestClient's event loop shuts down.
-    test_engine = create_async_engine(
-        f"sqlite+aiosqlite:///{INTEGRATION_TEST_DB}",
-        echo=False,
-        poolclass=NullPool,
-    )
-    test_session_maker = async_sessionmaker(
-        test_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-
-    # Create tables
-    async def init():
-        async with test_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    asyncio.run(init())
+    test_engine, test_session_maker = create_sqlite_async_shim(test_db_path)
+    Base.metadata.create_all(bind=test_engine)
 
     # Patch the database module
     original_engine = db_module.engine
     original_session_maker = db_module.async_session_maker
+    original_db_init = db_module.init_db
+    original_main_init = main_module.init_db
+    original_lifespan = app.router.lifespan_context
+    original_races_session_maker = races_module.async_session_maker
+    original_stats_session_maker = stats_service_module.async_session_maker
+
+    async def _init_db_for_tests() -> None:
+        return None
+
+    @asynccontextmanager
+    async def _noop_lifespan(_app):
+        yield
 
     db_module.engine = test_engine
     db_module.async_session_maker = test_session_maker
+    db_module.init_db = _init_db_for_tests
 
     # Also patch main module's import
     main_module.async_session_maker = test_session_maker
+    main_module.init_db = _init_db_for_tests
+    races_module.async_session_maker = test_session_maker
+    stats_service_module.async_session_maker = test_session_maker
+    app.router.lifespan_context = _noop_lifespan
 
     try:
         yield test_session_maker
@@ -191,12 +189,17 @@ def integration_db():
         # Restore originals
         db_module.engine = original_engine
         db_module.async_session_maker = original_session_maker
+        db_module.init_db = original_db_init
         main_module.async_session_maker = original_session_maker
+        main_module.init_db = original_main_init
+        races_module.async_session_maker = original_races_session_maker
+        stats_service_module.async_session_maker = original_stats_session_maker
+        app.router.lifespan_context = original_lifespan
 
         # Clean up
-        asyncio.run(test_engine.dispose())
-        if os.path.exists(INTEGRATION_TEST_DB):
-            os.remove(INTEGRATION_TEST_DB)
+        test_engine.dispose()
+        if os.path.exists(test_db_path):
+            os.remove(test_db_path)
 
 
 @pytest.fixture
@@ -1325,10 +1328,14 @@ def test_event_flag_revisit_appends_to_zone_history(
         mod0.receive_until_type("leaderboard_update")
 
         # Send same flag twice (first visit + revisit)
-        mod0.send_event_flag(9000000, igt_ms=10000)
+        mod0.send_event_flag(9000000, igt_ms=10000, message_id=1)
+        ack = mod0.receive_until_type("event_flag_ack")
+        assert ack["message_id"] == 1
         mod0.receive_until_type("leaderboard_update")  # first visit: leaderboard_update
 
-        mod0.send_event_flag(9000000, igt_ms=15000)
+        mod0.send_event_flag(9000000, igt_ms=15000, message_id=2)
+        ack = mod0.receive_until_type("event_flag_ack")
+        assert ack["message_id"] == 2
         # Revisit: player_update (not leaderboard_update)
         msg = mod0.receive_until_type("player_update")
         assert msg["type"] == "player_update"
@@ -1352,6 +1359,64 @@ def test_event_flag_revisit_appends_to_zone_history(
     assert history[1]["igt_ms"] == 10000
     assert history[2]["node_id"] == "node_a"
     assert history[2]["igt_ms"] == 15000
+
+
+def test_event_flag_replay_same_message_id_is_idempotent(
+    integration_client, race_with_participants, integration_db
+):
+    """Replaying the same event_flag message_id must not append twice."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+
+        mod0.send_event_flag(9000000, igt_ms=10000, message_id=77)
+        ack = mod0.receive_until_type("event_flag_ack")
+        assert ack["message_id"] == 77
+        mod0.receive_until_type("leaderboard_update")
+        mod0.receive_until_type("zone_update")
+
+        # Replay of the same message after a hypothetical lost ack/reconnect.
+        mod0.send_event_flag(9000000, igt_ms=10000, message_id=77)
+        ack = mod0.receive_until_type("event_flag_ack")
+        assert ack["message_id"] == 77
+
+    async def check_history():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is not None
+    assert len(history) == 2
+    assert history[1]["node_id"] == "node_a"
+    assert history[1]["igt_ms"] == 10000
+    assert history[1]["message_id"] == 77
 
 
 def test_shared_entrance_multi_flag_dedup(
@@ -1750,7 +1815,9 @@ def test_zone_history_backtrack_type(integration_db, integration_client, seed_fo
 
         # 2) event_flag → fog traversal to stormveil_godrick
         #    Server sends: leaderboard_update (broadcast) + zone_update (unicast)
-        mod.send_event_flag(1040292800, igt_ms=5000)
+        mod.send_event_flag(1040292800, igt_ms=5000, message_id=10)
+        ack = mod.receive_until_type("event_flag_ack")
+        assert ack["message_id"] == 10
         mod.receive_until_type("leaderboard_update")
         fog_zone_update = mod.receive_until_type("zone_update")
         assert fog_zone_update["node_id"] == "stormveil_godrick_48fd"
