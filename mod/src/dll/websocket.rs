@@ -88,6 +88,7 @@ pub enum IncomingMessage {
     RequeueEventFlag {
         flag_id: u32,
         igt_ms: u32,
+        message_id: u64,
     },
     EventFlagAck {
         message_id: u64,
@@ -331,12 +332,15 @@ fn websocket_thread(
                         OutgoingMessage::EventFlag {
                             flag_id,
                             igt_ms,
-                            message_id: _,
+                            message_id,
                         } => {
                             // Re-queue event flags back to the tracker for re-buffering.
                             // These were queued but never transmitted before disconnect.
-                            let _ = incoming_tx
-                                .send(IncomingMessage::RequeueEventFlag { flag_id, igt_ms });
+                            let _ = incoming_tx.send(IncomingMessage::RequeueEventFlag {
+                                flag_id,
+                                igt_ms,
+                                message_id,
+                            });
                         }
                         _ => {}
                     }

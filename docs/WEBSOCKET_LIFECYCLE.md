@@ -132,9 +132,9 @@ Main thread (game loop)          WS thread
 - `Shutdown` causes the thread to exit.
 - All other messages (`StatusUpdate`, `Ready`, `ZoneQuery`) are silently discarded (stale data from before disconnect).
 
-**In-flight event flags**: Once an `EventFlag` has been written to the socket, the tracker keeps it in an in-flight map until the server replies with `event_flag_ack`. If the connection transitions to `Reconnecting` before the ACK arrives, all in-flight `EventFlag`s are moved back to `pending_event_flags` and replayed after reconnect.
+**In-flight event flags**: Once an `EventFlag` has been written to the socket, the tracker keeps it in an in-flight map (keyed by `message_id`) until the server replies with `event_flag_ack`. On reconnect, in-flight events are replayed with their **original** `message_id` so the server can deduplicate them. Events that were queued in the outgoing channel but never transmitted are removed from the in-flight map and moved to `pending_event_flags` (the server never saw them, so they get a fresh `message_id` on resend).
 
-**Server idempotence**: Newer mods attach a `message_id` to each `event_flag`. The server stores this `message_id` in the corresponding `zone_history` entry and treats replays with the same `message_id` as already committed. This prevents duplicate `zone_history` entries when the original commit succeeded but the ACK was lost.
+**Server idempotence**: Newer mods attach a `message_id` to each `event_flag`. The server stores this `message_id` in the corresponding `zone_history` entry and treats replays with the same `message_id` as already committed. This prevents duplicate `zone_history` entries when the original commit succeeded but the ACK was lost. The server also ACKs event flags sent by participants who are already finished, so the mod can clear its in-flight set after a finish event whose ACK was lost.
 
 **Safety-net rescan on reconnect**: After reconnection and `ready`, the tracker re-scans all `event_ids` against live game memory. This catches flags that were set during the disconnection window and weren't captured by polling.
 
@@ -147,7 +147,7 @@ Main thread (game loop)          WS thread
 On `StatusChanged(Reconnecting)`:
 
 - `deferred_event_flags` are moved to `pending_event_flags` (they were waiting for loading exit, now they need to wait for reconnection too).
-- in-flight `event_flag`s without ACK are also moved back to `pending_event_flags`.
+- In-flight `event_flag`s remain in the in-flight map (not moved to pending). They will be replayed with their original `message_id` on reconnect.
 
 On `StatusChanged(Connected)`:
 

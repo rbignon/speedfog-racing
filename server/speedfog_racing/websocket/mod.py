@@ -665,7 +665,11 @@ async def handle_event_flag(
             return
 
         if participant.status != ParticipantStatus.PLAYING:
-            return  # Only PLAYING participants can trigger events
+            # ACK replayed event flags so the mod clears its in-flight set
+            # (e.g. finish event committed but ACK lost before disconnect).
+            if message_id is not None:
+                await send_event_flag_ack(websocket, message_id)
+            return
 
         seed = participant.race.seed
         if not seed or not seed.graph_json:

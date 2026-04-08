@@ -455,7 +455,11 @@ async def _handle_event_flag(
     async with session_maker() as db:
         session = await _load_session(db, session_id)
         if not session or session.status != TrainingSessionStatus.ACTIVE:
-            if session:
+            if session and message_id is not None:
+                # ACK replayed event flags so the mod clears its in-flight set
+                # (e.g. finish event committed but ACK lost before disconnect).
+                await send_event_flag_ack(websocket, message_id)
+            elif session:
                 await send_error(websocket, "Solo session not active")
             return
 

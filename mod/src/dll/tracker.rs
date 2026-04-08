@@ -602,7 +602,11 @@ impl RaceTracker {
             self.ready_sent = true;
 
             if self.is_race_running() && !self.am_i_finished() && !self.is_countdown_active() {
-                // Drain event flags buffered during disconnection
+                // Replay in-flight event flags (sent but not ACKed before disconnect)
+                // with their original message_id for server-side dedup.
+                self.replay_in_flight_event_flags();
+
+                // Drain event flags buffered during disconnection (never sent)
                 for (flag_id, flag_igt) in self.flag_buffer.drain_pending() {
                     self.send_tracked_event_flag(flag_id, flag_igt);
                     self.last_sent_debug =
@@ -715,17 +719,30 @@ impl RaceTracker {
         self.ws_client.send_event_flag(flag_id, igt_ms, message_id);
     }
 
-    fn requeue_in_flight_event_flags(&mut self) {
+    /// Replay in-flight event flags (sent but not yet ACKed) with their
+    /// original `message_id`, preserving server-side idempotency.
+    ///
+    /// Entries stay in `in_flight_event_flags` after replay: they are only
+    /// removed when the server sends `EventFlagAck` for each one.
+    fn replay_in_flight_event_flags(&mut self) {
         if self.in_flight_event_flags.is_empty() {
             return;
         }
 
-        let mut message_ids: Vec<u64> = self.in_flight_event_flags.keys().copied().collect();
-        message_ids.sort_unstable();
-        for message_id in message_ids {
-            if let Some(event) = self.in_flight_event_flags.remove(&message_id) {
-                self.flag_buffer.add_pending(event.flag_id, event.igt_ms);
-            }
+        let mut entries: Vec<(u64, BufferedEventFlag)> = self
+            .in_flight_event_flags
+            .iter()
+            .map(|(&k, &v)| (k, v))
+            .collect();
+        entries.sort_unstable_by_key(|(id, _)| *id);
+        for (message_id, event) in entries {
+            self.ws_client
+                .send_event_flag(event.flag_id, event.igt_ms, message_id);
+            info!(
+                message_id,
+                flag_id = event.flag_id,
+                "[RACE] Replaying in-flight event flag"
+            );
         }
     }
 
@@ -740,7 +757,6 @@ impl RaceTracker {
                     }
                     ConnectionStatus::Reconnecting => {
                         self.flag_buffer.park_deferred();
-                        self.requeue_in_flight_event_flags();
                         self.set_status("Reconnecting to server...".to_string());
                     }
                     ConnectionStatus::Error => {
@@ -961,11 +977,17 @@ impl RaceTracker {
                     warn!(message_id, "[WS] Ack for unknown event flag");
                 }
             }
-            IncomingMessage::RequeueEventFlag { flag_id, igt_ms } => {
-                // Event flag was in the outgoing channel but never transmitted before
-                // disconnect. Re-buffer it so it gets sent after reconnection.
+            IncomingMessage::RequeueEventFlag {
+                flag_id,
+                igt_ms,
+                message_id,
+            } => {
+                // Event flag was in the outgoing channel but never transmitted.
+                // Remove from in-flight (server never saw it) and add to pending
+                // buffer for resend with a fresh message_id.
+                self.in_flight_event_flags.remove(&message_id);
                 self.flag_buffer.add_pending(flag_id, igt_ms);
-                info!(flag_id, "[WS] Re-queued drained event flag");
+                info!(flag_id, message_id, "[WS] Re-queued drained event flag");
             }
             IncomingMessage::DeathCounts(counts) => {
                 self.last_received_debug = Some(format!("death_counts({} zones)", counts.len()));

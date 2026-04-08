@@ -120,6 +120,10 @@ The overlay keeps showing the old zone until the reveal. A `pre_reveal_layer` sn
 ```
 receive event_flag { flag_id, igt_ms, message_id? }
     │
+    ├── participant.status != PLAYING?
+    │       → ack(message_id) if present (finish replay after lost ACK)
+    │       → return
+    │
     ├── flag_id == finish_event?
     │       ├── yes → update igt_ms + current_layer=total_layers, commit
     │       │         ack(message_id) if present

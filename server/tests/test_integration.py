@@ -2739,6 +2739,48 @@ def test_finished_participant_event_flag_ignored(
         assert "node_a" not in node_ids, "Finished player should not gain new zone history"
 
 
+def test_finished_participant_event_flag_replay_acked(
+    integration_client, race_with_participants, integration_db
+):
+    """event_flag with message_id from a finished participant gets ACKed (lost ACK recovery)."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    # Start the race
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    # Player 0 finishes via the finish_event
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")  # READY->PLAYING
+        mod0.send_event_flag(9000003, igt_ms=50000, message_id=99)
+        ack = mod0.receive_until_type("event_flag_ack")
+        assert ack["message_id"] == 99
+        mod0.receive_until_type("leaderboard_update")
+
+    # Reconnect and replay the finish event (simulates lost ACK scenario).
+    # The participant is already FINISHED, so the server should ACK without reprocessing.
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_event_flag(9000003, igt_ms=50000, message_id=99)
+        ack = mod0.receive_until_type("event_flag_ack")
+        assert ack["message_id"] == 99
+
+
 def test_death_counts_broadcast(integration_client, race_with_participants):
     """Deaths broadcast death_counts to all connected mods."""
     race_id = race_with_participants["race_id"]
