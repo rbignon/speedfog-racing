@@ -26,6 +26,7 @@ use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 /// Defensive timeout: if a zone update hasn't been revealed after this duration
 /// (e.g., loading screen flag is unreadable), reveal anyway.
 const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(15);
+const DEBUG_REFRESH_INTERVAL: Duration = Duration::from_millis(250);
 
 // =============================================================================
 // RACE STATE
@@ -84,6 +85,7 @@ impl Default for RenderBuffers {
 }
 
 /// Result of reading a single flag for debug display
+#[derive(Clone, Copy)]
 pub enum FlagReadResult {
     /// Memory read failed
     Unreadable,
@@ -93,14 +95,37 @@ pub enum FlagReadResult {
     Set,
 }
 
+/// Cached frame-local memory reads reused by update and rendering.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct FrameSnapshot {
+    pub igt_ms: Option<u32>,
+    pub death_count: Option<u32>,
+    pub position_readable: bool,
+    pub loading_screen: Option<bool>,
+}
+
 /// Debug overlay info
-pub struct DebugInfo<'a> {
-    pub last_sent: Option<&'a str>,
-    pub last_received: Option<&'a str>,
-    pub flag_reader_status: FlagReaderStatus,
+pub struct DebugInfo {
+    pub last_sent: Option<String>,
+    pub last_received: Option<String>,
+    pub flag_reader_status: String,
+    pub flag_reader_ok: bool,
     /// Vanilla flag 6 sanity check (category 0 should always exist)
     pub vanilla_sanity: FlagReadResult,
     pub sample_reads: Vec<(u32, FlagReadResult)>,
+}
+
+impl Default for DebugInfo {
+    fn default() -> Self {
+        Self {
+            last_sent: None,
+            last_received: None,
+            flag_reader_status: String::new(),
+            flag_reader_ok: false,
+            vanilla_sanity: FlagReadResult::Unreadable,
+            sample_reads: Vec::new(),
+        }
+    }
 }
 
 // =============================================================================
@@ -151,6 +176,7 @@ pub struct RaceTracker {
 
     // Identity (set from auth_ok)
     my_participant_id: Option<String>,
+    my_participant_index: Option<usize>,
 
     // Event flag tracking
     event_ids: Vec<u32>,
@@ -217,6 +243,13 @@ pub struct RaceTracker {
     // finished. The mod's local participant igt_ms is stale (only updated via
     // leaderboard_update on events), so we freeze the live game IGT instead.
     pub(crate) frozen_igt_ms: Option<u32>,
+
+    // Cached reads for the current frame.
+    pub(crate) frame_snapshot: FrameSnapshot,
+
+    // Throttled debug snapshot to avoid expensive flag reads every frame.
+    debug_info: DebugInfo,
+    last_debug_refresh: Option<Instant>,
 
     // Pre-allocated render buffers (reused across frames)
     pub(crate) render_bufs: RenderBuffers,
@@ -296,6 +329,7 @@ impl RaceTracker {
             last_sent_debug: None,
             last_received_debug: None,
             my_participant_id: None,
+            my_participant_index: None,
             event_ids: Vec::new(),
             triggered_flags: HashSet::new(),
             flag_buffer: FlagBuffer::default(),
@@ -318,6 +352,9 @@ impl RaceTracker {
             last_auth_error: None,
             permanent_error: None,
             frozen_igt_ms: None,
+            frame_snapshot: FrameSnapshot::default(),
+            debug_info: DebugInfo::default(),
+            last_debug_refresh: None,
             render_bufs: RenderBuffers::default(),
         })
     }
@@ -383,9 +420,25 @@ impl RaceTracker {
             self.handle_ws_message(msg);
         }
 
+        let need_live_snapshot = self.show_ui || self.ws_client.is_connected();
+        self.frame_snapshot = FrameSnapshot {
+            igt_ms: need_live_snapshot
+                .then(|| self.game_state.read_igt())
+                .flatten(),
+            death_count: need_live_snapshot
+                .then(|| self.game_state.read_deaths())
+                .flatten(),
+            position_readable: self.game_state.is_position_readable(),
+            loading_screen: if self.pending_zone_update.is_some() {
+                self.game_state.is_in_loading_screen()
+            } else {
+                None
+            },
+        };
+
         // Check position readability once per frame for loading screen detection.
         // Uses is_position_readable() to avoid allocating a map_id String.
-        let position_readable = self.game_state.is_position_readable();
+        let position_readable = self.frame_snapshot.position_readable;
 
         // Reveal pending zone update once the loading screen ends and the
         // player position is readable. The loading flag may clear before the
@@ -395,7 +448,7 @@ impl RaceTracker {
             let timed_out = self
                 .pending_zone_received_at
                 .is_some_and(|t| t.elapsed() >= ZONE_REVEAL_TIMEOUT);
-            let loading_done = match self.game_state.is_in_loading_screen() {
+            let loading_done = match self.frame_snapshot.loading_screen {
                 Some(false) => true,
                 Some(true) => false,
                 // Flag unreadable: skip this check
@@ -421,7 +474,7 @@ impl RaceTracker {
             // (e.g. Erdtree burn, Maliketh warp) that the 10Hz poll couldn't read
             // because is_flag_set() returns None while position is unreadable.
             if !self.event_ids.is_empty() {
-                let igt_ms = self.game_state.read_igt().unwrap_or(0);
+                let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
                 // Resolve category page once (all event_ids share the same category)
                 let page = self.event_flag_reader.resolve_category(self.event_ids[0]);
                 let page_ref = page.as_ref();
@@ -473,7 +526,7 @@ impl RaceTracker {
                     }
                 } else {
                     // No fog gate (death/respawn/quit-out/fast-travel)
-                    let igt_ms = self.game_state.read_igt().unwrap_or(0);
+                    let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
                     let pos = self.game_state.read_position();
                     let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
                     let grace_opt = if grace_id > 0 { Some(grace_id) } else { None };
@@ -543,6 +596,7 @@ impl RaceTracker {
             }
 
             let igt_ms = self.game_state.read_igt().unwrap_or(0);
+            self.frame_snapshot.igt_ms = Some(igt_ms);
             // Resolve category page once for all event_ids (same category)
             let page = self.event_flag_reader.resolve_category(self.event_ids[0]);
             let page_ref = page.as_ref();
@@ -583,14 +637,22 @@ impl RaceTracker {
             }
         }
 
+        if self.show_debug
+            && self
+                .last_debug_refresh
+                .is_none_or(|t| t.elapsed() >= DEBUG_REFRESH_INTERVAL)
+        {
+            self.refresh_debug_info();
+        }
+
         // Skip rest if not connected (status updates, ready, diagnostics)
         if !self.ws_client.is_connected() {
             return;
         }
 
         // Read game state
-        let igt_ms = self.game_state.read_igt().unwrap_or(0);
-        let deaths = self.game_state.read_deaths().unwrap_or(0);
+        let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
+        let deaths = self.frame_snapshot.death_count.unwrap_or(0);
 
         // Send ready on (re)connection (skip in training mode since server auto-starts)
         if !self.ready_sent {
@@ -787,6 +849,9 @@ impl RaceTracker {
                     participants.len()
                 ));
                 self.my_participant_id = Some(participant_id);
+                self.my_participant_index = participants
+                    .iter()
+                    .position(|p| Some(&p.id) == self.my_participant_id.as_ref());
                 self.event_ids = seed.event_ids.clone();
                 self.finish_event = seed.finish_event;
                 // Don't clear triggered_flags on reconnect: finish_event is one-shot.
@@ -906,6 +971,7 @@ impl RaceTracker {
                 }
                 self.race_state.participants = participants;
                 self.race_state.leader_splits = leader_splits;
+                self.refresh_my_participant_index();
             }
             IncomingMessage::RaceStatusChange(status) => {
                 self.last_received_debug = Some(format!("race_status_change({})", status));
@@ -915,6 +981,7 @@ impl RaceTracker {
                 // leaderboard_update on events, not on every status_update).
                 if status == "finished" && !self.am_i_finished() {
                     self.frozen_igt_ms = self.game_state.read_igt();
+                    self.frame_snapshot.igt_ms = self.frozen_igt_ms;
                     info!(frozen_igt_ms = ?self.frozen_igt_ms, "[WS] Froze game IGT (race ended, player not finished)");
                 }
                 if let Some(ref mut race) = self.race_state.race {
@@ -942,6 +1009,7 @@ impl RaceTracker {
                 {
                     *p = player;
                 }
+                self.refresh_my_participant_index();
             }
             IncomingMessage::ZoneUpdate {
                 node_id,
@@ -1043,11 +1111,15 @@ impl RaceTracker {
     }
 
     pub fn read_igt(&self) -> Option<u32> {
-        self.game_state.read_igt()
+        self.frame_snapshot
+            .igt_ms
+            .or_else(|| self.game_state.read_igt())
     }
 
     pub fn read_deaths(&self) -> Option<u32> {
-        self.game_state.read_deaths()
+        self.frame_snapshot
+            .death_count
+            .or_else(|| self.game_state.read_deaths())
     }
 
     pub fn current_zone_info(&self) -> Option<&ZoneUpdateData> {
@@ -1065,8 +1137,8 @@ impl RaceTracker {
     }
 
     pub fn my_participant(&self) -> Option<&ParticipantInfo> {
-        let id = self.my_participant_id.as_ref()?;
-        self.race_state.participants.iter().find(|p| &p.id == id)
+        let idx = self.my_participant_index?;
+        self.race_state.participants.get(idx)
     }
 
     /// Set a status message that will be displayed temporarily (3 seconds).
@@ -1085,8 +1157,22 @@ impl RaceTracker {
         })
     }
 
-    pub fn debug_info(&self) -> DebugInfo<'_> {
+    pub fn debug_info(&self) -> &DebugInfo {
+        &self.debug_info
+    }
+
+    fn refresh_my_participant_index(&mut self) {
+        self.my_participant_index = self.my_participant_id.as_ref().and_then(|id| {
+            self.race_state
+                .participants
+                .iter()
+                .position(|p| &p.id == id)
+        });
+    }
+
+    fn refresh_debug_info(&mut self) {
         let flag_reader_status = self.event_flag_reader.diagnose();
+        let flag_reader_ok = matches!(flag_reader_status, FlagReaderStatus::Ok { .. });
 
         let sample_reads: Vec<(u32, FlagReadResult)> = self
             .event_ids
@@ -1108,13 +1194,15 @@ impl RaceTracker {
             Some(true) => FlagReadResult::Set,
         };
 
-        DebugInfo {
-            last_sent: self.last_sent_debug.as_deref(),
-            last_received: self.last_received_debug.as_deref(),
-            flag_reader_status,
+        self.debug_info = DebugInfo {
+            last_sent: self.last_sent_debug.clone(),
+            last_received: self.last_received_debug.clone(),
+            flag_reader_status: flag_reader_status.to_string(),
+            flag_reader_ok,
             vanilla_sanity,
             sample_reads,
-        }
+        };
+        self.last_debug_refresh = Some(Instant::now());
     }
 }
 

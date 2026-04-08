@@ -14,7 +14,6 @@ use tracing::{error, info};
 use super::death_icon::DeathIcon;
 use super::tracker::{FlagReadResult, RaceTracker, RenderBuffers};
 use super::websocket::ConnectionStatus;
-use crate::eldenring::FlagReaderStatus;
 
 impl ImguiRenderLoop for RaceTracker {
     fn initialize<'a>(
@@ -684,12 +683,12 @@ impl RaceTracker {
         // Flag reader diagnostics
         ui.text_disabled("Flag reader:");
         ui.same_line();
-        let status_color = if matches!(debug.flag_reader_status, FlagReaderStatus::Ok { .. }) {
+        let status_color = if debug.flag_reader_ok {
             [0.0, 1.0, 0.0, 1.0] // green
         } else {
             [1.0, 0.3, 0.3, 1.0] // red
         };
-        ui.text_colored(status_color, debug.flag_reader_status.to_string());
+        ui.text_colored(status_color, &debug.flag_reader_status);
 
         // Vanilla flag sanity check (category 0 should always exist)
         let (sanity_color, sanity_label) = match &debug.vanilla_sanity {
@@ -717,12 +716,12 @@ impl RaceTracker {
         // Last sent message
         ui.text_disabled("Sent:");
         ui.same_line();
-        ui.text(debug.last_sent.unwrap_or("\u{2013}"));
+        ui.text(debug.last_sent.as_deref().unwrap_or("\u{2013}"));
 
         // Last received message
         ui.text_disabled("Recv:");
         ui.same_line();
-        ui.text(debug.last_received.unwrap_or("\u{2013}"));
+        ui.text(debug.last_received.as_deref().unwrap_or("\u{2013}"));
     }
 }
 
