@@ -51,6 +51,15 @@ struct BufferedEventFlag {
     igt_ms: u32,
 }
 
+#[derive(Debug, Clone)]
+struct BufferedZoneQuery {
+    igt_ms: u32,
+    grace_entity_id: Option<u32>,
+    map_id: Option<String>,
+    position: Option<[f32; 3]>,
+    play_region_id: Option<u32>,
+}
+
 /// Current race state from server
 #[derive(Debug, Clone, Default)]
 pub struct RaceState {
@@ -203,6 +212,7 @@ pub struct RaceTracker {
     pub(crate) triggered_flags: HashSet<u32>,
     flag_buffer: FlagBuffer,
     in_flight_event_flags: HashMap<u64, BufferedEventFlag>,
+    in_flight_zone_queries: HashMap<u64, BufferedZoneQuery>,
     next_event_message_id: u64,
     /// finish_event from server, sent immediately (no loading screen on boss kill)
     finish_event: Option<u32>,
@@ -358,6 +368,7 @@ impl RaceTracker {
             triggered_flags: HashSet::new(),
             flag_buffer: FlagBuffer::default(),
             in_flight_event_flags: HashMap::new(),
+            in_flight_zone_queries: HashMap::new(),
             next_event_message_id: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
@@ -566,7 +577,7 @@ impl RaceTracker {
                     let play_region_id = pos.as_ref().and_then(|p| p.play_region_id);
 
                     if grace_opt.is_some() || map_id.is_some() {
-                        self.ws_client.send_zone_query(
+                        self.send_tracked_zone_query(
                             igt_ms,
                             grace_opt,
                             map_id.clone(),
@@ -700,6 +711,9 @@ impl RaceTracker {
                 // with their original message_id for server-side dedup.
                 self.replay_in_flight_event_flags();
 
+                // Replay in-flight zone queries (sent but not ACKed before disconnect)
+                self.replay_in_flight_zone_queries();
+
                 // Drain event flags buffered during disconnection (never sent)
                 let pending: Vec<_> = self.flag_buffer.drain_pending().collect();
                 for (flag_id, flag_igt) in pending {
@@ -815,6 +829,36 @@ impl RaceTracker {
         self.ws_client.send_event_flag(flag_id, igt_ms, message_id);
     }
 
+    fn send_tracked_zone_query(
+        &mut self,
+        igt_ms: u32,
+        grace_entity_id: Option<u32>,
+        map_id: Option<String>,
+        position: Option<[f32; 3]>,
+        play_region_id: Option<u32>,
+    ) {
+        let message_id = self.next_event_message_id;
+        self.next_event_message_id = self.next_event_message_id.wrapping_add(1);
+        self.in_flight_zone_queries.insert(
+            message_id,
+            BufferedZoneQuery {
+                igt_ms,
+                grace_entity_id,
+                map_id: map_id.clone(),
+                position,
+                play_region_id,
+            },
+        );
+        self.ws_client.send_zone_query(
+            igt_ms,
+            grace_entity_id,
+            map_id,
+            position,
+            play_region_id,
+            message_id,
+        );
+    }
+
     /// Replay in-flight event flags (sent but not yet ACKed) with their
     /// original `message_id`, preserving server-side idempotency.
     ///
@@ -839,6 +883,28 @@ impl RaceTracker {
                 flag_id = event.flag_id,
                 "[RACE] Replaying in-flight event flag"
             );
+        }
+    }
+
+    fn replay_in_flight_zone_queries(&mut self) {
+        if self.in_flight_zone_queries.is_empty() {
+            return;
+        }
+
+        let mut message_ids: Vec<u64> = self.in_flight_zone_queries.keys().copied().collect();
+        message_ids.sort_unstable();
+        for message_id in message_ids {
+            if let Some(zq) = self.in_flight_zone_queries.get(&message_id) {
+                self.ws_client.send_zone_query(
+                    zq.igt_ms,
+                    zq.grace_entity_id,
+                    zq.map_id.clone(),
+                    zq.position,
+                    zq.play_region_id,
+                    message_id,
+                );
+                info!(message_id, "[RACE] Replaying in-flight zone query");
+            }
         }
     }
 
@@ -1058,7 +1124,11 @@ impl RaceTracker {
                 layer,
                 is_first_visit,
                 exits,
+                message_id,
             } => {
+                if let Some(mid) = message_id {
+                    self.in_flight_zone_queries.remove(&mid);
+                }
                 self.last_received_debug = Some(format!("zone_update({})", display_name));
                 info!(node = %node_id, name = %display_name, first = is_first_visit, "[WS] Zone update (pending reveal)");
                 // Last-writer-wins: if two flags fire in rapid succession, only the
@@ -1095,6 +1165,32 @@ impl RaceTracker {
                 self.in_flight_event_flags.remove(&message_id);
                 self.flag_buffer.add_pending(flag_id, igt_ms);
                 info!(flag_id, message_id, "[WS] Re-queued drained event flag");
+            }
+            IncomingMessage::RequeueZoneQuery {
+                igt_ms,
+                grace_entity_id,
+                map_id,
+                position,
+                play_region_id,
+                message_id,
+            } => {
+                self.in_flight_zone_queries
+                    .entry(message_id)
+                    .or_insert(BufferedZoneQuery {
+                        igt_ms,
+                        grace_entity_id,
+                        map_id,
+                        position,
+                        play_region_id,
+                    });
+                info!(message_id, "[WS] Re-queued drained zone query");
+            }
+            IncomingMessage::ZoneQueryAck { message_id } => {
+                if let Some(_) = self.in_flight_zone_queries.remove(&message_id) {
+                    info!(message_id, "[WS] Zone query acknowledged (no zone_update)");
+                } else {
+                    warn!(message_id, "[WS] Ack for unknown zone query");
+                }
             }
             IncomingMessage::DeathCounts(counts) => {
                 self.last_received_debug = Some(format!("death_counts({} zones)", counts.len()));
