@@ -9,14 +9,14 @@ import pytest
 
 from speedfog_racing.models import ParticipantStatus, RaceStatus
 from speedfog_racing.websocket.common import parse_zone_query_input
-from speedfog_racing.websocket.manager import (
+from speedfog_racing.websocket.race.manager import (
     ConnectionManager,
     RaceRoom,
     SpectatorConnection,
     participant_to_info,
     sort_leaderboard,
 )
-from speedfog_racing.websocket.mod import aggregate_death_counts
+from speedfog_racing.websocket.race.mod import aggregate_death_counts
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     AuthOkMessage,
@@ -789,7 +789,7 @@ class TestGapComputation:
 
     def test_build_leader_splits(self):
         """Leader splits map each layer to the first IGT at that layer."""
-        from speedfog_racing.websocket.manager import build_leader_splits
+        from speedfog_racing.websocket.race.manager import build_leader_splits
 
         history = [
             {"node_id": "start", "igt_ms": 0},
@@ -802,7 +802,7 @@ class TestGapComputation:
 
     def test_build_leader_splits_keeps_first_igt_per_layer(self):
         """If multiple nodes share a layer, keep the first IGT."""
-        from speedfog_racing.websocket.manager import build_leader_splits
+        from speedfog_racing.websocket.race.manager import build_leader_splits
 
         graph = {
             "nodes": {
@@ -824,21 +824,21 @@ class TestGapComputation:
 
     def test_build_leader_splits_empty_history(self):
         """Empty history returns empty splits."""
-        from speedfog_racing.websocket.manager import build_leader_splits
+        from speedfog_racing.websocket.race.manager import build_leader_splits
 
         splits = build_leader_splits([], self._graph())
         assert splits == {}
 
     def test_build_leader_splits_none_history(self):
         """None history returns empty splits."""
-        from speedfog_racing.websocket.manager import build_leader_splits
+        from speedfog_racing.websocket.race.manager import build_leader_splits
 
         splits = build_leader_splits(None, self._graph())
         assert splits == {}
 
     def test_build_leader_splits_skips_unknown_nodes(self):
         """Unknown nodes in zone_history are skipped, not mapped to layer 0."""
-        from speedfog_racing.websocket.manager import build_leader_splits
+        from speedfog_racing.websocket.race.manager import build_leader_splits
 
         history = [
             {"node_id": "start", "igt_ms": 0},
@@ -852,7 +852,7 @@ class TestGapComputation:
 
     def test_compute_gap_within_budget(self):
         """Player within leader's time budget on layer -> gap = entry delta (fixed)."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
         # Player entered layer 2 at 80000, leader entered layer 2 at 75000
@@ -870,7 +870,7 @@ class TestGapComputation:
 
     def test_compute_gap_exceeded_budget(self):
         """Player exceeded leader's time budget on layer -> gap = entry_delta + layer overshoot."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
         # Player entered layer 2 at 80000, leader at 75000 -> entry_delta = 5000
@@ -889,7 +889,7 @@ class TestGapComputation:
 
     def test_compute_gap_negative_entry_delta(self):
         """Player entered layer faster than leader -> negative gap (ahead)."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
         # Player entered layer 2 at 70000, leader at 75000 -> ahead by 5s
@@ -906,7 +906,7 @@ class TestGapComputation:
 
     def test_compute_gap_leader_still_on_layer(self):
         """Leader hasn't left current layer -> use entry delta (no exit split)."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000, 2: 75000}
         # Player at layer 2, leader also at layer 2 (no layer 3 split)
@@ -922,7 +922,7 @@ class TestGapComputation:
 
     def test_compute_gap_finished_non_leader(self):
         """Finished non-leader gap = their IGT - leader IGT."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         gap = compute_gap_ms(
             "finished",
@@ -936,7 +936,7 @@ class TestGapComputation:
 
     def test_compute_gap_leader_returns_none(self):
         """Leader always has gap=None."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         gap = compute_gap_ms(
             "finished",
@@ -951,7 +951,7 @@ class TestGapComputation:
 
     def test_compute_gap_ready_returns_none(self):
         """Ready participants always have gap=None."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         gap = compute_gap_ms(
             "ready",
@@ -965,7 +965,7 @@ class TestGapComputation:
 
     def test_compute_gap_no_split_for_layer(self):
         """If leader has no split for player's layer, return None."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000}
         gap = compute_gap_ms(
@@ -980,7 +980,7 @@ class TestGapComputation:
 
     def test_compute_gap_abandoned_returns_none(self):
         """Abandoned (DNF) participants always have gap=None."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         gap = compute_gap_ms(
             "abandoned",
@@ -994,7 +994,7 @@ class TestGapComputation:
 
     def test_compute_gap_exceeded_budget_ahead_player(self):
         """P0: Player ahead (negative entry_delta) who exceeds budget."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
         # Player entered layer 2 at 70000, leader at 75000 -> entry_delta = -5000
@@ -1013,7 +1013,7 @@ class TestGapComputation:
 
     def test_compute_gap_never_exceeds_igt(self):
         """Gap must never exceed the player's own IGT (regression test)."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 10000, 2: 20000}
         # Player enters layer 1 very late (IGT 100000), leader entered at 10000
@@ -1032,7 +1032,7 @@ class TestGapComputation:
 
     def test_compute_gap_none_when_no_layer_entry_igt(self):
         """P1: Return None when player_layer_entry_igt is None."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000, 2: 75000}
         gap = compute_gap_ms(
@@ -1047,7 +1047,7 @@ class TestGapComputation:
 
     def test_compute_gap_last_layer_leader_finished_within_budget(self):
         """Last layer, leader finished: within budget -> entry delta only."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
         # Player entered layer 3 at 125000, leader at 120000 -> entry_delta = 5000
@@ -1066,7 +1066,7 @@ class TestGapComputation:
 
     def test_compute_gap_last_layer_leader_finished_exceeded(self):
         """Last layer, leader finished: exceeded budget -> entry delta + overshoot."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
         # Player entered layer 3 at 125000, leader at 120000 -> entry_delta = 5000
@@ -1086,7 +1086,7 @@ class TestGapComputation:
 
     def test_compute_gap_last_layer_leader_not_finished(self):
         """Last layer, leader NOT finished: entry delta only (no exit info)."""
-        from speedfog_racing.websocket.manager import compute_gap_ms
+        from speedfog_racing.websocket.race.manager import compute_gap_ms
 
         leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
         # Both on layer 3, leader hasn't finished -> entry delta only
@@ -1103,7 +1103,7 @@ class TestGapComputation:
 
     def test_get_layer_entry_igt(self):
         """Returns first IGT at the specified layer."""
-        from speedfog_racing.websocket.manager import get_layer_entry_igt
+        from speedfog_racing.websocket.race.manager import get_layer_entry_igt
 
         history = [
             {"node_id": "start", "igt_ms": 0},
@@ -1114,14 +1114,14 @@ class TestGapComputation:
 
     def test_get_layer_entry_igt_none_for_missing_layer(self):
         """Returns None if player has no entry for the layer."""
-        from speedfog_racing.websocket.manager import get_layer_entry_igt
+        from speedfog_racing.websocket.race.manager import get_layer_entry_igt
 
         history = [{"node_id": "start", "igt_ms": 0}]
         assert get_layer_entry_igt(history, 2, self._graph()) is None
 
     def test_get_layer_entry_igt_empty_history(self):
         """Returns None for empty history."""
-        from speedfog_racing.websocket.manager import get_layer_entry_igt
+        from speedfog_racing.websocket.race.manager import get_layer_entry_igt
 
         assert get_layer_entry_igt([], 0, self._graph()) is None
         assert get_layer_entry_igt(None, 0, self._graph()) is None
@@ -1142,7 +1142,7 @@ class TestGapComputation:
 
     def test_leader_splits_ignore_backtrack_entries(self):
         """Backtrack entries in zone_history should not affect leader splits."""
-        from speedfog_racing.websocket.manager import build_leader_splits
+        from speedfog_racing.websocket.race.manager import build_leader_splits
 
         history = [
             {"node_id": "start", "igt_ms": 0},
@@ -1226,35 +1226,35 @@ class TestSharedEntranceDedup:
 
     def test_same_node_same_igt_is_deduped(self):
         """Two flags resolving to the same node at the same IGT should be deduped."""
-        from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+        from speedfog_racing.websocket.race.mod import is_shared_entrance_duplicate
 
         history = [{"node_id": "zone_a", "igt_ms": 10000, "type": "fog"}]
         assert is_shared_entrance_duplicate(history, "zone_a", 10000)
 
     def test_same_node_within_tolerance_is_deduped(self):
         """Two flags within the tolerance window should be deduped."""
-        from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+        from speedfog_racing.websocket.race.mod import is_shared_entrance_duplicate
 
         history = [{"node_id": "zone_a", "igt_ms": 10000, "type": "fog"}]
         assert is_shared_entrance_duplicate(history, "zone_a", 10500)
 
     def test_same_node_beyond_tolerance_not_deduped(self):
         """A revisit beyond the tolerance window should NOT be deduped."""
-        from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+        from speedfog_racing.websocket.race.mod import is_shared_entrance_duplicate
 
         history = [{"node_id": "zone_a", "igt_ms": 10000, "type": "fog"}]
         assert not is_shared_entrance_duplicate(history, "zone_a", 15000)
 
     def test_different_node_same_igt_not_deduped(self):
         """Two flags resolving to different nodes should NOT be deduped."""
-        from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+        from speedfog_racing.websocket.race.mod import is_shared_entrance_duplicate
 
         history = [{"node_id": "zone_a", "igt_ms": 10000, "type": "fog"}]
         assert not is_shared_entrance_duplicate(history, "zone_b", 10000)
 
     def test_empty_history_not_deduped(self):
         """First flag ever should never be deduped."""
-        from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+        from speedfog_racing.websocket.race.mod import is_shared_entrance_duplicate
 
         assert not is_shared_entrance_duplicate([], "zone_a", 10000)
 

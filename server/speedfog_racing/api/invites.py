@@ -14,7 +14,7 @@ from speedfog_racing.schemas import (
     InviteInfoResponse,
 )
 from speedfog_racing.websocket import broadcast_race_state_update
-from speedfog_racing.websocket.manager import manager
+from speedfog_racing.websocket.race.manager import manager
 
 router = APIRouter()
 

@@ -80,7 +80,7 @@ from speedfog_racing.services.stats_service import (
     update_elo_ratings,
 )
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
-from speedfog_racing.websocket.manager import manager
+from speedfog_racing.websocket.race.manager import manager
 from speedfog_racing.websocket.schemas import persist_system_chat
 
 logger = logging.getLogger(__name__)

@@ -1,14 +1,14 @@
 """WebSocket handlers for SpeedFog Racing."""
 
-from speedfog_racing.websocket.manager import ConnectionManager, manager
-from speedfog_racing.websocket.mod import broadcast_race_start, handle_mod_websocket
-from speedfog_racing.websocket.spectator import (
+from speedfog_racing.websocket.race.manager import ConnectionManager, manager
+from speedfog_racing.websocket.race.mod import broadcast_race_start, handle_mod_websocket
+from speedfog_racing.websocket.race.spectator import (
     broadcast_race_state_update,
     handle_spectator_websocket,
 )
-from speedfog_racing.websocket.training_manager import training_manager
-from speedfog_racing.websocket.training_mod import handle_training_mod_websocket
-from speedfog_racing.websocket.training_spectator import handle_training_spectator_websocket
+from speedfog_racing.websocket.training.manager import training_manager
+from speedfog_racing.websocket.training.mod import handle_training_mod_websocket
+from speedfog_racing.websocket.training.spectator import handle_training_spectator_websocket
 
 __all__ = [
     "ConnectionManager",

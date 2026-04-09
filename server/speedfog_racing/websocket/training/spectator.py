@@ -20,8 +20,8 @@ from speedfog_racing.websocket.schemas import (
     RaceStateMessage,
     SeedInfo,
 )
-from speedfog_racing.websocket.training_manager import training_manager
-from speedfog_racing.websocket.training_mod import build_training_participant_info
+from speedfog_racing.websocket.training.manager import training_manager
+from speedfog_racing.websocket.training.mod import build_training_participant_info
 
 AUTH_TIMEOUT = 5.0
 

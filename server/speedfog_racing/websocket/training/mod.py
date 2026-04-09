@@ -39,7 +39,7 @@ from speedfog_racing.websocket.common import (
     send_zone_query_ack,
     send_zone_update,
 )
-from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
+from speedfog_racing.websocket.race.mod import is_shared_entrance_duplicate
 from speedfog_racing.websocket.schemas import (
     AuthOkMessage,
     DeathCountsMessage,
@@ -52,7 +52,7 @@ from speedfog_racing.websocket.schemas import (
     ZoneHistoryMessage,
     extract_spawn_items,
 )
-from speedfog_racing.websocket.training_manager import training_manager
+from speedfog_racing.websocket.training.manager import training_manager
 
 logger = logging.getLogger(__name__)
 

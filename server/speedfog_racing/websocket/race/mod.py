@@ -46,11 +46,12 @@ from speedfog_racing.websocket.common import (
     send_zone_query_ack,
     send_zone_update,
 )
-from speedfog_racing.websocket.manager import (
+from speedfog_racing.websocket.race.manager import (
     manager,
     participant_to_info,
     sort_leaderboard,
 )
+from speedfog_racing.websocket.race.spectator import broadcast_race_state_update, load_chat_history
 from speedfog_racing.websocket.schemas import (
     AuthOkMessage,
     DeathCountsMessage,
@@ -61,7 +62,6 @@ from speedfog_racing.websocket.schemas import (
     extract_spawn_items,
     persist_system_chat,
 )
-from speedfog_racing.websocket.spectator import broadcast_race_state_update, load_chat_history
 
 logger = logging.getLogger(__name__)
 

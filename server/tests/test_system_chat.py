@@ -16,8 +16,8 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.websocket.race.spectator import load_chat_history
 from speedfog_racing.websocket.schemas import persist_system_chat
-from speedfog_racing.websocket.spectator import load_chat_history
 
 
 @pytest.fixture

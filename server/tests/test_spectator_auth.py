@@ -8,7 +8,7 @@ from speedfog_racing.models import (
     RaceStatus,
     Seed,
 )
-from speedfog_racing.websocket.spectator import build_seed_info
+from speedfog_racing.websocket.race.spectator import build_seed_info
 
 
 def _make_race(

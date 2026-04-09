@@ -28,7 +28,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
-from speedfog_racing.websocket.manager import manager
+from speedfog_racing.websocket.race.manager import manager
 
 # Use a unique test database file for integration tests (cross-platform)
 INTEGRATION_TEST_DB = os.path.join(tempfile.gettempdir(), "speedfog_integration_test.db")

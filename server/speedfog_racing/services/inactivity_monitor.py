@@ -88,8 +88,8 @@ async def inactivity_monitor_loop(
         try:
             affected, abandoned_ids = await abandon_inactive_participants(session_maker)
             if affected:
-                from speedfog_racing.websocket.manager import manager
-                from speedfog_racing.websocket.spectator import broadcast_race_state_update
+                from speedfog_racing.websocket.race.manager import manager
+                from speedfog_racing.websocket.race.spectator import broadcast_race_state_update
 
                 for race_id in affected:
                     # One session per affected race: load Race with the full

@@ -755,7 +755,7 @@ def training_ws_client(async_session):
     """Sync test client for WebSocket testing."""
     from starlette.testclient import TestClient
 
-    from speedfog_racing.websocket.training_manager import training_manager
+    from speedfog_racing.websocket.training.manager import training_manager
 
     training_manager.rooms.clear()
     with TestClient(app, raise_server_exceptions=False) as client:
@@ -835,7 +835,7 @@ def test_training_mod_auth_ok_includes_spawn_items(async_session):
     """Training mod WS: auth_ok includes spawn_items for type-4 (gem) care package items."""
     from starlette.testclient import TestClient
 
-    from speedfog_racing.websocket.training_manager import training_manager
+    from speedfog_racing.websocket.training.manager import training_manager
 
     # Graph with care_package including type-4 gems and other types
     graph_json = {
@@ -2046,7 +2046,7 @@ def test_training_mod_auth_ok_includes_items_spawned_flag(async_session):
     """Training mod WS: auth_ok includes items_spawned_flag from graph_json."""
     from starlette.testclient import TestClient
 
-    from speedfog_racing.websocket.training_manager import training_manager
+    from speedfog_racing.websocket.training.manager import training_manager
 
     graph_json = {
         "version": "4.0",
@@ -2138,7 +2138,7 @@ def test_discord_notification_skipped_on_reconnect(async_session, training_user,
     """Reconnect (discord_notified_at already set) must not fire notification."""
     from starlette.testclient import TestClient
 
-    from speedfog_racing.websocket.training_manager import training_manager
+    from speedfog_racing.websocket.training.manager import training_manager
 
     # Create session with discord_notified_at already set (simulates restart)
     async def _setup():
@@ -2155,7 +2155,7 @@ def test_discord_notification_skipped_on_reconnect(async_session, training_user,
     with (
         TestClient(app, raise_server_exceptions=False) as client,
         patch(
-            "speedfog_racing.websocket.training_mod.send_training_live_notification"
+            "speedfog_racing.websocket.training.mod.send_training_live_notification"
         ) as mock_notify,
     ):
         with client.websocket_connect(f"/ws/training/{sid}") as ws:

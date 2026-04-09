@@ -29,7 +29,7 @@ from speedfog_racing.models import (
 )
 from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.websocket.common import MAX_CHAT_HISTORY_MESSAGES, heartbeat_loop
-from speedfog_racing.websocket.manager import (
+from speedfog_racing.websocket.race.manager import (
     SEND_TIMEOUT,
     SpectatorConnection,
     manager,

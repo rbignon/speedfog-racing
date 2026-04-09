@@ -17,7 +17,7 @@ from speedfog_racing.config import settings
 from speedfog_racing.models import Caster, Participant, Race, RaceStatus
 
 if TYPE_CHECKING:
-    from speedfog_racing.websocket.manager import ConnectionManager
+    from speedfog_racing.websocket.race.manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
 

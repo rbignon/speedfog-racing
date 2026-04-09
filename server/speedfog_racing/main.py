@@ -29,7 +29,7 @@ from speedfog_racing.websocket import (
     handle_training_mod_websocket,
     handle_training_spectator_websocket,
 )
-from speedfog_racing.websocket.manager import manager as ws_manager
+from speedfog_racing.websocket.race.manager import manager as ws_manager
 
 # Configure logging
 logging.basicConfig(
