@@ -5,7 +5,7 @@ import json
 import logging
 import uuid
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -14,7 +14,7 @@ from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.i18n import translate_graph_json
-from speedfog_racing.websocket.common import heartbeat_loop
+from speedfog_racing.websocket.handler import BaseSpectatorHandler
 from speedfog_racing.websocket.schemas import (
     RaceInfo,
     RaceStateMessage,
@@ -23,9 +23,86 @@ from speedfog_racing.websocket.schemas import (
 from speedfog_racing.websocket.training.manager import training_manager
 from speedfog_racing.websocket.training.mod import build_training_participant_info
 
-AUTH_TIMEOUT = 5.0
-
 logger = logging.getLogger(__name__)
+
+
+class TrainingSpectatorHandler(BaseSpectatorHandler):
+    """Spectator WebSocket handler for training session connections."""
+
+    AUTH_TIMEOUT = 5.0
+
+    def __init__(
+        self,
+        websocket: WebSocket,
+        session_id: uuid.UUID,
+        session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(websocket, session_id, session_maker)
+        self._spectator_id: uuid.UUID | None = None
+        self._user_id: uuid.UUID | None = None
+
+    async def _auth_and_setup(self) -> bool:
+        # Wait AUTH_TIMEOUT for auth message
+        try:
+            auth_data = await asyncio.wait_for(
+                self.websocket.receive_text(), timeout=self.AUTH_TIMEOUT
+            )
+        except TimeoutError:
+            await self.websocket.close(code=4001, reason="Auth timeout")
+            return False
+
+        try:
+            auth_msg = json.loads(auth_data)
+        except json.JSONDecodeError:
+            await self.websocket.close(code=4003, reason="Invalid JSON")
+            return False
+
+        if auth_msg.get("type") != "auth":
+            await self.websocket.close(code=4003, reason="Invalid auth")
+            return False
+
+        # Optional token -> get_user_by_token -> user_id, locale
+        token = auth_msg.get("token")
+        async with self.session_maker() as db:
+            if isinstance(token, str) and token:
+                user = await get_user_by_token(db, token)
+                if user:
+                    self._user_id = user.id
+                    if user.locale:
+                        self.locale = user.locale
+
+            # Load session
+            result = await db.execute(
+                select(TrainingSession)
+                .options(
+                    selectinload(TrainingSession.user),
+                    selectinload(TrainingSession.seed),
+                )
+                .where(TrainingSession.id == self.entity_id)
+            )
+            session = result.scalar_one_or_none()
+
+            if not session:
+                await self.websocket.close(code=4004, reason="Session not found")
+                return False
+
+            await _send_initial_state(self.websocket, session, locale=self.locale)
+
+        self._spectator_id = self._user_id or uuid.uuid4()
+        return True
+
+    async def _register(self) -> None:
+        assert isinstance(self.entity_id, uuid.UUID)
+        assert self._spectator_id is not None
+        await training_manager.connect_spectator(
+            self.entity_id,
+            self._spectator_id,
+            self.websocket,
+        )
+
+    async def _unregister(self) -> None:
+        assert isinstance(self.entity_id, uuid.UUID)
+        await training_manager.disconnect_spectator(self.entity_id, self.websocket)
 
 
 async def handle_training_spectator_websocket(
@@ -37,87 +114,8 @@ async def handle_training_spectator_websocket(
 
     Accepts both authenticated and anonymous spectators.
     """
-    await websocket.accept()
-
-    # Read locale from query param (e.g. ?locale=fr)
-    locale = websocket.query_params.get("locale", "en")
-
-    spectator_id = None
-
-    try:
-        # Wait for auth message (token is optional for anonymous access)
-        try:
-            auth_data = await asyncio.wait_for(websocket.receive_text(), timeout=AUTH_TIMEOUT)
-        except TimeoutError:
-            await websocket.close(code=4001, reason="Auth timeout")
-            return
-
-        try:
-            auth_msg = json.loads(auth_data)
-        except json.JSONDecodeError:
-            await websocket.close(code=4003, reason="Invalid JSON")
-            return
-
-        if auth_msg.get("type") != "auth":
-            await websocket.close(code=4003, reason="Invalid auth")
-            return
-
-        # Token is optional; anonymous spectators don't send one
-        token = auth_msg.get("token")
-        user_id = None
-
-        async with session_maker() as db:
-            if isinstance(token, str) and token:
-                user = await get_user_by_token(db, token)
-                if user:
-                    user_id = user.id
-                    # Prefer user's DB locale over query param
-                    if user.locale:
-                        locale = user.locale
-
-            # Load session (no ownership check, public read-only)
-            result = await db.execute(
-                select(TrainingSession)
-                .options(
-                    selectinload(TrainingSession.user),
-                    selectinload(TrainingSession.seed),
-                )
-                .where(TrainingSession.id == session_id)
-            )
-            session = result.scalar_one_or_none()
-
-            if not session:
-                await websocket.close(code=4004, reason="Session not found")
-                return
-
-            # Send initial state
-            await _send_initial_state(websocket, session, locale=locale)
-
-        # Register connection: use user_id if authenticated, else random UUID
-        spectator_id = user_id or uuid.uuid4()
-        await training_manager.connect_spectator(session_id, spectator_id, websocket)
-
-        # Start heartbeat
-        heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
-
-        try:
-            # Spectators only listen
-            while True:
-                await websocket.receive_text()
-        finally:
-            heartbeat_task.cancel()
-            try:
-                await heartbeat_task
-            except asyncio.CancelledError:
-                pass
-
-    except WebSocketDisconnect:
-        logger.info(f"Training spectator disconnected: session={session_id}")
-    except Exception:
-        logger.exception(f"Training spectator error: session={session_id}")
-    finally:
-        if spectator_id:
-            await training_manager.disconnect_spectator(session_id, websocket)
+    handler = TrainingSpectatorHandler(websocket, session_id, session_maker)
+    await handler.run()
 
 
 async def _send_initial_state(
