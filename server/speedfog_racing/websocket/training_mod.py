@@ -553,15 +553,11 @@ async def _handle_zone_query(
     locale: str = "en",
 ) -> None:
     """Handle zone_query from mod (loading screen exit overlay update)."""
-    raw_message_id = msg.get("message_id")
-    message_id: int | None = raw_message_id if isinstance(raw_message_id, int) else None
-
     zq = parse_zone_query_input(msg)
     if zq is None:
-        if message_id is not None:
-            await send_zone_query_ack(websocket, message_id)
         return
 
+    message_id = zq.message_id
     history_changed = False
 
     async with session_maker() as db:
@@ -617,7 +613,6 @@ async def _handle_zone_query(
             igt = zq.igt_ms if zq.igt_ms is not None else session.igt_ms
             old_history = session.zone_history or []
 
-            # Dedup: if this message_id was already persisted, skip to zone_update
             if message_id is not None and any(
                 entry.get("type") == "backtrack" and entry.get("message_id") == message_id
                 for entry in old_history

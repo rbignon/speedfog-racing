@@ -1186,7 +1186,7 @@ impl RaceTracker {
                 info!(message_id, "[WS] Re-queued drained zone query");
             }
             IncomingMessage::ZoneQueryAck { message_id } => {
-                if let Some(_) = self.in_flight_zone_queries.remove(&message_id) {
+                if self.in_flight_zone_queries.remove(&message_id).is_some() {
                     info!(message_id, "[WS] Zone query acknowledged (no zone_update)");
                 } else {
                     warn!(message_id, "[WS] Ack for unknown zone query");

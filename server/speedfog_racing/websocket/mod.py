@@ -791,15 +791,11 @@ async def handle_zone_query(
     When the resolved node differs from current_zone, this records a
     zone_history entry (backtrack via death/teleport/quit-out).
     """
-    raw_message_id = msg.get("message_id")
-    message_id: int | None = raw_message_id if isinstance(raw_message_id, int) else None
-
     zq = parse_zone_query_input(msg)
     if zq is None:
-        if message_id is not None:
-            await send_zone_query_ack(websocket, message_id)
         return
 
+    message_id = zq.message_id
     is_first_visit = False
     history_changed = False
 
@@ -823,7 +819,7 @@ async def handle_zone_query(
         if participant.status != ParticipantStatus.PLAYING:
             if message_id is not None:
                 await send_zone_query_ack(websocket, message_id)
-            return  # Only PLAYING participants can trigger zone queries
+            return
 
         seed = participant.race.seed
         if not seed or not seed.graph_json:
@@ -864,7 +860,6 @@ async def handle_zone_query(
             igt = zq.igt_ms if zq.igt_ms is not None else participant.igt_ms
             old_history = participant.zone_history or []
 
-            # Dedup: if this message_id was already persisted, skip to zone_update
             if message_id is not None and any(
                 entry.get("type") == "backtrack" and entry.get("message_id") == message_id
                 for entry in old_history
