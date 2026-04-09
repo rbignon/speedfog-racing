@@ -36,6 +36,7 @@ from speedfog_racing.websocket.common import (
     send_auth_error,
     send_error,
     send_event_flag_ack,
+    send_zone_query_ack,
     send_zone_update,
 )
 from speedfog_racing.websocket.mod import is_shared_entrance_duplicate
@@ -552,8 +553,13 @@ async def _handle_zone_query(
     locale: str = "en",
 ) -> None:
     """Handle zone_query from mod (loading screen exit overlay update)."""
+    raw_message_id = msg.get("message_id")
+    message_id: int | None = raw_message_id if isinstance(raw_message_id, int) else None
+
     zq = parse_zone_query_input(msg)
     if zq is None:
+        if message_id is not None:
+            await send_zone_query_ack(websocket, message_id)
         return
 
     history_changed = False
@@ -561,14 +567,20 @@ async def _handle_zone_query(
     async with session_maker() as db:
         session = await _load_session(db, session_id)
         if not session or session.status != TrainingSessionStatus.ACTIVE:
+            if message_id is not None:
+                await send_zone_query_ack(websocket, message_id)
             return
 
         # Guard: same as _handle_event_flag, require zone_history initialization
         if not session.zone_history:
+            if message_id is not None:
+                await send_zone_query_ack(websocket, message_id)
             return
 
         seed = session.seed
         if not seed or not seed.graph_json:
+            if message_id is not None:
+                await send_zone_query_ack(websocket, message_id)
             return
 
         graph_json = seed.graph_json
@@ -588,6 +600,8 @@ async def _handle_zone_query(
                 zq.map_id,
                 session_id,
             )
+            if message_id is not None:
+                await send_zone_query_ack(websocket, message_id)
             return
 
         # Record backtrack entry when the player moved to a different node
@@ -603,10 +617,13 @@ async def _handle_zone_query(
             igt = zq.igt_ms if zq.igt_ms is not None else session.igt_ms
             old_history = session.zone_history or []
 
-            # Cap zone_history but still update current_zone below
-            # (unlike event_flag which early-returns, zone_query must
-            # keep tracking position for overlay display)
-            if len(old_history) >= MAX_ZONE_HISTORY:
+            # Dedup: if this message_id was already persisted, skip to zone_update
+            if message_id is not None and any(
+                entry.get("type") == "backtrack" and entry.get("message_id") == message_id
+                for entry in old_history
+            ):
+                pass  # Dedup: already persisted, skip to zone_update
+            elif len(old_history) >= MAX_ZONE_HISTORY:
                 logger.warning("zone_history cap reached for training session %s", session_id)
             else:
                 is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
@@ -616,6 +633,8 @@ async def _handle_zone_query(
                     "igt_ms": igt,
                     "type": "backtrack",
                 }
+                if message_id is not None:
+                    new_entry["message_id"] = message_id
                 session.zone_history = [*old_history, new_entry]
                 history_changed = True
 
@@ -630,6 +649,7 @@ async def _handle_zone_query(
         session.zone_history or [],
         locale,
         is_first_visit=is_first_visit,
+        message_id=message_id,
     )
 
     # Broadcast to spectators so DAG view reflects current zone
