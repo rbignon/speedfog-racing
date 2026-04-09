@@ -92,6 +92,8 @@ class ModTestClient:
         map_id: str | None = None,
         position: list[float] | None = None,
         play_region_id: int | None = None,
+        message_id: int | None = None,
+        igt_ms: int | None = None,
     ) -> None:
         """Send zone query (loading screen exit)."""
         payload: dict[str, Any] = {"type": "zone_query"}
@@ -103,6 +105,10 @@ class ModTestClient:
             payload["position"] = position
         if play_region_id is not None:
             payload["play_region_id"] = play_region_id
+        if message_id is not None:
+            payload["message_id"] = message_id
+        if igt_ms is not None:
+            payload["igt_ms"] = igt_ms
         self.ws.send_json(payload)
 
     def receive(self, timeout: float = 5) -> dict[str, Any]:
@@ -3070,3 +3076,230 @@ def test_spectator_receives_zone_history_snapshots(integration_client, race_with
             assert death_msg["history"][1]["igt_ms"] == 10000
             assert death_msg["history"][1]["deaths"] == 3
             assert death_msg["history"][1]["type"] == "fog"
+
+
+# =============================================================================
+# zone_query message_id dedup and ACK tests
+# =============================================================================
+
+
+def test_zone_query_replay_same_message_id_is_idempotent(
+    integration_db, integration_client, seed_folder
+):
+    """Replaying a zone_query with the same message_id must not create a duplicate."""
+    import asyncio
+
+    # Graph with real zone IDs so grace resolution works:
+    # chapel_start (grace 10012952) <-> stormveil_godrick (event_flag 1040292800, grace 10002950)
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 2,
+        "nodes": {
+            "chapel_start_4f96": {
+                "type": "start",
+                "display_name": "Chapel of Anticipation",
+                "zones": ["chapel_start"],
+                "layer": 0,
+                "exits": [],
+            },
+            "stormveil_godrick_48fd": {
+                "display_name": "Godrick the Grafted",
+                "zones": ["stormveil_godrick"],
+                "layer": 1,
+                "tier": 5,
+                "exits": [],
+            },
+        },
+        "event_map": {"1040292800": "stormveil_godrick_48fd"},
+        "finish_event": 1040292801,
+    }
+
+    async def setup():
+        async with integration_db() as db:
+            organizer = User(
+                twitch_id="zqd_organizer",
+                twitch_username="zqd_organizer",
+                twitch_display_name="ZQD Org",
+                api_token="zqd_organizer_token",
+                role=UserRole.ORGANIZER,
+            )
+            player = User(
+                twitch_id="zqd_player",
+                twitch_username="zqd_player",
+                twitch_display_name="ZQD Player",
+                api_token="zqd_player_token",
+                role=UserRole.USER,
+            )
+            player2 = User(
+                twitch_id="zqd_player2",
+                twitch_username="zqd_player2",
+                twitch_display_name="ZQD Player2",
+                api_token="zqd_player2_token",
+                role=UserRole.USER,
+            )
+            seed = Seed(
+                seed_number="szqd_001",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=2,
+                folder_path=str(seed_folder),
+                status=SeedStatus.AVAILABLE,
+            )
+            db.add_all([organizer, player, player2, seed])
+            await db.commit()
+            await db.refresh(organizer)
+            await db.refresh(player)
+            await db.refresh(player2)
+            return organizer, player, player2
+
+    organizer, player, player2 = asyncio.run(setup())
+    org_headers = {"Authorization": f"Bearer {organizer.api_token}"}
+
+    # Create race
+    resp = integration_client.post(
+        "/api/races",
+        json={"name": "ZQ Dedup Test", "pool_name": "standard"},
+        headers=org_headers,
+    )
+    assert resp.status_code == 201
+    race_id = resp.json()["id"]
+
+    # Override seed graph
+    async def set_graph():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            if race.seed:
+                race.seed.graph_json = graph_json
+                race.seed.total_layers = 2
+                await db.commit()
+
+    asyncio.run(set_graph())
+
+    # Add participants (need at least 2 to start)
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants",
+        json={"twitch_username": player.twitch_username},
+        headers=org_headers,
+    )
+    assert resp.status_code == 200
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants",
+        json={"twitch_username": player2.twitch_username},
+        headers=org_headers,
+    )
+    assert resp.status_code == 200
+
+    # Get mod token for player
+    async def get_token():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == player.id,
+                )
+            )
+            p = result.scalar_one()
+            return p.mod_token
+
+    mod_token = asyncio.run(get_token())
+
+    # Ready + start
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, mod_token)
+        assert mod.auth()["type"] == "auth_ok"
+        mod.send_ready()
+        mod.receive_until_type("leaderboard_update")
+
+    integration_client.post(f"/api/races/{race_id}/release-seeds", headers=org_headers)
+    resp = integration_client.post(f"/api/races/{race_id}/start", headers=org_headers)
+    assert resp.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, mod_token)
+        assert mod.auth()["type"] == "auth_ok"
+
+        # 1) status_update: spawn at start node (READY -> PLAYING)
+        mod.send_status_update(igt_ms=1000, death_count=0)
+        mod.receive_until_type("leaderboard_update")
+
+        # 2) event_flag: fog traversal to stormveil_godrick
+        mod.send_event_flag(1040292800, igt_ms=5000)
+        mod.receive_until_type("leaderboard_update")
+        mod.receive_until_type("zone_update")
+
+        # 3) zone_query: backtrack to chapel_start via fast-travel (message_id=42)
+        mod.send_zone_query(10012952, message_id=42, igt_ms=8000)
+        zu1 = mod.receive_until_type("zone_update")
+        assert zu1["node_id"] == "chapel_start_4f96"
+        assert zu1.get("message_id") == 42
+
+        # 4) Replay same zone_query with same message_id (simulates lost ACK)
+        mod.send_zone_query(10012952, message_id=42, igt_ms=8000)
+        zu2 = mod.receive_until_type("zone_update")
+        assert zu2["node_id"] == "chapel_start_4f96"
+        assert zu2.get("message_id") == 42
+
+    # Verify: only ONE backtrack entry in zone_history
+    async def check_history():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == player.id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is not None
+    # Expected: spawn + fog + backtrack (no duplicate backtrack)
+    assert len(history) == 3
+    assert history[0]["type"] == "spawn"
+    assert history[0]["node_id"] == "chapel_start_4f96"
+    assert history[1]["type"] == "fog"
+    assert history[1]["node_id"] == "stormveil_godrick_48fd"
+    assert history[2]["type"] == "backtrack"
+    assert history[2]["node_id"] == "chapel_start_4f96"
+    assert history[2]["igt_ms"] == 8000
+    assert history[2]["message_id"] == 42
+
+
+def test_zone_query_unresolved_sends_ack_with_message_id(
+    integration_client, race_with_participants
+):
+    """When a zone_query cannot be resolved, the server sends zone_query_ack with message_id."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    # Start the race
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # Transition READY -> PLAYING
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+
+        # Send zone_query with an unknown grace_entity_id and a message_id
+        mod0.send_zone_query(99999999, message_id=55)
+        ack = mod0.receive_until_type("zone_query_ack")
+        assert ack["message_id"] == 55
