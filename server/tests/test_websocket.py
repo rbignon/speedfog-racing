@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from speedfog_racing.models import ParticipantStatus, RaceStatus
-from speedfog_racing.websocket.common import parse_zone_query_input
+from speedfog_racing.websocket.handler import parse_zone_query_input
 from speedfog_racing.websocket.race.manager import (
     ConnectionManager,
     RaceRoom,
