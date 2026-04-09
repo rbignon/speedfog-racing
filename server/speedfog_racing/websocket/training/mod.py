@@ -39,7 +39,7 @@ from speedfog_racing.websocket.common import (
     send_zone_query_ack,
     send_zone_update,
 )
-from speedfog_racing.websocket.race.mod import is_shared_entrance_duplicate
+from speedfog_racing.websocket.handler import is_shared_entrance_duplicate
 from speedfog_racing.websocket.schemas import (
     AuthOkMessage,
     DeathCountsMessage,

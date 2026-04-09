@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -22,29 +22,18 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
 )
-from speedfog_racing.services.grace_service import resolve_zone_query
+from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
+    compute_zone_update,
     get_layer_for_node,
     get_start_node,
 )
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
-from speedfog_racing.websocket.common import (
-    MAX_FRESH_IGT_MS,
-    MAX_ZONE_HISTORY,
-    MOD_AUTH_TIMEOUT,
-    MessageRateLimiter,
-    attribute_deaths,
-    clamp_death_count,
+from speedfog_racing.websocket.handler import (
+    SEND_TIMEOUT,
+    BaseModHandler,
     clamp_igt,
     extract_event_ids,
-    get_graces_mapping,
-    heartbeat_loop,
-    parse_zone_query_input,
-    send_auth_error,
-    send_error,
-    send_event_flag_ack,
-    send_zone_query_ack,
-    send_zone_update,
 )
 from speedfog_racing.websocket.race.manager import (
     manager,
@@ -55,6 +44,7 @@ from speedfog_racing.websocket.race.spectator import broadcast_race_state_update
 from speedfog_racing.websocket.schemas import (
     AuthOkMessage,
     DeathCountsMessage,
+    ErrorMessage,
     ParticipantInfo,
     RaceInfo,
     RaceStartMessage,
@@ -65,22 +55,10 @@ from speedfog_racing.websocket.schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Shared entrances (DuplicateEntrance in FogMod) inject multiple SetEventFlag
-# instructions for the same warp, all resolving to the same node_id via event_map.
-# The mod sends each flag as a separate WebSocket message within a single frame,
-# so they arrive with near-identical IGT. This tolerance window deduplicates them.
-SHARED_ENTRANCE_DEDUP_MS = 1000
 
-
-def is_shared_entrance_duplicate(history: list[dict[str, Any]], node_id: str, igt: int) -> bool:
-    """Check if this event flag is a duplicate from shared entrance multi-flag injection."""
-    return bool(
-        history
-        and history[-1].get("node_id") == node_id
-        and abs(history[-1].get("igt_ms", 0) - igt) <= SHARED_ENTRANCE_DEDUP_MS
-    )
-
-
+# ---------------------------------------------------------------------------
+# Race-specific utilities (kept module-level, used externally or by handler)
+# ---------------------------------------------------------------------------
 def _is_countdown_active(race: Race) -> bool:
     """Check if the race is still in the countdown period after starting."""
     if not race.started_at or settings.countdown_seconds <= 0:
@@ -112,6 +90,9 @@ def _set_layer(participant: Participant, new_layer: int, entry_igt: int) -> None
         participant.layer_entry_igts = entries
 
 
+# ---------------------------------------------------------------------------
+# DB loaders (kept module-level, used by handler and external callers)
+# ---------------------------------------------------------------------------
 def _participant_load_options() -> list[Any]:
     """Eager-load options for loading a participant with all broadcast data."""
     return [
@@ -208,719 +189,428 @@ def aggregate_death_counts(participants: list[Participant]) -> dict[str, int]:
     return counts
 
 
-async def handle_mod_websocket(
-    websocket: WebSocket,
-    race_id: uuid.UUID,
-    session_maker: async_sessionmaker[AsyncSession],
-) -> None:
-    """Handle a mod WebSocket connection."""
-    await websocket.accept()
+# ---------------------------------------------------------------------------
+# RaceModHandler
+# ---------------------------------------------------------------------------
+class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
+    """Mod WebSocket handler for race connections."""
 
-    participant_id: uuid.UUID | None = None
-    user_id: uuid.UUID | None = None
-    mod_locale: str = "en"
-    # graph_json is immutable during a race; cache at connect time so the
-    # disconnect broadcast does not need to reload the seed.
-    connect_graph_json: dict[str, Any] | None = None
+    def __init__(
+        self,
+        websocket: WebSocket,
+        race_id: uuid.UUID,
+        session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(websocket, race_id, session_maker)
+        self._race_id = race_id  # Typed alias for self.entity_id
+        self._message_handlers["ready"] = self._handle_ready
+        self._message_handlers["finished"] = self._handle_finished_message
+        self._participant_id: uuid.UUID | None = None
+        self._user_id: uuid.UUID | None = None
+        self._cached_graph_json: dict[str, Any] | None = None
+        # Detached participant from auth phase, used by _on_authenticated
+        self._auth_participant: Participant | None = None
 
-    try:
-        # Wait for auth message with timeout
-        try:
-            auth_data = await asyncio.wait_for(websocket.receive_text(), timeout=MOD_AUTH_TIMEOUT)
-        except TimeoutError:
-            logger.warning(f"Mod auth timeout: race={race_id}")
-            await websocket.close(code=4001, reason="Auth timeout")
-            return
+    # ------------------------------------------------------------------
+    # Authentication
+    # ------------------------------------------------------------------
+    async def _authenticate(self, mod_token: str) -> bool:
+        async with self.session_maker() as db:
+            result = await db.execute(
+                select(Participant)
+                .options(*_participant_load_options())
+                .where(
+                    Participant.race_id == self._race_id,
+                    Participant.mod_token == mod_token,
+                )
+            )
+            participant = result.scalar_one_or_none()
 
-        try:
-            auth_msg = json.loads(auth_data)
-        except json.JSONDecodeError:
-            await send_auth_error(websocket, "Invalid JSON")
-            return
-
-        if auth_msg.get("type") != "auth" or "mod_token" not in auth_msg:
-            await send_auth_error(websocket, "Invalid auth message")
-            return
-
-        mod_token = auth_msg["mod_token"]
-
-        # Auth phase: open session, authenticate, send auth_ok, close session
-        async with session_maker() as db:
-            participant = await authenticate_mod(db, race_id, mod_token)
             if not participant:
-                logger.warning(f"Mod auth failed: race={race_id}, invalid token")
-                await send_auth_error(websocket, "Invalid mod token or race")
-                return
+                logger.warning("Mod auth failed: race=%s, invalid token", self.entity_id)
+                await self._send_auth_error("Invalid mod token or race")
+                return False
 
             race = participant.race
             if race.status == RaceStatus.FINISHED:
                 logger.info(
-                    f"Mod rejected (race finished): race={race_id}, user={participant.user_id}"
+                    "Mod rejected (race finished): race=%s, user=%s",
+                    self.entity_id,
+                    participant.user_id,
                 )
-                await send_auth_error(websocket, "Race has already finished")
-                return
+                await self._send_auth_error("Race has already finished")
+                return False
 
-            # Keep IDs for use after session closes
-            participant_id = participant.id
-            user_id = participant.user_id
+            self._participant_id = participant.id
+            self._user_id = participant.user_id
 
-            # Resolve locale from user preference
             if participant.user.locale:
-                mod_locale = participant.user.locale
+                self.locale = participant.user.locale
 
-            await send_auth_ok(websocket, participant)
+            self._cached_graph_json = _get_graph_json(participant)
+
+            # Send auth_ok
+            await self._send_auth_ok(participant)
 
             # Send zone_update on reconnect (race already running)
             seed = participant.race.seed
             if participant.race.status == RaceStatus.RUNNING and seed and seed.graph_json:
                 zone = participant.current_zone or get_start_node(seed.graph_json)
                 if zone:
-                    await send_zone_update(
-                        websocket,
+                    await self._send_zone_update(
                         zone,
                         seed.graph_json,
                         participant.zone_history,
-                        mod_locale,
-                        race_id=race_id,
-                        participant_id=participant_id,
                     )
 
                 # Send current death counts on reconnect
                 counts = aggregate_death_counts(race.participants)
                 if counts:
-                    await websocket.send_text(DeathCountsMessage(counts=counts).model_dump_json())
-        # Session closed, released back to pool
-
-        # Cache graph_json (immutable during a race) for later reuse in
-        # the disconnect broadcast, avoiding a seed reload.
-        connect_graph_json = _get_graph_json(participant)
-
-        # Register connection (includes locale)
-        await manager.connect_mod(race_id, participant_id, user_id, websocket, mod_locale)
-
-        # Broadcast updated connection status (reuse detached objects from auth session)
-        try:
-            await manager.broadcast_leaderboard(
-                race_id, participant.race.participants, graph_json=connect_graph_json
-            )
-        except Exception:
-            logger.warning(f"Failed to broadcast connect: race={race_id}")
-
-        # Start heartbeat in background
-        heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
-        rate_limiter = MessageRateLimiter()
-
-        try:
-            # Main message loop
-            while True:
-                data = await websocket.receive_text()
-
-                if not rate_limiter.check():
-                    logger.warning(
-                        "Rate limit exceeded: race=%s, participant=%s", race_id, participant_id
+                    await self.websocket.send_text(
+                        DeathCountsMessage(counts=counts).model_dump_json()
                     )
-                    await websocket.close(code=4008, reason="Rate limit exceeded")
-                    return
 
-                try:
-                    msg = json.loads(data)
-                except json.JSONDecodeError as e:
-                    logger.warning(f"Invalid JSON from mod (ignored): {e}")
-                    continue
+        # Store detached participant for use by _on_authenticated
+        self._auth_participant = participant
+        return True
 
-                msg_type = msg.get("type")
+    async def _send_auth_ok(self, participant: Participant) -> None:
+        """Send successful auth response with race state."""
+        race = participant.race
+        seed = race.seed
 
-                if msg_type == "pong":
-                    pass  # Heartbeat response, no action needed
-                elif msg_type == "ready":
-                    await handle_ready(session_maker, participant_id)
-                elif msg_type == "status_update":
-                    await handle_status_update(
-                        websocket,
-                        session_maker,
-                        participant_id,
-                        msg,
-                        cached_graph_json=connect_graph_json,
-                    )
-                elif msg_type == "event_flag":
-                    await handle_event_flag(
-                        websocket, session_maker, participant_id, msg, mod_locale
-                    )
-                elif msg_type == "finished":
-                    await handle_finished(websocket, session_maker, participant_id, msg)
-                elif msg_type == "zone_query":
-                    await handle_zone_query(
-                        websocket, session_maker, participant_id, msg, mod_locale
-                    )
-                else:
-                    logger.warning(f"Unknown message type: {msg_type}")
-        finally:
-            heartbeat_task.cancel()
-            try:
-                await heartbeat_task
-            except asyncio.CancelledError:
-                pass
+        event_ids: list[int] = []
+        finish_event_id: int | None = None
+        if seed and seed.graph_json:
+            event_ids, finish_event_id = extract_event_ids(seed.graph_json)
 
-    except WebSocketDisconnect:
-        logger.info(f"Mod disconnected: race={race_id}")
-    except Exception:
-        logger.exception(f"Error in mod websocket: race={race_id}")
-    finally:
-        if participant_id:
-            await manager.disconnect_mod(race_id, participant_id, websocket)
-            # Broadcast updated connection status to remaining clients.
-            # Reload only Race.participants (+users), reuse the cached
-            # graph_json; skip the seed and casters eager loads.
-            try:
-                async with session_maker() as db:
-                    participants = await _load_race_participants(db, race_id)
-                    if participants:
-                        await manager.broadcast_leaderboard(
-                            race_id, participants, graph_json=connect_graph_json
-                        )
-            except Exception:
-                logger.warning(f"Failed to broadcast disconnect: race={race_id}")
+        spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
+        death_flags = seed.graph_json.get("death_flags", {}) if seed and seed.graph_json else {}
+        items_spawned_flag = (
+            seed.graph_json.get("items_spawned_flag") if seed and seed.graph_json else None
+        )
 
+        room = manager.get_room(race.id)
+        connected_ids = set(room.mods.keys()) if room else set()
+        graph = seed.graph_json if seed else None
+        sorted_participants, _ = sort_leaderboard(race.participants)
+        participant_infos: list[ParticipantInfo] = [
+            participant_to_info(p, connected_ids=connected_ids, graph_json=graph)
+            for p in sorted_participants
+        ]
 
-async def authenticate_mod(
-    db: AsyncSession, race_id: uuid.UUID, mod_token: str
-) -> Participant | None:
-    """Authenticate a mod connection by token."""
-    result = await db.execute(
-        select(Participant)
-        .options(*_participant_load_options())
-        .where(Participant.race_id == race_id, Participant.mod_token == mod_token)
-    )
-    return result.scalar_one_or_none()
-
-
-async def send_auth_ok(websocket: WebSocket, participant: Participant) -> None:
-    """Send successful auth response with race state."""
-    race = participant.race
-    seed = race.seed
-
-    # Extract event_ids and finish_event from graph_json
-    event_ids: list[int] = []
-    finish_event_id: int | None = None
-    if seed and seed.graph_json:
-        event_ids, finish_event_id = extract_event_ids(seed.graph_json)
-
-    # Extract gem items from care_package for runtime spawning by the mod
-    spawn_items = extract_spawn_items(seed.graph_json) if seed and seed.graph_json else []
-    death_flags = seed.graph_json.get("death_flags", {}) if seed and seed.graph_json else {}
-    items_spawned_flag = (
-        seed.graph_json.get("items_spawned_flag") if seed and seed.graph_json else None
-    )
-
-    # Build participant list
-    room = manager.get_room(race.id)
-    connected_ids = set(room.mods.keys()) if room else set()
-    graph = seed.graph_json if seed else None
-    sorted_participants, _ = sort_leaderboard(race.participants)
-    participant_infos: list[ParticipantInfo] = [
-        participant_to_info(p, connected_ids=connected_ids, graph_json=graph)
-        for p in sorted_participants
-    ]
-
-    message = AuthOkMessage(
-        participant_id=str(participant.id),
-        race=RaceInfo(
-            id=str(race.id),
-            name=race.name,
-            status=race.status.value,
-            started_at=race.started_at.isoformat() if race.started_at else None,
-            seeds_released_at=(
-                race.seeds_released_at.isoformat() if race.seeds_released_at else None
+        message = AuthOkMessage(
+            participant_id=str(participant.id),
+            race=RaceInfo(
+                id=str(race.id),
+                name=race.name,
+                status=race.status.value,
+                started_at=race.started_at.isoformat() if race.started_at else None,
+                seeds_released_at=(
+                    race.seeds_released_at.isoformat() if race.seeds_released_at else None
+                ),
+                countdown_seconds=settings.countdown_seconds,
             ),
-            countdown_seconds=settings.countdown_seconds,
-        ),
-        seed=SeedInfo(
-            seed_id=str(seed.id) if seed else None,
-            total_layers=seed.total_layers if seed else 0,
-            graph_json=None,  # Mods don't need the graph
-            event_ids=event_ids,
-            finish_event=finish_event_id,
-            spawn_items=spawn_items,
-            death_flags=death_flags,
-            items_spawned_flag=items_spawned_flag,
-        ),
-        participants=participant_infos,
-    )
-    await websocket.send_text(message.model_dump_json())
+            seed=SeedInfo(
+                seed_id=str(seed.id) if seed else None,
+                total_layers=seed.total_layers if seed else 0,
+                graph_json=None,  # Mods don't need the graph
+                event_ids=event_ids,
+                finish_event=finish_event_id,
+                spawn_items=spawn_items,
+                death_flags=death_flags,
+                items_spawned_flag=items_spawned_flag,
+            ),
+            participants=participant_infos,
+        )
+        await self.websocket.send_text(message.model_dump_json())
 
+    # ------------------------------------------------------------------
+    # Lifecycle hooks
+    # ------------------------------------------------------------------
+    async def _on_authenticated(self) -> None:
+        assert self._participant_id is not None
+        assert self._user_id is not None
+        await manager.connect_mod(
+            self._race_id, self._participant_id, self._user_id, self.websocket, self.locale
+        )
+        # Broadcast updated connection status using detached objects from auth session
+        participant = self._auth_participant
+        self._auth_participant = None  # Release reference
+        try:
+            if participant:
+                await manager.broadcast_leaderboard(
+                    self._race_id,
+                    participant.race.participants,
+                    graph_json=self._cached_graph_json,
+                )
+        except Exception:
+            logger.warning("Failed to broadcast connect: race=%s", self._race_id)
 
-async def handle_ready(
-    session_maker: async_sessionmaker[AsyncSession], participant_id: uuid.UUID
-) -> None:
-    """Handle player ready signal."""
-    async with session_maker() as db:
-        participant = await _load_participant(db, participant_id)
-        if not participant:
-            return
+    async def _on_disconnect(self) -> None:
+        assert self._participant_id is not None
+        await manager.disconnect_mod(self._race_id, self._participant_id, self.websocket)
+        try:
+            async with self.session_maker() as db:
+                participants = await _load_race_participants(db, self._race_id)
+                if participants:
+                    await manager.broadcast_leaderboard(
+                        self._race_id, participants, graph_json=self._cached_graph_json
+                    )
+        except Exception:
+            logger.warning("Failed to broadcast disconnect: race=%s", self._race_id)
 
-        if participant.status != ParticipantStatus.REGISTERED:
-            return
+    # ------------------------------------------------------------------
+    # Entity loading
+    # ------------------------------------------------------------------
+    async def _load_entity(self, db: AsyncSession) -> Participant | None:
+        return await _load_participant(db, self._participant_id)  # type: ignore[arg-type]
 
-        participant.status = ParticipantStatus.READY
-        await db.commit()
-        logger.info(f"Participant ready: {participant.id}")
+    async def _load_entity_for_status_update(self, db: AsyncSession) -> Participant | None:
+        assert self._participant_id is not None
+        if self._cached_graph_json is not None:
+            return await _load_participant_no_seed(db, self._participant_id)
+        return await _load_participant_light(db, self._participant_id)
 
-    # Broadcast leaderboard update (detached objects, readable thanks to expire_on_commit=False)
-    await manager.broadcast_leaderboard(
-        participant.race_id,
-        participant.race.participants,
-        graph_json=_get_graph_json(participant),
-    )
+    def _get_graph_json(self, entity: Participant) -> dict[str, Any] | None:
+        # Prefer cached graph_json (avoids lazy-loading race.seed when
+        # the entity was loaded without it, e.g. _load_participant_no_seed).
+        if self._cached_graph_json is not None:
+            return self._cached_graph_json
+        return entity.race.seed.graph_json if entity.race.seed else None
 
-
-async def handle_status_update(
-    websocket: WebSocket,
-    session_maker: async_sessionmaker[AsyncSession],
-    participant_id: uuid.UUID,
-    msg: dict[str, Any],
-    *,
-    cached_graph_json: dict[str, Any] | None = None,
-) -> None:
-    """Handle periodic status update from mod.
-
-    Uses a minimal DB load (participant + user only) for the common path
-    when ``cached_graph_json`` is supplied (saves the race.seed eager
-    load on every tick). Falls back to the light load when no cache.
-    Only reloads with full relationships when a leaderboard broadcast or
-    death aggregation is needed.
-    """
-    delta = 0
-    became_playing = False
-    history_changed = False
-
-    async with session_maker() as db:
-        if cached_graph_json is not None:
-            participant = await _load_participant_no_seed(db, participant_id)
-        else:
-            participant = await _load_participant_light(db, participant_id)
-        if not participant:
-            return
-
-        if participant.race.status != RaceStatus.RUNNING:
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+    async def _validate_for_status_update(self, entity: Participant) -> bool:
+        if entity.race.status != RaceStatus.RUNNING:
             logger.warning(
                 "Rejected status_update: race=%s status=%s",
-                participant.race_id,
-                participant.race.status.value,
+                entity.race_id,
+                entity.race.status.value,
             )
-            await send_error(websocket, "Race not running")
-            return
+            await self._send_error("Race not running")
+            return False
 
-        if participant.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
-            return  # Silently drop: IGT is frozen
+        if entity.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
+            return False  # Silently drop: IGT is frozen
 
-        # Silently drop status updates during countdown period
-        if _is_countdown_active(participant.race):
-            return
+        if _is_countdown_active(entity.race):
+            return False  # Silently drop during countdown
 
-        # Gate: reject stale saves (pre-existing save with high IGT)
-        igt_ms_val = clamp_igt(msg.get("igt_ms"))
-        if (
-            igt_ms_val is not None
-            and participant.status == ParticipantStatus.READY
-            and igt_ms_val > MAX_FRESH_IGT_MS
-        ):
+        return True
+
+    async def _validate_for_event_flag(self, entity: Participant, message_id: int | None) -> bool:
+        if entity.race.status != RaceStatus.RUNNING:
             logger.warning(
-                "Rejected stale save: participant=%s igt_ms=%d",
-                participant_id,
-                igt_ms_val,
+                "Rejected event_flag: race=%s status=%s",
+                entity.race_id,
+                entity.race.status.value,
             )
-            await send_error(websocket, "Please start a New Game to race")
-            return
+            await self._send_error("Race not running")
+            return False
 
-        if igt_ms_val is not None:
-            if igt_ms_val != participant.igt_ms:
-                participant.last_igt_change_at = datetime.now(UTC)
-            participant.igt_ms = igt_ms_val
-
-        # Transition READY→PLAYING first so current_zone/zone_history are
-        # set before death attribution (handles reconnect with deaths > 0).
-        race = participant.race
-        if race.status == RaceStatus.RUNNING and participant.status == ParticipantStatus.READY:
-            participant.status = ParticipantStatus.PLAYING
-            became_playing = True
-            graph_json = (
-                cached_graph_json if cached_graph_json is not None else _get_graph_json(participant)
+        if _is_countdown_active(entity.race):
+            logger.warning(
+                "Rejected event_flag during countdown: race=%s",
+                entity.race_id,
             )
-            if graph_json:
-                start_node = get_start_node(graph_json)
-                if start_node:
-                    participant.current_zone = start_node
-                    _set_layer(participant, 0, 0)
-                    history = participant.zone_history or []
-                    history.append({"node_id": start_node, "igt_ms": 0, "type": "spawn"})
-                    participant.zone_history = history
-                    history_changed = True
+            await self._send_error("Race countdown in progress")
+            return False
 
-        new_death_count = clamp_death_count(msg.get("death_count"))
-        if new_death_count is not None:
-            delta = new_death_count - participant.death_count
-            if delta < 0:
-                logger.warning(
-                    "Negative death delta %d for participant %s (stored=%d, received=%d)",
-                    delta,
-                    participant.id,
-                    participant.death_count,
-                    new_death_count,
-                )
-            if delta > 0 and participant.current_zone and participant.zone_history:
-                new_history = attribute_deaths(
-                    participant.zone_history, participant.current_zone, delta
-                )
-                participant.zone_history = new_history
-                history_changed = True
-            participant.death_count = new_death_count
+        if entity.status != ParticipantStatus.PLAYING:
+            # ACK replayed event flags so the mod clears its in-flight set
+            if message_id is not None:
+                await self._send_event_flag_ack(message_id)
+            return False
 
-        await db.commit()
+        return True
 
-    # Common path: only a player_update (no full participant list needed).
-    # Use the cached graph_json so the common path never touches race.seed.
-    # cached_graph_json was captured at connect time and is immutable during
-    # the session (None when no seed is assigned, stable too).
-    if not became_playing and delta <= 0:
-        await manager.broadcast_player_update(
-            participant.race_id, participant, graph_json=cached_graph_json
+    async def _validate_for_zone_query(self, entity: Participant, message_id: int | None) -> bool:
+        if entity.race.status != RaceStatus.RUNNING:
+            if message_id is not None:
+                await self._send_zone_query_ack(message_id)
+            return False
+
+        if _is_countdown_active(entity.race):
+            if message_id is not None:
+                await self._send_zone_query_ack(message_id)
+            return False
+
+        if entity.status != ParticipantStatus.PLAYING:
+            if message_id is not None:
+                await self._send_zone_query_ack(message_id)
+            return False
+
+        return True
+
+    # ------------------------------------------------------------------
+    # Virtual overrides
+    # ------------------------------------------------------------------
+    def _on_igt_change(self, entity: Participant, igt_ms: int) -> None:
+        if igt_ms != entity.igt_ms:
+            entity.last_igt_change_at = datetime.now(UTC)
+        entity.igt_ms = igt_ms
+
+    def _on_zone_entered(
+        self, entity: Participant, node_id: str, graph_json: dict[str, Any], igt: int
+    ) -> None:
+        node_layer = get_layer_for_node(node_id, graph_json)
+        if node_layer > entity.current_layer:
+            _set_layer(entity, node_layer, igt)
+
+    def _on_first_init(self, entity: Participant, start_node: str) -> None:
+        entity.status = ParticipantStatus.PLAYING
+        _set_layer(entity, 0, 0)
+
+    # ------------------------------------------------------------------
+    # Finish event (called AFTER DB session closed by base class)
+    # ------------------------------------------------------------------
+    async def _handle_finish_event(
+        self,
+        entity: Participant,
+        igt: int,
+        message_id: int | None,
+    ) -> None:
+        assert self._participant_id is not None
+        # Set layer to total_layers in a new session
+        async with self.session_maker() as db:
+            participant = await _load_participant(db, self._participant_id)
+            if participant and participant.race.seed:
+                _set_layer(participant, participant.race.seed.total_layers, igt)
+                await db.commit()
+
+        await handle_finished(
+            self.websocket, self.session_maker, self._participant_id, {"igt_ms": igt}
         )
-        return
 
-    # Uncommon path: reload with full relationships for leaderboard/death broadcasts
-    async with session_maker() as db:
-        participant = await _load_participant(db, participant_id)
-        if not participant:
-            return
+    # ------------------------------------------------------------------
+    # Broadcast hooks
+    # ------------------------------------------------------------------
+    async def _broadcast_after_status_update(
+        self,
+        entity: Participant,
+        *,
+        became_active: bool,
+        death_delta: int,
+        history_changed: bool,
+    ) -> None:
+        assert self._participant_id is not None
 
-    if became_playing:
+        if not became_active and death_delta <= 0:
+            await manager.broadcast_player_update(
+                entity.race_id, entity, graph_json=self._cached_graph_json
+            )
+        else:
+            # Uncommon path: reload with full relationships for leaderboard/death broadcasts
+            async with self.session_maker() as db:
+                reloaded = await _load_participant(db, self._participant_id)
+                if not reloaded:
+                    return
+                entity = reloaded
+
+            if became_active:
+                await manager.broadcast_leaderboard(
+                    entity.race_id,
+                    entity.race.participants,
+                    graph_json=_get_graph_json(entity),
+                )
+            else:
+                await manager.broadcast_player_update(
+                    entity.race_id, entity, graph_json=_get_graph_json(entity)
+                )
+
+        if history_changed:
+            await manager.broadcast_zone_history(
+                entity.race_id, entity.id, entity.zone_history or []
+            )
+
+        if death_delta > 0:
+            counts = aggregate_death_counts(entity.race.participants)
+            logger.info(
+                "Broadcasting death_counts: race=%s, counts=%s",
+                entity.race_id,
+                counts,
+            )
+            room = manager.get_room(entity.race_id)
+            if room:
+                await room.broadcast_to_mods(DeathCountsMessage(counts=counts).model_dump_json())
+
+    async def _broadcast_after_event_flag(
+        self,
+        entity: Participant,
+        node_id: str | None,
+        seed_graph: dict[str, Any] | None,
+        *,
+        is_first_visit: bool,
+    ) -> None:
+        if is_first_visit:
+            await manager.broadcast_leaderboard(
+                entity.race_id,
+                entity.race.participants,
+                graph_json=seed_graph,
+            )
+        else:
+            await manager.broadcast_player_update(entity.race_id, entity, graph_json=seed_graph)
+
+        await manager.broadcast_zone_history(entity.race_id, entity.id, entity.zone_history or [])
+
+    async def _broadcast_after_zone_query(
+        self,
+        entity: Participant,
+        *,
+        is_first_visit: bool,
+        history_changed: bool,
+    ) -> None:
+        if is_first_visit:
+            await manager.broadcast_leaderboard(
+                entity.race_id,
+                entity.race.participants,
+                graph_json=_get_graph_json(entity),
+            )
+        else:
+            await manager.broadcast_player_update(
+                entity.race_id, entity, graph_json=_get_graph_json(entity)
+            )
+
+        if history_changed:
+            await manager.broadcast_zone_history(
+                entity.race_id, entity.id, entity.zone_history or []
+            )
+
+    # ------------------------------------------------------------------
+    # Race-specific message handlers
+    # ------------------------------------------------------------------
+    async def _handle_ready(self, msg: dict[str, Any]) -> None:
+        """Handle player ready signal."""
+        assert self._participant_id is not None
+        async with self.session_maker() as db:
+            participant = await _load_participant(db, self._participant_id)
+            if not participant:
+                return
+
+            if participant.status != ParticipantStatus.REGISTERED:
+                return
+
+            participant.status = ParticipantStatus.READY
+            await db.commit()
+            logger.info("Participant ready: %s", participant.id)
+
         await manager.broadcast_leaderboard(
             participant.race_id,
             participant.race.participants,
             graph_json=_get_graph_json(participant),
         )
-    else:
-        await manager.broadcast_player_update(
-            participant.race_id, participant, graph_json=_get_graph_json(participant)
-        )
 
-    if history_changed:
-        await manager.broadcast_zone_history(
-            participant.race_id, participant.id, participant.zone_history or []
-        )
-
-    if delta > 0:
-        counts = aggregate_death_counts(participant.race.participants)
-        logger.info(
-            "Broadcasting death_counts: race=%s, counts=%s",
-            participant.race_id,
-            counts,
-        )
-        room = manager.get_room(participant.race_id)
-        if room:
-            await room.broadcast_to_mods(DeathCountsMessage(counts=counts).model_dump_json())
+    async def _handle_finished_message(self, msg: dict[str, Any]) -> None:
+        """Handle explicit finished message from mod."""
+        assert self._participant_id is not None
+        await handle_finished(self.websocket, self.session_maker, self._participant_id, msg)
 
 
-async def handle_event_flag(
-    websocket: WebSocket,
-    session_maker: async_sessionmaker[AsyncSession],
-    participant_id: uuid.UUID,
-    msg: dict[str, Any],
-    locale: str = "en",
-) -> None:
-    """Handle event flag trigger from mod."""
-    flag_id = msg.get("flag_id")
-    if not isinstance(flag_id, int):
-        return
-    raw_message_id = msg.get("message_id")
-    message_id = raw_message_id if isinstance(raw_message_id, int) else None
-
-    is_finish = False
-    is_first_visit = False
-    igt = 0
-    node_id: str | None = None
-    seed_graph: dict[str, Any] | None = None
-    history_changed = False
-
-    async with session_maker() as db:
-        participant = await _load_participant(db, participant_id)
-        if not participant:
-            return
-
-        if participant.race.status != RaceStatus.RUNNING:
-            logger.warning(
-                "Rejected event_flag: race=%s status=%s",
-                participant.race_id,
-                participant.race.status.value,
-            )
-            await send_error(websocket, "Race not running")
-            return
-
-        # Guard: reject event flags received during countdown period
-        if _is_countdown_active(participant.race):
-            logger.warning(
-                "Rejected event_flag during countdown: race=%s",
-                participant.race_id,
-            )
-            await send_error(websocket, "Race countdown in progress")
-            return
-
-        if participant.status != ParticipantStatus.PLAYING:
-            # ACK replayed event flags so the mod clears its in-flight set
-            # (e.g. finish event committed but ACK lost before disconnect).
-            if message_id is not None:
-                await send_event_flag_ack(websocket, message_id)
-            return
-
-        seed = participant.race.seed
-        if not seed or not seed.graph_json:
-            return
-
-        seed_graph = seed.graph_json
-        event_map = seed_graph.get("event_map", {})
-        finish_event = seed_graph.get("finish_event")
-
-        # Update IGT
-        raw_igt = clamp_igt(msg.get("igt_ms"))
-        igt = raw_igt if raw_igt is not None else 0
-
-        # Check finish event first (not in event_map, it's a boss kill, not a fog gate)
-        if flag_id == finish_event:
-            participant.last_igt_change_at = datetime.now(UTC)
-            participant.igt_ms = igt
-            _set_layer(participant, seed.total_layers, igt)
-            await db.commit()
-            if message_id is not None:
-                await send_event_flag_ack(websocket, message_id)
-            is_finish = True
-            # Exit session block before calling handle_finished to avoid
-            # nested sessions (deadlocks SQLite in tests)
-        else:
-            # Resolve flag_id to node_id
-            node_id = event_map.get(str(flag_id))
-            if node_id is None:
-                logger.warning(f"Unknown event flag {flag_id} from participant {participant_id}")
-                return
-
-            # Resolve layer for this node
-            node_layer = get_layer_for_node(node_id, seed_graph)
-
-            old_history = participant.zone_history or []
-
-            if message_id is not None and any(
-                entry.get("type", "fog") == "fog" and entry.get("message_id") == message_id
-                for entry in old_history
-            ):
-                await send_event_flag_ack(websocket, message_id)
-                return
-
-            if is_shared_entrance_duplicate(old_history, node_id, igt):
-                return
-
-            if len(old_history) >= MAX_ZONE_HISTORY:
-                logger.warning("zone_history cap reached for participant %s", participant_id)
-                return
-
-            is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
-
-            # Always append to zone_history (including revisits/backtracks)
-            participant.last_igt_change_at = datetime.now(UTC)
-            participant.igt_ms = igt
-            participant.current_zone = node_id
-            new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt, "type": "fog"}
-            if message_id is not None:
-                new_entry["message_id"] = message_id
-            participant.zone_history = [*old_history, new_entry]
-            history_changed = True
-
-            # current_layer is a high watermark (used for ranking), never regress
-            if node_layer > participant.current_layer:
-                _set_layer(participant, node_layer, igt)
-
-            await db.commit()
-            if message_id is not None:
-                await send_event_flag_ack(websocket, message_id)
-
-    # Session closed. Safe to open new sessions or broadcast.
-
-    if is_finish:
-        await handle_finished(websocket, session_maker, participant_id, {"igt_ms": igt})
-        return
-
-    if is_first_visit:
-        # Broadcast updated leaderboard only for new discoveries
-        await manager.broadcast_leaderboard(
-            participant.race_id,
-            participant.race.participants,
-            graph_json=seed_graph,
-        )
-    else:
-        # Revisit: broadcast player position update only
-        await manager.broadcast_player_update(
-            participant.race_id, participant, graph_json=seed_graph
-        )
-
-    if history_changed:
-        await manager.broadcast_zone_history(
-            participant.race_id, participant.id, participant.zone_history or []
-        )
-
-    # Unicast zone_update to originating mod
-    if node_id and seed_graph:
-        await send_zone_update(
-            websocket,
-            node_id,
-            seed_graph,
-            participant.zone_history,
-            locale,
-            is_first_visit=is_first_visit,
-            race_id=participant.race_id,
-            participant_id=participant_id,
-        )
-
-
-async def handle_zone_query(
-    websocket: WebSocket,
-    session_maker: async_sessionmaker[AsyncSession],
-    participant_id: uuid.UUID,
-    msg: dict[str, Any],
-    locale: str = "en",
-) -> None:
-    """Handle zone_query from mod (loading screen exit overlay update).
-
-    When the resolved node differs from current_zone, this records a
-    zone_history entry (backtrack via death/teleport/quit-out).
-    """
-    zq = parse_zone_query_input(msg)
-    if zq is None:
-        return
-
-    message_id = zq.message_id
-    is_first_visit = False
-    history_changed = False
-
-    async with session_maker() as db:
-        participant = await _load_participant(db, participant_id)
-        if not participant:
-            if message_id is not None:
-                await send_zone_query_ack(websocket, message_id)
-            return
-
-        if participant.race.status != RaceStatus.RUNNING:
-            if message_id is not None:
-                await send_zone_query_ack(websocket, message_id)
-            return
-
-        if _is_countdown_active(participant.race):
-            if message_id is not None:
-                await send_zone_query_ack(websocket, message_id)
-            return
-
-        if participant.status != ParticipantStatus.PLAYING:
-            if message_id is not None:
-                await send_zone_query_ack(websocket, message_id)
-            return
-
-        seed = participant.race.seed
-        if not seed or not seed.graph_json:
-            if message_id is not None:
-                await send_zone_query_ack(websocket, message_id)
-            return
-
-        graph_json = seed.graph_json
-        node_id = resolve_zone_query(
-            graph_json,
-            get_graces_mapping(),
-            grace_entity_id=zq.grace_entity_id,
-            map_id=zq.map_id,
-            position=zq.position,
-            play_region_id=zq.play_region_id,
-            zone_history=participant.zone_history,
-        )
-        if node_id is None:
-            logger.debug(
-                "zone_query: unresolved (grace=%s, map=%s) for race %s",
-                zq.grace_entity_id,
-                zq.map_id,
-                participant.race_id,
-            )
-            if message_id is not None:
-                await send_zone_query_ack(websocket, message_id)
-            return
-
-        # Record zone_history entry when the player moved to a different node
-        # (backtrack via death/teleport/quit-out, no event flag fired)
-        if node_id != participant.current_zone:
-            logger.info(
-                "zone_query backtrack: %s -> %s for participant %s",
-                participant.current_zone,
-                node_id,
-                participant_id,
-            )
-            igt = zq.igt_ms if zq.igt_ms is not None else participant.igt_ms
-            old_history = participant.zone_history or []
-
-            if message_id is not None and any(
-                entry.get("type") == "backtrack" and entry.get("message_id") == message_id
-                for entry in old_history
-            ):
-                pass  # Dedup: already persisted, skip to zone_update
-            elif len(old_history) >= MAX_ZONE_HISTORY:
-                logger.warning("zone_history cap reached for participant %s", participant_id)
-            else:
-                is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
-
-                participant.last_igt_change_at = datetime.now(UTC)
-                participant.igt_ms = igt
-                new_entry: dict[str, Any] = {
-                    "node_id": node_id,
-                    "igt_ms": igt,
-                    "type": "backtrack",
-                }
-                if message_id is not None:
-                    new_entry["message_id"] = message_id
-                participant.zone_history = [*old_history, new_entry]
-                history_changed = True
-
-            # current_layer is a high watermark, never regress
-            node_layer = get_layer_for_node(node_id, graph_json)
-            if node_layer > participant.current_layer:
-                _set_layer(participant, node_layer, igt)
-
-        participant.current_zone = node_id
-        await db.commit()
-
-    # Unicast zone_update to originating mod
-    await send_zone_update(
-        websocket,
-        node_id,
-        graph_json,
-        participant.zone_history,
-        locale,
-        is_first_visit=is_first_visit,
-        race_id=participant.race_id,
-        participant_id=participant_id,
-        message_id=message_id,
-    )
-
-    # Broadcast based on whether this was a first visit or revisit
-    if is_first_visit:
-        await manager.broadcast_leaderboard(
-            participant.race_id,
-            participant.race.participants,
-            graph_json=graph_json,
-        )
-    else:
-        await manager.broadcast_player_update(
-            participant.race_id, participant, graph_json=graph_json
-        )
-
-    if history_changed:
-        await manager.broadcast_zone_history(
-            participant.race_id, participant.id, participant.zone_history or []
-        )
-
-
+# ---------------------------------------------------------------------------
+# Standalone handle_finished (complex, used from 2 call sites)
+# ---------------------------------------------------------------------------
 async def handle_finished(
     websocket: WebSocket,
     session_maker: async_sessionmaker[AsyncSession],
@@ -941,7 +631,13 @@ async def handle_finished(
                 participant.race_id,
                 participant.race.status.value,
             )
-            await send_error(websocket, "Race not running")
+            try:
+                await asyncio.wait_for(
+                    websocket.send_text(ErrorMessage(message="Race not running").model_dump_json()),
+                    timeout=SEND_TIMEOUT,
+                )
+            except Exception:
+                pass
             return
 
         if participant.status == ParticipantStatus.FINISHED:
@@ -959,7 +655,7 @@ async def handle_finished(
             _set_layer(participant, seed.total_layers, participant.igt_ms)
 
         await db.commit()
-        logger.info(f"Participant finished: {participant.id}, igt={participant.igt_ms}ms")
+        logger.info("Participant finished: %s, igt=%dms", participant.id, participant.igt_ms)
 
         # Re-load to get fresh race status/version + all participants
         participant = await _load_participant(db, participant_id)
@@ -1010,6 +706,9 @@ async def handle_finished(
                 logger.warning("Failed to send public chat history to finished participant")
 
 
+# ---------------------------------------------------------------------------
+# broadcast_race_start (external API, kept module-level)
+# ---------------------------------------------------------------------------
 async def broadcast_race_start(
     race_id: uuid.UUID,
     started_at: str | None = None,
@@ -1028,19 +727,36 @@ async def broadcast_race_start(
             start_node = get_start_node(graph_json)
             if start_node:
                 for conn in room.mods.values():
-                    await send_zone_update(
-                        conn.websocket,
-                        start_node,
-                        graph_json,
-                        None,
-                        conn.locale,
-                        is_first_visit=True,
-                        race_id=race_id,
-                        participant_id=conn.participant_id,
-                    )
+                    msg = compute_zone_update(start_node, graph_json, None, is_first_visit=True)
+                    if msg:
+                        msg = translate_zone_update(msg, conn.locale)
+                        try:
+                            await asyncio.wait_for(
+                                conn.websocket.send_text(json.dumps(msg)),
+                                timeout=SEND_TIMEOUT,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "Failed to send zone_update: race=%s, participant=%s",
+                                race_id,
+                                conn.participant_id,
+                            )
 
         # Also notify spectators of status change
         await manager.broadcast_race_status(
             race_id, "running", started_at=started_at, countdown_seconds=countdown_seconds
         )
-        logger.info(f"Race start broadcast: race={race_id}")
+        logger.info("Race start broadcast: race=%s", race_id)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+async def handle_mod_websocket(
+    websocket: WebSocket,
+    race_id: uuid.UUID,
+    session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Handle a mod WebSocket connection."""
+    handler = RaceModHandler(websocket, race_id, session_maker)
+    await handler.run()
