@@ -43,6 +43,7 @@ from speedfog_racing.websocket.common import (
     send_auth_error,
     send_error,
     send_event_flag_ack,
+    send_zone_query_ack,
     send_zone_update,
 )
 from speedfog_racing.websocket.manager import (
@@ -790,8 +791,13 @@ async def handle_zone_query(
     When the resolved node differs from current_zone, this records a
     zone_history entry (backtrack via death/teleport/quit-out).
     """
+    raw_message_id = msg.get("message_id")
+    message_id: int | None = raw_message_id if isinstance(raw_message_id, int) else None
+
     zq = parse_zone_query_input(msg)
     if zq is None:
+        if message_id is not None:
+            await send_zone_query_ack(websocket, message_id)
         return
 
     is_first_visit = False
@@ -800,19 +806,29 @@ async def handle_zone_query(
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
         if not participant:
+            if message_id is not None:
+                await send_zone_query_ack(websocket, message_id)
             return
 
         if participant.race.status != RaceStatus.RUNNING:
+            if message_id is not None:
+                await send_zone_query_ack(websocket, message_id)
             return
 
         if _is_countdown_active(participant.race):
+            if message_id is not None:
+                await send_zone_query_ack(websocket, message_id)
             return
 
         if participant.status != ParticipantStatus.PLAYING:
+            if message_id is not None:
+                await send_zone_query_ack(websocket, message_id)
             return  # Only PLAYING participants can trigger zone queries
 
         seed = participant.race.seed
         if not seed or not seed.graph_json:
+            if message_id is not None:
+                await send_zone_query_ack(websocket, message_id)
             return
 
         graph_json = seed.graph_json
@@ -832,6 +848,8 @@ async def handle_zone_query(
                 zq.map_id,
                 participant.race_id,
             )
+            if message_id is not None:
+                await send_zone_query_ack(websocket, message_id)
             return
 
         # Record zone_history entry when the player moved to a different node
@@ -846,10 +864,13 @@ async def handle_zone_query(
             igt = zq.igt_ms if zq.igt_ms is not None else participant.igt_ms
             old_history = participant.zone_history or []
 
-            # Cap zone_history but still update current_zone below
-            # (unlike event_flag which early-returns, zone_query must
-            # keep tracking position for overlay display)
-            if len(old_history) >= MAX_ZONE_HISTORY:
+            # Dedup: if this message_id was already persisted, skip to zone_update
+            if message_id is not None and any(
+                entry.get("type") == "backtrack" and entry.get("message_id") == message_id
+                for entry in old_history
+            ):
+                pass  # Dedup: already persisted, skip to zone_update
+            elif len(old_history) >= MAX_ZONE_HISTORY:
                 logger.warning("zone_history cap reached for participant %s", participant_id)
             else:
                 is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
@@ -861,6 +882,8 @@ async def handle_zone_query(
                     "igt_ms": igt,
                     "type": "backtrack",
                 }
+                if message_id is not None:
+                    new_entry["message_id"] = message_id
                 participant.zone_history = [*old_history, new_entry]
                 history_changed = True
 
@@ -882,6 +905,7 @@ async def handle_zone_query(
         is_first_visit=is_first_visit,
         race_id=participant.race_id,
         participant_id=participant_id,
+        message_id=message_id,
     )
 
     # Broadcast based on whether this was a first visit or revisit
