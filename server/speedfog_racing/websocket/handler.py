@@ -453,11 +453,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
             # Gate: reject stale saves on first initialization
             igt_ms_val = clamp_igt(msg.get("igt_ms"))
-            if (
-                igt_ms_val is not None
-                and not entity.zone_history  # type: ignore[attr-defined]
-                and igt_ms_val > MAX_FRESH_IGT_MS
-            ):
+            if igt_ms_val is not None and not entity.zone_history and igt_ms_val > MAX_FRESH_IGT_MS:
                 logger.warning(
                     "Rejected stale save: %s igt_ms=%d",
                     self.entity_id,
@@ -471,43 +467,39 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
             # Record start node on first status_update.
             # Must happen BEFORE death attribution so current_zone/zone_history exist.
-            if not entity.zone_history:  # type: ignore[attr-defined]
+            if not entity.zone_history:
                 graph_json = self._get_graph_json(entity)
                 if graph_json:
                     start_node = get_start_node(graph_json)
                     if start_node:
-                        entity.zone_history = [  # type: ignore[attr-defined]
+                        entity.zone_history = [
                             {"node_id": start_node, "igt_ms": 0, "type": "spawn"}
                         ]
-                        entity.current_zone = start_node  # type: ignore[attr-defined]
+                        entity.current_zone = start_node
                         history_changed = True
                         became_active = True
                         self._on_first_init(entity, start_node)
 
             new_death_count = clamp_death_count(msg.get("death_count"))
             if new_death_count is not None:
-                delta = new_death_count - entity.death_count  # type: ignore[attr-defined]
+                delta = new_death_count - entity.death_count
                 if delta < 0:
                     logger.warning(
                         "Negative death delta %d for %s (stored=%d, received=%d)",
                         delta,
                         self.entity_id,
-                        entity.death_count,  # type: ignore[attr-defined]
+                        entity.death_count,
                         new_death_count,
                     )
-                if (
-                    delta > 0
-                    and entity.current_zone  # type: ignore[attr-defined]
-                    and entity.zone_history  # type: ignore[attr-defined]
-                ):
+                if delta > 0 and entity.current_zone and entity.zone_history:
                     new_history = attribute_deaths(
-                        entity.zone_history,  # type: ignore[attr-defined]
-                        entity.current_zone,  # type: ignore[attr-defined]
+                        entity.zone_history,
+                        entity.current_zone,
                         delta,
                     )
-                    entity.zone_history = new_history  # type: ignore[attr-defined]
+                    entity.zone_history = new_history
                     history_changed = True
-                entity.death_count = new_death_count  # type: ignore[attr-defined]
+                entity.death_count = new_death_count
 
             await db.commit()
 
@@ -532,7 +524,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         node_id: str | None = None
         seed_graph: dict[str, Any] | None = None
         is_first_visit = False
-        entity: T | None = None  # type: ignore[assignment]
+        entity: T | None = None
 
         async with self.session_maker() as db:
             entity = await self._load_entity(db)
@@ -545,7 +537,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             # Guard: zone_history must be initialized by the first valid status_update
             # before processing event flags. Without this, stale flags persisted in a
             # loaded save bypass the fresh-save IGT gate in _handle_status_update.
-            if not entity.zone_history:  # type: ignore[attr-defined]
+            if not entity.zone_history:
                 return
 
             seed_graph = self._get_graph_json(entity)
@@ -571,7 +563,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     logger.warning("Unknown event flag %d from %s", flag_id, self.entity_id)
                     return
 
-                old_history = entity.zone_history or []  # type: ignore[attr-defined]
+                old_history = entity.zone_history or []
 
                 # message_id dedup
                 if message_id is not None and any(
@@ -592,11 +584,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
 
                 self._on_igt_change(entity, igt)
-                entity.current_zone = node_id  # type: ignore[attr-defined]
+                entity.current_zone = node_id
                 new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt, "type": "fog"}
                 if message_id is not None:
                     new_entry["message_id"] = message_id
-                entity.zone_history = [*old_history, new_entry]  # type: ignore[attr-defined]
+                entity.zone_history = [*old_history, new_entry]
 
                 self._on_zone_entered(entity, node_id, seed_graph, igt)
 
@@ -618,7 +610,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             await self._send_zone_update(
                 node_id,
                 seed_graph,
-                entity.zone_history,  # type: ignore[attr-defined]
+                entity.zone_history,
                 is_first_visit=is_first_visit,
             )
 
@@ -645,7 +637,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 return
 
             # Guard: same as _handle_event_flag, require zone_history initialization
-            if not entity.zone_history:  # type: ignore[attr-defined]
+            if not entity.zone_history:
                 if message_id is not None:
                     await self._send_zone_query_ack(message_id)
                 return
@@ -663,7 +655,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 map_id=zq.map_id,
                 position=zq.position,
                 play_region_id=zq.play_region_id,
-                zone_history=entity.zone_history,  # type: ignore[attr-defined]
+                zone_history=entity.zone_history,
             )
             if node_id is None:
                 logger.debug(
@@ -678,15 +670,15 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
             # Record backtrack entry when the player moved to a different node
             # (death/teleport/quit-out, no event flag fired)
-            if node_id != entity.current_zone:  # type: ignore[attr-defined]
+            if node_id != entity.current_zone:
                 logger.info(
                     "zone_query backtrack: %s -> %s for %s",
-                    entity.current_zone,  # type: ignore[attr-defined]
+                    entity.current_zone,
                     node_id,
                     self.entity_id,
                 )
-                igt = zq.igt_ms if zq.igt_ms is not None else entity.igt_ms  # type: ignore[attr-defined]
-                old_history = entity.zone_history or []  # type: ignore[attr-defined]
+                igt = zq.igt_ms if zq.igt_ms is not None else entity.igt_ms
+                old_history = entity.zone_history or []
 
                 if message_id is not None and any(
                     entry.get("type") == "backtrack" and entry.get("message_id") == message_id
@@ -707,18 +699,15 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     }
                     if message_id is not None:
                         new_entry["message_id"] = message_id
-                    entity.zone_history = [  # type: ignore[attr-defined]
+                    entity.zone_history = [
                         *old_history,
                         new_entry,
                     ]
                     history_changed = True
 
-            # _on_zone_entered is called even when node_id == current_zone
-            # (race needs layer tracking even on same-zone)
-            zone_igt = zq.igt_ms if zq.igt_ms is not None else entity.igt_ms  # type: ignore[attr-defined]
-            self._on_zone_entered(entity, node_id, graph_json, zone_igt)
+                self._on_zone_entered(entity, node_id, graph_json, igt)
 
-            entity.current_zone = node_id  # type: ignore[attr-defined]
+            entity.current_zone = node_id
             await db.commit()
 
         # Unicast zone_update to originating mod
@@ -726,7 +715,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             await self._send_zone_update(
                 node_id,
                 graph_json,
-                entity.zone_history,  # type: ignore[attr-defined]
+                entity.zone_history,
                 is_first_visit=is_first_visit,
                 message_id=message_id,
             )
@@ -754,29 +743,29 @@ class BaseModHandler(BaseHandler, Generic[T]):
     async def _load_entity_for_status_update(self, db: AsyncSession) -> T | None: ...
 
     @abstractmethod
-    def _get_graph_json(self, entity: T) -> dict[str, Any] | None: ...  # type: ignore[type-var]
+    def _get_graph_json(self, entity: T) -> dict[str, Any] | None: ...
 
     @abstractmethod
-    async def _validate_for_status_update(self, entity: T) -> bool: ...  # type: ignore[type-var]
+    async def _validate_for_status_update(self, entity: T) -> bool: ...
 
     @abstractmethod
-    async def _validate_for_event_flag(self, entity: T, message_id: int | None) -> bool: ...  # type: ignore[type-var]
+    async def _validate_for_event_flag(self, entity: T, message_id: int | None) -> bool: ...
 
     @abstractmethod
-    async def _validate_for_zone_query(self, entity: T, message_id: int | None) -> bool: ...  # type: ignore[type-var]
+    async def _validate_for_zone_query(self, entity: T, message_id: int | None) -> bool: ...
 
     @abstractmethod
     async def _handle_finish_event(
         self,
         entity: T,
         igt: int,
-        message_id: int | None,  # type: ignore[type-var]
+        message_id: int | None,
     ) -> None: ...
 
     @abstractmethod
     async def _broadcast_after_status_update(
         self,
-        entity: T,  # type: ignore[type-var]
+        entity: T,
         *,
         became_active: bool,
         death_delta: int,
@@ -786,7 +775,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
     @abstractmethod
     async def _broadcast_after_event_flag(
         self,
-        entity: T,  # type: ignore[type-var]
+        entity: T,
         node_id: str | None,
         seed_graph: dict[str, Any] | None,
         *,
@@ -796,7 +785,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
     @abstractmethod
     async def _broadcast_after_zone_query(
         self,
-        entity: T,  # type: ignore[type-var]
+        entity: T,
         *,
         is_first_visit: bool,
         history_changed: bool,
@@ -805,16 +794,16 @@ class BaseModHandler(BaseHandler, Generic[T]):
     # ------------------------------------------------------------------
     # Virtual methods (with defaults, overridable by subclasses)
     # ------------------------------------------------------------------
-    def _on_igt_change(self, entity: T, igt_ms: int) -> None:  # type: ignore[type-var]
+    def _on_igt_change(self, entity: T, igt_ms: int) -> None:
         """Update entity IGT. Override to also set last_igt_change_at (race)."""
-        entity.igt_ms = igt_ms  # type: ignore[attr-defined]
+        entity.igt_ms = igt_ms
 
-    def _on_zone_entered(  # type: ignore[type-var]
+    def _on_zone_entered(
         self, entity: T, node_id: str, graph_json: dict[str, Any], igt: int
     ) -> None:
         """Hook called when a zone is entered. Override for layer tracking (race)."""
 
-    def _on_first_init(self, entity: T, start_node: str) -> None:  # type: ignore[type-var]
+    def _on_first_init(self, entity: T, start_node: str) -> None:
         """Hook called on first zone initialization. Override for READY->PLAYING (race)."""
 
 
