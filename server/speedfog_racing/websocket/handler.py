@@ -448,7 +448,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if entity is None:
                 return
 
-            if not self._validate_for_status_update(entity):
+            if not await self._validate_for_status_update(entity):
                 return
 
             # Gate: reject stale saves on first initialization
@@ -528,16 +528,18 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
         raw_igt = clamp_igt(msg.get("igt_ms"))
         igt = raw_igt if raw_igt is not None else 0
+        is_finish = False
         node_id: str | None = None
         seed_graph: dict[str, Any] | None = None
         is_first_visit = False
+        entity: T | None = None  # type: ignore[assignment]
 
         async with self.session_maker() as db:
             entity = await self._load_entity(db)
             if entity is None:
                 return
 
-            if not self._validate_for_event_flag(entity, message_id):
+            if not await self._validate_for_event_flag(entity, message_id):
                 return
 
             # Guard: zone_history must be initialized by the first valid status_update
@@ -559,51 +561,55 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 await db.commit()
                 if message_id is not None:
                     await self._send_event_flag_ack(message_id)
+                is_finish = True
                 # Exit DB session before calling _handle_finish_event
                 # to avoid nested sessions (deadlocks SQLite in tests)
-                await self._handle_finish_event(entity, igt, message_id)
-                return
+            else:
+                # Resolve flag_id to node_id
+                node_id = event_map.get(str(flag_id))
+                if node_id is None:
+                    logger.warning("Unknown event flag %d from %s", flag_id, self.entity_id)
+                    return
 
-            # Resolve flag_id to node_id
-            node_id = event_map.get(str(flag_id))
-            if node_id is None:
-                logger.warning("Unknown event flag %d from %s", flag_id, self.entity_id)
-                return
+                old_history = entity.zone_history or []  # type: ignore[attr-defined]
 
-            old_history = entity.zone_history or []  # type: ignore[attr-defined]
+                # message_id dedup
+                if message_id is not None and any(
+                    entry.get("type", "fog") == "fog" and entry.get("message_id") == message_id
+                    for entry in old_history
+                ):
+                    await self._send_event_flag_ack(message_id)
+                    return
 
-            # message_id dedup
-            if message_id is not None and any(
-                entry.get("type", "fog") == "fog" and entry.get("message_id") == message_id
-                for entry in old_history
-            ):
-                await self._send_event_flag_ack(message_id)
-                return
+                # Shared entrance dedup
+                if is_shared_entrance_duplicate(old_history, node_id, igt):
+                    return
 
-            # Shared entrance dedup
-            if is_shared_entrance_duplicate(old_history, node_id, igt):
-                return
+                if len(old_history) >= MAX_ZONE_HISTORY:
+                    logger.warning("zone_history cap reached for %s", self.entity_id)
+                    return
 
-            if len(old_history) >= MAX_ZONE_HISTORY:
-                logger.warning("zone_history cap reached for %s", self.entity_id)
-                return
+                is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
 
-            is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
+                self._on_igt_change(entity, igt)
+                entity.current_zone = node_id  # type: ignore[attr-defined]
+                new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt, "type": "fog"}
+                if message_id is not None:
+                    new_entry["message_id"] = message_id
+                entity.zone_history = [*old_history, new_entry]  # type: ignore[attr-defined]
 
-            self._on_igt_change(entity, igt)
-            entity.current_zone = node_id  # type: ignore[attr-defined]
-            new_entry: dict[str, Any] = {"node_id": node_id, "igt_ms": igt, "type": "fog"}
-            if message_id is not None:
-                new_entry["message_id"] = message_id
-            entity.zone_history = [*old_history, new_entry]  # type: ignore[attr-defined]
+                self._on_zone_entered(entity, node_id, seed_graph, igt)
 
-            self._on_zone_entered(entity, node_id, seed_graph, igt)
+                await db.commit()
+                if message_id is not None:
+                    await self._send_event_flag_ack(message_id)
 
-            await db.commit()
-            if message_id is not None:
-                await self._send_event_flag_ack(message_id)
+        # Session closed. Safe to open new sessions or broadcast.
 
-        # Session closed. Safe to broadcast and send zone_update.
+        if is_finish:
+            await self._handle_finish_event(entity, igt, message_id)
+            return
+
         await self._broadcast_after_event_flag(
             entity, node_id, seed_graph, is_first_visit=is_first_visit
         )
@@ -635,7 +641,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     await self._send_zone_query_ack(message_id)
                 return
 
-            if not self._validate_for_zone_query(entity, message_id):
+            if not await self._validate_for_zone_query(entity, message_id):
                 return
 
             # Guard: same as _handle_event_flag, require zone_history initialization
@@ -709,7 +715,8 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
             # _on_zone_entered is called even when node_id == current_zone
             # (race needs layer tracking even on same-zone)
-            self._on_zone_entered(entity, node_id, graph_json, zq.igt_ms or entity.igt_ms)  # type: ignore[attr-defined]
+            zone_igt = zq.igt_ms if zq.igt_ms is not None else entity.igt_ms  # type: ignore[attr-defined]
+            self._on_zone_entered(entity, node_id, graph_json, zone_igt)
 
             entity.current_zone = node_id  # type: ignore[attr-defined]
             await db.commit()
@@ -750,13 +757,13 @@ class BaseModHandler(BaseHandler, Generic[T]):
     def _get_graph_json(self, entity: T) -> dict[str, Any] | None: ...  # type: ignore[type-var]
 
     @abstractmethod
-    def _validate_for_status_update(self, entity: T) -> bool: ...  # type: ignore[type-var]
+    async def _validate_for_status_update(self, entity: T) -> bool: ...  # type: ignore[type-var]
 
     @abstractmethod
-    def _validate_for_event_flag(self, entity: T, message_id: int | None) -> bool: ...  # type: ignore[type-var]
+    async def _validate_for_event_flag(self, entity: T, message_id: int | None) -> bool: ...  # type: ignore[type-var]
 
     @abstractmethod
-    def _validate_for_zone_query(self, entity: T, message_id: int | None) -> bool: ...  # type: ignore[type-var]
+    async def _validate_for_zone_query(self, entity: T, message_id: int | None) -> bool: ...  # type: ignore[type-var]
 
     @abstractmethod
     async def _handle_finish_event(
