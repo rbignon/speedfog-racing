@@ -473,13 +473,6 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         message_id: int | None,
     ) -> None:
         assert self._participant_id is not None
-        # Set layer to total_layers in a new session
-        async with self.session_maker() as db:
-            participant = await _load_participant(db, self._participant_id)
-            if participant and participant.race.seed:
-                _set_layer(participant, participant.race.seed.total_layers, igt)
-                await db.commit()
-
         await handle_finished(
             self.websocket, self.session_maker, self._participant_id, {"igt_ms": igt}
         )
