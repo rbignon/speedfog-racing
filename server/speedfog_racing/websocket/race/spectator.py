@@ -191,7 +191,6 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
         super().__init__(websocket, race_id, session_maker)
         self._conn = SpectatorConnection(websocket=websocket, locale=self.locale)
         self._chat_info: dict[str, str | None] | None = None
-        self._race: Race | None = None  # stored for chat history loading
         self._message_handlers["chat"] = self._handle_chat
 
     async def _auth_and_setup(self) -> bool:
@@ -251,7 +250,6 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
 
             # Send initial race state (session still open for lazy access)
             await send_race_state(self.websocket, race, locale=self._conn.locale)
-            self._race = race
         # Session closed, released back to pool within ~2s of connect
 
         # Load chat history in parallel, send sequentially (safe for single WS)
