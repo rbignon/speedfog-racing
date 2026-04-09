@@ -51,6 +51,7 @@ pub enum OutgoingMessage {
         map_id: Option<String>,
         position: Option<[f32; 3]>,
         play_region_id: Option<u32>,
+        message_id: u64,
     },
     Shutdown,
 }
@@ -81,6 +82,7 @@ pub enum IncomingMessage {
         layer: Option<i32>,
         is_first_visit: bool,
         exits: Vec<ExitInfo>,
+        message_id: Option<u64>,
     },
     /// Aggregated death counts per zone for death marker flags
     DeathCounts(HashMap<String, u32>),
@@ -91,6 +93,18 @@ pub enum IncomingMessage {
         message_id: u64,
     },
     EventFlagAck {
+        message_id: u64,
+    },
+    /// Zone query drained from outgoing channel on reconnect, must be re-buffered
+    RequeueZoneQuery {
+        igt_ms: u32,
+        grace_entity_id: Option<u32>,
+        map_id: Option<String>,
+        position: Option<[f32; 3]>,
+        play_region_id: Option<u32>,
+        message_id: u64,
+    },
+    ZoneQueryAck {
         message_id: u64,
     },
     Error(String),
@@ -223,6 +237,7 @@ impl RaceWebSocketClient {
         map_id: Option<String>,
         position: Option<[f32; 3]>,
         play_region_id: Option<u32>,
+        message_id: u64,
     ) {
         if let Some(tx) = &self.tx {
             if let Err(e) = tx.try_send(OutgoingMessage::ZoneQuery {
@@ -231,6 +246,7 @@ impl RaceWebSocketClient {
                 map_id,
                 position,
                 play_region_id,
+                message_id,
             }) {
                 warn!("[WS] Failed to queue zone_query: {}", e);
             }
@@ -339,6 +355,23 @@ fn websocket_thread(
                             let _ = incoming_tx.send(IncomingMessage::RequeueEventFlag {
                                 flag_id,
                                 igt_ms,
+                                message_id,
+                            });
+                        }
+                        OutgoingMessage::ZoneQuery {
+                            igt_ms,
+                            grace_entity_id,
+                            map_id,
+                            position,
+                            play_region_id,
+                            message_id,
+                        } => {
+                            let _ = incoming_tx.send(IncomingMessage::RequeueZoneQuery {
+                                igt_ms,
+                                grace_entity_id,
+                                map_id,
+                                position,
+                                play_region_id,
                                 message_id,
                             });
                         }
@@ -551,14 +584,21 @@ fn message_loop(
                 map_id,
                 position,
                 play_region_id,
+                message_id,
             }) => {
-                info!(?grace_entity_id, ?map_id, "[WS] Sending: zone_query");
+                info!(
+                    ?grace_entity_id,
+                    ?map_id,
+                    message_id,
+                    "[WS] Sending: zone_query"
+                );
                 let msg = ClientMessage::ZoneQuery {
                     igt_ms,
                     grace_entity_id,
                     map_id,
                     position,
                     play_region_id,
+                    message_id,
                 };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
@@ -625,6 +665,7 @@ fn message_loop(
                             layer,
                             is_first_visit,
                             exits,
+                            message_id,
                         } => {
                             if incoming_tx
                                 .send(IncomingMessage::ZoneUpdate {
@@ -635,6 +676,7 @@ fn message_loop(
                                     layer,
                                     is_first_visit,
                                     exits,
+                                    message_id,
                                 })
                                 .is_err()
                             {
@@ -643,6 +685,9 @@ fn message_loop(
                         }
                         ServerMessage::EventFlagAck { message_id } => {
                             let _ = incoming_tx.send(IncomingMessage::EventFlagAck { message_id });
+                        }
+                        ServerMessage::ZoneQueryAck { message_id } => {
+                            let _ = incoming_tx.send(IncomingMessage::ZoneQueryAck { message_id });
                         }
                         ServerMessage::DeathCounts { counts } => {
                             let _ = incoming_tx.send(IncomingMessage::DeathCounts(counts));
