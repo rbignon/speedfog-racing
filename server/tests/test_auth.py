@@ -1,6 +1,7 @@
 """Test authentication endpoints."""
 
 import time
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -112,12 +113,16 @@ def test_exchange_expired_code(client):
     assert "Invalid or expired auth code" in response.json()["detail"]
 
 
+_FAKE_LOCALES = [{"code": "en", "name": "English"}, {"code": "fr", "name": "French"}]
+
+
 def test_twitch_login_passes_locale(client):
     """Test that /auth/twitch stores browser locale in OAuth state."""
     from speedfog_racing.api.auth import _oauth_states
 
     _oauth_states.clear()
-    response = client.get("/api/auth/twitch?locale=fr", follow_redirects=False)
+    with patch("speedfog_racing.api.auth.get_available_locales", return_value=_FAKE_LOCALES):
+        response = client.get("/api/auth/twitch?locale=fr", follow_redirects=False)
     assert response.status_code == 302
 
     assert len(_oauth_states) == 1
@@ -130,7 +135,8 @@ def test_twitch_login_invalid_locale_defaults_to_en(client):
     from speedfog_racing.api.auth import _oauth_states
 
     _oauth_states.clear()
-    response = client.get("/api/auth/twitch?locale=zz", follow_redirects=False)
+    with patch("speedfog_racing.api.auth.get_available_locales", return_value=_FAKE_LOCALES):
+        response = client.get("/api/auth/twitch?locale=zz", follow_redirects=False)
     assert response.status_code == 302
 
     assert len(_oauth_states) == 1

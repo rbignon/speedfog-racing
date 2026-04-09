@@ -4,17 +4,16 @@ import asyncio
 import os
 import tempfile
 import uuid
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
-import speedfog_racing.api.races as races_module
 import speedfog_racing.database as db_module
 import speedfog_racing.main as main_module
-import speedfog_racing.services.stats_service as stats_service_module
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
@@ -32,7 +31,9 @@ from speedfog_racing.services.training_service import (
     get_played_seed_counts,
     get_training_seed,
 )
-from tests.sqlite_async_shim import create_sqlite_async_shim
+
+# Use a unique test database file for training tests
+TRAINING_TEST_DB = os.path.join(tempfile.gettempdir(), "speedfog_training_test.db")
 
 
 @pytest.fixture(scope="function")
@@ -42,54 +43,46 @@ def async_session():
     Patches the database module so API routes and WS handlers use the same DB.
     Yields an async_sessionmaker.
     """
-    fd, test_db_path = tempfile.mkstemp(prefix="speedfog_training_", suffix=".db")
-    os.close(fd)
-    if os.path.exists(test_db_path):
-        os.remove(test_db_path)
+    if os.path.exists(TRAINING_TEST_DB):
+        os.remove(TRAINING_TEST_DB)
 
-    test_engine, test_session_maker = create_sqlite_async_shim(test_db_path)
-    Base.metadata.create_all(bind=test_engine)
+    test_engine = create_async_engine(
+        f"sqlite+aiosqlite:///{TRAINING_TEST_DB}",
+        echo=False,
+        poolclass=NullPool,
+    )
+    test_session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    # Create tables
+    asyncio.run(_create_tables(test_engine))
 
     # Patch modules
     original_engine = db_module.engine
     original_session_maker = db_module.async_session_maker
-    original_db_init = db_module.init_db
-    original_main_init = main_module.init_db
-    original_lifespan = app.router.lifespan_context
-    original_races_session_maker = races_module.async_session_maker
-    original_stats_session_maker = stats_service_module.async_session_maker
-
-    async def _init_db_for_tests() -> None:
-        return None
-
-    @asynccontextmanager
-    async def _noop_lifespan(_app):
-        yield
 
     db_module.engine = test_engine
     db_module.async_session_maker = test_session_maker
-    db_module.init_db = _init_db_for_tests
     main_module.async_session_maker = test_session_maker
-    main_module.init_db = _init_db_for_tests
-    races_module.async_session_maker = test_session_maker
-    stats_service_module.async_session_maker = test_session_maker
-    app.router.lifespan_context = _noop_lifespan
 
     try:
         yield test_session_maker
     finally:
         db_module.engine = original_engine
         db_module.async_session_maker = original_session_maker
-        db_module.init_db = original_db_init
         main_module.async_session_maker = original_session_maker
-        main_module.init_db = original_main_init
-        races_module.async_session_maker = original_races_session_maker
-        stats_service_module.async_session_maker = original_stats_session_maker
-        app.router.lifespan_context = original_lifespan
 
-        test_engine.dispose()
-        if os.path.exists(test_db_path):
-            os.remove(test_db_path)
+        asyncio.run(test_engine.dispose())
+        if os.path.exists(TRAINING_TEST_DB):
+            os.remove(TRAINING_TEST_DB)
+
+
+async def _create_tables(engine):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 @pytest.fixture

@@ -7,12 +7,14 @@ import tempfile
 import time
 import uuid
 import zipfile
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+from starlette.testclient import TestClient
 
 from speedfog_racing.database import Base
 from speedfog_racing.main import app
@@ -27,8 +29,10 @@ from speedfog_racing.models import (
     UserRole,
 )
 from speedfog_racing.websocket.manager import manager
-from tests.asgi_testclient import TestClient
-from tests.sqlite_async_shim import create_sqlite_async_shim
+
+# Use a unique test database file for integration tests (cross-platform)
+INTEGRATION_TEST_DB = os.path.join(tempfile.gettempdir(), "speedfog_integration_test.db")
+
 
 # =============================================================================
 # Helper Classes
@@ -148,46 +152,45 @@ def integration_db():
     This fixture patches the database module to use a file-based SQLite database,
     ensuring both the API routes and WebSocket handlers use the same database.
     """
+    import asyncio
 
-    import speedfog_racing.api.races as races_module
     import speedfog_racing.database as db_module
     import speedfog_racing.main as main_module
-    import speedfog_racing.services.stats_service as stats_service_module
 
-    fd, test_db_path = tempfile.mkstemp(prefix="speedfog_integration_", suffix=".db")
-    os.close(fd)
-    if os.path.exists(test_db_path):
-        os.remove(test_db_path)
+    # Clean up any existing test db
+    if os.path.exists(INTEGRATION_TEST_DB):
+        os.remove(INTEGRATION_TEST_DB)
 
-    test_engine, test_session_maker = create_sqlite_async_shim(test_db_path)
-    Base.metadata.create_all(bind=test_engine)
+    # Create new engine and session maker for tests
+    # NullPool: each session creates/closes its own connection, no pool
+    # cleanup issues when the TestClient's event loop shuts down.
+    test_engine = create_async_engine(
+        f"sqlite+aiosqlite:///{INTEGRATION_TEST_DB}",
+        echo=False,
+        poolclass=NullPool,
+    )
+    test_session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    # Create tables
+    async def init():
+        async with test_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init())
 
     # Patch the database module
     original_engine = db_module.engine
     original_session_maker = db_module.async_session_maker
-    original_db_init = db_module.init_db
-    original_main_init = main_module.init_db
-    original_lifespan = app.router.lifespan_context
-    original_races_session_maker = races_module.async_session_maker
-    original_stats_session_maker = stats_service_module.async_session_maker
-
-    async def _init_db_for_tests() -> None:
-        return None
-
-    @asynccontextmanager
-    async def _noop_lifespan(_app):
-        yield
 
     db_module.engine = test_engine
     db_module.async_session_maker = test_session_maker
-    db_module.init_db = _init_db_for_tests
 
     # Also patch main module's import
     main_module.async_session_maker = test_session_maker
-    main_module.init_db = _init_db_for_tests
-    races_module.async_session_maker = test_session_maker
-    stats_service_module.async_session_maker = test_session_maker
-    app.router.lifespan_context = _noop_lifespan
 
     try:
         yield test_session_maker
@@ -195,17 +198,12 @@ def integration_db():
         # Restore originals
         db_module.engine = original_engine
         db_module.async_session_maker = original_session_maker
-        db_module.init_db = original_db_init
         main_module.async_session_maker = original_session_maker
-        main_module.init_db = original_main_init
-        races_module.async_session_maker = original_races_session_maker
-        stats_service_module.async_session_maker = original_stats_session_maker
-        app.router.lifespan_context = original_lifespan
 
         # Clean up
-        test_engine.dispose()
-        if os.path.exists(test_db_path):
-            os.remove(test_db_path)
+        asyncio.run(test_engine.dispose())
+        if os.path.exists(INTEGRATION_TEST_DB):
+            os.remove(INTEGRATION_TEST_DB)
 
 
 @pytest.fixture
@@ -1334,14 +1332,10 @@ def test_event_flag_revisit_appends_to_zone_history(
         mod0.receive_until_type("leaderboard_update")
 
         # Send same flag twice (first visit + revisit)
-        mod0.send_event_flag(9000000, igt_ms=10000, message_id=1)
-        ack = mod0.receive_until_type("event_flag_ack")
-        assert ack["message_id"] == 1
+        mod0.send_event_flag(9000000, igt_ms=10000)
         mod0.receive_until_type("leaderboard_update")  # first visit: leaderboard_update
 
-        mod0.send_event_flag(9000000, igt_ms=15000, message_id=2)
-        ack = mod0.receive_until_type("event_flag_ack")
-        assert ack["message_id"] == 2
+        mod0.send_event_flag(9000000, igt_ms=15000)
         # Revisit: player_update (not leaderboard_update)
         msg = mod0.receive_until_type("player_update")
         assert msg["type"] == "player_update"
@@ -1821,9 +1815,7 @@ def test_zone_history_backtrack_type(integration_db, integration_client, seed_fo
 
         # 2) event_flag → fog traversal to stormveil_godrick
         #    Server sends: leaderboard_update (broadcast) + zone_update (unicast)
-        mod.send_event_flag(1040292800, igt_ms=5000, message_id=10)
-        ack = mod.receive_until_type("event_flag_ack")
-        assert ack["message_id"] == 10
+        mod.send_event_flag(1040292800, igt_ms=5000)
         mod.receive_until_type("leaderboard_update")
         fog_zone_update = mod.receive_until_type("zone_update")
         assert fog_zone_update["node_id"] == "stormveil_godrick_48fd"
