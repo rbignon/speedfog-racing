@@ -5,6 +5,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
@@ -28,7 +29,7 @@ from speedfog_racing.models import (
     ChatMessage as ChatMessageModel,
 )
 from speedfog_racing.services.i18n import translate_graph_json
-from speedfog_racing.websocket.common import MAX_CHAT_HISTORY_MESSAGES, heartbeat_loop
+from speedfog_racing.websocket.handler import BaseSpectatorHandler
 from speedfog_racing.websocket.race.manager import (
     SEND_TIMEOUT,
     SpectatorConnection,
@@ -48,12 +49,7 @@ from speedfog_racing.websocket.schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Grace period for auth message (seconds).
-# Spectator connections are intentionally unauthenticated by default (public races).
-# Optional auth within this window identifies the user for future role-based features.
-# Accepted risk: unauthenticated connections can observe public race state. This is
-# by design: race data (leaderboard, zone progress) is intended to be public.
-AUTH_GRACE_PERIOD = 2.0
+MAX_CHAT_HISTORY_MESSAGES = 50  # recent messages sent to each new spectator
 
 
 def build_seed_info(
@@ -181,36 +177,40 @@ async def load_chat_history(
     return ChatHistoryMessage(channel=channel.value, messages=messages)
 
 
-async def handle_spectator_websocket(
-    websocket: WebSocket, race_id: uuid.UUID, session_maker: async_sessionmaker[AsyncSession]
-) -> None:
-    """Handle a spectator WebSocket connection with optional auth."""
-    await websocket.accept()
+class RaceSpectatorHandler(BaseSpectatorHandler):
+    """Spectator WebSocket handler for race connections."""
 
-    # Read locale from query param (e.g. ?locale=fr)
-    query_locale = websocket.query_params.get("locale", "en")
+    AUTH_GRACE_PERIOD = 2.0
 
-    conn = SpectatorConnection(websocket=websocket, locale=query_locale)
+    def __init__(
+        self,
+        websocket: WebSocket,
+        race_id: uuid.UUID,
+        session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        super().__init__(websocket, race_id, session_maker)
+        self._conn = SpectatorConnection(websocket=websocket, locale=self.locale)
+        self._chat_info: dict[str, str | None] | None = None
+        self._race: Race | None = None  # stored for chat history loading
+        self._message_handlers["chat"] = self._handle_chat
 
-    # chat_info is set for all authenticated users (role or spectator)
-    chat_info: dict[str, str | None] | None = None
-
-    try:
-        # Open a short-lived session for init only
-        async with session_maker() as db:
-            race = await get_race_with_details(db, race_id)
+    async def _auth_and_setup(self) -> bool:
+        async with self.session_maker() as db:
+            race = await get_race_with_details(db, self.entity_id)  # type: ignore[arg-type]
             if not race:
-                await websocket.close(code=4004, reason="Race not found")
-                return
+                await self.websocket.close(code=4004, reason="Race not found")
+                return False
 
-            user_obj = await _try_auth(websocket, db)
+            user_obj = await self._try_auth(db)
             user_id = user_obj.id if user_obj else None
-            conn.user_id = user_id
+            self._conn.user_id = user_id
+            self._conn.locale = self.locale
 
-            # Prefer user's DB locale over query param if set
             if user_obj:
+                # Prefer user's DB locale over query param
                 if user_obj.locale:
-                    conn.locale = user_obj.locale
+                    self._conn.locale = user_obj.locale
+                    self.locale = user_obj.locale
 
                 # Determine role in this race
                 role: str | None = None
@@ -224,15 +224,15 @@ async def handle_spectator_websocket(
                     role = "participant"
 
                 if role is not None:
-                    conn.role = role
+                    self._conn.role = role
 
                     if role == "participant":
                         participant = next(
                             (p for p in race.participants if p.user_id == user_id), None
                         )
                         if participant:
-                            conn.participant_id = participant.id
-                            conn.is_playing = (
+                            self._conn.participant_id = participant.id
+                            self._conn.is_playing = (
                                 race.status == RaceStatus.RUNNING
                                 and participant.status == ParticipantStatus.PLAYING
                             )
@@ -241,7 +241,7 @@ async def handle_spectator_websocket(
                 trait_scores = await db.get(PlayerTraitScores, user_id)
                 dominant_trait = trait_scores.dominant_trait if trait_scores else None
 
-                chat_info = {
+                self._chat_info = {
                     "username": user_obj.twitch_username,
                     "display_name": user_obj.twitch_display_name,
                     "avatar_url": user_obj.twitch_avatar_url,
@@ -250,130 +250,123 @@ async def handle_spectator_websocket(
                 }
 
             # Send initial race state (session still open for lazy access)
-            await send_race_state(websocket, race, locale=conn.locale)
+            await send_race_state(self.websocket, race, locale=self._conn.locale)
+            self._race = race
         # Session closed, released back to pool within ~2s of connect
 
-        # Register connection
-        await manager.connect_spectator(race_id, conn)
-
         # Load chat history in parallel, send sequentially (safe for single WS)
-        chat_loads = []
-        if conn.role is not None:
+        chat_loads: list[Any] = []
+        if self._conn.role is not None:
             chat_loads.append(
-                load_chat_history(session_maker, race_id, race, ChatChannel.PARTICIPANTS)
+                load_chat_history(
+                    self.session_maker,
+                    self.entity_id,  # type: ignore[arg-type]
+                    race,
+                    ChatChannel.PARTICIPANTS,
+                )
             )
-        if conn.user_id is not None and not conn.is_playing:
-            chat_loads.append(load_chat_history(session_maker, race_id, race, ChatChannel.PUBLIC))
+        if self._conn.user_id is not None and not self._conn.is_playing:
+            chat_loads.append(
+                load_chat_history(
+                    self.session_maker,
+                    self.entity_id,  # type: ignore[arg-type]
+                    race,
+                    ChatChannel.PUBLIC,
+                )
+            )
         if chat_loads:
             histories = await asyncio.gather(*chat_loads)
             for hist in histories:
-                await websocket.send_text(hist.model_dump_json())
+                await self.websocket.send_text(hist.model_dump_json())
 
-        # Start heartbeat in background
-        heartbeat_task = asyncio.create_task(heartbeat_loop(websocket))
+        return True
+
+    async def _register(self) -> None:
+        await manager.connect_spectator(self.entity_id, self._conn)  # type: ignore[arg-type]
+
+    async def _unregister(self) -> None:
+        await manager.disconnect_spectator(self.entity_id, self._conn)  # type: ignore[arg-type]
+
+    async def _handle_chat(self, msg: dict[str, Any]) -> None:
+        if self._chat_info is None:
+            return  # Not authenticated
 
         try:
-            # Message loop: parse incoming messages and handle chat if authorized
-            while True:
-                try:
-                    raw = await websocket.receive_text()
-                except WebSocketDisconnect:
-                    break
+            chat_msg = SendChatMessage.model_validate(msg)
+        except Exception:
+            return
 
-                # Ignore pong and non-JSON gracefully
-                try:
-                    msg = json.loads(raw)
-                except (json.JSONDecodeError, ValueError):
-                    continue
+        # Validate channel access
+        channel = chat_msg.channel
+        if channel == "participants" and self._conn.role is None:
+            return  # Spectators cannot write to participants channel
+        if channel == "public" and self._conn.is_playing:
+            return  # Playing participants cannot write to public
 
-                msg_type = msg.get("type")
-                if msg_type == "pong":
-                    continue
+        room = manager.get_room(self.entity_id)  # type: ignore[arg-type]
+        if room is None:
+            return
 
-                if msg_type == "chat":
-                    if chat_info is None:
-                        continue  # Not authenticated
+        broadcast = ChatBroadcastMessage(
+            channel=channel,
+            username=self._chat_info["username"],  # type: ignore[arg-type]
+            display_name=self._chat_info["display_name"],
+            avatar_url=self._chat_info["avatar_url"],
+            role=self._chat_info["role"],  # type: ignore[arg-type]
+            dominant_trait=self._chat_info["dominant_trait"],
+            message=chat_msg.message,
+            timestamp=datetime.now(UTC).isoformat(),
+        )
 
-                    try:
-                        chat_msg = SendChatMessage.model_validate(msg)
-                    except Exception:
-                        continue
+        # Persist to DB
+        async with self.session_maker() as db:
+            db_msg = ChatMessageModel(
+                race_id=self.entity_id,
+                channel=ChatChannel(channel),
+                user_id=self._conn.user_id,
+                message=chat_msg.message,
+            )
+            db.add(db_msg)
+            await db.commit()
 
-                    # Validate channel access
-                    channel = chat_msg.channel
-                    if channel == "participants" and conn.role is None:
-                        continue  # Spectators cannot write to participants channel
-                    if channel == "public" and conn.is_playing:
-                        continue  # Playing participants cannot write to public
+        # Broadcast to appropriate connections
+        msg_json = broadcast.model_dump_json()
+        if channel == "participants":
+            await room.broadcast_chat_participants(msg_json)
+        else:
+            await room.broadcast_chat_public(msg_json)
 
-                    room = manager.get_room(race_id)
-                    if room is None:
-                        continue
+    async def _try_auth(self, db: AsyncSession) -> User | None:
+        """Wait briefly for an auth message. Returns User or None.
 
-                    broadcast = ChatBroadcastMessage(
-                        channel=channel,
-                        username=chat_info["username"],  # type: ignore[arg-type]
-                        display_name=chat_info["display_name"],
-                        avatar_url=chat_info["avatar_url"],
-                        role=chat_info["role"],  # type: ignore[arg-type]
-                        dominant_trait=chat_info["dominant_trait"],
-                        message=chat_msg.message,
-                        timestamp=datetime.now(UTC).isoformat(),
-                    )
-
-                    # Persist to DB
-                    async with session_maker() as db:
-                        db_msg = ChatMessageModel(
-                            race_id=race_id,
-                            channel=ChatChannel(channel),
-                            user_id=conn.user_id,
-                            message=chat_msg.message,
-                        )
-                        db.add(db_msg)
-                        await db.commit()
-
-                    # Broadcast to appropriate connections
-                    msg_json = broadcast.model_dump_json()
-                    if channel == "participants":
-                        await room.broadcast_chat_participants(msg_json)
-                    else:
-                        await room.broadcast_chat_public(msg_json)
-        finally:
-            heartbeat_task.cancel()
-            try:
-                await heartbeat_task
-            except asyncio.CancelledError:
-                pass
-
-    except WebSocketDisconnect:
-        logger.info(f"Spectator disconnected: race={race_id}")
-    except Exception as e:
-        logger.error(f"Error in spectator websocket: {e}")
-    finally:
-        await manager.disconnect_spectator(race_id, conn)
+        Clients should send either ``{"type": "auth", "token": "..."}`` or
+        ``{"type": "no_auth"}`` immediately after connect so the server does
+        not have to wait for the full grace period before sending race_state.
+        """
+        try:
+            data = await asyncio.wait_for(
+                self.websocket.receive_text(), timeout=self.AUTH_GRACE_PERIOD
+            )
+            msg = json.loads(data)
+            if msg.get("type") == "auth" and isinstance(msg.get("token"), str):
+                user = await get_user_by_token(db, msg["token"])
+                if user:
+                    user.last_seen = datetime.now(UTC)
+                    await db.commit()
+                    return user
+        except TimeoutError:
+            pass
+        except (json.JSONDecodeError, WebSocketDisconnect):
+            pass
+        return None
 
 
-async def _try_auth(websocket: WebSocket, db: AsyncSession) -> User | None:
-    """Wait briefly for an auth message. Returns User or None.
-
-    Clients should send either ``{"type": "auth", "token": "..."}`` or
-    ``{"type": "no_auth"}`` immediately after connect so the server does
-    not have to wait for the full grace period before sending race_state.
-    """
-    try:
-        data = await asyncio.wait_for(websocket.receive_text(), timeout=AUTH_GRACE_PERIOD)
-        msg = json.loads(data)
-        if msg.get("type") == "auth" and isinstance(msg.get("token"), str):
-            user = await get_user_by_token(db, msg["token"])
-            if user:
-                user.last_seen = datetime.now(UTC)
-                await db.commit()
-                return user
-    except TimeoutError:
-        pass
-    except (json.JSONDecodeError, WebSocketDisconnect):
-        pass
-    return None
+async def handle_spectator_websocket(
+    websocket: WebSocket, race_id: uuid.UUID, session_maker: async_sessionmaker[AsyncSession]
+) -> None:
+    """Handle a spectator WebSocket connection with optional auth."""
+    handler = RaceSpectatorHandler(websocket, race_id, session_maker)
+    await handler.run()
 
 
 async def get_race_with_details(db: AsyncSession, race_id: uuid.UUID) -> Race | None:

@@ -189,8 +189,10 @@ async def test_load_chat_history_caps_at_most_recent_messages(async_session):
     """load_chat_history returns at most MAX_CHAT_HISTORY_MESSAGES, most recent first wins."""
     from sqlalchemy.orm import selectinload
 
-    from speedfog_racing.websocket.common import MAX_CHAT_HISTORY_MESSAGES
-    from speedfog_racing.websocket.race.spectator import load_chat_history
+    from speedfog_racing.websocket.race.spectator import (
+        MAX_CHAT_HISTORY_MESSAGES,
+        load_chat_history,
+    )
 
     async with async_session() as db:
         organizer = User(
