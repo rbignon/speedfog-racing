@@ -18,6 +18,7 @@ from speedfog_racing.websocket.schemas import (
     ErrorMessage,
     EventFlagAckMessage,
     PingMessage,
+    ZoneQueryAckMessage,
 )
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,19 @@ async def send_event_flag_ack(
         pass
 
 
+async def send_zone_query_ack(
+    websocket: WebSocket, message_id: int, *, send_timeout: float = SEND_TIMEOUT
+) -> None:
+    """Acknowledge a zone_query that could not produce a zone_update."""
+    try:
+        await asyncio.wait_for(
+            websocket.send_text(ZoneQueryAckMessage(message_id=message_id).model_dump_json()),
+            timeout=send_timeout,
+        )
+    except Exception:
+        pass
+
+
 async def send_zone_update(
     websocket: WebSocket,
     node_id: str,
@@ -140,10 +154,13 @@ async def send_zone_update(
     send_timeout: float = SEND_TIMEOUT,
     race_id: object | None = None,
     participant_id: object | None = None,
+    message_id: int | None = None,
 ) -> None:
     """Send a zone_update unicast to the originating mod."""
     msg = compute_zone_update(node_id, graph_json, zone_history, is_first_visit=is_first_visit)
     if msg:
+        if message_id is not None:
+            msg["message_id"] = message_id
         msg = translate_zone_update(msg, locale)
         try:
             await asyncio.wait_for(websocket.send_text(json.dumps(msg)), timeout=send_timeout)
@@ -212,6 +229,7 @@ class ZoneQueryInput:
     position: tuple[Any, ...] | None
     play_region_id: int | None
     igt_ms: int | None
+    message_id: int | None
 
 
 def parse_zone_query_input(msg: dict[str, Any]) -> ZoneQueryInput | None:
@@ -233,10 +251,14 @@ def parse_zone_query_input(msg: dict[str, Any]) -> ZoneQueryInput | None:
     play_region_id = raw_pr if isinstance(raw_pr, int) else None
     igt_ms = clamp_igt(msg.get("igt_ms"))
 
+    raw_message_id = msg.get("message_id")
+    message_id = raw_message_id if isinstance(raw_message_id, int) else None
+
     return ZoneQueryInput(
         grace_entity_id=grace_entity_id,
         map_id=map_id_str,
         position=position,
         play_region_id=play_region_id,
         igt_ms=igt_ms,
+        message_id=message_id,
     )

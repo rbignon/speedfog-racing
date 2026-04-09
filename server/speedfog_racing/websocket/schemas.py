@@ -231,12 +231,20 @@ class ZoneUpdateMessage(BaseModel):
     layer: int | None = None
     is_first_visit: bool = False
     exits: list[ExitInfo]
+    message_id: int | None = None
 
 
 class EventFlagAckMessage(BaseModel):
     """Acknowledges persistence of an event_flag message."""
 
     type: Literal["event_flag_ack"] = "event_flag_ack"
+    message_id: int
+
+
+class ZoneQueryAckMessage(BaseModel):
+    """Acknowledges a zone_query that could not produce a zone_update."""
+
+    type: Literal["zone_query_ack"] = "zone_query_ack"
     message_id: int
 
 
