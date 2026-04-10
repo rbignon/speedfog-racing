@@ -2,6 +2,18 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.8] - 2026-04-10
+
+### Seeds
+
+- Boss arenas now lock their exits when entered, making it impossible to skip a boss by walking through without engaging it
+- More boss arenas can serve as pass-through path candidates, since exit restrictions are no longer needed to prevent skips
+
+### In-game
+
+- Death markers now appear only at exit fog gates, focusing the visual signal on where it best indicates zone difficulty
+- Fix: prevent state desync after network blips
+
 ## [1.5.7] - 2026-04-07
 
 ### Seeds
