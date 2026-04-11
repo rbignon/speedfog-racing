@@ -2,16 +2,20 @@
 
 import json
 import tempfile
+import uuid
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
+    ChatChannel,
+    ChatMessage,
     Participant,
     ParticipantStatus,
     Race,
@@ -646,7 +650,7 @@ async def test_remove_participant(test_client, organizer, player, seed):
 
 
 @pytest.mark.asyncio
-async def test_start_race(test_client, organizer, player, seed):
+async def test_start_race(test_client, organizer, player, seed, async_session):
     """Organizer can start a race."""
     async with test_client as client:
         # Create race with organizer as participant
@@ -686,6 +690,18 @@ async def test_start_race(test_client, organizer, player, seed):
         data = response.json()
         assert data["status"] == "running"
         assert data["started_at"] is not None
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(ChatMessage).where(
+                ChatMessage.race_id == uuid.UUID(race_id),
+                ChatMessage.message == "The race has started.",
+            )
+        )
+        started_msgs = result.scalars().all()
+        channels = {m.channel for m in started_msgs}
+        assert channels == {ChatChannel.PARTICIPANTS, ChatChannel.PUBLIC}
+        assert all(m.user_id is None for m in started_msgs)
 
 
 @pytest.mark.asyncio
@@ -1053,6 +1069,18 @@ async def test_finish_running_race(test_client, organizer, player, async_session
         assert p["current_layer"] == 5
         assert p["igt_ms"] == 300000
         assert p["death_count"] == 10
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(ChatMessage).where(
+                ChatMessage.race_id == uuid.UUID(race_id),
+                ChatMessage.message == "The race has finished.",
+            )
+        )
+        finished_msgs = result.scalars().all()
+        channels = {m.channel for m in finished_msgs}
+        assert channels == {ChatChannel.PARTICIPANTS, ChatChannel.PUBLIC}
+        assert all(m.user_id is None for m in finished_msgs)
 
 
 @pytest.mark.asyncio

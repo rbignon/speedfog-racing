@@ -1,12 +1,16 @@
 """Tests for inactivity monitor."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
+    ChatChannel,
+    ChatMessage,
     Participant,
     ParticipantStatus,
     Race,
@@ -16,7 +20,10 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
-from speedfog_racing.services.inactivity_monitor import abandon_inactive_participants
+from speedfog_racing.services.inactivity_monitor import (
+    abandon_inactive_participants,
+    inactivity_monitor_loop,
+)
 
 
 @pytest.fixture
@@ -329,3 +336,98 @@ async def test_does_not_abandon_null_last_igt(async_session):
     async with async_session() as db:
         p = await db.get(Participant, p_id)
         assert p.status == ParticipantStatus.PLAYING
+
+
+@pytest.mark.asyncio
+async def test_loop_persists_system_messages_when_no_room(async_session):
+    """The loop persists inactivity + race-finished system messages even when no
+    WebSocket room exists (they will replay via chat_history on reconnect).
+    """
+    async with async_session() as db:
+        user = User(
+            twitch_id="loop1",
+            twitch_username="loop_player",
+            twitch_display_name="Loop Player",
+            api_token="loop_tok",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="org_loop",
+            twitch_username="org_loop",
+            api_token="org_loop_tok",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="s_loop",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/loop",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Loop Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC) - timedelta(minutes=45),
+        )
+        db.add(race)
+        await db.flush()
+        race_id = race.id
+
+        p = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.PLAYING,
+            igt_ms=100000,
+            last_igt_change_at=datetime.now(UTC) - timedelta(minutes=36),
+        )
+        db.add(p)
+        await db.commit()
+
+    task = asyncio.create_task(inactivity_monitor_loop(async_session))
+    try:
+        for _ in range(40):
+            await asyncio.sleep(0.05)
+            async with async_session() as db:
+                result = await db.execute(
+                    select(ChatMessage).where(
+                        ChatMessage.race_id == race_id,
+                        ChatMessage.message == "The race has finished.",
+                    )
+                )
+                if len(result.scalars().all()) >= 2:
+                    break
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async with async_session() as db:
+        result = await db.execute(select(ChatMessage).where(ChatMessage.race_id == race_id))
+        messages = result.scalars().all()
+
+        finished_msgs = [m for m in messages if m.message == "The race has finished."]
+        finished_channels = {m.channel for m in finished_msgs}
+        assert finished_channels == {ChatChannel.PARTICIPANTS, ChatChannel.PUBLIC}
+
+        inactive_msgs = [
+            m
+            for m in messages
+            if m.message == "Loop Player has abandoned the race due to inactivity."
+        ]
+        assert len(inactive_msgs) == 1
+        assert inactive_msgs[0].channel == ChatChannel.PUBLIC
+
+        race = await db.get(Race, race_id)
+        assert race is not None
+        assert race.status == RaceStatus.FINISHED

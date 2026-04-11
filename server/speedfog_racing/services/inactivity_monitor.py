@@ -118,18 +118,37 @@ async def inactivity_monitor_loop(
                                 if p.status == ParticipantStatus.ABANDONED:
                                     room.clear_is_playing(p.user_id)
 
-                            # Notify public chat for newly abandoned participants only
-                            for p in race.participants:
-                                if p.id in abandoned_ids:
-                                    display = p.user.twitch_display_name or p.user.twitch_username
-                                    sys_json = await persist_system_chat(
-                                        db,
-                                        race_id,
-                                        ChatChannel.PUBLIC,
-                                        f"{display} has been removed due to inactivity.",
-                                    )
-                                    await room.broadcast_chat_public(sys_json)
-                            await db.commit()
+                        # Persist "abandoned due to inactivity" messages for
+                        # newly abandoned participants (persist unconditionally
+                        # so history replays on reconnect; broadcast only if a
+                        # room exists).
+                        abandon_messages: list[str] = []
+                        for p in race.participants:
+                            if p.id in abandoned_ids:
+                                display = p.user.twitch_display_name or p.user.twitch_username
+                                sys_json = await persist_system_chat(
+                                    db,
+                                    race_id,
+                                    ChatChannel.PUBLIC,
+                                    f"{display} has abandoned the race due to inactivity.",
+                                )
+                                abandon_messages.append(sys_json)
+
+                        finish_participants_json: str | None = None
+                        finish_public_json: str | None = None
+                        if race.status == RaceStatus.FINISHED:
+                            finished_msg = "The race has finished."
+                            finish_participants_json = await persist_system_chat(
+                                db, race_id, ChatChannel.PARTICIPANTS, finished_msg
+                            )
+                            finish_public_json = await persist_system_chat(
+                                db, race_id, ChatChannel.PUBLIC, finished_msg
+                            )
+                        await db.commit()
+
+                        if room:
+                            for sys_json in abandon_messages:
+                                await room.broadcast_chat_public(sys_json)
 
                         graph_json = race.seed.graph_json if race.seed else None
                         await manager.broadcast_leaderboard(
@@ -138,6 +157,13 @@ async def inactivity_monitor_loop(
                         await broadcast_race_state_update(race_id, race)
                         if race.status == RaceStatus.FINISHED:
                             await manager.broadcast_race_status(race_id, "finished")
+                            if (
+                                room
+                                and finish_participants_json is not None
+                                and finish_public_json is not None
+                            ):
+                                await room.broadcast_chat_participants(finish_participants_json)
+                                await room.broadcast_chat_public(finish_public_json)
                             fire_race_finished_notifications(race)
         except Exception:
             logger.exception("Inactivity monitor error")
