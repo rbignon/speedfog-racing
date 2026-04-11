@@ -174,6 +174,63 @@ def is_shared_entrance_duplicate(history: list[dict[str, Any]], node_id: str, ig
     )
 
 
+def detect_layer_jump(
+    graph_json: dict[str, Any],
+    zone_history: list[dict[str, Any]],
+    new_node_id: str,
+) -> tuple[str, int, int, list[str]] | None:
+    """Detect an event_flag that skips layers relative to the previous entry.
+
+    Fog gates always traverse from layer N to layer N+1 by design. If a new
+    event_flag produces an entry whose layer is not ``last.layer + 1``, a
+    backtrack entry was probably missed (for example a respawn inside a
+    previously-traversed node that the zone_query resolver could not localize)
+    or there is a bug in event_map resolution.
+
+    Returns ``(last_node_id, last_layer, new_layer, bridge_candidates)`` when a
+    jump is detected, ``None`` otherwise. ``bridge_candidates`` lists
+    already-visited graph neighbors of ``new_node_id`` at ``new_layer - 1``,
+    i.e. plausible missed-backtrack nodes, for diagnostic logging.
+    """
+    if not zone_history:
+        return None
+    last_node_id = zone_history[-1].get("node_id")
+    if not isinstance(last_node_id, str) or last_node_id == new_node_id:
+        return None
+    nodes = graph_json.get("nodes", {})
+    last_node = nodes.get(last_node_id)
+    new_node = nodes.get(new_node_id)
+    if not isinstance(last_node, dict) or not isinstance(new_node, dict):
+        return None
+    last_layer = last_node.get("layer")
+    new_layer = new_node.get("layer")
+    if not isinstance(last_layer, int) or not isinstance(new_layer, int):
+        return None
+    if new_layer == last_layer + 1:
+        return None
+    neighbors: set[str] = set()
+    for edge in graph_json.get("edges", []):
+        if not isinstance(edge, dict):
+            continue
+        src = edge.get("from")
+        dst = edge.get("to")
+        if dst == new_node_id and isinstance(src, str):
+            neighbors.add(src)
+        elif src == new_node_id and isinstance(dst, str):
+            neighbors.add(dst)
+    explored = {
+        entry.get("node_id") for entry in zone_history if isinstance(entry.get("node_id"), str)
+    }
+    bridges = sorted(
+        n
+        for n in neighbors
+        if n in explored
+        and isinstance(nodes.get(n), dict)
+        and nodes[n].get("layer") == new_layer - 1
+    )
+    return (last_node_id, last_layer, new_layer, bridges)
+
+
 def parse_zone_query_input(msg: dict[str, Any]) -> ZoneQueryInput | None:
     """Parse a zone_query message. Returns None if neither grace nor map_id present."""
     grace_entity_id = msg.get("grace_entity_id")
@@ -581,6 +638,22 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     logger.warning("zone_history cap reached for %s", self.entity_id)
                     return
 
+                jump = detect_layer_jump(seed_graph, old_history, node_id)
+                if jump is not None:
+                    last_nid, last_layer, new_layer, bridges = jump
+                    logger.warning(
+                        "zone_history layer jump: %s(L%d) -> %s(L%d) "
+                        "missing_bridge=%s entity=%s igt=%d message_id=%s",
+                        last_nid,
+                        last_layer,
+                        node_id,
+                        new_layer,
+                        ",".join(bridges) if bridges else "none",
+                        self.entity_id,
+                        igt,
+                        message_id,
+                    )
+
                 is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
 
                 self._on_igt_change(entity, igt)
@@ -667,6 +740,24 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 if message_id is not None:
                     await self._send_zone_query_ack(message_id)
                 return
+
+            # Fast travel (Strategy 1 grace lookup) bypasses the history filter,
+            # so it can resolve to a node that has never been traversed via fog.
+            # That is normally impossible in fog rando (unreachable graces are
+            # not in the menu) and points at a grace mapping bug or an
+            # unexpected warp, so warn for observability. parse_zone_query_input
+            # has already replaced a 0 grace_entity_id with None.
+            if zq.grace_entity_id is not None and not any(
+                entry.get("node_id") == node_id for entry in entity.zone_history or []
+            ):
+                logger.warning(
+                    "zone_query resolved to unvisited node via grace: "
+                    "node=%s grace_entity_id=%s entity=%s message_id=%s",
+                    node_id,
+                    zq.grace_entity_id,
+                    self.entity_id,
+                    message_id,
+                )
 
             # Record backtrack entry when the player moved to a different node
             # (death/teleport/quit-out, no event flag fired)

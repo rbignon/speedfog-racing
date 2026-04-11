@@ -3,6 +3,7 @@
 import json
 import uuid
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -1257,6 +1258,106 @@ class TestSharedEntranceDedup:
         from speedfog_racing.websocket.handler import is_shared_entrance_duplicate
 
         assert not is_shared_entrance_duplicate([], "zone_a", 10000)
+
+
+class TestDetectLayerJump:
+    """Test the layer-skipping event_flag detector."""
+
+    @staticmethod
+    def _graph(nodes: dict[str, int], edges: list[tuple[str, str]]) -> dict[str, Any]:
+        return {
+            "nodes": {nid: {"layer": layer} for nid, layer in nodes.items()},
+            "edges": [{"from": a, "to": b} for a, b in edges],
+        }
+
+    def test_empty_history_no_jump(self):
+        from speedfog_racing.websocket.handler import detect_layer_jump
+
+        graph = self._graph({"start": 0, "zone_a": 1}, [("start", "zone_a")])
+        assert detect_layer_jump(graph, [], "zone_a") is None
+
+    def test_forward_step_no_jump(self):
+        from speedfog_racing.websocket.handler import detect_layer_jump
+
+        graph = self._graph({"start": 0, "zone_a": 1}, [("start", "zone_a")])
+        history = [{"node_id": "start"}]
+        assert detect_layer_jump(graph, history, "zone_a") is None
+
+    def test_same_layer_is_jump(self):
+        from speedfog_racing.websocket.handler import detect_layer_jump
+
+        graph = self._graph(
+            {"start": 0, "throne": 4, "sanctuary": 5, "sewer_mohg": 5},
+            [("start", "throne"), ("throne", "sanctuary"), ("throne", "sewer_mohg")],
+        )
+        history = [
+            {"node_id": "start"},
+            {"node_id": "throne"},
+            {"node_id": "sanctuary"},
+        ]
+        result = detect_layer_jump(graph, history, "sewer_mohg")
+        assert result == ("sanctuary", 5, 5, ["throne"])
+
+    def test_two_layer_skip_is_jump_without_bridge(self):
+        from speedfog_racing.websocket.handler import detect_layer_jump
+
+        graph = self._graph(
+            {"start": 0, "a": 1, "b": 2, "c": 3},
+            [("start", "a"), ("a", "b"), ("b", "c")],
+        )
+        history = [{"node_id": "start"}, {"node_id": "a"}]
+        result = detect_layer_jump(graph, history, "c")
+        assert result == ("a", 1, 3, [])
+
+    def test_revisit_same_node_not_flagged(self):
+        """Consecutive duplicate node_id (shared entrance, dedup bypass) is a
+        separate issue and is not reported as a layer jump."""
+        from speedfog_racing.websocket.handler import detect_layer_jump
+
+        graph = self._graph({"zone_a": 3}, [])
+        history = [{"node_id": "zone_a"}]
+        assert detect_layer_jump(graph, history, "zone_a") is None
+
+    def test_missing_layer_field_returns_none(self):
+        """Nodes without layer metadata cannot be checked."""
+        from speedfog_racing.websocket.handler import detect_layer_jump
+
+        graph = {"nodes": {"a": {}, "b": {}}, "edges": []}
+        history = [{"node_id": "a"}]
+        assert detect_layer_jump(graph, history, "b") is None
+
+    def test_bridge_requires_visited_neighbor_at_previous_layer(self):
+        """A layer-1 neighbor exists in the graph but was never visited -> not a bridge."""
+        from speedfog_racing.websocket.handler import detect_layer_jump
+
+        graph = self._graph(
+            {"start": 0, "visited": 1, "unvisited": 1, "target": 1},
+            [("start", "visited"), ("visited", "target"), ("unvisited", "target")],
+        )
+        history = [{"node_id": "visited"}]
+        # From visited (L1) to target (L1): same-layer jump, missing bridge
+        # at L0, but only `start` is visited at L0 and it's not a neighbor of
+        # target.
+        result = detect_layer_jump(graph, history, "target")
+        assert result == ("visited", 1, 1, [])
+
+    def test_forward_step_after_backtrack_entry_no_jump(self):
+        """A backtrack entry is still the last entry and the next forward
+        event_flag from there must respect ``last.layer + 1``. The detector
+        must not special-case the entry ``type``."""
+        from speedfog_racing.websocket.handler import detect_layer_jump
+
+        graph = self._graph(
+            {"start": 0, "a": 1, "b": 2, "c": 2},
+            [("start", "a"), ("a", "b"), ("a", "c")],
+        )
+        history = [
+            {"node_id": "start"},
+            {"node_id": "a"},
+            {"node_id": "b"},
+            {"node_id": "a", "type": "backtrack"},
+        ]
+        assert detect_layer_jump(graph, history, "c") is None
 
 
 class TestZoneQueryBacktracking:
