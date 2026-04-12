@@ -489,6 +489,7 @@ impl RaceTracker {
         max_width: f32,
         bufs: &mut RenderBuffers,
     ) {
+        profile_span!("render_leaderboard");
         if self.participants().is_empty() {
             ui.text_disabled("No participants");
             return;
@@ -541,6 +542,7 @@ impl RaceTracker {
     }
 
     fn refresh_leaderboard_cache(&mut self, ui: &hudhook::imgui::Ui, max_width: f32) {
+        profile_span!("refresh_leaderboard_cache");
         let local_igt_bucket = self
             .read_igt()
             .map(|igt| igt / LEADERBOARD_REFRESH_INTERVAL_MS);
@@ -586,6 +588,7 @@ impl RaceTracker {
         cache.max_gap_width = 0.0;
         cache.max_right_width = 0.0;
 
+        profile_span!("leaderboard_rows");
         for (i, p) in participants.iter().enumerate() {
             let computed_gap_ms = if !has_leader {
                 None
