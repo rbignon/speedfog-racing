@@ -307,6 +307,14 @@
 		prevFinished = myParticipantFinished;
 	});
 
+	let prevPlaying = $state(false);
+	$effect(() => {
+		if (isParticipantPlaying && !prevPlaying && chatActiveTab === 'public') {
+			chatActiveTab = 'participants';
+		}
+		prevPlaying = isParticipantPlaying;
+	});
+
 	// Debug: force full DAG view even as participant (call __debugDagFull() in console)
 	let forceFullDag = $state(false);
 	if (typeof window !== 'undefined') {
