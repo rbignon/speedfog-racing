@@ -15,6 +15,8 @@ use std::fmt;
 use libeldenring::memedit::PointerChain;
 use tracing::{debug, info, warn};
 
+use crate::profile_span;
+
 /// Diagnostic status of the event flag reader.
 pub enum FlagReaderStatus {
     /// base_ptr.read() returned None (memory not readable)
@@ -101,6 +103,7 @@ impl EventFlagReader {
     /// tree from save data on area transitions. Saved flags (0xxx/4xxx/7-9xxx
     /// offsets) persist; temporary flags (2xxx/5xxx) are lost on reload.
     pub fn set_flag(&self, flag_id: u32, value: bool) -> bool {
+        profile_span!("event_flag.set_flag");
         let manager = match self.base_ptr.read() {
             Some(m) if m != 0 => m,
             _ => return false,
@@ -151,6 +154,7 @@ impl EventFlagReader {
     ///
     /// Returns `None` if memory read fails (game loading, etc.)
     pub fn is_flag_set(&self, flag_id: u32) -> Option<bool> {
+        profile_span!("event_flag.is_flag_set");
         let manager = self.base_ptr.read()?;
         if manager == 0 {
             return None;
@@ -183,6 +187,7 @@ impl EventFlagReader {
     /// Call once per poll cycle, then use `is_flag_set_fast` / `set_flag_fast`
     /// for each individual flag to skip the tree traversal.
     pub fn resolve_category(&self, flag_id: u32) -> Option<CategoryPage> {
+        profile_span!("event_flag.resolve_category");
         let manager = self.base_ptr.read()?;
         if manager == 0 {
             return None;
@@ -251,6 +256,7 @@ impl EventFlagReader {
     /// Convenience wrapper: dispatches to `is_flag_set_fast` when a page is
     /// provided, otherwise falls back to the full `is_flag_set` tree traversal.
     pub fn is_flag_set_cached(&self, flag_id: u32, page: Option<&CategoryPage>) -> Option<bool> {
+        profile_span!("event_flag.is_flag_set_cached");
         match page {
             Some(p) => self.is_flag_set_fast(flag_id, p),
             None => self.is_flag_set(flag_id),
@@ -331,6 +337,7 @@ impl EventFlagReader {
     /// - `+0x28`: address calculation mode (1=formula, 2=absent, >2=direct ptr)
     /// - `+0x30`: data pointer or multiplier (depends on mode)
     fn find_category_page(&self, manager: usize, category: u32) -> Option<usize> {
+        profile_span!("event_flag.find_category_page");
         // Root node at manager + 0x38
         let root: usize = PointerChain::<usize>::new(&[manager + 0x38]).read()?;
         if root == 0 {
