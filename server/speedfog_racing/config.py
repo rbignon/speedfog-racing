@@ -48,5 +48,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = False
 
+    # Sentry
+    sentry_dsn: str = ""
+    sentry_environment: str = "production"
+
 
 settings = Settings()  # type: ignore[call-arg]  # populated from env vars / .env file
