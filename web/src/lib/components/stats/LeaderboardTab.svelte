@@ -152,8 +152,8 @@
 					higher-rated players earns more. Harder seeds give a small bonus to all participants.
 				</p>
 				<p class="elo-explanation">
-					Rankings factor in confidence: when two players have similar ratings, the one with more
-					races ranks higher.
+					Confidence dots indicate how settled a
+					rating is based on the number of races played.
 				</p>
 				<div class="confidence-legend">
 					<span class="legend-item">
