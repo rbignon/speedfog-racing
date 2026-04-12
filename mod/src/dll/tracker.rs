@@ -17,6 +17,7 @@ use crate::core::flag_buffer::FlagBuffer;
 use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
+use crate::profile_span;
 
 use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
@@ -425,6 +426,7 @@ impl RaceTracker {
     }
 
     pub fn update(&mut self) {
+        profile_span!("tracker_update");
         // Process hotkeys at start of frame
         begin_hotkey_frame();
 
@@ -455,25 +457,31 @@ impl RaceTracker {
             }
         }
 
-        // Poll WebSocket
-        while let Some(msg) = self.ws_client.poll() {
-            self.handle_ws_message(msg);
+        {
+            profile_span!("ws_poll");
+            // Poll WebSocket
+            while let Some(msg) = self.ws_client.poll() {
+                self.handle_ws_message(msg);
+            }
         }
 
         let need_live_snapshot = self.show_ui || self.ws_client.is_connected();
-        self.frame_snapshot = FrameSnapshot {
-            igt_ms: need_live_snapshot
-                .then(|| self.game_state.read_igt())
-                .flatten(),
-            death_count: need_live_snapshot
-                .then(|| self.game_state.read_deaths())
-                .flatten(),
-            position_readable: self.game_state.is_position_readable(),
-            loading_screen: if self.pending_zone_update.is_some() {
-                self.game_state.is_in_loading_screen()
-            } else {
-                None
-            },
+        self.frame_snapshot = {
+            profile_span!("frame_snapshot");
+            FrameSnapshot {
+                igt_ms: need_live_snapshot
+                    .then(|| self.game_state.read_igt())
+                    .flatten(),
+                death_count: need_live_snapshot
+                    .then(|| self.game_state.read_deaths())
+                    .flatten(),
+                position_readable: self.game_state.is_position_readable(),
+                loading_screen: if self.pending_zone_update.is_some() {
+                    self.game_state.is_in_loading_screen()
+                } else {
+                    None
+                },
+            }
         };
 
         // Check position readability once per frame for loading screen detection.
@@ -510,6 +518,7 @@ impl RaceTracker {
 
         // Loading screen exit: send deferred event_flags (certain) or zone_query (probabilistic)
         if position_readable && !self.was_position_readable {
+            profile_span!("loading_exit_scan");
             // Force one immediate flag scan to catch flags set during loading
             // (e.g. Erdtree burn, Maliketh warp) that the 10Hz poll couldn't read
             // because is_flag_set() returns None while position is unreadable.
@@ -623,6 +632,7 @@ impl RaceTracker {
         // deferred until loading exit; finish_event is sent immediately.
         if !self.event_ids.is_empty() && self.last_flag_poll.elapsed() >= Duration::from_millis(100)
         {
+            profile_span!("event_flag_poll");
             self.last_flag_poll = Instant::now();
 
             // Log flag reader status transitions (not every tick)
