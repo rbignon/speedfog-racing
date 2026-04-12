@@ -50,10 +50,30 @@ fn init_logging(hmodule: HINSTANCE) {
         let subscriber = Registry::default()
             .with(filter)
             .with(fmt::layer().with_writer(non_blocking).with_ansi(false));
+
+        #[cfg(feature = "profile-tracy")]
+        let subscriber = subscriber.with(tracing_tracy::TracyLayer::default());
+
         tracing::subscriber::set_global_default(subscriber).ok();
     } else {
         // Fallback: stderr only (original behavior)
-        fmt().with_env_filter(filter).with_ansi(false).init();
+        let subscriber = Registry::default()
+            .with(filter)
+            .with(fmt::layer().with_ansi(false));
+
+        #[cfg(feature = "profile-tracy")]
+        let subscriber = subscriber.with(tracing_tracy::TracyLayer::default());
+
+        tracing::subscriber::set_global_default(subscriber).ok();
+    }
+
+    #[cfg(feature = "profile-tracy")]
+    {
+        // Force the Tracy client to start now so `frame_mark()` calls find it
+        // already running on the first frame. Drop the handle: the client is
+        // a process-wide singleton and stays alive for the DLL's lifetime.
+        let _ = tracy_client::Client::start();
+        info!("Tracy profiling client started");
     }
 }
 
