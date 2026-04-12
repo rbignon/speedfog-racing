@@ -8,6 +8,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import sentry_sdk
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -37,6 +38,14 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.sentry_environment,
+        release=__version__,
+        traces_sample_rate=0,
+    )
 
 
 @asynccontextmanager
@@ -141,12 +150,14 @@ async def health_check() -> dict[str, str]:
 @app.websocket("/ws/mod/{race_id}")
 async def websocket_mod(websocket: WebSocket, race_id: uuid.UUID) -> None:
     """WebSocket endpoint for mod connections."""
+    sentry_sdk.set_tag("race_id", str(race_id))
     await handle_mod_websocket(websocket, race_id, async_session_maker)
 
 
 @app.websocket("/ws/race/{race_id}")
 async def websocket_spectator(websocket: WebSocket, race_id: uuid.UUID) -> None:
     """WebSocket endpoint for spectator connections."""
+    sentry_sdk.set_tag("race_id", str(race_id))
     await handle_spectator_websocket(websocket, race_id, async_session_maker)
 
 
