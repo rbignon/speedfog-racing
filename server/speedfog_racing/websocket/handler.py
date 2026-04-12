@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Generic, Protocol, TypeVar
 
+import sentry_sdk
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -48,6 +49,12 @@ MSG_RATE_LIMIT = 200  # max messages per window (normal mod sends ~2/s)
 # The mod sends each flag as a separate WebSocket message within a single frame,
 # so they arrive with near-identical IGT. This tolerance window deduplicates them.
 SHARED_ENTRANCE_DEDUP_MS = 1000
+
+
+def sentry_breadcrumb(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Mark a WebSocket message handler as generating a Sentry breadcrumb."""
+    func._sentry_breadcrumb = True  # type: ignore[attr-defined]
+    return func
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +320,7 @@ class BaseHandler(ABC):
             if not await self._initialize():
                 return
             self._connected = True
+            self._configure_sentry_scope()
             heartbeat_task = asyncio.create_task(heartbeat_loop(self.websocket))
             try:
                 await self._message_loop()
@@ -326,6 +334,7 @@ class BaseHandler(ABC):
             logger.info("%s disconnected: %s", type(self).__name__, self.entity_id)
         except Exception:
             logger.exception("%s error: %s", type(self).__name__, self.entity_id)
+            sentry_sdk.capture_exception()
         finally:
             if self._connected:
                 await self._cleanup()
@@ -350,6 +359,12 @@ class BaseHandler(ABC):
         msg_type = msg.get("type")
         handler = self._message_handlers.get(msg_type)  # type: ignore[arg-type]
         if handler:
+            if getattr(handler, "_sentry_breadcrumb", False):
+                sentry_sdk.add_breadcrumb(
+                    category="websocket",
+                    message=f"Received: {msg_type}",
+                    level="info",
+                )
             await handler(msg)
         else:
             logger.warning("%s: unknown message type: %s", type(self).__name__, msg_type)
@@ -359,6 +374,11 @@ class BaseHandler(ABC):
 
     @abstractmethod
     async def _cleanup(self) -> None: ...
+
+    def _configure_sentry_scope(self) -> None:
+        """Set Sentry tags for this connection. Override to enrich."""
+        sentry_sdk.set_tag("entity_id", str(self.entity_id))
+        sentry_sdk.set_tag("handler", type(self).__name__)
 
 
 # ---------------------------------------------------------------------------
