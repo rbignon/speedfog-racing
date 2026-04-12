@@ -542,7 +542,6 @@ impl RaceTracker {
     }
 
     fn refresh_leaderboard_cache(&mut self, ui: &hudhook::imgui::Ui, max_width: f32) {
-        profile_span!("refresh_leaderboard_cache");
         let local_igt_bucket = self
             .read_igt()
             .map(|igt| igt / LEADERBOARD_REFRESH_INTERVAL_MS);
@@ -552,6 +551,7 @@ impl RaceTracker {
         if !should_refresh {
             return;
         }
+        profile_span!("refresh_leaderboard_cache");
 
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let is_setup = self
