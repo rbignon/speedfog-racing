@@ -23,7 +23,7 @@ first_layer_type = "legacy_dungeon"
 [structure.final_boss_candidates]
 # Base game remembrance bosses
 stormveil_godrick = 1      # through-pass
-academy_library = 2        # dead-end
+academy_library = 1        # through-pass
 caelid_radahn = 1          # through-pass
 leyndell_throne = 1        # through-pass
 volcano_rykard = 2         # dead-end
@@ -39,12 +39,12 @@ belurat_boss = 1           # through-pass
 ensis_boss = 1             # through-pass
 fissure_boss = 1           # through-pass
 scaduview_gaius = 1        # through-pass
-midramanse_boss = 2        # dead-end
-scadutree_base = 2         # dead-end
-storehouse_messmer = 3     # through-pass
+midramanse_boss = 1        # through-pass
+scadutree_base = 1         # through-pass
+storehouse_messmer = 2     # through-pass
 rauhruins_romina = 1       # through-pass
 fingergrounds = 2          # dead-end
-jaggedpeak_bayle = 3       # through-pass
+jaggedpeak_bayle = 2       # through-pass
 enirilim_radahn = 5        # dead-end
 
 [starting_items]
