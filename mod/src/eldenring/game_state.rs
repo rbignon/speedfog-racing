@@ -14,6 +14,7 @@ use crate::core::constants::{
 use crate::core::map_utils::format_map_id;
 use crate::core::traits::GameStateReader;
 use crate::core::types::PlayerPosition;
+use crate::profile_span;
 
 /// Elden Ring game state reader
 ///
@@ -68,6 +69,7 @@ impl GameState {
     ///
     /// Returns the total number of deaths for the current character.
     pub fn read_deaths(&self) -> Option<u32> {
+        profile_span!("read_deaths");
         self.death_count_ptr.read()
     }
 
@@ -75,6 +77,7 @@ impl GameState {
     ///
     /// Returns the IGT in milliseconds.
     pub fn read_igt(&self) -> Option<u32> {
+        profile_span!("read_igt");
         // libeldenring reads IGT as usize but it's actually a u32 in milliseconds
         self.pointers.igt.read().map(|v| v as u32)
     }
@@ -84,6 +87,7 @@ impl GameState {
     /// Returns `Some(true)` if loading, `Some(false)` if gameplay, `None` if
     /// the pointer chain is unreadable (e.g., game not fully initialized).
     pub fn is_in_loading_screen(&self) -> Option<bool> {
+        profile_span!("is_in_loading_screen");
         self.loading_screen_ptr.read().map(|v| v != 0)
     }
 
@@ -91,6 +95,7 @@ impl GameState {
     /// for the map ID. Use this instead of `read_position().is_some()` when
     /// only a boolean check is needed (e.g., loading screen detection).
     pub fn is_position_readable(&self) -> bool {
+        profile_span!("is_position_readable");
         let coords = match self.pointers.global_position.read() {
             Some(c) => c,
             None => return false,
@@ -123,6 +128,7 @@ impl GameStateReader for GameState {
     }
 
     fn read_position(&self) -> Option<PlayerPosition> {
+        profile_span!("read_position");
         let [x, y, z, _, _] = self.pointers.global_position.read()?;
         let map_id = self.pointers.global_position.read_map_id()?;
 
