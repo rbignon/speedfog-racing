@@ -51,8 +51,25 @@ hudhook = { version = "0.7.0", features = ["dx12", "inject"], default-features =
 retour = { version = "0.3", default-features = false }
 
 # --- Profiling (optional, behind `profile-tracy` feature) ---
-tracing-tracy = { version = "0.11", optional = true, default-features = false, features = ["enable", "system-tracing", "context-switch-tracing", "sampling", "code-transfer", "broadcast", "callstack-inlines"] }
-tracy-client = { version = "0.17", optional = true }
+# `enable` is the master switch on both crates; removing it makes the profiler a no-op.
+tracing-tracy = { version = "0.11", optional = true, default-features = false, features = [
+    "enable",
+    "system-tracing",
+    "context-switch-tracing",
+    "sampling",
+    "code-transfer",
+    "broadcast",
+    "callstack-inlines",
+] }
+tracy-client = { version = "0.18", optional = true, default-features = false, features = [
+    "enable",
+    "system-tracing",
+    "context-switch-tracing",
+    "sampling",
+    "code-transfer",
+    "broadcast",
+    "callstack-inlines",
+] }
 
 # --- Windows API ---
 [target.'cfg(windows)'.dependencies.windows]
