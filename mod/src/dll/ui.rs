@@ -10,6 +10,8 @@ use hudhook::imgui::{
 use hudhook::{ImguiRenderLoop, RenderContext};
 use tracing::{error, info};
 
+use crate::profile_span;
+
 use super::death_icon::DeathIcon;
 use super::tracker::{
     FlagReadResult, LeaderboardRowCache, RaceTracker, RenderBuffers,
@@ -69,6 +71,8 @@ impl ImguiRenderLoop for RaceTracker {
     }
 
     fn render(&mut self, ui: &mut hudhook::imgui::Ui) {
+        profile_span!("frame");
+
         // Per-frame update
         self.update();
 
@@ -79,6 +83,7 @@ impl ImguiRenderLoop for RaceTracker {
                 .size([1.0, 1.0], Condition::Always)
                 .no_decoration()
                 .build(|| {});
+            crate::core::profile::frame_mark();
             return;
         }
 
@@ -101,32 +106,37 @@ impl ImguiRenderLoop for RaceTracker {
         let flags =
             WindowFlags::NO_TITLE_BAR | WindowFlags::ALWAYS_AUTO_RESIZE | WindowFlags::NO_SCROLLBAR;
 
-        ui.window("SpeedFog Race")
-            .position(
-                [
-                    dw - max_width - self.config.overlay.position_offset_x,
-                    self.config.overlay.position_offset_y,
-                ],
-                Condition::FirstUseEver,
-            )
-            .flags(flags)
-            .build(|| {
-                self.render_seed_mismatch_warning(ui);
-                self.render_player_status(ui, max_width, &mut bufs);
-                self.render_exits(ui, max_width);
-                if !self.config.server.training && self.show_leaderboard {
-                    ui.separator();
-                    self.render_leaderboard(ui, max_width, &mut bufs);
-                }
-                self.render_status_message(ui);
-                if self.show_debug {
-                    ui.separator();
-                    self.render_debug(ui);
-                }
-            });
+        {
+            profile_span!("imgui_window");
+            ui.window("SpeedFog Race")
+                .position(
+                    [
+                        dw - max_width - self.config.overlay.position_offset_x,
+                        self.config.overlay.position_offset_y,
+                    ],
+                    Condition::FirstUseEver,
+                )
+                .flags(flags)
+                .build(|| {
+                    self.render_seed_mismatch_warning(ui);
+                    self.render_player_status(ui, max_width, &mut bufs);
+                    self.render_exits(ui, max_width);
+                    if !self.config.server.training && self.show_leaderboard {
+                        ui.separator();
+                        self.render_leaderboard(ui, max_width, &mut bufs);
+                    }
+                    self.render_status_message(ui);
+                    if self.show_debug {
+                        ui.separator();
+                        self.render_debug(ui);
+                    }
+                });
+        }
 
         // Put buffers back (preserves capacity for next frame)
         self.render_bufs = bufs;
+
+        crate::core::profile::frame_mark();
     }
 }
 
