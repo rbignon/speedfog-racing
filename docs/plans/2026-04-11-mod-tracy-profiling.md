@@ -6,7 +6,7 @@
 
 **Architecture:** All profiling is gated behind a Cargo feature `profile-tracy`. When the feature is on, `lib.rs` registers a `tracing-tracy` layer alongside the existing file logger. Instrumentation uses `tracing::debug_span!` for outer spans (cheap even when the feature is off, because the file logger's default `info` filter turns them into a callsite no-op). Inner hot-loop spans are wrapped in a `profile_span!` macro that is compiled out entirely when the feature is off. A single `tracy_client::frame_mark()` call in `ImguiRenderLoop::render` draws the frame boundary on Tracy's timeline.
 
-**Tech Stack:** Rust 2021, tracing 0.1 (already a dep), tracing-subscriber 0.3 (already a dep), tracing-tracy 0.11, tracy-client 0.18, Tracy server UI 0.11.
+**Tech Stack:** Rust 2021, tracing 0.1 (already a dep), tracing-subscriber 0.3 (already a dep), tracing-tracy 0.11, tracy-client 0.18, Tracy profiler v0.13.1.
 
 ---
 

@@ -22,10 +22,10 @@ UI over TCP port `8086`. You can see:
 
 ## Prerequisites
 
-1. **Tracy server 0.11.** Download from <https://github.com/wolfpld/tracy/releases>
-   or build from source. The major version of the server **must match** the
-   major version of the `tracy-client` crate used by the mod, otherwise the
-   client will refuse to connect.
+1. **Tracy profiler v0.13.1.** Download from <https://github.com/wolfpld/tracy/releases>.
+   The server version **must match** the protocol version embedded in
+   `tracy-client-sys`. Check the version table at
+   <https://github.com/nagisa/rust_tracy_client> if you bump crate versions.
 2. **Windows MSVC toolchain** for building the mod (same as normal dev).
 3. **Elden Ring launched offline** (already required for `hudhook` injection).
 
@@ -44,7 +44,7 @@ opens a TCP listener.
 
 ## Capture a trace
 
-1. Start the Tracy server UI (`Tracy.exe`). Click **Connect** and leave the
+1. Start the Tracy profiler (`tracy-profiler.exe`). Click **Connect** and leave the
    address at `127.0.0.1`.
 2. Inject the profiling DLL into Elden Ring the same way you normally inject
    the mod (hudhook injector or your usual launcher). You should see a log
