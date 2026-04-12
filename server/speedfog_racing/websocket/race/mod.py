@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import sentry_sdk
 from fastapi import WebSocket
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -210,6 +211,13 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         self._cached_graph_json: dict[str, Any] | None = None
         # Detached participant from auth phase, used by _on_authenticated
         self._auth_participant: Participant | None = None
+
+    def _configure_sentry_scope(self) -> None:
+        super()._configure_sentry_scope()
+        if self._participant_id:
+            sentry_sdk.set_tag("participant_id", str(self._participant_id))
+        if self._user_id:
+            sentry_sdk.set_user({"id": str(self._user_id)})
 
     # ------------------------------------------------------------------
     # Authentication

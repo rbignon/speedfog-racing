@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+import sentry_sdk
 from fastapi import WebSocket
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -75,6 +76,11 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         self._session_id = session_id  # Typed alias for self.entity_id
         self._user_id: uuid.UUID | None = None
         self._cached_graph_json: dict[str, Any] | None = None
+
+    def _configure_sentry_scope(self) -> None:
+        super()._configure_sentry_scope()
+        if self._user_id:
+            sentry_sdk.set_user({"id": str(self._user_id)})
 
     # ------------------------------------------------------------------
     # Authentication
