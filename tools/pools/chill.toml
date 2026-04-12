@@ -52,3 +52,7 @@ ashes_of_war = 5
 difficulty = 35
 nerf_gargoyles = true
 nerf_malenia = true
+
+[enemy]
+randomize_bosses = "minor"
+swap_boss = true
