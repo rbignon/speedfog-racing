@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -86,6 +87,11 @@ from speedfog_racing.websocket.schemas import persist_system_chat
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def sentry_race_context(race_id: UUID) -> None:
+    """FastAPI dependency: tag the current Sentry scope with race_id."""
+    sentry_sdk.set_tag("race_id", str(race_id))
 
 
 def _seed_total_nodes(seed: Seed) -> int:
@@ -481,6 +487,7 @@ async def get_race(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User | None = Depends(get_current_user_optional),
+    _sentry: None = Depends(sentry_race_context),
 ) -> RaceDetailResponse:
     """Get race details with participants and casters."""
     race = await _get_race_or_404(
@@ -495,6 +502,7 @@ async def update_race(
     request: UpdateRaceRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> RaceResponse:
     """Update race properties. Organizer only."""
     race = await _get_race_or_404(db, race_id, load_participants=True)
@@ -608,6 +616,7 @@ async def add_participant(
     request: AddParticipantRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> AddParticipantResponse:
     """Add a participant to a race.
 
@@ -743,6 +752,7 @@ async def remove_participant(
     participant_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> None:
     """Remove a participant from a race."""
     race = await _get_race_or_404(db, race_id)
@@ -787,6 +797,7 @@ async def revoke_invite(
     invite_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> None:
     """Revoke a pending invite from a race."""
     race = await _get_race_or_404(db, race_id)
@@ -837,6 +848,7 @@ async def add_caster(
     request: AddCasterRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> CasterResponse:
     """Add a caster to a race. Works at any race status."""
     race = await _get_race_or_404(db, race_id, load_participants=True)
@@ -892,6 +904,7 @@ async def remove_caster(
     caster_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> None:
     """Remove a caster from a race."""
     race = await _get_race_or_404(db, race_id)
@@ -929,6 +942,7 @@ async def join_race(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> ParticipantResponse:
     """Self-register as a participant in an open-registration race."""
     race = await _get_race_or_404(db, race_id, load_participants=True)
@@ -1034,6 +1048,7 @@ async def leave_race(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> None:
     """Self-remove from a race during setup."""
     race = await _get_race_or_404(db, race_id)
@@ -1089,6 +1104,7 @@ async def cast_join(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> RaceDetailResponse:
     """Self-register as a caster for a race."""
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
@@ -1139,6 +1155,7 @@ async def cast_leave(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> RaceDetailResponse:
     """Self-remove as a caster from a race."""
     race = await _get_race_or_404(db, race_id)
@@ -1172,6 +1189,7 @@ async def start_race(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> RaceResponse:
     """Start the race immediately."""
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
@@ -1256,6 +1274,7 @@ async def reroll_seed(
     body: RerollSeedRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> RaceDetailResponse:
     """Re-roll the seed for a SETUP race."""
     race = await _get_race_or_404(
@@ -1329,6 +1348,7 @@ async def release_seeds(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> RaceDetailResponse:
     """Release seeds so participants can download their packs."""
     race = await _get_race_or_404(
@@ -1385,6 +1405,7 @@ async def reset_race(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> RaceResponse:
     """Reset a race back to SETUP status, clearing all participant progress."""
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
@@ -1429,6 +1450,7 @@ async def finish_race(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> RaceResponse:
     """Force finish a running race."""
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
@@ -1488,6 +1510,7 @@ async def abandon_race(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> RaceResponse:
     """Abandon a running race as a participant."""
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
@@ -1564,6 +1587,7 @@ async def delete_race(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> None:
     """Delete a race and all associated data."""
     race = await _get_race_or_404(db, race_id)
@@ -1604,6 +1628,7 @@ async def download_my_seed_pack(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
 ) -> StreamingResponse:
     """Download the authenticated user's personalized seed pack for a race.
 
