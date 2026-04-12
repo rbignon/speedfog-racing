@@ -415,6 +415,10 @@ class BaseModHandler(BaseHandler, Generic[T]):
     async def _cleanup(self) -> None:
         await self._on_disconnect()
 
+    def _configure_sentry_scope(self) -> None:
+        super()._configure_sentry_scope()
+        sentry_sdk.set_tag("connection_type", "mod")
+
     async def _auth_phase(self) -> bool:
         """Run the auth handshake: timeout, JSON parse, type/token check, delegate."""
         try:
@@ -587,6 +591,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             history_changed=history_changed,
         )
 
+    @sentry_breadcrumb
     async def _handle_event_flag(self, msg: dict[str, Any]) -> None:
         """Handle fog gate traversal or boss kill event flag."""
         flag_id = msg.get("flag_id")
@@ -707,6 +712,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 is_first_visit=is_first_visit,
             )
 
+    @sentry_breadcrumb
     async def _handle_zone_query(self, msg: dict[str, Any]) -> None:
         """Handle zone_query from mod (loading screen exit overlay update)."""
         zq = parse_zone_query_input(msg)
