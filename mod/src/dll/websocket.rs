@@ -17,6 +17,7 @@ use super::config::ServerSettings;
 use crate::core::protocol::{
     is_permanent_close, ClientMessage, ExitInfo, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage,
 };
+use crate::profile_span;
 
 // =============================================================================
 // TYPES
@@ -295,6 +296,10 @@ fn websocket_thread(
     incoming_tx: Sender<IncomingMessage>,
     shutdown_flag: Arc<AtomicBool>,
 ) {
+    #[cfg(feature = "profile-tracy")]
+    tracy_client::set_thread_name!("ws-worker");
+    profile_span!("ws_thread");
+
     let mut reconnect_delay = Duration::from_secs(1);
     let max_delay = Duration::from_secs(30);
     let mut consecutive_failures: u32 = 0;
