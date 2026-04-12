@@ -4,8 +4,13 @@
 //! disabled they are zero-cost no-ops (the macro expands to an empty block,
 //! and `frame_mark()` becomes an empty function the compiler inlines away).
 //!
-//! When the feature is enabled, `profile_span!` expands to a `debug_span!`
+//! When the feature is enabled, `profile_span!` expands to an `info_span!`
 //! that is guarded-entered, and `frame_mark()` forwards to Tracy.
+//!
+//! We use `info_span!` (not `debug_span!`) so the spans pass through the
+//! global `EnvFilter` (which defaults to "info") and reach the `TracyLayer`.
+//! The `fmt` layer does not render span enter/exit events by default, so
+//! this adds no noise to the log file.
 
 /// Enter a profiling span scoped to the surrounding block.
 ///
@@ -24,10 +29,10 @@
 #[macro_export]
 macro_rules! profile_span {
     ($name:expr) => {
-        let _profile_span_guard = ::tracing::debug_span!($name).entered();
+        let _profile_span_guard = ::tracing::info_span!($name).entered();
     };
     ($name:expr, $($field:tt)*) => {
-        let _profile_span_guard = ::tracing::debug_span!($name, $($field)*).entered();
+        let _profile_span_guard = ::tracing::info_span!($name, $($field)*).entered();
     };
 }
 
