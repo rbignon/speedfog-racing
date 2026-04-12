@@ -5,6 +5,7 @@ pub mod constants;
 pub mod flag_buffer;
 pub mod format;
 pub mod map_utils;
+pub mod profile;
 pub mod protocol;
 pub mod traits;
 pub mod types;
