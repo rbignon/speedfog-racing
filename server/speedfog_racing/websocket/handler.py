@@ -508,6 +508,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 await asyncio.wait_for(
                     self.websocket.send_text(json.dumps(msg)), timeout=SEND_TIMEOUT
                 )
+                logger.info(
+                    "zone_update sent: node_id=%s entity=%s",
+                    node_id,
+                    self.entity_id,
+                )
             except Exception:
                 logger.warning(
                     "Failed to send zone_update: entity=%s, node=%s",
@@ -688,6 +693,15 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     new_entry["message_id"] = message_id
                 entity.zone_history = [*old_history, new_entry]
 
+                logger.info(
+                    "event_flag: flag_id=%d node_id=%s igt_ms=%d first_visit=%s entity=%s",
+                    flag_id,
+                    node_id,
+                    igt,
+                    is_first_visit,
+                    self.entity_id,
+                )
+
                 self._on_zone_entered(entity, node_id, seed_graph, igt)
 
                 await db.commit()
@@ -747,7 +761,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     await self._send_zone_query_ack(message_id)
                 return
 
-            node_id = resolve_zone_query(
+            result = resolve_zone_query(
                 graph_json,
                 get_graces_mapping(),
                 grace_entity_id=zq.grace_entity_id,
@@ -756,6 +770,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 play_region_id=zq.play_region_id,
                 zone_history=entity.zone_history,
             )
+            node_id = result.node_id
             if node_id is None:
                 logger.debug(
                     "zone_query: unresolved (grace=%s, map=%s) for %s",
@@ -766,6 +781,16 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 if message_id is not None:
                     await self._send_zone_query_ack(message_id)
                 return
+
+            logger.info(
+                "zone_query: node_id=%s strategy=%s candidates=%d grace=%s map_id=%s entity=%s",
+                node_id,
+                result.strategy,
+                result.candidates,
+                zq.grace_entity_id,
+                zq.map_id,
+                self.entity_id,
+            )
 
             # Fast travel (Strategy 1 grace lookup) bypasses the history filter,
             # so it can resolve to a node that has never been traversed via fog.

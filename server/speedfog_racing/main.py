@@ -45,6 +45,7 @@ if settings.sentry_dsn:
         environment=settings.sentry_environment,
         release=__version__,
         traces_sample_rate=0,
+        enable_logs=True,
     )
 
 
