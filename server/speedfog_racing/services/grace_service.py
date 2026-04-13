@@ -31,12 +31,12 @@ class ZoneQueryResult:
 
     strategy values: "grace", "map+position", "map+history", "map+recent",
     "map", or None (unresolved).
-    candidates is the count of matching graph nodes before the history filter.
+    candidates is the list of matching graph node_ids before the history filter.
     """
 
     node_id: str | None
     strategy: str | None = None
-    candidates: int = 0
+    candidates: tuple[str, ...] = ()
 
 
 def load_graces_mapping() -> dict[str, dict[str, Any]]:
@@ -140,7 +140,7 @@ def resolve_zone_query(
                 if any(z in zone_ids_for_map for z in zones):
                     matching.append(nid)
 
-        candidates_before_history = len(matching)
+        candidates_before_history = tuple(matching)
 
         # Filter by history: player can only be in an explored zone
         # (zone_query is only sent on death/respawn/fast-travel, never on
@@ -152,7 +152,7 @@ def resolve_zone_query(
         if len(matching) == 1:
             if position_narrowed:
                 strategy = "map+position"
-            elif candidates_before_history > 1:
+            elif len(candidates_before_history) > 1:
                 strategy = "map+history"
             else:
                 strategy = "map"

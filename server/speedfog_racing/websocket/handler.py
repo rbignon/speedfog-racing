@@ -783,10 +783,10 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 return
 
             logger.info(
-                "zone_query: node_id=%s strategy=%s candidates=%d grace=%s map_id=%s entity=%s",
+                "zone_query: node_id=%s strategy=%s candidates=%s grace=%s map_id=%s entity=%s",
                 node_id,
                 result.strategy,
-                result.candidates,
+                ",".join(result.candidates) if result.candidates else "-",
                 zq.grace_entity_id,
                 zq.map_id,
                 self.entity_id,

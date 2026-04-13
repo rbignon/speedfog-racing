@@ -172,7 +172,7 @@ def test_resolve_zone_query_ambiguous_narrowed_by_history():
     result = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
     assert result.node_id == "node_a"
     assert result.strategy == "map+history"
-    assert result.candidates == 2
+    assert set(result.candidates) == {"node_a", "node_b"}
 
 
 def test_resolve_zone_query_ambiguous_both_explored():
