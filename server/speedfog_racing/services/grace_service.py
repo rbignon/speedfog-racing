@@ -11,6 +11,7 @@ submaps.txt (position-based disambiguation) via the zone_resolver module.
 
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,20 @@ from speedfog_racing.services.zone_resolver import (
 logger = logging.getLogger(__name__)
 
 _GRACES_FILE = Path(__file__).parent.parent.parent / "data" / "graces.json"
+
+
+@dataclass(frozen=True, slots=True)
+class ZoneQueryResult:
+    """Result of resolve_zone_query with strategy metadata for logging.
+
+    strategy values: "grace", "map+position", "map+history", "map+recent",
+    "map", or None (unresolved).
+    candidates is the count of matching graph nodes before the history filter.
+    """
+
+    node_id: str | None
+    strategy: str | None = None
+    candidates: int = 0
 
 
 def load_graces_mapping() -> dict[str, dict[str, Any]]:
@@ -82,7 +97,7 @@ def resolve_zone_query(
     position: tuple[float, float, float] | None = None,
     play_region_id: int | None = None,  # reserved for future disambiguation
     zone_history: list[dict[str, Any]] | None = None,
-) -> str | None:
+) -> ZoneQueryResult:
     """Resolve a zone query to a graph node_id.
 
     Strategies (in order):
@@ -99,11 +114,12 @@ def resolve_zone_query(
     if grace_entity_id is not None and grace_entity_id != 0:
         node_id = resolve_grace_to_node(grace_entity_id, graph_json, graces_mapping)
         if node_id is not None:
-            return node_id
+            return ZoneQueryResult(node_id=node_id, strategy="grace")
 
     # Strategy 2: map_id → fog.txt zone lookup + position disambiguation
     if map_id is not None:
         zone_ids_for_map = get_zones_for_map(map_id)
+        position_narrowed = False
 
         # Use position to narrow candidates, but only for fast travel (grace
         # present). On death/respawn (no grace_entity_id), position is the
@@ -113,6 +129,7 @@ def resolve_zone_query(
             resolved = resolve_zone_by_position(map_id, *position)
             if resolved and resolved in zone_ids_for_map:
                 zone_ids_for_map = {resolved}
+                position_narrowed = True
 
         # Find graph nodes whose zones intersect candidates
         nodes = graph_json.get("nodes", {})
@@ -123,6 +140,8 @@ def resolve_zone_query(
                 if any(z in zone_ids_for_map for z in zones):
                     matching.append(nid)
 
+        candidates_before_history = len(matching)
+
         # Filter by history: player can only be in an explored zone
         # (zone_query is only sent on death/respawn/fast-travel, never on
         # fog gate traversal, so the target zone is always already explored)
@@ -131,7 +150,17 @@ def resolve_zone_query(
             matching = [nid for nid in matching if nid in explored]
 
         if len(matching) == 1:
-            return matching[0]
+            if position_narrowed:
+                strategy = "map+position"
+            elif candidates_before_history > 1:
+                strategy = "map+history"
+            else:
+                strategy = "map"
+            return ZoneQueryResult(
+                node_id=matching[0],
+                strategy=strategy,
+                candidates=candidates_before_history,
+            )
 
         # Death/remembrance fallback: pick most recently visited among candidates.
         # Only when grace_entity_id is absent: fast travel with failed grace lookup
@@ -141,6 +170,10 @@ def resolve_zone_query(
             for entry in reversed(zone_history):
                 candidate = str(entry.get("node_id", ""))
                 if candidate in matching_set:
-                    return candidate
+                    return ZoneQueryResult(
+                        node_id=candidate,
+                        strategy="map+recent",
+                        candidates=candidates_before_history,
+                    )
 
-    return None
+    return ZoneQueryResult(node_id=None)

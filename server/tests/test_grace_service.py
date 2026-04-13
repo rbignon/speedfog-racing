@@ -1,6 +1,7 @@
 """Unit tests for grace service."""
 
 from speedfog_racing.services.grace_service import (
+    ZoneQueryResult,
     load_graces_mapping,
     resolve_grace_to_node,
     resolve_zone_query,
@@ -91,17 +92,19 @@ def test_resolve_grace_to_node_zero():
 def test_resolve_zone_query_grace_primary():
     """grace_entity_id present → uses grace lookup (highest priority)."""
     mapping = load_graces_mapping()
-    node_id = resolve_zone_query(SAMPLE_GRAPH, mapping, grace_entity_id=10002950)
-    assert node_id == "stormveil_godrick_48fd"
+    result = resolve_zone_query(SAMPLE_GRAPH, mapping, grace_entity_id=10002950)
+    assert result.node_id == "stormveil_godrick_48fd"
+    assert result.strategy == "grace"
 
 
 def test_resolve_zone_query_grace_priority_over_map():
     """grace_entity_id takes priority even when map_id is also provided."""
     mapping = load_graces_mapping()
-    node_id = resolve_zone_query(
+    result = resolve_zone_query(
         SAMPLE_GRAPH, mapping, grace_entity_id=10002950, map_id="m60_44_36_00"
     )
-    assert node_id == "stormveil_godrick_48fd"
+    assert result.node_id == "stormveil_godrick_48fd"
+    assert result.strategy == "grace"
 
 
 def test_resolve_zone_query_map_id_unambiguous():
@@ -118,8 +121,9 @@ def test_resolve_zone_query_map_id_unambiguous():
         }
     }
     mapping = load_graces_mapping()
-    node_id = resolve_zone_query(graph, mapping, map_id="m12_04_00_00")
-    assert node_id == "ainsel_boss_node"
+    result = resolve_zone_query(graph, mapping, map_id="m12_04_00_00")
+    assert result.node_id == "ainsel_boss_node"
+    assert result.strategy == "map"
 
 
 def test_resolve_zone_query_map_id_ambiguous():
@@ -132,20 +136,23 @@ def test_resolve_zone_query_map_id_ambiguous():
         }
     }
     mapping = load_graces_mapping()
-    node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00")
-    assert node_id is None
+    result = resolve_zone_query(graph, mapping, map_id="m10_00_00_00")
+    assert result.node_id is None
+    assert result.strategy is None
 
 
 def test_resolve_zone_query_no_data():
     """No grace, no map → returns None."""
     mapping = load_graces_mapping()
-    assert resolve_zone_query(SAMPLE_GRAPH, mapping) is None
+    assert resolve_zone_query(SAMPLE_GRAPH, mapping) == ZoneQueryResult(node_id=None)
 
 
 def test_resolve_zone_query_unknown_map():
     """map_id not in fog.txt → returns None."""
     mapping = load_graces_mapping()
-    assert resolve_zone_query(SAMPLE_GRAPH, mapping, map_id="m99_99_99_99") is None
+    assert resolve_zone_query(SAMPLE_GRAPH, mapping, map_id="m99_99_99_99") == ZoneQueryResult(
+        node_id=None
+    )
 
 
 # --- resolve_zone_query: zone_history disambiguation ---
@@ -162,8 +169,10 @@ def test_resolve_zone_query_ambiguous_narrowed_by_history():
     }
     mapping = load_graces_mapping()
     history = [{"node_id": "node_a", "igt_ms": 0}]
-    node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
-    assert node_id == "node_a"
+    result = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
+    assert result.node_id == "node_a"
+    assert result.strategy == "map+history"
+    assert result.candidates == 2
 
 
 def test_resolve_zone_query_ambiguous_both_explored():
@@ -180,8 +189,9 @@ def test_resolve_zone_query_ambiguous_both_explored():
         {"node_id": "node_a", "igt_ms": 0},
         {"node_id": "node_b", "igt_ms": 5000},
     ]
-    node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
-    assert node_id == "node_b"
+    result = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
+    assert result.node_id == "node_b"
+    assert result.strategy == "map+recent"
 
 
 def test_resolve_zone_query_fast_travel_failed_grace_no_fallback():
@@ -201,14 +211,14 @@ def test_resolve_zone_query_fast_travel_failed_grace_no_fallback():
         {"node_id": "node_b", "igt_ms": 5000},
     ]
     # grace_entity_id=99999999 won't resolve, but its presence means fast travel
-    node_id = resolve_zone_query(
+    result = resolve_zone_query(
         graph,
         mapping,
         grace_entity_id=99999999,
         map_id="m10_00_00_00",
         zone_history=history,
     )
-    assert node_id is None
+    assert result.node_id is None
 
 
 def test_resolve_zone_query_death_most_recent_fallback():
@@ -226,13 +236,14 @@ def test_resolve_zone_query_death_most_recent_fallback():
         {"node_id": "leyndell_1259", "igt_ms": 400000},  # backtracked
     ]
     # No grace → death context. Most recent matching = leyndell_1259
-    node_id = resolve_zone_query(
+    result = resolve_zone_query(
         graph,
         mapping,
         map_id="m11_00_00_00",
         zone_history=history,
     )
-    assert node_id == "leyndell_1259"
+    assert result.node_id == "leyndell_1259"
+    assert result.strategy == "map+recent"
 
 
 def test_resolve_zone_query_ambiguous_empty_history():
@@ -244,8 +255,8 @@ def test_resolve_zone_query_ambiguous_empty_history():
         }
     }
     mapping = load_graces_mapping()
-    node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=[])
-    assert node_id is None
+    result = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=[])
+    assert result.node_id is None
 
 
 def test_resolve_zone_query_ambiguous_no_history_match():
@@ -258,8 +269,8 @@ def test_resolve_zone_query_ambiguous_no_history_match():
     }
     mapping = load_graces_mapping()
     history = [{"node_id": "some_other_node", "igt_ms": 0}]
-    node_id = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
-    assert node_id is None
+    result = resolve_zone_query(graph, mapping, map_id="m10_00_00_00", zone_history=history)
+    assert result.node_id is None
 
 
 # --- resolve_zone_query: Leyndell bug regression ---
@@ -289,13 +300,14 @@ def test_resolve_zone_query_leyndell_bug():
     }
     mapping = load_graces_mapping()
     history = [{"node_id": "leyndell_1259", "igt_ms": 120000}]
-    node_id = resolve_zone_query(
+    result = resolve_zone_query(
         graph,
         mapping,
         map_id="m11_00_00_00",
         zone_history=history,
     )
-    assert node_id == "leyndell_1259"
+    assert result.node_id == "leyndell_1259"
+    assert result.strategy == "map+history"
 
 
 def test_resolve_zone_query_leyndell_with_position_fast_travel():
@@ -322,7 +334,7 @@ def test_resolve_zone_query_leyndell_with_position_fast_travel():
 
     # Fast travel with unmapped grace: position disambiguates
     # Main city position (low Y) -> leyndell
-    node_id = resolve_zone_query(
+    result = resolve_zone_query(
         graph,
         mapping,
         grace_entity_id=99999999,  # unknown grace, but signals fast travel
@@ -330,10 +342,11 @@ def test_resolve_zone_query_leyndell_with_position_fast_travel():
         position=(0.0, -50.0, 0.0),
         zone_history=history,
     )
-    assert node_id == "leyndell_1259"
+    assert result.node_id == "leyndell_1259"
+    assert result.strategy == "map+position"
 
     # Sanctuary position (high Y, low Z) -> leyndell_sanctuary
-    node_id = resolve_zone_query(
+    result = resolve_zone_query(
         graph,
         mapping,
         grace_entity_id=99999999,
@@ -341,7 +354,8 @@ def test_resolve_zone_query_leyndell_with_position_fast_travel():
         position=(0.0, 30.0, -400.0),
         zone_history=history,
     )
-    assert node_id == "leyndell_sanctuary_d3e5"
+    assert result.node_id == "leyndell_sanctuary_d3e5"
+    assert result.strategy == "map+position"
 
 
 def test_resolve_zone_query_death_ignores_position():
@@ -373,14 +387,15 @@ def test_resolve_zone_query_death_ignores_position():
 
     # Death at Malenia: position is the respawn point in Elphael (Y < 380),
     # but most recently visited is haligtree_malenia_8b07
-    node_id = resolve_zone_query(
+    result = resolve_zone_query(
         graph,
         mapping,
         map_id="m15_00_00_00",
         position=(0.0, 100.0, 0.0),  # Elphael area (Y < 380)
         zone_history=history,
     )
-    assert node_id == "haligtree_malenia_8b07"
+    assert result.node_id == "haligtree_malenia_8b07"
+    assert result.strategy == "map+recent"
 
 
 def test_resolve_zone_query_single_match_unexplored():
@@ -400,5 +415,5 @@ def test_resolve_zone_query_single_match_unexplored():
     mapping = load_graces_mapping()
     # Player has explored a different node; ainsel_boss_node is not in history
     history = [{"node_id": "some_other_node", "igt_ms": 60000}]
-    node_id = resolve_zone_query(graph, mapping, map_id="m12_04_00_00", zone_history=history)
-    assert node_id is None
+    result = resolve_zone_query(graph, mapping, map_id="m12_04_00_00", zone_history=history)
+    assert result.node_id is None
