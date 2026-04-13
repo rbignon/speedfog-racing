@@ -2,6 +2,8 @@
 
 Competitive racing platform for SpeedFog - race against other players on randomized Elden Ring seeds with real-time tracking.
 
+Website: [https://speedfog.racing](https://speedfog.racing)
+
 ## Features
 
 - Real-time leaderboard and position tracking
