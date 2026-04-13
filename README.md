@@ -56,31 +56,7 @@ Create a `.env` file in the `server/` directory:
 cp server/.env.example server/.env  # If example exists, or create manually
 ```
 
-Edit `server/.env` with your configuration:
-
-```env
-# Database
-DATABASE_URL=postgresql+asyncpg://user:password@localhost/speedfog_racing
-
-# Twitch OAuth (get credentials at https://dev.twitch.tv/console/apps)
-TWITCH_CLIENT_ID=your_client_id
-TWITCH_CLIENT_SECRET=your_client_secret
-TWITCH_REDIRECT_URI=http://localhost:8000/api/auth/callback
-
-# Application
-SECRET_KEY=generate-a-secure-random-key
-OAUTH_REDIRECT_URL=http://localhost:5173/auth/callback
-WEBSOCKET_URL=ws://localhost:8000
-CORS_ORIGINS=["http://localhost:5173", "http://localhost:8000"]
-
-# Seeds (adjust paths as needed)
-SEEDS_POOL_DIR=/data/seeds
-SPEEDFOG_PATH=/path/to/speedfog
-
-# Logging
-LOG_LEVEL=INFO
-LOG_JSON=false
-```
+Edit `server/.env` with your configuration.
 
 ### 4. Set up the server
 
@@ -188,14 +164,7 @@ cargo test
 cargo build --lib --release
 ```
 
-## API Documentation
-
-Once the server is running, API documentation is available at:
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-## WebSocket Protocol
+## API and WebSocket Protocol
 
 See [docs/PROTOCOL.md](docs/PROTOCOL.md) for the complete WebSocket protocol reference.
 
