@@ -75,11 +75,12 @@ Pool configs live at `tools/pools/<pool>.toml`. Each TOML file contains:
 
 Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For each pool directory configured in `SEEDS_POOL_DIR`:
 
-1. Walk the pool directory for `seed_*.zip` files.
-2. For each zip, extract `graph.json` (root-level or `*/graph.json`).
-3. Parse `total_layers` from `graph_json`.
-4. Check if `(seed_number, pool_name)` already exists in DB, skip if so.
-5. Create `Seed` record with `status=AVAILABLE`, `folder_path` pointing to the zip.
+1. Load `<pool>/config.toml`, normalize it via `_normalize_pool_config()`, and upsert the `Pool` row (`config`, `last_scanned_at` refreshed; `enabled` preserved so admin toggles survive rescans).
+2. Walk the pool directory for `seed_*.zip` files.
+3. For each zip, extract `graph.json` (root-level or `*/graph.json`).
+4. Parse `total_layers` from `graph_json`.
+5. Check if `(seed_number, pool_name)` already exists in DB, skip if so.
+6. Create `Seed` record with `status=AVAILABLE`, `folder_path` pointing to the zip, FK `pool_name` referencing the `Pool` row.
 
 ### Seed Assignment
 
@@ -111,9 +112,28 @@ Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For 
 
 ### Pool Metadata
 
-**`get_pool_config(pool_name)`** reads `$SEEDS_POOL_DIR/<pool>/config.toml` and returns a dict of human-readable settings (estimated_duration, starting_items, care_package_items, difficulty labels, etc.).
+Pools live in the `pools` table (see section 5 below). The on-disk
+`config.toml` is the source of truth at scan time, but runtime reads go
+through the DB:
 
-**`get_pool_metadata(seeds_pool_dir)`** scans all pool subdirectories for `config.toml` files and extracts the `[display]` section.
+**`get_pool_config(db, pool_name)`** (async) returns the normalized
+config dict cached on `Pool.config` (human-readable settings:
+estimated_duration, starting_items, care_package_items, difficulty
+labels, etc.). Returns `None` if the pool does not exist or was
+backfilled without a rescan.
+
+**`pool_service.list_pools(db, *, include_disabled=False)`** returns
+`Pool` rows, by default filtering out disabled pools. Used by
+`/api/pools` (public) and `/api/admin/pools` (admin, with
+`include_disabled=True`).
+
+**`pool_service.set_pool_enabled(db, name, enabled)`** flips the admin
+toggle; rescans never touch `enabled`.
+
+Response builders that need the display name read from the eager
+`seed.pool` relationship (`Seed.pool` uses `lazy="joined"`), so no
+extra DB round-trips are needed to render pool names in race / training
+responses.
 
 ---
 
@@ -169,7 +189,31 @@ The `seed_id` in the TOML config enables client-side detection of outdated seed 
 
 ---
 
-## 4. Seed Status Lifecycle
+## 4. Pool Table
+
+Each pool directory on disk is mirrored by a row in the `pools` table.
+The row carries the runtime state that does not belong in the
+filesystem:
+
+| Column            | Purpose                                                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `name`            | Functional key (unique). Matches the directory name and `seeds.pool_name`.                                              |
+| `enabled`         | Admin-managed visibility flag. Disabled pools are hidden from `/api/pools` and training creation rejects them with 400. |
+| `config`          | Normalized snapshot of `config.toml` (`_normalize_pool_config()` output). Refreshed on every scan.                      |
+| `last_scanned_at` | Populated by `scan_pool()`.                                                                                             |
+
+`seeds.pool_name` is a foreign key referencing `pools.name`. A migration
+backfills one row per distinct `seed.pool_name` with `enabled=True` and
+an empty `config`. Operators are expected to run `speedfog-scan-seeds`
+right after the migration to populate `config` / `last_scanned_at`.
+
+Disabling a pool does not alter its seeds. Existing races keep playing
+and existing training sessions remain valid; the toggle only hides the
+pool from new selection UIs and blocks training creation.
+
+---
+
+## 5. Seed Status Lifecycle
 
 ```
 AVAILABLE ──assign_seed_to_race──→ CONSUMED

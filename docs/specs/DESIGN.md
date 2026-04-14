@@ -100,15 +100,15 @@ Rust Mod <--WebSocket--> FastAPI Server <--WebSocket--> Svelte Frontend
 ### Main Entities
 
 ```
-┌─────────────┐       ┌─────────────┐       ┌─────────────┐
-│    User     │       │    Race     │       │    Seed     │
-├─────────────┤       ├─────────────┤       ├─────────────┤
-│ id          │       │ id          │       │ id          │
-│ twitch_id   │       │ name        │       │ seed_number │
-│ twitch_name │<──────│ organizer_id│       │ pool_name   │
-│ avatar_url  │       │ seed_id     │──────>│ graph_json  │
-│ api_token   │       │ status      │       │ total_layers│
-│ is_admin    │       │ mode        │       │ zip_path    │
+┌─────────────┐       ┌─────────────┐       ┌─────────────┐       ┌─────────────┐
+│    User     │       │    Race     │       │    Seed     │       │    Pool     │
+├─────────────┤       ├─────────────┤       ├─────────────┤       ├─────────────┤
+│ id          │       │ id          │       │ id          │       │ id          │
+│ twitch_id   │       │ name        │       │ seed_number │       │ name        │
+│ twitch_name │<──────│ organizer_id│       │ pool_name   │──────>│ enabled     │
+│ avatar_url  │       │ seed_id     │──────>│ graph_json  │       │ config      │
+│ api_token   │       │ status      │       │ total_layers│       │ last_scan..│
+│ is_admin    │       │ mode        │       │ zip_path    │       └─────────────┘
 │ created_at  │       │ config      │       │ status      │
 └─────────────┘       │ scheduled_  │       │ created_at  │
       ^               │   start     │       └─────────────┘
@@ -139,7 +139,9 @@ Rust Mod <--WebSocket--> FastAPI Server <--WebSocket--> Svelte Frontend
 
 **Participant.status**: `registered` -> `ready` -> `playing` -> `finished` | `abandoned`
 
-**Seed.status**: `available` -> `consumed`
+**Seed.status**: `available` -> `consumed` | `discarded` | `reported`
+
+**Pool.enabled**: `true` (visible to users) | `false` (hidden from pickers, training creation rejected). Managed via `PATCH /api/admin/pools/{name}`; never touched by `scan_pool`.
 
 ### Race Config (JSON)
 
@@ -361,7 +363,8 @@ speedfog-racing/server/
 │   │
 │   └── services/
 │       ├── race_service.py  # Race business logic
-│       ├── seed_service.py  # Pool management, zip generation
+│       ├── seed_service.py  # Seed scan, assign, reroll, discard
+│       ├── pool_service.py  # Pool lookup + admin enabled toggle
 │       └── leaderboard.py   # Real-time leaderboard calculation
 │
 ├── alembic/                 # DB migrations
@@ -389,6 +392,11 @@ Races:
 Seeds (admin):
   GET  /api/admin/seeds              -> Pool stats (available/consumed)
   POST /api/admin/seeds/scan         -> Rescan directory
+  POST /api/admin/seeds/discard      -> Discard a pool's seeds
+
+Pools (admin):
+  GET   /api/admin/pools             -> List all pools (incl. disabled)
+  PATCH /api/admin/pools/{name}      -> Toggle ``enabled`` flag
 
 WebSocket:
   WS   /ws/mod/{race_id}             -> Mod connection

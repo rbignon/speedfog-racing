@@ -77,14 +77,16 @@ Reference document for API endpoints and WebSocket messages.
 
 ### Admin
 
-| Method | Endpoint                     | Auth           | Description                         |
-| ------ | ---------------------------- | -------------- | ----------------------------------- |
-| POST   | `/api/admin/seeds/scan`      | Bearer (admin) | Rescan seed pool (`{ pool_name? }`) |
-| GET    | `/api/admin/seeds/stats`     | Bearer (admin) | Pool statistics                     |
-| POST   | `/api/admin/seeds/discard`   | Bearer (admin) | Discard seeds from pool             |
-| GET    | `/api/admin/users`           | Bearer (admin) | List all users                      |
-| PATCH  | `/api/admin/users/{user_id}` | Bearer (admin) | Update user role                    |
-| GET    | `/api/admin/activity`        | Bearer (admin) | Admin activity timeline             |
+| Method | Endpoint                     | Auth           | Description                                  |
+| ------ | ---------------------------- | -------------- | -------------------------------------------- |
+| POST   | `/api/admin/seeds/scan`      | Bearer (admin) | Rescan seed pool (`{ pool_name? }`)          |
+| GET    | `/api/admin/seeds/stats`     | Bearer (admin) | Pool statistics                              |
+| POST   | `/api/admin/seeds/discard`   | Bearer (admin) | Discard seeds from pool                      |
+| GET    | `/api/admin/pools`           | Bearer (admin) | List pools (incl. disabled) with seed counts |
+| PATCH  | `/api/admin/pools/{name}`    | Bearer (admin) | Toggle `enabled` flag (`{ enabled: bool }`)  |
+| GET    | `/api/admin/users`           | Bearer (admin) | List all users                               |
+| PATCH  | `/api/admin/users/{user_id}` | Bearer (admin) | Update user role                             |
+| GET    | `/api/admin/activity`        | Bearer (admin) | Admin activity timeline                      |
 
 ---
 
