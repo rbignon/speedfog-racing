@@ -108,6 +108,26 @@ class User(Base):
     caster_roles: Mapped[list["Caster"]] = relationship(back_populates="user")
 
 
+class Pool(Base):
+    """A curated pool of seeds (e.g. "standard", "sprint").
+
+    Runtime state (``enabled``, ``last_scanned_at``) lives here. The
+    immutable pool definition is loaded from the on-disk ``config.toml`` at
+    scan time and cached in ``config``.
+    """
+
+    __tablename__ = "pools"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    last_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    seeds: Mapped[list["Seed"]] = relationship(back_populates="pool")
+
+
 class Seed(Base):
     """A SpeedFog seed available for racing."""
 
@@ -119,7 +139,7 @@ class Seed(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     seed_number: Mapped[str] = mapped_column(String(50), nullable=False)
-    pool_name: Mapped[str] = mapped_column(String(50), nullable=False)  # "standard", "sprint"
+    pool_name: Mapped[str] = mapped_column(String(50), ForeignKey("pools.name"), nullable=False)
     graph_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     total_layers: Mapped[int] = mapped_column(Integer, nullable=False)
     difficulty_score: Mapped[float] = mapped_column(default=0.0, server_default="0.0")
@@ -133,6 +153,7 @@ class Seed(Base):
     reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
+    pool: Mapped["Pool"] = relationship(back_populates="seeds")
     races: Mapped[list["Race"]] = relationship(back_populates="seed")
     reported_by: Mapped["User | None"] = relationship(foreign_keys=[reported_by_id])
 

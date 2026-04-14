@@ -16,6 +16,7 @@ from speedfog_racing.models import (  # noqa: F401
     Caster,
     Invite,
     Participant,
+    Pool,
     Race,
     Seed,
     TrainingSession,
