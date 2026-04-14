@@ -36,7 +36,13 @@ from speedfog_racing.schemas import (
     RaceParticipantActivity,
     TrainingActivity,
 )
-from speedfog_racing.services import discard_pool, get_pool_stats, scan_pool
+from speedfog_racing.services import (
+    discard_pool,
+    get_pool_stats,
+    list_pools,
+    scan_pool,
+    set_pool_enabled,
+)
 from speedfog_racing.services.analytics_service import compute_analytics
 from speedfog_racing.services.stats_service import recalculate_all_stats
 
@@ -125,6 +131,69 @@ async def discard_seeds(
     """
     count = await discard_pool(db, request.pool_name)
     return DiscardResponse(discarded=count, pool_name=request.pool_name)
+
+
+# =============================================================================
+# Pool Management
+# =============================================================================
+
+
+class AdminPoolResponse(BaseModel):
+    """Admin view of a pool row."""
+
+    name: str
+    enabled: bool
+    last_scanned_at: datetime | None
+    available: int = 0
+    consumed: int = 0
+    discarded: int = 0
+    reported: int = 0
+
+
+class UpdatePoolRequest(BaseModel):
+    """Request body for PATCH ``/admin/pools/{name}``."""
+
+    enabled: bool
+
+
+@router.get("/pools", response_model=list[AdminPoolResponse])
+async def admin_list_pools(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> list[AdminPoolResponse]:
+    """List every pool (enabled and disabled) with seed counts."""
+    pools = await list_pools(db, include_disabled=True)
+    stats = await get_pool_stats(db)
+    return [
+        AdminPoolResponse(
+            name=p.name,
+            enabled=p.enabled,
+            last_scanned_at=p.last_scanned_at,
+            **stats.get(p.name, {}),
+        )
+        for p in pools
+    ]
+
+
+@router.patch("/pools/{name}", response_model=AdminPoolResponse)
+async def admin_update_pool(
+    name: str,
+    request: UpdatePoolRequest,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> AdminPoolResponse:
+    """Toggle the ``enabled`` flag on a pool."""
+    try:
+        pool = await set_pool_enabled(db, name, request.enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    stats = (await get_pool_stats(db)).get(pool.name, {})
+    return AdminPoolResponse(
+        name=pool.name,
+        enabled=pool.enabled,
+        last_scanned_at=pool.last_scanned_at,
+        **stats,
+    )
 
 
 # =============================================================================

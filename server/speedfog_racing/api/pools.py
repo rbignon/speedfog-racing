@@ -4,14 +4,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.auth import get_current_user_optional
 from speedfog_racing.database import get_db
-from speedfog_racing.models import Pool, User
+from speedfog_racing.models import User
 from speedfog_racing.schemas import PoolConfig
 from speedfog_racing.services import get_pool_stats
+from speedfog_racing.services import list_pools as list_pool_rows
 from speedfog_racing.services.training_service import get_played_seed_counts
 
 router = APIRouter()
@@ -45,8 +45,7 @@ async def list_pools(
     if user:
         played_counts = await get_played_seed_counts(db, user.id)
 
-    pools_q = await db.execute(select(Pool).where(Pool.enabled.is_(True)))
-    pools_by_name = {p.name: p for p in pools_q.scalars().all()}
+    pools_by_name = {p.name: p for p in await list_pool_rows(db)}
 
     result: dict[str, PoolStats] = {}
     for name, counts in stats.items():
