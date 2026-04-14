@@ -214,6 +214,27 @@ async def test_create_race_no_seeds_available(test_client, organizer):
         assert "No available seeds" in response.json()["detail"]
 
 
+@pytest.mark.asyncio
+async def test_create_race_rejects_disabled_pool(test_client, organizer, seed, async_session):
+    """POST /api/races returns 400 when the target pool is disabled."""
+    from sqlalchemy import update
+
+    from speedfog_racing.models import Pool
+
+    async with async_session() as db:
+        await db.execute(update(Pool).where(Pool.name == "standard").values(enabled=False))
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Disabled Pool", "pool_name": "standard"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "not available" in response.json()["detail"].lower()
+
+
 # =============================================================================
 # Race Listing Tests
 # =============================================================================

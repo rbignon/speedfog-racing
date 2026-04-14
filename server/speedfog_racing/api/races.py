@@ -68,6 +68,7 @@ from speedfog_racing.schemas import (
 from speedfog_racing.services import (
     assign_seed_to_race,
     generate_player_config,
+    get_pool,
     reroll_seed_for_race,
 )
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
@@ -277,6 +278,15 @@ async def create_race(
     )
     db.add(race)
     await db.flush()
+
+    # Guard: reject unknown or disabled pools so admin toggles aren't
+    # bypassable by an organizer passing the raw pool name directly.
+    pool = await get_pool(db, request.pool_name)
+    if pool is None or not pool.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Pool '{request.pool_name}' is not available",
+        )
 
     # Assign seed from pool
     try:

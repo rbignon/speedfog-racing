@@ -684,9 +684,9 @@ async def test_resolve_seed_restore(test_client, admin_user, organizer_user, asy
 
 @pytest.fixture
 async def seeded_pools(async_session):
-    """Seed two pools so the admin endpoints have something to list."""
+    """Seed an extra disabled pool alongside the auto-seeded "standard"
+    row (added by the ``after_create`` listener in conftest.py)."""
     async with async_session() as db:
-        db.add(Pool(name="standard", enabled=True, config={"name": "Standard"}))
         db.add(Pool(name="sprint", enabled=False, config={"name": "Sprint"}))
         await db.commit()
 

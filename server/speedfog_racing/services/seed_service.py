@@ -318,7 +318,10 @@ async def get_available_seed(
 async def assign_seed_to_race(db: AsyncSession, race: Race, pool_name: str = "standard") -> Seed:
     """Assign an available seed to a race.
 
-    Marks the seed as consumed and sets race.seed_id.
+    Marks the seed as consumed and sets race.seed_id. Callers are
+    responsible for enforcing ``Pool.enabled`` (see
+    ``api/races.py:create_race`` / ``api/training.py:create_session``);
+    this function only cares about seed availability.
 
     Args:
         db: Database session

@@ -175,7 +175,8 @@ def integration_db():
         expire_on_commit=False,
     )
 
-    # Create tables
+    # Create tables. The after-create listener in conftest.py seeds a
+    # default "standard" Pool row, which unlocks race creation.
     async def init():
         async with test_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

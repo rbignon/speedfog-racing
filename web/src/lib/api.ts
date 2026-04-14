@@ -968,13 +968,6 @@ export async function updateAdminUserRole(
   return handleResponse<AdminUser>(response);
 }
 
-export interface AdminPoolStats {
-  pools: Record<
-    string,
-    { available: number; consumed: number; discarded: number; reported: number }
-  >;
-}
-
 export interface AdminPool {
   name: string;
   enabled: boolean;
@@ -1020,16 +1013,6 @@ export interface AdminAnalytics {
     solo: number[][];
   };
   timezones: AnalyticsTimezone[];
-}
-
-/**
- * Fetch seed pool statistics (admin only).
- */
-export async function fetchAdminSeedStats(): Promise<AdminPoolStats> {
-  const response = await fetch(`${API_BASE}/admin/seeds/stats`, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse<AdminPoolStats>(response);
 }
 
 /**
