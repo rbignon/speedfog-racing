@@ -165,7 +165,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
             participant_id=str(session.id),
             race=RaceInfo(
                 id=str(session.id),
-                name=format_pool_display_name(seed.pool_name) if seed else "Solo",
+                name=format_pool_display_name(seed.pool) if seed else "Solo",
                 status="running",
                 started_at=session.created_at.isoformat() if session.created_at else None,
             ),
@@ -219,7 +219,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                 send_training_live_notification(
                     session_id=str(session.id),
                     user=session.user,
-                    pool_name=session.seed.pool_name if session.seed else "training_standard",
+                    pool=session.seed.pool if session.seed else None,
                 )
             )
             notif_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

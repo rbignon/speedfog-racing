@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.config import settings
-from speedfog_racing.models import Race, Seed, SeedStatus
+from speedfog_racing.models import Pool, Race, Seed, SeedStatus
 from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
 
 logger = logging.getLogger(__name__)
@@ -45,11 +46,158 @@ def _read_graph_from_zip(zip_path: Path) -> dict[str, Any] | None:
         return None
 
 
+_VALID_BOSS_MODES = {"none", "minor", "all"}
+
+
+def _normalize_randomize_bosses(value: Any) -> str | None:
+    """Normalize randomize_bosses from bool (legacy) or str to enum string."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "all" if value else "none"
+    result = str(value)
+    if result not in _VALID_BOSS_MODES:
+        logger.warning(f"Invalid randomize_bosses value: {result!r}, defaulting to 'none'")
+        return "none"
+    return result
+
+
+def _normalize_pool_config(data: dict[str, Any]) -> dict[str, Any]:
+    """Turn a parsed config.toml dict into the curated pool config payload.
+
+    The returned dict is stored on ``Pool.config`` and consumed by the
+    ``/api/pools`` endpoint + ``PoolConfig`` schema.
+    """
+    display = data.get("display", {})
+    requirements = data.get("requirements", {})
+    structure = data.get("structure", {})
+    care_package = data.get("care_package", {})
+    item_randomizer = data.get("item_randomizer", {})
+    enemy = data.get("enemy", {})
+    starting_items_raw = data.get("starting_items", {})
+
+    # Build starting upgrades (quantified resources that affect progression)
+    starting_upgrades: list[str] = []
+    if tp := starting_items_raw.get("talisman_pouches"):
+        starting_upgrades.append(f"{tp} Talisman Pouches" if tp > 1 else "1 Talisman Pouch")
+    if gs := starting_items_raw.get("golden_seeds"):
+        starting_upgrades.append(f"{gs} Golden Seeds")
+    if st := starting_items_raw.get("sacred_tears"):
+        starting_upgrades.append(f"{st} Sacred Tears")
+    if lt := starting_items_raw.get("larval_tears"):
+        starting_upgrades.append(f"{lt} Larval Tears" if lt > 1 else "1 Larval Tear")
+
+    starting_runes = starting_items_raw.get("starting_runes")
+
+    # Build starting items (utility items, excluding anti-softlock keys)
+    utility_items = {
+        "lantern": "Lantern",
+        "spirit_calling_bell": "Spirit Calling Bell",
+        "physick_flask": "Physick Flask",
+        "great_runes": "Restored Great Runes",
+        "whetblades": "Whetblades",
+    }
+    starting_items: list[str] = []
+    for key, label in utility_items.items():
+        if starting_items_raw.get(key):
+            starting_items.append(label)
+    if sk := starting_items_raw.get("stonesword_keys"):
+        starting_items.append(f"{sk} Stonesword Keys" if sk > 1 else "1 Stonesword Key")
+
+    # Build care package items list
+    care_package_items: list[str] = []
+    if care_package.get("enabled"):
+        cp_fields = [
+            ("weapons", "Weapons"),
+            ("shields", "Shields"),
+            ("catalysts", "Catalysts"),
+            ("talismans", "Talismans"),
+            ("sorceries", "Sorceries"),
+            ("incantations", "Incantations"),
+            ("crystal_tears", "Crystal Tears"),
+            ("ashes_of_war", "Ashes of War"),
+        ]
+        for key, label in cp_fields:
+            if count := care_package.get(key):
+                care_package_items.append(f"{count} {label}")
+        armor_count = sum(
+            care_package.get(k, 0) for k in ("head_armor", "body_armor", "arm_armor", "leg_armor")
+        )
+        if armor_count:
+            care_package_items.append(f"{armor_count} Armor pieces")
+
+    # Compute major boss density from fixed count + layer range
+    major_bosses = requirements.get("major_bosses")
+    min_layers = structure.get("min_layers")
+    max_layers = structure.get("max_layers")
+    if major_bosses and min_layers and max_layers:
+        mbr = major_bosses / ((min_layers + max_layers) / 2)
+        major_boss_label = "High" if mbr >= 0.35 else ("Medium" if mbr >= 0.20 else "Low")
+    else:
+        major_boss_label = None
+
+    # Derive difficulty curve label from tier_curve + tier_curve_exponent
+    tier_curve = structure.get("tier_curve", "linear")
+    tier_curve_exponent = structure.get("tier_curve_exponent", 1.0)
+    if tier_curve == "power":
+        if tier_curve_exponent > 1.0:
+            difficulty_curve_label = "Late spike"
+        elif tier_curve_exponent < 1.0:
+            difficulty_curve_label = "Early spike"
+        else:
+            difficulty_curve_label = "Linear"
+    else:
+        difficulty_curve_label = "Linear"
+
+    return {
+        "name": display.get("name"),
+        "type": display.get("type", "race"),
+        "sort_order": display.get("sort_order", 99),
+        "estimated_duration": display.get("estimated_duration"),
+        "description": display.get("description") or None,
+        "final_tier": structure.get("final_tier"),
+        "min_layers": structure.get("min_layers"),
+        "max_layers": structure.get("max_layers"),
+        "starting_runes": starting_runes,
+        "starting_upgrades": starting_upgrades or None,
+        "starting_items": starting_items or None,
+        "care_package": care_package.get("enabled"),
+        "weapon_upgrade": care_package.get("weapon_upgrade"),
+        "care_package_items": care_package_items or None,
+        "items_randomized": item_randomizer.get("enabled"),
+        "auto_upgrade_weapons": item_randomizer.get("auto_upgrade_weapons"),
+        "remove_requirements": item_randomizer.get("remove_requirements"),
+        "major_boss_ratio": major_boss_label,
+        "randomize_bosses": _normalize_randomize_bosses(enemy.get("randomize_bosses")),
+        "difficulty_curve": difficulty_curve_label,
+        "nerf_gargoyles": item_randomizer.get("nerf_gargoyles"),
+        "nerf_malenia": item_randomizer.get("nerf_malenia"),
+        "allcraft": item_randomizer.get("allcraft"),
+        "sentry_torch_shop": data.get("run", {}).get("sentry_torch_shop"),
+    }
+
+
+def _load_pool_config_from_disk(pool_name: str) -> dict[str, Any] | None:
+    """Parse ``<seeds_pool_dir>/<pool_name>/config.toml`` and normalize it."""
+    config_file = Path(settings.seeds_pool_dir) / pool_name / "config.toml"
+    if not config_file.exists():
+        return None
+    try:
+        with open(config_file, "rb") as f:
+            data = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        logger.warning(f"Failed to read {config_file}", exc_info=True)
+        return None
+    return _normalize_pool_config(data)
+
+
 async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
     """Scan pool directory and sync with database.
 
-    Looks for seed_*.zip files containing graph.json.
-    Creates Seed records for new seeds, skips existing ones.
+    Upserts the ``Pool`` row (refreshing ``config`` from the on-disk
+    ``config.toml`` and bumping ``last_scanned_at``, never touching
+    ``enabled``), then looks for ``seed_*.zip`` files containing
+    ``graph.json`` and creates missing ``Seed`` records.
 
     Args:
         db: Database session
@@ -63,6 +211,26 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
     if not pool_dir.exists():
         logger.warning(f"Pool directory does not exist: {pool_dir}")
         return 0
+
+    pool_config = _load_pool_config_from_disk(pool_name) or {}
+
+    # Upsert the Pool row. ``enabled`` is intentionally excluded from the
+    # update clause so admin toggles survive rescans.
+    stmt = pg_insert(Pool).values(
+        id=uuid.uuid4(),
+        name=pool_name,
+        enabled=True,
+        config=pool_config,
+        last_scanned_at=datetime.now(UTC),
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[Pool.name],
+        set_={
+            "config": stmt.excluded.config,
+            "last_scanned_at": stmt.excluded.last_scanned_at,
+        },
+    )
+    await db.execute(stmt)
 
     # Pre-fetch all known seed numbers for this pool to avoid per-file queries
     # and, more importantly, skip zip I/O for seeds already in the database.
@@ -270,176 +438,15 @@ async def discard_pool(db: AsyncSession, pool_name: str) -> int:
     return count
 
 
-_VALID_BOSS_MODES = {"none", "minor", "all"}
+async def get_pool_config(db: AsyncSession, pool_name: str) -> dict[str, Any] | None:
+    """Return the normalized config dict for a pool, or ``None`` if unknown.
 
-
-def _normalize_randomize_bosses(value: Any) -> str | None:
-    """Normalize randomize_bosses from bool (legacy) or str to enum string."""
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return "all" if value else "none"
-    result = str(value)
-    if result not in _VALID_BOSS_MODES:
-        logger.warning(f"Invalid randomize_bosses value: {result!r}, defaulting to 'none'")
-        return "none"
-    return result
-
-
-def get_pool_config(pool_name: str) -> dict[str, Any] | None:
-    """Read curated settings from a pool's config.toml."""
-    config_file = Path(settings.seeds_pool_dir) / pool_name / "config.toml"
-    if not config_file.exists():
-        return None
-
-    try:
-        with open(config_file, "rb") as f:
-            data = tomllib.load(f)
-    except (OSError, tomllib.TOMLDecodeError):
-        logger.warning(f"Failed to read {config_file}", exc_info=True)
-        return None
-
-    display = data.get("display", {})
-    requirements = data.get("requirements", {})
-    structure = data.get("structure", {})
-    care_package = data.get("care_package", {})
-    item_randomizer = data.get("item_randomizer", {})
-    enemy = data.get("enemy", {})
-    starting_items_raw = data.get("starting_items", {})
-
-    # Build starting upgrades (quantified resources that affect progression)
-    starting_upgrades: list[str] = []
-    if tp := starting_items_raw.get("talisman_pouches"):
-        starting_upgrades.append(f"{tp} Talisman Pouches" if tp > 1 else "1 Talisman Pouch")
-    if gs := starting_items_raw.get("golden_seeds"):
-        starting_upgrades.append(f"{gs} Golden Seeds")
-    if st := starting_items_raw.get("sacred_tears"):
-        starting_upgrades.append(f"{st} Sacred Tears")
-    if lt := starting_items_raw.get("larval_tears"):
-        starting_upgrades.append(f"{lt} Larval Tears" if lt > 1 else "1 Larval Tear")
-
-    starting_runes = starting_items_raw.get("starting_runes")
-
-    # Build starting items (utility items, excluding anti-softlock keys)
-    utility_items = {
-        "lantern": "Lantern",
-        "spirit_calling_bell": "Spirit Calling Bell",
-        "physick_flask": "Physick Flask",
-        "great_runes": "Restored Great Runes",
-        "whetblades": "Whetblades",
-    }
-    starting_items: list[str] = []
-    for key, label in utility_items.items():
-        if starting_items_raw.get(key):
-            starting_items.append(label)
-    if sk := starting_items_raw.get("stonesword_keys"):
-        starting_items.append(f"{sk} Stonesword Keys" if sk > 1 else "1 Stonesword Key")
-
-    # Build care package items list
-    care_package_items: list[str] = []
-    if care_package.get("enabled"):
-        cp_fields = [
-            ("weapons", "Weapons"),
-            ("shields", "Shields"),
-            ("catalysts", "Catalysts"),
-            ("talismans", "Talismans"),
-            ("sorceries", "Sorceries"),
-            ("incantations", "Incantations"),
-            ("crystal_tears", "Crystal Tears"),
-            ("ashes_of_war", "Ashes of War"),
-        ]
-        for key, label in cp_fields:
-            if count := care_package.get(key):
-                care_package_items.append(f"{count} {label}")
-        armor_count = sum(
-            care_package.get(k, 0) for k in ("head_armor", "body_armor", "arm_armor", "leg_armor")
-        )
-        if armor_count:
-            care_package_items.append(f"{armor_count} Armor pieces")
-
-    # Compute major boss density from fixed count + layer range
-    major_bosses = requirements.get("major_bosses")
-    min_layers = structure.get("min_layers")
-    max_layers = structure.get("max_layers")
-    if major_bosses and min_layers and max_layers:
-        mbr = major_bosses / ((min_layers + max_layers) / 2)
-        major_boss_label = "High" if mbr >= 0.35 else ("Medium" if mbr >= 0.20 else "Low")
-    else:
-        major_boss_label = None
-
-    # Derive difficulty curve label from tier_curve + tier_curve_exponent
-    tier_curve = structure.get("tier_curve", "linear")
-    tier_curve_exponent = structure.get("tier_curve_exponent", 1.0)
-    if tier_curve == "power":
-        if tier_curve_exponent > 1.0:
-            difficulty_curve_label = "Late spike"
-        elif tier_curve_exponent < 1.0:
-            difficulty_curve_label = "Early spike"
-        else:
-            difficulty_curve_label = "Linear"
-    else:
-        difficulty_curve_label = "Linear"
-
-    return {
-        "name": display.get("name"),
-        "type": display.get("type", "race"),
-        "sort_order": display.get("sort_order", 99),
-        "estimated_duration": display.get("estimated_duration"),
-        "description": display.get("description") or None,
-        "final_tier": structure.get("final_tier"),
-        "min_layers": structure.get("min_layers"),
-        "max_layers": structure.get("max_layers"),
-        "starting_runes": starting_runes,
-        "starting_upgrades": starting_upgrades or None,
-        "starting_items": starting_items or None,
-        "care_package": care_package.get("enabled"),
-        "weapon_upgrade": care_package.get("weapon_upgrade"),
-        "care_package_items": care_package_items or None,
-        "items_randomized": item_randomizer.get("enabled"),
-        "auto_upgrade_weapons": item_randomizer.get("auto_upgrade_weapons"),
-        "remove_requirements": item_randomizer.get("remove_requirements"),
-        "major_boss_ratio": major_boss_label,
-        "randomize_bosses": _normalize_randomize_bosses(enemy.get("randomize_bosses")),
-        "difficulty_curve": difficulty_curve_label,
-        "nerf_gargoyles": item_randomizer.get("nerf_gargoyles"),
-        "nerf_malenia": item_randomizer.get("nerf_malenia"),
-        "allcraft": item_randomizer.get("allcraft"),
-        "sentry_torch_shop": data.get("run", {}).get("sentry_torch_shop"),
-    }
-
-
-def get_pool_metadata(seeds_pool_dir: str) -> dict[str, dict[str, str | None]]:
-    """Read display metadata from pool config.toml files.
-
-    Scans subdirectories of seeds_pool_dir for config.toml files and extracts
-    the [display] section from each.
-
-    Returns:
-        Dict mapping pool names to {"estimated_duration": ..., "description": ...}
+    Reads from the ``pools.config`` column (populated at scan time).
     """
-    pool_dir = Path(seeds_pool_dir)
-    if not pool_dir.exists():
-        return {}
-
-    metadata: dict[str, dict[str, str | None]] = {}
-
-    for subdir in pool_dir.iterdir():
-        if not subdir.is_dir():
-            continue
-        config_file = subdir / "config.toml"
-        if not config_file.exists():
-            continue
-        try:
-            with open(config_file, "rb") as f:
-                data = tomllib.load(f)
-            display = data.get("display", {})
-            metadata[subdir.name] = {
-                "name": display.get("name"),
-                "sort_order": display.get("sort_order", 99),
-                "estimated_duration": display.get("estimated_duration"),
-                "description": display.get("description"),
-            }
-        except (OSError, tomllib.TOMLDecodeError):
-            logger.warning(f"Failed to read config.toml from {subdir}", exc_info=True)
-
-    return metadata
+    result = await db.execute(select(Pool.config).where(Pool.name == pool_name))
+    row = result.first()
+    if row is None:
+        return None
+    config = row[0]
+    # Row stored as empty dict when backfilled but not yet rescanned.
+    return config or None

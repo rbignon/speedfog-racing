@@ -1,14 +1,17 @@
 """Seed pools API routes (public, with optional auth enrichment)."""
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.auth import get_current_user_optional
 from speedfog_racing.database import get_db
-from speedfog_racing.models import User
+from speedfog_racing.models import Pool, User
 from speedfog_racing.schemas import PoolConfig
-from speedfog_racing.services import get_pool_config, get_pool_stats
+from speedfog_racing.services import get_pool_stats
 from speedfog_racing.services.training_service import get_played_seed_counts
 
 router = APIRouter()
@@ -30,10 +33,11 @@ async def list_pools(
     pool_type: str | None = Query(None, alias="type"),
     user: User | None = Depends(get_current_user_optional),
 ) -> dict[str, PoolStats]:
-    """Get availability statistics for seed pools.
+    """Get availability statistics for enabled seed pools.
 
     Optional filter: ?type=race or ?type=training
     If authenticated, includes played_by_user count for training pools.
+    Disabled pools are hidden from this public endpoint.
     """
     stats = await get_pool_stats(db)
 
@@ -41,9 +45,17 @@ async def list_pools(
     if user:
         played_counts = await get_played_seed_counts(db, user.id)
 
+    pools_q = await db.execute(select(Pool).where(Pool.enabled.is_(True)))
+    pools_by_name = {p.name: p for p in pools_q.scalars().all()}
+
     result: dict[str, PoolStats] = {}
     for name, counts in stats.items():
-        raw_config = get_pool_config(name)
+        pool = pools_by_name.get(name)
+        if pool is None:
+            # Pool was disabled or never scanned; skip.
+            continue
+        raw_config: dict[str, Any] | None = pool.config or None
+
         # Filter by type if requested
         if pool_type and raw_config:
             if raw_config.get("type", "race") != pool_type:

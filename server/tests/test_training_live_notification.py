@@ -10,6 +10,11 @@ from speedfog_racing.discord import (
     _training_notif_cooldowns,
     send_training_live_notification,
 )
+from speedfog_racing.models import Pool
+
+
+def _make_pool(name: str = "training_standard", config: dict | None = None) -> Pool:
+    return Pool(name=name, enabled=True, config=config or {"name": "Standard"})
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +47,7 @@ async def test_noop_when_no_training_webhook():
         await send_training_live_notification(
             session_id="session-123",
             user=user,
-            pool_name="training_standard",
+            pool=_make_pool(),
         )
     # No exception, no HTTP call
 
@@ -62,7 +67,7 @@ async def test_noop_when_user_not_live():
         await send_training_live_notification(
             session_id="session-123",
             user=user,
-            pool_name="training_standard",
+            pool=_make_pool(),
         )
 
         mock_send.assert_not_called()
@@ -85,7 +90,7 @@ async def test_sends_notification_when_live():
         await send_training_live_notification(
             session_id="session-123",
             user=user,
-            pool_name="training_standard",
+            pool=_make_pool(),
         )
 
         mock_send.assert_called_once()
@@ -112,7 +117,7 @@ async def test_cooldown_blocks_duplicate():
         await send_training_live_notification(
             session_id="session-123",
             user=user,
-            pool_name="training_standard",
+            pool=_make_pool(),
         )
 
         mock_send.assert_not_called()
@@ -137,7 +142,7 @@ async def test_cooldown_allows_after_expiry():
         await send_training_live_notification(
             session_id="session-123",
             user=user,
-            pool_name="training_standard",
+            pool=_make_pool(),
         )
 
         mock_send.assert_called_once()
@@ -160,7 +165,7 @@ async def test_embed_contains_pool_and_links():
         await send_training_live_notification(
             session_id="session-456",
             user=user,
-            pool_name="training_standard",
+            pool=_make_pool(),
         )
 
         embed = mock_send.call_args[0][0]
@@ -187,7 +192,7 @@ async def test_embed_has_avatar_thumbnail():
         await send_training_live_notification(
             session_id="session-123",
             user=user,
-            pool_name="training_standard",
+            pool=_make_pool(),
         )
 
         embed = mock_send.call_args[0][0]
@@ -211,7 +216,7 @@ async def test_no_thumbnail_without_avatar():
         await send_training_live_notification(
             session_id="session-123",
             user=user,
-            pool_name="training_standard",
+            pool=_make_pool(),
         )
 
         embed = mock_send.call_args[0][0]

@@ -21,6 +21,12 @@ from speedfog_racing.discord import (
     set_event_status,
     update_scheduled_event,
 )
+from speedfog_racing.models import Pool
+
+
+def _make_pool(name: str, config: dict | None = None) -> Pool:
+    """Build a detached Pool instance for test wiring."""
+    return Pool(name=name, enabled=True, config=config or {})
 
 
 @pytest.fixture
@@ -28,7 +34,7 @@ def race_kwargs():
     return {
         "race_name": "Sunday Sprint #3",
         "race_id": "abc-123",
-        "pool_name": "sprint",
+        "pool": _make_pool("sprint"),
         "participant_count": 4,
         "organizer_name": "TestOrganizer",
         "organizer_avatar_url": "https://example.com/avatar.png",
@@ -40,7 +46,7 @@ def created_kwargs():
     return {
         "race_name": "Sunday Sprint #3",
         "race_id": "abc-123",
-        "pool_name": "sprint",
+        "pool": _make_pool("sprint"),
         "organizer_name": "TestOrganizer",
         "organizer_avatar_url": "https://example.com/avatar.png",
     }
@@ -51,7 +57,7 @@ def finished_kwargs():
     return {
         "race_name": "Sunday Sprint #3",
         "race_id": "abc-123",
-        "pool_name": "sprint",
+        "pool": _make_pool("sprint"),
         "participant_count": 4,
         "podium": [
             {"name": "Player1", "igt": "12:34"},
@@ -254,15 +260,13 @@ async def test_created_training_notification(created_kwargs):
     """Should use training styling for training pools."""
     mock_response = AsyncMock()
     mock_response.status_code = 204
-    created_kwargs["pool_name"] = "training_hardcore"
+    created_kwargs["pool"] = _make_pool(
+        "training_hardcore", {"name": "Hardcore", "type": "training"}
+    )
 
     with (
         patch("speedfog_racing.discord.settings") as mock_settings,
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
-        patch(
-            "speedfog_racing.api.helpers.get_pool_config",
-            return_value={"name": "Hardcore", "type": "training"},
-        ),
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
         mock_settings.base_url = "https://speedfog.racing"
@@ -320,17 +324,13 @@ async def test_sends_race_notification(race_kwargs):
 @pytest.mark.asyncio
 async def test_sends_training_notification(race_kwargs):
     """Should POST a Discord embed with training styling."""
-    race_kwargs["pool_name"] = "training_hardcore"
+    race_kwargs["pool"] = _make_pool("training_hardcore", {"name": "Hardcore", "type": "training"})
     mock_response = AsyncMock()
     mock_response.status_code = 204
 
     with (
         patch("speedfog_racing.discord.settings") as mock_settings,
         patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
-        patch(
-            "speedfog_racing.api.helpers.get_pool_config",
-            return_value={"name": "Hardcore", "type": "training"},
-        ),
     ):
         mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
         mock_settings.base_url = "https://speedfog.racing"

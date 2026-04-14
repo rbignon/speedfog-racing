@@ -25,7 +25,7 @@ from speedfog_racing.models import (
     UserRole,
     generate_token,
 )
-from speedfog_racing.services.seed_service import get_pool_config
+from speedfog_racing.services.seed_service import _load_pool_config_from_disk
 from speedfog_racing.services.training_service import (
     create_training_session,
     get_played_seed_counts,
@@ -129,8 +129,29 @@ async def training_user(async_session):
         return user
 
 
+TRAINING_POOL_CONFIG = {
+    "name": "Standard",
+    "type": "training",
+    "estimated_duration": "~1h",
+    "description": "Training pool",
+}
+
+
 @pytest.fixture
-async def training_seed(async_session, sample_graph_json):
+async def training_pool(async_session):
+    """A Pool row backing the ``training_standard`` pool used in other fixtures."""
+    from speedfog_racing.models import Pool
+
+    async with async_session() as db:
+        pool = Pool(name="training_standard", enabled=True, config=TRAINING_POOL_CONFIG)
+        db.add(pool)
+        await db.commit()
+        await db.refresh(pool)
+        return pool
+
+
+@pytest.fixture
+async def training_seed(async_session, sample_graph_json, training_pool):
     """A seed in a training pool."""
     async with async_session() as db:
         seed = Seed(
@@ -207,7 +228,7 @@ def test_pool_config_includes_type(tmp_path, monkeypatch):
         "speedfog_racing.services.seed_service.settings",
         type("S", (), {"seeds_pool_dir": str(tmp_path)})(),
     )
-    config = get_pool_config("training_standard")
+    config = _load_pool_config_from_disk("training_standard")
     assert config is not None
     assert config["type"] == "training"
 
@@ -246,7 +267,7 @@ def test_pool_config_starting_items_and_care_package(tmp_path, monkeypatch):
         "speedfog_racing.services.seed_service.settings",
         type("S", (), {"seeds_pool_dir": str(tmp_path)})(),
     )
-    config = get_pool_config("test_pool")
+    config = _load_pool_config_from_disk("test_pool")
     assert config is not None
 
     su = config["starting_upgrades"]
@@ -288,7 +309,7 @@ def test_pool_config_singular_items(tmp_path, monkeypatch):
         "speedfog_racing.services.seed_service.settings",
         type("S", (), {"seeds_pool_dir": str(tmp_path)})(),
     )
-    config = get_pool_config("test_pool")
+    config = _load_pool_config_from_disk("test_pool")
     assert config is not None
     su = config["starting_upgrades"]
     assert "1 Talisman Pouch" in su
@@ -304,7 +325,7 @@ def test_pool_config_defaults_to_race(tmp_path, monkeypatch):
         "speedfog_racing.services.seed_service.settings",
         type("S", (), {"seeds_pool_dir": str(tmp_path)})(),
     )
-    config = get_pool_config("standard")
+    config = _load_pool_config_from_disk("standard")
     assert config is not None
     assert config["type"] == "race"
 
@@ -464,13 +485,6 @@ async def test_get_played_seed_counts_multiple_pools(
 # Task 6: API endpoint tests
 # =============================================================================
 
-TRAINING_POOL_CONFIG = {
-    "name": "Standard",
-    "type": "training",
-    "estimated_duration": "~1h",
-    "description": "Training pool",
-}
-
 
 @pytest.fixture
 def test_client(async_session, monkeypatch):
@@ -486,11 +500,10 @@ def test_client(async_session, monkeypatch):
     app.dependency_overrides[get_db] = override_get_db
 
     # Monkeypatch get_pool_config so "training_standard" returns a training config
-    def _pool_config_mock(name: str) -> dict | None:
+    async def _pool_config_mock(db, name: str) -> dict | None:
         return TRAINING_POOL_CONFIG if name == "training_standard" else None
 
     monkeypatch.setattr("speedfog_racing.api.training.get_pool_config", _pool_config_mock)
-    monkeypatch.setattr("speedfog_racing.api.helpers.get_pool_config", _pool_config_mock)
 
     # Disable rate limiting in tests to avoid 429 across test functions
     limiter.enabled = False
@@ -690,8 +703,9 @@ async def test_abandon_training_session_with_progress_is_abandoned(
 
 
 @pytest.fixture
-def pool_test_client(async_session, monkeypatch):
-    """Test client with pool config patched for the pools API."""
+def pool_test_client(async_session):
+    """Test client wired against the real pools table (Pool rows are seeded
+    by the ``training_pool`` fixture where needed)."""
     from httpx import ASGITransport, AsyncClient
 
     async def override_get_db():
@@ -699,11 +713,6 @@ def pool_test_client(async_session, monkeypatch):
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
-
-    monkeypatch.setattr(
-        "speedfog_racing.api.pools.get_pool_config",
-        lambda name: TRAINING_POOL_CONFIG if "training" in name else {"type": "race"},
-    )
 
     transport = ASGITransport(app=app)
     client = AsyncClient(transport=transport, base_url="http://test")
@@ -1922,10 +1931,11 @@ async def test_ghost_endpoint_returns_finished_sessions(
     async_session, training_user, training_seed, monkeypatch
 ):
     """GET /api/training/{id}/ghosts returns zone_history of other finished sessions."""
-    monkeypatch.setattr(
-        "speedfog_racing.api.training.get_pool_config",
-        lambda name: {"type": "training", "display": {"label": name}},
-    )
+
+    async def _mock_pool_config(db, name: str) -> dict:
+        return {"type": "training", "display": {"label": name}}
+
+    monkeypatch.setattr("speedfog_racing.api.training.get_pool_config", _mock_pool_config)
 
     # Create the "current" session (finished)
     async with async_session() as db:
@@ -1997,10 +2007,11 @@ async def test_ghost_endpoint_excludes_self(
     async_session, training_user, training_seed, monkeypatch
 ):
     """The current session should not appear in its own ghost list."""
-    monkeypatch.setattr(
-        "speedfog_racing.api.training.get_pool_config",
-        lambda name: {"type": "training", "display": {"label": name}},
-    )
+
+    async def _mock_pool_config(db, name: str) -> dict:
+        return {"type": "training", "display": {"label": name}}
+
+    monkeypatch.setattr("speedfog_racing.api.training.get_pool_config", _mock_pool_config)
 
     async with async_session() as db:
         session = TrainingSession(
@@ -2027,10 +2038,11 @@ async def test_ghost_endpoint_excludes_self(
 @pytest.mark.asyncio
 async def test_ghost_endpoint_404_for_missing_session(async_session, monkeypatch):
     """Returns 404 for non-existent session."""
-    monkeypatch.setattr(
-        "speedfog_racing.api.training.get_pool_config",
-        lambda name: {"type": "training", "display": {"label": name}},
-    )
+
+    async def _mock_pool_config(db, name: str) -> dict:
+        return {"type": "training", "display": {"label": name}}
+
+    monkeypatch.setattr("speedfog_racing.api.training.get_pool_config", _mock_pool_config)
 
     import uuid
 

@@ -19,7 +19,7 @@ from speedfog_racing.services.twitch_live import twitch_live_service
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from speedfog_racing.models import Participant, Race, User
+    from speedfog_racing.models import Participant, Pool, Race, User
 
 logger = logging.getLogger(__name__)
 
@@ -246,8 +246,9 @@ def _escape_discord_md(text: str) -> str:
     return _DISCORD_MD_RE.sub(r"\\\1", text)
 
 
-def _race_label_and_color(pool_name: str | None) -> tuple[str, int]:
+def _race_label_and_color(pool: Pool | None) -> tuple[str, int]:
     """Return (label, color) based on pool type."""
+    pool_name = pool.name if pool else None
     is_training = pool_name.startswith("training_") if pool_name else False
     label = "Solo" if is_training else "Race"
     color = 0x3B82F6 if is_training else 0xF97316  # blue for solo, orange for race
@@ -263,14 +264,14 @@ async def notify_race_created(
     *,
     race_name: str,
     race_id: str,
-    pool_name: str | None,
+    pool: Pool | None,
     organizer_name: str,
     organizer_avatar_url: str | None,
     scheduled_at: str | None = None,
 ) -> None:
     """Send Discord notification when a race is created."""
-    label, color = _race_label_and_color(pool_name)
-    display_pool = format_pool_display_name(pool_name)
+    label, color = _race_label_and_color(pool)
+    display_pool = format_pool_display_name(pool)
 
     safe_name = _escape_discord_md(race_name)
     safe_organizer = _escape_discord_md(organizer_name)
@@ -301,14 +302,14 @@ async def notify_race_started(
     *,
     race_name: str,
     race_id: str,
-    pool_name: str | None,
+    pool: Pool | None,
     participant_count: int,
     organizer_name: str,
     organizer_avatar_url: str | None,
 ) -> None:
     """Send Discord notification when a race is started."""
-    label, color = _race_label_and_color(pool_name)
-    display_pool = format_pool_display_name(pool_name)
+    label, color = _race_label_and_color(pool)
+    display_pool = format_pool_display_name(pool)
     safe_name = _escape_discord_md(race_name)
     safe_organizer = _escape_discord_md(organizer_name)
 
@@ -358,7 +359,7 @@ async def notify_race_finished(
     *,
     race_name: str,
     race_id: str,
-    pool_name: str | None,
+    pool: Pool | None,
     participant_count: int,
     podium: list[dict[str, str]],
 ) -> None:
@@ -366,7 +367,7 @@ async def notify_race_finished(
 
     podium is a list of {"name": ..., "igt": ...} dicts for top finishers.
     """
-    label, _ = _race_label_and_color(pool_name)
+    label, _ = _race_label_and_color(pool)
     safe_name = _escape_discord_md(race_name)
 
     podium_lines = []
@@ -401,7 +402,7 @@ def fire_race_finished_notifications(race: Race) -> None:
             notify_race_finished(
                 race_name=race.name,
                 race_id=str(race.id),
-                pool_name=race.seed.pool_name if race.seed else None,
+                pool=race.seed.pool if race.seed else None,
                 participant_count=len(race.participants),
                 podium=build_podium(race.participants),
             )
@@ -473,7 +474,7 @@ async def send_training_live_notification(
     *,
     session_id: str,
     user: User,
-    pool_name: str,
+    pool: Pool | None,
 ) -> None:
     """Send Discord notification for a live training session.
 
@@ -492,7 +493,7 @@ async def send_training_live_notification(
         return
 
     display_name = _escape_discord_md(user.twitch_display_name or user.twitch_username)
-    display_pool = format_pool_display_name(pool_name)
+    display_pool = format_pool_display_name(pool)
     stream_url = f"https://twitch.tv/{user.twitch_username}"
     base_url = settings.base_url.rstrip("/")
 

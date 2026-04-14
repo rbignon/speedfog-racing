@@ -7,7 +7,15 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus, User
+from speedfog_racing.models import (
+    Caster,
+    Participant,
+    ParticipantStatus,
+    Pool,
+    Race,
+    RaceStatus,
+    User,
+)
 from speedfog_racing.schemas import (
     CasterResponse,
     ParticipantPreview,
@@ -15,7 +23,6 @@ from speedfog_racing.schemas import (
     RaceResponse,
     UserResponse,
 )
-from speedfog_racing.services.seed_service import get_pool_config
 from speedfog_racing.services.twitch_live import twitch_live_service
 
 
@@ -24,18 +31,18 @@ def race_date(race: Race) -> datetime:
     return race.started_at or race.scheduled_at or race.created_at
 
 
-def format_pool_display_name(pool_name: str | None) -> str:
-    """Format a pool name for display using the config's display name.
+def format_pool_display_name(pool: Pool | None) -> str:
+    """Format a pool for display using the config's display name.
 
-    Looks up the pool's config.toml for an explicit name. Falls back to
-    title-casing the raw pool name if config is unavailable.
+    Uses the pool's cached config name if present; falls back to title-casing
+    the raw pool name (e.g. ``training_standard`` → ``Training Standard``).
     """
-    if not pool_name:
+    if pool is None:
         return "Unknown"
-    config = get_pool_config(pool_name)
-    if config and config.get("name"):
-        return str(config["name"])
-    return pool_name.replace("_", " ").title()
+    name = pool.config.get("name") if pool.config else None
+    if name:
+        return str(name)
+    return pool.name.replace("_", " ").title()
 
 
 def user_response(user: User) -> UserResponse:

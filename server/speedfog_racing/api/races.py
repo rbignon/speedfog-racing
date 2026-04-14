@@ -68,7 +68,6 @@ from speedfog_racing.schemas import (
 from speedfog_racing.services import (
     assign_seed_to_race,
     generate_player_config,
-    get_pool_config,
     reroll_seed_for_race,
 )
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
@@ -135,10 +134,8 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         else []
     )
     pool_config = None
-    if race.seed:
-        raw = get_pool_config(race.seed.pool_name)
-        if raw is not None:
-            pool_config = PoolConfig(**raw)
+    if race.seed and race.seed.pool and race.seed.pool.config:
+        pool_config = PoolConfig(**race.seed.pool.config)
     return RaceDetailResponse(
         id=race.id,
         name=race.name,
@@ -313,7 +310,7 @@ async def create_race(
             notify_race_created(
                 race_name=race.name,
                 race_id=str(race.id),
-                pool_name=race.seed.pool_name if race.seed else None,
+                pool=race.seed.pool if race.seed else None,
                 organizer_name=race.organizer.twitch_display_name or race.organizer.twitch_username,
                 organizer_avatar_url=race.organizer.twitch_avatar_url,
                 scheduled_at=scheduled_str,
@@ -1252,7 +1249,7 @@ async def start_race(
             notify_race_started(
                 race_name=race.name,
                 race_id=str(race.id),
-                pool_name=race.seed.pool_name if race.seed else None,
+                pool=race.seed.pool if race.seed else None,
                 participant_count=len(race.participants),
                 organizer_name=race.organizer.twitch_display_name or race.organizer.twitch_username,
                 organizer_avatar_url=race.organizer.twitch_avatar_url,

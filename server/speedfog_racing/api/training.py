@@ -95,7 +95,7 @@ def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
         user=user_response(session.user),
         status=session.status,
         pool_name=session.seed.pool_name,
-        pool_display_name=format_pool_display_name(session.seed.pool_name),
+        pool_display_name=format_pool_display_name(session.seed.pool),
         igt_ms=session.igt_ms,
         death_count=session.death_count,
         exclude_from_stats=session.exclude_from_stats,
@@ -111,7 +111,7 @@ def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
 
 def _build_detail_response(session: TrainingSession) -> TrainingSessionDetailResponse:
     seed = session.seed
-    raw_config = get_pool_config(seed.pool_name)
+    raw_config = seed.pool.config if seed.pool and seed.pool.config else None
     return TrainingSessionDetailResponse(
         id=session.id,
         user=user_response(session.user),
@@ -158,7 +158,7 @@ async def create_session(
         )
 
     # Validate pool is a training pool
-    raw_config = get_pool_config(body.pool_name)
+    raw_config = await get_pool_config(db, body.pool_name)
     if not raw_config or raw_config.get("type", "race") != "training":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

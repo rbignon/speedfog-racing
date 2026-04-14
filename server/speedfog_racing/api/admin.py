@@ -381,7 +381,7 @@ async def get_global_activity(
                 user=user_response(t.user),
                 session_id=t.id,
                 pool_name=t.seed.pool_name,
-                pool_display_name=format_pool_display_name(t.seed.pool_name),
+                pool_display_name=format_pool_display_name(t.seed.pool),
                 status=t.status.value,
                 igt_ms=t.igt_ms,
                 death_count=t.death_count,

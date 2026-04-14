@@ -153,7 +153,11 @@ class Seed(Base):
     reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    pool: Mapped["Pool"] = relationship(back_populates="seeds")
+    # ``lazy="joined"`` so that fetching a Seed always brings its Pool in the
+    # same query. Callers therefore never need to add
+    # ``selectinload(Seed.pool)``, and sync helpers can read ``seed.pool``
+    # freely without tripping the async lazy-load error.
+    pool: Mapped["Pool"] = relationship(back_populates="seeds", lazy="joined")
     races: Mapped[list["Race"]] = relationship(back_populates="seed")
     reported_by: Mapped["User | None"] = relationship(foreign_keys=[reported_by_id])
 
