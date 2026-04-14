@@ -216,8 +216,12 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
 
     # Upsert the Pool row. ``enabled`` is intentionally excluded from the
     # update clause so admin toggles survive rescans.
+    #
+    # We use the PostgreSQL ``insert`` construct; SQLite >= 3.24 understands
+    # the same ``ON CONFLICT ... DO UPDATE`` syntax, so tests running against
+    # aiosqlite work too. If the minimum SQLite version ever drops, swap this
+    # for a portable select-then-insert-or-update pattern.
     stmt = pg_insert(Pool).values(
-        id=uuid.uuid4(),
         name=pool_name,
         enabled=True,
         config=pool_config,

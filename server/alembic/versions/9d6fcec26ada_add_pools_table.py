@@ -65,5 +65,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # NOTE: dropping `pools` discards every admin `enabled=False` decision.
+    # Safe only before any admin has toggled a pool off. No automatic
+    # safeguard is in place; operators are expected to know.
     op.drop_constraint("fk_seeds_pool_name", "seeds", type_="foreignkey")
     op.drop_table("pools")

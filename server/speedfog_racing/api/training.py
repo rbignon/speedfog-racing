@@ -28,7 +28,7 @@ from speedfog_racing.schemas import (
     TrainingSessionDetailResponse,
     TrainingSessionResponse,
 )
-from speedfog_racing.services import get_pool_config
+from speedfog_racing.services import get_pool
 from speedfog_racing.services.seed_pack_service import (
     generate_training_config,
     sanitize_filename,
@@ -157,9 +157,15 @@ async def create_session(
             detail="You already have an active training session",
         )
 
-    # Validate pool is a training pool
-    raw_config = await get_pool_config(db, body.pool_name)
-    if not raw_config or raw_config.get("type", "race") != "training":
+    # Validate pool exists, is enabled, and is a training pool.
+    pool = await get_pool(db, body.pool_name)
+    raw_config = pool.config if pool and pool.config else None
+    if not pool or not pool.enabled or not raw_config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{body.pool_name}' is not available",
+        )
+    if raw_config.get("type", "race") != "training":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"'{body.pool_name}' is not a training pool",

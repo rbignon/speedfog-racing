@@ -487,8 +487,12 @@ async def test_get_played_seed_counts_multiple_pools(
 
 
 @pytest.fixture
-def test_client(async_session, monkeypatch):
-    """Create test client with async database override and training pool config."""
+def test_client(async_session):
+    """Create test client with async database override.
+
+    Relies on the ``training_pool`` fixture to seed the Pool row the
+    training endpoint looks up via get_pool.
+    """
     from httpx import ASGITransport, AsyncClient
 
     from speedfog_racing.rate_limit import limiter
@@ -498,12 +502,6 @@ def test_client(async_session, monkeypatch):
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
-
-    # Monkeypatch get_pool_config so "training_standard" returns a training config
-    async def _pool_config_mock(db, name: str) -> dict | None:
-        return TRAINING_POOL_CONFIG if name == "training_standard" else None
-
-    monkeypatch.setattr("speedfog_racing.api.training.get_pool_config", _pool_config_mock)
 
     # Disable rate limiting in tests to avoid 429 across test functions
     limiter.enabled = False
@@ -548,6 +546,26 @@ async def test_create_training_session_api_exclude_from_stats(
         assert resp.status_code == 201
         data = resp.json()
         assert data["exclude_from_stats"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_training_session_api_rejects_disabled_pool(
+    test_client, training_user, training_pool, training_seed, async_session
+):
+    """POST /api/training returns 400 when the pool is disabled."""
+    async with async_session() as db:
+        training_pool.enabled = False
+        await db.merge(training_pool)
+        await db.commit()
+
+    async with test_client as client:
+        resp = await client.post(
+            "/api/training",
+            json={"pool_name": "training_standard"},
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert resp.status_code == 400
+        assert "not available" in resp.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
@@ -1932,11 +1950,6 @@ async def test_ghost_endpoint_returns_finished_sessions(
 ):
     """GET /api/training/{id}/ghosts returns zone_history of other finished sessions."""
 
-    async def _mock_pool_config(db, name: str) -> dict:
-        return {"type": "training", "display": {"label": name}}
-
-    monkeypatch.setattr("speedfog_racing.api.training.get_pool_config", _mock_pool_config)
-
     # Create the "current" session (finished)
     async with async_session() as db:
         current = TrainingSession(
@@ -2008,11 +2021,6 @@ async def test_ghost_endpoint_excludes_self(
 ):
     """The current session should not appear in its own ghost list."""
 
-    async def _mock_pool_config(db, name: str) -> dict:
-        return {"type": "training", "display": {"label": name}}
-
-    monkeypatch.setattr("speedfog_racing.api.training.get_pool_config", _mock_pool_config)
-
     async with async_session() as db:
         session = TrainingSession(
             user_id=training_user.id,
@@ -2038,11 +2046,6 @@ async def test_ghost_endpoint_excludes_self(
 @pytest.mark.asyncio
 async def test_ghost_endpoint_404_for_missing_session(async_session, monkeypatch):
     """Returns 404 for non-existent session."""
-
-    async def _mock_pool_config(db, name: str) -> dict:
-        return {"type": "training", "display": {"label": name}}
-
-    monkeypatch.setattr("speedfog_racing.api.training.get_pool_config", _mock_pool_config)
 
     import uuid
 
