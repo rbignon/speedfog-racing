@@ -135,7 +135,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         else []
     )
     pool_config = None
-    if race.seed and race.seed.pool and race.seed.pool.config:
+    if race.seed and race.seed.pool.config:
         pool_config = PoolConfig(**race.seed.pool.config)
     return RaceDetailResponse(
         id=race.id,

@@ -111,7 +111,7 @@ def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
 
 def _build_detail_response(session: TrainingSession) -> TrainingSessionDetailResponse:
     seed = session.seed
-    raw_config = seed.pool.config if seed.pool and seed.pool.config else None
+    raw_config = seed.pool.config or None
     return TrainingSessionDetailResponse(
         id=session.id,
         user=user_response(session.user),
