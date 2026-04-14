@@ -975,6 +975,16 @@ export interface AdminPoolStats {
   >;
 }
 
+export interface AdminPool {
+  name: string;
+  enabled: boolean;
+  last_scanned_at: string | null;
+  available: number;
+  consumed: number;
+  discarded: number;
+  reported: number;
+}
+
 export interface AnalyticsKpis {
   total_users: number;
   new_users_this_month: number;
@@ -1064,6 +1074,37 @@ export async function adminScanPool(
     body: JSON.stringify({ pool_name: poolName }),
   });
   return handleResponse<{ added: number; pool_name: string }>(response);
+}
+
+/**
+ * List all pools with admin metadata (enabled, last_scanned_at, seed counts).
+ */
+export async function fetchAdminPools(): Promise<AdminPool[]> {
+  const response = await fetch(`${API_BASE}/admin/pools`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<AdminPool[]>(response);
+}
+
+/**
+ * Enable or disable a pool for end users (admin only).
+ */
+export async function setAdminPoolEnabled(
+  poolName: string,
+  enabled: boolean,
+): Promise<AdminPool> {
+  const response = await fetch(
+    `${API_BASE}/admin/pools/${encodeURIComponent(poolName)}`,
+    {
+      method: "PATCH",
+      headers: {
+        ...getAuthHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ enabled }),
+    },
+  );
+  return handleResponse<AdminPool>(response);
 }
 
 export interface ReportedSeed {

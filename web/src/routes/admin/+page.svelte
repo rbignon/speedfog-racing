@@ -4,7 +4,8 @@
 	import {
 		fetchAdminUsers,
 		updateAdminUserRole,
-		fetchAdminSeedStats,
+		fetchAdminPools,
+		setAdminPoolEnabled,
 		adminDiscardPool,
 		adminScanPool,
 		fetchAdminActivity,
@@ -13,7 +14,7 @@
 		resolveReportedSeed,
 		fetchAdminAnalytics,
 		type AdminUser,
-		type AdminPoolStats,
+		type AdminPool,
 		type ActivityTimeline,
 		type ReportedSeed,
 		type AdminAnalytics
@@ -71,7 +72,7 @@
 		return userSortAsc ? ' \u25B2' : ' \u25BC';
 	}
 
-	let seedStats: AdminPoolStats | null = $state(null);
+	let adminPools: AdminPool[] = $state([]);
 	let seedsLoading = $state(false);
 	let actionLoading = $state<Record<string, boolean>>({});
 
@@ -112,11 +113,27 @@
 	async function loadSeedStats() {
 		seedsLoading = true;
 		try {
-			seedStats = await fetchAdminSeedStats();
+			adminPools = await fetchAdminPools();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load seed stats.';
 		} finally {
 			seedsLoading = false;
+		}
+	}
+
+	async function handleTogglePool(poolName: string, enabled: boolean) {
+		actionLoading = { ...actionLoading, [`toggle_${poolName}`]: true };
+		try {
+			const updated = await setAdminPoolEnabled(poolName, enabled);
+			const idx = adminPools.findIndex((p) => p.name === updated.name);
+			if (idx !== -1) {
+				adminPools[idx] = updated;
+			}
+			error = null;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to update pool.';
+		} finally {
+			actionLoading = { ...actionLoading, [`toggle_${poolName}`]: false };
 		}
 	}
 
@@ -153,7 +170,7 @@
 		if (tab === 'users' && users.length === 0 && loading) {
 			loadUsers();
 		}
-		if (tab === 'seeds' && !seedStats) {
+		if (tab === 'seeds' && adminPools.length === 0) {
 			loadSeedStats();
 			loadReportedSeeds();
 		}
@@ -597,7 +614,7 @@
 	{:else if activeTab === 'seeds'}
 		{#if seedsLoading || reportedLoading}
 			<p class="loading">Loading seed stats...</p>
-		{:else if !seedStats || Object.keys(seedStats.pools).length === 0}
+		{:else if adminPools.length === 0}
 			<p class="empty">No seed pools found.</p>
 		{:else}
 			<div class="reported-section">
@@ -656,6 +673,7 @@
 					<thead>
 						<tr>
 							<th>Pool Name</th>
+							<th>Visible</th>
 							<th class="num-col">Available</th>
 							<th class="num-col">Consumed</th>
 							<th class="num-col">Reported</th>
@@ -664,27 +682,39 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each Object.entries(seedStats.pools).sort( ([a], [b]) => a.localeCompare(b) ) as [poolName, stats] (poolName)}
-							<tr>
-								<td class="pool-name">{formatPoolName(poolName)}</td>
-								<td class="num-cell">{stats.available}</td>
-								<td class="num-cell">{stats.consumed}</td>
-								<td class="num-cell">{stats.reported ?? 0}</td>
-								<td class="num-cell">{stats.discarded}</td>
+						{#each [...adminPools].sort((a, b) => a.name.localeCompare(b.name)) as pool (pool.name)}
+							<tr class:pool-disabled={!pool.enabled}>
+								<td class="pool-name">{formatPoolName(pool.name)}</td>
+								<td>
+									<label class="pool-toggle">
+										<input
+											type="checkbox"
+											checked={pool.enabled}
+											disabled={actionLoading[`toggle_${pool.name}`]}
+											onchange={(e) =>
+												handleTogglePool(pool.name, (e.currentTarget as HTMLInputElement).checked)}
+										/>
+										<span>{pool.enabled ? 'On' : 'Off'}</span>
+									</label>
+								</td>
+								<td class="num-cell">{pool.available}</td>
+								<td class="num-cell">{pool.consumed}</td>
+								<td class="num-cell">{pool.reported}</td>
+								<td class="num-cell">{pool.discarded}</td>
 								<td class="actions-cell">
 									<button
 										class="action-btn scan"
-										disabled={actionLoading[`scan_${poolName}`]}
-										onclick={() => handleScan(poolName)}
+										disabled={actionLoading[`scan_${pool.name}`]}
+										onclick={() => handleScan(pool.name)}
 									>
-										{actionLoading[`scan_${poolName}`] ? 'Scanning...' : 'Scan'}
+										{actionLoading[`scan_${pool.name}`] ? 'Scanning...' : 'Scan'}
 									</button>
 									<button
 										class="action-btn discard"
-										disabled={actionLoading[`discard_${poolName}`] || stats.available === 0}
-										onclick={() => handleDiscard(poolName)}
+										disabled={actionLoading[`discard_${pool.name}`] || pool.available === 0}
+										onclick={() => handleDiscard(pool.name)}
 									>
-										{actionLoading[`discard_${poolName}`] ? 'Discarding...' : 'Discard'}
+										{actionLoading[`discard_${pool.name}`] ? 'Discarding...' : 'Discard'}
 									</button>
 								</td>
 							</tr>
@@ -1091,6 +1121,22 @@
 	.pool-name {
 		font-weight: 500;
 		font-family: var(--font-family-mono, monospace);
+		font-size: var(--font-size-sm);
+	}
+
+	.pool-disabled td {
+		color: var(--color-text-disabled);
+	}
+
+	.pool-disabled .pool-name {
+		text-decoration: line-through;
+	}
+
+	.pool-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		cursor: pointer;
 		font-size: var(--font-size-sm);
 	}
 
