@@ -17,6 +17,7 @@ from speedfog_racing.models import (
     Caster,
     Participant,
     ParticipantStatus,
+    Pool,
     Race,
     RaceStatus,
     Seed,
@@ -674,3 +675,120 @@ async def test_resolve_seed_restore(test_client, admin_user, organizer_user, asy
         assert seed.reported_by_id is None
         assert seed.reported_reason is None
         assert seed.reported_at is None
+
+
+# =============================================================================
+# Pool Management Tests
+# =============================================================================
+
+
+@pytest.fixture
+async def seeded_pools(async_session):
+    """Seed two pools so the admin endpoints have something to list."""
+    async with async_session() as db:
+        db.add(Pool(name="standard", enabled=True, config={"name": "Standard"}))
+        db.add(Pool(name="sprint", enabled=False, config={"name": "Sprint"}))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_admin_list_pools_includes_disabled(test_client, admin_user, seeded_pools):
+    """GET /admin/pools returns both enabled and disabled pools."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/pools",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        pools_by_name = {p["name"]: p for p in body}
+        assert pools_by_name["standard"]["enabled"] is True
+        assert pools_by_name["sprint"]["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_admin_list_pools_requires_admin(test_client, regular_user):
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/pools",
+            headers={"Authorization": f"Bearer {regular_user.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_toggle_pool_enabled(test_client, admin_user, seeded_pools):
+    """PATCH /admin/pools/{name} flips the enabled flag and persists."""
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/pools/standard",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"enabled": False},
+        )
+        assert response.status_code == 200
+        assert response.json()["enabled"] is False
+
+        # Re-enable
+        response = await client.patch(
+            "/api/admin/pools/standard",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"enabled": True},
+        )
+        assert response.status_code == 200
+        assert response.json()["enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_admin_toggle_pool_unknown(test_client, admin_user):
+    """PATCH /admin/pools/{unknown} returns 404."""
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/pools/ghost",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"enabled": False},
+        )
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_public_pools_hides_disabled(async_session, seeded_pools):
+    """GET /api/pools filters out pools with enabled=False."""
+    from httpx import ASGITransport, AsyncClient
+
+    async def override_get_db():
+        async with async_session() as s:
+            yield s
+
+    app.dependency_overrides[get_db] = override_get_db
+    # Seed one available seed in each pool so get_pool_stats picks them up.
+    async with async_session() as db:
+        db.add(
+            Seed(
+                seed_number="std_001",
+                pool_name="standard",
+                graph_json={"total_layers": 5},
+                total_layers=5,
+                folder_path="/tmp/x.zip",
+                status=SeedStatus.AVAILABLE,
+            )
+        )
+        db.add(
+            Seed(
+                seed_number="spr_001",
+                pool_name="sprint",
+                graph_json={"total_layers": 3},
+                total_layers=3,
+                folder_path="/tmp/y.zip",
+                status=SeedStatus.AVAILABLE,
+            )
+        )
+        await db.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/pools")
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    data = response.json()
+    assert "standard" in data
+    assert "sprint" not in data

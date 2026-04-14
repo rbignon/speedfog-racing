@@ -13,11 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
-from speedfog_racing.models import Race, Seed, SeedStatus, User, UserRole
+from speedfog_racing.models import Pool, Race, Seed, SeedStatus, User, UserRole
 from speedfog_racing.services.seed_service import (
     assign_seed_to_race,
     discard_pool,
     get_available_seed,
+    get_pool_config,
     get_pool_stats,
     reroll_seed_for_race,
     scan_pool,
@@ -68,8 +69,8 @@ def seed_pool_dir():
         _create_seed_zip(pool_dir, "seed_abc123", {"total_layers": 10, "nodes": []})
         _create_seed_zip(pool_dir, "seed_def456", {"total_layers": 12, "nodes": []})
 
-        # Create a non-seed file (should be ignored)
-        (pool_dir / "config.toml").write_text("[pool]\nname = 'standard'")
+        # Create a config so scan_pool picks up the normalized display metadata.
+        (pool_dir / "config.toml").write_text('[display]\nname = "Standard"\ntype = "race"\n')
 
         yield tmpdir
 
@@ -543,3 +544,53 @@ async def test_get_pool_stats_includes_reported(reporting_session):
     assert "reported" in pool
     assert pool["reported"] == 1
     assert pool["available"] == 1
+
+
+# =============================================================================
+# Pool table Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_scan_pool_upserts_pool_row(async_db, seed_pool_dir):
+    """scan_pool creates a Pool row and fills config from the TOML."""
+    with patch("speedfog_racing.services.seed_service.settings") as mock_settings:
+        mock_settings.seeds_pool_dir = seed_pool_dir
+        await scan_pool(async_db, "standard")
+
+    result = await async_db.execute(select(Pool).where(Pool.name == "standard"))
+    pool = result.scalar_one()
+    assert pool.enabled is True
+    assert pool.config["name"] == "Standard"
+    assert pool.config["type"] == "race"
+    assert pool.last_scanned_at is not None
+
+
+@pytest.mark.asyncio
+async def test_scan_pool_preserves_enabled_flag(async_db, seed_pool_dir):
+    """Re-scanning a pool refreshes config but leaves enabled untouched."""
+    with patch("speedfog_racing.services.seed_service.settings") as mock_settings:
+        mock_settings.seeds_pool_dir = seed_pool_dir
+        await scan_pool(async_db, "standard")
+
+        pool = (await async_db.execute(select(Pool).where(Pool.name == "standard"))).scalar_one()
+        pool.enabled = False
+        await async_db.commit()
+
+        # Re-scan should not flip enabled back to True
+        await scan_pool(async_db, "standard")
+        await async_db.refresh(pool)
+        assert pool.enabled is False
+
+
+@pytest.mark.asyncio
+async def test_get_pool_config_reads_from_db(async_db):
+    """get_pool_config returns the cached config dict from pools.config."""
+    async_db.add(Pool(name="demo", enabled=True, config={"name": "Demo", "type": "race"}))
+    await async_db.commit()
+
+    config = await get_pool_config(async_db, "demo")
+    assert config == {"name": "Demo", "type": "race"}
+
+    missing = await get_pool_config(async_db, "ghost")
+    assert missing is None
