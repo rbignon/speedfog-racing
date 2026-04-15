@@ -381,7 +381,7 @@ Player explored more zones than anyone else.
 
 - **Condition:** `max_unique_zones >= avg * 1.3` and `>= 4`
 - **Score:** `(max_nodes / avg_nodes) * 30`
-- **Text:** "[Player] explored [N] zones across [M] layers, more than anyone else"
+- **Text:** "[Player] explored [N] zones across [M] depth levels, more than anyone else"
 
 #### Hard Pass
 
@@ -405,15 +405,15 @@ Two players finished very close together.
 
 The lead changed hands multiple times.
 
-- **Condition:** >= 2 lead changes across layers (different player first to reach each layer)
+- **Condition:** >= 2 lead changes across depths (different player first to reach each depth)
 - **Score:** `changes * 25`
 - **Text:** "The lead changed [N] times throughout the race"
 
 #### Dominant
 
-One player led at every single layer.
+One player led at every single depth.
 
-- **Condition:** Same player is first to reach every layer (>= 2 layers)
+- **Condition:** Same player is first to reach every depth (>= 2 depth levels)
 - **Score:** `40 + num_layers * 8`
 - **Text:** "[Player] led from start to finish"
 
@@ -496,7 +496,7 @@ Player took a unique branch at a fork that no other player took.
 
 Player backed out of a zone and found a better alternative, saving time.
 
-- **Condition:** Player backed a zone, then cleared an alternative at same or higher layer; `avg_clear_time_of_backed_zone - (backed_time + alt_time) > 0`
+- **Condition:** Player backed a zone, then cleared an alternative at same or higher depth; `avg_clear_time_of_backed_zone - (backed_time + alt_time) > 0`
 - **Score:** `(time_saved_ms / 1000) * 2`
 - **Text:** "Good call turning back from [BackedZone]: going to [AltZone] instead saved you [Time] compared to those who stayed"
 
@@ -531,17 +531,17 @@ Player was the slowest through a zone, noticeably behind the next-slowest.
 
 Player was leading the race but lost the lead.
 
-- **Condition:** Rank 1 at layer N, rank > 1 at layer N+1; fires once (first occurrence)
+- **Condition:** Rank 1 at depth N, rank > 1 at depth N+1; fires once (first occurrence)
 - **Score:** Fixed `60`
-- **Text:** "You were leading the race, but lost the lead at [Zone] (layer [N])"
+- **Text:** "You were leading the race, but lost the lead at [Zone] (depth [N])"
 
 #### Comeback
 
-Player gained 2+ positions between consecutive layers.
+Player gained 2+ positions between consecutive depths.
 
 - **Condition:** `rank_before - rank_after >= 2`; picks the largest gain
 - **Score:** `rank_gain * 30`
-- **Text:** "You were [Rank] at layer [N], then climbed back to [Rank] place at [Zone]"
+- **Text:** "You were [Rank] at depth [N], then climbed back to [Rank] place at [Zone]"
 
 #### Lead Swap
 
@@ -555,6 +555,6 @@ Player and another player alternated as leader multiple times.
 
 Player stayed close to another player throughout the race.
 
-- **Condition:** Within 1 rank for >= 70% of layers, final IGT gap < 10% of faster player's time
+- **Condition:** Within 1 rank for >= 70% of depths, final IGT gap < 10% of faster player's time
 - **Score:** `layers_together * 10`
 - **Text:** "You stayed neck and neck with [Player] throughout the race"
