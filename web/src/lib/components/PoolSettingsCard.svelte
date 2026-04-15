@@ -46,7 +46,7 @@
 		{/if}
 		{#if poolConfig.min_layers != null && poolConfig.max_layers != null}
 			<div class="info-item">
-				<span class="label">Layers</span>
+				<span class="label">Depth</span>
 				<span class="value">{poolConfig.min_layers}–{poolConfig.max_layers}</span>
 			</div>
 		{/if}

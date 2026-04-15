@@ -405,7 +405,7 @@ Two players finished very close together.
 
 The lead changed hands multiple times.
 
-- **Condition:** >= 2 lead changes across depths (different player first to reach each depth)
+- **Condition:** >= 2 lead changes across depth levels (different player first to reach each depth)
 - **Score:** `changes * 25`
 - **Text:** "The lead changed [N] times throughout the race"
 

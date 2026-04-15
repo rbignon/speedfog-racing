@@ -76,7 +76,7 @@
 			</div>
 			<p class="config-hint">Scrolls the metro map to keep active players in view.</p>
 			<div class="config-row">
-				<label for="dag-max-layers">Visible layers</label>
+				<label for="dag-max-layers">Visible depth levels</label>
 				<input
 					id="dag-max-layers"
 					type="number"

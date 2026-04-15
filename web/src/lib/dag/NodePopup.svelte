@@ -88,7 +88,7 @@
 			{#if data.tier > 0}
 				<span class="tier-badge">Tier {data.tier}</span>
 			{/if}
-			<span class="layer-badge">Layer {data.layer + 1}</span>
+			<span class="layer-badge">Depth {data.layer + 1}</span>
 		</div>
 		{#if data.randomizedBosses?.length}
 			<div class="popup-boss">
