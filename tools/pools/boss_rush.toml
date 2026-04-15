@@ -1,0 +1,49 @@
+# SpeedFog Racing - Boss Shuffle Pool Configuration
+# ~1 hour races with randomized boss encounters
+extends = "standard"
+
+[display]
+name = "Boss Rush"
+sort_order = 6
+description = "Nothing but bosses the whole run"
+
+[requirements]
+allowed_types = ["boss_arena", "major_boss"]
+legacy_dungeons = 0
+bosses = 5
+mini_dungeons = 0
+major_bosses = 10
+
+
+[structure]
+first_layer_type = ""
+min_layers = 30
+max_layers = 35
+final_tier = 23
+final_boss_candidates = [
+    # Base game remembrance bosses
+    "stormveil_godrick",
+    "academy_library",
+    "caelid_radahn",
+    "ainsel_boss",
+    "leyndell_throne",
+    "volcano_rykard",
+    "flamepeak_firegiant",
+    "mohgwyn_boss",
+    "farumazula_maliketh",
+    "leyndell2_throne",
+    "haligtree_malenia",
+    "leyndell_erdtree",
+    # DLC remembrance bosses + Bayle
+    "belurat_boss",
+    "ensis_boss",
+    "fissure_boss",
+    "scaduview_gaius",
+    "midramanse_boss",
+    "scadutree_base",
+    "storehouse_messmer",
+    "rauhruins_romina",
+    "fingergrounds",
+    "jaggedpeak_bayle",
+    "enirilim_radahn",
+]

@@ -1,0 +1,7 @@
+# SpeedFog Racing - Training Boss Shuffle Pool Configuration
+# ~1 hour solo runs with randomized boss encounters
+extends = "boss_rush"
+
+[display]
+type = "training"
+description = "Nothing but bosses the whole solo run"
