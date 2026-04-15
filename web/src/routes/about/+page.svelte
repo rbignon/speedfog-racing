@@ -173,7 +173,7 @@
 			<div class="feature-card">
 				<strong>Multiple Formats</strong>
 				<p>
-					Sprint, Standard, or Hardcore: pick a seed pool that fits your
+					Sprint, Standard, or Hardcore: select a game mode that fits your
 					playstyle. From quick 30-minute runs to punishing gauntlets.
 				</p>
 			</div>

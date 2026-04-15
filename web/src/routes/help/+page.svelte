@@ -127,7 +127,7 @@
 
 <svelte:head>
 	<title>How to Play – SpeedFog Racing</title>
-	<meta name="description" content="How to play SpeedFog Racing. Setup guide, pool descriptions, and instructions for joining competitive Elden Ring fog gate races." />
+	<meta name="description" content="How to play SpeedFog Racing. Setup guide, game mode descriptions, and instructions for joining competitive Elden Ring fog gate races." />
 	<link rel="canonical" href="{PUBLIC_BASE_URL}/help" />
 </svelte:head>
 
@@ -341,8 +341,8 @@
 	<section class="section" id="game-modes">
 		<h2>Game Modes</h2>
 		<p>
-			Each mode uses a different seed pool with its own balance of duration, difficulty, and
-			resources. <strong>Standard</strong> is the default; other modes twist the formula.
+			Each mode has its own balance of duration, difficulty, and resources.
+			<strong>Standard</strong> is the default; other modes twist the formula.
 		</p>
 
 		<div class="pool-container">
@@ -748,7 +748,7 @@
 				Click <strong>Create Race</strong> from the navigation bar.
 			</li>
 			<li>
-				Choose a name, select a <strong>game mode</strong> (seed pool), and configure
+				Choose a name, select a <strong>game mode</strong>, and configure
 				options: participate yourself or organize only, schedule a time, set public or private
 				visibility.
 			</li>
