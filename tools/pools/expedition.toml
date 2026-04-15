@@ -4,7 +4,7 @@ extends = "_base"
 
 [display]
 name = "Expedition"
-sort_order = 6
+sort_order = 7
 estimated_duration = "~5h"
 description = "Epic race through most of the Lands Between"
 
