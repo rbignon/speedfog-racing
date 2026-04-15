@@ -49,7 +49,7 @@
 			if (available) poolName = available[0];
 		} catch (e) {
 			console.error('Failed to fetch pools:', e);
-			error = 'Failed to load seed pools.';
+			error = 'Failed to load game modes.';
 		} finally {
 			loading = false;
 		}
@@ -128,10 +128,10 @@
 			</div>
 
 			<div class="form-group">
-				<span>Seed Pool</span>
+				<span>Game Mode</span>
 				{#if sortedPools.length === 0}
 					<p class="empty-pools">
-						No seed pools available. Seeds need to be generated before races can be
+						No game modes available. Seeds need to be generated before races can be
 						created.
 					</p>
 				{:else if !hasAvailablePool}
@@ -147,7 +147,7 @@
 						{/each}
 					</div>
 					<p class="empty-pools">
-						All seed pools are empty. New seeds need to be generated.
+						No seeds available in any game mode. New seeds need to be generated.
 					</p>
 				{:else}
 					<div class="pool-cards">
