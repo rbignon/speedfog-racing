@@ -205,7 +205,7 @@
 					<li>
 						Go to <a href="/training"><strong>Solo</strong></a> in the navigation bar.
 					</li>
-					<li>Pick a <strong>game mode</strong> (pool) and start a session.</li>
+					<li>Select a <strong>game mode</strong> and start a session.</li>
 					<li><strong>Download</strong> the seed pack.</li>
 					<li>Unzip and run <code>launch_speedfog.bat</code>.</li>
 					<li>Enjoy!</li>
