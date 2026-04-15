@@ -103,7 +103,7 @@ async def create_training_session(
     """
     seed = await get_training_seed(db, pool_name, user_id)
     if seed is None:
-        raise ValueError(f"No available seeds in training pool '{pool_name}'")
+        raise ValueError(f"No available seeds in training mode '{pool_name}'")
 
     session = TrainingSession(
         user_id=user_id,

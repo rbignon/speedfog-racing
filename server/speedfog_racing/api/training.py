@@ -168,7 +168,7 @@ async def create_session(
     if raw_config.get("type", "race") != "training":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"'{body.pool_name}' is not a training pool",
+            detail=f"'{body.pool_name}' is not a training mode",
         )
 
     try:

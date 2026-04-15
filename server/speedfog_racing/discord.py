@@ -277,7 +277,7 @@ async def notify_race_created(
     safe_organizer = _escape_discord_md(organizer_name)
 
     fields: list[dict[str, object]] = [
-        {"name": "Pool", "value": display_pool, "inline": True},
+        {"name": "Mode", "value": display_pool, "inline": True},
         {"name": "Organizer", "value": safe_organizer, "inline": True},
     ]
     if scheduled_at:
@@ -318,7 +318,7 @@ async def notify_race_started(
         "url": _race_url(race_id),
         "color": color,
         "fields": [
-            {"name": "Pool", "value": display_pool, "inline": True},
+            {"name": "Mode", "value": display_pool, "inline": True},
             {"name": "Participants", "value": str(participant_count), "inline": True},
             {"name": "Organizer", "value": safe_organizer, "inline": True},
         ],
@@ -502,7 +502,7 @@ async def send_training_live_notification(
         "url": f"{base_url}/training/{session_id}",
         "color": 0x3B82F6,  # blue (training/solo)
         "fields": [
-            {"name": "Pool", "value": display_pool, "inline": True},
+            {"name": "Mode", "value": display_pool, "inline": True},
             {
                 "name": "Stream",
                 "value": f"[twitch.tv/{user.twitch_username}]({stream_url})",

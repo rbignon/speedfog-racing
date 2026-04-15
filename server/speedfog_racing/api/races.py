@@ -285,7 +285,7 @@ async def create_race(
     if pool is None or not pool.enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Pool '{request.pool_name}' is not available",
+            detail=f"Mode '{request.pool_name}' is not available",
         )
 
     # Assign seed from pool

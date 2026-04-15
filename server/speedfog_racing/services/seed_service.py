@@ -337,7 +337,7 @@ async def assign_seed_to_race(db: AsyncSession, race: Race, pool_name: str = "st
     seed = await get_available_seed(db, pool_name)
 
     if seed is None:
-        raise ValueError(f"No available seeds in pool '{pool_name}'")
+        raise ValueError(f"No available seeds in mode '{pool_name}'")
 
     seed.status = SeedStatus.CONSUMED
     race.seed_id = seed.id
@@ -373,7 +373,7 @@ async def reroll_seed_for_race(
 
     new_seed = await get_available_seed(db, pool_name, exclude_id=old_seed.id)
     if new_seed is None:
-        raise ValueError(f"No available seeds in pool '{pool_name}'")
+        raise ValueError(f"No available seeds in mode '{pool_name}'")
 
     # Release old seed (keep DISCARDED if pool was discarded)
     if old_seed.status != SeedStatus.DISCARDED:

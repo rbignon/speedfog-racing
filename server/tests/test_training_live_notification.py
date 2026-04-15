@@ -170,7 +170,7 @@ async def test_embed_contains_pool_and_links():
 
         embed = mock_send.call_args[0][0]
         fields = {f["name"]: f["value"] for f in embed["fields"]}
-        assert "Standard" in fields["Pool"]
+        assert "Standard" in fields["Mode"]
         assert "twitch.tv/testplayer" in fields["Stream"]
         assert "session-456" in embed["url"]
 

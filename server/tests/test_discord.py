@@ -224,7 +224,7 @@ async def test_sends_created_notification(created_kwargs):
         assert embed["url"] == "https://speedfog.racing/race/abc-123"
 
         fields = {f["name"]: f["value"] for f in embed["fields"]}
-        assert fields["Pool"] == "Sprint"
+        assert fields["Mode"] == "Sprint"
         assert fields["Organizer"] == "TestOrganizer"
         assert "Scheduled" not in fields
 
@@ -316,7 +316,7 @@ async def test_sends_race_notification(race_kwargs):
         assert embed["thumbnail"]["url"] == "https://example.com/avatar.png"
 
         fields = {f["name"]: f["value"] for f in embed["fields"]}
-        assert fields["Pool"] == "Sprint"
+        assert fields["Mode"] == "Sprint"
         assert fields["Participants"] == "4"
         assert fields["Organizer"] == "TestOrganizer"
 
@@ -346,7 +346,7 @@ async def test_sends_training_notification(race_kwargs):
         assert "Solo Started" in embed["title"]
         assert embed["color"] == 0x3B82F6  # blue
         fields = {f["name"]: f["value"] for f in embed["fields"]}
-        assert fields["Pool"] == "Hardcore"
+        assert fields["Mode"] == "Hardcore"
 
 
 @pytest.mark.asyncio
