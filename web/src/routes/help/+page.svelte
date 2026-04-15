@@ -51,7 +51,7 @@
 		sprint: {
 			label: 'Sprint',
 			duration: '~30min',
-			pitch: 'Short and fast. Fewer layers, quicker to the final boss. Great for warmups or time-limited sessions.',
+			pitch: 'Short and fast. Less depth, quicker to the final boss. Great for warmups or time-limited sessions.',
 			layers: '10–15',
 			majorBosses: 'Medium',
 			finalTier: 13,
@@ -241,9 +241,9 @@
 
 		<h3>Route Map</h3>
 		<p>
-			The route map is organized in <strong>layers of increasing difficulty</strong>. Paths can
+			The route map is organized by <strong>increasing depth</strong>. Paths can
 			<strong>split and merge</strong>, and occasional <strong>cross-links</strong> create
-			shortcuts between distant branches. Within a layer, parallel paths have the
+			shortcuts between distant branches. At each depth, parallel paths have the
 			<strong>same difficulty</strong>, only the specific zones differ.
 		</p>
 		<p>
@@ -365,7 +365,7 @@
 						<p class="pool-pitch">{pool.pitch}</p>
 						<div class="pool-grid">
 							<div class="pool-stat">
-								<span class="pool-stat-label">Layers</span>
+								<span class="pool-stat-label">Depth</span>
 								<span class="pool-stat-value">{pool.layers}</span>
 							</div>
 							<div class="pool-stat">
@@ -458,22 +458,22 @@
 			<div class="panel">
 				<p>
 					The leaderboard shows <strong>time gaps</strong> relative to the leader's pace
-					on each layer, similar to LiveSplit splits.
+					on each depth, similar to LiveSplit splits.
 				</p>
 				<ul>
 					<li>
 						<strong style="color: var(--color-success)">Green</strong> = you entered
-						this layer faster than the leader did
+						this depth faster than the leader did
 					</li>
 					<li>
 						<strong style="color: var(--color-danger)">Red</strong> = you entered this
-						layer slower
+						depth slower
 					</li>
 				</ul>
 				<p>
-					The gap is fixed when you enter a layer (based on entry time difference). It
+					The gap is fixed when you enter a new depth (based on entry time difference). It
 					only starts growing in real time if you exceed the leader's time budget for that
-					layer.
+					depth.
 				</p>
 			</div>
 		{/if}

@@ -91,7 +91,7 @@
 			progression in real time.
 		</p>
 		<p>
-			The map is structured in <strong>layers of increasing difficulty</strong>: mini
+			The map is structured by <strong>increasing depth</strong>: mini
 			dungeons, legacy dungeons, boss arenas, and major bosses. Every parallel path is
 			balanced: same length, same challenge. The final destination is always a random
 			major boss.
