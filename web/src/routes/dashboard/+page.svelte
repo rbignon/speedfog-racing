@@ -192,7 +192,7 @@
 							</div>
 							<div class="welcome-step-text">
 								<div class="welcome-step-label">1. Start a solo</div>
-								<div class="welcome-step-desc">Pick a seed pool and generate your run</div>
+								<div class="welcome-step-desc">Select a game mode and generate your run</div>
 								<div class="welcome-step-hint">Sprint is a great start</div>
 							</div>
 						</div>
@@ -221,7 +221,7 @@
 							<li><strong>Touch every grace</strong> you find, even if you don't plan to sit</li>
 							<li>If you're stuck, <strong>backtrack</strong> to a previous zone and try a different path</li>
 							<li>Use the <strong>metro map</strong> to plan your route and spot alternatives</li>
-							<li>Check the pool settings before starting to see your <strong>starting items and upgrades</strong></li>
+							<li>Check the mode settings before starting to see your <strong>starting items and upgrades</strong></li>
 						</ul>
 					</div>
 					<div class="welcome-actions">
@@ -379,7 +379,7 @@
 		<!-- Pool Stats Section -->
 		{#if poolStats && poolStats.pools.length > 0}
 			<section class="pool-stats-section">
-				<h2>Pool Stats</h2>
+				<h2>Mode Stats</h2>
 				<PoolStatsTable pools={poolStats.pools} />
 			</section>
 		{/if}

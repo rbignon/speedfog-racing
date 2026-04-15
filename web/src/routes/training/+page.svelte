@@ -129,7 +129,7 @@
 		{:else}
 			<h2>Start a Run</h2>
 			{#if sortedPools.length === 0}
-				<p class="empty">No pools available.</p>
+				<p class="empty">No game modes available.</p>
 			{:else}
 				<div class="pool-cards">
 					{#each sortedPools as [pool, info] (pool)}
@@ -215,7 +215,7 @@
 				<table class="history-table">
 					<thead>
 						<tr>
-							<th>Pool</th>
+							<th>Mode</th>
 							<th>Status</th>
 							<th>Progress</th>
 							<th>IGT</th>

@@ -198,7 +198,7 @@
 
 		{#if poolStats && poolStats.pools.length > 0}
 			<section class="pool-stats-section">
-				<h2>Pool Stats</h2>
+				<h2>Mode Stats</h2>
 				<PoolStatsTable pools={poolStats.pools} />
 			</section>
 		{/if}

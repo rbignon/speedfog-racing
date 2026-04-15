@@ -27,7 +27,7 @@
 	<table class="pool-stats-table">
 		<thead>
 			<tr>
-				<th>Pool</th>
+				<th>Mode</th>
 				<th>Type</th>
 				<th class="th-runs">Runs</th>
 				<th class="th-right">Avg Time</th>
