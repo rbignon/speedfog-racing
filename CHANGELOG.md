@@ -2,6 +2,21 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.9] - 2026-04-15
+
+### Seeds
+
+- New mode: Boss Rush, made exclusively of boss arenas and major bosses, no legacy dungeons or mini dungeons
+- Most major boss arenas can now be used as pass-through path candidates (their entry can serve as an exit), increasing topology variety
+- Redmane Castle boss excluded from candidates, as it can be missing when the Radahn festival is active
+- Chill mode: minor bosses are now randomized and swapped between each other
+- Rebalanced final boss probabilities
+- Bloodstain height reduced for better in-world readability
+
+### Website
+
+- Renamed "pool" to "mode" and "layer" to "depth" across the UI
+
 ## [1.5.8] - 2026-04-10
 
 ### Seeds
