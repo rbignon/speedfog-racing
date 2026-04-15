@@ -753,7 +753,8 @@ function detectDetour(
   if (!maxPlayer || maxNodes <= avgNodes * 1.3 || maxNodes < 4) return null;
 
   const totalLayers = (graphJson.total_layers as number) ?? 0;
-  const layerSuffix = totalLayers > 0 ? ` across ${totalLayers} layers` : "";
+  const layerSuffix =
+    totalLayers > 0 ? ` across ${totalLayers} depth levels` : "";
 
   return {
     type: "detour",

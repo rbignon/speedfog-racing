@@ -858,11 +858,11 @@ function detectLeadLost(
         ? [
             tSeg("You were leading the race, but lost the lead at "),
             zSeg(zoneId, nodeInfo),
-            tSeg(` (layer ${layers[i + 1]})`),
+            tSeg(` (depth ${layers[i + 1]})`),
           ]
         : [
             tSeg(
-              `You were leading the race, but lost the lead at layer ${layers[i + 1]}`,
+              `You were leading the race, but lost the lead at depth ${layers[i + 1]}`,
             ),
           ];
       return {
@@ -907,13 +907,13 @@ function detectComeback(
       const segments: DescriptionSegment[] = zoneId
         ? [
             tSeg(
-              `You were ${ordinal(rankBefore)} at layer ${layers[i]}, then climbed back to ${ordinal(rankAfter)} place at `,
+              `You were ${ordinal(rankBefore)} at depth ${layers[i]}, then climbed back to ${ordinal(rankAfter)} place at `,
             ),
             zSeg(zoneId, nodeInfo),
           ]
         : [
             tSeg(
-              `You were ${ordinal(rankBefore)} at layer ${layers[i]} before climbing back to ${ordinal(rankAfter)} place`,
+              `You were ${ordinal(rankBefore)} at depth ${layers[i]} before climbing back to ${ordinal(rankAfter)} place`,
             ),
           ];
       bestHighlight = {

@@ -606,7 +606,7 @@ describe("competitive detectors", () => {
     expect(h).toBeDefined();
     const text = descriptionText(h!);
     expect(text).toContain("zone_c");
-    expect(text).toContain("layer 3");
+    expect(text).toContain("depth 3");
   });
 
   it("does not detect lead_lost when lead was only at the starting layer", () => {
@@ -679,8 +679,8 @@ describe("competitive detectors", () => {
     const text = descriptionText(h!);
     // Should mention the zone where the comeback happened
     expect(text).toContain("l2");
-    // And keep the layer info
-    expect(text).toContain("layer 1");
+    // And keep the depth info
+    expect(text).toContain("depth 1");
   });
 
   it("detects lead_swap when two players alternate as leader", () => {
