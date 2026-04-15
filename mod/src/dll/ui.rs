@@ -343,7 +343,7 @@ impl RaceTracker {
                 // Show current layer when backtracking (zone layer < max layer reached)
                 if let Some(zl) = z.layer {
                     if zl < current_layer {
-                        write!(buf_left, ", layer {}/{}", zl + 1, total_layers).ok();
+                        write!(buf_left, ", depth {}/{}", zl + 1, total_layers).ok();
                     }
                 }
             }
