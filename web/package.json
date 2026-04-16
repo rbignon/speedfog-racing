@@ -1,6 +1,6 @@
 {
   "name": "speedfog-racing-web",
-  "version": "1.5.9",
+  "version": "1.5.10",
   "private": true,
   "scripts": {
     "dev": "vite dev",

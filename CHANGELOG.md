@@ -2,6 +2,31 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.5.10] - 2026-04-16
+
+### Seeds
+
+- Minor boss randomization: add elite ennemies:
+  - Colossal Fingercreeper
+  - Crucible Knights (including Devonia)
+  - Divine Bird Warriors (Lightning, Frost and Wind)
+  - Elder Lion
+  - Fire Knights
+  - Fire Prelates
+  - Giant Death Crab
+  - Guardian Golem
+  - Hornsent
+  - Lobster
+  - Omen
+  - Runebear
+  - Smith Golem
+- Divine Beast Dancing Lion and Basilisks excluded from minor boss randomization
+- Patches excluded from boss candidates
+
+### In-game
+
+- Fix: leaderboard now keeps the "ready" / "registered" label for pre-launch players once the race starts, instead of switching to a misleading "1/N" layer count
+
 ## [1.5.9] - 2026-04-15
 
 ### Seeds
