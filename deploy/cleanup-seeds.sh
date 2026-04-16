@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # SpeedFog Racing - Discarded seed cleanup script
 # Deletes .zip files on the VPS for seeds marked DISCARDED in the database.
-# DB records are kept for audit trail / race history.
+# Additionally, deletes DB rows for DISCARDED seeds that were never referenced
+# by any race or training session (pure pollution, no audit value).
+# DB records of referenced DISCARDED seeds are kept for history / audit trail.
 #
 # Usage:
 #   deploy/cleanup-seeds.sh                    # dry-run (default)
@@ -22,7 +24,9 @@ usage() {
 Usage: deploy/cleanup-seeds.sh [OPTIONS]
 
 Delete .zip files on the VPS for seeds marked DISCARDED in the database.
-DB records are preserved for race history / audit trail.
+Also delete DB rows for DISCARDED seeds that were never referenced by any
+race or training session (they have no audit value).
+DB records of referenced DISCARDED seeds are preserved for race history.
 
 By default runs in dry-run mode (shows what would be deleted).
 
@@ -69,13 +73,14 @@ if [[ "$DRY_RUN" == true ]]; then
     echo ""
 fi
 
-# Validate pool name before sending to server
+# POOL and OLDER_THAN are interpolated verbatim into SQL (WHERE clauses) in
+# the remote script below. Keep these regexes strict (no quotes, no spaces)
+# so that interpolation stays injection-safe without parameter binding.
 if [[ -n "$POOL" ]] && [[ ! "$POOL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     echo "Error: invalid pool name '$POOL' (only alphanumeric, underscore, hyphen allowed)"
     exit 1
 fi
 
-# Validate --older-than is a positive integer
 if [[ -n "$OLDER_THAN" ]] && [[ ! "$OLDER_THAN" =~ ^[0-9]+$ ]]; then
     echo "Error: --older-than must be a positive integer (number of days)"
     exit 1
@@ -156,5 +161,55 @@ ssh "$SERVER" bash -s "${POOL:-__ALL__}" "$DRY_RUN" "$SEEDS_DIR" "${OLDER_THAN:-
         echo "Summary: $TOTAL discarded seeds, $((TOTAL - MISSING)) files on disk ($HUMAN_TOTAL), $MISSING already removed"
     else
         echo "Summary: deleted $DELETED files ($HUMAN_TOTAL freed), $MISSING were already removed"
+    fi
+
+    # --- Phase 2: delete DB rows for DISCARDED seeds never referenced ---
+    echo ""
+    echo "==> Unreferenced DISCARDED seeds (never used in any race or training session)"
+
+    UNREF_WHERE="s.status = 'DISCARDED'
+        AND NOT EXISTS (SELECT 1 FROM races r WHERE r.seed_id = s.id)
+        AND NOT EXISTS (SELECT 1 FROM training_sessions t WHERE t.seed_id = s.id)"
+    if [[ -n "$POOL" ]]; then
+        UNREF_WHERE="$UNREF_WHERE AND s.pool_name = '$POOL'"
+    fi
+    if [[ -n "$OLDER_THAN" ]]; then
+        UNREF_WHERE="$UNREF_WHERE AND s.created_at < NOW() - INTERVAL '$OLDER_THAN days'"
+    fi
+
+    # In dry-run we SELECT; in execute we DELETE ... RETURNING wrapped in a CTE
+    # so the outer statement is a SELECT (avoids psql's "DELETE N" command tag
+    # leaking into the output) and the printed list exactly matches the rows
+    # that got deleted (no TOCTOU mismatch).
+    if [[ "$DRY_RUN" == true ]]; then
+        UNREF_SQL="SELECT s.pool_name, s.seed_number FROM seeds s WHERE $UNREF_WHERE ORDER BY s.pool_name, s.seed_number;"
+    else
+        UNREF_SQL="WITH deleted AS (DELETE FROM seeds s WHERE $UNREF_WHERE RETURNING s.pool_name, s.seed_number) SELECT pool_name, seed_number FROM deleted ORDER BY pool_name, seed_number;"
+    fi
+    UNREF=$(sudo -u speedfog psql -t -A -F'|' speedfog_racing -c "$UNREF_SQL" </dev/null) || {
+        echo "ERROR: psql query failed"
+        exit 1
+    }
+
+    UNREF_COUNT=0
+    if [[ -n "$UNREF" ]]; then
+        while IFS='|' read -r pool_name seed_number; do
+            [[ -z "$pool_name" ]] && continue
+            UNREF_COUNT=$((UNREF_COUNT + 1))
+            if [[ "$DRY_RUN" == true ]]; then
+                echo "  would delete DB row: $pool_name/$seed_number"
+            else
+                echo "  deleted DB row: $pool_name/$seed_number"
+            fi
+        done <<< "$UNREF"
+    fi
+
+    echo ""
+    if [[ "$UNREF_COUNT" -eq 0 ]]; then
+        echo "No unreferenced discarded seeds found."
+    elif [[ "$DRY_RUN" == true ]]; then
+        echo "Summary: $UNREF_COUNT unreferenced discarded seeds would be removed from DB"
+    else
+        echo "Summary: $UNREF_COUNT unreferenced discarded seed rows deleted from DB"
     fi
 ENDSSH
