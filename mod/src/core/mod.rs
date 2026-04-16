@@ -11,7 +11,10 @@ pub mod traits;
 pub mod types;
 
 pub use color::parse_hex_color;
-pub use format::{compute_gap, format_gap, format_gap_into, parse_splits};
+pub use format::{
+    compute_gap, format_gap, format_gap_into, format_time_into, parse_splits,
+    write_participant_right_text,
+};
 pub use map_utils::format_map_id;
 pub use protocol::{
     is_permanent_close, ClientMessage, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage,

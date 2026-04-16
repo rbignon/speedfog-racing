@@ -11,6 +11,46 @@ pub fn parse_splits(src: HashMap<String, i32>) -> HashMap<i32, i32> {
         .collect()
 }
 
+/// Write a signed millisecond value as `M:SS` / `H:MM:SS`, or `--:--` when negative.
+pub fn format_time_into(buf: &mut String, ms: i32) {
+    if ms < 0 {
+        buf.push_str("--:--");
+        return;
+    }
+    let ms = ms as u32;
+    let secs = ms / 1000;
+    let mins = secs / 60;
+    let hours = mins / 60;
+    if hours > 0 {
+        write!(buf, "{}:{:02}:{:02}", hours, mins % 60, secs % 60).ok();
+    } else {
+        write!(buf, "{:02}:{:02}", mins, secs % 60).ok();
+    }
+}
+
+/// Write the right-column text for a participant into an existing buffer.
+///
+/// Returns the finish time for `finished`, layer progress (`N/total`) for
+/// `playing`, and the raw status label for any other state (registered,
+/// ready, abandoned). Keeps pre-launch states visible once the race is
+/// running so "ready" doesn't silently become `1/LAYERS`.
+pub fn write_participant_right_text(
+    buf: &mut String,
+    status: &str,
+    current_layer: i32,
+    total_layers: i32,
+    igt_ms: i32,
+) {
+    match status {
+        "finished" => format_time_into(buf, igt_ms),
+        "playing" => {
+            let display = (current_layer + 1).min(total_layers);
+            write!(buf, "{}/{}", display, total_layers).ok();
+        }
+        _ => buf.push_str(status),
+    }
+}
+
 /// Format a gap in milliseconds as `+M:SS` / `+H:MM:SS` (behind)
 /// or `-M:SS` / `-H:MM:SS` (ahead).
 pub fn format_gap(ms: i32) -> String {
@@ -241,5 +281,70 @@ mod tests {
         assert_eq!(parsed.get(&0), Some(&0));
         assert_eq!(parsed.get(&1), Some(&30000));
         assert_eq!(parsed.len(), 2); // "bad" key dropped
+    }
+
+    #[test]
+    fn test_format_time_negative_is_placeholder() {
+        let mut buf = String::new();
+        format_time_into(&mut buf, -1);
+        assert_eq!(buf, "--:--");
+    }
+
+    #[test]
+    fn test_format_time_seconds_and_minutes() {
+        let mut buf = String::new();
+        format_time_into(&mut buf, 65_000);
+        assert_eq!(buf, "01:05");
+    }
+
+    #[test]
+    fn test_format_time_hours() {
+        let mut buf = String::new();
+        format_time_into(&mut buf, 3_723_000);
+        assert_eq!(buf, "1:02:03");
+    }
+
+    #[test]
+    fn test_right_text_finished_shows_time() {
+        let mut buf = String::new();
+        write_participant_right_text(&mut buf, "finished", 5, 5, 125_000);
+        assert_eq!(buf, "02:05");
+    }
+
+    #[test]
+    fn test_right_text_playing_shows_layer_progress() {
+        let mut buf = String::new();
+        write_participant_right_text(&mut buf, "playing", 0, 5, 1_000);
+        assert_eq!(buf, "1/5");
+    }
+
+    #[test]
+    fn test_right_text_playing_caps_at_total() {
+        let mut buf = String::new();
+        write_participant_right_text(&mut buf, "playing", 10, 5, 1_000);
+        assert_eq!(buf, "5/5");
+    }
+
+    #[test]
+    fn test_right_text_ready_shows_status_label() {
+        // Even when the race is running (non-zero layer), a ready player
+        // must keep showing "ready" instead of a misleading "1/LAYERS".
+        let mut buf = String::new();
+        write_participant_right_text(&mut buf, "ready", 0, 5, 0);
+        assert_eq!(buf, "ready");
+    }
+
+    #[test]
+    fn test_right_text_registered_shows_status_label() {
+        let mut buf = String::new();
+        write_participant_right_text(&mut buf, "registered", 0, 5, 0);
+        assert_eq!(buf, "registered");
+    }
+
+    #[test]
+    fn test_right_text_abandoned_shows_status_label() {
+        let mut buf = String::new();
+        write_participant_right_text(&mut buf, "abandoned", 2, 5, 45_000);
+        assert_eq!(buf, "abandoned");
     }
 }

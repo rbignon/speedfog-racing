@@ -10,6 +10,7 @@ use hudhook::imgui::{
 use hudhook::{ImguiRenderLoop, RenderContext};
 use tracing::{error, info};
 
+use crate::core::write_participant_right_text;
 use crate::profile_span;
 
 use super::death_icon::DeathIcon;
@@ -278,29 +279,29 @@ impl RaceTracker {
         let zone = self.current_zone_info();
         let frozen_layer = self.pre_reveal_layer();
 
-        let is_setup = self
-            .race_info()
-            .is_some_and(|r| r.status.as_str() == "setup");
+        // Show layer progress only while actively playing or finished; otherwise
+        // show the participant status so pre-launch states (registered/ready)
+        // stay visible once the race leaves setup.
+        let my_status = me.map(|p| p.status.as_str()).unwrap_or("registered");
+        let orange = [1.0, 0.65, 0.0, 1.0];
 
-        // In setup phase, show participant status instead of layer progress
-        let right_color = if is_setup {
-            let status = me.map(|p| p.status.as_str()).unwrap_or("registered");
-            let orange = [1.0, 0.65, 0.0, 1.0];
-            buf_right.push_str(status);
-            match status {
-                "ready" => orange,
-                _ => self.cached_colors.text_disabled,
-            }
-        } else {
+        let right_color = if my_status == "playing" || my_status == "finished" {
             let layer = frozen_layer
                 .or_else(|| me.map(|p| p.current_layer))
                 .unwrap_or(0);
             let display_layer = (layer + 1).min(total_layers);
             write!(buf_right, "{}/{}", display_layer, total_layers).ok();
-            if self.am_i_finished() {
+            if my_status == "finished" {
                 green
             } else {
                 yellow
+            }
+        } else {
+            buf_right.push_str(my_status);
+            if my_status == "ready" {
+                orange
+            } else {
+                self.cached_colors.text_disabled
             }
         };
         let right_width = ui.calc_text_size(&buf_right)[0];
@@ -554,9 +555,6 @@ impl RaceTracker {
         profile_span!("refresh_leaderboard_cache");
 
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
-        let is_setup = self
-            .race_info()
-            .is_some_and(|r| r.status.as_str() == "setup");
         let race_finished = self
             .race_info()
             .is_some_and(|r| r.status.as_str() == "finished");
@@ -615,7 +613,13 @@ impl RaceTracker {
             };
 
             let mut row = LeaderboardRowCache::default();
-            write_right_text(&mut row.right_text, p, total_layers, is_setup);
+            write_participant_right_text(
+                &mut row.right_text,
+                &p.status,
+                p.current_layer,
+                total_layers,
+                p.igt_ms,
+            );
             cache.max_right_width = cache
                 .max_right_width
                 .max(ui.calc_text_size(&row.right_text)[0]);
@@ -738,43 +742,6 @@ fn brighten(color: [f32; 4], factor: f32) -> [f32; 4] {
         color[2] + (1.0 - color[2]) * factor,
         color[3],
     ]
-}
-
-/// Write right-column text for a participant row into a buffer.
-/// Produces: finish time, layer progress, or status label.
-fn write_right_text(
-    buf: &mut String,
-    p: &crate::core::protocol::ParticipantInfo,
-    total_layers: i32,
-    is_setup: bool,
-) {
-    match p.status.as_str() {
-        "finished" => write_time(buf, p.igt_ms),
-        "ready" if is_setup => buf.push_str("ready"),
-        "registered" if is_setup => buf.push_str("registered"),
-        _ if is_setup => buf.push_str(&p.status),
-        _ => {
-            let display = (p.current_layer + 1).min(total_layers);
-            write!(buf, "{}/{}", display, total_layers).ok();
-        }
-    }
-}
-
-/// Write a time value (signed ms) as M:SS or H:MM:SS into a buffer.
-fn write_time(buf: &mut String, ms: i32) {
-    if ms < 0 {
-        buf.push_str("--:--");
-        return;
-    }
-    let ms = ms as u32;
-    let secs = ms / 1000;
-    let mins = secs / 60;
-    let hours = mins / 60;
-    if hours > 0 {
-        write!(buf, "{}:{:02}:{:02}", hours, mins % 60, secs % 60).ok();
-    } else {
-        write!(buf, "{:02}:{:02}", mins, secs % 60).ok();
-    }
 }
 
 /// Write a time value (unsigned ms) as HH:MM:SS into a buffer.
