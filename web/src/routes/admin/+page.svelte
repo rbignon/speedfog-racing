@@ -854,6 +854,108 @@
 				</div>
 			{/if}
 
+			{@const poolRunsMax = Math.max(
+				1,
+				...analytics.pool_usage.flatMap((p) => [p.race_runs, p.training_runs])
+			)}
+			<div class="charts-grid">
+				<div class="chart-box">
+					<div class="chart-title">Pool Usage</div>
+					{#if analytics.pool_usage.length === 0}
+						<p class="analytics-table-empty">No runs recorded yet.</p>
+					{:else}
+						<table class="analytics-table">
+							<thead>
+								<tr>
+									<th>Pool</th>
+									<th>Type</th>
+									<th class="th-runs">Runs</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each analytics.pool_usage as pool (pool.pool_name)}
+									{@const hasRace = pool.race_runs > 0}
+									{@const hasTraining = pool.training_runs > 0}
+									{@const rowCount = (hasRace ? 1 : 0) + (hasTraining ? 1 : 0)}
+									{#if hasRace}
+										<tr class="race-row">
+											<td class="pool-name" rowspan={rowCount}>
+												{formatPoolName(pool.pool_name)}
+											</td>
+											<td class="type-label race-type">Race</td>
+											<td class="runs-cell">
+												<div
+													class="runs-bar runs-bar-race"
+													style="width: {Math.max(12, (pool.race_runs / poolRunsMax) * 120)}px"
+												></div>
+												<span class="runs-value">{pool.race_runs}</span>
+											</td>
+										</tr>
+									{/if}
+									{#if hasTraining}
+										<tr class={hasRace ? 'training-row' : 'training-row-first'}>
+											{#if !hasRace}
+												<td class="pool-name" rowspan={rowCount}>
+													{formatPoolName(pool.pool_name)}
+												</td>
+											{/if}
+											<td class="type-label training-type">Solo</td>
+											<td class="runs-cell">
+												<div
+													class="runs-bar runs-bar-training"
+													style="width: {Math.max(12, (pool.training_runs / poolRunsMax) * 120)}px"
+												></div>
+												<span class="runs-value">{pool.training_runs}</span>
+											</td>
+										</tr>
+									{/if}
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+				</div>
+				<div class="chart-box">
+					<div class="chart-title">Top Race Organizers</div>
+					{#if analytics.top_organizers.length === 0}
+						<p class="analytics-table-empty">No finished races yet.</p>
+					{:else}
+						<table class="analytics-table">
+							<thead>
+								<tr>
+									<th class="rank-col">#</th>
+									<th>User</th>
+									<th class="num">Races</th>
+									<th class="num">Avg Players</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each analytics.top_organizers as org, idx (org.user_id)}
+									<tr>
+										<td class="rank-col num">{idx + 1}</td>
+										<td>
+											<a
+												href="/user/{org.twitch_username}"
+												class="organizer-link"
+												title={org.twitch_display_name || org.twitch_username}
+											>
+												{#if org.twitch_avatar_url}
+													<img src={org.twitch_avatar_url} alt="" class="organizer-avatar" />
+												{/if}
+												<span class="organizer-name"
+													>{org.twitch_display_name || org.twitch_username}</span
+												>
+											</a>
+										</td>
+										<td class="num">{org.race_count}</td>
+										<td class="num">{org.avg_participants.toFixed(1)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+				</div>
+			</div>
+
 			<div class="stats-section">
 				<h2 class="section-title">Recalculate</h2>
 				<p class="stats-description">
@@ -1518,6 +1620,132 @@
 		font-weight: 600;
 		color: var(--color-text);
 		margin-bottom: 0.75rem;
+	}
+
+	.analytics-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.9rem;
+	}
+
+	.analytics-table thead th {
+		text-align: left;
+		padding: 0.4rem 0.6rem;
+		color: var(--color-text-secondary);
+		font-weight: 500;
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.analytics-table tbody td {
+		padding: 0.4rem 0.6rem;
+		color: var(--color-text);
+	}
+
+	.analytics-table th.num,
+	.analytics-table td.num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.analytics-table .rank-col {
+		width: 2.5rem;
+	}
+
+	.analytics-table .th-runs {
+		width: 50%;
+	}
+
+	.analytics-table .runs-cell {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.analytics-table .runs-bar {
+		height: 12px;
+		border-radius: 6px;
+		flex-shrink: 0;
+		transition: width 0.3s ease;
+	}
+
+	.analytics-table .runs-bar-race {
+		background: var(--color-gold);
+	}
+
+	.analytics-table .runs-bar-training {
+		background: var(--color-purple);
+	}
+
+	.analytics-table .runs-value {
+		font-variant-numeric: tabular-nums;
+		flex-shrink: 0;
+	}
+
+	.analytics-table .pool-name {
+		font-weight: 600;
+		color: var(--color-gold);
+		vertical-align: middle;
+	}
+
+	.analytics-table .type-label {
+		font-size: 0.8rem;
+		font-weight: 500;
+	}
+
+	.analytics-table .race-type {
+		color: var(--color-gold);
+	}
+
+	.analytics-table .training-type {
+		color: var(--color-purple);
+	}
+
+	.analytics-table .race-row td,
+	.analytics-table .training-row-first td {
+		border-top: 1px solid var(--color-border);
+	}
+
+	.analytics-table .training-row td {
+		border-top: none;
+	}
+
+	.analytics-table tbody tr:first-child td {
+		border-top: none;
+	}
+
+	.analytics-table-empty {
+		color: var(--color-text-secondary);
+		font-size: 0.85rem;
+		margin: 0.25rem 0 0;
+	}
+
+	.organizer-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.organizer-link:hover .organizer-name {
+		text-decoration: underline;
+	}
+
+	.organizer-avatar {
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		object-fit: cover;
+	}
+
+	.organizer-name {
+		max-width: 10rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.heatmaps-row {

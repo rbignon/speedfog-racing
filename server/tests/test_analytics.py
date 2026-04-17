@@ -370,6 +370,8 @@ async def test_analytics_endpoint_returns_200_for_admin(test_client, admin_user,
     assert "weekly" in data
     assert "heatmaps" in data
     assert "timezones" in data
+    assert "pool_usage" in data
+    assert "top_organizers" in data
 
 
 @pytest.mark.asyncio
@@ -390,3 +392,319 @@ async def test_analytics_endpoint_returns_401_without_auth(test_client):
     async with test_client as client:
         response = await client.get("/api/admin/analytics")
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Pool usage / top organizers tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_pool_usage_from_fixture(analytics_data, async_session):
+    """pool_usage should aggregate race participations and eligible training sessions."""
+    async with async_session() as db:
+        result = await compute_analytics(db)
+
+    pool_usage = result["pool_usage"]
+    assert len(pool_usage) == 1
+    entry = pool_usage[0]
+    assert entry["pool_name"] == "standard"
+    # One race in the pool (participant count does not inflate the value)
+    assert entry["race_runs"] == 1
+    # 1 FINISHED training; the ABANDONED one has igt_ms=0 so is excluded
+    assert entry["training_runs"] == 1
+    assert entry["total_runs"] == 2
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_pool_usage_merges_training_prefix(async_session):
+    """A seed pool named "training_<x>" must merge into "<x>" on the pool_usage row."""
+    now = datetime.now(tz=UTC)
+    async with async_session() as db:
+        user = User(
+            twitch_id="pool_u",
+            twitch_username="pooluser",
+            api_token=generate_token(),
+        )
+        db.add(user)
+        await db.flush()
+
+        race_seed = Seed(
+            seed_number="100",
+            pool_name="boss_rush",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/100",
+            status=SeedStatus.CONSUMED,
+        )
+        training_seed = Seed(
+            seed_number="101",
+            pool_name="training_boss_rush",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/101",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add_all([race_seed, training_seed])
+        await db.flush()
+
+        race = Race(
+            name="r",
+            organizer_id=user.id,
+            seed_id=race_seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=now - timedelta(hours=1),
+            finished_at=now,
+        )
+        db.add(race)
+        await db.flush()
+        db.add(
+            Participant(
+                race_id=race.id,
+                user_id=user.id,
+                mod_token=generate_token(),
+                status=ParticipantStatus.FINISHED,
+            )
+        )
+        db.add(
+            TrainingSession(
+                user_id=user.id,
+                seed_id=training_seed.id,
+                mod_token=generate_token(),
+                status=TrainingSessionStatus.FINISHED,
+                igt_ms=1000,
+            )
+        )
+        await db.commit()
+
+    async with async_session() as db:
+        result = await compute_analytics(db)
+
+    pools = {p["pool_name"]: p for p in result["pool_usage"]}
+    assert "boss_rush" in pools
+    # training_boss_rush must merge into boss_rush, not appear as its own row
+    assert "training_boss_rush" not in pools
+    entry = pools["boss_rush"]
+    assert entry["race_runs"] == 1
+    assert entry["training_runs"] == 1
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_pool_usage_excludes_training_flag(async_session):
+    """Training sessions flagged exclude_from_stats must not count in pool_usage."""
+    now = datetime.now(tz=UTC)
+    async with async_session() as db:
+        user = User(twitch_id="x_u", twitch_username="xuser", api_token=generate_token())
+        db.add(user)
+        await db.flush()
+        seed = Seed(
+            seed_number="200",
+            pool_name="excluded_pool",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/200",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        db.add(
+            TrainingSession(
+                user_id=user.id,
+                seed_id=seed.id,
+                mod_token=generate_token(),
+                status=TrainingSessionStatus.FINISHED,
+                igt_ms=1000,
+                exclude_from_stats=True,
+                created_at=now,
+            )
+        )
+        await db.commit()
+
+    async with async_session() as db:
+        result = await compute_analytics(db)
+
+    assert all(p["pool_name"] != "excluded_pool" for p in result["pool_usage"])
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_top_organizers_from_fixture(analytics_data, async_session):
+    """Top organizers should list user1 (1 finished race, avg 2.0 participants)."""
+    async with async_session() as db:
+        result = await compute_analytics(db)
+
+    top = result["top_organizers"]
+    assert len(top) == 1
+    entry = top[0]
+    assert entry["twitch_username"] == "tzuser1"
+    assert entry["race_count"] == 1
+    assert entry["avg_participants"] == 2.0
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_pool_usage_sorted_by_total_runs(async_session):
+    """pool_usage entries must be sorted by total_runs desc, then pool_name asc."""
+    now = datetime.now(tz=UTC)
+    async with async_session() as db:
+        user = User(twitch_id="su", twitch_username="suser", api_token=generate_token())
+        db.add(user)
+        await db.flush()
+
+        seed_big = Seed(
+            seed_number="400",
+            pool_name="alpha",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/400",
+            status=SeedStatus.CONSUMED,
+        )
+        seed_small = Seed(
+            seed_number="401",
+            pool_name="beta",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/401",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add_all([seed_big, seed_small])
+        await db.flush()
+
+        # alpha: 2 races ; beta: 1 race
+        for seed, count in ((seed_big, 2), (seed_small, 1)):
+            for _ in range(count):
+                db.add(
+                    Race(
+                        name="r",
+                        organizer_id=user.id,
+                        seed_id=seed.id,
+                        status=RaceStatus.FINISHED,
+                        started_at=now - timedelta(hours=1),
+                        finished_at=now,
+                    )
+                )
+        await db.commit()
+
+    async with async_session() as db:
+        result = await compute_analytics(db)
+
+    names = [p["pool_name"] for p in result["pool_usage"]]
+    assert names == ["alpha", "beta"]
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_top_organizers_zero_participants(async_session):
+    """A finished race with zero participants must still count in the organizer's tally."""
+    now = datetime.now(tz=UTC)
+    async with async_session() as db:
+        user = User(twitch_id="zp", twitch_username="zporg", api_token=generate_token())
+        db.add(user)
+        await db.flush()
+        seed = Seed(
+            seed_number="500",
+            pool_name="solo_pool",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/500",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        db.add(
+            Race(
+                name="r",
+                organizer_id=user.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=now - timedelta(hours=1),
+                finished_at=now,
+            )
+        )
+        await db.commit()
+
+    async with async_session() as db:
+        result = await compute_analytics(db)
+
+    top = result["top_organizers"]
+    assert len(top) == 1
+    assert top[0]["twitch_username"] == "zporg"
+    assert top[0]["race_count"] == 1
+    assert top[0]["avg_participants"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_top_organizers_ranking(async_session):
+    """Organizers must be ranked by race count (desc), ignoring non-finished races."""
+    now = datetime.now(tz=UTC)
+    async with async_session() as db:
+        organizers = [
+            User(
+                twitch_id=f"o{i}",
+                twitch_username=f"org{i}",
+                api_token=generate_token(),
+            )
+            for i in range(3)
+        ]
+        # Pool of distinct players to satisfy participants.UNIQUE(race_id, user_id)
+        players = [
+            User(
+                twitch_id=f"p{i}",
+                twitch_username=f"player{i}",
+                api_token=generate_token(),
+            )
+            for i in range(4)
+        ]
+        db.add_all(organizers + players)
+        await db.flush()
+
+        seed = Seed(
+            seed_number="300",
+            pool_name="std",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/300",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        # org0: 3 finished races, 2 participants each
+        # org1: 2 finished races, 4 participants each
+        # org2: 1 SETUP race (must be ignored)
+        race_specs = [
+            (organizers[0], RaceStatus.FINISHED, 2),
+            (organizers[0], RaceStatus.FINISHED, 2),
+            (organizers[0], RaceStatus.FINISHED, 2),
+            (organizers[1], RaceStatus.FINISHED, 4),
+            (organizers[1], RaceStatus.FINISHED, 4),
+            (organizers[2], RaceStatus.SETUP, 3),
+        ]
+        for organizer, status, participant_count in race_specs:
+            race = Race(
+                name="r",
+                organizer_id=organizer.id,
+                seed_id=seed.id,
+                status=status,
+                started_at=now - timedelta(hours=1) if status != RaceStatus.SETUP else None,
+                finished_at=now if status == RaceStatus.FINISHED else None,
+            )
+            db.add(race)
+            await db.flush()
+            for idx in range(participant_count):
+                db.add(
+                    Participant(
+                        race_id=race.id,
+                        user_id=players[idx].id,
+                        mod_token=generate_token(),
+                        status=ParticipantStatus.FINISHED,
+                    )
+                )
+        await db.commit()
+
+    async with async_session() as db:
+        result = await compute_analytics(db)
+
+    top = result["top_organizers"]
+    assert [e["twitch_username"] for e in top] == ["org0", "org1"]
+    assert top[0]["race_count"] == 3
+    assert top[0]["avg_participants"] == 2.0
+    assert top[1]["race_count"] == 2
+    assert top[1]["avg_participants"] == 4.0

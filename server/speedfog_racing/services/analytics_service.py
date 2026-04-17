@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
     Participant,
     Race,
     RaceStatus,
+    Seed,
     TrainingSession,
     TrainingSessionStatus,
     User,
@@ -267,12 +269,115 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
 
     tz_list.sort(key=lambda x: int(x["offset_minutes"]))
 
+    pool_usage = await _compute_pool_usage(db)
+    top_organizers = await _compute_top_organizers(db)
+
     return {
         "kpis": kpis,
         "weekly": weekly,
         "heatmaps": heatmaps,
         "timezones": tz_list,
+        "pool_usage": pool_usage,
+        "top_organizers": top_organizers,
     }
+
+
+async def _compute_pool_usage(db: AsyncSession) -> list[dict[str, Any]]:
+    """Aggregate runs per pool, site-wide.
+
+    Races: one count per race (any status), so that each race weighs the same
+    regardless of its number of participants. Training: sessions with status
+    FINISHED or (ABANDONED and igt_ms > 0), matching the per-user pool-stats
+    semantics. Training pool names are normalized by stripping the "training_"
+    prefix so they merge with their race pool.
+    """
+    race_counts_q = await db.execute(
+        select(Seed.pool_name, func.count(Race.id))
+        .select_from(Race)
+        .join(Seed, Race.seed_id == Seed.id)
+        .group_by(Seed.pool_name)
+    )
+    race_counts: dict[str, int] = {row[0]: row[1] for row in race_counts_q.all()}
+
+    training_counts_q = await db.execute(
+        select(Seed.pool_name, func.count(TrainingSession.id))
+        .select_from(TrainingSession)
+        .join(Seed, TrainingSession.seed_id == Seed.id)
+        .where(
+            or_(
+                TrainingSession.status == TrainingSessionStatus.FINISHED,
+                (TrainingSession.status == TrainingSessionStatus.ABANDONED)
+                & (TrainingSession.igt_ms > 0),
+            ),
+            TrainingSession.exclude_from_stats == False,  # noqa: E712
+        )
+        .group_by(Seed.pool_name)
+    )
+    training_counts: dict[str, int] = {}
+    for raw_pool, count in training_counts_q.all():
+        pool = raw_pool.removeprefix("training_")
+        training_counts[pool] = training_counts.get(pool, 0) + count
+
+    all_pools = set(race_counts) | set(training_counts)
+    entries: list[dict[str, Any]] = [
+        {
+            "pool_name": pool,
+            "race_runs": race_counts.get(pool, 0),
+            "training_runs": training_counts.get(pool, 0),
+            "total_runs": race_counts.get(pool, 0) + training_counts.get(pool, 0),
+        }
+        for pool in all_pools
+    ]
+    entries.sort(key=lambda e: (-int(e["total_runs"]), str(e["pool_name"])))
+    return entries
+
+
+async def _compute_top_organizers(db: AsyncSession, limit: int = 10) -> list[dict[str, Any]]:
+    """Top organizers by count of finished races, with average participants.
+
+    Participant count per race is computed in SQL, then averaged in Python to
+    stay dialect-agnostic (SQLite test DB does not support AVG of subquery
+    aggregates in a single statement the same way as PostgreSQL).
+    """
+    # race_id -> participant count, restricted to finished races
+    per_race_q = await db.execute(
+        select(Race.id, Race.organizer_id, func.count(Participant.id))
+        .select_from(Race)
+        .outerjoin(Participant, Participant.race_id == Race.id)
+        .where(Race.status == RaceStatus.FINISHED)
+        .group_by(Race.id, Race.organizer_id)
+    )
+    per_organizer_counts: dict[uuid.UUID, list[int]] = {}
+    for _race_id, organizer_id, participant_count in per_race_q.all():
+        per_organizer_counts.setdefault(organizer_id, []).append(participant_count)
+
+    if not per_organizer_counts:
+        return []
+
+    users_q = await db.execute(select(User).where(User.id.in_(list(per_organizer_counts.keys()))))
+    users_by_id = {u.id: u for u in users_q.scalars().all()}
+
+    entries: list[dict[str, Any]] = []
+    for organizer_id, counts in per_organizer_counts.items():
+        user = users_by_id.get(organizer_id)
+        if user is None:
+            logger.warning("Finished race organizer %s not found in users table", organizer_id)
+            continue
+        race_count = len(counts)
+        avg_participants = round(sum(counts) / race_count, 1) if race_count > 0 else 0.0
+        entries.append(
+            {
+                "user_id": str(user.id),
+                "twitch_username": user.twitch_username,
+                "twitch_display_name": user.twitch_display_name,
+                "twitch_avatar_url": user.twitch_avatar_url,
+                "race_count": race_count,
+                "avg_participants": avg_participants,
+            }
+        )
+
+    entries.sort(key=lambda e: (-e["race_count"], e["twitch_username"]))
+    return entries[:limit]
 
 
 def _ensure_utc(dt: datetime) -> datetime:

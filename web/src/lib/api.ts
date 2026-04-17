@@ -1005,6 +1005,22 @@ export interface AnalyticsTimezone {
   count: number;
 }
 
+export interface AnalyticsPoolUsage {
+  pool_name: string;
+  race_runs: number;
+  training_runs: number;
+  total_runs: number;
+}
+
+export interface AnalyticsTopOrganizer {
+  user_id: string;
+  twitch_username: string;
+  twitch_display_name: string | null;
+  twitch_avatar_url: string | null;
+  race_count: number;
+  avg_participants: number;
+}
+
 export interface AdminAnalytics {
   kpis: AnalyticsKpis;
   weekly: AnalyticsWeekly;
@@ -1013,6 +1029,8 @@ export interface AdminAnalytics {
     solo: number[][];
   };
   timezones: AnalyticsTimezone[];
+  pool_usage: AnalyticsPoolUsage[];
+  top_organizers: AnalyticsTopOrganizer[];
 }
 
 /**
