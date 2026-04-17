@@ -22,6 +22,8 @@
 		ghostIds?: Set<string>;
 		/** IDs of selected participants to highlight (empty = show all) */
 		highlightIds?: Set<string>;
+		/** Render the leader star above the leading player (default: true) */
+		showLeader?: boolean;
 	}
 
 	let {
@@ -36,7 +38,8 @@
 		previousLeader,
 		onleaderchange,
 		ghostIds,
-		highlightIds
+		highlightIds,
+		showLeader = true
 	}: Props = $props();
 
 	let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
@@ -158,7 +161,7 @@
 			<title>{rp.displayName}</title>
 		</circle>
 		<!-- Leader star (never on ghosts, frozen, or hidden players) -->
-		{#if snap.participantId === leaderId && !isGhost && !isFrozen && !isHidden}
+		{#if showLeader && snap.participantId === leaderId && !isGhost && !isFrozen && !isHidden}
 			<text
 				x={snap.x}
 				y={snap.y - RACER_DOT_RADIUS - 5}
@@ -166,8 +169,8 @@
 				font-size="14"
 				fill={leaderChanged ? '#FACC15' : '#C8A44E'}
 				class="leader-star"
-				class:flash={leaderChanged}
-			>&#x2B51;</text>
+				class:flash={leaderChanged}>&#x2B51;</text
+			>
 		{/if}
 	{/if}
 {/each}
@@ -185,8 +188,8 @@
 			dominant-baseline="central"
 			font-size={18 * skullScale(skull.progress)}
 			opacity={(isGhostSkull ? 0.3 : 1) * skullOpacity(skull.progress)}
-			class="skull-anim"
-		>&#x1F480;</text>
+			class="skull-anim">&#x1F480;</text
+		>
 	{/if}
 {/each}
 

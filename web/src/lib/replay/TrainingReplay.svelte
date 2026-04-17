@@ -195,6 +195,7 @@
 						{leaderId}
 						{previousLeader}
 						{ghostIds}
+						showLeader={false}
 						onleaderchange={handleLeaderChange}
 					/>
 				{/if}
