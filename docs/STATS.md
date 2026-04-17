@@ -206,9 +206,9 @@ A minimum threshold applies: the player must be in the **top 50%** (`DOMINANT_PE
 
 ## Zone Stats
 
-**Endpoint:** `GET /api/stats/zones?pool=<optional>`
+**Endpoint:** `GET /api/stats/zones?pool=<optional>&days=<optional>`
 
-Aggregates `zone_history` from all FINISHED participants. Only includes dungeon-type nodes.
+Aggregates `zone_history` from FINISHED participants (and ABANDONED with `igt_ms > 0`) in races started within the last `days` days (default 30). Only includes dungeon-type nodes.
 
 ### Node Type Filter
 

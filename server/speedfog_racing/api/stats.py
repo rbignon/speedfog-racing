@@ -322,13 +322,13 @@ def _aggregate_zone_stats(
 @router.get("/zones", response_model=ZoneStatsResponse)
 async def get_zone_stats(
     pool: str | None = Query(default=None),
-    days: int = Query(default=90, ge=1, le=3650),
+    days: int = Query(default=30, ge=1, le=3650),
     db: AsyncSession = Depends(get_db),
 ) -> ZoneStatsResponse:
     """Zone analytics: deadliest dungeons and most visited nodes.
 
     ``days`` restricts the input to races started within the last N days
-    (default 90, range 1..3650). The output is capped at 5 entries per
+    (default 30, range 1..3650). The output is capped at 5 entries per
     category (deadliest, backtracked, slowest, fastest).
     """
     query = (
