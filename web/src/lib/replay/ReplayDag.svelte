@@ -164,9 +164,9 @@
 		{#if showLeader && snap.participantId === leaderId && !isGhost && !isFrozen && !isHidden}
 			<text
 				x={snap.x}
-				y={snap.y - RACER_DOT_RADIUS - 5}
+				y={snap.y - RACER_DOT_RADIUS - 8}
 				text-anchor="middle"
-				font-size="14"
+				font-size="22"
 				fill={leaderChanged ? '#FACC15' : '#C8A44E'}
 				class="leader-star"
 				class:flash={leaderChanged}>&#x2B51;</text
@@ -216,10 +216,10 @@
 	@keyframes star-flash {
 		0%,
 		100% {
-			font-size: 14px;
+			font-size: 22px;
 		}
 		50% {
-			font-size: 20px;
+			font-size: 30px;
 		}
 	}
 
