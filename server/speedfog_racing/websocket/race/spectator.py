@@ -114,7 +114,7 @@ async def load_chat_history(
                 ChatMessageModel.race_id == race_id,
                 ChatMessageModel.channel == channel,
             )
-            .order_by(ChatMessageModel.created_at.desc())
+            .order_by(ChatMessageModel.created_at.desc(), ChatMessageModel.id.desc())
             .limit(MAX_CHAT_HISTORY_MESSAGES)
         )
         rows = list(reversed(result.all()))

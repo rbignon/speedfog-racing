@@ -314,6 +314,13 @@ async def persist_system_chat(
 
     The caller is responsible for broadcasting the returned JSON string
     to the appropriate room channel.
+
+    `created_at` is stamped Python-side so that successive calls produce
+    monotonically increasing timestamps: the `server_default=func.now()`
+    on ChatMessage maps to PostgreSQL `transaction_timestamp()` (shared
+    across a whole transaction) and to SQLite `CURRENT_TIMESTAMP`
+    (1-second resolution), neither of which preserves insertion order
+    for rows flushed close together.
     """
     from speedfog_racing.models import ChatChannel as ChatChannelModel
     from speedfog_racing.models import ChatMessage
@@ -323,6 +330,7 @@ async def persist_system_chat(
         channel=ChatChannelModel(channel) if isinstance(channel, str) else channel,
         user_id=None,
         message=message,
+        created_at=datetime.now(UTC),
     )
     db.add(db_msg)
     await db.flush()
