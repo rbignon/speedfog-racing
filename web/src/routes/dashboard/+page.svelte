@@ -11,6 +11,7 @@
 		type UserProfile,
 		type UserPoolStats,
 		type ActivityItem,
+		type ActivityTimeline,
 		type Race,
 		type TrainingSession,
 	} from '$lib/api';
@@ -24,11 +25,12 @@
 
 	let profile: UserProfile | null = $state(null);
 	let poolStats: UserPoolStats | null = $state(null);
-	let activity: ActivityItem[] = $state([]);
+	let activity = $state<ActivityTimeline | null>(null);
 	let myRaces: Race[] = $state([]);
 	let trainingSessions: TrainingSession[] = $state([]);
 	let joinableRaces: Race[] = $state([]);
 	let loading = $state(true);
+	let loadingMore = $state(false);
 	let error = $state<string | null>(null);
 	let fetched = $state(false);
 
@@ -88,7 +90,7 @@
 		])
 			.then(([p, a, r, t, ps, jr]) => {
 				profile = p;
-				activity = a.items;
+				activity = a;
 				myRaces = r;
 				trainingSessions = t;
 				poolStats = ps;
@@ -100,6 +102,23 @@
 			})
 			.finally(() => (loading = false));
 	});
+
+	async function loadMoreActivity() {
+		if (!activity || !activity.has_more || !auth.user) return;
+		loadingMore = true;
+		try {
+			const more = await fetchUserActivity(auth.user.twitch_username, activity.items.length);
+			activity = {
+				items: [...activity.items, ...more.items],
+				total: more.total,
+				has_more: more.has_more,
+			};
+		} catch (e) {
+			console.error('Load more activity error:', e);
+		} finally {
+			loadingMore = false;
+		}
+	}
 
 	function activityLink(item: ActivityItem): string {
 		if (item.type === 'training') return `/training/${item.session_id}`;
@@ -385,11 +404,11 @@
 		{/if}
 
 		<!-- Recent Activity Section -->
-		{#if activity.length > 0}
+		{#if activity && activity.items.length > 0}
 			<section class="activity-section">
 				<h2>Recent Activity</h2>
 				<div class="activity-list">
-					{#each activity as item}
+					{#each activity.items as item}
 						<a href={activityLink(item)} class="activity-row">
 							<span class="activity-badge badge-{item.type === 'training' ? 'training' : item.status}">{activityBadge(item)}</span>
 							<div class="activity-content">
@@ -420,11 +439,15 @@
 						</a>
 					{/each}
 				</div>
-				<div class="activity-footer">
-					<a href="/user/{auth.user?.twitch_username}" class="activity-more"
-						>See all activity</a
+				{#if activity.has_more}
+					<button
+						class="btn btn-secondary load-more"
+						disabled={loadingMore}
+						onclick={loadMoreActivity}
 					>
-				</div>
+						{loadingMore ? 'Loading...' : 'Load more'}
+					</button>
+				{/if}
 			</section>
 		{/if}
 	{/if}
@@ -1007,19 +1030,9 @@
 		flex-shrink: 0;
 	}
 
-	.activity-footer {
-		padding-top: 0.75rem;
-		text-align: center;
-	}
-
-	.activity-more {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
-		text-decoration: none;
-	}
-
-	.activity-more:hover {
-		color: var(--color-gold);
+	.load-more {
+		margin-top: 1rem;
+		width: 100%;
 	}
 
 	/* Responsive */
