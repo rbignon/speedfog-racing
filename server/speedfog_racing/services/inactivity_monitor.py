@@ -134,15 +134,10 @@ async def inactivity_monitor_loop(
                                 )
                                 abandon_messages.append(sys_json)
 
-                        finish_participants_json: str | None = None
                         finish_public_json: str | None = None
                         if race.status == RaceStatus.FINISHED:
-                            finished_msg = "The race has finished."
-                            finish_participants_json = await persist_system_chat(
-                                db, race_id, ChatChannel.PARTICIPANTS, finished_msg
-                            )
                             finish_public_json = await persist_system_chat(
-                                db, race_id, ChatChannel.PUBLIC, finished_msg
+                                db, race_id, ChatChannel.PUBLIC, "The race has finished."
                             )
                         await db.commit()
 
@@ -157,12 +152,7 @@ async def inactivity_monitor_loop(
                         await broadcast_race_state_update(race_id, race)
                         if race.status == RaceStatus.FINISHED:
                             await manager.broadcast_race_status(race_id, "finished")
-                            if (
-                                room
-                                and finish_participants_json is not None
-                                and finish_public_json is not None
-                            ):
-                                await room.broadcast_chat_participants(finish_participants_json)
+                            if room and finish_public_json is not None:
                                 await room.broadcast_chat_public(finish_public_json)
                             fire_race_finished_notifications(race)
         except Exception:

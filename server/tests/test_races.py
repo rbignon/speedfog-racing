@@ -1100,7 +1100,7 @@ async def test_finish_running_race(test_client, organizer, player, async_session
         )
         finished_msgs = result.scalars().all()
         channels = {m.channel for m in finished_msgs}
-        assert channels == {ChatChannel.PARTICIPANTS, ChatChannel.PUBLIC}
+        assert channels == {ChatChannel.PUBLIC}
         assert all(m.user_id is None for m in finished_msgs)
 
 
@@ -1170,6 +1170,69 @@ async def test_finish_race_non_organizer(test_client, organizer, player, async_s
             headers={"Authorization": f"Bearer {player.api_token}"},
         )
         assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_mod_finish_auto_finish_chat_order(organizer, player, async_session):
+    """When the last mod-finish auto-finishes the race, the per-player
+    message is persisted before "The race has finished." (public channel only).
+    """
+    from unittest.mock import MagicMock
+
+    from speedfog_racing.websocket.race.mod import handle_finished
+
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_mod_order",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/mod_order",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Mod Order Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        p = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.PLAYING,
+            current_layer=4,
+            igt_ms=250000,
+        )
+        db.add(p)
+        await db.commit()
+        race_id = race.id
+        participant_id = p.id
+
+    await handle_finished(MagicMock(), async_session, participant_id, {"igt_ms": 300000})
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.race_id == race_id)
+            .order_by(ChatMessage.created_at, ChatMessage.id)
+        )
+        messages = list(result.scalars().all())
+
+        per_player = [m for m in messages if "has finished the race!" in m.message]
+        race_finished = [m for m in messages if m.message == "The race has finished."]
+
+        assert len(per_player) == 1
+        assert per_player[0].channel == ChatChannel.PUBLIC
+        assert len(race_finished) == 1
+        assert race_finished[0].channel == ChatChannel.PUBLIC
+        assert messages.index(per_player[0]) < messages.index(race_finished[0])
 
 
 # =============================================================================

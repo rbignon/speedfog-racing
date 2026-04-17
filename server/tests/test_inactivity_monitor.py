@@ -403,7 +403,7 @@ async def test_loop_persists_system_messages_when_no_room(async_session):
                         ChatMessage.message == "The race has finished.",
                     )
                 )
-                if len(result.scalars().all()) >= 2:
+                if len(result.scalars().all()) >= 1:
                     break
     finally:
         task.cancel()
@@ -418,7 +418,7 @@ async def test_loop_persists_system_messages_when_no_room(async_session):
 
         finished_msgs = [m for m in messages if m.message == "The race has finished."]
         finished_channels = {m.channel for m in finished_msgs}
-        assert finished_channels == {ChatChannel.PARTICIPANTS, ChatChannel.PUBLIC}
+        assert finished_channels == {ChatChannel.PUBLIC}
 
         inactive_msgs = [
             m

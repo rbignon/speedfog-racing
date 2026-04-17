@@ -663,19 +663,21 @@ async def handle_finished(
         if not participant:
             return
 
+        # Persist per-player finish first so its timestamp precedes the
+        # race-finished message when the race auto-finishes on this event.
+        display = participant.user.twitch_display_name or participant.user.twitch_username
+        participant_finished_public_json = await persist_system_chat(
+            db, participant.race_id, ChatChannel.PUBLIC, f"{display} has finished the race!"
+        )
+
         race_transitioned = await check_race_auto_finish(db, participant.race)
-        race_finished_participants_json: str | None = None
         race_finished_public_json: str | None = None
         if race_transitioned:
             logger.info("Race finished: %s", participant.race_id)
-            finished_msg = "The race has finished."
-            race_finished_participants_json = await persist_system_chat(
-                db, participant.race_id, ChatChannel.PARTICIPANTS, finished_msg
-            )
             race_finished_public_json = await persist_system_chat(
-                db, participant.race_id, ChatChannel.PUBLIC, finished_msg
+                db, participant.race_id, ChatChannel.PUBLIC, "The race has finished."
             )
-            await db.commit()
+        await db.commit()
 
     # Session closed. All broadcasts use detached objects.
 
@@ -685,14 +687,6 @@ async def handle_finished(
         await broadcast_race_state_update(participant.race_id, participant.race)
         await manager.broadcast_race_status(participant.race_id, "finished")
         fire_race_finished_notifications(participant.race)
-        finished_room = manager.get_room(participant.race_id)
-        if (
-            finished_room
-            and race_finished_participants_json is not None
-            and race_finished_public_json is not None
-        ):
-            await finished_room.broadcast_chat_participants(race_finished_participants_json)
-            await finished_room.broadcast_chat_public(race_finished_public_json)
 
     await manager.broadcast_leaderboard(
         participant.race_id,
@@ -700,16 +694,14 @@ async def handle_finished(
         graph_json=_get_graph_json(participant),
     )
 
-    # Notify public chat (persisted) + unlock PUBLIC channel for finished participant
-    display = participant.user.twitch_display_name or participant.user.twitch_username
-    async with session_maker() as db:
-        sys_json = await persist_system_chat(
-            db, participant.race_id, ChatChannel.PUBLIC, f"{display} has finished the race!"
-        )
-        await db.commit()
+    # Chat broadcasts + unlock PUBLIC channel for the finished participant.
+    # Per-player message first, then the race-finished notice (when applicable)
+    # so spectators see them in chronological order.
     room = manager.get_room(participant.race_id)
     if room:
-        await room.broadcast_chat_public(sys_json)
+        await room.broadcast_chat_public(participant_finished_public_json)
+        if race_finished_public_json is not None:
+            await room.broadcast_chat_public(race_finished_public_json)
         spec_conn = room.get_spectator_by_user_id(participant.user_id)
         if spec_conn and spec_conn.is_playing:
             spec_conn.is_playing = False

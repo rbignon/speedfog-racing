@@ -1478,11 +1478,9 @@ async def finish_race(
         if p.status == ParticipantStatus.PLAYING:
             p.status = ParticipantStatus.ABANDONED
 
-    finished_msg = "The race has finished."
-    finished_participants_json = await persist_system_chat(
-        db, race_id, ChatChannel.PARTICIPANTS, finished_msg
+    finished_public_json = await persist_system_chat(
+        db, race_id, ChatChannel.PUBLIC, "The race has finished."
     )
-    finished_public_json = await persist_system_chat(db, race_id, ChatChannel.PUBLIC, finished_msg)
     await db.commit()
 
     # Clear is_playing on all spectator connections (race is finished)
@@ -1504,7 +1502,6 @@ async def finish_race(
     await broadcast_race_state_update(race_id, race)
     await manager.broadcast_race_status(race_id, "finished")
     if room:
-        await room.broadcast_chat_participants(finished_participants_json)
         await room.broadcast_chat_public(finished_public_json)
 
     fire_race_finished_notifications(race)
@@ -1572,17 +1569,14 @@ async def abandon_race(
     # Check auto-finish
     race_transitioned = await check_race_auto_finish(db, race)
     if race_transitioned:
-        finished_msg = "The race has finished."
-        fin_participants_json = await persist_system_chat(
-            db, race_id, ChatChannel.PARTICIPANTS, finished_msg
+        fin_public_json = await persist_system_chat(
+            db, race_id, ChatChannel.PUBLIC, "The race has finished."
         )
-        fin_public_json = await persist_system_chat(db, race_id, ChatChannel.PUBLIC, finished_msg)
         await db.commit()
         race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
         await broadcast_race_state_update(race_id, race)
         await manager.broadcast_race_status(race_id, "finished")
         if room:
-            await room.broadcast_chat_participants(fin_participants_json)
             await room.broadcast_chat_public(fin_public_json)
         fire_race_finished_notifications(race)
 

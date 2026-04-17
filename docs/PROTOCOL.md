@@ -723,7 +723,7 @@ The server broadcasts system notifications for the following events:
 | Event                       | Channels              | Message                                                      |
 | --------------------------- | --------------------- | ------------------------------------------------------------ |
 | Race starts                 | participants + public | `"The race has started."`                                    |
-| Race finishes               | participants + public | `"The race has finished."`                                   |
+| Race finishes               | public                | `"The race has finished."`                                   |
 | Player finishes             | public                | `"{display_name} has finished the race!"`                    |
 | Player abandons             | public                | `"{display_name} has abandoned the race."`                   |
 | Player inactive (abandoned) | public                | `"{display_name} has abandoned the race due to inactivity."` |
