@@ -31,14 +31,14 @@ stormveil_godrick = 1      # through-pass
 academy_library = 1        # through-pass
 caelid_radahn = 1          # through-pass
 leyndell_throne = 1        # through-pass
-volcano_rykard = 2         # dead-end
+volcano_rykard = 1         # through-pass
 flamepeak_firegiant = 1    # through-pass
 mohgwyn_boss = 1           # through-pass
 farumazula_maliketh = 1    # through-pass
 leyndell2_throne = 1       # through-pass
 haligtree_malenia = 4      # through-pass
 farumazula_placidusax = 4  # dead-end
-leyndell_erdtree = 5       # dead-end
+leyndell_erdtree = 6       # dead-end
 # DLC remembrance bosses + Bayle
 belurat_boss = 1           # through-pass
 ensis_boss = 1             # through-pass
@@ -50,7 +50,7 @@ storehouse_messmer = 2     # through-pass
 rauhruins_romina = 1       # through-pass
 fingergrounds = 2          # dead-end
 jaggedpeak_bayle = 2       # through-pass
-enirilim_radahn = 5        # dead-end
+enirilim_radahn = 6        # dead-end
 
 [starting_items]
 whetblades = false
