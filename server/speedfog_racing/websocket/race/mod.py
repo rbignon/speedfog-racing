@@ -409,13 +409,20 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         return True
 
     async def _validate_for_event_flag(self, entity: Participant, message_id: int | None) -> bool:
+        # For each rejection, prefer ACKing (clears the mod's in-flight set) over
+        # the error banner when message_id is present, so a reconnect-replay does
+        # not loop and, in the case of a race/participant whose state moves on,
+        # append stale-IGT duplicates later.
         if entity.race.status != RaceStatus.RUNNING:
             logger.warning(
                 "Rejected event_flag: race=%s status=%s",
                 entity.race_id,
                 entity.race.status.value,
             )
-            await self._send_error("Race not running")
+            if message_id is not None:
+                await self._send_event_flag_ack(message_id)
+            else:
+                await self._send_error("Race not running")
             return False
 
         if _is_countdown_active(entity.race):
@@ -423,11 +430,13 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 "Rejected event_flag during countdown: race=%s",
                 entity.race_id,
             )
-            await self._send_error("Race countdown in progress")
+            if message_id is not None:
+                await self._send_event_flag_ack(message_id)
+            else:
+                await self._send_error("Race countdown in progress")
             return False
 
         if entity.status != ParticipantStatus.PLAYING:
-            # ACK replayed event flags so the mod clears its in-flight set
             if message_id is not None:
                 await self._send_event_flag_ack(message_id)
             return False
