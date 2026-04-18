@@ -625,10 +625,14 @@ class BaseModHandler(BaseHandler, Generic[T]):
             # before processing event flags. Without this, stale flags persisted in a
             # loaded save bypass the fresh-save IGT gate in _handle_status_update.
             if not entity.zone_history:
+                if message_id is not None:
+                    await self._send_event_flag_ack(message_id)
                 return
 
             seed_graph = self._get_graph_json(entity)
             if not seed_graph:
+                if message_id is not None:
+                    await self._send_event_flag_ack(message_id)
                 return
 
             event_map = seed_graph.get("event_map", {})
@@ -648,6 +652,8 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 node_id = event_map.get(str(flag_id))
                 if node_id is None:
                     logger.warning("Unknown event flag %d from %s", flag_id, self.entity_id)
+                    if message_id is not None:
+                        await self._send_event_flag_ack(message_id)
                     return
 
                 old_history = entity.zone_history or []
@@ -660,12 +666,21 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     await self._send_event_flag_ack(message_id)
                     return
 
-                # Shared entrance dedup
+                # Shared entrance dedup: must ack so the mod drops the message from its
+                # in-flight set. Without the ack, replay_in_flight_event_flags on
+                # reconnect would re-send the same flag later, and the shared-entrance
+                # check compares to history[-1] rather than the time-proximate entry,
+                # so the replay would be accepted as a fresh visit with the original
+                # (now-stale) igt_ms. See also is_shared_entrance_duplicate.
                 if is_shared_entrance_duplicate(old_history, node_id, igt):
+                    if message_id is not None:
+                        await self._send_event_flag_ack(message_id)
                     return
 
                 if len(old_history) >= MAX_ZONE_HISTORY:
                     logger.warning("zone_history cap reached for %s", self.entity_id)
+                    if message_id is not None:
+                        await self._send_event_flag_ack(message_id)
                     return
 
                 jump = detect_layer_jump(seed_graph, old_history, node_id)

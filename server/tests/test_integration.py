@@ -1498,6 +1498,86 @@ def test_shared_entrance_multi_flag_dedup(
     assert history[1]["igt_ms"] == 10000
 
 
+def test_shared_entrance_duplicate_is_acked(
+    integration_client, race_with_participants, integration_db
+):
+    """A shared-entrance duplicate must be acked so the mod drops it from in-flight.
+
+    Without the ack, replay_in_flight_event_flags on reconnect would re-send the
+    same flag later, and since history[-1] would have advanced to a different
+    zone, the shared-entrance check would fail and the server would insert a
+    stale duplicate entry (with the original, now-older igt_ms).
+    """
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Add a second flag mapping to node_a (simulates shared entrance).
+    async def add_shared_entrance_flag():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            graph = json.loads(json.dumps(race.seed.graph_json))
+            graph["event_map"]["9000020"] = "node_a"  # second flag to same node
+            race.seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(add_shared_entrance_flag())
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+
+        # First flag of the shared entrance: accepted, acked.
+        mod0.send_event_flag(9000000, igt_ms=10000, message_id=101)
+        ack = mod0.receive_until_type("event_flag_ack")
+        assert ack["message_id"] == 101
+
+        # Second flag of the shared entrance: dedup'd, must still be acked so the
+        # mod drops it from in_flight_event_flags and won't replay on reconnect.
+        mod0.send_event_flag(9000020, igt_ms=10000, message_id=102)
+        ack = mod0.receive_until_type("event_flag_ack")
+        assert ack["message_id"] == 102
+
+    async def check_history():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_history())
+    assert history is not None
+    # zone_history: spawn + node_a (duplicate was deduped but acked)
+    assert len(history) == 2
+    assert history[1]["node_id"] == "node_a"
+    assert history[1]["message_id"] == 101
+
+
 def test_shared_entrance_dedup_allows_legitimate_revisit(
     integration_client, race_with_participants, integration_db
 ):
