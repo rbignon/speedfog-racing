@@ -69,12 +69,15 @@ class TestResolvePoolConfig:
             resolve_pool_config("a", _pools_dir=tmp_path)
 
     def test_chain_depth_limit(self, tmp_path):
-        """Chains deeper than 4 should raise ValueError."""
-        (tmp_path / "a.toml").write_text('extends = "b"\n[x]\na = 1\n')
-        (tmp_path / "b.toml").write_text('extends = "c"\n[x]\nb = 1\n')
-        (tmp_path / "c.toml").write_text('extends = "d"\n[x]\nc = 1\n')
-        (tmp_path / "d.toml").write_text('extends = "e"\n[x]\nd = 1\n')
-        (tmp_path / "e.toml").write_text("[x]\ne = 1\n")
+        """Chains deeper than 6 should raise ValueError."""
+        for i, child in enumerate("abcdefg"):
+            parent = "abcdefg"[i + 1] if i + 1 < 7 else None
+            if parent:
+                (tmp_path / f"{child}.toml").write_text(
+                    f'extends = "{parent}"\n[x]\n{child} = 1\n'
+                )
+            else:
+                (tmp_path / f"{child}.toml").write_text(f"[x]\n{child} = 1\n")
         with pytest.raises(ValueError, match="too deep"):
             resolve_pool_config("a", _pools_dir=tmp_path)
 
@@ -97,6 +100,56 @@ class TestResolvePoolConfig:
         (tmp_path / "child.toml").write_text('extends = "nonexistent"\n[x]\na = 1\n')
         with pytest.raises(FileNotFoundError):
             resolve_pool_config("child", _pools_dir=tmp_path)
+
+    def test_extends_list_later_parent_wins(self, tmp_path):
+        """When extends is a list, later parents override earlier ones."""
+        (tmp_path / "a.toml").write_text("[x]\nk = 'from_a'\nonly_a = 1\n")
+        (tmp_path / "b.toml").write_text("[x]\nk = 'from_b'\nonly_b = 2\n")
+        (tmp_path / "child.toml").write_text('extends = ["a", "b"]\n[display]\nn = 1\n')
+        resolved = resolve_pool_config("child", _pools_dir=tmp_path)
+        assert resolved["x"]["k"] == "from_b"
+        assert resolved["x"]["only_a"] == 1
+        assert resolved["x"]["only_b"] == 2
+
+    def test_extends_list_own_values_win(self, tmp_path):
+        """Pool's own values override all listed parents."""
+        (tmp_path / "a.toml").write_text("[x]\nk = 'from_a'\n")
+        (tmp_path / "b.toml").write_text("[x]\nk = 'from_b'\n")
+        (tmp_path / "child.toml").write_text(
+            'extends = ["a", "b"]\n[x]\nk = "from_child"\n'
+        )
+        resolved = resolve_pool_config("child", _pools_dir=tmp_path)
+        assert resolved["x"]["k"] == "from_child"
+
+    def test_extends_list_resolves_parent_chains(self, tmp_path):
+        """Each parent in the list is resolved recursively."""
+        (tmp_path / "grand.toml").write_text("[x]\ng = 1\n")
+        (tmp_path / "a.toml").write_text('extends = "grand"\n[x]\na = 1\n')
+        (tmp_path / "b.toml").write_text("[x]\nb = 1\n")
+        (tmp_path / "child.toml").write_text('extends = ["a", "b"]\n[display]\nn = 1\n')
+        resolved = resolve_pool_config("child", _pools_dir=tmp_path)
+        assert resolved["x"] == {"g": 1, "a": 1, "b": 1}
+
+    def test_extends_list_cycle_detection(self, tmp_path):
+        """A cycle through a list branch must still raise."""
+        (tmp_path / "a.toml").write_text('extends = ["b"]\n[x]\na = 1\n')
+        (tmp_path / "b.toml").write_text('extends = ["a"]\n[x]\nb = 1\n')
+        with pytest.raises(ValueError, match="Circular extends"):
+            resolve_pool_config("a", _pools_dir=tmp_path)
+
+    def test_extends_list_depth_limit(self, tmp_path):
+        """Depth limit applies through a list branch too."""
+        (tmp_path / "sibling.toml").write_text("[x]\ns = 1\n")
+        for i, child in enumerate("abcdefg"):
+            parent = "abcdefg"[i + 1] if i + 1 < 7 else None
+            if parent:
+                (tmp_path / f"{child}.toml").write_text(
+                    f'extends = ["{parent}", "sibling"]\n[x]\n{child} = 1\n'
+                )
+            else:
+                (tmp_path / f"{child}.toml").write_text(f"[x]\n{child} = 1\n")
+        with pytest.raises(ValueError, match="too deep"):
+            resolve_pool_config("a", _pools_dir=tmp_path)
 
     def test_all_pools_resolve(self):
         """Every non-underscore pool must resolve without error."""

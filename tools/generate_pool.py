@@ -66,6 +66,10 @@ def resolve_pool_config(
 ) -> dict:
     """Resolve a pool config by following the extends chain.
 
+    ``extends`` may be a single pool name or a list. Listed parents are
+    merged left-to-right (later parents override earlier ones), then the
+    pool's own values override all parents.
+
     Returns a fully-merged dict with no ``extends`` key.
     """
     pools_dir = _pools_dir or POOLS_DIR
@@ -75,9 +79,9 @@ def resolve_pool_config(
         raise ValueError(
             f"Circular extends detected: {' -> '.join(seen)} -> {pool_name}"
         )
-    if len(seen) >= 4:
+    if len(seen) >= 6:
         raise ValueError(
-            f"Extends chain too deep (max 4): {' -> '.join(seen)} -> {pool_name}"
+            f"Extends chain too deep (max 6): {' -> '.join(seen)} -> {pool_name}"
         )
 
     toml_path = pools_dir / f"{pool_name}.toml"
@@ -87,16 +91,21 @@ def resolve_pool_config(
     with open(toml_path, "rb") as f:
         data = tomllib.load(f)
 
-    parent_name = data.pop("extends", None)
-    if parent_name is None:
+    parents = data.pop("extends", None)
+    if parents is None:
         return data
+    if isinstance(parents, str):
+        parents = [parents]
 
-    parent = resolve_pool_config(
-        parent_name,
-        _pools_dir=pools_dir,
-        _seen=seen | {pool_name},
-    )
-    return deep_merge(parent, data)
+    merged: dict = {}
+    for parent_name in parents:
+        parent = resolve_pool_config(
+            parent_name,
+            _pools_dir=pools_dir,
+            _seen=seen | {pool_name},
+        )
+        merged = deep_merge(merged, parent)
+    return deep_merge(merged, data)
 
 
 REQUIRED_SECTIONS = (
