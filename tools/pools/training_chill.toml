@@ -1,17 +1,6 @@
 # SpeedFog Racing - Training Chill Pool Configuration
 # ~1 hour solo runs, generous resources
-extends = "chill"
-
-[run]
-run_complete_message = [
-    # Max length:
-    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-    "RUN COMPLETE GG",
-    "GG WP",
-    "WELL PLAYED",
-    "VICTORY ACHIEVED",
-]
+extends = ["chill", "_training_base"]
 
 [display]
-type = "training"
 description = "Relaxed solo run with generous resources and loot"

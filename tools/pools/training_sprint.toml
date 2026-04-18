@@ -1,17 +1,6 @@
 # SpeedFog Racing - Training Sprint Pool Configuration
 # ~30 minute solo runs
-extends = "sprint"
-
-[run]
-run_complete_message = [
-    # Max length:
-    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-    "RUN COMPLETE GG",
-    "GG WP",
-    "WELL PLAYED",
-    "VICTORY ACHIEVED",
-]
+extends = ["sprint", "_training_base"]
 
 [display]
-type = "training"
 description = "Quick solo run, minimal exploration"

@@ -1,17 +1,6 @@
-# SpeedFog Racing - Training Boss Shuffle Pool Configuration
-# ~1 hour solo runs with randomized boss encounters
-extends = "boss_rush"
-
-[run]
-run_complete_message = [
-    # Max length:
-    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-    "RUN COMPLETE GG",
-    "GG WP",
-    "WELL PLAYED",
-    "VICTORY ACHIEVED",
-]
+# SpeedFog Racing - Training Boss Rush Pool Configuration
+# ~1 hour solo runs, nothing but bosses
+extends = ["boss_rush", "_training_base"]
 
 [display]
-type = "training"
 description = "Nothing but bosses the whole solo run"

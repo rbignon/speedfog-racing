@@ -1,17 +1,6 @@
 # SpeedFog Racing - Training Standard Pool Configuration
 # ~1 hour solo runs
-extends = "standard"
-
-[run]
-run_complete_message = [
-    # Max length:
-    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-    "RUN COMPLETE GG",
-    "GG WP",
-    "WELL PLAYED",
-    "VICTORY ACHIEVED",
-]
+extends = ["standard", "_training_base"]
 
 [display]
-type = "training"
 description = "Balanced solo run with legacy dungeons and bosses"

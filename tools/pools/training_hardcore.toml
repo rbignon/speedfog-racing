@@ -1,17 +1,6 @@
 # SpeedFog Racing - Training Hardcore Pool Configuration
 # ~1 hour solo runs, reduced resources and harder loot
-extends = "hardcore"
-
-[run]
-run_complete_message = [
-    # Max length:
-    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-    "RUN COMPLETE GG",
-    "GG WP",
-    "WELL PLAYED",
-    "VICTORY ACHIEVED",
-]
+extends = ["hardcore", "_training_base"]
 
 [display]
-type = "training"
 description = "Punishing solo run with scarce resources and tougher encounters"

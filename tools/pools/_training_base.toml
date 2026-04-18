@@ -1,0 +1,17 @@
+# SpeedFog Racing - Training Mixin
+# Shared overrides for all training_* pools. Apply as a second parent
+# (extends = ["<race>", "_training_base"]) so it layers on top of the
+# race pool it trains against.
+
+[run]
+run_complete_message = [
+    # Max length:
+    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    "RUN COMPLETE GG",
+    "GG WP",
+    "WELL PLAYED",
+    "VICTORY ACHIEVED",
+]
+
+[display]
+type = "training"
