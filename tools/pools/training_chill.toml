@@ -2,6 +2,16 @@
 # ~1 hour solo runs, generous resources
 extends = "chill"
 
+[run]
+run_complete_message = [
+    # Max length:
+    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    "RUN COMPLETE GG",
+    "GG WP",
+    "WELL PLAYED",
+    "VICTORY ACHIEVED",
+]
+
 [display]
 type = "training"
 description = "Relaxed solo run with generous resources and loot"

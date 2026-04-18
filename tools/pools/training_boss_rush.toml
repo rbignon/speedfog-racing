@@ -2,6 +2,16 @@
 # ~1 hour solo runs with randomized boss encounters
 extends = "boss_rush"
 
+[run]
+run_complete_message = [
+    # Max length:
+    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    "RUN COMPLETE GG",
+    "GG WP",
+    "WELL PLAYED",
+    "VICTORY ACHIEVED",
+]
+
 [display]
 type = "training"
 description = "Nothing but bosses the whole solo run"

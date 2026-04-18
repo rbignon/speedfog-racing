@@ -2,6 +2,16 @@
 # ~5 hour solo runs through most of the Lands Between
 extends = "expedition"
 
+[run]
+run_complete_message = [
+    # Max length:
+    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    "RUN COMPLETE GG",
+    "GG WP",
+    "WELL PLAYED",
+    "VICTORY ACHIEVED",
+]
+
 [display]
 type = "training"
 description = "Solo expedition through most of the Lands Between"

@@ -3,7 +3,23 @@
 
 [run]
 seed = 0
-run_complete_message = "RUN COMPLETE GG"
+run_complete_message = [
+    # Max length:
+    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    "RUN COMPLETE GG",
+    "GG WP",
+    "WELL PLAYED",
+    "TRY FINGER, BUT HOLE",
+    "GIT GUD",
+    "SKILL ISSUE RESOLVED",
+    "EMBOLDENED BY THE FLAME", # Margit
+    "LORD OF ALL THAT IS GOLDEN", # Godrick
+    "DEVOURED THE GODS, TOGETHAA", # Rykard
+    "A MAN CAN KILL A GOD", # Gideon
+    "TARNISHED WARRIOR", # Hoarah Loux
+    "HAVE NEVER KNOWN DEFEAT", # Malenia
+    "NIHIL! NIHIL! NIHIL!", # Mohg
+]
 chapel_grace = true
 sentry_torch_shop = true
 

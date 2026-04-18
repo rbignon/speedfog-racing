@@ -2,6 +2,16 @@
 # ~30 minute solo runs
 extends = "sprint"
 
+[run]
+run_complete_message = [
+    # Max length:
+    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    "RUN COMPLETE GG",
+    "GG WP",
+    "WELL PLAYED",
+    "VICTORY ACHIEVED",
+]
+
 [display]
 type = "training"
 description = "Quick solo run, minimal exploration"

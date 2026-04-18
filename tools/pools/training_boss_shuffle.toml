@@ -2,6 +2,16 @@
 # ~1 hour solo runs with randomized boss encounters
 extends = "boss_shuffle"
 
+[run]
+run_complete_message = [
+    # Max length:
+    #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    "RUN COMPLETE GG",
+    "GG WP",
+    "WELL PLAYED",
+    "VICTORY ACHIEVED",
+]
+
 [display]
 type = "training"
 description = "Solo run with randomized boss encounters"
