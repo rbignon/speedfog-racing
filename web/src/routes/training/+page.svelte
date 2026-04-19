@@ -7,9 +7,10 @@
 		createTrainingSession,
 		type PoolStats,
 		type PoolInfo,
-		type TrainingSession,
+		type TrainingSession
 	} from '$lib/api';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
+	import PoolTabs from '$lib/components/PoolTabs.svelte';
 	import TrainingSessionCard from '$lib/components/TrainingSessionCard.svelte';
 	import { timeAgo } from '$lib/utils/time';
 	import { formatPoolName } from '$lib/utils/format';
@@ -28,17 +29,23 @@
 	let sortedPools = $derived(
 		Object.entries(pools)
 			.map(([p, info]) => [p, info] as [string, PoolInfo])
-			.sort((a, b) => (a[1].pool_config?.sort_order ?? 99) - (b[1].pool_config?.sort_order ?? 99) || a[0].localeCompare(b[0])),
+			.sort(
+				(a, b) =>
+					(a[1].pool_config?.sort_order ?? 99) - (b[1].pool_config?.sort_order ?? 99) ||
+					a[0].localeCompare(b[0])
+			)
 	);
 
-	let selectedConfig = $derived(selectedPool ? pools[selectedPool]?.pool_config ?? null : null);
-	let selectedInfo = $derived(selectedPool ? pools[selectedPool] ?? null : null);
+	let selectedConfig = $derived(selectedPool ? (pools[selectedPool]?.pool_config ?? null) : null);
+	let selectedInfo = $derived(selectedPool ? (pools[selectedPool] ?? null) : null);
 	let activeSessions = $derived(sessions.filter((s) => s.status === 'active'));
 
 	// Recommend Sprint to new players (no sessions yet)
 	let isNewPlayer = $derived(sessions.length === 0);
 	let sprintPool = $derived(
-		sortedPools.find(([, info]) => info.pool_config?.name === 'Sprint' && info.available > 0)?.[0] ?? null,
+		sortedPools.find(
+			([, info]) => info.pool_config?.name === 'Sprint' && info.available > 0
+		)?.[0] ?? null
 	);
 
 	$effect(() => {
@@ -58,7 +65,7 @@
 		try {
 			const [poolData, sessionData] = await Promise.all([
 				fetchTrainingPools(),
-				fetchTrainingSessions(),
+				fetchTrainingSessions()
 			]);
 			pools = poolData;
 			sessions = sessionData;
@@ -96,7 +103,6 @@
 			}
 		}
 	}
-
 </script>
 
 <svelte:head>
@@ -131,74 +137,65 @@
 			{#if sortedPools.length === 0}
 				<p class="empty">No game modes available.</p>
 			{:else}
-				<div class="pool-cards">
-					{#each sortedPools as [pool, info] (pool)}
-						{@const disabled = info.available === 0}
-						<button
-							type="button"
-							class="pool-card"
-							class:selected={selectedPool === pool}
-							class:disabled
-							onclick={() => { if (!disabled && !startingPool) selectedPool = pool; }}
-						>
-							{#if isNewPlayer && pool === sprintPool}
-								<span class="badge-recommended">Recommended</span>
-							{/if}
-							<span class="pool-name">
-								{info.pool_config?.name || formatPoolName(pool)}
-							</span>
-							{#if info.pool_config?.estimated_duration}
-								<span class="pool-duration">{info.pool_config.estimated_duration}</span>
-							{/if}
-							{#if info.pool_config?.description}
-								<span class="pool-desc">{info.pool_config.description}</span>
-							{/if}
-							<span class="pool-seeds" class:pool-exhausted={info.played_by_user != null && info.played_by_user >= info.available}>
-								{#if info.played_by_user != null && info.played_by_user > 0}
-									{info.played_by_user}/{info.available} seed{info.available !== 1 ? 's' : ''} played
-									{#if info.played_by_user >= info.available}
-										(seeds will repeat)
-									{/if}
-								{:else}
-									{info.available} seed{info.available !== 1 ? 's' : ''} available
-								{/if}
-							</span>
-						</button>
-					{/each}
-				</div>
-				{#if selectedPool && selectedConfig}
-					<div class="pool-detail">
-						<PoolSettingsCard poolName={selectedConfig?.name || formatPoolName(selectedPool)} poolConfig={selectedConfig} compact />
-						<label class="slow-run-toggle">
-							<input type="checkbox" bind:checked={slowRun} />
-							<span class="slow-run-label">Slow run</span>
-							<span class="slow-run-desc">This session won't count in your performance stats</span>
-						</label>
-						<div class="pool-detail-footer">
-							<span class="seed-count" class:pool-exhausted={selectedInfo?.played_by_user != null && selectedInfo.played_by_user >= (selectedInfo?.available ?? 0)}>
+				<div class="pool-container">
+					<PoolTabs
+						pools={sortedPools}
+						selected={selectedPool}
+						onselect={(p) => {
+							if (!startingPool) selectedPool = p;
+						}}
+						disabled={startingPool !== null}
+						recommended={isNewPlayer ? sprintPool : null}
+					/>
+					{#if selectedPool && selectedConfig}
+						<div class="pool-content">
+							<PoolSettingsCard
+								poolName={selectedConfig?.name || formatPoolName(selectedPool)}
+								poolConfig={selectedConfig}
+								compact
+							/>
+							<p
+								class="seed-count"
+								class:pool-exhausted={selectedInfo?.played_by_user != null &&
+									selectedInfo.played_by_user >= (selectedInfo?.available ?? 0)}
+							>
 								{#if selectedInfo?.played_by_user != null && selectedInfo.played_by_user > 0}
-									{selectedInfo.played_by_user}/{selectedInfo.available} seed{selectedInfo.available !== 1 ? 's' : ''} played
+									{selectedInfo.played_by_user}/{selectedInfo.available} seed{selectedInfo.available !==
+									1
+										? 's'
+										: ''} played
 									{#if selectedInfo.played_by_user >= selectedInfo.available}
 										(seeds will repeat)
 									{/if}
 								{:else}
-									{selectedInfo?.available ?? 0} seed{(selectedInfo?.available ?? 0) !== 1 ? 's' : ''} available
+									{selectedInfo?.available ?? 0} seed{(selectedInfo?.available ?? 0) !== 1
+										? 's'
+										: ''} available
 								{/if}
-							</span>
-							<button
-								class="btn btn-primary"
-								disabled={(selectedInfo?.available ?? 0) === 0 || startingPool !== null}
-								onclick={() => startTraining(selectedPool!)}
-							>
-								{#if startingPool === selectedPool}
-									Starting...
-								{:else}
-									Start
-								{/if}
-							</button>
+							</p>
+							<div class="pool-content-footer">
+								<label class="slow-run-toggle">
+									<input type="checkbox" bind:checked={slowRun} />
+									<span class="slow-run-label">Slow run</span>
+									<span class="slow-run-desc"
+										>This session won't count in your performance stats</span
+									>
+								</label>
+								<button
+									class="btn btn-primary"
+									disabled={(selectedInfo?.available ?? 0) === 0 || startingPool !== null}
+									onclick={() => startTraining(selectedPool!)}
+								>
+									{#if startingPool === selectedPool}
+										Starting...
+									{:else}
+										Start
+									{/if}
+								</button>
+							</div>
 						</div>
-					</div>
-				{/if}
+					{/if}
+				</div>
 			{/if}
 		{/if}
 	</section>
@@ -237,7 +234,12 @@
 										<span class="badge badge-slow">Slow</span>
 									{/if}
 								</td>
-								<td class="mono">{Math.min(session.current_layer + 1, session.seed_total_layers ?? Infinity)}/{session.seed_total_layers ?? '?'}</td>
+								<td class="mono"
+									>{Math.min(
+										session.current_layer + 1,
+										session.seed_total_layers ?? Infinity
+									)}/{session.seed_total_layers ?? '?'}</td
+								>
 								<td class="mono">{formatIgt(session.igt_ms)}</td>
 								<td class="mono">{session.death_count}</td>
 								<td class="date">{timeAgo(session.created_at)}</td>
@@ -318,84 +320,6 @@
 		max-width: 480px;
 	}
 
-	/* Pool selector cards */
-	.pool-cards {
-		display: flex;
-		gap: 0.75rem;
-		flex-wrap: wrap;
-	}
-
-	.pool-card {
-		position: relative;
-		flex: 1;
-		min-width: 140px;
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		padding: 1rem;
-		border: 2px solid var(--color-border);
-		border-radius: var(--radius-lg);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-family: var(--font-family);
-		cursor: pointer;
-		text-align: left;
-		transition:
-			border-color 0.15s,
-			background-color 0.15s;
-	}
-
-	.pool-card:hover:not(.disabled) {
-		border-color: var(--color-text-secondary);
-	}
-
-	.pool-card.selected {
-		border-color: var(--color-gold);
-		background: var(--color-surface-elevated);
-	}
-
-	.pool-card.disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
-	.pool-name {
-		font-weight: 600;
-		font-size: var(--font-size-lg);
-	}
-
-	.badge-recommended {
-		position: absolute;
-		top: -0.65em;
-		right: 0.75rem;
-		font-size: var(--font-size-xs);
-		font-weight: 600;
-		color: var(--color-gold);
-		background: var(--color-surface-elevated);
-		padding: 0.1em 0.5em;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--color-gold);
-		white-space: nowrap;
-	}
-
-	.pool-duration {
-		color: var(--color-gold);
-		font-size: var(--font-size-sm);
-		font-weight: 500;
-	}
-
-	.pool-desc {
-		color: var(--color-text-secondary);
-		font-size: var(--font-size-sm);
-		line-height: 1.3;
-	}
-
-	.pool-seeds {
-		margin-top: 0.25rem;
-		color: var(--color-text-disabled);
-		font-size: var(--font-size-xs);
-	}
-
 	.pool-exhausted {
 		color: var(--color-gold);
 	}
@@ -424,19 +348,32 @@
 		color: var(--color-text-disabled);
 	}
 
-	/* Pool detail panel */
-	.pool-detail {
-		margin-top: 1rem;
+	/* Pool container (tabs + content as one unit) */
+	.pool-container {
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
 	}
 
-	.pool-detail-footer {
+	.pool-content {
+		padding: 1rem;
+		background: var(--color-surface-elevated);
+	}
+
+	.pool-content > :global(.card) {
+		background: transparent;
+		border-radius: 0;
+		padding: 0;
+	}
+
+	.pool-content-footer {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-top: 1rem;
+		gap: 1rem;
 	}
 
 	.seed-count {
+		margin: 0.75rem 0 0;
 		font-size: var(--font-size-sm);
 		color: var(--color-text-disabled);
 	}
@@ -493,10 +430,6 @@
 	@media (max-width: 640px) {
 		.training-page {
 			padding: 1rem;
-		}
-
-		.pool-cards {
-			flex-direction: column;
 		}
 	}
 </style>

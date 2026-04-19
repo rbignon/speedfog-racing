@@ -3,8 +3,8 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { createRace, fetchPoolStats, type PoolStats, type PoolInfo } from '$lib/api';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
+	import PoolTabs from '$lib/components/PoolTabs.svelte';
 	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
-	import { formatPoolName } from '$lib/utils/format';
 
 	let name = $state('');
 	let scheduledAt = $state('');
@@ -22,11 +22,16 @@
 	let sortedPools = $derived(
 		Object.entries(pools)
 			.map(([p, info]) => [p, info] as [string, PoolInfo])
-			.sort((a, b) => (a[1].pool_config?.sort_order ?? 99) - (b[1].pool_config?.sort_order ?? 99) || a[0].localeCompare(b[0]))
+			.sort(
+				(a, b) =>
+					(a[1].pool_config?.sort_order ?? 99) - (b[1].pool_config?.sort_order ?? 99) ||
+					a[0].localeCompare(b[0])
+			)
 	);
 
 	let hasAvailablePool = $derived(sortedPools.some(([, info]) => info.available > 0));
 	let selectedConfig = $derived(pools[poolName]?.pool_config ?? null);
+	let selectedAvailable = $derived(pools[poolName]?.available ?? 0);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -75,7 +80,7 @@
 				isoScheduled,
 				isPublic,
 				openRegistration,
-				openRegistration ? maxParticipants : null,
+				openRegistration ? maxParticipants : null
 			);
 			goto(`/race/${race.id}`);
 		} catch (e) {
@@ -83,7 +88,6 @@
 			creating = false;
 		}
 	}
-
 </script>
 
 <svelte:head>
@@ -122,59 +126,38 @@
 					disabled={creating}
 					placeholder="Pick a date"
 				/>
-				<p class="hint">
-					Indicative only. The organizer starts the race manually at any time.
-				</p>
+				<p class="hint">Indicative only. The organizer starts the race manually at any time.</p>
 			</div>
 
 			<div class="form-group">
 				<span>Game Mode</span>
 				{#if sortedPools.length === 0}
 					<p class="empty-pools">
-						No game modes available. Seeds need to be generated before races can be
-						created.
-					</p>
-				{:else if !hasAvailablePool}
-					<div class="pool-cards">
-						{#each sortedPools as [pool, info] (pool)}
-							<button type="button" class="pool-card disabled">
-								<span class="pool-name">{info.pool_config?.name || formatPoolName(pool)}</span>
-								{#if info.pool_config?.estimated_duration}
-									<span class="pool-duration">{info.pool_config?.estimated_duration}</span>
-								{/if}
-								<span class="pool-seeds">0 seeds available</span>
-							</button>
-						{/each}
-					</div>
-					<p class="empty-pools">
-						No seeds available in any game mode. New seeds need to be generated.
+						No game modes available. Seeds need to be generated before races can be created.
 					</p>
 				{:else}
-					<div class="pool-cards">
-						{#each sortedPools as [pool, info] (pool)}
-							{@const disabled = info.available === 0}
-							<button
-								type="button"
-								class="pool-card"
-								class:selected={poolName === pool}
-								class:disabled
-								onclick={() => { if (!disabled && !creating) poolName = pool; }}
-							>
-								<span class="pool-name">{info.pool_config?.name || formatPoolName(pool)}</span>
-								{#if info.pool_config?.estimated_duration}
-									<span class="pool-duration">{info.pool_config?.estimated_duration}</span>
-								{/if}
-								{#if info.pool_config?.description}
-									<span class="pool-desc">{info.pool_config?.description}</span>
-								{/if}
-								<span class="pool-seeds">
-									{info.available} seed{info.available !== 1 ? 's' : ''} available
-								</span>
-							</button>
-						{/each}
+					<div class="pool-container">
+						<PoolTabs
+							pools={sortedPools}
+							selected={poolName}
+							onselect={(p) => {
+								if (!creating) poolName = p;
+							}}
+							disabled={creating}
+						/>
+						{#if hasAvailablePool && selectedConfig}
+							<div class="pool-content">
+								<PoolSettingsCard {poolName} poolConfig={selectedConfig} compact />
+								<p class="seeds-available">
+									{selectedAvailable} seed{selectedAvailable !== 1 ? 's' : ''} available
+								</p>
+							</div>
+						{/if}
 					</div>
-					{#if selectedConfig}
-						<PoolSettingsCard poolName={poolName} poolConfig={selectedConfig} compact />
+					{#if !hasAvailablePool}
+						<p class="empty-pools">
+							No seeds available in any game mode. New seeds need to be generated.
+						</p>
 					{/if}
 				{/if}
 			</div>
@@ -234,8 +217,8 @@
 					</label>
 				</div>
 				<p class="hint">
-					Private races won't appear on the homepage and don't count towards rankings. Players
-					can still join via direct link or invite.
+					Private races won't appear on the homepage and don't count towards rankings. Players can
+					still join via direct link or invite.
 				</p>
 			</div>
 
@@ -263,9 +246,7 @@
 						Open registration
 					</label>
 				</div>
-				<p class="hint">
-					Open registration lets any logged-in player join the race themselves.
-				</p>
+				<p class="hint">Open registration lets any logged-in player join the race themselves.</p>
 				{#if openRegistration}
 					<div class="max-participants">
 						<label for="max-participants">Max participants</label>
@@ -349,66 +330,26 @@
 		color: var(--color-text-disabled);
 	}
 
-	.pool-cards {
-		display: flex;
-		gap: 0.75rem;
-		flex-wrap: wrap;
-	}
-
-	.pool-card {
-		flex: 1;
-		min-width: 140px;
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		padding: 1rem;
-		border: 2px solid var(--color-border);
+	.pool-container {
+		border: 1px solid var(--color-border);
 		border-radius: var(--radius-lg);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-family: var(--font-family);
-		cursor: pointer;
-		text-align: left;
-		transition:
-			border-color 0.15s,
-			background-color 0.15s;
 	}
 
-	.pool-card:hover:not(.disabled) {
-		border-color: var(--color-text-secondary);
-	}
-
-	.pool-card.selected {
-		border-color: var(--color-gold);
+	.pool-content {
+		padding: 1rem;
 		background: var(--color-surface-elevated);
 	}
 
-	.pool-card.disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
+	.pool-content > :global(.card) {
+		background: transparent;
+		border-radius: 0;
+		padding: 0;
 	}
 
-	.pool-name {
-		font-weight: 600;
-		font-size: var(--font-size-lg);
-	}
-
-	.pool-duration {
-		color: var(--color-gold);
-		font-size: var(--font-size-sm);
-		font-weight: 500;
-	}
-
-	.pool-desc {
-		color: var(--color-text-secondary);
-		font-size: var(--font-size-sm);
-		line-height: 1.3;
-	}
-
-	.pool-seeds {
-		margin-top: 0.25rem;
+	.seeds-available {
+		margin: 0.75rem 0 0;
 		color: var(--color-text-disabled);
-		font-size: var(--font-size-xs);
+		font-size: var(--font-size-sm);
 	}
 
 	.radio-group {
