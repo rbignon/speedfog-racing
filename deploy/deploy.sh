@@ -45,9 +45,6 @@ ssh "$SERVER" bash << 'ENDSSH'
     fi
     sudo -H -u speedfog .venv/bin/pip install --quiet .
 
-    echo "  Ensuring OG cache dir exists..."
-    sudo -H -u speedfog mkdir -p "/home/speedfog/.cache/speedfog-racing/og"
-
     echo "  Running database migrations..."
     sudo -H -u speedfog .venv/bin/alembic upgrade head
 
