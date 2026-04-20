@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    {# Circular clip reused by every avatar image, regardless of size. #}
+    <clipPath id="avatar-clip" clipPathUnits="objectBoundingBox">
+      <circle cx="0.5" cy="0.5" r="0.5"/>
+    </clipPath>
+  </defs>
   <rect width="1200" height="630" fill="#0f1923"/>
   {# Status accent: 12px left border (scaled-up version of the card 5px border) #}
   {% set accent = {"Upcoming": "#3b82f6", "Live": "#ef4444", "Finished": "#10b981"}[status_label] %}

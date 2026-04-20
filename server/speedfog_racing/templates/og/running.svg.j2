@@ -5,7 +5,7 @@
   <text x="118" y="280" font-family="Inter, sans-serif" font-size="68" font-weight="600" fill="#e8e6e1">{{ race_name }}</text>
   {% set ax = 60 %}
   {% for p in participants %}
-    <image x="{{ ax + loop.index0 * 60 }}" y="340" width="72" height="72" clip-path="circle(36px at 36px 36px)" href="{{ p.avatar_b64 }}"/>
+    <image x="{{ ax + loop.index0 * 60 }}" y="340" width="72" height="72" clip-path="url(#avatar-clip)" href="{{ p.avatar_b64 }}"/>
     <circle cx="{{ ax + loop.index0 * 60 + 36 }}" cy="376" r="36" fill="none" stroke="#0f1923" stroke-width="6"/>
   {% endfor %}
   {% if overflow_count %}
