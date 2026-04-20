@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     seeds_pool_dir: str = "/data/seeds"
     speedfog_path: str = ""  # Path to speedfog repo for seed generation
 
+    # OG images
+    og_cache_dir: str = "~/.cache/speedfog-racing/og"
+
     # Discord integration (optional)
     discord_webhook_url: str | None = None
     discord_training_webhook_url: str | None = None

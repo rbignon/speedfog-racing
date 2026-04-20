@@ -5,6 +5,7 @@ description = "Competitive racing platform for SpeedFog"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.109",
+    "Jinja2>=3.1",
     "uvicorn[standard]>=0.27",
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.29",
@@ -17,6 +18,7 @@ dependencies = [
     "toml>=0.10",
     "slowapi>=0.1.9",
     "PyNaCl>=1.5.0",
+    "resvg-py>=0.1.10",
     "tomli_w>=1.0",
     "sentry-sdk[fastapi]>=2.0",
 ]
