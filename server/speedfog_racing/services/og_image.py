@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import datetime as dt
 import hashlib
+import logging
 from collections.abc import Awaitable, Callable
+from datetime import UTC
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import resvg_py
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from speedfog_racing.models import ParticipantStatus, Race, RaceStatus
+
+logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 _env = Environment(
@@ -66,10 +72,27 @@ def format_pool(race: Race) -> str:
     return pool.name.replace("_", " ").title()
 
 
-def _format_scheduled(scheduled_at: Any) -> str | None:
+def _format_scheduled(scheduled_at: Any, tz_name: str | None) -> str | None:
     if scheduled_at is None:
         return None
-    return str(scheduled_at.strftime("%b %d, %H:%M"))
+    tz: Any = UTC
+    if tz_name:
+        try:
+            tz = ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError:
+            logger.warning("invalid organizer timezone %r, falling back to UTC", tz_name)
+    local = scheduled_at.astimezone(tz)
+    offset = local.utcoffset() or dt.timedelta(0)
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "+" if total_minutes >= 0 else "-"
+    hours, minutes = divmod(abs(total_minutes), 60)
+    if minutes:
+        suffix = f"UTC{sign}{hours}:{minutes:02d}"
+    elif total_minutes == 0:
+        suffix = "UTC"
+    else:
+        suffix = f"UTC{sign}{hours}"
+    return str(local.strftime("%b %d, %H:%M")) + " " + suffix
 
 
 def _b64(avatar_bytes: bytes) -> str:
@@ -146,7 +169,9 @@ async def build_context(race: Race, *, avatar_lookup: AvatarLookup) -> dict[str,
         "overflow_count": overflow,
         "winner": winner_dict,
         "scheduled_label": (
-            _format_scheduled(race.scheduled_at) if race.status == RaceStatus.SETUP else None
+            _format_scheduled(race.scheduled_at, getattr(race.organizer, "timezone", None))
+            if race.status == RaceStatus.SETUP
+            else None
         ),
     }
 
@@ -165,12 +190,14 @@ def _cache_key(race: Race) -> str:
     else:
         ids = sorted(str(p.user_id) for p in race.participants)
         scheduled = int(race.scheduled_at.timestamp()) if race.scheduled_at else "none"
+        tz = getattr(race.organizer, "timezone", None) or "utc"
         snapshot = (
             race.status.value
             + ":"
             + ",".join(ids)
             + f"|max={race.max_participants}"
             + f"|sched={scheduled}"
+            + f"|tz={tz}"
         )
     return hashlib.sha256(snapshot.encode("utf-8")).hexdigest()[:8]
 

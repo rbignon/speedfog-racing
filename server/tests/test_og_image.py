@@ -139,3 +139,51 @@ async def test_render_race_og_invalidates_cache_on_reschedule(tmp_path: Path) ->
     race.scheduled_at = dt.datetime(2026, 4, 25, 22, 0, tzinfo=dt.UTC)
     _, key2 = await render_race_og(race, cache_dir=out_dir, avatar_lookup=lambda url: b"AVATAR")
     assert key1 != key2
+
+
+async def test_build_context_scheduled_label_uses_organizer_timezone() -> None:
+    race = _race(
+        status="setup",
+        participants=[],
+        max_participants=20,
+        scheduled_at=dt.datetime(2026, 4, 25, 21, 0, tzinfo=dt.UTC),
+    )
+    race.organizer.timezone = "Europe/Paris"  # UTC+2 on 2026-04-25
+    ctx = await build_context(race, avatar_lookup=lambda url: b"AVATAR")
+    assert ctx["scheduled_label"] == "Apr 25, 23:00 UTC+2"
+
+
+async def test_build_context_scheduled_label_falls_back_to_utc() -> None:
+    race = _race(
+        status="setup",
+        participants=[],
+        max_participants=20,
+        scheduled_at=dt.datetime(2026, 4, 25, 21, 0, tzinfo=dt.UTC),
+    )
+    race.organizer.timezone = None
+    ctx = await build_context(race, avatar_lookup=lambda url: b"AVATAR")
+    assert ctx["scheduled_label"] == "Apr 25, 21:00 UTC"
+
+
+async def test_build_context_scheduled_label_handles_half_hour_offset() -> None:
+    race = _race(
+        status="setup",
+        participants=[],
+        max_participants=20,
+        scheduled_at=dt.datetime(2026, 4, 25, 21, 0, tzinfo=dt.UTC),
+    )
+    race.organizer.timezone = "Asia/Kolkata"  # UTC+5:30 year-round
+    ctx = await build_context(race, avatar_lookup=lambda url: b"AVATAR")
+    assert ctx["scheduled_label"] == "Apr 26, 02:30 UTC+5:30"
+
+
+async def test_build_context_scheduled_label_invalid_tz_falls_back_to_utc() -> None:
+    race = _race(
+        status="setup",
+        participants=[],
+        max_participants=20,
+        scheduled_at=dt.datetime(2026, 4, 25, 21, 0, tzinfo=dt.UTC),
+    )
+    race.organizer.timezone = "Not/A_Real_Zone"
+    ctx = await build_context(race, avatar_lookup=lambda url: b"AVATAR")
+    assert ctx["scheduled_label"] == "Apr 25, 21:00 UTC"
