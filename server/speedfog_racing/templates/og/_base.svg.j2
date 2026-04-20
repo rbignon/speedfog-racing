@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0f1923"/>
+  {# Status accent: 12px left border (scaled-up version of the card 5px border) #}
+  {% set accent = {"Upcoming": "#3b82f6", "Live": "#ef4444", "Finished": "#10b981"}[status_label] %}
+  <rect x="0" y="0" width="12" height="630" fill="{{ accent }}"/>
+
+  {# Header: brand mark + wordmark left, status badge right #}
+  <g transform="translate(60, 60)">
+    <g transform="scale(0.094)">
+      {# Inline favicon (checkered flag dissolving into fog) #}
+      <defs>
+        <linearGradient id="fogFade" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="white"/>
+          <stop offset="25%" stop-color="white"/>
+          <stop offset="60%" stop-color="white" stop-opacity="0.3"/>
+          <stop offset="90%" stop-color="white" stop-opacity="0"/>
+        </linearGradient>
+        <mask id="dissolve"><rect width="512" height="512" fill="url(#fogFade)"/></mask>
+      </defs>
+      <rect width="512" height="512" rx="160" fill="#0f1923"/>
+      <g mask="url(#dissolve)">
+        {% for row in range(4) %}{% for col in range(5) %}
+        <rect x="{{ 48 + col*72 }}" y="{{ 112 + row*72 }}" width="72" height="72" fill="{{ '#e8e6e1' if (row+col) % 2 == 0 else '#1c2a3f' }}"/>
+        {% endfor %}{% endfor %}
+      </g>
+    </g>
+    <text x="68" y="36" font-family="Inter, sans-serif" font-size="30" font-weight="600" fill="#e8e6e1">SpeedFog Racing</text>
+  </g>
+
+  {# Status badge (top right). Site convention: small radius, tinted bg, uppercase. #}
+  {% set badge_bg = {"Upcoming": "#1d3050", "Live": "#3a1818", "Finished": "#0f3c2c"}[status_label] %}
+  <g transform="translate(1140, 60)">
+    {% set badge_w = (status_label|length * 14) + 36 %}
+    <rect x="-{{ badge_w }}" y="0" width="{{ badge_w }}" height="44" rx="6" fill="{{ badge_bg }}"/>
+    <text x="-{{ badge_w / 2 }}" y="29" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="600" letter-spacing="1.2" fill="{{ accent }}">{{ status_label.upper() }}</text>
+  </g>
+
+  {% block body %}{% endblock %}
+
+  {# Meta row (bottom) #}
+  <text x="60" y="568" font-family="Inter, sans-serif" font-size="26" fill="#9ca3af">{{ participant_count_label }} · <tspan fill="#e8e6e1">{{ pool_name }}</tspan></text>
+  {% block meta_right %}{% endblock %}
+</svg>

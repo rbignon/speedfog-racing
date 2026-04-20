@@ -1,0 +1,25 @@
+{% extends "og/_base.svg.j2" %}
+{% block body %}
+  <text x="60" y="280" font-family="Inter, sans-serif" font-size="68" font-weight="600" fill="#e8e6e1">{{ race_name }}</text>
+  {% set ax = 60 %}
+  {% for p in participants %}
+    <image x="{{ ax + loop.index0 * 60 }}" y="340" width="72" height="72" clip-path="circle(36px at 36px 36px)" href="{{ p.avatar_b64 }}"/>
+    <circle cx="{{ ax + loop.index0 * 60 + 36 }}" cy="376" r="36" fill="none" stroke="#0f1923" stroke-width="6"/>
+  {% endfor %}
+  {% if overflow_count %}
+    <circle cx="{{ ax + participants|length * 60 + 36 }}" cy="376" r="36" fill="#1c2a3f" stroke="#0f1923" stroke-width="6"/>
+    <text x="{{ ax + participants|length * 60 + 36 }}" y="386" text-anchor="middle" font-family="Inter, sans-serif" font-size="22" font-weight="600" fill="#9ca3af">+{{ overflow_count }}</text>
+  {% endif %}
+  {% if winner %}
+    <g transform="translate(720,338)">
+      <g transform="translate(0,8) scale(1.6)" fill="#c8a44e">
+        <path d="M12 2C9.24 2 7 4.24 7 7h-3c-1.1 0-2 .9-2 2v2c0 2.21 1.79 4 4 4h.68A7.01 7.01 0 0012 19.87V22H8v2h8v-2h-4v-2.13A7.01 7.01 0 0017.32 15H18c2.21 0 4-1.79 4-4V9c0-1.1-.9-2-2-2h-3c0-2.76-2.24-5-5-5zM4 11V9h3v4.83C5.17 13.1 4 11.65 4 11zm16 0c0 1.65-1.17 3.1-3 3.83V9h3v2z"/>
+      </g>
+      <image x="50" y="10" width="60" height="60" clip-path="circle(30px at 30px 30px)" href="{{ winner.avatar_b64 }}"/>
+      <text x="120" y="55" font-family="Inter, sans-serif" font-size="34" font-weight="600" fill="#f5efe0">{{ winner.name }}</text>
+    </g>
+  {% endif %}
+{% endblock %}
+{% block meta_right %}
+  <text x="1140" y="568" text-anchor="end" font-family="Inter, sans-serif" font-size="26" fill="#9ca3af">by <tspan fill="#e8e6e1" font-weight="500">{{ organizer_name }}</tspan></text>
+{% endblock %}

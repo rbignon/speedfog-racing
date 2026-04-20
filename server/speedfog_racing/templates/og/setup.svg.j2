@@ -1,0 +1,20 @@
+{% extends "og/_base.svg.j2" %}
+{% block body %}
+  <text x="60" y="280" font-family="Inter, sans-serif" font-size="68" font-weight="600" fill="#e8e6e1">{{ race_name }}</text>
+  {% if participants %}
+    {% set ax = 60 %}
+    {% for p in participants %}
+      <image x="{{ ax + loop.index0 * 60 }}" y="340" width="72" height="72" clip-path="circle(36px at 36px 36px)" href="{{ p.avatar_b64 }}"/>
+      <circle cx="{{ ax + loop.index0 * 60 + 36 }}" cy="376" r="36" fill="none" stroke="#0f1923" stroke-width="6"/>
+    {% endfor %}
+    {% if overflow_count %}
+      <circle cx="{{ ax + participants|length * 60 + 36 }}" cy="376" r="36" fill="#1c2a3f" stroke="#0f1923" stroke-width="6"/>
+      <text x="{{ ax + participants|length * 60 + 36 }}" y="386" text-anchor="middle" font-family="Inter, sans-serif" font-size="22" font-weight="600" fill="#9ca3af">+{{ overflow_count }}</text>
+    {% endif %}
+  {% else %}
+    <text x="60" y="390" font-family="Inter, sans-serif" font-size="32" font-style="italic" fill="#6b7280">No players yet</text>
+  {% endif %}
+{% endblock %}
+{% block meta_right %}
+  <text x="1140" y="568" text-anchor="end" font-family="Inter, sans-serif" font-size="26" fill="#9ca3af">by <tspan fill="#e8e6e1" font-weight="500">{{ organizer_name }}</tspan>{% if scheduled_label %} · <tspan fill="#c8a44e">{{ scheduled_label }}</tspan>{% endif %}</text>
+{% endblock %}
