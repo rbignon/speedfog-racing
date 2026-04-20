@@ -201,6 +201,13 @@ class Race(Base):
     max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
     discord_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    registration_closes_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    race_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    private_dag: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
 
     # Relationships
     organizer: Mapped["User"] = relationship(back_populates="organized_races")
