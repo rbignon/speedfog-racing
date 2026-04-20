@@ -56,7 +56,11 @@
 	};
 	let effectiveRole = $derived(role ?? (race.my_role ? roleLabels[race.my_role] : undefined));
 	let action = $derived(actionLabel(race.status, effectiveRole));
-	let relativeTime = $derived(raceDisplayDate(race));
+	let relativeTime = $derived(
+		race.started_at || (race.scheduled_at && race.status === 'setup')
+			? raceDisplayDate(race)
+			: 'TBD'
+	);
 	let showOpenBadge = $derived(race.open_registration && race.status === 'setup');
 </script>
 
