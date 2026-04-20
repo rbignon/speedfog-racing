@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import resvg_py
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -25,3 +26,8 @@ def render_svg(status: str, ctx: dict[str, Any]) -> str:
     name = _TEMPLATE_BY_STATUS[status]
     template = _env.get_template(name)
     return template.render(**ctx)
+
+
+def rasterize_svg(svg: str) -> bytes:
+    """Rasterize an SVG string to PNG bytes at the SVG's intrinsic size."""
+    return bytes(resvg_py.svg_to_bytes(svg_string=svg))
