@@ -163,7 +163,14 @@ def _cache_key(race: Race) -> str:
         snapshot = "F:" + "|".join(f"{uid}@{igt}" for uid, igt in finishers)
     else:
         ids = sorted(str(p.user_id) for p in race.participants)
-        snapshot = race.status.value + ":" + ",".join(ids) + f"|max={race.max_participants}"
+        scheduled = int(race.scheduled_at.timestamp()) if race.scheduled_at else "none"
+        snapshot = (
+            race.status.value
+            + ":"
+            + ",".join(ids)
+            + f"|max={race.max_participants}"
+            + f"|sched={scheduled}"
+        )
     return hashlib.sha256(snapshot.encode("utf-8")).hexdigest()[:8]
 
 

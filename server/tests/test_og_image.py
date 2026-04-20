@@ -125,3 +125,17 @@ async def test_render_race_og_uses_cache_on_second_call(tmp_path: Path) -> None:
     first_calls = calls["n"]
     await render_race_og(race, cache_dir=out_dir, avatar_lookup=lookup)
     assert calls["n"] == first_calls  # avatar lookup not re-invoked on cache hit
+
+
+async def test_render_race_og_invalidates_cache_on_reschedule(tmp_path: Path) -> None:
+    race = _race(
+        status="setup",
+        participants=[],
+        max_participants=20,
+        scheduled_at=dt.datetime(2026, 4, 25, 21, 0, tzinfo=dt.UTC),
+    )
+    out_dir = tmp_path / "og"
+    _, key1 = await render_race_og(race, cache_dir=out_dir, avatar_lookup=lambda url: b"AVATAR")
+    race.scheduled_at = dt.datetime(2026, 4, 25, 22, 0, tzinfo=dt.UTC)
+    _, key2 = await render_race_og(race, cache_dir=out_dir, avatar_lookup=lambda url: b"AVATAR")
+    assert key1 != key2
