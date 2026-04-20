@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 from collections.abc import Awaitable, Callable
@@ -187,6 +188,6 @@ async def render_race_og(
         return cached.read_bytes(), key
     ctx = await build_context(race, avatar_lookup=avatar_lookup)
     svg = render_svg(race.status.value, ctx)
-    png = rasterize_svg(svg)
+    png = await asyncio.to_thread(rasterize_svg, svg)
     cached.write_bytes(png)
     return png, key
