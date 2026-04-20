@@ -8,9 +8,19 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import speedfog_racing.api.og as og_api
+from speedfog_racing.config import settings
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import Race, RaceStatus, Seed, SeedStatus, User, UserRole
+
+
+@pytest.fixture(autouse=True)
+def _isolate_og_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "og_cache_dir", str(tmp_path / "og"))
+    og_api._avatar_cache.cache_clear()
+    yield
+    og_api._avatar_cache.cache_clear()
 
 
 @pytest.fixture

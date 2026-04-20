@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from html import escape
 from pathlib import Path
@@ -15,7 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
-from speedfog_racing.models import Caster, Participant, Race
+from speedfog_racing.models import Participant, Race
 from speedfog_racing.services.avatar_cache import AvatarCache
 from speedfog_racing.services.og_image import (
     STATUS_LABEL,
@@ -52,6 +53,7 @@ _DEFAULT_DESCRIPTION = (
 )
 
 
+@functools.lru_cache(maxsize=1)
 def _avatar_cache() -> AvatarCache:
     cache_dir = Path(settings.og_cache_dir).expanduser() / "avatars"
     return AvatarCache(cache_dir=cache_dir, default_avatar=_DEFAULT_AVATAR_PATH.read_bytes())
@@ -80,7 +82,6 @@ async def _load_race(db: AsyncSession, race_id: UUID) -> Race | None:
         .options(
             selectinload(Race.organizer),
             selectinload(Race.participants).selectinload(Participant.user),
-            selectinload(Race.casters).selectinload(Caster.user),
             selectinload(Race.seed),
         )
     )
