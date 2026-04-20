@@ -19,6 +19,8 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=/data/SpeedFog
+CacheDirectory=speedfog-racing
+Environment=OG_CACHE_DIR=%C/speedfog-racing/og
 PrivateTmp=yes
 
 [Install]
