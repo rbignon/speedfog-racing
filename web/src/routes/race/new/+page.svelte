@@ -275,6 +275,7 @@
 					onclick={() => (showAdvanced = !showAdvanced)}
 					disabled={creating}
 					aria-expanded={showAdvanced}
+					aria-controls="advanced-panel"
 				>
 					<span class="advanced-chevron">{showAdvanced ? '▼' : '▸'}</span>
 					<span class="advanced-label">Advanced options</span>
@@ -288,7 +289,7 @@
 				</button>
 
 				{#if showAdvanced}
-					<div class="advanced-panel">
+					<div id="advanced-panel" class="advanced-panel">
 						<div class="form-group">
 							<label for="scheduled">Scheduled time <span class="optional">(optional)</span></label>
 							<DateTimePicker
