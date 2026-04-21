@@ -1,12 +1,48 @@
 """Pydantic schemas for API requests and responses."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from speedfog_racing.models import ParticipantStatus, RaceStatus, TrainingSessionStatus
+
+
+def _as_aware(dt: datetime | None) -> datetime | None:
+    """Normalize naive datetimes to UTC so cross-field comparisons don't raise."""
+    if dt is None or dt.tzinfo is not None:
+        return dt
+    return dt.replace(tzinfo=UTC)
+
+
+def validate_late_join_invariants(
+    *,
+    scheduled_at: datetime | None,
+    registration_closes_at: datetime | None,
+    race_ends_at: datetime | None,
+) -> None:
+    """Enforce the late-join cross-field rules. Raises ValueError on violation.
+
+    Shared between CreateRaceRequest's validator and PATCH /races so a partial
+    update cannot leave the race in a state that the create endpoint would
+    have rejected.
+    """
+    sched = _as_aware(scheduled_at)
+    closes = _as_aware(registration_closes_at)
+    ends = _as_aware(race_ends_at)
+
+    if closes is not None and sched is None:
+        raise ValueError("registration_closes_at requires scheduled_at to be set")
+    if ends is not None and sched is not None and ends <= sched:
+        raise ValueError("race_ends_at must be after scheduled_at")
+    if closes is not None and sched is not None and closes > sched and ends is None:
+        raise ValueError(
+            "race_ends_at is required when registration_closes_at is after scheduled_at"
+        )
+    if closes is not None and ends is not None and closes > ends:
+        raise ValueError("registration_closes_at must be <= race_ends_at")
+
 
 # =============================================================================
 # Request Schemas
@@ -39,26 +75,11 @@ class CreateRaceRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_late_join(self) -> "CreateRaceRequest":
-        if self.registration_closes_at is not None and self.scheduled_at is None:
-            raise ValueError("registration_closes_at requires scheduled_at to be set")
-        ref = self.scheduled_at
-        if self.race_ends_at is not None and ref is not None and self.race_ends_at <= ref:
-            raise ValueError("race_ends_at must be after scheduled_at")
-        if (
-            self.registration_closes_at is not None
-            and ref is not None
-            and self.registration_closes_at > ref
-            and self.race_ends_at is None
-        ):
-            raise ValueError(
-                "race_ends_at is required when registration_closes_at is after scheduled_at"
-            )
-        if (
-            self.registration_closes_at is not None
-            and self.race_ends_at is not None
-            and self.registration_closes_at > self.race_ends_at
-        ):
-            raise ValueError("registration_closes_at must be <= race_ends_at")
+        validate_late_join_invariants(
+            scheduled_at=self.scheduled_at,
+            registration_closes_at=self.registration_closes_at,
+            race_ends_at=self.race_ends_at,
+        )
         return self
 
 

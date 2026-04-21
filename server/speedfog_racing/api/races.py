@@ -65,6 +65,7 @@ from speedfog_racing.schemas import (
     RaceResponse,
     RerollSeedRequest,
     UpdateRaceRequest,
+    validate_late_join_invariants,
 )
 from speedfog_racing.services import (
     assign_seed_to_race,
@@ -601,6 +602,8 @@ async def update_race(
             if current is not None and current.tzinfo is None:
                 current = current.replace(tzinfo=UTC)
             new = request.race_ends_at
+            if new is not None and new.tzinfo is None:
+                new = new.replace(tzinfo=UTC)
             if new is None or current is None or new < current:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -621,6 +624,22 @@ async def update_race(
                 detail="private_dag can only be edited in SETUP status",
             )
         race.private_dag = bool(request.private_dag)
+
+    # Re-enforce late-join cross-field invariants on the combined post-PATCH state.
+    # Only meaningful in SETUP since all three late-join fields are immutable in
+    # RUNNING (race_ends_at can only be extended, which preserves invariants).
+    if race.status == RaceStatus.SETUP:
+        try:
+            validate_late_join_invariants(
+                scheduled_at=race.scheduled_at,
+                registration_closes_at=race.registration_closes_at,
+                race_ends_at=race.race_ends_at,
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            ) from e
 
     await db.commit()
 

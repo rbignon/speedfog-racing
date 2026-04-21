@@ -947,3 +947,177 @@ async def test_get_race_detail_exposes_late_join_and_private_dag(
     assert body["registration_closes_at"] is not None
     assert body["race_ends_at"] is not None
     assert body["private_dag"] is True
+
+
+# ---------------------------------------------------------------------------
+# PATCH cross-field validation: same invariants as CreateRaceRequest must hold
+# after the update. These guard against the gross errors fixed in e0fb234 /
+# 1af1da6 by ensuring the PATCH path doesn't drop fields silently or leave
+# the race in an internally-inconsistent state.
+# ---------------------------------------------------------------------------
+
+
+async def _make_setup_race(
+    session_factory,
+    *,
+    organizer_id,
+    suffix: str,
+    scheduled_at,
+    registration_closes_at=None,
+    race_ends_at=None,
+    private_dag: bool = False,
+):
+    """Create a SETUP race with the given late-join config and return its id."""
+    async with session_factory() as db:
+        seed = await _make_http_seed(db, suffix=suffix)
+        race = Race(
+            name=f"Setup {suffix}",
+            organizer_id=organizer_id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            scheduled_at=scheduled_at,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            registration_closes_at=registration_closes_at,
+            race_ends_at=race_ends_at,
+            private_dag=private_dag,
+        )
+        db.add(race)
+        await db.commit()
+        return race.id
+
+
+async def test_patch_setup_rejects_clearing_scheduled_at_with_late_join(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """Clearing scheduled_at while registration_closes_at is set must be rejected."""
+    now = datetime.now(UTC)
+    scheduled = now + timedelta(hours=1)
+    race_id = await _make_setup_race(
+        lj_async_session,
+        organizer_id=lj_organizer.id,
+        suffix="patch_clear_sched",
+        scheduled_at=scheduled,
+        registration_closes_at=scheduled + timedelta(minutes=30),
+        race_ends_at=scheduled + timedelta(hours=4),
+    )
+
+    async with lj_test_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"scheduled_at": None},
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code == 400, resp.text
+    assert "scheduled_at" in resp.json()["detail"].lower()
+
+
+async def test_patch_setup_rejects_late_registration_without_race_ends_at(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """If registration_closes_at > scheduled_at then race_ends_at is required."""
+    now = datetime.now(UTC)
+    scheduled = now + timedelta(hours=1)
+    race_id = await _make_setup_race(
+        lj_async_session,
+        organizer_id=lj_organizer.id,
+        suffix="patch_late_no_end",
+        scheduled_at=scheduled,
+    )
+
+    async with lj_test_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"registration_closes_at": (scheduled + timedelta(minutes=30)).isoformat()},
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code == 400, resp.text
+    assert "race_ends_at" in resp.json()["detail"].lower()
+
+
+async def test_patch_setup_rejects_registration_after_race_ends_at(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """registration_closes_at must be <= race_ends_at."""
+    now = datetime.now(UTC)
+    scheduled = now + timedelta(hours=1)
+    race_id = await _make_setup_race(
+        lj_async_session,
+        organizer_id=lj_organizer.id,
+        suffix="patch_reg_gt_end",
+        scheduled_at=scheduled,
+        registration_closes_at=scheduled + timedelta(minutes=30),
+        race_ends_at=scheduled + timedelta(hours=4),
+    )
+
+    async with lj_test_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"registration_closes_at": (scheduled + timedelta(hours=5)).isoformat()},
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code == 400, resp.text
+    assert "registration_closes_at" in resp.json()["detail"].lower()
+
+
+async def test_patch_setup_rejects_race_ends_at_before_scheduled_at(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """race_ends_at must be after scheduled_at."""
+    now = datetime.now(UTC)
+    scheduled = now + timedelta(hours=2)
+    race_id = await _make_setup_race(
+        lj_async_session,
+        organizer_id=lj_organizer.id,
+        suffix="patch_end_lt_sched",
+        scheduled_at=scheduled,
+    )
+
+    async with lj_test_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"race_ends_at": (scheduled - timedelta(minutes=10)).isoformat()},
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code == 400, resp.text
+    assert "race_ends_at" in resp.json()["detail"].lower()
+
+
+async def test_patch_running_extend_accepts_naive_iso(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """A naive ISO datetime (no offset) must not crash the comparison."""
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="patch_naive")
+        race = Race(
+            name="Naive Extend",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            registration_closes_at=now + timedelta(hours=1),
+            race_ends_at=now + timedelta(hours=4),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+        current_end = race.race_ends_at
+
+    new_end_naive = (current_end + timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    async with lj_test_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"race_ends_at": new_end_naive},
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code in (200, 400), resp.text
+    # Critical assertion: the comparison did not raise a 500 due to naive/aware mismatch.
+    assert resp.status_code != 500
+
+
+# PLACEHOLDER_FINALIZE_TESTS
