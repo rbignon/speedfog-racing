@@ -38,12 +38,6 @@
 		<p class="description">{poolConfig.description}</p>
 	{/if}
 	<div class="info-grid">
-		{#if poolConfig.estimated_duration}
-			<div class="info-item">
-				<span class="label">Est. Duration</span>
-				<span class="value">{poolConfig.estimated_duration}</span>
-			</div>
-		{/if}
 		{#if poolConfig.min_layers != null && poolConfig.max_layers != null}
 			<div class="info-item">
 				<span class="label">Depth</span>
@@ -68,12 +62,10 @@
 				<span class="value">{poolConfig.starting_runes >= 1000 ? `${poolConfig.starting_runes / 1000}k` : poolConfig.starting_runes}</span>
 			</div>
 		{/if}
-		{#if poolConfig.care_package && poolConfig.weapon_upgrade != null}
-			<div class="info-item">
-				<span class="label">Care Package</span>
-				<span class="value">{poolConfig.weapon_upgrade === 0 ? 'Yes' : `+${poolConfig.weapon_upgrade} weapons`}</span>
-			</div>
-		{/if}
+		<div class="info-item">
+			<span class="label">Starting Weapons</span>
+			<span class="value">+{poolConfig.weapon_upgrade}</span>
+		</div>
 		{#if poolConfig.items_randomized != null}
 			<div class="info-item">
 				<span class="label">Items Randomized</span>
@@ -98,16 +90,10 @@
 				<span class="value">{poolConfig.difficulty_curve}</span>
 			</div>
 		{/if}
-		{#if poolConfig.major_boss_ratio}
-			<div class="info-item">
-				<span class="label">Major Bosses</span>
-				<span class="value">{poolConfig.major_boss_ratio}</span>
-			</div>
-		{/if}
-		{#if poolConfig.randomize_bosses && poolConfig.randomize_bosses !== 'none'}
+		{#if poolConfig.randomize_bosses}
 			<div class="info-item">
 				<span class="label">Boss Shuffle</span>
-				<span class="value">{poolConfig.randomize_bosses === 'minor' ? 'Minor only' : 'All'}</span>
+				<span class="value">{poolConfig.randomize_bosses === 'none' ? 'No' : poolConfig.randomize_bosses === 'minor' ? 'Minor only' : 'All'}</span>
 			</div>
 		{/if}
 	</div>
