@@ -92,15 +92,51 @@ class ParticipantInfo(BaseModel):
 
 
 class RaceInfo(BaseModel):
-    """Race info for WebSocket."""
+    """Race info for WebSocket.
+
+    Carries every race-level field that can be displayed by a connected client
+    so the same payload feeds both initial state (auth_ok / race_state) and
+    live updates (race_info_update emitted on PATCH /races).
+    """
 
     id: str
     name: str
     status: str
+    is_public: bool = True
+    open_registration: bool = False
+    max_participants: int | None = None
+    scheduled_at: str | None = None
     started_at: str | None = None
     seeds_released_at: str | None = None
+    registration_closes_at: str | None = None
     race_ends_at: str | None = None
+    private_dag: bool = False
     countdown_seconds: int = 0
+
+
+def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
+    """Build a RaceInfo from a Race ORM model.
+
+    Centralized so the auth_ok handshake, the race_state broadcast, and the
+    race_info_update broadcast all serialize the same set of fields.
+    """
+    return RaceInfo(
+        id=str(race.id),
+        name=race.name,
+        status=race.status.value,
+        is_public=race.is_public,
+        open_registration=race.open_registration,
+        max_participants=race.max_participants,
+        scheduled_at=race.scheduled_at.isoformat() if race.scheduled_at else None,
+        started_at=race.started_at.isoformat() if race.started_at else None,
+        seeds_released_at=(race.seeds_released_at.isoformat() if race.seeds_released_at else None),
+        registration_closes_at=(
+            race.registration_closes_at.isoformat() if race.registration_closes_at else None
+        ),
+        race_ends_at=race.race_ends_at.isoformat() if race.race_ends_at else None,
+        private_dag=race.private_dag,
+        countdown_seconds=countdown_seconds,
+    )
 
 
 class SeedInfo(BaseModel):
@@ -171,6 +207,17 @@ class RaceStateMessage(BaseModel):
     race: RaceInfo
     seed: SeedInfo
     participants: list[ParticipantInfo]
+
+
+class RaceInfoUpdateMessage(BaseModel):
+    """Live update of race-level info, broadcast to mod and spectator clients.
+
+    Emitted by PATCH /races whenever a RaceInfo field changes so connected
+    clients keep their cached race state in sync without reconnecting.
+    """
+
+    type: Literal["race_info_update"] = "race_info_update"
+    race: RaceInfo
 
 
 class PlayerUpdateMessage(BaseModel):

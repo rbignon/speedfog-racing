@@ -78,7 +78,11 @@ from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
     stream_seed_pack_with_config,
 )
-from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
+from speedfog_racing.websocket import (
+    broadcast_race_info_update,
+    broadcast_race_start,
+    broadcast_race_state_update,
+)
 from speedfog_racing.websocket.race.manager import manager
 from speedfog_racing.websocket.schemas import persist_system_chat
 
@@ -525,6 +529,17 @@ async def update_race(
     _require_organizer(race, user)
 
     old_event_id = race.discord_event_id
+    # Snapshot every RaceInfo field PATCH can mutate, so we only broadcast
+    # race_info_update when something actually changed (no-op PATCHes stay quiet).
+    pre_snapshot = (
+        race.is_public,
+        race.open_registration,
+        race.max_participants,
+        race.scheduled_at,
+        race.registration_closes_at,
+        race.race_ends_at,
+        race.private_dag,
+    )
 
     # is_public can be changed at any status
     if request.is_public is not None:
@@ -678,6 +693,18 @@ async def update_race(
 
         ev_task = asyncio.create_task(_create_discord_event())
         ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+    post_snapshot = (
+        race.is_public,
+        race.open_registration,
+        race.max_participants,
+        race.scheduled_at,
+        race.registration_closes_at,
+        race.race_ends_at,
+        race.private_dag,
+    )
+    if post_snapshot != pre_snapshot:
+        await broadcast_race_info_update(race)
 
     race = await _get_race_or_404(db, race_id, load_participants=True)
     return race_response(race, user)

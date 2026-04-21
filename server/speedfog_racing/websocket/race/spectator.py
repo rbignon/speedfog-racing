@@ -41,10 +41,11 @@ from speedfog_racing.websocket.schemas import (
     ChatBroadcastMessage,
     ChatHistoryMessage,
     ParticipantInfo,
-    RaceInfo,
+    RaceInfoUpdateMessage,
     RaceStateMessage,
     SeedInfo,
     SendChatMessage,
+    build_race_info,
 )
 
 logger = logging.getLogger(__name__)
@@ -400,17 +401,7 @@ async def send_race_state(
     ]
 
     message = RaceStateMessage(
-        race=RaceInfo(
-            id=str(race.id),
-            name=race.name,
-            status=race.status.value,
-            started_at=race.started_at.isoformat() if race.started_at else None,
-            seeds_released_at=(
-                race.seeds_released_at.isoformat() if race.seeds_released_at else None
-            ),
-            race_ends_at=race.race_ends_at.isoformat() if race.race_ends_at else None,
-            countdown_seconds=settings.countdown_seconds,
-        ),
+        race=build_race_info(race, countdown_seconds=settings.countdown_seconds),
         seed=build_seed_info(race, locale=locale),
         participants=participant_infos,
     )
@@ -443,3 +434,19 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
     for conn in results:
         if conn is not None:
             room.spectators.pop(conn.connection_id, None)
+
+
+async def broadcast_race_info_update(race: Race) -> None:
+    """Push a RaceInfo snapshot to every connected mod and spectator.
+
+    Called from PATCH /races whenever a race-level field changes so clients
+    can refresh their cached state (race_ends_at extension, max_participants
+    bump, etc.) without reconnecting.
+    """
+    room = manager.get_room(race.id)
+    if not room:
+        return
+    message = RaceInfoUpdateMessage(
+        race=build_race_info(race, countdown_seconds=settings.countdown_seconds),
+    )
+    await room.broadcast_to_all(message.model_dump_json())

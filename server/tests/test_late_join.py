@@ -1190,3 +1190,118 @@ async def test_finalize_race_abandons_registered_and_ready(hc_async_session):
     assert statuses[registered.id] == ParticipantStatus.ABANDONED
     assert statuses[ready.id] == ParticipantStatus.ABANDONED
     assert statuses[playing.id] == ParticipantStatus.ABANDONED
+
+
+# ---------------------------------------------------------------------------
+# PATCH /races must broadcast a race_info_update so connected mods and
+# spectators see field changes (race_ends_at extension, max_participants
+# bump, etc.) without reconnecting.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_patch_running_race_broadcasts_race_info_update(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """Extending race_ends_at on a RUNNING race must emit race_info_update to all clients."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="patch_bcast")
+        race = Race(
+            name="Broadcast extend",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            registration_closes_at=now + timedelta(hours=1),
+            race_ends_at=now + timedelta(hours=4),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+        current_end = race.race_ends_at
+
+    new_end = current_end + timedelta(hours=1)
+    with mock_patch(
+        "speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()
+    ) as broadcast_mock:
+        async with lj_test_client as client:
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"race_ends_at": new_end.isoformat()},
+                headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+            )
+        assert resp.status_code == 200, resp.text
+        broadcast_mock.assert_awaited_once()
+        # Verify the broadcast carried the new race_ends_at
+        broadcast_race_arg = broadcast_mock.await_args.args[0]
+        assert str(broadcast_race_arg.id) == str(race_id)
+        assert broadcast_race_arg.race_ends_at == new_end
+
+
+@pytest.mark.asyncio
+async def test_patch_no_field_change_does_not_broadcast(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """A no-op PATCH (only fields that didn't actually change) must not broadcast."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    now = datetime.now(UTC)
+    scheduled = now + timedelta(hours=1)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="patch_noop")
+        race = Race(
+            name="Noop patch",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            scheduled_at=scheduled,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    with mock_patch(
+        "speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()
+    ) as broadcast_mock:
+        async with lj_test_client as client:
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"is_public": True},  # already True
+                headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+            )
+        assert resp.status_code == 200, resp.text
+        broadcast_mock.assert_not_awaited()
+
+
+def test_race_info_update_message_serialization():
+    """RaceInfoUpdateMessage carries the full RaceInfo with type discriminator."""
+    import json
+
+    from speedfog_racing.websocket.schemas import RaceInfo, RaceInfoUpdateMessage
+
+    msg = RaceInfoUpdateMessage(
+        race=RaceInfo(
+            id="abc",
+            name="Test",
+            status="running",
+            race_ends_at="2026-04-21T15:00:00+00:00",
+            registration_closes_at="2026-04-21T13:00:00+00:00",
+            private_dag=True,
+        )
+    )
+    data = json.loads(msg.model_dump_json())
+    assert data["type"] == "race_info_update"
+    assert data["race"]["race_ends_at"] == "2026-04-21T15:00:00+00:00"
+    assert data["race"]["registration_closes_at"] == "2026-04-21T13:00:00+00:00"
+    assert data["race"]["private_dag"] is True

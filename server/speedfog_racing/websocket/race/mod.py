@@ -47,9 +47,9 @@ from speedfog_racing.websocket.schemas import (
     DeathCountsMessage,
     ErrorMessage,
     ParticipantInfo,
-    RaceInfo,
     RaceStartMessage,
     SeedInfo,
+    build_race_info,
     extract_spawn_items,
     persist_system_chat,
 )
@@ -309,17 +309,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
 
         message = AuthOkMessage(
             participant_id=str(participant.id),
-            race=RaceInfo(
-                id=str(race.id),
-                name=race.name,
-                status=race.status.value,
-                started_at=race.started_at.isoformat() if race.started_at else None,
-                seeds_released_at=(
-                    race.seeds_released_at.isoformat() if race.seeds_released_at else None
-                ),
-                race_ends_at=race.race_ends_at.isoformat() if race.race_ends_at else None,
-                countdown_seconds=settings.countdown_seconds,
-            ),
+            race=build_race_info(race, countdown_seconds=settings.countdown_seconds),
             seed=SeedInfo(
                 seed_id=str(seed.id) if seed else None,
                 total_layers=seed.total_layers if seed else 0,
