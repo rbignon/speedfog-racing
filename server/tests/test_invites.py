@@ -278,7 +278,7 @@ async def test_cannot_accept_invite_for_started_race(
             headers={"Authorization": f"Bearer {invited_user.api_token}"},
         )
         assert response.status_code == 400
-        assert "already started" in response.json()["detail"]
+        assert "closed" in response.json()["detail"].lower()
 
 
 # =============================================================================

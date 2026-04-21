@@ -1,5 +1,7 @@
 """Invite management API routes."""
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,11 +73,20 @@ async def accept_invite(
             detail="This invite has already been accepted",
         )
 
-    # Check race status
-    if invite.race.status not in (RaceStatus.SETUP,):
+    # Check race status (allow late-join on RUNNING races within the registration window)
+    now = datetime.now(UTC)
+    race_registration_closes_at = invite.race.registration_closes_at
+    if race_registration_closes_at is not None and race_registration_closes_at.tzinfo is None:
+        race_registration_closes_at = race_registration_closes_at.replace(tzinfo=UTC)
+    is_late_join_open = (
+        invite.race.status == RaceStatus.RUNNING
+        and race_registration_closes_at is not None
+        and race_registration_closes_at > now
+    )
+    if invite.race.status != RaceStatus.SETUP and not is_late_join_open:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot join a race that has already started or finished",
+            detail="Registration is closed for this race",
         )
 
     # Check username matches (case-insensitive)

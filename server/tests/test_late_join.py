@@ -513,3 +513,40 @@ async def test_abandoned_player_cannot_rejoin_late_join_race(
         )
         assert response.status_code == 409
         assert "already" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_accept_invite_on_late_join_running_race(
+    lj_test_client, lj_async_session, lj_organizer, lj_player
+):
+    """A pending invite can be accepted while late-join is open on a RUNNING race."""
+    from speedfog_racing.models import Invite
+
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="inv_lj")
+        race = Race(
+            name="Late-join invite",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now,
+            is_public=True,
+            open_registration=False,  # invite-only + late-join is a valid combo
+            max_participants=10,
+            registration_closes_at=now + timedelta(hours=1),
+            race_ends_at=now + timedelta(hours=4),
+        )
+        db.add(race)
+        await db.flush()
+        invite = Invite(race_id=race.id, twitch_username=lj_player.twitch_username)
+        db.add(invite)
+        await db.commit()
+        token = invite.token
+
+    async with lj_test_client as client:
+        resp = await client.post(
+            f"/api/invite/{token}/accept",
+            headers={"Authorization": f"Bearer {lj_player.api_token}"},
+        )
+    assert resp.status_code == 200, resp.text
