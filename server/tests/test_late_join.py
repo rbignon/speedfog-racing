@@ -583,3 +583,140 @@ async def test_organizer_can_add_participant_mid_late_join_race(
             headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
         )
     assert resp.status_code == 200, resp.text
+
+
+async def test_patch_race_accepts_new_fields_in_setup(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """SETUP race: PATCH can set all three new fields."""
+    now = datetime.now(UTC)
+    scheduled = now + timedelta(hours=1)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="patch_setup")
+        race = Race(
+            name="Patchable setup",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            scheduled_at=scheduled,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    async with lj_test_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={
+                "registration_closes_at": (scheduled + timedelta(minutes=30)).isoformat(),
+                "race_ends_at": (scheduled + timedelta(hours=4)).isoformat(),
+                "private_dag": True,
+            },
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["private_dag"] is True
+    assert body["registration_closes_at"] is not None
+    assert body["race_ends_at"] is not None
+
+
+async def test_patch_running_race_can_extend_race_ends_at(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="patch_extend")
+        race = Race(
+            name="Extend",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            registration_closes_at=now + timedelta(hours=1),
+            race_ends_at=now + timedelta(hours=4),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+        current_end = race.race_ends_at
+
+    new_end = current_end + timedelta(hours=1)
+    async with lj_test_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"race_ends_at": new_end.isoformat()},
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_patch_running_race_cannot_shorten_race_ends_at(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="patch_shorten")
+        race = Race(
+            name="Shorten",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            registration_closes_at=now + timedelta(hours=1),
+            race_ends_at=now + timedelta(hours=4),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+        current_end = race.race_ends_at
+
+    shorter = current_end - timedelta(minutes=10)
+    async with lj_test_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"race_ends_at": shorter.isoformat()},
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code == 400
+    assert "shorten" in resp.json()["detail"].lower()
+
+
+async def test_patch_running_race_cannot_change_private_dag(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="patch_privdag")
+        race = Race(
+            name="PrivDag",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            registration_closes_at=now + timedelta(hours=1),
+            race_ends_at=now + timedelta(hours=4),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    async with lj_test_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"private_dag": True},
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code == 400

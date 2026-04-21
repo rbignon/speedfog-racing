@@ -568,6 +568,45 @@ async def update_race(
         race.open_registration = new_open_registration
         race.max_participants = new_max_participants
 
+    # registration_closes_at: SETUP only
+    if "registration_closes_at" in request.model_fields_set:
+        if race.status != RaceStatus.SETUP:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="registration_closes_at can only be edited in SETUP status",
+            )
+        race.registration_closes_at = request.registration_closes_at
+
+    # race_ends_at: SETUP always; RUNNING only to extend (never shorten)
+    if "race_ends_at" in request.model_fields_set:
+        if race.status == RaceStatus.SETUP:
+            race.race_ends_at = request.race_ends_at
+        elif race.status == RaceStatus.RUNNING:
+            current = race.race_ends_at
+            if current is not None and current.tzinfo is None:
+                current = current.replace(tzinfo=UTC)
+            new = request.race_ends_at
+            if new is None or current is None or new < current:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot shorten race_ends_at once running",
+                )
+            race.race_ends_at = request.race_ends_at
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="race_ends_at cannot be changed on a finished race",
+            )
+
+    # private_dag: SETUP only
+    if "private_dag" in request.model_fields_set:
+        if race.status != RaceStatus.SETUP:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="private_dag can only be edited in SETUP status",
+            )
+        race.private_dag = bool(request.private_dag)
+
     await db.commit()
 
     # Sync Discord scheduled event

@@ -110,11 +110,14 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
     participant_count = len(race.participants)
     is_full = race.max_participants is not None and participant_count >= race.max_participants
     is_open_setup = race.open_registration and race.status == RaceStatus.SETUP
+    registration_closes_at = race.registration_closes_at
+    if registration_closes_at is not None and registration_closes_at.tzinfo is None:
+        registration_closes_at = registration_closes_at.replace(tzinfo=UTC)
     is_open_late_join = (
         race.open_registration
         and race.status == RaceStatus.RUNNING
-        and race.registration_closes_at is not None
-        and race.registration_closes_at > now
+        and registration_closes_at is not None
+        and registration_closes_at > now
     )
     casters = race.casters if "casters" in race.__dict__ else []
 
