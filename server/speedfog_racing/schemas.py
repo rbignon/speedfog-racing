@@ -24,6 +24,9 @@ class CreateRaceRequest(BaseModel):
     is_public: bool = True
     open_registration: bool = False
     max_participants: int | None = None
+    registration_closes_at: datetime | None = None
+    race_ends_at: datetime | None = None
+    private_dag: bool = False
 
     @model_validator(mode="after")
     def validate_open_registration(self) -> "CreateRaceRequest":
@@ -34,20 +37,45 @@ class CreateRaceRequest(BaseModel):
             raise ValueError("max_participants cannot exceed 100")
         return self
 
+    @model_validator(mode="after")
+    def validate_late_join(self) -> "CreateRaceRequest":
+        ref = self.scheduled_at
+        if self.race_ends_at is not None and ref is not None and self.race_ends_at <= ref:
+            raise ValueError("race_ends_at must be after scheduled_at")
+        if (
+            self.registration_closes_at is not None
+            and ref is not None
+            and self.registration_closes_at > ref
+            and self.race_ends_at is None
+        ):
+            raise ValueError(
+                "race_ends_at is required when registration_closes_at is after scheduled_at"
+            )
+        if (
+            self.registration_closes_at is not None
+            and self.race_ends_at is not None
+            and self.registration_closes_at > self.race_ends_at
+        ):
+            raise ValueError("registration_closes_at must be <= race_ends_at")
+        return self
+
 
 class UpdateRaceRequest(BaseModel):
     """Request to update race properties. Organizer only.
 
-    scheduled_at: only editable in SETUP status.
+    scheduled_at / open_registration / max_participants / private_dag: SETUP only.
     is_public: editable at any status.
-    open_registration: only editable in SETUP status.
-    max_participants: only editable in SETUP status.
+    registration_closes_at: SETUP only.
+    race_ends_at: SETUP, or RUNNING to extend (never shorten).
     """
 
     scheduled_at: datetime | None = None
     is_public: bool | None = None
     open_registration: bool | None = None
     max_participants: int | None = None
+    registration_closes_at: datetime | None = None
+    race_ends_at: datetime | None = None
+    private_dag: bool | None = None
 
 
 class AddParticipantRequest(BaseModel):
@@ -236,6 +264,9 @@ class RaceResponse(BaseModel):
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
     seeds_released_at: datetime | None = None
+    registration_closes_at: datetime | None = None
+    race_ends_at: datetime | None = None
+    private_dag: bool = False
     participant_count: int
     participant_previews: list[ParticipantPreview] = []
     seed_total_layers: int | None = None
@@ -300,6 +331,9 @@ class RaceDetailResponse(BaseModel):
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
     seeds_released_at: datetime | None = None
+    registration_closes_at: datetime | None = None
+    race_ends_at: datetime | None = None
+    private_dag: bool = False
     participant_count: int
     seed_number: str | None = None
     seed_total_layers: int | None
