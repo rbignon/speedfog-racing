@@ -169,69 +169,81 @@
 				{/if}
 			</div>
 
-			<div class="form-group">
-				<span>Will you participate?</span>
-				<div class="radio-group">
-					<label class="radio-label">
-						<input
-							type="radio"
-							name="participate"
-							checked={organizerParticipates}
-							onchange={() => (organizerParticipates = true)}
-							disabled={creating}
-						/>
-						Yes, I'll race
-					</label>
-					<label class="radio-label">
-						<input
-							type="radio"
-							name="participate"
-							checked={!organizerParticipates}
-							onchange={() => (organizerParticipates = false)}
-							disabled={creating}
-						/>
-						No, organize only
-					</label>
+			<div class="form-group role-visibility-grid">
+				<div class="role-col">
+					<span>Your role</span>
+					<div class="radio-group">
+						<label class="radio-label">
+							<input
+								type="radio"
+								name="participate"
+								checked={organizerParticipates}
+								onchange={() => (organizerParticipates = true)}
+								disabled={creating}
+							/>
+							I'll race
+						</label>
+						<label class="radio-label">
+							<input
+								type="radio"
+								name="participate"
+								checked={!organizerParticipates}
+								onchange={() => (organizerParticipates = false)}
+								disabled={creating}
+							/>
+							Organize only
+						</label>
+					</div>
+					<p class="hint">
+						If you choose "Organize only", you will see the metro map and cannot join as a player
+						later.
+					</p>
 				</div>
-				<p class="hint">
-					If you choose "organize only", you will see the metro map and cannot join as a player
-					later.
-				</p>
-			</div>
 
-			<div class="form-group">
-				<span>Visibility</span>
-				<div class="radio-group">
-					<label class="radio-label">
-						<input
-							type="radio"
-							name="visibility"
-							checked={isPublic}
-							onchange={() => (isPublic = true)}
-							disabled={creating}
-						/>
-						Public
-					</label>
-					<label class="radio-label">
-						<input
-							type="radio"
-							name="visibility"
-							checked={!isPublic}
-							onchange={() => (isPublic = false)}
-							disabled={creating}
-						/>
-						Private
-					</label>
+				<div class="visibility-col">
+					<span>Visibility</span>
+					<div class="radio-group">
+						<label class="radio-label">
+							<input
+								type="radio"
+								name="visibility"
+								checked={isPublic}
+								onchange={() => (isPublic = true)}
+								disabled={creating}
+							/>
+							Public
+						</label>
+						<label class="radio-label">
+							<input
+								type="radio"
+								name="visibility"
+								checked={!isPublic}
+								onchange={() => (isPublic = false)}
+								disabled={creating}
+							/>
+							Private
+						</label>
+					</div>
+					<p class="hint">
+						Private races don't appear on the homepage and don't count towards rankings. Players can
+						still join via direct link or invite.
+					</p>
 				</div>
-				<p class="hint">
-					Private races won't appear on the homepage and don't count towards rankings. Players can
-					still join via direct link or invite.
-				</p>
 			</div>
 
 			<div class="form-group">
 				<span>Registration</span>
-				<div class="radio-group">
+				<div class="registration-row">
+					<label class="radio-label">
+						<input
+							type="radio"
+							name="registration"
+							checked={openRegistration}
+							onchange={() => (openRegistration = true)}
+							disabled={creating}
+						/>
+						Open
+					</label>
 					<label class="radio-label">
 						<input
 							type="radio"
@@ -242,31 +254,21 @@
 						/>
 						Invite only
 					</label>
-					<label class="radio-label">
-						<input
-							type="radio"
-							name="registration"
-							checked={openRegistration}
-							onchange={() => (openRegistration = true)}
-							disabled={creating}
-						/>
-						Open registration
-					</label>
+					{#if openRegistration}
+						<span class="registration-sep">·</span>
+						<label class="inline-max">
+							max
+							<input
+								type="number"
+								bind:value={maxParticipants}
+								min="2"
+								max="100"
+								disabled={creating}
+							/>
+						</label>
+					{/if}
 				</div>
 				<p class="hint">Open registration lets any logged-in player join the race themselves.</p>
-				{#if openRegistration}
-					<div class="max-participants">
-						<label for="max-participants">Max participants</label>
-						<input
-							type="number"
-							id="max-participants"
-							bind:value={maxParticipants}
-							min="2"
-							max="100"
-							disabled={creating}
-						/>
-					</div>
-				{/if}
 			</div>
 
 			<div class="form-group">
@@ -312,9 +314,19 @@
 				<p class="hint">Useful for asynchronous races where spoilers matter.</p>
 			</div>
 
-			<button type="submit" class="btn btn-primary" disabled={creating || !hasAvailablePool}>
-				{creating ? 'Creating...' : 'Create Race'}
-			</button>
+			<div class="actions">
+				<button type="submit" class="btn btn-primary" disabled={creating || !hasAvailablePool}>
+					{creating ? 'Creating...' : 'Create Race'}
+				</button>
+				<button
+					type="button"
+					class="btn btn-secondary"
+					onclick={() => goto('/')}
+					disabled={creating}
+				>
+					Cancel
+				</button>
+			</div>
 		</form>
 	{/if}
 </main>
@@ -336,7 +348,7 @@
 	form {
 		display: flex;
 		flex-direction: column;
-		gap: 1.5rem;
+		gap: 1.25rem;
 	}
 
 	.form-group {
@@ -437,7 +449,70 @@
 		line-height: 1.4;
 	}
 
-	.max-participants,
+	.role-visibility-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1.25rem;
+	}
+
+	.role-col,
+	.visibility-col {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.role-col > span:first-child,
+	.visibility-col > span:first-child {
+		font-weight: 500;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.registration-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.registration-sep {
+		color: var(--color-text-disabled);
+	}
+
+	.inline-max {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 1rem;
+		font-weight: normal;
+		color: var(--color-text);
+	}
+
+	.inline-max input[type='number'] {
+		width: 70px;
+		padding: 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-family: var(--font-family);
+		font-size: 1rem;
+	}
+
+	.inline-max input[type='number']:focus {
+		outline: none;
+		border-color: var(--color-purple);
+	}
+
+	.actions {
+		display: flex;
+		gap: 0.75rem;
+		align-self: flex-start;
+	}
+
 	.duration-field {
 		display: flex;
 		align-items: center;
@@ -445,7 +520,6 @@
 		margin-top: 0.5rem;
 	}
 
-	.max-participants label,
 	.duration-field label {
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
@@ -455,7 +529,6 @@
 		letter-spacing: normal;
 	}
 
-	.max-participants input[type='number'],
 	.duration-field input[type='number'] {
 		width: 80px;
 		padding: 0.5rem;
@@ -467,7 +540,6 @@
 		font-size: 1rem;
 	}
 
-	.max-participants input[type='number']:focus,
 	.duration-field input[type='number']:focus {
 		outline: none;
 		border-color: var(--color-purple);
@@ -494,10 +566,6 @@
 		font-style: italic;
 	}
 
-	button[type='submit'] {
-		align-self: flex-start;
-	}
-
 	@media (max-width: 640px) {
 		main {
 			padding: 1rem;
@@ -505,6 +573,10 @@
 
 		h1 {
 			font-size: var(--font-size-xl);
+		}
+
+		.role-visibility-grid {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>
