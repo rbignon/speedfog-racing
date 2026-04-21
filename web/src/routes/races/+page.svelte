@@ -16,14 +16,8 @@
 	let liveRaces = $derived(races.filter((r) => r.status === 'running'));
 	let upcomingRaces = $derived(
 		races
-			.filter((r) => r.status === 'setup')
-			.sort((a, b) => {
-				if (a.scheduled_at && b.scheduled_at)
-					return new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime();
-				if (a.scheduled_at) return -1;
-				if (b.scheduled_at) return 1;
-				return 0;
-			}),
+			.filter((r) => r.status === 'setup' && r.scheduled_at)
+			.sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime())
 	);
 
 	onMount(() => {
@@ -44,11 +38,7 @@
 	async function loadMoreFinished() {
 		loadingMore = true;
 		try {
-			const data = await fetchRacesPaginated(
-				'finished',
-				finishedRaces.length,
-				FINISHED_PAGE_SIZE,
-			);
+			const data = await fetchRacesPaginated('finished', finishedRaces.length, FINISHED_PAGE_SIZE);
 			finishedRaces = [...finishedRaces, ...data.races];
 			hasMoreFinished = data.has_more ?? false;
 		} catch (e) {
@@ -191,8 +181,7 @@
 		color: var(--color-text-secondary);
 		text-decoration: none;
 		font-size: var(--font-size-sm);
-		transition:
-			color 0.15s ease;
+		transition: color 0.15s ease;
 	}
 
 	.discord-link:hover {

@@ -18,14 +18,8 @@
 	let liveRaces = $derived(races.filter((r) => r.status === 'running'));
 	let upcomingRaces = $derived(
 		races
-			.filter((r) => r.status === 'setup')
-			.sort((a, b) => {
-				if (a.scheduled_at && b.scheduled_at)
-					return new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime();
-				if (a.scheduled_at) return -1;
-				if (b.scheduled_at) return 1;
-				return 0;
-			}),
+			.filter((r) => r.status === 'setup' && r.scheduled_at)
+			.sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime())
 	);
 
 	onMount(() => {
@@ -62,7 +56,10 @@
 
 <svelte:head>
 	<title>SpeedFog Racing</title>
-	<meta name="description" content="Competitive Elden Ring Fog Randomizer racing platform. Race against other players through randomized fog gates in real time." />
+	<meta
+		name="description"
+		content="Competitive Elden Ring Fog Randomizer racing platform. Race against other players through randomized fog gates in real time."
+	/>
 	<link rel="canonical" href="{PUBLIC_BASE_URL}/" />
 </svelte:head>
 
@@ -107,62 +104,62 @@
 </div>
 
 <main class="public-section">
-		{#if !loadingRaces}
-			{#if liveRaces.length > 0}
-				<section class="public-races">
-					<h2><LiveIndicator dotOnly /> Live Races</h2>
-					<div class="race-grid">
-						{#each liveRaces as race}
-							<RaceCard {race} />
-						{/each}
-					</div>
-				</section>
-			{/if}
-
-			{#if upcomingRaces.length > 0}
-				<section class="public-races">
-					<h2>Upcoming Races</h2>
-					<div class="race-grid">
-						{#each upcomingRaces as race}
-							<RaceCard {race} />
-						{/each}
-					</div>
-				</section>
-			{/if}
-
-			{#if liveRaces.length === 0 && upcomingRaces.length === 0}
-				<div class="empty-hero">
-					<svg
-						class="empty-icon"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<circle cx="12" cy="12" r="10" />
-						<polyline points="12 6 12 12 16 14" />
-					</svg>
-					<p class="empty-title">No active races right now</p>
-				</div>
-			{/if}
-		{/if}
-
-		{#if !loadingRecent && recentRaces.length > 0}
+	{#if !loadingRaces}
+		{#if liveRaces.length > 0}
 			<section class="public-races">
-				<h2>Recent Results</h2>
+				<h2><LiveIndicator dotOnly /> Live Races</h2>
 				<div class="race-grid">
-					{#each recentRaces as race}
+					{#each liveRaces as race}
 						<RaceCard {race} />
 					{/each}
 				</div>
-				<div class="see-all">
-					<a href="/races" class="see-all-link">See all results &rarr;</a>
+			</section>
+		{/if}
+
+		{#if upcomingRaces.length > 0}
+			<section class="public-races">
+				<h2>Upcoming Races</h2>
+				<div class="race-grid">
+					{#each upcomingRaces as race}
+						<RaceCard {race} />
+					{/each}
 				</div>
 			</section>
 		{/if}
-	</main>
+
+		{#if liveRaces.length === 0 && upcomingRaces.length === 0}
+			<div class="empty-hero">
+				<svg
+					class="empty-icon"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<circle cx="12" cy="12" r="10" />
+					<polyline points="12 6 12 12 16 14" />
+				</svg>
+				<p class="empty-title">No active races right now</p>
+			</div>
+		{/if}
+	{/if}
+
+	{#if !loadingRecent && recentRaces.length > 0}
+		<section class="public-races">
+			<h2>Recent Results</h2>
+			<div class="race-grid">
+				{#each recentRaces as race}
+					<RaceCard {race} />
+				{/each}
+			</div>
+			<div class="see-all">
+				<a href="/races" class="see-all-link">See all results &rarr;</a>
+			</div>
+		</section>
+	{/if}
+</main>
 
 <style>
 	/* Error banner */
