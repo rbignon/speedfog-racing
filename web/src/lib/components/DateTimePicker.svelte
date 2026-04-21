@@ -7,8 +7,30 @@
 		placeholder?: string;
 	}
 
-	let { value = '', onchange, min, disabled = false, placeholder = 'Pick a date' }: Props =
-		$props();
+	let {
+		value = '',
+		onchange,
+		min,
+		disabled = false,
+		placeholder = 'Pick a date'
+	}: Props = $props();
+
+	// Default time: next 30-minute slot after the current time (14:15 → 14:30, 14:30 → 15:00).
+	// Computed once at mount to keep the displayed time stable while the user sits on the page.
+	function computeDefaultTime(): string {
+		const now = new Date();
+		let hours = now.getHours();
+		let minutes = now.getMinutes();
+		if (minutes < 30) {
+			minutes = 30;
+		} else {
+			minutes = 0;
+			hours = (hours + 1) % 24;
+		}
+		return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+	}
+
+	const defaultTime = computeDefaultTime();
 
 	let open = $state(false);
 	let containerEl: HTMLDivElement | undefined = $state();
@@ -21,7 +43,7 @@
 	});
 
 	let selectedTime: string = $derived.by(() => {
-		if (!value) return '18:00';
+		if (!value) return defaultTime;
 		const d = new Date(value);
 		const h = d.getHours().toString().padStart(2, '0');
 		const m = d.getMinutes().toString().padStart(2, '0');
@@ -199,7 +221,7 @@
 	}
 
 	// Time combobox state
-	let timeInputValue = $state('18:00');
+	let timeInputValue = $state(defaultTime);
 	let timeDropdownOpen = $state(false);
 	let highlightedSlotIndex = $state(-1);
 	let timeInputEl: HTMLInputElement | undefined = $state();
@@ -283,7 +305,9 @@
 				const slotMin = h * 60 + m;
 				const minMin = minLocal.hours * 60 + minLocal.minutes;
 				if (slotMin < minMin) {
-					time = `${Math.floor(minMin / 60).toString().padStart(2, '0')}:${(minMin % 60).toString().padStart(2, '0')}`;
+					time = `${Math.floor(minMin / 60)
+						.toString()
+						.padStart(2, '0')}:${(minMin % 60).toString().padStart(2, '0')}`;
 				}
 			}
 			emitChange(selectedLocalDate.year, selectedLocalDate.month, selectedLocalDate.day, time);
@@ -386,13 +410,7 @@
 			}}
 			{disabled}
 		>
-			<svg
-				class="calendar-icon"
-				viewBox="0 0 20 20"
-				fill="currentColor"
-				width="16"
-				height="16"
-			>
+			<svg class="calendar-icon" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
 				<path
 					d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h1.25A1.75 1.75 0 0 1 18 5.75v10.5A1.75 1.75 0 0 1 16.25 18H3.75A1.75 1.75 0 0 1 2 16.25V5.75A1.75 1.75 0 0 1 3.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-2 5.5v8.75c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V7.5H3.75Z"
 				/>
@@ -425,12 +443,7 @@
 					{disabled}
 				/>
 				{#if timeDropdownOpen}
-					<div
-						class="time-dropdown"
-						bind:this={timeDropdownEl}
-						role="listbox"
-						id="time-listbox"
-					>
+					<div class="time-dropdown" bind:this={timeDropdownEl} role="listbox" id="time-listbox">
 						{#each timeSlots as slot, i}
 							<button
 								type="button"
@@ -468,8 +481,7 @@
 				{/each}
 				{#each calendarWeeks as week}
 					{#each week as cell}
-						{@const cellDisabled =
-							!cell.inMonth || isDayDisabled(cell.year, cell.month, cell.day)}
+						{@const cellDisabled = !cell.inMonth || isDayDisabled(cell.year, cell.month, cell.day)}
 						<button
 							type="button"
 							class="day-cell"
@@ -489,7 +501,6 @@
 			</div>
 		</div>
 	{/if}
-
 </div>
 
 <style>
