@@ -66,16 +66,38 @@ pub struct ParticipantInfo {
     pub layer_entry_igt: Option<i32>,
 }
 
-/// Race info from server
+/// Race info from server.
+///
+/// Carries every race-level field the server may push at any time. Only the
+/// fields the mod actually uses are read by the UI today (status, race_ends_at,
+/// countdown_seconds); the rest are kept on the struct so a single payload
+/// shape covers `auth_ok`, `race_state` and `race_info_update` and so the
+/// protocol stays symmetrical with the spectator client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RaceInfo {
     pub id: String,
     pub name: String,
     pub status: String,
     #[serde(default)]
-    pub countdown_seconds: u32,
+    pub is_public: bool,
+    #[serde(default)]
+    pub open_registration: bool,
+    #[serde(default)]
+    pub max_participants: Option<i32>,
+    #[serde(default)]
+    pub scheduled_at: Option<String>,
+    #[serde(default)]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    pub seeds_released_at: Option<String>,
+    #[serde(default)]
+    pub registration_closes_at: Option<String>,
     #[serde(default)]
     pub race_ends_at: Option<String>,
+    #[serde(default)]
+    pub private_dag: bool,
+    #[serde(default)]
+    pub countdown_seconds: u32,
 }
 
 /// Item to be spawned at runtime by the mod (e.g., Gem/Ash of War).
@@ -147,6 +169,9 @@ pub enum ServerMessage {
     },
     /// Race status changed
     RaceStatusChange { status: String },
+    /// Race-level info changed (race_ends_at extension, etc.) and the cached
+    /// RaceInfo on the client must be replaced wholesale with this snapshot.
+    RaceInfoUpdate { race: RaceInfo },
     /// Single player update
     PlayerUpdate { player: ParticipantInfo },
     /// Zone update (unicast to originating mod)
@@ -554,6 +579,27 @@ mod tests {
         let json = r#"{"id": "123", "name": "Test", "status": "running", "race_ends_at": "2026-04-20T12:00:00Z"}"#;
         let info: RaceInfo = serde_json::from_str(json).unwrap();
         assert_eq!(info.race_ends_at.as_deref(), Some("2026-04-20T12:00:00Z"));
+    }
+
+    #[test]
+    fn test_race_info_update_deserialize() {
+        let json = r#"{
+            "type": "race_info_update",
+            "race": {
+                "id": "123",
+                "name": "Test",
+                "status": "running",
+                "race_ends_at": "2026-04-21T15:00:00Z"
+            }
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::RaceInfoUpdate { race } => {
+                assert_eq!(race.race_ends_at.as_deref(), Some("2026-04-21T15:00:00Z"));
+                assert_eq!(race.status, "running");
+            }
+            _ => panic!("Expected RaceInfoUpdate"),
+        }
     }
 
     #[test]

@@ -1102,6 +1102,15 @@ impl RaceTracker {
                 }
                 self.bump_leaderboard_version();
             }
+            IncomingMessage::RaceInfoUpdate(race) => {
+                self.last_received_debug = Some(format!("race_info_update(name={})", race.name));
+                info!(
+                    race_ends_at = ?race.race_ends_at,
+                    status = %race.status,
+                    "[WS] Race info updated"
+                );
+                self.race_state.race = Some(race);
+            }
             IncomingMessage::PlayerUpdate(player) => {
                 // Snapshot current_layer on increase (same rationale as LeaderboardUpdate).
                 if self.pre_reveal_layer.is_none() {

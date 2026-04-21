@@ -74,6 +74,9 @@ pub enum IncomingMessage {
         leader_splits: Option<HashMap<i32, i32>>,
     },
     RaceStatusChange(String),
+    /// Server pushed a refreshed RaceInfo (race_ends_at extension, etc.).
+    /// Replaces the cached race info wholesale.
+    RaceInfoUpdate(RaceInfo),
     PlayerUpdate(ParticipantInfo),
     ZoneUpdate {
         node_id: String,
@@ -656,6 +659,16 @@ fn message_loop(
                             {
                                 warn!(
                                     "[WS] Incoming channel full/closed: race_status_change dropped"
+                                );
+                            }
+                        }
+                        ServerMessage::RaceInfoUpdate { race } => {
+                            if incoming_tx
+                                .send(IncomingMessage::RaceInfoUpdate(race))
+                                .is_err()
+                            {
+                                warn!(
+                                    "[WS] Incoming channel full/closed: race_info_update dropped"
                                 );
                             }
                         }
