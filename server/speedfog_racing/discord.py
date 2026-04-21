@@ -391,12 +391,17 @@ async def notify_race_finished(
     await _send_webhook(embed)
 
 
-def fire_race_finished_notifications(race: Race) -> None:
+def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> None:
     """Fire-and-forget Discord notifications for a finished race.
 
     Creates background tasks for the webhook notification (public races)
     and the scheduled event status update (if a Discord event exists).
+
+    The `forced` flag is plumbed through so future logic (daily seed Discord
+    copy, etc.) can differentiate between auto-finish and hard-close paths;
+    current implementation ignores it.
     """
+    del forced  # currently unused, reserved for future copy differentiation
     if race.is_public:
         task = asyncio.create_task(
             notify_race_finished(

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from speedfog_racing.api.helpers import race_response
 from speedfog_racing.models import Race, RaceStatus, User
 from speedfog_racing.schemas import CreateRaceRequest
+from speedfog_racing.services.race_lifecycle import finalize_race
 
 
 def _base_kwargs(**overrides):
@@ -164,3 +165,10 @@ def test_can_join_false_when_registration_not_open_even_with_deadline():
     race.open_registration = False
     resp = race_response(race, user=None)
     assert resp.can_join is False
+
+
+def test_finalize_race_helper_is_importable():
+    import inspect
+
+    sig = inspect.signature(finalize_race)
+    assert set(sig.parameters.keys()) == {"db", "race", "forced"}

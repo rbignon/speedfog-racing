@@ -71,14 +71,10 @@ from speedfog_racing.services import (
     get_pool,
     reroll_seed_for_race,
 )
-from speedfog_racing.services.race_lifecycle import check_race_auto_finish
+from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
     stream_seed_pack_with_config,
-)
-from speedfog_racing.services.stats_service import (
-    recompute_traits_for_race_async,
-    update_elo_ratings,
 )
 from speedfog_racing.websocket import broadcast_race_start, broadcast_race_state_update
 from speedfog_racing.websocket.race.manager import manager
@@ -1470,38 +1466,8 @@ async def finish_race(
         db, race, [RaceStatus.RUNNING], RaceStatus.FINISHED, finished_at=datetime.now(UTC)
     )
 
-    # Mark remaining playing participants as abandoned
-    for p in race.participants:
-        if p.status == ParticipantStatus.PLAYING:
-            p.status = ParticipantStatus.ABANDONED
-
-    finished_public_json = await persist_system_chat(
-        db, race_id, ChatChannel.PUBLIC, "The race has finished."
-    )
-    await db.commit()
-
-    # Clear is_playing on all spectator connections (race is finished)
-    room = manager.get_room(race_id)
-    if room:
-        room.clear_all_playing()
-
-    # Re-query with eager-loaded relationships (refresh only reloads columns)
     race = await _get_race_or_404(db, race.id, load_participants=True, load_casters=True)
-
-    await update_elo_ratings(race_id, db)
-    # Trait recomputation rescans each finisher's full race history, so
-    # run it in the background to keep the request responsive.
-    task = asyncio.create_task(recompute_traits_for_race_async(race_id))
-    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-
-    # Push full race_state (status + zone_history) before status change
-    # so spectators get everything atomically in one message.
-    await broadcast_race_state_update(race_id, race)
-    await manager.broadcast_race_status(race_id, "finished")
-    if room:
-        await room.broadcast_chat_public(finished_public_json)
-
-    fire_race_finished_notifications(race)
+    await finalize_race(db, race, forced=True)
 
     return race_response(race, user)
 
