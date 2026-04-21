@@ -5,10 +5,27 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from speedfog_racing.api.helpers import race_response
-from speedfog_racing.models import Race, RaceStatus, User
+from speedfog_racing.database import Base
+from speedfog_racing.models import (
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    Seed,
+    SeedStatus,
+    User,
+    UserRole,
+)
 from speedfog_racing.schemas import CreateRaceRequest
+from speedfog_racing.services.hard_close_loop import close_expired_races
 from speedfog_racing.services.race_lifecycle import finalize_race
 
 
@@ -177,23 +194,6 @@ def test_finalize_race_helper_is_importable():
 # ---------------------------------------------------------------------------
 # hard_close_loop tests
 # ---------------------------------------------------------------------------
-
-from sqlalchemy import select  # noqa: E402
-from sqlalchemy.ext.asyncio import (  # noqa: E402
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
-
-from speedfog_racing.database import Base  # noqa: E402
-from speedfog_racing.models import (  # noqa: E402
-    Participant,
-    ParticipantStatus,
-    Seed,
-    SeedStatus,
-    UserRole,
-)
-from speedfog_racing.services.hard_close_loop import close_expired_races  # noqa: E402
 
 
 @pytest.fixture
