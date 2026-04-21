@@ -5,7 +5,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -54,8 +54,34 @@ async def close_expired_races(
             if race is None or race.status != RaceStatus.RUNNING:
                 continue
 
+            # Optimistic locking: another worker (e.g. /finish endpoint or
+            # check_race_auto_finish) may transition this race concurrently.
+            # Filter on version so only one caller wins; if we lose, skip.
+            now_ts = datetime.now(UTC)
+            current_version = race.version
+            result = await db.execute(
+                update(Race)
+                .where(
+                    Race.id == race_id,
+                    Race.status == RaceStatus.RUNNING,
+                    Race.version == current_version,
+                )
+                .values(
+                    status=RaceStatus.FINISHED,
+                    version=current_version + 1,
+                    finished_at=now_ts,
+                )
+            )
+            if result.rowcount == 0:  # type: ignore[attr-defined]
+                logger.info("Hard-close skipped race %s (concurrently transitioned)", race_id)
+                await db.commit()
+                continue
+
+            # Sync the in-memory object so finalize_race sees a consistent
+            # post-transition snapshot (matches the race_lifecycle pattern).
             race.status = RaceStatus.FINISHED
-            race.finished_at = datetime.now(UTC)
+            race.version = current_version + 1
+            race.finished_at = now_ts
             await db.commit()
 
             await finalize_race(db, race, forced=True)

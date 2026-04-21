@@ -279,6 +279,103 @@ async def test_close_expired_races_transitions_to_finished(hc_async_session):
 
 
 @pytest.mark.asyncio
+async def test_close_expired_races_stale_version_skipped(hc_async_session):
+    """Directly verify the atomic UPDATE's optimistic-lock predicate.
+
+    Regression for the check-then-act race: hard-close now filters its UPDATE
+    on `version = :v` so a concurrent /finish (which bumps version) causes
+    hard-close to see rowcount=0 and skip finalization, preventing duplicate
+    "race has finished" messages and double ELO recomputation.
+
+    We exercise the exact predicate the fix added: load the race, let another
+    session bump the version, then issue the guarded UPDATE with the stale
+    version and assert rowcount is 0.
+    """
+    from sqlalchemy import update as sa_update
+
+    now = datetime.now(UTC)
+    async with hc_async_session() as db:
+        organizer = await _make_db_user(db, twitch_id="org_stale", role=UserRole.ORGANIZER)
+        seed = await _make_db_seed(db, suffix="stale")
+
+        race = Race(
+            name="StaleVersion",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now - timedelta(hours=25),
+            race_ends_at=now - timedelta(minutes=5),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    # Load the race as the hard-close loop does
+    async with hc_async_session() as db:
+        race_obj = (await db.execute(select(Race).where(Race.id == race_id))).scalar_one()
+        stale_version = race_obj.version
+
+    # Concurrent /finish bumps the version
+    async with hc_async_session() as other:
+        await other.execute(
+            sa_update(Race).where(Race.id == race_id).values(version=Race.version + 1)
+        )
+        await other.commit()
+
+    # The guarded UPDATE the hard-close loop issues must now fail the predicate
+    async with hc_async_session() as db:
+        result = await db.execute(
+            sa_update(Race)
+            .where(
+                Race.id == race_id,
+                Race.status == RaceStatus.RUNNING,
+                Race.version == stale_version,
+            )
+            .values(
+                status=RaceStatus.FINISHED,
+                version=stale_version + 1,
+                finished_at=datetime.now(UTC),
+            )
+        )
+        await db.commit()
+        assert result.rowcount == 0
+
+    # And the race must still be RUNNING (hard-close did not finalize)
+    async with hc_async_session() as db:
+        final = (await db.execute(select(Race).where(Race.id == race_id))).scalar_one()
+        assert final.status == RaceStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_close_expired_races_is_idempotent(hc_async_session):
+    """Calling close_expired_races twice on the same race only finalizes once.
+
+    Second call must be a no-op because the race is already FINISHED.
+    """
+    now = datetime.now(UTC)
+    async with hc_async_session() as db:
+        organizer = await _make_db_user(db, twitch_id="org_idem", role=UserRole.ORGANIZER)
+        seed = await _make_db_seed(db, suffix="idem")
+
+        race = Race(
+            name="Idempotent",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now - timedelta(hours=25),
+            race_ends_at=now - timedelta(minutes=5),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    first = await close_expired_races(hc_async_session)
+    second = await close_expired_races(hc_async_session)
+    assert race_id in first
+    assert race_id not in second
+
+
+@pytest.mark.asyncio
 async def test_close_expired_races_skips_non_expired(hc_async_session):
     now = datetime.now(UTC)
     async with hc_async_session() as db:
