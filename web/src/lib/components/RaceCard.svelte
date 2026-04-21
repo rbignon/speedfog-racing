@@ -61,7 +61,10 @@
 			? raceDisplayDate(race)
 			: 'TBD'
 	);
-	let showOpenBadge = $derived(race.open_registration && race.status === 'setup');
+	let showOpenBadge = $derived(
+		(race.open_registration && race.status === 'setup') ||
+			(race.status === 'running' && race.can_join)
+	);
 </script>
 
 <a
@@ -176,6 +179,15 @@
 			</span>
 		{/if}
 	</div>
+	{#if race.status === 'running' && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
+		<div class="late-join-note">
+			Joinable until {new Date(race.registration_closes_at).toLocaleTimeString([], {
+				hour: '2-digit',
+				minute: '2-digit',
+				hour12: false
+			})}
+		</div>
+	{/if}
 	</div>
 	{#if race.can_join}
 		<div class="join-strip">
@@ -432,6 +444,12 @@
 		font-size: var(--font-size-sm);
 		color: var(--color-purple);
 		font-weight: 500;
+	}
+
+	.late-join-note {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-disabled);
+		margin-top: 0.25rem;
 	}
 
 	.race-organizer {
