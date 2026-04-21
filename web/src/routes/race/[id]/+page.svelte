@@ -133,9 +133,7 @@
 	let totalNodes = $derived(liveSeed?.total_nodes ?? initialRace.seed_total_nodes);
 	let totalPaths = $derived(liveSeed?.total_paths ?? initialRace.seed_total_paths);
 	let seedsReleased = $derived(
-		liveRace
-			? liveRace.seeds_released_at !== null
-			: initialRace.seeds_released_at !== null
+		liveRace ? liveRace.seeds_released_at !== null : initialRace.seeds_released_at !== null
 	);
 
 	// Build node ID → display name map for leaderboard zone labels
@@ -377,6 +375,52 @@
 			(initialRace.max_participants === null ||
 				mergedParticipants.length < initialRace.max_participants)
 	);
+
+	let isCasterOrOrganizer = $derived(isCaster || isOrganizer);
+
+	let registrationOpenWindow = $derived(
+		initialRace.registration_closes_at !== null &&
+			new Date(initialRace.registration_closes_at).getTime() > now
+	);
+
+	let canRejoin = $derived(
+		initialRace.open_registration &&
+			raceStatus === 'running' &&
+			auth.isLoggedIn &&
+			!myParticipant &&
+			!isCasterOrOrganizer &&
+			registrationOpenWindow &&
+			(initialRace.max_participants === null ||
+				mergedParticipants.length < initialRace.max_participants)
+	);
+
+	let dagHidden = $derived(
+		raceStatus === 'running' &&
+			!myParticipant &&
+			!isCasterOrOrganizer &&
+			(initialRace.private_dag || registrationOpenWindow)
+	);
+
+	let dagHiddenReason = $derived(
+		initialRace.private_dag
+			? 'The DAG is hidden until the race finishes.'
+			: 'The DAG is hidden while late registration is open.'
+	);
+
+	function formatLocalTime(iso: string): string {
+		const d = new Date(iso);
+		return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	}
+
+	function formatCountdown(iso: string, refMs: number): string {
+		const diff = Math.max(0, Math.floor((new Date(iso).getTime() - refMs) / 1000));
+		const h = Math.floor(diff / 3600);
+		const m = Math.floor((diff % 3600) / 60);
+		const s = diff % 60;
+		if (h > 0) return `${h}h ${m}min`;
+		if (m > 0) return `${m}min ${s}s`;
+		return `${s}s`;
+	}
 
 	let raceFull = $derived(
 		initialRace.open_registration &&
@@ -745,6 +789,28 @@
 				</div>
 			{/if}
 
+			{#if canRejoin}
+				<div class="join-cta">
+					<button class="join-btn join-cta-btn" onclick={handleJoin} disabled={joining}>
+						{joining ? 'Joining...' : 'Join this race'}
+					</button>
+					{#if initialRace.registration_closes_at}
+						<span class="deadline"
+							>Joinable until {formatLocalTime(initialRace.registration_closes_at)}</span
+						>
+					{/if}
+					{#if joinLeaveError}
+						<span class="join-leave-error">{joinLeaveError}</span>
+					{/if}
+				</div>
+			{/if}
+
+			{#if initialRace.race_ends_at && raceStatus === 'running'}
+				<div class="race-ends-pill">
+					Race ends in {formatCountdown(initialRace.race_ends_at, now)}
+				</div>
+			{/if}
+
 			<div class="dag-wrapper">
 				{#if countdownRemaining !== null}
 					<div class="go-overlay countdown-overlay">
@@ -756,7 +822,11 @@
 					</div>
 				{/if}
 
-				{#if liveSeed?.graph_json && raceStatus === 'running'}
+				{#if dagHidden}
+					<div class="dag-placeholder">
+						<p class="dag-note">{dagHiddenReason}</p>
+					</div>
+				{:else if liveSeed?.graph_json && raceStatus === 'running'}
 					{#if myWsParticipantId && !myParticipantFinished && !forceFullDag}
 						<MetroDagProgressive
 							graphJson={liveSeed.graph_json}
@@ -1568,5 +1638,36 @@
 	.ws-error-detail {
 		color: var(--color-text-secondary);
 		font-size: var(--font-size-sm);
+	}
+
+	.join-cta {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+
+	.join-cta-btn {
+		margin-top: 0;
+		width: auto;
+		padding: 0.5rem 1.25rem;
+	}
+
+	.join-cta .deadline {
+		color: var(--color-text-disabled);
+		font-size: var(--font-size-sm);
+	}
+
+	.race-ends-pill {
+		display: inline-block;
+		align-self: flex-start;
+		padding: 0.25rem 0.75rem;
+		background: rgba(200, 164, 78, 0.12);
+		border: 1px solid rgba(200, 164, 78, 0.35);
+		border-radius: var(--radius-sm);
+		color: var(--color-warning, #c8a44e);
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
 	}
 </style>
