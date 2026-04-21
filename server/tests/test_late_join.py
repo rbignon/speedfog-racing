@@ -299,3 +299,217 @@ async def test_close_expired_races_skips_non_expired(hc_async_session):
 
     affected = await close_expired_races(hc_async_session)
     assert race_id not in affected
+
+
+# ---------------------------------------------------------------------------
+# HTTP tests for POST /races/{id}/join with late-join
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def lj_async_engine():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+async def lj_async_session(lj_async_engine):
+    return async_sessionmaker(lj_async_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture
+def lj_test_client(lj_async_session):
+    from httpx import ASGITransport, AsyncClient
+
+    from speedfog_racing.database import get_db
+    from speedfog_racing.main import app
+
+    async def override_get_db():
+        async with lj_async_session() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    client = AsyncClient(transport=transport, base_url="http://test")
+    yield client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def lj_organizer(lj_async_session):
+    async with lj_async_session() as db:
+        user = User(
+            twitch_id="org_lj",
+            twitch_username="organizer_lj",
+            twitch_display_name="Organizer LJ",
+            api_token="org_lj_token",
+            role=UserRole.ORGANIZER,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+@pytest.fixture
+async def lj_player(lj_async_session):
+    async with lj_async_session() as db:
+        user = User(
+            twitch_id="player_lj",
+            twitch_username="player_lj",
+            twitch_display_name="Player LJ",
+            api_token="player_lj_token",
+            role=UserRole.USER,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+async def _make_http_seed(db, *, suffix: str) -> Seed:
+    seed = Seed(
+        seed_number=f"lj_{suffix}",
+        pool_name="standard",
+        graph_json={"total_layers": 5, "nodes": []},
+        total_layers=5,
+        folder_path=f"/test/lj_{suffix}",
+        status=SeedStatus.CONSUMED,
+    )
+    db.add(seed)
+    await db.flush()
+    return seed
+
+
+async def _create_running_race(
+    session_factory,
+    *,
+    organizer_id,
+    suffix: str,
+    registration_closes_at,
+    race_ends_at=None,
+):
+    async with session_factory() as db:
+        seed = await _make_http_seed(db, suffix=suffix)
+        race = Race(
+            name=f"Running Race {suffix}",
+            organizer_id=organizer_id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            scheduled_at=datetime.now(UTC) - timedelta(minutes=30),
+            started_at=datetime.now(UTC) - timedelta(minutes=10),
+            registration_closes_at=registration_closes_at,
+            race_ends_at=race_ends_at,
+        )
+        db.add(race)
+        await db.commit()
+        await db.refresh(race)
+        return race.id
+
+
+@pytest.mark.asyncio
+async def test_join_running_race_with_late_join_open(
+    lj_test_client, lj_organizer, lj_player, lj_async_session
+):
+    """Player can join a RUNNING race while late-join window is open."""
+    now = datetime.now(UTC)
+    race_id = await _create_running_race(
+        lj_async_session,
+        organizer_id=lj_organizer.id,
+        suffix="open",
+        registration_closes_at=now + timedelta(hours=1),
+        race_ends_at=now + timedelta(hours=4),
+    )
+
+    async with lj_test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/join",
+            headers={"Authorization": f"Bearer {lj_player.api_token}"},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["user"]["twitch_username"] == "player_lj"
+
+
+@pytest.mark.asyncio
+async def test_join_running_race_after_deadline(
+    lj_test_client, lj_organizer, lj_player, lj_async_session
+):
+    """Player cannot join a RUNNING race after the late-join deadline passed."""
+    now = datetime.now(UTC)
+    race_id = await _create_running_race(
+        lj_async_session,
+        organizer_id=lj_organizer.id,
+        suffix="afterd",
+        registration_closes_at=now - timedelta(minutes=1),
+        race_ends_at=now + timedelta(hours=4),
+    )
+
+    async with lj_test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/join",
+            headers={"Authorization": f"Bearer {lj_player.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "closed" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_join_running_race_without_late_join(
+    lj_test_client, lj_organizer, lj_player, lj_async_session
+):
+    """Player cannot join a RUNNING race that has no late-join configured."""
+    race_id = await _create_running_race(
+        lj_async_session,
+        organizer_id=lj_organizer.id,
+        suffix="nolj",
+        registration_closes_at=None,
+        race_ends_at=None,
+    )
+
+    async with lj_test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/join",
+            headers={"Authorization": f"Bearer {lj_player.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "setup" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_abandoned_player_cannot_rejoin_late_join_race(
+    lj_test_client, lj_organizer, lj_player, lj_async_session
+):
+    """An ABANDONED participant cannot /join again while late-join is open (409)."""
+    now = datetime.now(UTC)
+    race_id = await _create_running_race(
+        lj_async_session,
+        organizer_id=lj_organizer.id,
+        suffix="aband",
+        registration_closes_at=now + timedelta(hours=1),
+        race_ends_at=now + timedelta(hours=4),
+    )
+
+    async with lj_async_session() as db:
+        participant = Participant(
+            race_id=race_id,
+            user_id=lj_player.id,
+            status=ParticipantStatus.ABANDONED,
+            color_index=0,
+        )
+        db.add(participant)
+        await db.commit()
+
+    async with lj_test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/join",
+            headers={"Authorization": f"Bearer {lj_player.api_token}"},
+        )
+        assert response.status_code == 409
+        assert "already" in response.json()["detail"].lower()

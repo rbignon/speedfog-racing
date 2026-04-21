@@ -947,7 +947,22 @@ async def join_race(
     """Self-register as a participant in an open-registration race."""
     race = await _get_race_or_404(db, race_id, load_participants=True)
 
-    if race.status != RaceStatus.SETUP:
+    now = datetime.now(UTC)
+    registration_closes_at = race.registration_closes_at
+    if registration_closes_at is not None and registration_closes_at.tzinfo is None:
+        registration_closes_at = registration_closes_at.replace(tzinfo=UTC)
+    is_late_join_open = (
+        race.status == RaceStatus.RUNNING
+        and registration_closes_at is not None
+        and registration_closes_at > now
+    )
+
+    if race.status != RaceStatus.SETUP and not is_late_join_open:
+        if race.status == RaceStatus.RUNNING and registration_closes_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Registration is closed for this race",
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Can only join a race in setup status",
