@@ -803,7 +803,7 @@
 				{/if}
 			</div>
 
-			{#if isOrganizer}
+			{#if isOrganizer || auth.isAdmin}
 				<RaceControls
 					race={initialRace}
 					{raceStatus}
