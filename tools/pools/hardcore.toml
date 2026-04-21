@@ -65,20 +65,7 @@ larval_tears = 2
 stonesword_keys = 3
 
 [care_package]
-enabled = true
-weapon_upgrade = 0
-weapons = 0
-shields = 0
-catalysts = 0
-talismans = 0
-sorceries = 0
-incantations = 0
-head_armor = 1
-body_armor = 1
-arm_armor = 1
-leg_armor = 1
-crystal_tears = 2
-ashes_of_war = 1
+enabled = false
 
 [item_randomizer]
 difficulty = 75
