@@ -151,3 +151,16 @@ def test_can_join_false_for_running_race_without_late_join():
     race = _make_race(status=RaceStatus.RUNNING)
     resp = race_response(race, user=None)
     assert resp.can_join is False
+
+
+def test_can_join_false_when_registration_not_open_even_with_deadline():
+    """registration_closes_at alone must not bypass open_registration=False."""
+    now = datetime.now(UTC)
+    race = _make_race(
+        status=RaceStatus.RUNNING,
+        registration_closes_at=now + timedelta(hours=1),
+        race_ends_at=now + timedelta(hours=4),
+    )
+    race.open_registration = False
+    resp = race_response(race, user=None)
+    assert resp.can_join is False
