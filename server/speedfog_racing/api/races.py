@@ -358,7 +358,7 @@ async def list_joinable_races(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RaceListResponse:
-    """List open-registration setup races the user can join."""
+    """List open-registration, scheduled setup races the user can join."""
     my_participant_races = select(Participant.race_id).where(Participant.user_id == user.id)
     my_caster_races = select(Caster.race_id).where(Caster.user_id == user.id)
 
@@ -382,6 +382,7 @@ async def list_joinable_races(
             Race.status == RaceStatus.SETUP,
             Race.open_registration.is_(True),
             Race.is_public.is_(True),
+            Race.scheduled_at.is_not(None),
             Race.organizer_id != user.id,
             Race.id.notin_(my_participant_races),
             Race.id.notin_(my_caster_races),
@@ -390,11 +391,7 @@ async def list_joinable_races(
                 Race.max_participants > func.coalesce(participant_count_sq.c.cnt, 0),
             ),
         )
-        .order_by(
-            case((Race.scheduled_at.is_(None), 1), else_=0),
-            Race.scheduled_at.asc(),
-            Race.created_at.desc(),
-        )
+        .order_by(Race.scheduled_at.asc())
     )
 
     result = await db.execute(query)

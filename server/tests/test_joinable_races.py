@@ -1,5 +1,7 @@
 """Tests for GET /api/races/joinable endpoint."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -104,8 +106,11 @@ async def _create_race(
     max_participants=None,
     status=RaceStatus.SETUP,
     is_public=True,
+    scheduled_at=...,
 ):
     """Helper to create a race directly in the DB."""
+    if scheduled_at is ...:
+        scheduled_at = datetime.now(UTC) + timedelta(hours=1)
     race = Race(
         name="Test Race",
         organizer_id=organizer.id,
@@ -114,6 +119,7 @@ async def _create_race(
         open_registration=open_registration,
         max_participants=max_participants,
         is_public=is_public,
+        scheduled_at=scheduled_at,
     )
     db.add(race)
     await db.commit()
@@ -252,6 +258,23 @@ async def test_joinable_excludes_private_races(test_client, organizer, player, s
     """Private races are excluded."""
     async with async_session() as db:
         await _create_race(db, organizer, seed, is_public=False)
+
+    async with test_client as client:
+        resp = await client.get(
+            "/api/races/joinable",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert resp.status_code == 200
+        assert len(resp.json()["races"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_joinable_excludes_unscheduled_races(
+    test_client, organizer, player, seed, async_session
+):
+    """Races without a scheduled_at are excluded."""
+    async with async_session() as db:
+        await _create_race(db, organizer, seed, scheduled_at=None)
 
     async with test_client as client:
         resp = await client.get(
