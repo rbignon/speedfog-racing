@@ -29,10 +29,16 @@ export interface WsRaceInfo {
   id: string;
   name: string;
   status: string;
+  is_public?: boolean;
+  open_registration?: boolean;
+  max_participants?: number | null;
+  scheduled_at?: string | null;
   started_at: string | null;
   seeds_released_at: string | null;
-  countdown_seconds?: number;
+  registration_closes_at?: string | null;
   race_ends_at?: string | null;
+  private_dag?: boolean;
+  countdown_seconds?: number;
 }
 
 export interface WsSeedInfo {
@@ -65,6 +71,11 @@ export interface RaceStatusChangeMessage {
   status: string;
   started_at: string | null;
   countdown_seconds?: number;
+}
+
+export interface RaceInfoUpdateMessage {
+  type: "race_info_update";
+  race: WsRaceInfo;
 }
 
 export interface SpectatorCountMessage {
@@ -101,6 +112,7 @@ export type ServerMessage =
   | LeaderboardUpdateMessage
   | PlayerUpdateMessage
   | RaceStatusChangeMessage
+  | RaceInfoUpdateMessage
   | SpectatorCountMessage
   | ZoneHistoryMessage
   | ChatMessage
@@ -111,6 +123,7 @@ const VALID_SERVER_MESSAGE_TYPES = new Set([
   "leaderboard_update",
   "player_update",
   "race_status_change",
+  "race_info_update",
   "spectator_count",
   "zone_history",
   "chat_message",
@@ -136,6 +149,7 @@ export interface RaceWebSocketOptions {
   onLeaderboardUpdate?: (msg: LeaderboardUpdateMessage) => void;
   onPlayerUpdate?: (msg: PlayerUpdateMessage) => void;
   onRaceStatusChange?: (msg: RaceStatusChangeMessage) => void;
+  onRaceInfoUpdate?: (msg: RaceInfoUpdateMessage) => void;
   onSpectatorCount?: (msg: SpectatorCountMessage) => void;
   onZoneHistory?: (msg: ZoneHistoryMessage) => void;
   onChatMessage?: (msg: ChatMessage) => void;
@@ -301,6 +315,9 @@ export class RaceWebSocket {
         break;
       case "race_status_change":
         this.options.onRaceStatusChange?.(msg);
+        break;
+      case "race_info_update":
+        this.options.onRaceInfoUpdate?.(msg);
         break;
       case "spectator_count":
         this.options.onSpectatorCount?.(msg);

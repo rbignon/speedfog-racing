@@ -172,6 +172,13 @@ class RaceStore {
           }
         },
 
+        onRaceInfoUpdate: (msg) => {
+          // Wholesale replacement so any field the organizer changed via
+          // PATCH /races (race_ends_at extension, max_participants bump,
+          // open_registration toggle, etc.) propagates to the live UI.
+          this.race = msg.race;
+        },
+
         onSpectatorCount: (msg) => {
           this.spectatorCount = msg.count;
         },

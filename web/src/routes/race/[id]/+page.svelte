@@ -365,44 +365,63 @@
 		};
 	}
 
+	let isCasterOrOrganizer = $derived(isCaster || isOrganizer);
+
+	// Live values: prefer the WS-broadcast race when present (raceStore.race
+	// is updated by race_state on connect and race_info_update on PATCH) so
+	// the UI reflects an organizer's mid-race edit without requiring reload.
+	// Fall back to the initial REST fetch when the WS hasn't delivered yet.
+	let liveRegistrationClosesAt = $derived(
+		raceStore.race?.registration_closes_at ?? initialRace.registration_closes_at
+	);
+	let liveRaceEndsAt = $derived(raceStore.race?.race_ends_at ?? initialRace.race_ends_at);
+	let livePrivateDag = $derived(raceStore.race?.private_dag ?? initialRace.private_dag);
+	let liveOpenRegistration = $derived(
+		raceStore.race?.open_registration ?? initialRace.open_registration
+	);
+	let liveMaxParticipants = $derived(
+		raceStore.race?.max_participants ?? initialRace.max_participants
+	);
+
 	let canJoin = $derived(
-		initialRace.open_registration &&
+		liveOpenRegistration &&
 			raceStatus === 'setup' &&
 			auth.isLoggedIn &&
 			!myParticipant &&
 			!isCaster &&
 			!isOrganizer &&
-			(initialRace.max_participants === null ||
-				mergedParticipants.length < initialRace.max_participants)
+			(liveMaxParticipants === null ||
+				liveMaxParticipants === undefined ||
+				mergedParticipants.length < liveMaxParticipants)
 	);
 
-	let isCasterOrOrganizer = $derived(isCaster || isOrganizer);
-
 	let registrationOpenWindow = $derived(
-		initialRace.registration_closes_at !== null &&
-			new Date(initialRace.registration_closes_at).getTime() > now
+		liveRegistrationClosesAt !== null &&
+			liveRegistrationClosesAt !== undefined &&
+			new Date(liveRegistrationClosesAt).getTime() > now
 	);
 
 	let canRejoin = $derived(
-		initialRace.open_registration &&
+		liveOpenRegistration &&
 			raceStatus === 'running' &&
 			auth.isLoggedIn &&
 			!myParticipant &&
 			!isCasterOrOrganizer &&
 			registrationOpenWindow &&
-			(initialRace.max_participants === null ||
-				mergedParticipants.length < initialRace.max_participants)
+			(liveMaxParticipants === null ||
+				liveMaxParticipants === undefined ||
+				mergedParticipants.length < liveMaxParticipants)
 	);
 
 	let dagHidden = $derived(
 		raceStatus === 'running' &&
 			!myParticipant &&
 			!isCasterOrOrganizer &&
-			(initialRace.private_dag || registrationOpenWindow)
+			(livePrivateDag || registrationOpenWindow)
 	);
 
 	let dagHiddenReason = $derived(
-		initialRace.private_dag
+		livePrivateDag
 			? 'The DAG is hidden until the race finishes.'
 			: 'The DAG is hidden while late registration is open.'
 	);
@@ -423,9 +442,10 @@
 	}
 
 	let raceFull = $derived(
-		initialRace.open_registration &&
-			initialRace.max_participants !== null &&
-			mergedParticipants.length >= initialRace.max_participants
+		liveOpenRegistration &&
+			liveMaxParticipants !== null &&
+			liveMaxParticipants !== undefined &&
+			mergedParticipants.length >= liveMaxParticipants
 	);
 
 	let canLeave = $derived(raceStatus === 'setup' && !!myParticipant && !isOrganizer);
@@ -581,6 +601,42 @@
 					/>
 				</div>
 
+				{#if isOrganizer && registrationOpenWindow}
+					<div class="sidebar-section">
+						<h2>Late join open</h2>
+						{#if liveRegistrationClosesAt}
+							<p class="login-hint">
+								Joinable until {formatLocalTime(liveRegistrationClosesAt)}
+							</p>
+						{/if}
+						{#if initialRace.pending_invites.length > 0}
+							<div class="participant-list">
+								{#each initialRace.pending_invites as invite (invite.id)}
+									<InviteCard
+										{invite}
+										canRemove={false}
+										onRemove={() => handleRevokeInvite(invite.id, invite.twitch_username)}
+									/>
+								{/each}
+							</div>
+						{/if}
+						{#if showInviteSearch}
+							<div class="invite-search">
+								<ParticipantSearch
+									mode="participant"
+									raceId={initialRace.id}
+									onAdded={handleParticipantAdded}
+									onCancel={() => (showInviteSearch = false)}
+								/>
+							</div>
+						{:else}
+							<button class="invite-btn" onclick={() => (showInviteSearch = true)}>
+								+ Invite
+							</button>
+						{/if}
+					</div>
+				{/if}
+
 				{#if canAbandon}
 					<div class="abandon-section">
 						<button class="abandon-btn" onclick={() => (showAbandonConfirm = true)}>
@@ -617,8 +673,8 @@
 			{:else}
 				<div class="sidebar-section">
 					<h2>
-						Participants ({mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
-							/{initialRace.max_participants}{/if})
+						Participants ({mergedParticipants.length}{#if liveOpenRegistration && liveMaxParticipants}
+							/{liveMaxParticipants}{/if})
 					</h2>
 					<div class="participant-list">
 						{#each mergedParticipants as mp (mp.id)}
@@ -662,7 +718,7 @@
 						{/if}
 					{/if}
 
-					{#if (initialRace.open_registration && raceStatus === 'setup') || canRejoin}
+					{#if (liveOpenRegistration && raceStatus === 'setup') || canRejoin}
 						{#if canJoin || canRejoin}
 							<button class="join-btn" onclick={handleJoin} disabled={joining}>
 								{joining ? 'Joining...' : 'Join Race'}
@@ -675,9 +731,9 @@
 								{leaving ? 'Leaving...' : 'Leave Race'}
 							</button>
 						{/if}
-						{#if canRejoin && initialRace.registration_closes_at}
+						{#if canRejoin && liveRegistrationClosesAt}
 							<p class="login-hint">
-								Joinable until {formatLocalTime(initialRace.registration_closes_at)}
+								Joinable until {formatLocalTime(liveRegistrationClosesAt)}
 							</p>
 						{/if}
 						{#if !auth.isLoggedIn && raceStatus === 'setup'}
@@ -771,9 +827,9 @@
 					{#if initialRace.seed_number}
 						<span class="seed-badge">Seed {initialRace.seed_number}</span>
 					{/if}
-					{#if initialRace.race_ends_at && raceStatus === 'running'}
+					{#if liveRaceEndsAt && raceStatus === 'running'}
 						<span class="race-ends-pill">
-							Ends in {formatCountdown(initialRace.race_ends_at, now)}
+							Ends in {formatCountdown(liveRaceEndsAt, now)}
 						</span>
 					{/if}
 					<RaceStatus status={raceStatus} />
@@ -885,8 +941,8 @@
 					<div class="info-item">
 						<span class="label">Participants</span>
 						<span class="value"
-							>{mergedParticipants.length}{#if initialRace.open_registration && initialRace.max_participants}
-								/{initialRace.max_participants}{/if}</span
+							>{mergedParticipants.length}{#if liveOpenRegistration && liveMaxParticipants}
+								/{liveMaxParticipants}{/if}</span
 						>
 					</div>
 					<div class="info-item">
