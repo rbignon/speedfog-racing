@@ -8,7 +8,7 @@ from uuid import UUID
 
 import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import case, delete, func, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -355,7 +355,7 @@ async def list_joinable_races(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RaceListResponse:
-    """List open-registration, scheduled setup races the user can join."""
+    """List open-registration races the user can join (SETUP or late-join RUNNING)."""
     my_participant_races = select(Participant.race_id).where(Participant.user_id == user.id)
     my_caster_races = select(Caster.race_id).where(Caster.user_id == user.id)
 
@@ -366,6 +366,7 @@ async def list_joinable_races(
         .subquery()
     )
 
+    now = datetime.now(UTC)
     query = (
         select(Race)
         .options(
@@ -376,7 +377,14 @@ async def list_joinable_races(
         )
         .outerjoin(participant_count_sq, Race.id == participant_count_sq.c.race_id)
         .where(
-            Race.status == RaceStatus.SETUP,
+            or_(
+                Race.status == RaceStatus.SETUP,
+                and_(
+                    Race.status == RaceStatus.RUNNING,
+                    Race.registration_closes_at.is_not(None),
+                    Race.registration_closes_at > now,
+                ),
+            ),
             Race.open_registration.is_(True),
             Race.is_public.is_(True),
             Race.scheduled_at.is_not(None),

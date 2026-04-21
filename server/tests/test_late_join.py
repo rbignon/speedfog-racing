@@ -817,3 +817,49 @@ async def test_patch_running_race_cannot_change_private_dag(
             headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
         )
     assert resp.status_code == 400
+
+
+async def test_joinable_list_includes_running_late_join_race(
+    lj_test_client, lj_async_session, lj_organizer, lj_player
+):
+    """GET /races/joinable must surface RUNNING races whose late-join window is open."""
+    now = datetime.now(UTC)
+    race_id = await _create_running_race(
+        lj_async_session,
+        organizer_id=lj_organizer.id,
+        suffix="joinable_lj",
+        registration_closes_at=now + timedelta(hours=1),
+        race_ends_at=now + timedelta(hours=4),
+    )
+
+    async with lj_test_client as client:
+        resp = await client.get(
+            "/api/races/joinable",
+            headers={"Authorization": f"Bearer {lj_player.api_token}"},
+        )
+    assert resp.status_code == 200, resp.text
+    ids = [r["id"] for r in resp.json()["races"]]
+    assert str(race_id) in ids
+
+
+async def test_joinable_list_excludes_running_race_after_deadline(
+    lj_test_client, lj_async_session, lj_organizer, lj_player
+):
+    """GET /races/joinable must exclude RUNNING races past their late-join deadline."""
+    now = datetime.now(UTC)
+    race_id = await _create_running_race(
+        lj_async_session,
+        organizer_id=lj_organizer.id,
+        suffix="joinable_past",
+        registration_closes_at=now - timedelta(minutes=1),
+        race_ends_at=now + timedelta(hours=4),
+    )
+
+    async with lj_test_client as client:
+        resp = await client.get(
+            "/api/races/joinable",
+            headers={"Authorization": f"Bearer {lj_player.api_token}"},
+        )
+    assert resp.status_code == 200, resp.text
+    ids = [r["id"] for r in resp.json()["races"]]
+    assert str(race_id) not in ids
