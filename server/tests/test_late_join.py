@@ -1120,4 +1120,73 @@ async def test_patch_running_extend_accepts_naive_iso(
     assert resp.status_code != 500
 
 
-# PLACEHOLDER_FINALIZE_TESTS
+# ---------------------------------------------------------------------------
+# finalize_race must abandon REGISTERED and READY participants too, not only
+# PLAYING. Otherwise late-joiners who never connected leave the race FINISHED
+# with stale REGISTERED/READY rows that pollute UI and stats.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_finalize_race_abandons_registered_and_ready(hc_async_session):
+    """REGISTERED and READY participants must transition to ABANDONED on finalize."""
+    from sqlalchemy.orm import selectinload
+
+    now = datetime.now(UTC)
+    async with hc_async_session() as db:
+        organizer = await _make_db_user(db, twitch_id="org_finalize_rr", role=UserRole.ORGANIZER)
+        registered = await _make_db_user(db, twitch_id="late_registered")
+        ready = await _make_db_user(db, twitch_id="late_ready")
+        playing = await _make_db_user(db, twitch_id="late_playing")
+        seed = await _make_db_seed(db, suffix="finalize_rr")
+
+        race = Race(
+            name="Finalize REGISTERED+READY",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=now - timedelta(hours=1),
+            finished_at=now,
+            race_ends_at=now,
+        )
+        db.add(race)
+        await db.flush()
+        for user, status_, color in (
+            (registered, ParticipantStatus.REGISTERED, 0),
+            (ready, ParticipantStatus.READY, 1),
+            (playing, ParticipantStatus.PLAYING, 2),
+        ):
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    status=status_,
+                    color_index=color,
+                )
+            )
+        await db.commit()
+        race_id = race.id
+
+    async with hc_async_session() as db:
+        race = (
+            await db.execute(
+                select(Race)
+                .where(Race.id == race_id)
+                .options(
+                    selectinload(Race.participants).selectinload(Participant.user),
+                    selectinload(Race.seed),
+                )
+            )
+        ).scalar_one()
+        await finalize_race(db, race, forced=True)
+
+    async with hc_async_session() as db:
+        statuses = {
+            p.user_id: p.status
+            for p in (
+                await db.execute(select(Participant).where(Participant.race_id == race_id))
+            ).scalars()
+        }
+    assert statuses[registered.id] == ParticipantStatus.ABANDONED
+    assert statuses[ready.id] == ParticipantStatus.ABANDONED
+    assert statuses[playing.id] == ParticipantStatus.ABANDONED

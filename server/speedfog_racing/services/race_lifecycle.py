@@ -75,7 +75,7 @@ async def finalize_race(
     committed the transition.
 
     finalize_race then:
-    - marks remaining PLAYING participants as ABANDONED
+    - marks any non-terminal participant (REGISTERED, READY, PLAYING) as ABANDONED
     - posts the public chat "race has finished" message
     - clears is_playing on spectator connections
     - triggers ELO update and trait recomputation (background)
@@ -89,8 +89,16 @@ async def finalize_race(
 
     assert race.status == RaceStatus.FINISHED, "finalize_race: race must be FINISHED already"
 
+    # Late-joiners who never connected stay REGISTERED; players who set ready but
+    # never started stay READY. Both must be moved to ABANDONED so the race
+    # leaves no participant in a non-terminal status after FINISHED.
+    non_terminal = {
+        ParticipantStatus.REGISTERED,
+        ParticipantStatus.READY,
+        ParticipantStatus.PLAYING,
+    }
     for p in race.participants:
-        if p.status == ParticipantStatus.PLAYING:
+        if p.status in non_terminal:
             p.status = ParticipantStatus.ABANDONED
 
     finished_public_json = await persist_system_chat(
