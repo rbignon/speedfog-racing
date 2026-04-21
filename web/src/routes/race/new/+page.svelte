@@ -13,6 +13,10 @@
 	let isPublic = $state(true);
 	let openRegistration = $state(true);
 	let maxParticipants = $state(20);
+	let lateJoinEnabled = $state(false);
+	let registrationClosesAt = $state('');
+	let raceEndsAt = $state('');
+	let privateDag = $state(false);
 	let pools: PoolStats = $state({});
 	let loading = $state(true);
 	let creating = $state(false);
@@ -80,7 +84,10 @@
 				isoScheduled,
 				isPublic,
 				openRegistration,
-				openRegistration ? maxParticipants : null
+				openRegistration ? maxParticipants : null,
+				lateJoinEnabled && registrationClosesAt ? registrationClosesAt : null,
+				lateJoinEnabled && raceEndsAt ? raceEndsAt : null,
+				privateDag
 			);
 			goto(`/race/${race.id}`);
 		} catch (e) {
@@ -262,6 +269,50 @@
 				{/if}
 			</div>
 
+			<div class="form-group">
+				<span>Late joiners</span>
+				<label class="radio-label">
+					<input type="checkbox" bind:checked={lateJoinEnabled} disabled={creating} />
+					Accept late joiners
+				</label>
+				<p class="hint">
+					Allow players to join after the race has started. Requires a hard end time.
+				</p>
+				{#if lateJoinEnabled}
+					<div class="late-join-fields">
+						<div class="form-group">
+							<label for="reg-closes">Registration closes at</label>
+							<DateTimePicker
+								value={registrationClosesAt}
+								onchange={(iso) => (registrationClosesAt = iso)}
+								min={scheduledAt ? new Date(scheduledAt) : new Date()}
+								disabled={creating}
+								placeholder="Leave empty to keep open until race end"
+							/>
+						</div>
+						<div class="form-group">
+							<label for="race-ends">Race hard-closes at</label>
+							<DateTimePicker
+								value={raceEndsAt}
+								onchange={(iso) => (raceEndsAt = iso)}
+								min={scheduledAt ? new Date(scheduledAt) : new Date()}
+								disabled={creating}
+								placeholder="Required when accepting late joiners"
+							/>
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<div class="form-group">
+				<span>DAG visibility</span>
+				<label class="radio-label">
+					<input type="checkbox" bind:checked={privateDag} disabled={creating} />
+					Hide the DAG from non-participants until the race finishes
+				</label>
+				<p class="hint">Useful for asynchronous races where spoilers matter.</p>
+			</div>
+
 			<button type="submit" class="btn btn-primary" disabled={creating || !hasAvailablePool}>
 				{creating ? 'Creating...' : 'Create Race'}
 			</button>
@@ -417,6 +468,15 @@
 	.max-participants input[type='number']:focus {
 		outline: none;
 		border-color: var(--color-purple);
+	}
+
+	.late-join-fields {
+		margin-top: 0.75rem;
+		padding-left: 1rem;
+		border-left: 2px solid var(--color-border);
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
 	}
 
 	.error {
