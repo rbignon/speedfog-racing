@@ -836,6 +836,11 @@ async def add_participant(
         await db.commit()
         await db.refresh(invite)
 
+        # Broadcast so any other connected client (the organizer's other tab,
+        # casters watching, etc.) sees the new pending invite live.
+        race = await _get_race_or_404(db, race_id, load_participants=True)
+        await broadcast_race_state_update(race_id, race)
+
         return AddParticipantResponse(
             invite=InviteResponse(
                 token=invite.token,
@@ -930,6 +935,11 @@ async def revoke_invite(
 
     await db.delete(invite)
     await db.commit()
+
+    # Push the new pending_invites list to spectators so the organizer's UI
+    # drops the revoked entry without a reload.
+    race = await _get_race_or_404(db, race_id, load_participants=True)
+    await broadcast_race_state_update(race_id, race)
 
 
 # =============================================================================

@@ -1284,6 +1284,159 @@ async def test_patch_no_field_change_does_not_broadcast(
         broadcast_mock.assert_not_awaited()
 
 
+# ---------------------------------------------------------------------------
+# pending_invites must travel in race_state so the organizer's UI sees the
+# list update live (in both SETUP and RUNNING/late-join), without reload.
+# Symmetric with the existing live updates for participants.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_send_race_state_includes_pending_invites(lj_async_session, lj_organizer):
+    """RaceStateMessage must carry pending_invites alongside participants."""
+    import json
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy.orm import selectinload
+
+    from speedfog_racing.models import Invite
+    from speedfog_racing.websocket.race.spectator import send_race_state
+
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="pinv_state")
+        race = Race(
+            name="Pending invites in state",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            scheduled_at=now + timedelta(hours=1),
+            is_public=True,
+        )
+        db.add(race)
+        await db.flush()
+        for username in ("alice", "bob"):
+            db.add(Invite(race_id=race.id, twitch_username=username))
+        # An accepted invite must NOT appear in pending list
+        db.add(Invite(race_id=race.id, twitch_username="charlie", accepted=True))
+        await db.commit()
+        race_id = race.id
+
+    async with lj_async_session() as db:
+        loaded = (
+            await db.execute(
+                select(Race)
+                .where(Race.id == race_id)
+                .options(
+                    selectinload(Race.organizer),
+                    selectinload(Race.seed),
+                    selectinload(Race.participants).selectinload(Participant.user),
+                )
+            )
+        ).scalar_one()
+
+        ws = AsyncMock()
+        ws.send_text = AsyncMock()
+
+        # send_race_state queries pending invites internally; point it at the
+        # in-memory test database for the duration of the call.
+        from speedfog_racing import database as db_module
+
+        original_maker = db_module.async_session_maker
+        db_module.async_session_maker = lj_async_session
+        try:
+            await send_race_state(ws, loaded, locale="en")
+        finally:
+            db_module.async_session_maker = original_maker
+
+    sent_text = ws.send_text.call_args.args[0]
+    payload = json.loads(sent_text)
+    pending_usernames = sorted(p["twitch_username"] for p in payload["pending_invites"])
+    assert pending_usernames == ["alice", "bob"]
+    # No token should leak in the WS payload (organizer fetches via REST for that)
+    assert all("token" not in p for p in payload["pending_invites"])
+
+
+@pytest.mark.asyncio
+async def test_revoke_invite_broadcasts_race_state(lj_test_client, lj_async_session, lj_organizer):
+    """Revoking a pending invite must emit race_state so the organizer's UI updates."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    from speedfog_racing.models import Invite
+
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="revoke_bcast")
+        race = Race(
+            name="Revoke broadcast",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            scheduled_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+        db.add(race)
+        await db.flush()
+        invite = Invite(race_id=race.id, twitch_username="alice")
+        db.add(invite)
+        await db.commit()
+        race_id = race.id
+        invite_id = invite.id
+
+    with mock_patch(
+        "speedfog_racing.api.races.broadcast_race_state_update", new=AsyncMock()
+    ) as bcast:
+        async with lj_test_client as client:
+            resp = await client.delete(
+                f"/api/races/{race_id}/invites/{invite_id}",
+                headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+            )
+        assert resp.status_code == 204, resp.text
+        bcast.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_add_participant_invite_branch_broadcasts(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """Creating an invite (organizer adds an unknown twitch_username) must broadcast."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="addinv_bcast")
+        race = Race(
+            name="Add invite broadcast",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            scheduled_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    with mock_patch(
+        "speedfog_racing.api.races.broadcast_race_state_update", new=AsyncMock()
+    ) as bcast:
+        async with lj_test_client as client:
+            resp = await client.post(
+                f"/api/races/{race_id}/participants",
+                json={"twitch_username": "no_such_user_yet"},
+                headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["invite"] is not None
+        assert body["participant"] is None
+        bcast.assert_awaited_once()
+
+
 def test_race_info_update_message_serialization():
     """RaceInfoUpdateMessage carries the full RaceInfo with type discriminator."""
     import json

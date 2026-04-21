@@ -17,6 +17,7 @@ from speedfog_racing.config import settings
 from speedfog_racing.models import (
     Caster,
     ChatChannel,
+    Invite,
     Participant,
     ParticipantStatus,
     PlayerTraitScores,
@@ -41,6 +42,7 @@ from speedfog_racing.websocket.schemas import (
     ChatBroadcastMessage,
     ChatHistoryMessage,
     ParticipantInfo,
+    PendingInviteInfo,
     RaceInfoUpdateMessage,
     RaceStateMessage,
     SeedInfo,
@@ -400,10 +402,38 @@ async def send_race_state(
         for p in sorted_participants
     ]
 
+    # Always re-query pending invites here rather than relying on the caller
+    # to eager-load Race.invites: every existing call site to
+    # broadcast_race_state_update would otherwise need an extra option, and
+    # the tiny dedicated query is cheaper than auditing every path.
+    from speedfog_racing.database import async_session_maker
+
+    async with async_session_maker() as inv_db:
+        pending_rows = (
+            (
+                await inv_db.execute(
+                    select(Invite)
+                    .where(Invite.race_id == race.id, Invite.accepted.is_(False))
+                    .order_by(Invite.created_at.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+    pending_invites = [
+        PendingInviteInfo(
+            id=str(inv.id),
+            twitch_username=inv.twitch_username,
+            created_at=inv.created_at.isoformat(),
+        )
+        for inv in pending_rows
+    ]
+
     message = RaceStateMessage(
         race=build_race_info(race, countdown_seconds=settings.countdown_seconds),
         seed=build_seed_info(race, locale=locale),
         participants=participant_infos,
+        pending_invites=pending_invites,
     )
     await websocket.send_text(message.model_dump_json())
 

@@ -200,6 +200,20 @@ class LeaderboardUpdateMessage(BaseModel):
     leader_splits: dict[int, int] | None = None
 
 
+class PendingInviteInfo(BaseModel):
+    """Public projection of a pending invite shipped over WebSocket.
+
+    The opaque accept token is intentionally absent: it is sensitive (anyone
+    holding it can claim the slot) and only the organizer needs it, fetched
+    via REST GET /races/:id. The WS payload only carries what every client
+    needs to render the "still waiting on" list.
+    """
+
+    id: str
+    twitch_username: str
+    created_at: str
+
+
 class RaceStateMessage(BaseModel):
     """Initial race state for spectators."""
 
@@ -207,6 +221,7 @@ class RaceStateMessage(BaseModel):
     race: RaceInfo
     seed: SeedInfo
     participants: list[ParticipantInfo]
+    pending_invites: list[PendingInviteInfo] = Field(default_factory=list)
 
 
 class RaceInfoUpdateMessage(BaseModel):
