@@ -550,3 +550,36 @@ async def test_accept_invite_on_late_join_running_race(
             headers={"Authorization": f"Bearer {lj_player.api_token}"},
         )
     assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_organizer_can_add_participant_mid_late_join_race(
+    lj_test_client, lj_async_session, lj_organizer, lj_player
+):
+    """Organizer can invite a new participant to a running late-join race."""
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="org_add_lj")
+        race = Race(
+            name="Mid-race invite",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            registration_closes_at=now + timedelta(hours=1),
+            race_ends_at=now + timedelta(hours=4),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    async with lj_test_client as client:
+        resp = await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": lj_player.twitch_username},
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code == 200, resp.text

@@ -626,8 +626,17 @@ async def add_participant(
     race = await _get_race_or_404(db, race_id, load_participants=True)
     _require_organizer(race, user)
 
-    # Check race status
-    if race.status not in (RaceStatus.SETUP,):
+    # Check race status (allow adds during the late-join window on RUNNING races)
+    now = datetime.now(UTC)
+    race_registration_closes_at = race.registration_closes_at
+    if race_registration_closes_at is not None and race_registration_closes_at.tzinfo is None:
+        race_registration_closes_at = race_registration_closes_at.replace(tzinfo=UTC)
+    is_late_join_open = (
+        race.status == RaceStatus.RUNNING
+        and race_registration_closes_at is not None
+        and race_registration_closes_at > now
+    )
+    if race.status != RaceStatus.SETUP and not is_late_join_open:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot add participants to a race that has started",
