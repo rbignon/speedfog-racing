@@ -583,33 +583,20 @@
 {:else}
 	<div class="race-page">
 		<aside class="sidebar">
-			{#if raceStatus === 'finished'}
-				<div class="sidebar-section">
-					<Leaderboard
-						participants={raceStore.leaderboard}
-						{totalLayers}
-						mode="finished"
-						{zoneNames}
-						selectedIds={selectedParticipantIds}
-						onToggle={handleLeaderboardToggle}
-						onClearSelection={clearSelection}
-					/>
-				</div>
-
-				<CasterList
-					casters={initialRace.casters}
-					currentUserId={auth.user?.id ?? null}
-					raceId={initialRace.id}
-					onRaceUpdated={handleRaceUpdated}
-				/>
-			{:else if raceStatus === 'running'}
+			{#if raceStatus === 'running'}
 				<WatchLive casters={initialRace.casters.filter((c) => c.is_live)} />
+			{/if}
 
+			{#if raceStatus === 'running' || raceStatus === 'finished'}
 				<div class="sidebar-section">
 					<Leaderboard
 						participants={raceStore.leaderboard}
 						{totalLayers}
-						zoneNames={myWsParticipantId && !myParticipantFinished && !forceFullDag
+						mode={raceStatus === 'finished' ? 'finished' : 'running'}
+						zoneNames={raceStatus === 'running' &&
+						myWsParticipantId &&
+						!myParticipantFinished &&
+						!forceFullDag
 							? null
 							: zoneNames}
 						selectedIds={selectedParticipantIds}
@@ -617,75 +604,9 @@
 						onClearSelection={clearSelection}
 					/>
 				</div>
+			{/if}
 
-				{#if isOrganizer && registrationOpenWindow}
-					<div class="sidebar-section">
-						<h2>Late join open</h2>
-						{#if liveRegistrationClosesAt}
-							<p class="login-hint">
-								Joinable until {formatLocalTime(liveRegistrationClosesAt)}
-							</p>
-						{/if}
-						{#if livePendingInvites.length > 0}
-							<div class="participant-list">
-								{#each livePendingInvites as invite (invite.id)}
-									<!-- canRemove=false: backend revoke_invite rejects anything other
-									     than SETUP, so the button would 400. -->
-									<InviteCard {invite} canRemove={false} onRemove={() => {}} />
-								{/each}
-							</div>
-						{/if}
-						{#if showInviteSearch}
-							<div class="invite-search">
-								<ParticipantSearch
-									mode="participant"
-									raceId={initialRace.id}
-									onAdded={handleParticipantAdded}
-									onCancel={() => (showInviteSearch = false)}
-								/>
-							</div>
-						{:else}
-							<button class="invite-btn" onclick={() => (showInviteSearch = true)}>
-								+ Invite
-							</button>
-						{/if}
-					</div>
-				{/if}
-
-				{#if canAbandon}
-					<div class="abandon-section">
-						<button class="abandon-btn" onclick={() => (showAbandonConfirm = true)}>
-							Rage quit
-						</button>
-						{#if abandonError}
-							<p class="abandon-error">{abandonError}</p>
-						{/if}
-					</div>
-				{/if}
-
-				{#if myParticipant && seedsReleased}
-					<button
-						class="sidebar-download-btn"
-						onclick={() => {
-							downloadError = null;
-							showDownloadModal = true;
-						}}
-						disabled={downloading}
-					>
-						<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-							<path
-								d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
-								stroke="currentColor"
-								stroke-width="1.5"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								fill="none"
-							/>
-						</svg>
-						{downloading ? 'Preparing...' : 'Download Race Package'}
-					</button>
-				{/if}
-			{:else}
+			{#if raceStatus === 'setup'}
 				<div class="sidebar-section">
 					<h2>
 						Participants ({mergedParticipants.length}{#if liveOpenRegistration && liveMaxParticipants}
@@ -715,102 +636,122 @@
 							{/each}
 						{/if}
 					</div>
+				</div>
+			{/if}
 
-					{#if isOrganizer}
-						{#if showInviteSearch}
-							<div class="invite-search">
-								<ParticipantSearch
-									mode="participant"
-									raceId={initialRace.id}
-									onAdded={handleParticipantAdded}
-									onCancel={() => (showInviteSearch = false)}
-								/>
-							</div>
-						{:else}
-							<button class="invite-btn" onclick={() => (showInviteSearch = true)}>
-								+ Invite
-							</button>
-						{/if}
-					{/if}
+			{#if raceStatus === 'running' && registrationOpenWindow && livePendingInvites.length > 0}
+				<div class="participant-list">
+					{#each livePendingInvites as invite (invite.id)}
+						<!-- canRemove=false: backend revoke_invite rejects anything other than SETUP. -->
+						<InviteCard {invite} canRemove={false} onRemove={() => {}} />
+					{/each}
+				</div>
+			{/if}
 
-					{#if (liveOpenRegistration && raceStatus === 'setup') || canRejoin}
-						{#if canJoin || canRejoin}
-							<button class="join-btn" onclick={handleJoin} disabled={joining}>
-								{joining ? 'Joining...' : 'Join Race'}
-							</button>
-						{:else if raceFull && !myParticipant && raceStatus === 'setup'}
-							<button class="join-btn disabled" disabled> Race Full </button>
-						{/if}
-						{#if canLeave}
-							<button class="leave-btn" onclick={handleLeave} disabled={leaving}>
-								{leaving ? 'Leaving...' : 'Leave Race'}
-							</button>
-						{/if}
-						{#if canRejoin && liveRegistrationClosesAt}
-							<p class="login-hint">
-								Joinable until {formatLocalTime(liveRegistrationClosesAt)}
-							</p>
-						{/if}
-						{#if !auth.isLoggedIn && raceStatus === 'setup'}
-							<p class="login-hint">
-								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<!-- svelte-ignore a11y_click_events_have_key_events -->
-								<a
-									href={getTwitchLoginUrl()}
-									data-sveltekit-reload
-									onclick={() =>
-										sessionStorage.setItem('redirect_after_login', window.location.pathname)}
-									>Log in</a
-								> to join this race
-							</p>
-						{/if}
-						{#if joinLeaveError}
-							<p class="join-leave-error">{joinLeaveError}</p>
-						{/if}
+			{#if canJoin || canRejoin}
+				<button class="join-btn" onclick={handleJoin} disabled={joining}>
+					{joining ? 'Joining...' : 'Join Race'}
+				</button>
+			{:else if raceFull && !myParticipant && (raceStatus === 'setup' || (raceStatus === 'running' && registrationOpenWindow && !isCasterOrOrganizer))}
+				<button class="join-btn disabled" disabled> Race Full </button>
+			{/if}
+
+			{#if canLeave}
+				<button class="leave-btn" onclick={handleLeave} disabled={leaving}>
+					{leaving ? 'Leaving...' : 'Leave Race'}
+				</button>
+			{/if}
+
+			{#if isOrganizer && (raceStatus === 'setup' || (raceStatus === 'running' && registrationOpenWindow))}
+				{#if showInviteSearch}
+					<div class="invite-search">
+						<ParticipantSearch
+							mode="participant"
+							raceId={initialRace.id}
+							onAdded={handleParticipantAdded}
+							onCancel={() => (showInviteSearch = false)}
+						/>
+					</div>
+				{:else}
+					<button class="invite-btn" onclick={() => (showInviteSearch = true)}>+ Invite</button>
+				{/if}
+			{/if}
+
+			{#if liveRegistrationClosesAt && (raceStatus === 'setup' ? liveOpenRegistration : raceStatus === 'running' && registrationOpenWindow)}
+				<p class="login-hint">
+					Joinable until {formatLocalTime(liveRegistrationClosesAt)}
+				</p>
+			{/if}
+
+			{#if !auth.isLoggedIn && (raceStatus === 'setup' || (raceStatus === 'running' && registrationOpenWindow))}
+				<p class="login-hint">
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<a
+						href={getTwitchLoginUrl()}
+						data-sveltekit-reload
+						onclick={() => sessionStorage.setItem('redirect_after_login', window.location.pathname)}
+						>Log in</a
+					> to join this race
+				</p>
+			{/if}
+
+			{#if joinLeaveError}
+				<p class="join-leave-error">{joinLeaveError}</p>
+			{/if}
+
+			{#if canAbandon}
+				<div class="abandon-section">
+					<button class="abandon-btn" onclick={() => (showAbandonConfirm = true)}>
+						Rage quit
+					</button>
+					{#if abandonError}
+						<p class="abandon-error">{abandonError}</p>
 					{/if}
 				</div>
+			{/if}
 
-				{#if myParticipant}
-					{#if seedsReleased}
-						<button
-							class="sidebar-download-btn"
-							onclick={() => {
-								downloadError = null;
-								showDownloadModal = true;
-							}}
-							disabled={downloading}
-						>
-							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-								<path
-									d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
-									stroke="currentColor"
-									stroke-width="1.5"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									fill="none"
-								/>
-							</svg>
-							{downloading ? 'Preparing...' : 'Download Race Package'}
-						</button>
-					{:else}
-						<p class="waiting-seeds">Waiting for seeds...</p>
-					{/if}
+			{#if myParticipant && (raceStatus === 'setup' || raceStatus === 'running')}
+				{#if seedsReleased}
+					<button
+						class="sidebar-download-btn"
+						onclick={() => {
+							downloadError = null;
+							showDownloadModal = true;
+						}}
+						disabled={downloading}
+					>
+						<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+							<path
+								d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								fill="none"
+							/>
+						</svg>
+						{downloading ? 'Preparing...' : 'Download Race Package'}
+					</button>
+				{:else if raceStatus === 'setup'}
+					<p class="waiting-seeds">Waiting for seeds...</p>
 				{/if}
+			{/if}
 
+			{#if raceStatus !== 'running'}
 				<CasterList
 					casters={initialRace.casters}
-					editable={isOrganizer}
-					canCast={auth.isLoggedIn && !myParticipant && !isCaster}
+					editable={raceStatus === 'setup' && isOrganizer}
+					canCast={raceStatus === 'setup' && auth.isLoggedIn && !myParticipant && !isCaster}
 					{isCaster}
 					currentUserId={auth.user?.id ?? null}
 					raceId={initialRace.id}
 					onRaceUpdated={handleRaceUpdated}
 				/>
+			{/if}
 
-				{#if isOrganizer || auth.isAdmin || isCaster || myParticipant}
-					<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}>OBS Overlays</button
-					>
-				{/if}
+			{#if raceStatus === 'setup' && (isOrganizer || auth.isAdmin || isCaster || myParticipant)}
+				<button class="obs-overlay-btn" onclick={() => (showObsModal = true)}>OBS Overlays</button>
 			{/if}
 
 			<div class="sidebar-footer">
