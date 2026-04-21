@@ -16,6 +16,7 @@ from starlette.responses import StreamingResponse
 
 from speedfog_racing.api.helpers import (
     caster_response,
+    late_join_window_open,
     participant_response,
     race_response,
     user_response,
@@ -667,14 +668,7 @@ async def add_participant(
 
     # Check race status (allow adds during the late-join window on RUNNING races)
     now = datetime.now(UTC)
-    race_registration_closes_at = race.registration_closes_at
-    if race_registration_closes_at is not None and race_registration_closes_at.tzinfo is None:
-        race_registration_closes_at = race_registration_closes_at.replace(tzinfo=UTC)
-    is_late_join_open = (
-        race.status == RaceStatus.RUNNING
-        and race_registration_closes_at is not None
-        and race_registration_closes_at > now
-    )
+    is_late_join_open = late_join_window_open(race, now)
     if race.status != RaceStatus.SETUP and not is_late_join_open:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -996,17 +990,10 @@ async def join_race(
     race = await _get_race_or_404(db, race_id, load_participants=True)
 
     now = datetime.now(UTC)
-    registration_closes_at = race.registration_closes_at
-    if registration_closes_at is not None and registration_closes_at.tzinfo is None:
-        registration_closes_at = registration_closes_at.replace(tzinfo=UTC)
-    is_late_join_open = (
-        race.status == RaceStatus.RUNNING
-        and registration_closes_at is not None
-        and registration_closes_at > now
-    )
+    is_late_join_open = late_join_window_open(race, now)
 
     if race.status != RaceStatus.SETUP and not is_late_join_open:
-        if race.status == RaceStatus.RUNNING and registration_closes_at is not None:
+        if race.status == RaceStatus.RUNNING and race.registration_closes_at is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Registration is closed for this race",

@@ -26,6 +26,21 @@ from speedfog_racing.schemas import (
 from speedfog_racing.services.twitch_live import twitch_live_service
 
 
+def late_join_window_open(race: Race, now: datetime) -> bool:
+    """True iff the race is RUNNING with an open late-join registration window.
+
+    Does NOT consult open_registration; the caller composes that where relevant.
+    """
+    if race.status != RaceStatus.RUNNING:
+        return False
+    closes = race.registration_closes_at
+    if closes is None:
+        return False
+    if closes.tzinfo is None:
+        closes = closes.replace(tzinfo=UTC)
+    return closes > now
+
+
 def race_date(race: Race) -> datetime:
     """Best date for a race: started_at > scheduled_at > created_at."""
     return race.started_at or race.scheduled_at or race.created_at
@@ -110,15 +125,7 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
     participant_count = len(race.participants)
     is_full = race.max_participants is not None and participant_count >= race.max_participants
     is_open_setup = race.open_registration and race.status == RaceStatus.SETUP
-    registration_closes_at = race.registration_closes_at
-    if registration_closes_at is not None and registration_closes_at.tzinfo is None:
-        registration_closes_at = registration_closes_at.replace(tzinfo=UTC)
-    is_open_late_join = (
-        race.open_registration
-        and race.status == RaceStatus.RUNNING
-        and registration_closes_at is not None
-        and registration_closes_at > now
-    )
+    is_open_late_join = race.open_registration and late_join_window_open(race, now)
     casters = race.casters if "casters" in race.__dict__ else []
 
     my_role: str | None = None

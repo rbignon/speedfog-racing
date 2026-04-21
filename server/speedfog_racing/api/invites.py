@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import participant_response
+from speedfog_racing.api.helpers import late_join_window_open, participant_response
 from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Invite, Participant, Race, RaceStatus, User
@@ -75,14 +75,7 @@ async def accept_invite(
 
     # Check race status (allow late-join on RUNNING races within the registration window)
     now = datetime.now(UTC)
-    race_registration_closes_at = invite.race.registration_closes_at
-    if race_registration_closes_at is not None and race_registration_closes_at.tzinfo is None:
-        race_registration_closes_at = race_registration_closes_at.replace(tzinfo=UTC)
-    is_late_join_open = (
-        invite.race.status == RaceStatus.RUNNING
-        and race_registration_closes_at is not None
-        and race_registration_closes_at > now
-    )
+    is_late_join_open = late_join_window_open(invite.race, now)
     if invite.race.status != RaceStatus.SETUP and not is_late_join_open:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
