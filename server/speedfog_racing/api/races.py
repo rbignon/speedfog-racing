@@ -65,6 +65,7 @@ from speedfog_racing.schemas import (
     RaceResponse,
     RerollSeedRequest,
     UpdateRaceRequest,
+    as_aware_utc,
     validate_late_join_invariants,
 )
 from speedfog_racing.services import (
@@ -258,16 +259,14 @@ async def create_race(
             detail="You do not have permission to create races",
         )
 
-    # Validate scheduled_at is not in the past
-    if request.scheduled_at is not None:
-        scheduled = request.scheduled_at
-        if scheduled.tzinfo is None:
-            scheduled = scheduled.replace(tzinfo=UTC)
-        if scheduled < datetime.now(UTC):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Scheduled time cannot be in the past",
-            )
+    # Normalize naive datetimes to UTC so the value stored in TIMESTAMPTZ
+    # columns doesn't get re-interpreted through the session timezone.
+    scheduled_at_aware = as_aware_utc(request.scheduled_at)
+    if scheduled_at_aware is not None and scheduled_at_aware < datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Scheduled time cannot be in the past",
+        )
 
     # Create race
     race = Race(
@@ -276,12 +275,12 @@ async def create_race(
         organizer=user,
         config=request.config,
         status=RaceStatus.SETUP,
-        scheduled_at=request.scheduled_at,
+        scheduled_at=scheduled_at_aware,
         is_public=request.is_public,
         open_registration=request.open_registration,
         max_participants=request.max_participants,
-        registration_closes_at=request.registration_closes_at,
-        race_ends_at=request.race_ends_at,
+        registration_closes_at=as_aware_utc(request.registration_closes_at),
+        race_ends_at=as_aware_utc(request.race_ends_at),
         private_dag=request.private_dag,
     )
     db.add(race)
@@ -529,9 +528,13 @@ async def update_race(
     _require_organizer(race, user)
 
     old_event_id = race.discord_event_id
-    # Snapshot every RaceInfo field PATCH can mutate, so we only broadcast
-    # race_info_update when something actually changed (no-op PATCHes stay quiet).
+    # Snapshot every RaceInfo field PATCH could mutate, so we only broadcast
+    # race_info_update when something actually changed (no-op PATCHes stay
+    # quiet). `name` is currently immutable via PATCH but included in the
+    # snapshot so the day a rename endpoint lands here, the broadcast fires
+    # without anyone having to remember to update both tuples.
     pre_snapshot = (
+        race.name,
         race.is_public,
         race.open_registration,
         race.max_participants,
@@ -552,16 +555,13 @@ async def update_race(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Can only update schedule for setup races",
             )
-        if request.scheduled_at is not None:
-            scheduled = request.scheduled_at
-            if scheduled.tzinfo is None:
-                scheduled = scheduled.replace(tzinfo=UTC)
-            if scheduled < datetime.now(UTC):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Scheduled time cannot be in the past",
-                )
-        race.scheduled_at = request.scheduled_at
+        scheduled = as_aware_utc(request.scheduled_at)
+        if scheduled is not None and scheduled < datetime.now(UTC):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Scheduled time cannot be in the past",
+            )
+        race.scheduled_at = scheduled
 
     # open_registration and max_participants only editable in SETUP
     registration_fields = {"open_registration", "max_participants"} & request.model_fields_set
@@ -606,25 +606,21 @@ async def update_race(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="registration_closes_at can only be edited in SETUP status",
             )
-        race.registration_closes_at = request.registration_closes_at
+        race.registration_closes_at = as_aware_utc(request.registration_closes_at)
 
     # race_ends_at: SETUP always; RUNNING only to extend (never shorten)
     if "race_ends_at" in request.model_fields_set:
+        new_race_ends_at = as_aware_utc(request.race_ends_at)
         if race.status == RaceStatus.SETUP:
-            race.race_ends_at = request.race_ends_at
+            race.race_ends_at = new_race_ends_at
         elif race.status == RaceStatus.RUNNING:
-            current = race.race_ends_at
-            if current is not None and current.tzinfo is None:
-                current = current.replace(tzinfo=UTC)
-            new = request.race_ends_at
-            if new is not None and new.tzinfo is None:
-                new = new.replace(tzinfo=UTC)
-            if new is None or current is None or new < current:
+            current = as_aware_utc(race.race_ends_at)
+            if new_race_ends_at is None or current is None or new_race_ends_at < current:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Cannot shorten race_ends_at once running",
                 )
-            race.race_ends_at = request.race_ends_at
+            race.race_ends_at = new_race_ends_at
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -695,6 +691,7 @@ async def update_race(
         ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     post_snapshot = (
+        race.name,
         race.is_public,
         race.open_registration,
         race.max_participants,

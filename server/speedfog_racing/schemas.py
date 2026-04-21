@@ -9,11 +9,21 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from speedfog_racing.models import ParticipantStatus, RaceStatus, TrainingSessionStatus
 
 
-def _as_aware(dt: datetime | None) -> datetime | None:
-    """Normalize naive datetimes to UTC so cross-field comparisons don't raise."""
+def as_aware_utc(dt: datetime | None) -> datetime | None:
+    """Normalize naive datetimes to UTC.
+
+    Public helper so API handlers can apply the same conversion before
+    persisting client-supplied datetimes (otherwise a naive value lands on
+    a TIMESTAMPTZ column and Postgres re-interprets it through the session
+    timezone, which silently shifts the stored instant).
+    """
     if dt is None or dt.tzinfo is not None:
         return dt
     return dt.replace(tzinfo=UTC)
+
+
+# Internal alias kept for backward-compat with the validator below.
+_as_aware = as_aware_utc
 
 
 def validate_late_join_invariants(

@@ -612,11 +612,9 @@
 						{#if initialRace.pending_invites.length > 0}
 							<div class="participant-list">
 								{#each initialRace.pending_invites as invite (invite.id)}
-									<InviteCard
-										{invite}
-										canRemove={false}
-										onRemove={() => handleRevokeInvite(invite.id, invite.twitch_username)}
-									/>
+									<!-- canRemove=false: backend revoke_invite rejects anything other
+									     than SETUP, so the button would 400. -->
+									<InviteCard {invite} canRemove={false} onRemove={() => {}} />
 								{/each}
 							</div>
 						{/if}
