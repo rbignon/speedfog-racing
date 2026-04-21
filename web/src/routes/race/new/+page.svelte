@@ -40,10 +40,7 @@
 	let selectedAvailable = $derived(pools[poolName]?.available ?? 0);
 
 	let advancedCount = $derived(
-		(scheduledAt ? 1 : 0) +
-			(autoEndEnabled ? 1 : 0) +
-			(lateJoinEnabled ? 1 : 0) +
-			(privateDag ? 1 : 0)
+		(autoEndEnabled ? 1 : 0) + (lateJoinEnabled ? 1 : 0) + (privateDag ? 1 : 0)
 	);
 
 	$effect(() => {
@@ -131,6 +128,18 @@
 					disabled={creating}
 					required
 				/>
+			</div>
+
+			<div class="form-group">
+				<label for="scheduled">Scheduled Time <span class="optional">(optional)</span></label>
+				<DateTimePicker
+					value={scheduledAt}
+					onchange={(iso) => (scheduledAt = iso)}
+					min={new Date()}
+					disabled={creating}
+					placeholder="Pick a date"
+				/>
+				<p class="hint">Indicative only. The organizer starts the race manually at any time.</p>
 			</div>
 
 			<div class="form-group">
@@ -235,21 +244,21 @@
 						<input
 							type="radio"
 							name="registration"
-							checked={openRegistration}
-							onchange={() => (openRegistration = true)}
-							disabled={creating}
-						/>
-						Open
-					</label>
-					<label class="radio-label">
-						<input
-							type="radio"
-							name="registration"
 							checked={!openRegistration}
 							onchange={() => (openRegistration = false)}
 							disabled={creating}
 						/>
 						Invite only
+					</label>
+					<label class="radio-label">
+						<input
+							type="radio"
+							name="registration"
+							checked={openRegistration}
+							onchange={() => (openRegistration = true)}
+							disabled={creating}
+						/>
+						Open
 					</label>
 					{#if openRegistration}
 						<span class="registration-sep">·</span>
@@ -283,7 +292,7 @@
 						{#if advancedCount > 0}
 							{advancedCount} set
 						{:else}
-							scheduled time · auto-end · late joiners · private DAG
+							late joiners · auto-end · private DAG
 						{/if}
 					</span>
 				</button>
@@ -291,17 +300,23 @@
 				{#if showAdvanced}
 					<div id="advanced-panel" class="advanced-panel">
 						<div class="form-group">
-							<label for="scheduled">Scheduled time <span class="optional">(optional)</span></label>
-							<DateTimePicker
-								value={scheduledAt}
-								onchange={(iso) => (scheduledAt = iso)}
-								min={new Date()}
-								disabled={creating}
-								placeholder="Pick a date"
-							/>
-							<p class="hint">
-								Indicative only. The organizer starts the race manually at any time.
-							</p>
+							<span>Late joiners</span>
+							<label class="radio-label">
+								<input type="checkbox" bind:checked={lateJoinEnabled} disabled={creating} />
+								Allow joining up to
+								{#if lateJoinEnabled}
+									<input
+										type="number"
+										bind:value={lateJoinWindowMinutes}
+										min="1"
+										max={autoEndEnabled ? raceDurationMinutes : undefined}
+										disabled={creating}
+										class="inline-duration"
+									/>
+									min after start
+								{/if}
+							</label>
+							<p class="hint">Counted from the actual start time.</p>
 						</div>
 
 						<div class="form-group">
@@ -323,26 +338,6 @@
 							<p class="hint">
 								Useful for time-boxed community races. The organizer can still finalize earlier.
 							</p>
-						</div>
-
-						<div class="form-group">
-							<span>Late joiners</span>
-							<label class="radio-label">
-								<input type="checkbox" bind:checked={lateJoinEnabled} disabled={creating} />
-								Allow joining up to
-								{#if lateJoinEnabled}
-									<input
-										type="number"
-										bind:value={lateJoinWindowMinutes}
-										min="1"
-										max={autoEndEnabled ? raceDurationMinutes : undefined}
-										disabled={creating}
-										class="inline-duration"
-									/>
-									min after start
-								{/if}
-							</label>
-							<p class="hint">Counted from the actual start time.</p>
 						</div>
 
 						<div class="form-group">
