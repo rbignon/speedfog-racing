@@ -909,3 +909,41 @@ async def test_create_race_persists_late_join_and_private_dag(
     assert body["registration_closes_at"] is not None
     assert body["race_ends_at"] is not None
     assert body["private_dag"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_race_detail_exposes_late_join_and_private_dag(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """GET /races/:id must return registration_closes_at, race_ends_at, private_dag."""
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="get_detail_lj")
+        race = Race(
+            name="Detail late-join",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            scheduled_at=now + timedelta(hours=1),
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            registration_closes_at=now + timedelta(hours=2),
+            race_ends_at=now + timedelta(hours=5),
+            private_dag=True,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    async with lj_test_client as client:
+        resp = await client.get(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["registration_closes_at"] is not None
+    assert body["race_ends_at"] is not None
+    assert body["private_dag"] is True
