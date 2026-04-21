@@ -278,7 +278,7 @@
 				<p class="hint">Windows are counted from the moment the race actually starts.</p>
 				{#if lateJoinEnabled}
 					<div class="late-join-fields">
-						<div class="form-group">
+						<div class="duration-field">
 							<label for="lj-window">Registration stays open for (minutes after start)</label>
 							<input
 								type="number"
@@ -289,7 +289,7 @@
 								disabled={creating}
 							/>
 						</div>
-						<div class="form-group">
+						<div class="duration-field">
 							<label for="race-duration">Race ends automatically after (minutes after start)</label>
 							<input
 								type="number"
@@ -437,14 +437,16 @@
 		line-height: 1.4;
 	}
 
-	.max-participants {
+	.max-participants,
+	.duration-field {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
 		margin-top: 0.5rem;
 	}
 
-	.max-participants label {
+	.max-participants label,
+	.duration-field label {
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
 		white-space: nowrap;
@@ -453,7 +455,8 @@
 		letter-spacing: normal;
 	}
 
-	.max-participants input[type='number'] {
+	.max-participants input[type='number'],
+	.duration-field input[type='number'] {
 		width: 80px;
 		padding: 0.5rem;
 		border: 1px solid var(--color-border);
@@ -464,7 +467,8 @@
 		font-size: 1rem;
 	}
 
-	.max-participants input[type='number']:focus {
+	.max-participants input[type='number']:focus,
+	.duration-field input[type='number']:focus {
 		outline: none;
 		border-color: var(--color-purple);
 	}
@@ -475,7 +479,7 @@
 		border-left: 2px solid var(--color-border);
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: 0.25rem;
 	}
 
 	.error {
