@@ -14,6 +14,7 @@
 	let openRegistration = $state(true);
 	let maxParticipants = $state(20);
 	let lateJoinEnabled = $state(false);
+	let autoEndEnabled = $state(false);
 	let lateJoinWindowMinutes = $state(30);
 	let raceDurationMinutes = $state(120);
 	let privateDag = $state(false);
@@ -86,7 +87,7 @@
 				openRegistration,
 				openRegistration ? maxParticipants : null,
 				lateJoinEnabled ? lateJoinWindowMinutes : null,
-				lateJoinEnabled ? raceDurationMinutes : null,
+				autoEndEnabled ? raceDurationMinutes : null,
 				privateDag
 			);
 			goto(`/race/${race.id}`);
@@ -272,37 +273,44 @@
 			</div>
 
 			<div class="form-group">
+				<span>Auto-end</span>
+				<label class="radio-label">
+					<input type="checkbox" bind:checked={autoEndEnabled} disabled={creating} />
+					End race automatically after
+					{#if autoEndEnabled}
+						<input
+							type="number"
+							bind:value={raceDurationMinutes}
+							min="1"
+							disabled={creating}
+							class="inline-duration"
+						/>
+						min
+					{/if}
+				</label>
+				<p class="hint">
+					Useful for time-boxed community races. The organizer can still finalize earlier.
+				</p>
+			</div>
+
+			<div class="form-group">
 				<span>Late joiners</span>
 				<label class="radio-label">
 					<input type="checkbox" bind:checked={lateJoinEnabled} disabled={creating} />
-					Accept late joiners
+					Allow joining up to
+					{#if lateJoinEnabled}
+						<input
+							type="number"
+							bind:value={lateJoinWindowMinutes}
+							min="1"
+							max={autoEndEnabled ? raceDurationMinutes : undefined}
+							disabled={creating}
+							class="inline-duration"
+						/>
+						min after start
+					{/if}
 				</label>
-				<p class="hint">Windows are counted from the moment the race actually starts.</p>
-				{#if lateJoinEnabled}
-					<div class="late-join-fields">
-						<div class="duration-field">
-							<label for="lj-window">Registration stays open for (minutes after start)</label>
-							<input
-								type="number"
-								id="lj-window"
-								bind:value={lateJoinWindowMinutes}
-								min="1"
-								max={raceDurationMinutes}
-								disabled={creating}
-							/>
-						</div>
-						<div class="duration-field">
-							<label for="race-duration">Race ends automatically after (minutes after start)</label>
-							<input
-								type="number"
-								id="race-duration"
-								bind:value={raceDurationMinutes}
-								min="1"
-								disabled={creating}
-							/>
-						</div>
-					</div>
-				{/if}
+				<p class="hint">Counted from the actual start time.</p>
 			</div>
 
 			<div class="form-group">
@@ -513,45 +521,21 @@
 		align-self: flex-start;
 	}
 
-	.duration-field {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		margin-top: 0.5rem;
-	}
-
-	.duration-field label {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
-		white-space: nowrap;
-		font-weight: normal;
-		text-transform: none;
-		letter-spacing: normal;
-	}
-
-	.duration-field input[type='number'] {
-		width: 80px;
-		padding: 0.5rem;
+	.inline-duration {
+		width: 70px;
+		padding: 0.35rem 0.5rem;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-sm);
 		background: var(--color-surface);
 		color: var(--color-text);
 		font-family: var(--font-family);
 		font-size: 1rem;
+		margin: 0 0.25rem;
 	}
 
-	.duration-field input[type='number']:focus {
+	.inline-duration:focus {
 		outline: none;
 		border-color: var(--color-purple);
-	}
-
-	.late-join-fields {
-		margin-top: 0.75rem;
-		padding-left: 1rem;
-		border-left: 2px solid var(--color-border);
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
 	}
 
 	.error {
