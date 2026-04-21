@@ -32,6 +32,7 @@ export interface WsRaceInfo {
   started_at: string | null;
   seeds_released_at: string | null;
   countdown_seconds?: number;
+  race_ends_at?: string | null;
 }
 
 export interface WsSeedInfo {

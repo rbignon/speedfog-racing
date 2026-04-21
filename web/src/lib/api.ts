@@ -40,6 +40,9 @@ export interface Race {
   scheduled_at: string | null;
   started_at: string | null;
   seeds_released_at: string | null;
+  registration_closes_at: string | null;
+  race_ends_at: string | null;
+  private_dag: boolean;
   participant_count: number;
   participant_previews: ParticipantPreview[];
   casters: Caster[];
@@ -360,6 +363,9 @@ export async function createRace(
   isPublic: boolean = true,
   openRegistration: boolean = false,
   maxParticipants: number | null = null,
+  registrationClosesAt: string | null = null,
+  raceEndsAt: string | null = null,
+  privateDag: boolean = false,
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races`, {
     method: "POST",
@@ -376,6 +382,9 @@ export async function createRace(
       is_public: isPublic,
       open_registration: openRegistration,
       max_participants: maxParticipants,
+      registration_closes_at: registrationClosesAt,
+      race_ends_at: raceEndsAt,
+      private_dag: privateDag,
     }),
   });
   return handleResponse<Race>(response);
@@ -391,6 +400,9 @@ export async function updateRace(
     is_public?: boolean;
     open_registration?: boolean;
     max_participants?: number | null;
+    registration_closes_at?: string | null;
+    race_ends_at?: string | null;
+    private_dag?: boolean;
   },
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races/${raceId}`, {
