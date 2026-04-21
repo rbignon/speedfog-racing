@@ -74,6 +74,8 @@ pub struct RaceInfo {
     pub status: String,
     #[serde(default)]
     pub countdown_seconds: u32,
+    #[serde(default)]
+    pub race_ends_at: Option<String>,
 }
 
 /// Item to be spawned at runtime by the mod (e.g., Gem/Ash of War).
@@ -537,6 +539,7 @@ mod tests {
         let json = r#"{"id": "123", "name": "Test", "status": "running"}"#;
         let info: RaceInfo = serde_json::from_str(json).unwrap();
         assert_eq!(info.countdown_seconds, 0);
+        assert_eq!(info.race_ends_at, None);
     }
 
     #[test]
@@ -544,6 +547,13 @@ mod tests {
         let json = r#"{"id": "123", "name": "Test", "status": "running", "countdown_seconds": 10}"#;
         let info: RaceInfo = serde_json::from_str(json).unwrap();
         assert_eq!(info.countdown_seconds, 10);
+    }
+
+    #[test]
+    fn test_race_info_with_race_ends_at() {
+        let json = r#"{"id": "123", "name": "Test", "status": "running", "race_ends_at": "2026-04-20T12:00:00Z"}"#;
+        let info: RaceInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.race_ends_at.as_deref(), Some("2026-04-20T12:00:00Z"));
     }
 
     #[test]
