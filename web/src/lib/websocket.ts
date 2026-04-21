@@ -48,12 +48,19 @@ export interface WsSeedInfo {
   total_paths: number | null;
 }
 
+export interface WsPendingInvite {
+  id: string;
+  twitch_username: string;
+  created_at: string;
+}
+
 // Server -> Client messages
 export interface RaceStateMessage {
   type: "race_state";
   race: WsRaceInfo;
   seed: WsSeedInfo;
   participants: WsParticipant[];
+  pending_invites?: WsPendingInvite[];
 }
 
 export interface LeaderboardUpdateMessage {

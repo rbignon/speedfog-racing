@@ -7,6 +7,7 @@ import {
   type RaceWebSocket,
   type ChatMessage,
   type WsParticipant,
+  type WsPendingInvite,
   type WsRaceInfo,
   type WsSeedInfo,
 } from "$lib/websocket";
@@ -16,6 +17,9 @@ class RaceStore {
   race = $state<WsRaceInfo | null>(null);
   seed = $state<WsSeedInfo | null>(null);
   participants = $state<WsParticipant[]>([]);
+  // null while no race_state has arrived yet → page falls back to the
+  // initial REST fetch's pending_invites until the WS catches up.
+  pendingInvites = $state<WsPendingInvite[] | null>(null);
   chatMessagesParticipants = $state<ChatMessage[]>([]);
   chatMessagesPublic = $state<ChatMessage[]>([]);
   chatHistoryVersion = $state(0);
@@ -84,6 +88,7 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
+    this.pendingInvites = null;
     this.chatMessagesParticipants = [];
     this.chatMessagesPublic = [];
     this.spectatorCount = 0;
@@ -110,6 +115,10 @@ class RaceStore {
           this.race = msg.race;
           this.seed = msg.seed;
           this.participants = msg.participants;
+          // Older servers may not include pending_invites: keep an empty
+          // array so the page can distinguish "WS sent the list" from
+          // "WS hasn't broadcast yet" (null).
+          this.pendingInvites = msg.pending_invites ?? [];
           this.loading = false;
           // Cancel pending finish check, race_state already has the data
           if (this.finishCheckTimer) {
@@ -226,6 +235,7 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
+    this.pendingInvites = null;
     this.chatMessagesParticipants = [];
     this.chatMessagesPublic = [];
     this.chatHistoryVersion = 0;

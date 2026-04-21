@@ -383,6 +383,23 @@
 		raceStore.race?.max_participants ?? initialRace.max_participants
 	);
 
+	// Pending invites: use the WS list (drops accepted/revoked entries live)
+	// for presence, enriched from initialRace to keep the organizer's invite
+	// token for the copy-link button. WS-only entries render without a token;
+	// reloading is enough to get it back.
+	let livePendingInvites = $derived.by(() => {
+		if (raceStore.pendingInvites === null) {
+			return initialRace.pending_invites;
+		}
+		const tokenById = new Map(initialRace.pending_invites.map((p) => [p.id, p.token]));
+		return raceStore.pendingInvites.map((p) => ({
+			id: p.id,
+			twitch_username: p.twitch_username,
+			created_at: p.created_at,
+			token: tokenById.get(p.id) ?? null
+		}));
+	});
+
 	let canJoin = $derived(
 		liveOpenRegistration &&
 			raceStatus === 'setup' &&
@@ -609,9 +626,9 @@
 								Joinable until {formatLocalTime(liveRegistrationClosesAt)}
 							</p>
 						{/if}
-						{#if initialRace.pending_invites.length > 0}
+						{#if livePendingInvites.length > 0}
 							<div class="participant-list">
-								{#each initialRace.pending_invites as invite (invite.id)}
+								{#each livePendingInvites as invite (invite.id)}
 									<!-- canRemove=false: backend revoke_invite rejects anything other
 									     than SETUP, so the button would 400. -->
 									<InviteCard {invite} canRemove={false} onRemove={() => {}} />
@@ -688,8 +705,8 @@
 							/>
 						{/each}
 
-						{#if initialRace.pending_invites.length > 0}
-							{#each initialRace.pending_invites as invite (invite.id)}
+						{#if livePendingInvites.length > 0}
+							{#each livePendingInvites as invite (invite.id)}
 								<InviteCard
 									{invite}
 									canRemove={isOrganizer}
