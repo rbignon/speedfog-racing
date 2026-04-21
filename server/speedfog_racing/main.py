@@ -21,6 +21,7 @@ from speedfog_racing.config import settings
 from speedfog_racing.database import async_session_maker, init_db
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.services.chat_cleanup import chat_cleanup_loop
+from speedfog_racing.services.hard_close_loop import hard_close_loop
 from speedfog_racing.services.i18n import load_translations
 from speedfog_racing.services.inactivity_monitor import inactivity_monitor_loop
 from speedfog_racing.services.twitch_live import twitch_live_poll_loop
@@ -73,6 +74,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start inactivity monitor
     monitor_task = asyncio.create_task(inactivity_monitor_loop(async_session_maker))
 
+    # Start hard-close monitor (finalizes races past race_ends_at)
+    hard_close_task = asyncio.create_task(hard_close_loop(async_session_maker))
+
     # Start Twitch live polling (only if Twitch credentials are configured)
     twitch_live_task = None
     if settings.twitch_client_id and settings.twitch_client_secret:
@@ -100,6 +104,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     monitor_task.cancel()
     try:
         await monitor_task
+    except asyncio.CancelledError:
+        pass
+    hard_close_task.cancel()
+    try:
+        await hard_close_task
     except asyncio.CancelledError:
         pass
     logger.info("Shutting down SpeedFog Racing server...")
