@@ -662,12 +662,12 @@
 						{/if}
 					{/if}
 
-					{#if initialRace.open_registration && raceStatus === 'setup'}
-						{#if canJoin}
+					{#if (initialRace.open_registration && raceStatus === 'setup') || canRejoin}
+						{#if canJoin || canRejoin}
 							<button class="join-btn" onclick={handleJoin} disabled={joining}>
 								{joining ? 'Joining...' : 'Join Race'}
 							</button>
-						{:else if raceFull && !myParticipant}
+						{:else if raceFull && !myParticipant && raceStatus === 'setup'}
 							<button class="join-btn disabled" disabled> Race Full </button>
 						{/if}
 						{#if canLeave}
@@ -675,7 +675,12 @@
 								{leaving ? 'Leaving...' : 'Leave Race'}
 							</button>
 						{/if}
-						{#if !auth.isLoggedIn}
+						{#if canRejoin && initialRace.registration_closes_at}
+							<p class="login-hint">
+								Joinable until {formatLocalTime(initialRace.registration_closes_at)}
+							</p>
+						{/if}
+						{#if !auth.isLoggedIn && raceStatus === 'setup'}
 							<p class="login-hint">
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -766,6 +771,11 @@
 					{#if initialRace.seed_number}
 						<span class="seed-badge">Seed {initialRace.seed_number}</span>
 					{/if}
+					{#if initialRace.race_ends_at && raceStatus === 'running'}
+						<span class="race-ends-pill">
+							Ends in {formatCountdown(initialRace.race_ends_at, now)}
+						</span>
+					{/if}
 					<RaceStatus status={raceStatus} />
 					{#if raceStatus === 'running'}
 						<span class="elapsed-clock">{formatElapsed(elapsedSeconds)}</span>
@@ -786,28 +796,6 @@
 						class:active={dagView === 'replay'}
 						onclick={() => (dagView = 'replay')}>Replay</button
 					>
-				</div>
-			{/if}
-
-			{#if canRejoin}
-				<div class="join-cta">
-					<button class="join-btn join-cta-btn" onclick={handleJoin} disabled={joining}>
-						{joining ? 'Joining...' : 'Join this race'}
-					</button>
-					{#if initialRace.registration_closes_at}
-						<span class="deadline"
-							>Joinable until {formatLocalTime(initialRace.registration_closes_at)}</span
-						>
-					{/if}
-					{#if joinLeaveError}
-						<span class="join-leave-error">{joinLeaveError}</span>
-					{/if}
-				</div>
-			{/if}
-
-			{#if initialRace.race_ends_at && raceStatus === 'running'}
-				<div class="race-ends-pill">
-					Race ends in {formatCountdown(initialRace.race_ends_at, now)}
 				</div>
 			{/if}
 
@@ -1640,34 +1628,15 @@
 		font-size: var(--font-size-sm);
 	}
 
-	.join-cta {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		flex-wrap: wrap;
-	}
-
-	.join-cta-btn {
-		margin-top: 0;
-		width: auto;
-		padding: 0.5rem 1.25rem;
-	}
-
-	.join-cta .deadline {
-		color: var(--color-text-disabled);
-		font-size: var(--font-size-sm);
-	}
-
 	.race-ends-pill {
-		display: inline-block;
-		align-self: flex-start;
-		padding: 0.25rem 0.75rem;
+		padding: 0.2rem 0.5rem;
 		background: rgba(200, 164, 78, 0.12);
 		border: 1px solid rgba(200, 164, 78, 0.35);
 		border-radius: var(--radius-sm);
 		color: var(--color-warning, #c8a44e);
-		font-size: var(--font-size-sm);
+		font-size: var(--font-size-xs);
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
 </style>
