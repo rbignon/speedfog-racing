@@ -39,6 +39,8 @@ class CreateRaceRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_late_join(self) -> "CreateRaceRequest":
+        if self.registration_closes_at is not None and self.scheduled_at is None:
+            raise ValueError("registration_closes_at requires scheduled_at to be set")
         ref = self.scheduled_at
         if self.race_ends_at is not None and ref is not None and self.race_ends_at <= ref:
             raise ValueError("race_ends_at must be after scheduled_at")

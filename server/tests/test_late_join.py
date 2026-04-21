@@ -63,3 +63,12 @@ class TestCreateRaceRequestLateJoin:
         )
         assert req.registration_closes_at == scheduled + timedelta(minutes=30)
         assert req.race_ends_at == scheduled + timedelta(hours=4)
+
+    def test_registration_without_scheduled_rejected(self):
+        with pytest.raises(ValidationError, match="scheduled_at"):
+            CreateRaceRequest(
+                name="Test",
+                scheduled_at=None,
+                registration_closes_at=datetime.now(UTC) + timedelta(hours=1),
+                race_ends_at=datetime.now(UTC) + timedelta(hours=4),
+            )
