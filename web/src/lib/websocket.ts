@@ -35,6 +35,8 @@ export interface WsRaceInfo {
   scheduled_at?: string | null;
   started_at: string | null;
   seeds_released_at: string | null;
+  late_join_window_minutes?: number | null;
+  race_duration_minutes?: number | null;
   registration_closes_at?: string | null;
   race_ends_at?: string | null;
   private_dag?: boolean;

@@ -14,8 +14,8 @@
 	let openRegistration = $state(true);
 	let maxParticipants = $state(20);
 	let lateJoinEnabled = $state(false);
-	let registrationClosesAt = $state('');
-	let raceEndsAt = $state('');
+	let lateJoinWindowMinutes = $state(30);
+	let raceDurationMinutes = $state(120);
 	let privateDag = $state(false);
 	let pools: PoolStats = $state({});
 	let loading = $state(true);
@@ -85,8 +85,8 @@
 				isPublic,
 				openRegistration,
 				openRegistration ? maxParticipants : null,
-				lateJoinEnabled && registrationClosesAt ? registrationClosesAt : null,
-				lateJoinEnabled && raceEndsAt ? raceEndsAt : null,
+				lateJoinEnabled ? lateJoinWindowMinutes : null,
+				lateJoinEnabled ? raceDurationMinutes : null,
 				privateDag
 			);
 			goto(`/race/${race.id}`);
@@ -275,29 +275,28 @@
 					<input type="checkbox" bind:checked={lateJoinEnabled} disabled={creating} />
 					Accept late joiners
 				</label>
-				<p class="hint">
-					Allow players to join after the race has started. Requires a hard end time.
-				</p>
+				<p class="hint">Windows are counted from the moment the race actually starts.</p>
 				{#if lateJoinEnabled}
 					<div class="late-join-fields">
 						<div class="form-group">
-							<label for="reg-closes">Registration closes at</label>
-							<DateTimePicker
-								value={registrationClosesAt}
-								onchange={(iso) => (registrationClosesAt = iso)}
-								min={scheduledAt ? new Date(scheduledAt) : new Date()}
+							<label for="lj-window">Registration stays open for (minutes after start)</label>
+							<input
+								type="number"
+								id="lj-window"
+								bind:value={lateJoinWindowMinutes}
+								min="1"
+								max={raceDurationMinutes}
 								disabled={creating}
-								placeholder="Leave empty to keep open until race end"
 							/>
 						</div>
 						<div class="form-group">
-							<label for="race-ends">Race hard-closes at</label>
-							<DateTimePicker
-								value={raceEndsAt}
-								onchange={(iso) => (raceEndsAt = iso)}
-								min={scheduledAt ? new Date(scheduledAt) : new Date()}
+							<label for="race-duration">Race ends automatically after (minutes after start)</label>
+							<input
+								type="number"
+								id="race-duration"
+								bind:value={raceDurationMinutes}
+								min="1"
 								disabled={creating}
-								placeholder="Required when accepting late joiners"
 							/>
 						</div>
 					</div>

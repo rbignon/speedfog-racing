@@ -28,6 +28,8 @@ describe("RaceWebSocket message dispatch", () => {
         status: "running",
         started_at: null,
         seeds_released_at: null,
+        late_join_window_minutes: 30,
+        race_duration_minutes: 240,
         race_ends_at: "2026-04-21T15:00:00+00:00",
         registration_closes_at: "2026-04-21T13:00:00+00:00",
         private_dag: true,
@@ -38,6 +40,7 @@ describe("RaceWebSocket message dispatch", () => {
 
     expect(received).toHaveLength(1);
     expect(received[0].race.race_ends_at).toBe("2026-04-21T15:00:00+00:00");
+    expect(received[0].race.race_duration_minutes).toBe(240);
     expect(received[0].race.private_dag).toBe(true);
   });
 
