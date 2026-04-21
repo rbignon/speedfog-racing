@@ -272,6 +272,9 @@ async def create_race(
         is_public=request.is_public,
         open_registration=request.open_registration,
         max_participants=request.max_participants,
+        registration_closes_at=request.registration_closes_at,
+        race_ends_at=request.race_ends_at,
+        private_dag=request.private_dag,
     )
     db.add(race)
     await db.flush()

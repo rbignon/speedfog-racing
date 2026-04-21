@@ -863,3 +863,49 @@ async def test_joinable_list_excludes_running_race_after_deadline(
     assert resp.status_code == 200, resp.text
     ids = [r["id"] for r in resp.json()["races"]]
     assert str(race_id) not in ids
+
+
+async def test_create_race_persists_late_join_and_private_dag(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """POST /races must persist registration_closes_at, race_ends_at, private_dag."""
+    # Seed an AVAILABLE seed so create_race's assign_seed_to_race succeeds.
+    async with lj_async_session() as db:
+        seed = Seed(
+            seed_number="lj_create_persist",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/lj_create_persist",
+            status=SeedStatus.AVAILABLE,
+        )
+        db.add(seed)
+        await db.commit()
+
+    scheduled = datetime.now(UTC) + timedelta(hours=1)
+    reg_closes = scheduled + timedelta(minutes=30)
+    race_ends = scheduled + timedelta(hours=4)
+
+    async with lj_test_client as client:
+        resp = await client.post(
+            "/api/races",
+            json={
+                "name": "Late-join create",
+                "pool_name": "standard",
+                "organizer_participates": True,
+                "scheduled_at": scheduled.isoformat(),
+                "is_public": True,
+                "open_registration": True,
+                "max_participants": 10,
+                "registration_closes_at": reg_closes.isoformat(),
+                "race_ends_at": race_ends.isoformat(),
+                "private_dag": True,
+            },
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["registration_closes_at"] is not None
+    assert body["race_ends_at"] is not None
+    assert body["private_dag"] is True
