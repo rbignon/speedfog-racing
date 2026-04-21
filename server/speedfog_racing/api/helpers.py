@@ -2,7 +2,7 @@
 
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,9 +106,16 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         previews = [participant_preview(p.user) for p in race.participants[:5]]
 
     # Compute can_join and my_role
+    now = datetime.now(UTC)
     participant_count = len(race.participants)
-    is_open_setup = race.open_registration and race.status == RaceStatus.SETUP
     is_full = race.max_participants is not None and participant_count >= race.max_participants
+    is_open_setup = race.open_registration and race.status == RaceStatus.SETUP
+    is_open_late_join = (
+        race.open_registration
+        and race.status == RaceStatus.RUNNING
+        and race.registration_closes_at is not None
+        and race.registration_closes_at > now
+    )
     casters = race.casters if "casters" in race.__dict__ else []
 
     my_role: str | None = None
@@ -120,7 +127,7 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         elif any(c.user_id == user.id for c in casters):
             my_role = "casting"
 
-    if not is_open_setup or is_full:
+    if not (is_open_setup or is_open_late_join) or is_full:
         can_join = False
     elif user is None:
         can_join = True
@@ -140,6 +147,9 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         scheduled_at=race.scheduled_at,
         started_at=race.started_at,
         seeds_released_at=race.seeds_released_at,
+        registration_closes_at=race.registration_closes_at,
+        race_ends_at=race.race_ends_at,
+        private_dag=race.private_dag,
         participant_count=participant_count,
         participant_previews=previews,
         casters=[caster_response(c) for c in race.casters] if "casters" in race.__dict__ else [],
