@@ -99,6 +99,7 @@ class RaceInfo(BaseModel):
     status: str
     started_at: str | None = None
     seeds_released_at: str | None = None
+    race_ends_at: str | None = None
     countdown_seconds: int = 0
 
 

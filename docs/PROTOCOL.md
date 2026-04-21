@@ -234,7 +234,8 @@ Authentication successful. Contains initial race state.
     "name": "Sunday Showdown",
     "status": "setup",
     "started_at": null,
-    "seeds_released_at": null
+    "seeds_released_at": null,
+    "race_ends_at": null
   },
   "seed": {
     "seed_id": "uuid",
@@ -279,7 +280,7 @@ Authentication successful. Contains initial race state.
 
 `items_spawned_flag`: (int, optional) Event flag ID for runtime item spawn prevention. When present, the mod checks this flag before spawning items, and sets it after. Persists in save file (saved flag range). `null` if not provided by graph.json (backward compat: mod skips flag check).
 
-**Note:** The `race` object includes `started_at` and `seeds_released_at`, but the mod only uses `id`, `name`, and `status`; the other fields are silently ignored.
+**Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`, but the mod currently only uses `id`, `name`, and `status`; the other fields are silently ignored.
 
 #### `auth_error`
 
@@ -537,7 +538,8 @@ Sent immediately on connection (after optional auth). Full race state. Also re-s
     "name": "Sunday Showdown",
     "status": "running",
     "started_at": "2026-02-19T14:00:00Z",
-    "seeds_released_at": "2026-02-19T13:55:00Z"
+    "seeds_released_at": "2026-02-19T13:55:00Z",
+    "race_ends_at": "2026-02-19T15:30:00Z"
   },
   "seed": {
     "seed_id": "uuid",
@@ -824,13 +826,14 @@ Shared schema across all WebSocket messages:
 
 Included in `auth_ok` and `race_state` messages:
 
-| Field               | Type      | Description                                 |
-| ------------------- | --------- | ------------------------------------------- |
-| `id`                | `string`  | Race UUID                                   |
-| `name`              | `string`  | Race name                                   |
-| `status`            | `string`  | Race status (see above)                     |
-| `started_at`        | `string?` | ISO 8601 timestamp when race started        |
-| `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released |
+| Field               | Type      | Description                                                             |
+| ------------------- | --------- | ----------------------------------------------------------------------- |
+| `id`                | `string`  | Race UUID                                                               |
+| `name`              | `string`  | Race name                                                               |
+| `status`            | `string`  | Race status (see above)                                                 |
+| `started_at`        | `string?` | ISO 8601 timestamp when race started                                    |
+| `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                             |
+| `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff) |
 
 **Note:** The mod only uses `id`, `name`, and `status` from RaceInfo.
 

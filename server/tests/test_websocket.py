@@ -178,6 +178,18 @@ class TestSchemas:
         )
         assert info.name == "Test Race"
         assert info.status == "running"
+        assert info.race_ends_at is None
+
+    def test_race_info_with_race_ends_at(self):
+        """RaceInfo serializes race_ends_at as an ISO 8601 string."""
+        info = RaceInfo(
+            id="race-123",
+            name="Test Race",
+            status="running",
+            race_ends_at="2026-02-19T15:30:00+00:00",
+        )
+        data = json.loads(info.model_dump_json())
+        assert data["race_ends_at"] == "2026-02-19T15:30:00+00:00"
 
     def test_auth_ok_message(self):
         """Test AuthOkMessage serialization."""

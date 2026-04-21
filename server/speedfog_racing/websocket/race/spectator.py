@@ -408,6 +408,7 @@ async def send_race_state(
             seeds_released_at=(
                 race.seeds_released_at.isoformat() if race.seeds_released_at else None
             ),
+            race_ends_at=race.race_ends_at.isoformat() if race.race_ends_at else None,
             countdown_seconds=settings.countdown_seconds,
         ),
         seed=build_seed_info(race, locale=locale),
