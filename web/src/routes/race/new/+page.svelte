@@ -18,6 +18,7 @@
 	let lateJoinWindowMinutes = $state(30);
 	let raceDurationMinutes = $state(120);
 	let privateDag = $state(false);
+	let showAdvanced = $state(false);
 	let pools: PoolStats = $state({});
 	let loading = $state(true);
 	let creating = $state(false);
@@ -37,6 +38,13 @@
 	let hasAvailablePool = $derived(sortedPools.some(([, info]) => info.available > 0));
 	let selectedConfig = $derived(pools[poolName]?.pool_config ?? null);
 	let selectedAvailable = $derived(pools[poolName]?.available ?? 0);
+
+	let advancedCount = $derived(
+		(scheduledAt ? 1 : 0) +
+			(autoEndEnabled ? 1 : 0) +
+			(lateJoinEnabled ? 1 : 0) +
+			(privateDag ? 1 : 0)
+	);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -123,18 +131,6 @@
 					disabled={creating}
 					required
 				/>
-			</div>
-
-			<div class="form-group">
-				<label for="scheduled">Scheduled Time <span class="optional">(optional)</span></label>
-				<DateTimePicker
-					value={scheduledAt}
-					onchange={(iso) => (scheduledAt = iso)}
-					min={new Date()}
-					disabled={creating}
-					placeholder="Pick a date"
-				/>
-				<p class="hint">Indicative only. The organizer starts the race manually at any time.</p>
 			</div>
 
 			<div class="form-group">
@@ -272,54 +268,92 @@
 				<p class="hint">Open registration lets any logged-in player join the race themselves.</p>
 			</div>
 
-			<div class="form-group">
-				<span>Auto-end</span>
-				<label class="radio-label">
-					<input type="checkbox" bind:checked={autoEndEnabled} disabled={creating} />
-					End race automatically after
-					{#if autoEndEnabled}
-						<input
-							type="number"
-							bind:value={raceDurationMinutes}
-							min="1"
-							disabled={creating}
-							class="inline-duration"
-						/>
-						min
-					{/if}
-				</label>
-				<p class="hint">
-					Useful for time-boxed community races. The organizer can still finalize earlier.
-				</p>
-			</div>
+			<div class="advanced">
+				<button
+					type="button"
+					class="advanced-trigger"
+					onclick={() => (showAdvanced = !showAdvanced)}
+					disabled={creating}
+					aria-expanded={showAdvanced}
+				>
+					<span class="advanced-chevron">{showAdvanced ? '▼' : '▸'}</span>
+					<span class="advanced-label">Advanced options</span>
+					<span class="advanced-summary">
+						{#if advancedCount > 0}
+							{advancedCount} set
+						{:else}
+							scheduled time · auto-end · late joiners · private DAG
+						{/if}
+					</span>
+				</button>
 
-			<div class="form-group">
-				<span>Late joiners</span>
-				<label class="radio-label">
-					<input type="checkbox" bind:checked={lateJoinEnabled} disabled={creating} />
-					Allow joining up to
-					{#if lateJoinEnabled}
-						<input
-							type="number"
-							bind:value={lateJoinWindowMinutes}
-							min="1"
-							max={autoEndEnabled ? raceDurationMinutes : undefined}
-							disabled={creating}
-							class="inline-duration"
-						/>
-						min after start
-					{/if}
-				</label>
-				<p class="hint">Counted from the actual start time.</p>
-			</div>
+				{#if showAdvanced}
+					<div class="advanced-panel">
+						<div class="form-group">
+							<label for="scheduled">Scheduled time <span class="optional">(optional)</span></label>
+							<DateTimePicker
+								value={scheduledAt}
+								onchange={(iso) => (scheduledAt = iso)}
+								min={new Date()}
+								disabled={creating}
+								placeholder="Pick a date"
+							/>
+							<p class="hint">
+								Indicative only. The organizer starts the race manually at any time.
+							</p>
+						</div>
 
-			<div class="form-group">
-				<span>DAG visibility</span>
-				<label class="radio-label">
-					<input type="checkbox" bind:checked={privateDag} disabled={creating} />
-					Hide the DAG from non-participants until the race finishes
-				</label>
-				<p class="hint">Useful for asynchronous races where spoilers matter.</p>
+						<div class="form-group">
+							<span>Auto-end</span>
+							<label class="radio-label">
+								<input type="checkbox" bind:checked={autoEndEnabled} disabled={creating} />
+								End race automatically after
+								{#if autoEndEnabled}
+									<input
+										type="number"
+										bind:value={raceDurationMinutes}
+										min="1"
+										disabled={creating}
+										class="inline-duration"
+									/>
+									min
+								{/if}
+							</label>
+							<p class="hint">
+								Useful for time-boxed community races. The organizer can still finalize earlier.
+							</p>
+						</div>
+
+						<div class="form-group">
+							<span>Late joiners</span>
+							<label class="radio-label">
+								<input type="checkbox" bind:checked={lateJoinEnabled} disabled={creating} />
+								Allow joining up to
+								{#if lateJoinEnabled}
+									<input
+										type="number"
+										bind:value={lateJoinWindowMinutes}
+										min="1"
+										max={autoEndEnabled ? raceDurationMinutes : undefined}
+										disabled={creating}
+										class="inline-duration"
+									/>
+									min after start
+								{/if}
+							</label>
+							<p class="hint">Counted from the actual start time.</p>
+						</div>
+
+						<div class="form-group">
+							<span>Spoiler protection</span>
+							<label class="radio-label">
+								<input type="checkbox" bind:checked={privateDag} disabled={creating} />
+								Hide the DAG from non-participants until the race finishes
+							</label>
+							<p class="hint">Useful for asynchronous races where spoilers matter.</p>
+						</div>
+					</div>
+				{/if}
 			</div>
 
 			<div class="actions">
@@ -536,6 +570,57 @@
 	.inline-duration:focus {
 		outline: none;
 		border-color: var(--color-purple);
+	}
+
+	.advanced {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.advanced-trigger {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
+		background: transparent;
+		border: 1px dashed var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.advanced-trigger:hover:not(:disabled) {
+		border-color: var(--color-purple);
+	}
+
+	.advanced-trigger:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.advanced-chevron {
+		color: var(--color-purple);
+	}
+
+	.advanced-label {
+		font-weight: 500;
+	}
+
+	.advanced-summary {
+		margin-left: auto;
+		color: var(--color-text-disabled);
+	}
+
+	.advanced-panel {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		padding-left: 1rem;
+		border-left: 2px solid rgba(139, 92, 246, 0.3);
 	}
 
 	.error {
