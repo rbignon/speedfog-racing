@@ -122,6 +122,7 @@ impl ImguiRenderLoop for RaceTracker {
                     self.render_seed_mismatch_warning(ui);
                     self.render_player_status(ui, max_width, &mut bufs);
                     self.render_exits(ui, max_width);
+                    self.render_race_ends_warning(ui);
                     if !self.config.server.training && self.show_leaderboard {
                         ui.separator();
                         self.render_leaderboard(ui, max_width, &mut bufs);
@@ -168,6 +169,30 @@ impl RaceTracker {
             let red = [1.0, 0.2, 0.2, 1.0];
             ui.text_colored(red, "SEED OUTDATED");
             ui.text_colored(red, "Re-download your seed pack");
+        }
+    }
+
+    /// Amber countdown when a running race has less than 1 hour remaining.
+    /// Only shown while the race is RUNNING and race_ends_at is in the future.
+    fn render_race_ends_warning(&self, ui: &hudhook::imgui::Ui) {
+        if let Some(race_info) = self.race_info() {
+            if race_info.status == "running" {
+                if let Some(ends_at) = race_info.race_ends_at.as_deref() {
+                    if let Ok(ends_at_dt) = chrono::DateTime::parse_from_rfc3339(ends_at) {
+                        let now = chrono::Utc::now();
+                        let remaining = ends_at_dt.signed_duration_since(now);
+                        let remaining_seconds = remaining.num_seconds();
+                        if remaining_seconds > 0 && remaining_seconds < 3600 {
+                            let mins = remaining_seconds / 60;
+                            let secs = remaining_seconds % 60;
+                            ui.text_colored(
+                                [1.0, 0.7, 0.2, 1.0],
+                                format!("Race ends in {}:{:02}", mins, secs),
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 
