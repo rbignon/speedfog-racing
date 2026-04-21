@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from speedfog_racing.models import ParticipantStatus, Race, RaceStatus
+from speedfog_racing.models import ChatChannel, ParticipantStatus, Race, RaceStatus
 from speedfog_racing.services.stats_service import (
     recompute_traits_for_race_async,
     update_elo_ratings,
@@ -82,14 +82,7 @@ async def finalize_race(
     - broadcasts race_state + race_status + chat
     - fires Discord notifications
     """
-    import asyncio as _asyncio
-
     from speedfog_racing.discord import fire_race_finished_notifications
-    from speedfog_racing.models import ChatChannel, ParticipantStatus, RaceStatus
-    from speedfog_racing.services.stats_service import (
-        recompute_traits_for_race_async,
-        update_elo_ratings,
-    )
     from speedfog_racing.websocket.race.manager import manager
     from speedfog_racing.websocket.race.spectator import broadcast_race_state_update
     from speedfog_racing.websocket.schemas import persist_system_chat
@@ -111,7 +104,7 @@ async def finalize_race(
 
     await update_elo_ratings(race.id, db)
 
-    task = _asyncio.create_task(recompute_traits_for_race_async(race.id))
+    task = asyncio.create_task(recompute_traits_for_race_async(race.id))
     task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     await broadcast_race_state_update(race.id, race)
