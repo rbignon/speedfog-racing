@@ -49,6 +49,7 @@ from speedfog_racing.models import (
     SeedStatus,
     User,
     UserRole,
+    compute_late_join_deadlines,
 )
 from speedfog_racing.schemas import (
     AddCasterRequest,
@@ -66,7 +67,7 @@ from speedfog_racing.schemas import (
     RerollSeedRequest,
     UpdateRaceRequest,
     as_aware_utc,
-    validate_late_join_invariants,
+    validate_late_join_durations,
 )
 from speedfog_racing.services import (
     assign_seed_to_race,
@@ -140,6 +141,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
     pool_config = None
     if race.seed and race.seed.pool.config:
         pool_config = PoolConfig(**race.seed.pool.config)
+    registration_closes_at, race_ends_at = compute_late_join_deadlines(race)
     return RaceDetailResponse(
         id=race.id,
         name=race.name,
@@ -153,8 +155,10 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         scheduled_at=race.scheduled_at,
         started_at=race.started_at,
         seeds_released_at=race.seeds_released_at,
-        registration_closes_at=race.registration_closes_at,
-        race_ends_at=race.race_ends_at,
+        late_join_window_minutes=race.late_join_window_minutes,
+        race_duration_minutes=race.race_duration_minutes,
+        registration_closes_at=registration_closes_at,
+        race_ends_at=race_ends_at,
         private_dag=race.private_dag,
         participant_count=len(race.participants),
         seed_number=race.seed.seed_number if race.seed else None,
@@ -279,8 +283,8 @@ async def create_race(
         is_public=request.is_public,
         open_registration=request.open_registration,
         max_participants=request.max_participants,
-        registration_closes_at=as_aware_utc(request.registration_closes_at),
-        race_ends_at=as_aware_utc(request.race_ends_at),
+        late_join_window_minutes=request.late_join_window_minutes,
+        race_duration_minutes=request.race_duration_minutes,
         private_dag=request.private_dag,
     )
     db.add(race)
@@ -377,6 +381,11 @@ async def list_joinable_races(
     )
 
     now = datetime.now(UTC)
+    # SQL pre-filter: SETUP races, or RUNNING races with a late-join window configured.
+    # The actual "window still open" check is computed in Python below — datetime
+    # arithmetic on Race.started_at + late_join_window_minutes is dialect-specific
+    # (Postgres supports interval math, SQLite used by tests does not), and the
+    # row volume here is small enough that an in-memory filter is fine.
     query = (
         select(Race)
         .options(
@@ -391,8 +400,8 @@ async def list_joinable_races(
                 Race.status == RaceStatus.SETUP,
                 and_(
                     Race.status == RaceStatus.RUNNING,
-                    Race.registration_closes_at.is_not(None),
-                    Race.registration_closes_at > now,
+                    Race.started_at.is_not(None),
+                    Race.late_join_window_minutes.is_not(None),
                 ),
             ),
             Race.open_registration.is_(True),
@@ -410,7 +419,11 @@ async def list_joinable_races(
     )
 
     result = await db.execute(query)
-    races = list(result.scalars().all())
+    races = [
+        r
+        for r in result.scalars().all()
+        if r.status == RaceStatus.SETUP or late_join_window_open(r, now)
+    ]
     return RaceListResponse(races=[race_response(r, user) for r in races])
 
 
@@ -539,8 +552,8 @@ async def update_race(
         race.open_registration,
         race.max_participants,
         race.scheduled_at,
-        race.registration_closes_at,
-        race.race_ends_at,
+        race.late_join_window_minutes,
+        race.race_duration_minutes,
         race.private_dag,
     )
 
@@ -599,32 +612,32 @@ async def update_race(
         race.open_registration = new_open_registration
         race.max_participants = new_max_participants
 
-    # registration_closes_at: SETUP only
-    if "registration_closes_at" in request.model_fields_set:
+    # late_join_window_minutes: SETUP only
+    if "late_join_window_minutes" in request.model_fields_set:
         if race.status != RaceStatus.SETUP:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="registration_closes_at can only be edited in SETUP status",
+                detail="late_join_window_minutes can only be edited in SETUP status",
             )
-        race.registration_closes_at = as_aware_utc(request.registration_closes_at)
+        race.late_join_window_minutes = request.late_join_window_minutes
 
-    # race_ends_at: SETUP always; RUNNING only to extend (never shorten)
-    if "race_ends_at" in request.model_fields_set:
-        new_race_ends_at = as_aware_utc(request.race_ends_at)
+    # race_duration_minutes: SETUP always; RUNNING only to extend (never shorten)
+    if "race_duration_minutes" in request.model_fields_set:
+        new_duration = request.race_duration_minutes
         if race.status == RaceStatus.SETUP:
-            race.race_ends_at = new_race_ends_at
+            race.race_duration_minutes = new_duration
         elif race.status == RaceStatus.RUNNING:
-            current = as_aware_utc(race.race_ends_at)
-            if new_race_ends_at is None or current is None or new_race_ends_at < current:
+            current_duration = race.race_duration_minutes
+            if new_duration is None or current_duration is None or new_duration < current_duration:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Cannot shorten race_ends_at once running",
+                    detail="Cannot shorten race_duration_minutes once running",
                 )
-            race.race_ends_at = new_race_ends_at
+            race.race_duration_minutes = new_duration
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="race_ends_at cannot be changed on a finished race",
+                detail="race_duration_minutes cannot be changed on a finished race",
             )
 
     # private_dag: SETUP only
@@ -636,15 +649,14 @@ async def update_race(
             )
         race.private_dag = bool(request.private_dag)
 
-    # Re-enforce late-join cross-field invariants on the combined post-PATCH state.
-    # Only meaningful in SETUP since all three late-join fields are immutable in
-    # RUNNING (race_ends_at can only be extended, which preserves invariants).
+    # Re-enforce late-join duration invariants on the combined post-PATCH state.
+    # Only meaningful in SETUP since late_join_window_minutes is immutable in
+    # RUNNING and race_duration_minutes can only be extended (preserves invariants).
     if race.status == RaceStatus.SETUP:
         try:
-            validate_late_join_invariants(
-                scheduled_at=race.scheduled_at,
-                registration_closes_at=race.registration_closes_at,
-                race_ends_at=race.race_ends_at,
+            validate_late_join_durations(
+                late_join_window_minutes=race.late_join_window_minutes,
+                race_duration_minutes=race.race_duration_minutes,
             )
         except ValueError as e:
             raise HTTPException(
@@ -696,8 +708,8 @@ async def update_race(
         race.open_registration,
         race.max_participants,
         race.scheduled_at,
-        race.registration_closes_at,
-        race.race_ends_at,
+        race.late_join_window_minutes,
+        race.race_duration_minutes,
         race.private_dag,
     )
     if post_snapshot != pre_snapshot:
@@ -1060,7 +1072,7 @@ async def join_race(
     is_late_join_open = late_join_window_open(race, now)
 
     if race.status != RaceStatus.SETUP and not is_late_join_open:
-        if race.status == RaceStatus.RUNNING and race.registration_closes_at is not None:
+        if race.status == RaceStatus.RUNNING and race.late_join_window_minutes is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Registration is closed for this race",

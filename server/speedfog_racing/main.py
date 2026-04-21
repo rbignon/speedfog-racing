@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start inactivity monitor
     monitor_task = asyncio.create_task(inactivity_monitor_loop(async_session_maker))
 
-    # Start hard-close monitor (finalizes races past race_ends_at)
+    # Start hard-close monitor (finalizes races past started_at + race_duration_minutes)
     hard_close_task = asyncio.create_task(hard_close_loop(async_session_maker))
 
     # Start Twitch live polling (only if Twitch credentials are configured)

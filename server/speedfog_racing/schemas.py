@@ -26,32 +26,34 @@ def as_aware_utc(dt: datetime | None) -> datetime | None:
 _as_aware = as_aware_utc
 
 
-def validate_late_join_invariants(
+def validate_late_join_durations(
     *,
-    scheduled_at: datetime | None,
-    registration_closes_at: datetime | None,
-    race_ends_at: datetime | None,
+    late_join_window_minutes: int | None,
+    race_duration_minutes: int | None,
 ) -> None:
-    """Enforce the late-join cross-field rules. Raises ValueError on violation.
+    """Enforce the late-join / race-duration invariants. Raises ValueError on violation.
 
     Shared between CreateRaceRequest's validator and PATCH /races so a partial
     update cannot leave the race in a state that the create endpoint would
     have rejected.
-    """
-    sched = _as_aware(scheduled_at)
-    closes = _as_aware(registration_closes_at)
-    ends = _as_aware(race_ends_at)
 
-    if closes is not None and sched is None:
-        raise ValueError("registration_closes_at requires scheduled_at to be set")
-    if ends is not None and sched is not None and ends <= sched:
-        raise ValueError("race_ends_at must be after scheduled_at")
-    if closes is not None and sched is not None and closes > sched and ends is None:
-        raise ValueError(
-            "race_ends_at is required when registration_closes_at is after scheduled_at"
-        )
-    if closes is not None and ends is not None and closes > ends:
-        raise ValueError("registration_closes_at must be <= race_ends_at")
+    Both durations are counted in minutes from ``started_at``; the absolute
+    deadlines are computed on read by :func:`compute_late_join_deadlines`.
+    """
+    if late_join_window_minutes is not None and late_join_window_minutes <= 0:
+        raise ValueError("late_join_window_minutes must be > 0")
+    if race_duration_minutes is not None and race_duration_minutes <= 0:
+        raise ValueError("race_duration_minutes must be > 0")
+    if late_join_window_minutes is not None and race_duration_minutes is None:
+        # A late-joiner stuck in REGISTERED would otherwise prevent natural finish
+        # indefinitely; require a hard close.
+        raise ValueError("race_duration_minutes is required when late_join_window_minutes is set")
+    if (
+        late_join_window_minutes is not None
+        and race_duration_minutes is not None
+        and late_join_window_minutes > race_duration_minutes
+    ):
+        raise ValueError("late_join_window_minutes must be <= race_duration_minutes")
 
 
 # =============================================================================
@@ -70,8 +72,8 @@ class CreateRaceRequest(BaseModel):
     is_public: bool = True
     open_registration: bool = False
     max_participants: int | None = None
-    registration_closes_at: datetime | None = None
-    race_ends_at: datetime | None = None
+    late_join_window_minutes: int | None = None
+    race_duration_minutes: int | None = None
     private_dag: bool = False
 
     @model_validator(mode="after")
@@ -85,10 +87,9 @@ class CreateRaceRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_late_join(self) -> "CreateRaceRequest":
-        validate_late_join_invariants(
-            scheduled_at=self.scheduled_at,
-            registration_closes_at=self.registration_closes_at,
-            race_ends_at=self.race_ends_at,
+        validate_late_join_durations(
+            late_join_window_minutes=self.late_join_window_minutes,
+            race_duration_minutes=self.race_duration_minutes,
         )
         return self
 
@@ -98,16 +99,16 @@ class UpdateRaceRequest(BaseModel):
 
     scheduled_at / open_registration / max_participants / private_dag: SETUP only.
     is_public: editable at any status.
-    registration_closes_at: SETUP only.
-    race_ends_at: SETUP, or RUNNING to extend (never shorten).
+    late_join_window_minutes: SETUP only.
+    race_duration_minutes: SETUP, or RUNNING to extend (never shorten).
     """
 
     scheduled_at: datetime | None = None
     is_public: bool | None = None
     open_registration: bool | None = None
     max_participants: int | None = None
-    registration_closes_at: datetime | None = None
-    race_ends_at: datetime | None = None
+    late_join_window_minutes: int | None = None
+    race_duration_minutes: int | None = None
     private_dag: bool | None = None
 
 
@@ -297,6 +298,8 @@ class RaceResponse(BaseModel):
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
     seeds_released_at: datetime | None = None
+    late_join_window_minutes: int | None = None
+    race_duration_minutes: int | None = None
     registration_closes_at: datetime | None = None
     race_ends_at: datetime | None = None
     private_dag: bool = False
@@ -364,6 +367,8 @@ class RaceDetailResponse(BaseModel):
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
     seeds_released_at: datetime | None = None
+    late_join_window_minutes: int | None = None
+    race_duration_minutes: int | None = None
     registration_closes_at: datetime | None = None
     race_ends_at: datetime | None = None
     private_dag: bool = False

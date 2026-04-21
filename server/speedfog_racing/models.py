@@ -3,7 +3,7 @@
 import enum
 import secrets
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import (
@@ -201,10 +201,8 @@ class Race(Base):
     max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
     discord_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    registration_closes_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    race_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    late_join_window_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    race_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     private_dag: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
@@ -406,3 +404,32 @@ class ChatMessage(Base):
 
     race: Mapped["Race"] = relationship()
     user: Mapped["User | None"] = relationship()
+
+
+def compute_late_join_deadlines(race: Race) -> tuple[datetime | None, datetime | None]:
+    """Compute absolute (registration_closes_at, race_ends_at) from stored durations.
+
+    Both deadlines are ``None`` until ``started_at`` is set. Used by REST
+    responses and the WebSocket ``RaceInfo`` builder so clients never
+    re-derive the math.
+
+    Placed on the model module to stay neutral between ``api.helpers`` and
+    ``websocket.schemas`` (both serializers call it; the former additionally
+    imports response schemas that would cycle back to websocket.schemas).
+    """
+    started = race.started_at
+    if started is None:
+        return None, None
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    closes = (
+        started + timedelta(minutes=race.late_join_window_minutes)
+        if race.late_join_window_minutes is not None
+        else None
+    )
+    ends = (
+        started + timedelta(minutes=race.race_duration_minutes)
+        if race.race_duration_minutes is not None
+        else None
+    )
+    return closes, ends

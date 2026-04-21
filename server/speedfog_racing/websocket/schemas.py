@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
 from pydantic import BaseModel, Field
 
+from speedfog_racing.models import compute_late_join_deadlines
+
 # --- Client -> Server Messages (Mod) ---
 
 
@@ -108,6 +110,8 @@ class RaceInfo(BaseModel):
     scheduled_at: str | None = None
     started_at: str | None = None
     seeds_released_at: str | None = None
+    late_join_window_minutes: int | None = None
+    race_duration_minutes: int | None = None
     registration_closes_at: str | None = None
     race_ends_at: str | None = None
     private_dag: bool = False
@@ -118,8 +122,11 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
     """Build a RaceInfo from a Race ORM model.
 
     Centralized so the auth_ok handshake, the race_state broadcast, and the
-    race_info_update broadcast all serialize the same set of fields.
+    race_info_update broadcast all serialize the same set of fields. The two
+    absolute deadlines are computed from ``started_at + duration`` so clients
+    never duplicate the math.
     """
+    registration_closes_at, race_ends_at = compute_late_join_deadlines(race)
     return RaceInfo(
         id=str(race.id),
         name=race.name,
@@ -130,10 +137,12 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
         scheduled_at=race.scheduled_at.isoformat() if race.scheduled_at else None,
         started_at=race.started_at.isoformat() if race.started_at else None,
         seeds_released_at=(race.seeds_released_at.isoformat() if race.seeds_released_at else None),
+        late_join_window_minutes=race.late_join_window_minutes,
+        race_duration_minutes=race.race_duration_minutes,
         registration_closes_at=(
-            race.registration_closes_at.isoformat() if race.registration_closes_at else None
+            registration_closes_at.isoformat() if registration_closes_at else None
         ),
-        race_ends_at=race.race_ends_at.isoformat() if race.race_ends_at else None,
+        race_ends_at=race_ends_at.isoformat() if race_ends_at else None,
         private_dag=race.private_dag,
         countdown_seconds=countdown_seconds,
     )

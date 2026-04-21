@@ -1,9 +1,9 @@
-"""Background task that force-finishes races past their race_ends_at."""
+"""Background task that force-finishes races past their race_duration_minutes."""
 
 import asyncio
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,25 +17,41 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL = 30  # seconds
 
 
+def _deadline_reached(started_at: datetime | None, duration_min: int | None, now: datetime) -> bool:
+    if started_at is None or duration_min is None:
+        return False
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=UTC)
+    return started_at + timedelta(minutes=duration_min) <= now
+
+
 async def close_expired_races(
     session_maker: async_sessionmaker[AsyncSession],
 ) -> list[uuid.UUID]:
-    """Transition any RUNNING race past race_ends_at to FINISHED.
+    """Transition any RUNNING race past ``started_at + race_duration_minutes`` to FINISHED.
 
     Returns the list of race ids that were finalized this tick.
     """
     now = datetime.now(UTC)
     affected: list[uuid.UUID] = []
 
+    # SQL pre-filter on non-null duration fields; the datetime arithmetic
+    # (started_at + duration <= now) is applied in Python since it's
+    # dialect-specific (Postgres supports interval math, SQLite used in tests
+    # does not). Row volume here is bounded by concurrent RUNNING races.
     async with session_maker() as db:
         result = await db.execute(
-            select(Race.id).where(
+            select(Race.id, Race.started_at, Race.race_duration_minutes).where(
                 Race.status == RaceStatus.RUNNING,
-                Race.race_ends_at.isnot(None),
-                Race.race_ends_at <= now,
+                Race.started_at.isnot(None),
+                Race.race_duration_minutes.isnot(None),
             )
         )
-        race_ids = [row[0] for row in result.all()]
+        race_ids = [
+            row_id
+            for row_id, started_at, duration in result.all()
+            if _deadline_reached(started_at, duration, now)
+        ]
 
     for race_id in race_ids:
         async with session_maker() as db:

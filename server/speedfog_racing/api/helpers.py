@@ -15,6 +15,7 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
     User,
+    compute_late_join_deadlines,
 )
 from speedfog_racing.schemas import (
     CasterResponse,
@@ -33,11 +34,9 @@ def late_join_window_open(race: Race, now: datetime) -> bool:
     """
     if race.status != RaceStatus.RUNNING:
         return False
-    closes = race.registration_closes_at
+    closes, _ = compute_late_join_deadlines(race)
     if closes is None:
         return False
-    if closes.tzinfo is None:
-        closes = closes.replace(tzinfo=UTC)
     return closes > now
 
 
@@ -144,6 +143,7 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
     else:
         can_join = my_role is None
 
+    registration_closes_at, race_ends_at = compute_late_join_deadlines(race)
     return RaceResponse(
         id=race.id,
         name=race.name,
@@ -157,8 +157,10 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         scheduled_at=race.scheduled_at,
         started_at=race.started_at,
         seeds_released_at=race.seeds_released_at,
-        registration_closes_at=race.registration_closes_at,
-        race_ends_at=race.race_ends_at,
+        late_join_window_minutes=race.late_join_window_minutes,
+        race_duration_minutes=race.race_duration_minutes,
+        registration_closes_at=registration_closes_at,
+        race_ends_at=race_ends_at,
         private_dag=race.private_dag,
         participant_count=participant_count,
         participant_previews=previews,

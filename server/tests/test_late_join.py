@@ -23,6 +23,7 @@ from speedfog_racing.models import (
     SeedStatus,
     User,
     UserRole,
+    compute_late_join_deadlines,
 )
 from speedfog_racing.schemas import CreateRaceRequest
 from speedfog_racing.services.hard_close_loop import close_expired_races
@@ -39,60 +40,50 @@ def _base_kwargs(**overrides):
 class TestCreateRaceRequestLateJoin:
     def test_both_null_is_valid(self):
         req = CreateRaceRequest(**_base_kwargs())
-        assert req.registration_closes_at is None
-        assert req.race_ends_at is None
+        assert req.late_join_window_minutes is None
+        assert req.race_duration_minutes is None
 
-    def test_registration_after_scheduled_requires_race_ends_at(self):
-        scheduled = datetime.now(UTC) + timedelta(hours=1)
-        with pytest.raises(ValidationError, match="race_ends_at"):
+    def test_window_requires_duration(self):
+        """Setting a late-join window without a race duration is rejected."""
+        with pytest.raises(ValidationError, match="race_duration_minutes"):
+            CreateRaceRequest(**_base_kwargs(late_join_window_minutes=30))
+
+    def test_window_must_be_le_duration(self):
+        with pytest.raises(ValidationError, match="late_join_window_minutes"):
             CreateRaceRequest(
-                **_base_kwargs(
-                    scheduled_at=scheduled,
-                    registration_closes_at=scheduled + timedelta(minutes=30),
-                )
+                **_base_kwargs(late_join_window_minutes=120, race_duration_minutes=60)
             )
 
-    def test_registration_closes_at_must_be_before_race_ends_at(self):
-        scheduled = datetime.now(UTC) + timedelta(hours=1)
-        with pytest.raises(ValidationError, match="registration_closes_at"):
-            CreateRaceRequest(
-                **_base_kwargs(
-                    scheduled_at=scheduled,
-                    registration_closes_at=scheduled + timedelta(hours=5),
-                    race_ends_at=scheduled + timedelta(hours=2),
-                )
-            )
+    def test_duration_must_be_positive(self):
+        with pytest.raises(ValidationError, match="race_duration_minutes"):
+            CreateRaceRequest(**_base_kwargs(race_duration_minutes=0))
 
-    def test_race_ends_at_must_be_after_scheduled(self):
-        scheduled = datetime.now(UTC) + timedelta(hours=1)
-        with pytest.raises(ValidationError, match="race_ends_at"):
-            CreateRaceRequest(
-                **_base_kwargs(
-                    scheduled_at=scheduled,
-                    race_ends_at=scheduled - timedelta(minutes=1),
-                )
-            )
+    def test_window_must_be_positive(self):
+        with pytest.raises(ValidationError, match="late_join_window_minutes"):
+            CreateRaceRequest(**_base_kwargs(late_join_window_minutes=0, race_duration_minutes=120))
 
     def test_late_join_race_valid(self):
-        scheduled = datetime.now(UTC) + timedelta(hours=1)
         req = CreateRaceRequest(
-            **_base_kwargs(
-                scheduled_at=scheduled,
-                registration_closes_at=scheduled + timedelta(minutes=30),
-                race_ends_at=scheduled + timedelta(hours=4),
-            )
+            **_base_kwargs(late_join_window_minutes=30, race_duration_minutes=240)
         )
-        assert req.registration_closes_at == scheduled + timedelta(minutes=30)
-        assert req.race_ends_at == scheduled + timedelta(hours=4)
+        assert req.late_join_window_minutes == 30
+        assert req.race_duration_minutes == 240
 
-    def test_registration_without_scheduled_rejected(self):
-        with pytest.raises(ValidationError, match="scheduled_at"):
-            CreateRaceRequest(
-                name="Test",
-                scheduled_at=None,
-                registration_closes_at=datetime.now(UTC) + timedelta(hours=1),
-                race_ends_at=datetime.now(UTC) + timedelta(hours=4),
-            )
+    def test_duration_only_without_window_is_valid(self):
+        """A hard-close without late-join window is a valid solo-timer race."""
+        req = CreateRaceRequest(**_base_kwargs(race_duration_minutes=180))
+        assert req.race_duration_minutes == 180
+        assert req.late_join_window_minutes is None
+
+    def test_late_join_without_scheduled_at_is_valid(self):
+        """Durations no longer depend on scheduled_at (ad-hoc races are fine)."""
+        req = CreateRaceRequest(
+            name="Ad-hoc",
+            scheduled_at=None,
+            late_join_window_minutes=30,
+            race_duration_minutes=240,
+        )
+        assert req.late_join_window_minutes == 30
 
 
 def _make_user(**kw) -> User:
@@ -107,7 +98,14 @@ def _make_user(**kw) -> User:
     return User(**defaults)
 
 
-def _make_race(*, status, registration_closes_at=None, race_ends_at=None, private_dag=False):
+def _make_race(
+    *,
+    status,
+    started_at=None,
+    late_join_window_minutes=None,
+    race_duration_minutes=None,
+    private_dag=False,
+):
     organizer = _make_user()
     race = Race(
         id=uuid4(),
@@ -118,8 +116,9 @@ def _make_race(*, status, registration_closes_at=None, race_ends_at=None, privat
         is_public=True,
         open_registration=True,
         max_participants=10,
-        registration_closes_at=registration_closes_at,
-        race_ends_at=race_ends_at,
+        started_at=started_at,
+        late_join_window_minutes=late_join_window_minutes,
+        race_duration_minutes=race_duration_minutes,
         private_dag=private_dag,
         created_at=datetime.now(UTC),
     )
@@ -129,55 +128,83 @@ def _make_race(*, status, registration_closes_at=None, race_ends_at=None, privat
     return race
 
 
-def test_race_response_exposes_new_fields():
-    now = datetime.now(UTC)
+def test_compute_late_join_deadlines_resolves_absolutes():
+    started = datetime.now(UTC) - timedelta(minutes=5)
     race = _make_race(
         status=RaceStatus.RUNNING,
-        registration_closes_at=now + timedelta(hours=1),
-        race_ends_at=now + timedelta(hours=4),
+        started_at=started,
+        late_join_window_minutes=30,
+        race_duration_minutes=240,
+    )
+    closes, ends = compute_late_join_deadlines(race)
+    assert closes == started + timedelta(minutes=30)
+    assert ends == started + timedelta(minutes=240)
+
+
+def test_compute_late_join_deadlines_none_before_start():
+    race = _make_race(
+        status=RaceStatus.SETUP,
+        started_at=None,
+        late_join_window_minutes=30,
+        race_duration_minutes=240,
+    )
+    closes, ends = compute_late_join_deadlines(race)
+    assert closes is None
+    assert ends is None
+
+
+def test_race_response_exposes_new_fields():
+    started = datetime.now(UTC) - timedelta(minutes=5)
+    race = _make_race(
+        status=RaceStatus.RUNNING,
+        started_at=started,
+        late_join_window_minutes=60,
+        race_duration_minutes=240,
         private_dag=True,
     )
     resp = race_response(race, user=None)
-    assert resp.registration_closes_at == race.registration_closes_at
-    assert resp.race_ends_at == race.race_ends_at
+    assert resp.late_join_window_minutes == 60
+    assert resp.race_duration_minutes == 240
+    assert resp.registration_closes_at == started + timedelta(minutes=60)
+    assert resp.race_ends_at == started + timedelta(minutes=240)
     assert resp.private_dag is True
 
 
 def test_can_join_true_for_running_race_with_late_join_open():
-    now = datetime.now(UTC)
     race = _make_race(
         status=RaceStatus.RUNNING,
-        registration_closes_at=now + timedelta(hours=1),
-        race_ends_at=now + timedelta(hours=4),
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        late_join_window_minutes=60,
+        race_duration_minutes=240,
     )
     resp = race_response(race, user=None)
     assert resp.can_join is True
 
 
 def test_can_join_false_for_running_race_after_deadline():
-    now = datetime.now(UTC)
     race = _make_race(
         status=RaceStatus.RUNNING,
-        registration_closes_at=now - timedelta(minutes=1),
-        race_ends_at=now + timedelta(hours=4),
+        started_at=datetime.now(UTC) - timedelta(hours=2),
+        late_join_window_minutes=30,
+        race_duration_minutes=240,
     )
     resp = race_response(race, user=None)
     assert resp.can_join is False
 
 
 def test_can_join_false_for_running_race_without_late_join():
-    race = _make_race(status=RaceStatus.RUNNING)
+    race = _make_race(status=RaceStatus.RUNNING, started_at=datetime.now(UTC))
     resp = race_response(race, user=None)
     assert resp.can_join is False
 
 
-def test_can_join_false_when_registration_not_open_even_with_deadline():
-    """registration_closes_at alone must not bypass open_registration=False."""
-    now = datetime.now(UTC)
+def test_can_join_false_when_registration_not_open_even_with_window():
+    """late_join_window_minutes alone must not bypass open_registration=False."""
     race = _make_race(
         status=RaceStatus.RUNNING,
-        registration_closes_at=now + timedelta(hours=1),
-        race_ends_at=now + timedelta(hours=4),
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        late_join_window_minutes=60,
+        race_duration_minutes=240,
     )
     race.open_registration = False
     resp = race_response(race, user=None)
@@ -239,7 +266,7 @@ async def _make_db_seed(db, *, suffix: str) -> Seed:
 
 @pytest.mark.asyncio
 async def test_close_expired_races_transitions_to_finished(hc_async_session):
-    """A running race past its race_ends_at is finalized, PLAYING participants go to ABANDONED."""
+    """A running race past started_at + race_duration_minutes is finalized."""
     now = datetime.now(UTC)
     async with hc_async_session() as db:
         organizer = await _make_db_user(db, twitch_id="org_hc1", role=UserRole.ORGANIZER)
@@ -252,7 +279,7 @@ async def test_close_expired_races_transitions_to_finished(hc_async_session):
             seed_id=seed.id,
             status=RaceStatus.RUNNING,
             started_at=now - timedelta(hours=25),
-            race_ends_at=now - timedelta(minutes=5),
+            race_duration_minutes=60,
         )
         db.add(race)
         await db.flush()
@@ -282,14 +309,10 @@ async def test_close_expired_races_transitions_to_finished(hc_async_session):
 async def test_close_expired_races_stale_version_skipped(hc_async_session):
     """Directly verify the atomic UPDATE's optimistic-lock predicate.
 
-    Regression for the check-then-act race: hard-close now filters its UPDATE
+    Regression for the check-then-act race: hard-close filters its UPDATE
     on `version = :v` so a concurrent /finish (which bumps version) causes
     hard-close to see rowcount=0 and skip finalization, preventing duplicate
     "race has finished" messages and double ELO recomputation.
-
-    We exercise the exact predicate the fix added: load the race, let another
-    session bump the version, then issue the guarded UPDATE with the stale
-    version and assert rowcount is 0.
     """
     from sqlalchemy import update as sa_update
 
@@ -304,25 +327,22 @@ async def test_close_expired_races_stale_version_skipped(hc_async_session):
             seed_id=seed.id,
             status=RaceStatus.RUNNING,
             started_at=now - timedelta(hours=25),
-            race_ends_at=now - timedelta(minutes=5),
+            race_duration_minutes=60,
         )
         db.add(race)
         await db.commit()
         race_id = race.id
 
-    # Load the race as the hard-close loop does
     async with hc_async_session() as db:
         race_obj = (await db.execute(select(Race).where(Race.id == race_id))).scalar_one()
         stale_version = race_obj.version
 
-    # Concurrent /finish bumps the version
     async with hc_async_session() as other:
         await other.execute(
             sa_update(Race).where(Race.id == race_id).values(version=Race.version + 1)
         )
         await other.commit()
 
-    # The guarded UPDATE the hard-close loop issues must now fail the predicate
     async with hc_async_session() as db:
         result = await db.execute(
             sa_update(Race)
@@ -340,7 +360,6 @@ async def test_close_expired_races_stale_version_skipped(hc_async_session):
         await db.commit()
         assert result.rowcount == 0
 
-    # And the race must still be RUNNING (hard-close did not finalize)
     async with hc_async_session() as db:
         final = (await db.execute(select(Race).where(Race.id == race_id))).scalar_one()
         assert final.status == RaceStatus.RUNNING
@@ -348,10 +367,7 @@ async def test_close_expired_races_stale_version_skipped(hc_async_session):
 
 @pytest.mark.asyncio
 async def test_close_expired_races_is_idempotent(hc_async_session):
-    """Calling close_expired_races twice on the same race only finalizes once.
-
-    Second call must be a no-op because the race is already FINISHED.
-    """
+    """Calling close_expired_races twice on the same race only finalizes once."""
     now = datetime.now(UTC)
     async with hc_async_session() as db:
         organizer = await _make_db_user(db, twitch_id="org_idem", role=UserRole.ORGANIZER)
@@ -363,7 +379,7 @@ async def test_close_expired_races_is_idempotent(hc_async_session):
             seed_id=seed.id,
             status=RaceStatus.RUNNING,
             started_at=now - timedelta(hours=25),
-            race_ends_at=now - timedelta(minutes=5),
+            race_duration_minutes=60,
         )
         db.add(race)
         await db.commit()
@@ -388,7 +404,30 @@ async def test_close_expired_races_skips_non_expired(hc_async_session):
             seed_id=seed.id,
             status=RaceStatus.RUNNING,
             started_at=now,
-            race_ends_at=now + timedelta(hours=1),
+            race_duration_minutes=60,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    affected = await close_expired_races(hc_async_session)
+    assert race_id not in affected
+
+
+@pytest.mark.asyncio
+async def test_close_expired_races_ignores_race_without_duration(hc_async_session):
+    """A running race with no race_duration_minutes must never be force-closed."""
+    now = datetime.now(UTC)
+    async with hc_async_session() as db:
+        organizer = await _make_db_user(db, twitch_id="org_nodur", role=UserRole.ORGANIZER)
+        seed = await _make_db_seed(db, suffix="nodur")
+        race = Race(
+            name="No hard close",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now - timedelta(hours=25),
+            race_duration_minutes=None,
         )
         db.add(race)
         await db.commit()
@@ -486,8 +525,9 @@ async def _create_running_race(
     *,
     organizer_id,
     suffix: str,
-    registration_closes_at,
-    race_ends_at=None,
+    started_at,
+    late_join_window_minutes=None,
+    race_duration_minutes=None,
 ):
     async with session_factory() as db:
         seed = await _make_http_seed(db, suffix=suffix)
@@ -499,10 +539,10 @@ async def _create_running_race(
             is_public=True,
             open_registration=True,
             max_participants=10,
-            scheduled_at=datetime.now(UTC) - timedelta(minutes=30),
-            started_at=datetime.now(UTC) - timedelta(minutes=10),
-            registration_closes_at=registration_closes_at,
-            race_ends_at=race_ends_at,
+            scheduled_at=started_at - timedelta(minutes=20),
+            started_at=started_at,
+            late_join_window_minutes=late_join_window_minutes,
+            race_duration_minutes=race_duration_minutes,
         )
         db.add(race)
         await db.commit()
@@ -515,13 +555,13 @@ async def test_join_running_race_with_late_join_open(
     lj_test_client, lj_organizer, lj_player, lj_async_session
 ):
     """Player can join a RUNNING race while late-join window is open."""
-    now = datetime.now(UTC)
     race_id = await _create_running_race(
         lj_async_session,
         organizer_id=lj_organizer.id,
         suffix="open",
-        registration_closes_at=now + timedelta(hours=1),
-        race_ends_at=now + timedelta(hours=4),
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        late_join_window_minutes=60,
+        race_duration_minutes=240,
     )
 
     async with lj_test_client as client:
@@ -539,13 +579,13 @@ async def test_join_running_race_after_deadline(
     lj_test_client, lj_organizer, lj_player, lj_async_session
 ):
     """Player cannot join a RUNNING race after the late-join deadline passed."""
-    now = datetime.now(UTC)
     race_id = await _create_running_race(
         lj_async_session,
         organizer_id=lj_organizer.id,
         suffix="afterd",
-        registration_closes_at=now - timedelta(minutes=1),
-        race_ends_at=now + timedelta(hours=4),
+        started_at=datetime.now(UTC) - timedelta(hours=2),
+        late_join_window_minutes=30,
+        race_duration_minutes=240,
     )
 
     async with lj_test_client as client:
@@ -566,8 +606,7 @@ async def test_join_running_race_without_late_join(
         lj_async_session,
         organizer_id=lj_organizer.id,
         suffix="nolj",
-        registration_closes_at=None,
-        race_ends_at=None,
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
     )
 
     async with lj_test_client as client:
@@ -584,13 +623,13 @@ async def test_abandoned_player_cannot_rejoin_late_join_race(
     lj_test_client, lj_organizer, lj_player, lj_async_session
 ):
     """An ABANDONED participant cannot /join again while late-join is open (409)."""
-    now = datetime.now(UTC)
     race_id = await _create_running_race(
         lj_async_session,
         organizer_id=lj_organizer.id,
         suffix="aband",
-        registration_closes_at=now + timedelta(hours=1),
-        race_ends_at=now + timedelta(hours=4),
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        late_join_window_minutes=60,
+        race_duration_minutes=240,
     )
 
     async with lj_async_session() as db:
@@ -631,8 +670,8 @@ async def test_accept_invite_on_late_join_running_race(
             is_public=True,
             open_registration=False,  # invite-only + late-join is a valid combo
             max_participants=10,
-            registration_closes_at=now + timedelta(hours=1),
-            race_ends_at=now + timedelta(hours=4),
+            late_join_window_minutes=60,
+            race_duration_minutes=240,
         )
         db.add(race)
         await db.flush()
@@ -666,8 +705,8 @@ async def test_organizer_can_add_participant_mid_late_join_race(
             is_public=True,
             open_registration=True,
             max_participants=10,
-            registration_closes_at=now + timedelta(hours=1),
-            race_ends_at=now + timedelta(hours=4),
+            late_join_window_minutes=60,
+            race_duration_minutes=240,
         )
         db.add(race)
         await db.commit()
@@ -685,9 +724,8 @@ async def test_organizer_can_add_participant_mid_late_join_race(
 async def test_patch_race_accepts_new_fields_in_setup(
     lj_test_client, lj_async_session, lj_organizer
 ):
-    """SETUP race: PATCH can set all three new fields."""
+    """SETUP race: PATCH can set durations + private_dag."""
     now = datetime.now(UTC)
-    scheduled = now + timedelta(hours=1)
     async with lj_async_session() as db:
         seed = await _make_http_seed(db, suffix="patch_setup")
         race = Race(
@@ -695,7 +733,7 @@ async def test_patch_race_accepts_new_fields_in_setup(
             organizer_id=lj_organizer.id,
             seed_id=seed.id,
             status=RaceStatus.SETUP,
-            scheduled_at=scheduled,
+            scheduled_at=now + timedelta(hours=1),
             is_public=True,
             open_registration=True,
             max_participants=10,
@@ -708,8 +746,8 @@ async def test_patch_race_accepts_new_fields_in_setup(
         resp = await client.patch(
             f"/api/races/{race_id}",
             json={
-                "registration_closes_at": (scheduled + timedelta(minutes=30)).isoformat(),
-                "race_ends_at": (scheduled + timedelta(hours=4)).isoformat(),
+                "late_join_window_minutes": 30,
+                "race_duration_minutes": 240,
                 "private_dag": True,
             },
             headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
@@ -717,11 +755,11 @@ async def test_patch_race_accepts_new_fields_in_setup(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["private_dag"] is True
-    assert body["registration_closes_at"] is not None
-    assert body["race_ends_at"] is not None
+    assert body["late_join_window_minutes"] == 30
+    assert body["race_duration_minutes"] == 240
 
 
-async def test_patch_running_race_can_extend_race_ends_at(
+async def test_patch_running_race_can_extend_race_duration(
     lj_test_client, lj_async_session, lj_organizer
 ):
     now = datetime.now(UTC)
@@ -736,25 +774,24 @@ async def test_patch_running_race_can_extend_race_ends_at(
             is_public=True,
             open_registration=True,
             max_participants=10,
-            registration_closes_at=now + timedelta(hours=1),
-            race_ends_at=now + timedelta(hours=4),
+            late_join_window_minutes=60,
+            race_duration_minutes=240,
         )
         db.add(race)
         await db.commit()
         race_id = race.id
-        current_end = race.race_ends_at
 
-    new_end = current_end + timedelta(hours=1)
     async with lj_test_client as client:
         resp = await client.patch(
             f"/api/races/{race_id}",
-            json={"race_ends_at": new_end.isoformat()},
+            json={"race_duration_minutes": 300},
             headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
         )
     assert resp.status_code == 200, resp.text
+    assert resp.json()["race_duration_minutes"] == 300
 
 
-async def test_patch_running_race_cannot_shorten_race_ends_at(
+async def test_patch_running_race_cannot_shorten_race_duration(
     lj_test_client, lj_async_session, lj_organizer
 ):
     now = datetime.now(UTC)
@@ -769,23 +806,54 @@ async def test_patch_running_race_cannot_shorten_race_ends_at(
             is_public=True,
             open_registration=True,
             max_participants=10,
-            registration_closes_at=now + timedelta(hours=1),
-            race_ends_at=now + timedelta(hours=4),
+            late_join_window_minutes=60,
+            race_duration_minutes=240,
         )
         db.add(race)
         await db.commit()
         race_id = race.id
-        current_end = race.race_ends_at
 
-    shorter = current_end - timedelta(minutes=10)
     async with lj_test_client as client:
         resp = await client.patch(
             f"/api/races/{race_id}",
-            json={"race_ends_at": shorter.isoformat()},
+            json={"race_duration_minutes": 120},
             headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
         )
     assert resp.status_code == 400
     assert "shorten" in resp.json()["detail"].lower()
+
+
+async def test_patch_running_race_cannot_change_window(
+    lj_test_client, lj_async_session, lj_organizer
+):
+    """late_join_window_minutes is SETUP-only; editing on RUNNING must 400."""
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="patch_window_run")
+        race = Race(
+            name="RunningWindow",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            late_join_window_minutes=60,
+            race_duration_minutes=240,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    async with lj_test_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"late_join_window_minutes": 90},
+            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+        )
+    assert resp.status_code == 400
+    assert "setup" in resp.json()["detail"].lower()
 
 
 async def test_patch_running_race_cannot_change_private_dag(
@@ -803,8 +871,8 @@ async def test_patch_running_race_cannot_change_private_dag(
             is_public=True,
             open_registration=True,
             max_participants=10,
-            registration_closes_at=now + timedelta(hours=1),
-            race_ends_at=now + timedelta(hours=4),
+            late_join_window_minutes=60,
+            race_duration_minutes=240,
         )
         db.add(race)
         await db.commit()
@@ -823,13 +891,13 @@ async def test_joinable_list_includes_running_late_join_race(
     lj_test_client, lj_async_session, lj_organizer, lj_player
 ):
     """GET /races/joinable must surface RUNNING races whose late-join window is open."""
-    now = datetime.now(UTC)
     race_id = await _create_running_race(
         lj_async_session,
         organizer_id=lj_organizer.id,
         suffix="joinable_lj",
-        registration_closes_at=now + timedelta(hours=1),
-        race_ends_at=now + timedelta(hours=4),
+        started_at=datetime.now(UTC) - timedelta(minutes=5),
+        late_join_window_minutes=60,
+        race_duration_minutes=240,
     )
 
     async with lj_test_client as client:
@@ -846,13 +914,13 @@ async def test_joinable_list_excludes_running_race_after_deadline(
     lj_test_client, lj_async_session, lj_organizer, lj_player
 ):
     """GET /races/joinable must exclude RUNNING races past their late-join deadline."""
-    now = datetime.now(UTC)
     race_id = await _create_running_race(
         lj_async_session,
         organizer_id=lj_organizer.id,
         suffix="joinable_past",
-        registration_closes_at=now - timedelta(minutes=1),
-        race_ends_at=now + timedelta(hours=4),
+        started_at=datetime.now(UTC) - timedelta(hours=2),
+        late_join_window_minutes=30,
+        race_duration_minutes=240,
     )
 
     async with lj_test_client as client:
@@ -868,8 +936,7 @@ async def test_joinable_list_excludes_running_race_after_deadline(
 async def test_create_race_persists_late_join_and_private_dag(
     lj_test_client, lj_async_session, lj_organizer
 ):
-    """POST /races must persist registration_closes_at, race_ends_at, private_dag."""
-    # Seed an AVAILABLE seed so create_race's assign_seed_to_race succeeds.
+    """POST /races must persist durations + private_dag."""
     async with lj_async_session() as db:
         seed = Seed(
             seed_number="lj_create_persist",
@@ -883,8 +950,6 @@ async def test_create_race_persists_late_join_and_private_dag(
         await db.commit()
 
     scheduled = datetime.now(UTC) + timedelta(hours=1)
-    reg_closes = scheduled + timedelta(minutes=30)
-    race_ends = scheduled + timedelta(hours=4)
 
     async with lj_test_client as client:
         resp = await client.post(
@@ -897,8 +962,8 @@ async def test_create_race_persists_late_join_and_private_dag(
                 "is_public": True,
                 "open_registration": True,
                 "max_participants": 10,
-                "registration_closes_at": reg_closes.isoformat(),
-                "race_ends_at": race_ends.isoformat(),
+                "late_join_window_minutes": 30,
+                "race_duration_minutes": 240,
                 "private_dag": True,
             },
             headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
@@ -906,8 +971,11 @@ async def test_create_race_persists_late_join_and_private_dag(
 
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["registration_closes_at"] is not None
-    assert body["race_ends_at"] is not None
+    assert body["late_join_window_minutes"] == 30
+    assert body["race_duration_minutes"] == 240
+    # Race has not started, so computed absolutes are null.
+    assert body["registration_closes_at"] is None
+    assert body["race_ends_at"] is None
     assert body["private_dag"] is True
 
 
@@ -915,21 +983,23 @@ async def test_create_race_persists_late_join_and_private_dag(
 async def test_get_race_detail_exposes_late_join_and_private_dag(
     lj_test_client, lj_async_session, lj_organizer
 ):
-    """GET /races/:id must return registration_closes_at, race_ends_at, private_dag."""
+    """GET /races/:id must return durations + computed absolutes + private_dag."""
     now = datetime.now(UTC)
+    started = now - timedelta(minutes=5)
     async with lj_async_session() as db:
         seed = await _make_http_seed(db, suffix="get_detail_lj")
         race = Race(
             name="Detail late-join",
             organizer_id=lj_organizer.id,
             seed_id=seed.id,
-            status=RaceStatus.SETUP,
-            scheduled_at=now + timedelta(hours=1),
+            status=RaceStatus.RUNNING,
+            scheduled_at=started - timedelta(minutes=20),
+            started_at=started,
             is_public=True,
             open_registration=True,
             max_participants=10,
-            registration_closes_at=now + timedelta(hours=2),
-            race_ends_at=now + timedelta(hours=5),
+            late_join_window_minutes=60,
+            race_duration_minutes=300,
             private_dag=True,
         )
         db.add(race)
@@ -944,6 +1014,9 @@ async def test_get_race_detail_exposes_late_join_and_private_dag(
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
+    assert body["late_join_window_minutes"] == 60
+    assert body["race_duration_minutes"] == 300
+    # Computed absolute: started_at + 60 min / 300 min.
     assert body["registration_closes_at"] is not None
     assert body["race_ends_at"] is not None
     assert body["private_dag"] is True
@@ -951,9 +1024,7 @@ async def test_get_race_detail_exposes_late_join_and_private_dag(
 
 # ---------------------------------------------------------------------------
 # PATCH cross-field validation: same invariants as CreateRaceRequest must hold
-# after the update. These guard against the gross errors fixed in e0fb234 /
-# 1af1da6 by ensuring the PATCH path doesn't drop fields silently or leave
-# the race in an internally-inconsistent state.
+# after the update.
 # ---------------------------------------------------------------------------
 
 
@@ -963,8 +1034,8 @@ async def _make_setup_race(
     organizer_id,
     suffix: str,
     scheduled_at,
-    registration_closes_at=None,
-    race_ends_at=None,
+    late_join_window_minutes=None,
+    race_duration_minutes=None,
     private_dag: bool = False,
 ):
     """Create a SETUP race with the given late-join config and return its id."""
@@ -979,8 +1050,8 @@ async def _make_setup_race(
             is_public=True,
             open_registration=True,
             max_participants=10,
-            registration_closes_at=registration_closes_at,
-            race_ends_at=race_ends_at,
+            late_join_window_minutes=late_join_window_minutes,
+            race_duration_minutes=race_duration_minutes,
             private_dag=private_dag,
         )
         db.add(race)
@@ -988,136 +1059,71 @@ async def _make_setup_race(
         return race.id
 
 
-async def test_patch_setup_rejects_clearing_scheduled_at_with_late_join(
+async def test_patch_setup_rejects_window_without_duration(
     lj_test_client, lj_async_session, lj_organizer
 ):
-    """Clearing scheduled_at while registration_closes_at is set must be rejected."""
+    """Setting late_join_window_minutes without race_duration_minutes must be rejected."""
     now = datetime.now(UTC)
-    scheduled = now + timedelta(hours=1)
     race_id = await _make_setup_race(
         lj_async_session,
         organizer_id=lj_organizer.id,
-        suffix="patch_clear_sched",
-        scheduled_at=scheduled,
-        registration_closes_at=scheduled + timedelta(minutes=30),
-        race_ends_at=scheduled + timedelta(hours=4),
+        suffix="patch_no_duration",
+        scheduled_at=now + timedelta(hours=1),
     )
 
     async with lj_test_client as client:
         resp = await client.patch(
             f"/api/races/{race_id}",
-            json={"scheduled_at": None},
+            json={"late_join_window_minutes": 30},
             headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
         )
     assert resp.status_code == 400, resp.text
-    assert "scheduled_at" in resp.json()["detail"].lower()
+    assert "race_duration_minutes" in resp.json()["detail"].lower()
 
 
-async def test_patch_setup_rejects_late_registration_without_race_ends_at(
+async def test_patch_setup_rejects_window_greater_than_duration(
     lj_test_client, lj_async_session, lj_organizer
 ):
-    """If registration_closes_at > scheduled_at then race_ends_at is required."""
+    """late_join_window_minutes must be <= race_duration_minutes."""
     now = datetime.now(UTC)
-    scheduled = now + timedelta(hours=1)
     race_id = await _make_setup_race(
         lj_async_session,
         organizer_id=lj_organizer.id,
-        suffix="patch_late_no_end",
-        scheduled_at=scheduled,
+        suffix="patch_window_gt_duration",
+        scheduled_at=now + timedelta(hours=1),
+        late_join_window_minutes=30,
+        race_duration_minutes=240,
     )
 
     async with lj_test_client as client:
         resp = await client.patch(
             f"/api/races/{race_id}",
-            json={"registration_closes_at": (scheduled + timedelta(minutes=30)).isoformat()},
+            json={"late_join_window_minutes": 300},
             headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
         )
     assert resp.status_code == 400, resp.text
-    assert "race_ends_at" in resp.json()["detail"].lower()
+    assert "late_join_window_minutes" in resp.json()["detail"].lower()
 
 
-async def test_patch_setup_rejects_registration_after_race_ends_at(
+async def test_patch_setup_rejects_non_positive_duration(
     lj_test_client, lj_async_session, lj_organizer
 ):
-    """registration_closes_at must be <= race_ends_at."""
     now = datetime.now(UTC)
-    scheduled = now + timedelta(hours=1)
     race_id = await _make_setup_race(
         lj_async_session,
         organizer_id=lj_organizer.id,
-        suffix="patch_reg_gt_end",
-        scheduled_at=scheduled,
-        registration_closes_at=scheduled + timedelta(minutes=30),
-        race_ends_at=scheduled + timedelta(hours=4),
+        suffix="patch_zero_duration",
+        scheduled_at=now + timedelta(hours=1),
     )
 
     async with lj_test_client as client:
         resp = await client.patch(
             f"/api/races/{race_id}",
-            json={"registration_closes_at": (scheduled + timedelta(hours=5)).isoformat()},
+            json={"race_duration_minutes": 0},
             headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
         )
     assert resp.status_code == 400, resp.text
-    assert "registration_closes_at" in resp.json()["detail"].lower()
-
-
-async def test_patch_setup_rejects_race_ends_at_before_scheduled_at(
-    lj_test_client, lj_async_session, lj_organizer
-):
-    """race_ends_at must be after scheduled_at."""
-    now = datetime.now(UTC)
-    scheduled = now + timedelta(hours=2)
-    race_id = await _make_setup_race(
-        lj_async_session,
-        organizer_id=lj_organizer.id,
-        suffix="patch_end_lt_sched",
-        scheduled_at=scheduled,
-    )
-
-    async with lj_test_client as client:
-        resp = await client.patch(
-            f"/api/races/{race_id}",
-            json={"race_ends_at": (scheduled - timedelta(minutes=10)).isoformat()},
-            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
-        )
-    assert resp.status_code == 400, resp.text
-    assert "race_ends_at" in resp.json()["detail"].lower()
-
-
-async def test_patch_running_extend_accepts_naive_iso(
-    lj_test_client, lj_async_session, lj_organizer
-):
-    """A naive ISO datetime (no offset) must not crash the comparison."""
-    now = datetime.now(UTC)
-    async with lj_async_session() as db:
-        seed = await _make_http_seed(db, suffix="patch_naive")
-        race = Race(
-            name="Naive Extend",
-            organizer_id=lj_organizer.id,
-            seed_id=seed.id,
-            status=RaceStatus.RUNNING,
-            started_at=now,
-            is_public=True,
-            open_registration=True,
-            max_participants=10,
-            registration_closes_at=now + timedelta(hours=1),
-            race_ends_at=now + timedelta(hours=4),
-        )
-        db.add(race)
-        await db.commit()
-        race_id = race.id
-        current_end = race.race_ends_at
-
-    new_end_naive = (current_end + timedelta(hours=1)).replace(tzinfo=None).isoformat()
-    async with lj_test_client as client:
-        resp = await client.patch(
-            f"/api/races/{race_id}",
-            json={"race_ends_at": new_end_naive},
-            headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
-        )
-    assert resp.status_code in (200, 400), resp.text
-    # Critical assertion: the comparison did not raise a 500 due to naive/aware mismatch.
-    assert resp.status_code != 500
+    assert "race_duration_minutes" in resp.json()["detail"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -1147,7 +1153,7 @@ async def test_finalize_race_abandons_registered_and_ready(hc_async_session):
             status=RaceStatus.FINISHED,
             started_at=now - timedelta(hours=1),
             finished_at=now,
-            race_ends_at=now,
+            race_duration_minutes=60,
         )
         db.add(race)
         await db.flush()
@@ -1194,8 +1200,7 @@ async def test_finalize_race_abandons_registered_and_ready(hc_async_session):
 
 # ---------------------------------------------------------------------------
 # PATCH /races must broadcast a race_info_update so connected mods and
-# spectators see field changes (race_ends_at extension, max_participants
-# bump, etc.) without reconnecting.
+# spectators see field changes without reconnecting.
 # ---------------------------------------------------------------------------
 
 
@@ -1203,7 +1208,7 @@ async def test_finalize_race_abandons_registered_and_ready(hc_async_session):
 async def test_patch_running_race_broadcasts_race_info_update(
     lj_test_client, lj_async_session, lj_organizer
 ):
-    """Extending race_ends_at on a RUNNING race must emit race_info_update to all clients."""
+    """Extending race_duration_minutes on RUNNING must emit race_info_update."""
     from unittest.mock import AsyncMock
     from unittest.mock import patch as mock_patch
 
@@ -1219,30 +1224,27 @@ async def test_patch_running_race_broadcasts_race_info_update(
             is_public=True,
             open_registration=True,
             max_participants=10,
-            registration_closes_at=now + timedelta(hours=1),
-            race_ends_at=now + timedelta(hours=4),
+            late_join_window_minutes=60,
+            race_duration_minutes=240,
         )
         db.add(race)
         await db.commit()
         race_id = race.id
-        current_end = race.race_ends_at
 
-    new_end = current_end + timedelta(hours=1)
     with mock_patch(
         "speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()
     ) as broadcast_mock:
         async with lj_test_client as client:
             resp = await client.patch(
                 f"/api/races/{race_id}",
-                json={"race_ends_at": new_end.isoformat()},
+                json={"race_duration_minutes": 300},
                 headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
             )
         assert resp.status_code == 200, resp.text
         broadcast_mock.assert_awaited_once()
-        # Verify the broadcast carried the new race_ends_at
         broadcast_race_arg = broadcast_mock.await_args.args[0]
         assert str(broadcast_race_arg.id) == str(race_id)
-        assert broadcast_race_arg.race_ends_at == new_end
+        assert broadcast_race_arg.race_duration_minutes == 300
 
 
 @pytest.mark.asyncio
@@ -1287,7 +1289,6 @@ async def test_patch_no_field_change_does_not_broadcast(
 # ---------------------------------------------------------------------------
 # pending_invites must travel in race_state so the organizer's UI sees the
 # list update live (in both SETUP and RUNNING/late-join), without reload.
-# Symmetric with the existing live updates for participants.
 # ---------------------------------------------------------------------------
 
 
@@ -1317,7 +1318,6 @@ async def test_send_race_state_includes_pending_invites(lj_async_session, lj_org
         await db.flush()
         for username in ("alice", "bob"):
             db.add(Invite(race_id=race.id, twitch_username=username))
-        # An accepted invite must NOT appear in pending list
         db.add(Invite(race_id=race.id, twitch_username="charlie", accepted=True))
         await db.commit()
         race_id = race.id
@@ -1338,8 +1338,6 @@ async def test_send_race_state_includes_pending_invites(lj_async_session, lj_org
         ws = AsyncMock()
         ws.send_text = AsyncMock()
 
-        # send_race_state queries pending invites internally; point it at the
-        # in-memory test database for the duration of the call.
         from speedfog_racing import database as db_module
 
         original_maker = db_module.async_session_maker
@@ -1353,7 +1351,6 @@ async def test_send_race_state_includes_pending_invites(lj_async_session, lj_org
     payload = json.loads(sent_text)
     pending_usernames = sorted(p["twitch_username"] for p in payload["pending_invites"])
     assert pending_usernames == ["alice", "bob"]
-    # No token should leak in the WS payload (organizer fetches via REST for that)
     assert all("token" not in p for p in payload["pending_invites"])
 
 
@@ -1437,6 +1434,23 @@ async def test_add_participant_invite_branch_broadcasts(
         bcast.assert_awaited_once()
 
 
+def test_build_race_info_null_absolutes_before_start():
+    """RaceInfo must serialize null ISO strings for the absolutes when not started."""
+    from speedfog_racing.websocket.schemas import build_race_info
+
+    race = _make_race(
+        status=RaceStatus.SETUP,
+        started_at=None,
+        late_join_window_minutes=30,
+        race_duration_minutes=240,
+    )
+    info = build_race_info(race)
+    assert info.late_join_window_minutes == 30
+    assert info.race_duration_minutes == 240
+    assert info.registration_closes_at is None
+    assert info.race_ends_at is None
+
+
 def test_race_info_update_message_serialization():
     """RaceInfoUpdateMessage carries the full RaceInfo with type discriminator."""
     import json
@@ -1448,6 +1462,8 @@ def test_race_info_update_message_serialization():
             id="abc",
             name="Test",
             status="running",
+            late_join_window_minutes=30,
+            race_duration_minutes=240,
             race_ends_at="2026-04-21T15:00:00+00:00",
             registration_closes_at="2026-04-21T13:00:00+00:00",
             private_dag=True,
@@ -1455,6 +1471,8 @@ def test_race_info_update_message_serialization():
     )
     data = json.loads(msg.model_dump_json())
     assert data["type"] == "race_info_update"
+    assert data["race"]["late_join_window_minutes"] == 30
+    assert data["race"]["race_duration_minutes"] == 240
     assert data["race"]["race_ends_at"] == "2026-04-21T15:00:00+00:00"
     assert data["race"]["registration_closes_at"] == "2026-04-21T13:00:00+00:00"
     assert data["race"]["private_dag"] is True
