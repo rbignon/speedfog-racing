@@ -1287,6 +1287,115 @@ async def test_patch_no_field_change_does_not_broadcast(
 
 
 # ---------------------------------------------------------------------------
+# POST /races/{id}/start must broadcast race_info_update so mods that authed
+# while the race was in SETUP refresh their cached RaceInfo and pick up
+# race_ends_at (which only becomes computable once started_at is set).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_race_broadcasts_race_info_update_with_race_ends_at(
+    lj_test_client, lj_async_session, lj_organizer, lj_player
+):
+    """Starting a race with race_duration_minutes must broadcast a fresh RaceInfo."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="start_bcast")
+        race = Race(
+            name="Start broadcast",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            seeds_released_at=now,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+            late_join_window_minutes=30,
+            race_duration_minutes=180,
+        )
+        db.add(race)
+        await db.flush()
+        db.add(Participant(race_id=race.id, user_id=lj_organizer.id, color_index=0))
+        db.add(Participant(race_id=race.id, user_id=lj_player.id, color_index=1))
+        await db.commit()
+        race_id = race.id
+
+    with mock_patch(
+        "speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()
+    ) as broadcast_mock:
+        async with lj_test_client as client:
+            resp = await client.post(
+                f"/api/races/{race_id}/start",
+                headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+            )
+        assert resp.status_code == 200, resp.text
+        broadcast_mock.assert_awaited_once()
+        broadcast_race_arg = broadcast_mock.await_args.args[0]
+        assert str(broadcast_race_arg.id) == str(race_id)
+        # The broadcast must carry the just-set started_at so race_ends_at is
+        # derivable; otherwise mods that authed in SETUP keep race_ends_at=None.
+        assert broadcast_race_arg.started_at is not None
+        _, race_ends_at = compute_late_join_deadlines(broadcast_race_arg)
+        assert race_ends_at is not None
+        started = broadcast_race_arg.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=UTC)
+        assert race_ends_at - started == timedelta(minutes=180)
+
+
+@pytest.mark.asyncio
+async def test_start_race_broadcasts_race_info_update_without_duration(
+    lj_test_client, lj_async_session, lj_organizer, lj_player
+):
+    """Even without race_duration_minutes, start_race must broadcast a fresh RaceInfo.
+
+    race_ends_at stays None, but spectators and mods still benefit from the
+    refreshed started_at so the broadcast must fire unconditionally on
+    transition.
+    """
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    now = datetime.now(UTC)
+    async with lj_async_session() as db:
+        seed = await _make_http_seed(db, suffix="start_bcast_nodur")
+        race = Race(
+            name="Start broadcast no duration",
+            organizer_id=lj_organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            seeds_released_at=now,
+            is_public=True,
+            open_registration=True,
+            max_participants=10,
+        )
+        db.add(race)
+        await db.flush()
+        db.add(Participant(race_id=race.id, user_id=lj_organizer.id, color_index=0))
+        db.add(Participant(race_id=race.id, user_id=lj_player.id, color_index=1))
+        await db.commit()
+        race_id = race.id
+
+    with mock_patch(
+        "speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()
+    ) as broadcast_mock:
+        async with lj_test_client as client:
+            resp = await client.post(
+                f"/api/races/{race_id}/start",
+                headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
+            )
+        assert resp.status_code == 200, resp.text
+        broadcast_mock.assert_awaited_once()
+        broadcast_race_arg = broadcast_mock.await_args.args[0]
+        assert broadcast_race_arg.started_at is not None
+        _, race_ends_at = compute_late_join_deadlines(broadcast_race_arg)
+        assert race_ends_at is None
+
+
+# ---------------------------------------------------------------------------
 # pending_invites must travel in race_state so the organizer's UI sees the
 # list update live (in both SETUP and RUNNING/late-join), without reload.
 # ---------------------------------------------------------------------------

@@ -1366,6 +1366,11 @@ async def start_race(
         graph_json=race.seed.graph_json if race.seed else None,
         countdown_seconds=settings.countdown_seconds,
     )
+    # Push the refreshed RaceInfo (race_ends_at, etc.) so mods that authed
+    # while the race was in setup pick up the now-populated deadlines without
+    # waiting for a PATCH /races. Spectators get the same data via
+    # broadcast_race_state_update below; the redundancy is idempotent.
+    await broadcast_race_info_update(race)
     await broadcast_race_state_update(race_id, race)
 
     # Mark participant spectator connections as playing
