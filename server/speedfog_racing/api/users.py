@@ -1,5 +1,6 @@
 """User API routes."""
 
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -82,6 +83,7 @@ class MyProfileResponse(BaseModel):
     twitch_avatar_url: str | None
     role: str
     overlay_settings: dict[str, float] | None = None
+    feedback_prompted_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

@@ -6,7 +6,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from speedfog_racing.models import ParticipantStatus, RaceStatus, TrainingSessionStatus
+from speedfog_racing.models import (
+    FeedbackSource,
+    ParticipantStatus,
+    RaceStatus,
+    TrainingSessionStatus,
+)
 
 
 def as_aware_utc(dt: datetime | None) -> datetime | None:
@@ -583,3 +588,62 @@ class UserTraitsResponse(BaseModel):
     elo_rating: int
     elo_rank: int | None
     elo_trend_delta: int
+
+
+# =============================================================================
+# Feedback Schemas
+# =============================================================================
+
+
+class FeedbackCreate(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=1000)
+    source: FeedbackSource
+    race_id: UUID | None = None
+
+
+class FeedbackResponse(BaseModel):
+    id: UUID
+    rating: int
+    comment: str | None
+    source: FeedbackSource
+    race_id: UUID | None
+    races_played_at_feedback: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminFeedbackUser(BaseModel):
+    id: UUID
+    twitch_username: str
+    twitch_display_name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminFeedbackRace(BaseModel):
+    id: UUID
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminFeedbackItem(BaseModel):
+    id: UUID
+    rating: int
+    comment: str | None
+    source: FeedbackSource
+    race_id: UUID | None
+    races_played_at_feedback: int
+    created_at: datetime
+    user: AdminFeedbackUser
+    race: AdminFeedbackRace | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminFeedbackListResponse(BaseModel):
+    items: list[AdminFeedbackItem]
+    total: int
+    average_rating: float | None
+    distribution: dict[int, int]
