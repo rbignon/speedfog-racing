@@ -57,6 +57,14 @@
 	let scheduleInput = $state('');
 	let scheduleError = $state<string | null>(null);
 	let scheduleSaving = $state(false);
+	let editingLateJoin = $state(false);
+	let lateJoinInput = $state<number>(30);
+	let lateJoinError = $state<string | null>(null);
+	let lateJoinSaving = $state(false);
+	let editingDuration = $state(false);
+	let durationInput = $state<number>(120);
+	let durationError = $state<string | null>(null);
+	let durationSaving = $state(false);
 	let selectedParticipantIds = $state<Set<string>>(new Set());
 	let showDownloadModal = $state(false);
 	let deleting = $state(false);
@@ -446,9 +454,7 @@
 				forceFullDag)
 	);
 
-	let dagHidden = $derived(
-		dagHiddenByRunningRules || (!canRenderDag && !!totalLayers)
-	);
+	let dagHidden = $derived(dagHiddenByRunningRules || (!canRenderDag && !!totalLayers));
 
 	let dagHiddenReason = $derived.by(() => {
 		if (livePrivateDag) return 'The map is hidden until the race finishes.';
@@ -548,6 +554,46 @@
 			scheduleError = e instanceof Error ? e.message : 'Failed to update';
 		} finally {
 			scheduleSaving = false;
+		}
+	}
+
+	function startEditLateJoin() {
+		lateJoinInput = initialRace.late_join_window_minutes ?? 30;
+		lateJoinError = null;
+		editingLateJoin = true;
+	}
+
+	async function saveLateJoin(value: number | null) {
+		lateJoinSaving = true;
+		lateJoinError = null;
+		try {
+			await updateRace(initialRace.id, { late_join_window_minutes: value });
+			initialRace = await fetchRace(initialRace.id);
+			editingLateJoin = false;
+		} catch (e) {
+			lateJoinError = e instanceof Error ? e.message : 'Failed to update';
+		} finally {
+			lateJoinSaving = false;
+		}
+	}
+
+	function startEditDuration() {
+		durationInput = initialRace.race_duration_minutes ?? 120;
+		durationError = null;
+		editingDuration = true;
+	}
+
+	async function saveDuration(value: number | null) {
+		durationSaving = true;
+		durationError = null;
+		try {
+			await updateRace(initialRace.id, { race_duration_minutes: value });
+			initialRace = await fetchRace(initialRace.id);
+			editingDuration = false;
+		} catch (e) {
+			durationError = e instanceof Error ? e.message : 'Failed to update';
+		} finally {
+			durationSaving = false;
 		}
 	}
 
@@ -914,48 +960,181 @@
 						<span class="label">Created</span>
 						<span class="value">{formatDate(initialRace.created_at)}</span>
 					</div>
-					<div class="info-item">
-						<span class="label">Scheduled</span>
-						{#if editingSchedule}
-							<div class="schedule-edit">
-								<DateTimePicker
-									value={scheduleInput}
-									onchange={(iso) => (scheduleInput = iso)}
-									min={new Date()}
-									disabled={scheduleSaving}
-								/>
-								<div class="schedule-edit-actions">
-									<button class="btn-inline" onclick={saveSchedule} disabled={scheduleSaving}>
-										{scheduleSaving ? '...' : 'Save'}
-									</button>
-									<button
-										class="btn-inline btn-inline-secondary"
-										onclick={() => (editingSchedule = false)}
+					{#if raceStatus === 'setup'}
+						<div class="info-item">
+							<span class="label">Scheduled</span>
+							{#if editingSchedule}
+								<div class="schedule-edit">
+									<DateTimePicker
+										value={scheduleInput}
+										onchange={(iso) => (scheduleInput = iso)}
+										min={new Date()}
 										disabled={scheduleSaving}
-									>
-										Cancel
-									</button>
+									/>
+									<div class="schedule-edit-actions">
+										<button class="btn-inline" onclick={saveSchedule} disabled={scheduleSaving}>
+											{scheduleSaving ? '...' : 'Save'}
+										</button>
+										<button
+											class="btn-inline btn-inline-secondary"
+											onclick={() => (editingSchedule = false)}
+											disabled={scheduleSaving}
+										>
+											Cancel
+										</button>
+									</div>
+									{#if scheduleError}
+										<span class="schedule-error">{scheduleError}</span>
+									{/if}
 								</div>
-								{#if scheduleError}
-									<span class="schedule-error">{scheduleError}</span>
+							{:else if initialRace.scheduled_at}
+								<span class="value">
+									{formatDate(initialRace.scheduled_at)}
+									{#if isOrganizer}
+										<button class="btn-edit" onclick={startEditSchedule}>Edit</button>
+									{/if}
+								</span>
+							{:else if isOrganizer}
+								<span class="value">
+									To be defined
+									<button class="btn-edit" onclick={startEditSchedule}>Set time</button>
+								</span>
+							{:else}
+								<span class="value">To be defined</span>
+							{/if}
+						</div>
+						{#if isOrganizer || initialRace.late_join_window_minutes !== null}
+							<div class="info-item">
+								<span class="label">Late join</span>
+								{#if editingLateJoin}
+									<div class="schedule-edit">
+										<div class="inline-minutes">
+											<input
+												type="number"
+												min="1"
+												max={initialRace.race_duration_minutes ?? undefined}
+												bind:value={lateJoinInput}
+												disabled={lateJoinSaving}
+												aria-label="Late join window in minutes"
+												class="inline-duration"
+											/>
+											<span>min</span>
+										</div>
+										<div class="schedule-edit-actions">
+											<button
+												class="btn-inline"
+												onclick={() => saveLateJoin(lateJoinInput)}
+												disabled={lateJoinSaving}
+											>
+												{lateJoinSaving ? '...' : 'Save'}
+											</button>
+											<button
+												class="btn-inline btn-inline-secondary"
+												onclick={() => (editingLateJoin = false)}
+												disabled={lateJoinSaving}
+											>
+												Cancel
+											</button>
+											{#if initialRace.late_join_window_minutes !== null}
+												<button
+													class="btn-inline btn-inline-secondary"
+													onclick={() => saveLateJoin(null)}
+													disabled={lateJoinSaving}
+												>
+													Disable
+												</button>
+											{/if}
+										</div>
+										{#if lateJoinError}
+											<span class="schedule-error">{lateJoinError}</span>
+										{/if}
+									</div>
+								{:else if initialRace.late_join_window_minutes !== null}
+									<span class="value">
+										{initialRace.late_join_window_minutes} min
+										{#if isOrganizer}
+											<button class="btn-edit" onclick={startEditLateJoin}>Edit</button>
+										{/if}
+									</span>
+								{:else}
+									<span class="value">
+										Disabled
+										{#if initialRace.race_duration_minutes === null}
+											<button
+												class="btn-edit"
+												disabled
+												title="Set Duration before enabling Late join"
+											>
+												Enable
+											</button>
+										{:else}
+											<button class="btn-edit" onclick={startEditLateJoin}>Enable</button>
+										{/if}
+									</span>
 								{/if}
 							</div>
-						{:else if initialRace.scheduled_at}
-							<span class="value">
-								{formatDate(initialRace.scheduled_at)}
-								{#if isOrganizer && raceStatus === 'setup'}
-									<button class="btn-edit" onclick={startEditSchedule}>Edit</button>
-								{/if}
-							</span>
-						{:else if isOrganizer && raceStatus === 'setup'}
-							<span class="value">
-								To be defined
-								<button class="btn-edit" onclick={startEditSchedule}>Set time</button>
-							</span>
-						{:else}
-							<span class="value">To be defined</span>
 						{/if}
-					</div>
+						{#if isOrganizer || initialRace.race_duration_minutes !== null}
+							<div class="info-item">
+								<span class="label">Duration</span>
+								{#if editingDuration}
+									<div class="schedule-edit">
+										<div class="inline-minutes">
+											<input
+												type="number"
+												min={initialRace.late_join_window_minutes ?? 1}
+												bind:value={durationInput}
+												disabled={durationSaving}
+												aria-label="Race duration in minutes"
+												class="inline-duration"
+											/>
+											<span>min</span>
+										</div>
+										<div class="schedule-edit-actions">
+											<button
+												class="btn-inline"
+												onclick={() => saveDuration(durationInput)}
+												disabled={durationSaving}
+											>
+												{durationSaving ? '...' : 'Save'}
+											</button>
+											<button
+												class="btn-inline btn-inline-secondary"
+												onclick={() => (editingDuration = false)}
+												disabled={durationSaving}
+											>
+												Cancel
+											</button>
+											{#if initialRace.race_duration_minutes !== null && initialRace.late_join_window_minutes === null}
+												<button
+													class="btn-inline btn-inline-secondary"
+													onclick={() => saveDuration(null)}
+													disabled={durationSaving}
+												>
+													Disable
+												</button>
+											{/if}
+										</div>
+										{#if durationError}
+											<span class="schedule-error">{durationError}</span>
+										{/if}
+									</div>
+								{:else if initialRace.race_duration_minutes !== null}
+									<span class="value">
+										{initialRace.race_duration_minutes} min
+										{#if isOrganizer}
+											<button class="btn-edit" onclick={startEditDuration}>Edit</button>
+										{/if}
+									</span>
+								{:else}
+									<span class="value">
+										Disabled
+										<button class="btn-edit" onclick={startEditDuration}>Enable</button>
+									</span>
+								{/if}
+							</div>
+						{/if}
+					{/if}
 					{#if initialRace.started_at}
 						<div class="info-item">
 							<span class="label">Started</span>
@@ -1352,13 +1531,35 @@
 		cursor: pointer;
 	}
 
-	.btn-edit:hover {
+	.btn-edit:hover:not(:disabled) {
 		text-decoration: underline;
+	}
+
+	.btn-edit:disabled {
+		color: var(--color-text-disabled);
+		cursor: not-allowed;
 	}
 
 	.schedule-error {
 		color: var(--color-danger);
 		font-size: var(--font-size-xs);
+	}
+
+	.inline-minutes {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.inline-duration {
+		width: 5rem;
+		padding: 0.25rem 0.5rem;
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
 	}
 
 	.waiting-seeds {
