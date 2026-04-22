@@ -318,7 +318,7 @@
 	if (typeof window !== 'undefined') {
 		(window as any).__debugDagFull = (on?: boolean) => {
 			forceFullDag = on ?? !forceFullDag;
-			return forceFullDag ? 'Full DAG enabled' : 'Progressive DAG restored';
+			return forceFullDag ? 'Full map enabled' : 'Progressive map restored';
 		};
 	}
 
@@ -439,8 +439,8 @@
 
 	let dagHiddenReason = $derived(
 		livePrivateDag
-			? 'The DAG is hidden until the race finishes.'
-			: 'The DAG is hidden while late registration is open.'
+			? 'The map is hidden until the race finishes.'
+			: 'The map is hidden while late registration is open.'
 	);
 
 	function formatLocalTime(iso: string): string {

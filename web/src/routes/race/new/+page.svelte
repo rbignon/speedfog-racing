@@ -12,7 +12,7 @@
 	let organizerParticipates = $state(true);
 	let isPublic = $state(true);
 	let openRegistration = $state(true);
-	let maxParticipants = $state(20);
+	let maxParticipants = $state(30);
 	let lateJoinEnabled = $state(false);
 	let autoEndEnabled = $state(false);
 	let lateJoinWindowMinutes = $state(30);
@@ -292,7 +292,7 @@
 						{#if advancedCount > 0}
 							{advancedCount} set
 						{:else}
-							late joiners · auto-end · private DAG
+							late joiners · auto-end · private map
 						{/if}
 					</span>
 				</button>
@@ -344,7 +344,7 @@
 							<span>Spoiler protection</span>
 							<label class="radio-label">
 								<input type="checkbox" bind:checked={privateDag} disabled={creating} />
-								Hide the DAG from non-participants until the race finishes
+								Hide the map from non-participants until the race finishes
 							</label>
 							<p class="hint">Useful for asynchronous races where spoilers matter.</p>
 						</div>
