@@ -187,7 +187,8 @@ impl RaceTracker {
                         let secs = remaining_seconds % 60;
                         let text = format!("{}:{:02} left", mins, secs);
                         let text_width = ui.calc_text_size(&text)[0];
-                        ui.set_cursor_pos_x(max_width - text_width);
+                        let y = ui.cursor_pos()[1];
+                        ui.set_cursor_pos([max_width - text_width, y]);
                         ui.text_colored([1.0, 0.7, 0.2, 1.0], text);
                     }
                 }
