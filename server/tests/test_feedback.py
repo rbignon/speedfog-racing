@@ -183,3 +183,45 @@ async def test_post_feedback_requires_auth(test_client):
     async with test_client as client:
         r = await client.post("/api/feedback", json={"rating": 4, "source": "user_menu"})
         assert r.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_mark_prompted_sets_timestamp(test_client, async_session):
+    user = await _create_user(async_session, "promptu")
+    assert user.feedback_prompted_at is None
+    async with test_client as client:
+        r = await client.post("/api/feedback/mark-prompted", headers=_auth_headers(user))
+        assert r.status_code == 204
+
+    async with async_session() as db:
+        result = await db.execute(select(User).where(User.id == user.id))
+        refreshed = result.scalar_one()
+        assert refreshed.feedback_prompted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_mark_prompted_is_idempotent(test_client, async_session):
+    user = await _create_user(async_session, "promptv")
+    async with test_client as client:
+        r1 = await client.post("/api/feedback/mark-prompted", headers=_auth_headers(user))
+        assert r1.status_code == 204
+
+        async with async_session() as db:
+            result = await db.execute(select(User).where(User.id == user.id))
+            first = result.scalar_one().feedback_prompted_at
+            assert first is not None
+
+        r2 = await client.post("/api/feedback/mark-prompted", headers=_auth_headers(user))
+        assert r2.status_code == 204
+
+        async with async_session() as db:
+            result = await db.execute(select(User).where(User.id == user.id))
+            second = result.scalar_one().feedback_prompted_at
+            assert second == first
+
+
+@pytest.mark.asyncio
+async def test_mark_prompted_requires_auth(test_client):
+    async with test_client as client:
+        r = await client.post("/api/feedback/mark-prompted")
+        assert r.status_code in (401, 403)

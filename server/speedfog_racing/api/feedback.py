@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -82,3 +83,14 @@ async def create_feedback(
         payload.rating,
     )
     return feedback
+
+
+@router.post("/mark-prompted", status_code=status.HTTP_204_NO_CONTENT)
+async def mark_feedback_prompted(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Set feedback_prompted_at on the current user (idempotent)."""
+    if user.feedback_prompted_at is None:
+        user.feedback_prompted_at = datetime.now(UTC)
+        await db.commit()
