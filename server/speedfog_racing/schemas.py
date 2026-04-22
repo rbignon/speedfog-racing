@@ -44,10 +44,6 @@ def validate_late_join_durations(
         raise ValueError("late_join_window_minutes must be > 0")
     if race_duration_minutes is not None and race_duration_minutes <= 0:
         raise ValueError("race_duration_minutes must be > 0")
-    if late_join_window_minutes is not None and race_duration_minutes is None:
-        # A late-joiner stuck in REGISTERED would otherwise prevent natural finish
-        # indefinitely; require a hard close.
-        raise ValueError("race_duration_minutes is required when late_join_window_minutes is set")
     if (
         late_join_window_minutes is not None
         and race_duration_minutes is not None

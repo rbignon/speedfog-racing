@@ -44,10 +44,11 @@ class TestCreateRaceRequestLateJoin:
         assert req.late_join_window_minutes is None
         assert req.race_duration_minutes is None
 
-    def test_window_requires_duration(self):
-        """Setting a late-join window without a race duration is rejected."""
-        with pytest.raises(ValidationError, match="race_duration_minutes"):
-            CreateRaceRequest(**_base_kwargs(late_join_window_minutes=30))
+    def test_window_without_duration_is_valid(self):
+        """Late-join window is independent from race duration."""
+        req = CreateRaceRequest(**_base_kwargs(late_join_window_minutes=30))
+        assert req.late_join_window_minutes == 30
+        assert req.race_duration_minutes is None
 
     def test_window_must_be_le_duration(self):
         with pytest.raises(ValidationError, match="late_join_window_minutes"):
@@ -1060,10 +1061,10 @@ async def _make_setup_race(
         return race.id
 
 
-async def test_patch_setup_rejects_window_without_duration(
+async def test_patch_setup_accepts_window_without_duration(
     lj_test_client, lj_async_session, lj_organizer
 ):
-    """Setting late_join_window_minutes without race_duration_minutes must be rejected."""
+    """late_join_window_minutes does not require race_duration_minutes."""
     now = datetime.now(UTC)
     race_id = await _make_setup_race(
         lj_async_session,
@@ -1078,8 +1079,9 @@ async def test_patch_setup_rejects_window_without_duration(
             json={"late_join_window_minutes": 30},
             headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
         )
-    assert resp.status_code == 400, resp.text
-    assert "race_duration_minutes" in resp.json()["detail"].lower()
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["late_join_window_minutes"] == 30
+    assert resp.json()["race_duration_minutes"] is None
 
 
 async def test_patch_setup_rejects_window_greater_than_duration(

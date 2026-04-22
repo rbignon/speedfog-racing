@@ -1075,17 +1075,7 @@
 								{:else}
 									<span class="value">
 										Disabled
-										{#if liveRaceDuration === null}
-											<button
-												class="btn-edit"
-												disabled
-												title="Set Duration before enabling Late join"
-											>
-												Enable
-											</button>
-										{:else}
-											<button class="btn-edit" onclick={startEditLateJoin}>Enable</button>
-										{/if}
+										<button class="btn-edit" onclick={startEditLateJoin}>Enable</button>
 									</span>
 								{/if}
 							</div>
@@ -1121,7 +1111,7 @@
 											>
 												Cancel
 											</button>
-											{#if liveRaceDuration !== null && liveLateJoinWindow === null}
+											{#if liveRaceDuration !== null}
 												<button
 													class="btn-inline btn-inline-secondary"
 													onclick={() => saveDuration(null)}
@@ -1547,13 +1537,8 @@
 		cursor: pointer;
 	}
 
-	.btn-edit:hover:not(:disabled) {
+	.btn-edit:hover {
 		text-decoration: underline;
-	}
-
-	.btn-edit:disabled {
-		color: var(--color-text-disabled);
-		cursor: not-allowed;
 	}
 
 	.schedule-error {
