@@ -23,6 +23,7 @@ export interface AuthUser extends User {
   role: string;
   locale: string | null;
   overlay_settings: { font_size?: number } | null;
+  feedback_prompted_at: string | null;
 }
 
 export type RaceStatus = "setup" | "running" | "finished";
@@ -1496,4 +1497,102 @@ export async function fetchUserTraits(
   const res = await fetch(`${API_BASE}/users/${username}/traits`);
   if (!res.ok) throw new Error("Failed to fetch user traits");
   return res.json();
+}
+
+// =============================================================================
+// Feedback API
+// =============================================================================
+
+export type FeedbackSource = "post_first_race" | "user_menu";
+
+export interface FeedbackInput {
+  rating: number;
+  comment?: string | null;
+  source: FeedbackSource;
+  race_id?: string | null;
+}
+
+export interface Feedback {
+  id: string;
+  rating: number;
+  comment: string | null;
+  source: FeedbackSource;
+  race_id: string | null;
+  races_played_at_feedback: number;
+  created_at: string;
+}
+
+export interface AdminFeedbackItem extends Feedback {
+  user: {
+    id: string;
+    twitch_username: string;
+    twitch_display_name: string | null;
+  };
+  race: { id: string } | null;
+}
+
+export interface AdminFeedbackList {
+  items: AdminFeedbackItem[];
+  total: number;
+  average_rating: number | null;
+  distribution: Record<string, number>;
+}
+
+/**
+ * Submit user feedback (rating + optional comment).
+ */
+export async function submitFeedback(input: FeedbackInput): Promise<Feedback> {
+  const response = await fetch(`${API_BASE}/feedback`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+  return handleResponse<Feedback>(response);
+}
+
+/**
+ * Mark the current user as having been prompted for feedback (idempotent, 204).
+ */
+export async function markFeedbackPrompted(): Promise<void> {
+  const response = await fetch(`${API_BASE}/feedback/mark-prompted`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail);
+  }
+}
+
+/**
+ * List feedback entries (admin only).
+ */
+export async function adminListFeedback(params: {
+  source?: FeedbackSource;
+  rating_min?: number;
+  rating_max?: number;
+  limit?: number;
+  offset?: number;
+}): Promise<AdminFeedbackList> {
+  const query = new URLSearchParams();
+  if (params.source !== undefined) query.set("source", params.source);
+  if (params.rating_min !== undefined)
+    query.set("rating_min", String(params.rating_min));
+  if (params.rating_max !== undefined)
+    query.set("rating_max", String(params.rating_max));
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.offset !== undefined) query.set("offset", String(params.offset));
+  const qs = query.toString();
+  const url = qs
+    ? `${API_BASE}/admin/feedback?${qs}`
+    : `${API_BASE}/admin/feedback`;
+  const response = await fetch(url, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<AdminFeedbackList>(response);
 }

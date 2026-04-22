@@ -99,6 +99,20 @@ class AuthStore {
     this.loading = false;
     this.initialized = true;
   }
+
+  /**
+   * Mark the current user locally as having been prompted for feedback.
+   * Idempotent: only updates if not already set.
+   */
+  markFeedbackPrompted(): void {
+    if (this.user && this.user.feedback_prompted_at === null) {
+      this.user = {
+        ...this.user,
+        feedback_prompted_at: new Date().toISOString(),
+      };
+      setStoredUser(this.user);
+    }
+  }
 }
 
 export const auth = new AuthStore();
