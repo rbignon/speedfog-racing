@@ -121,8 +121,8 @@ impl ImguiRenderLoop for RaceTracker {
                 .build(|| {
                     self.render_seed_mismatch_warning(ui);
                     self.render_player_status(ui, max_width, &mut bufs);
+                    self.render_race_ends_warning(ui, max_width);
                     self.render_exits(ui, max_width);
-                    self.render_race_ends_warning(ui);
                     if !self.config.server.training && self.show_leaderboard {
                         ui.separator();
                         self.render_leaderboard(ui, max_width, &mut bufs);
@@ -172,22 +172,23 @@ impl RaceTracker {
         }
     }
 
-    /// Amber countdown when a running race has less than 1 hour remaining.
-    /// Only shown while the race is RUNNING and race_ends_at is in the future.
-    fn render_race_ends_warning(&self, ui: &hudhook::imgui::Ui) {
+    /// Amber countdown shown right-aligned when a running race has less than
+    /// 30 minutes remaining. Only shown while the race is RUNNING and
+    /// race_ends_at is in the future.
+    fn render_race_ends_warning(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
         if let Some(race_info) = self.race_info() {
             if race_info.status == "running" {
                 if let Some(ends_at_dt) = race_info.race_ends_at_dt {
                     let remaining_seconds = ends_at_dt
                         .signed_duration_since(chrono::Utc::now())
                         .num_seconds();
-                    if remaining_seconds > 0 && remaining_seconds < 3600 {
+                    if remaining_seconds > 0 && remaining_seconds < 1800 {
                         let mins = remaining_seconds / 60;
                         let secs = remaining_seconds % 60;
-                        ui.text_colored(
-                            [1.0, 0.7, 0.2, 1.0],
-                            format!("Race ends in {}:{:02}", mins, secs),
-                        );
+                        let text = format!("{}:{:02} left", mins, secs);
+                        let text_width = ui.calc_text_size(&text)[0];
+                        ui.set_cursor_pos_x(max_width - text_width);
+                        ui.text_colored([1.0, 0.7, 0.2, 1.0], text);
                     }
                 }
             }
@@ -229,7 +230,11 @@ impl RaceTracker {
 
         // Right side of line 1: state banner during setup/countdown/go, IGT otherwise.
         let orange = [1.0, 0.75, 0.0, 1.0];
+        let red = [1.0, 0.3, 0.3, 1.0];
         let status_str = self.race_info().map(|r| r.status.as_str()).unwrap_or("");
+        let i_abandoned = self
+            .my_participant()
+            .is_some_and(|p| p.status == "abandoned");
 
         let right_color = match status_str {
             "setup" => {
@@ -265,7 +270,11 @@ impl RaceTracker {
             }
             "finished" => {
                 self.write_igt(buf_right);
-                green
+                if i_abandoned {
+                    red
+                } else {
+                    green
+                }
             }
             _ => {
                 self.write_igt(buf_right);
@@ -463,7 +472,10 @@ impl RaceTracker {
             "ready" => [1.0, 0.65, 0.0, 1.0],
             _ => self.cached_colors.text_disabled,
         };
-        let color = if is_self {
+        // Abandoned rows stay greyed even for the local player: the usual
+        // is_self brighten would make the local row pop visually, which we
+        // don't want once the player has abandoned.
+        let color = if is_self && p.status != "abandoned" {
             brighten(base_color, 0.35)
         } else {
             base_color
