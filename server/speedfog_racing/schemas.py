@@ -596,6 +596,8 @@ class UserTraitsResponse(BaseModel):
 
 
 class FeedbackCreate(BaseModel):
+    """Payload for submitting user feedback."""
+
     rating: int = Field(ge=1, le=5)
     comment: str | None = Field(default=None, max_length=1000)
     source: FeedbackSource
@@ -603,6 +605,8 @@ class FeedbackCreate(BaseModel):
 
 
 class FeedbackResponse(BaseModel):
+    """Feedback row returned to the submitter."""
+
     id: UUID
     rating: int
     comment: str | None
@@ -615,20 +619,26 @@ class FeedbackResponse(BaseModel):
 
 
 class AdminFeedbackUser(BaseModel):
+    """User info joined into admin feedback listings."""
+
     id: UUID
     twitch_username: str
-    twitch_display_name: str
+    twitch_display_name: str | None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class AdminFeedbackRace(BaseModel):
+    """Race info joined into admin feedback listings (extensible with more fields later)."""
+
     id: UUID
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class AdminFeedbackItem(BaseModel):
+    """Feedback row with joined user and race info (admin view)."""
+
     id: UUID
     rating: int
     comment: str | None
@@ -643,6 +653,8 @@ class AdminFeedbackItem(BaseModel):
 
 
 class AdminFeedbackListResponse(BaseModel):
+    """Paginated admin feedback list with aggregate stats."""
+
     items: list[AdminFeedbackItem]
     total: int
     average_rating: float | None
