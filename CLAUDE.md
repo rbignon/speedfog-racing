@@ -86,6 +86,13 @@ SvelteKit file-based routing under `web/src/routes/`. Key paths: `/race/[id]` (r
 
 Rust DLL entry point in `lib.rs`. `dll/` has the main loop (`mod.rs`), ImGui overlay (`ui.rs`), WebSocket client (`websocket.rs`), game event tracker (`tracker.rs`). `eldenring/` has game-specific logic: memory reading (`game_state.rs`), event flags (`event_flags.rs`), warp detection (`warp_hook.rs`). Cross-platform core in `core/` (protocol, types, constants).
 
+**Per-frame perf is non-negotiable.** `RaceTracker::update` and `ImguiRenderLoop::render` run once per game frame (60+ FPS). Anything done in those paths, or in helpers they call (`render_*`, `write_*`), runs that often. Before adding work to a per-frame path:
+
+- Parse, format, allocate, or compute on receipt (WS message handler, config load) and cache the result on the struct that owns the data. See `CachedColors` (parsed once from hex strings), `RaceInfo::race_ends_at_dt` (parsed in `reparse_dates` on AuthOk / RaceInfoUpdate), `FrameSnapshot` (memory reads cached for the current frame), `LeaderboardCache` (recomputed only when `leaderboard_version` bumps), pre-allocated `RenderBuffers`.
+- Avoid per-frame heap allocations: reuse `String` buffers via `RenderBuffers` and `write!`, never `format!` into a fresh `String` if a buffer is already in scope. The exception is rare cosmetic UI text that only renders for a few seconds (e.g. countdown banners), where allocation cost is negligible.
+- Memory reads from the game process are expensive: route them through `FrameSnapshot` so the same value is read at most once per frame.
+- Use `profile_span!` around any new non-trivial block so Tracy can confirm the cost. If a change is plausibly a hotspot, validate with Tracy (see `docs/MOD_PROFILING.md`) before merging.
+
 ## Code Style
 
 - **Python**: ruff (line-length 100, rules E/F/I/UP), mypy strict, async/await for all I/O
