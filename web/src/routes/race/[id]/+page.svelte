@@ -430,18 +430,31 @@
 				mergedParticipants.length < liveMaxParticipants)
 	);
 
-	let dagHidden = $derived(
+	let dagHiddenByRunningRules = $derived(
 		raceStatus === 'running' &&
 			!myParticipant &&
 			!isCasterOrOrganizer &&
 			(livePrivateDag || registrationOpenWindow)
 	);
 
-	let dagHiddenReason = $derived(
-		livePrivateDag
-			? 'The map is hidden until the race finishes.'
-			: 'The map is hidden while late registration is open.'
+	let canRenderDag = $derived(
+		!!liveSeed?.graph_json &&
+			(raceStatus === 'running' ||
+				raceStatus === 'finished' ||
+				!!myWsParticipantId ||
+				isOrganizer ||
+				forceFullDag)
 	);
+
+	let dagHidden = $derived(
+		dagHiddenByRunningRules || (!canRenderDag && !!totalLayers)
+	);
+
+	let dagHiddenReason = $derived.by(() => {
+		if (livePrivateDag) return 'The map is hidden until the race finishes.';
+		if (registrationOpenWindow) return 'The map is hidden while registration is open.';
+		return 'Map revealed at race start.';
+	});
 
 	function formatLocalTime(iso: string): string {
 		const d = new Date(iso);
@@ -866,10 +879,6 @@
 					/>
 				{:else if liveSeed?.graph_json && (isOrganizer || forceFullDag)}
 					<MetroDag graphJson={liveSeed.graph_json} />
-				{:else if totalLayers}
-					<div class="dag-placeholder">
-						<p class="dag-note">Map revealed at race start</p>
-					</div>
 				{/if}
 			</div>
 
