@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 // =============================================================================
@@ -98,6 +99,30 @@ pub struct RaceInfo {
     pub private_dag: bool,
     #[serde(default)]
     pub countdown_seconds: u32,
+    /// Pre-parsed `race_ends_at` filled by [`RaceInfo::reparse_dates`] after
+    /// receipt so the per-frame countdown UI doesn't reparse the string.
+    /// Not part of the wire format.
+    ///
+    /// Call sites that store a freshly deserialized `RaceInfo` MUST call
+    /// [`RaceInfo::reparse_dates`] first; otherwise this stays `None` and the
+    /// countdown silently doesn't render. Also note that this field
+    /// participates in the derived `PartialEq`, so two structurally identical
+    /// payloads compare unequal if only one has been reparsed.
+    #[serde(skip)]
+    pub race_ends_at_dt: Option<DateTime<Utc>>,
+}
+
+impl RaceInfo {
+    /// Populate non-serde cached fields from their RFC3339 string counterparts.
+    /// Call after deserializing or replacing a `RaceInfo` so render code can
+    /// read the parsed `DateTime` directly.
+    pub fn reparse_dates(&mut self) {
+        self.race_ends_at_dt = self
+            .race_ends_at
+            .as_deref()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+    }
 }
 
 /// Item to be spawned at runtime by the mod (e.g., Gem/Ash of War).
@@ -579,6 +604,34 @@ mod tests {
         let json = r#"{"id": "123", "name": "Test", "status": "running", "race_ends_at": "2026-04-20T12:00:00Z"}"#;
         let info: RaceInfo = serde_json::from_str(json).unwrap();
         assert_eq!(info.race_ends_at.as_deref(), Some("2026-04-20T12:00:00Z"));
+        // Cached parsed field is empty until reparse_dates() is called.
+        assert!(info.race_ends_at_dt.is_none());
+    }
+
+    #[test]
+    fn test_race_info_reparse_dates_populates_cache() {
+        let json = r#"{"id": "123", "name": "Test", "status": "running", "race_ends_at": "2026-04-20T12:00:00Z"}"#;
+        let mut info: RaceInfo = serde_json::from_str(json).unwrap();
+        info.reparse_dates();
+        let dt = info.race_ends_at_dt.expect("race_ends_at_dt populated");
+        assert_eq!(dt.to_rfc3339(), "2026-04-20T12:00:00+00:00");
+    }
+
+    #[test]
+    fn test_race_info_reparse_dates_handles_missing_and_invalid() {
+        // Missing field: cache stays None.
+        let mut info: RaceInfo =
+            serde_json::from_str(r#"{"id": "123", "name": "Test", "status": "setup"}"#).unwrap();
+        info.reparse_dates();
+        assert!(info.race_ends_at_dt.is_none());
+
+        // Garbage value: parse fails silently, cache stays None.
+        let mut info: RaceInfo = serde_json::from_str(
+            r#"{"id": "123", "name": "Test", "status": "setup", "race_ends_at": "not-a-date"}"#,
+        )
+        .unwrap();
+        info.reparse_dates();
+        assert!(info.race_ends_at_dt.is_none());
     }
 
     #[test]

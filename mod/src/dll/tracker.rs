@@ -948,7 +948,7 @@ impl RaceTracker {
             }
             IncomingMessage::AuthOk {
                 participant_id,
-                race,
+                mut race,
                 seed,
                 participants,
             } => {
@@ -967,6 +967,7 @@ impl RaceTracker {
                 // Don't clear triggered_flags on reconnect: finish_event is one-shot.
                 // Regular fog gate flags are no longer tracked in triggered_flags;
                 // they're cleared in game memory after capture for re-traversal detection.
+                race.reparse_dates();
                 self.race_state.race = Some(race);
                 self.frozen_igt_ms = None;
 
@@ -1102,13 +1103,14 @@ impl RaceTracker {
                 }
                 self.bump_leaderboard_version();
             }
-            IncomingMessage::RaceInfoUpdate(race) => {
+            IncomingMessage::RaceInfoUpdate(mut race) => {
                 self.last_received_debug = Some(format!("race_info_update(name={})", race.name));
                 info!(
                     race_ends_at = ?race.race_ends_at,
                     status = %race.status,
                     "[WS] Race info updated"
                 );
+                race.reparse_dates();
                 self.race_state.race = Some(race);
             }
             IncomingMessage::PlayerUpdate(player) => {
