@@ -2,6 +2,35 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.6.0] - 2026-04-22
+
+### Races
+
+- Late-join mode: organizers can keep registration open after the race starts. Running races show an "Open" badge with a deadline countdown and a Join button in the sidebar
+- Auto-end: organizers can set a maximum race duration, after which the race automatically finalizes and any unfinished runners are marked as abandoned
+
+### Seeds
+
+- Boss randomization now respects arena compatibility (thanks to Ignite's [Boss Arena Randomizer](https://github.com/ignitesouls/BossArenaRandomizer))
+- Updated list of elite enemies used as minor bosses
+- Ancestor Spirit reclassified as a minor boss
+- Fia's Champions can't be in a two phase arena anymore (fuck you)
+- Drop-in entrances into major boss arenas are no longer used as a major boss (e.g. Red Wolf of Radagon)
+- Hardcore mode: minor bosses are now randomized
+- Hardcore mode: care package removed
+- Varied run-complete messages
+
+### In-game
+
+- Race-ends countdown in the overlay, with a warning color when under 30 minutes remaining
+
+### Website
+
+- Rich link previews: race pages now generate a dynamic social image, with scheduled times shown in the organizer's timezone
+- Pool selection replaced by a compact tab bar on the training and race creation pages
+- Pool settings card simplified
+- Zones stats window shortened to 30 days to better reflect the current meta
+
 ## [1.5.10] - 2026-04-16
 
 ### Seeds
