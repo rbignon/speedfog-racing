@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -99,6 +100,9 @@ class User(Base):
     timezone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    feedback_prompted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     elo_rating: Mapped[float] = mapped_column(default=1500.0)
     elo_races: Mapped[int] = mapped_column(default=0)
 
@@ -273,6 +277,42 @@ class Participant(Base):
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="participants")
     user: Mapped["User"] = relationship(back_populates="participations")
+
+
+class FeedbackSource(enum.Enum):
+    POST_FIRST_RACE = "post_first_race"
+    USER_MENU = "user_menu"
+
+
+class Feedback(Base):
+    """User feedback: CSAT rating + optional comment."""
+
+    __tablename__ = "feedback"
+    __table_args__ = (
+        CheckConstraint("rating >= 1 AND rating <= 5", name="ck_feedback_rating_range"),
+        Index("ix_feedback_created_at", "created_at"),
+        Index("ix_feedback_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[FeedbackSource] = mapped_column(
+        Enum(FeedbackSource, name="feedback_source"), nullable=False
+    )
+    race_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("races.id"), nullable=True
+    )
+    races_played_at_feedback: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship()
+    race: Mapped["Race | None"] = relationship()
 
 
 class Caster(Base):

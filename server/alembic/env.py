@@ -14,6 +14,7 @@ from speedfog_racing.database import Base
 # Import all models to register them with Base.metadata
 from speedfog_racing.models import (  # noqa: F401
     Caster,
+    Feedback,
     Invite,
     Participant,
     Pool,
