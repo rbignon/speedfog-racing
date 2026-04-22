@@ -15,7 +15,7 @@
 	let maxParticipants = $state(30);
 	let lateJoinEnabled = $state(false);
 	let autoEndEnabled = $state(false);
-	let lateJoinWindowMinutes = $state(30);
+	let lateJoinWindowMinutes = $state(10);
 	let raceDurationMinutes = $state(120);
 	let privateDag = $state(false);
 	let showAdvanced = $state(false);
