@@ -20,6 +20,8 @@ from speedfog_racing.auth import require_admin
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
     Caster,
+    Feedback,
+    FeedbackSource,
     Participant,
     Race,
     Seed,
@@ -31,6 +33,8 @@ from speedfog_racing.models import (
 from speedfog_racing.schemas import (
     ActivityItem,
     ActivityTimelineResponse,
+    AdminFeedbackItem,
+    AdminFeedbackListResponse,
     RaceCasterActivity,
     RaceOrganizerActivity,
     RaceParticipantActivity,
@@ -546,3 +550,50 @@ async def resolve_reported_seed(
 
     await db.commit()
     return {"status": "ok"}
+
+
+# =============================================================================
+# Feedback Management
+# =============================================================================
+
+
+@router.get("/feedback", response_model=AdminFeedbackListResponse)
+async def admin_list_feedback(
+    source: FeedbackSource | None = None,
+    rating_min: int | None = Query(default=None, ge=1, le=5),
+    rating_max: int | None = Query(default=None, ge=1, le=5),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> AdminFeedbackListResponse:
+    """List feedback rows (paginated) with aggregate stats, for admin panel."""
+    stmt = select(Feedback).options(
+        selectinload(Feedback.user),
+        selectinload(Feedback.race),
+    )
+    if source is not None:
+        stmt = stmt.where(Feedback.source == source)
+    if rating_min is not None:
+        stmt = stmt.where(Feedback.rating >= rating_min)
+    if rating_max is not None:
+        stmt = stmt.where(Feedback.rating <= rating_max)
+
+    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
+
+    page_stmt = stmt.order_by(Feedback.created_at.desc()).limit(limit).offset(offset)
+    items = list((await db.execute(page_stmt)).scalars().all())
+
+    avg = await db.scalar(select(func.avg(Feedback.rating)))
+
+    distribution: dict[int, int] = {i: 0 for i in range(1, 6)}
+    dist_rows = await db.execute(select(Feedback.rating, func.count()).group_by(Feedback.rating))
+    for rating, count in dist_rows.all():
+        distribution[int(rating)] = int(count)
+
+    return AdminFeedbackListResponse(
+        items=[AdminFeedbackItem.model_validate(it) for it in items],
+        total=int(total or 0),
+        average_rating=float(avg) if avg is not None else None,
+        distribution=distribution,
+    )

@@ -11,11 +11,13 @@ from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
     Feedback,
+    FeedbackSource,
     Participant,
     ParticipantStatus,
     Race,
     RaceStatus,
     User,
+    UserRole,
 )
 
 
@@ -241,3 +243,80 @@ async def test_auth_me_exposes_feedback_prompted_at(test_client, async_session):
         r = await client.get("/api/auth/me", headers=_auth_headers(user))
         assert r.status_code == 200
         assert r.json()["feedback_prompted_at"] is not None
+
+
+async def _create_admin(async_session) -> User:
+    async with async_session() as db:
+        user = User(
+            twitch_id="tw_admin",
+            twitch_username="admin",
+            twitch_display_name="Admin",
+            api_token="tok_admin",
+            role=UserRole.ADMIN,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+@pytest.mark.asyncio
+async def test_admin_feedback_list_requires_admin(test_client, async_session):
+    user = await _create_user(async_session, "notadmin")
+    async with test_client as client:
+        r = await client.get("/api/admin/feedback", headers=_auth_headers(user))
+        assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_feedback_list_basic(test_client, async_session):
+    admin = await _create_admin(async_session)
+    author = await _create_user(async_session, "author")
+    async with async_session() as db:
+        fb = Feedback(
+            user_id=author.id,
+            rating=4,
+            comment="hey",
+            source=FeedbackSource.USER_MENU,
+            race_id=None,
+            races_played_at_feedback=2,
+        )
+        db.add(fb)
+        await db.commit()
+
+    async with test_client as client:
+        r = await client.get("/api/admin/feedback", headers=_auth_headers(admin))
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        assert body["average_rating"] == 4.0
+        assert body["distribution"] == {"1": 0, "2": 0, "3": 0, "4": 1, "5": 0}
+        assert len(body["items"]) == 1
+        assert body["items"][0]["user"]["twitch_username"] == "author"
+        assert body["items"][0]["race"] is None
+
+
+@pytest.mark.asyncio
+async def test_admin_feedback_filters(test_client, async_session):
+    admin = await _create_admin(async_session)
+    author = await _create_user(async_session, "f1")
+    async with async_session() as db:
+        for rating in (1, 3, 5):
+            db.add(
+                Feedback(
+                    user_id=author.id,
+                    rating=rating,
+                    source=FeedbackSource.USER_MENU,
+                    races_played_at_feedback=0,
+                )
+            )
+        await db.commit()
+
+    async with test_client as client:
+        r = await client.get(
+            "/api/admin/feedback?rating_min=4&rating_max=5",
+            headers=_auth_headers(admin),
+        )
+        assert r.status_code == 200
+        ratings = [it["rating"] for it in r.json()["items"]]
+        assert ratings == [5]
