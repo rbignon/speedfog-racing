@@ -1141,10 +1141,10 @@
 							</div>
 						{/if}
 					{/if}
-					{#if initialRace.started_at}
+					{#if startedAt}
 						<div class="info-item">
 							<span class="label">Started</span>
-							<span class="value">{formatDate(initialRace.started_at)}</span>
+							<span class="value">{formatDate(startedAt)}</span>
 						</div>
 					{/if}
 				</div>
