@@ -280,7 +280,7 @@ Authentication successful. Contains initial race state.
 
 `items_spawned_flag`: (int, optional) Event flag ID for runtime item spawn prevention. When present, the mod checks this flag before spawning items, and sets it after. Persists in save file (saved flag range). `null` if not provided by graph.json (backward compat: mod skips flag check).
 
-**Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`, but the mod currently only uses `id`, `name`, and `status`; the other fields are silently ignored.
+**Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`. `race_ends_at` is `null` until the race transitions to `running` (it is computed from `started_at + race_duration_minutes`); when the race starts, the server pushes a [`race_info_update`](#race_info_update) so mods that authed in `setup` pick up the now-populated value.
 
 #### `auth_error`
 
@@ -362,7 +362,32 @@ Race status changed. Broadcast to all mods and spectators. Includes `started_at`
 | `started_at`        | `string?` | ISO 8601 timestamp, included when status is `running`          |
 | `countdown_seconds` | `int?`    | Cosmetic countdown duration in seconds, included for `running` |
 
-**Note:** The mod does not currently consume `started_at` from this message; the field is silently ignored by serde.
+**Note:** The mod does not currently consume `started_at` from this message; the field is silently ignored by serde. The mod refreshes the rest of its cached RaceInfo from a separate `race_info_update` broadcast (see below).
+
+#### `race_info_update`
+
+A refreshed [RaceInfo](#raceinfo) snapshot broadcast to all mods and spectators whenever a race-level field changes outside the normal lifecycle messages. Receivers replace their cached RaceInfo wholesale (no per-field merge). Emitted in two situations:
+
+- The organizer issues a `PATCH /races/{id}` that mutates a tracked field (`name`, `is_public`, `open_registration`, `max_participants`, `scheduled_at`, `late_join_window_minutes`, `race_duration_minutes`, `private_dag`). No-op PATCHes do not broadcast.
+- The race transitions from `setup` to `running` (`POST /races/{id}/start`). At that point `started_at` becomes non-null and `race_ends_at` becomes computable; the broadcast lets mods that authed in `setup` pick up the new deadlines without reconnecting.
+
+```json
+{
+  "type": "race_info_update",
+  "race": {
+    "id": "uuid",
+    "name": "Sunday Showdown",
+    "status": "running",
+    "started_at": "2026-02-19T14:00:00Z",
+    "seeds_released_at": "2026-02-19T13:55:00Z",
+    "race_ends_at": "2026-02-19T18:00:00Z"
+  }
+}
+```
+
+| Field  | Type     | Description                       |
+| ------ | -------- | --------------------------------- |
+| `race` | `object` | Full [RaceInfo](#raceinfo) object |
 
 #### `zone_update`
 
@@ -596,7 +621,7 @@ Full leaderboard broadcast to all mods and spectators (on zone progress, ready, 
 
 #### `race_status_change`
 
-Race status changed. Broadcast to all mods and spectators.
+Race status changed. Broadcast to all mods and spectators. On the `setup` -> `running` transition the server also emits a [`race_info_update`](#race_info_update) (and a `race_state` push) so receivers can refresh deadlines.
 
 ```json
 {
@@ -604,6 +629,10 @@ Race status changed. Broadcast to all mods and spectators.
   "status": "finished"
 }
 ```
+
+#### `race_info_update`
+
+Same payload as the [mod variant](#race_info_update). Broadcast to spectators when a race-level field changes via `PATCH /races` or when the race starts. Spectators also receive the same data through `race_state` on transitions that already trigger a full state push (start, finish, seed release), so this message is mostly relevant for in-place edits while the race is live.
 
 #### `spectator_count`
 
@@ -824,7 +853,7 @@ Shared schema across all WebSocket messages:
 
 ### RaceInfo
 
-Included in `auth_ok` and `race_state` messages:
+Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full payload is rebroadcast on change rather than diffed, so receivers replace their cached copy wholesale.
 
 | Field               | Type      | Description                                                             |
 | ------------------- | --------- | ----------------------------------------------------------------------- |
@@ -835,7 +864,7 @@ Included in `auth_ok` and `race_state` messages:
 | `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                             |
 | `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff) |
 
-**Note:** The mod only uses `id`, `name`, and `status` from RaceInfo.
+**Note:** The mod's overlay reads `id`, `name`, `status`, and `race_ends_at` (countdown warning when less than 1h remains). Other fields are present on the wire but currently unused by the mod.
 
 ### SeedInfo
 
@@ -975,24 +1004,25 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 
 ### Broadcasting Strategy
 
-| Event                          | Mods                                                              | Spectators                                                           |
-| ------------------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Mod connects/disconnects       | `leaderboard_update`                                              | `leaderboard_update`                                                 |
-| `ready`                        | `leaderboard_update`                                              | `leaderboard_update`                                                 |
-| `status_update` (periodic)     | `player_update`                                                   | `player_update`                                                      |
-| `status_update` (READY→PLAY)   | `leaderboard_update`                                              | `leaderboard_update` + `zone_history` (spawn)                        |
-| `status_update` (death delta)  | `player_update` + `death_counts`                                  | `player_update` + `zone_history` (deaths update)                     |
-| `event_flag` (new node)        | `leaderboard_update`                                              | `leaderboard_update` + `zone_history` (fog)                          |
-| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                         | `player_update` + `zone_history` (fog)                               |
-| `event_flag` (finish)          | `leaderboard_update`                                              | `race_state` + status change + `chat_message` (system)               |
-| `zone_query` (same zone)       | `zone_update` (unicast) + `player_update`                         | `player_update`                                                      |
-| `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update` | `leaderboard_update` or `player_update` + `zone_history` (backtrack) |
-| Race starts                    | `race_start` + `zone_update` + `race_status_change`               | `race_state` + `race_status_change`                                  |
-| Race finishes                  | `race_status_change`                                              | `race_state` + `race_status_change`                                  |
-| Seeds released                 | (none)                                                            | `race_state`                                                         |
-| Spectator connects/disconnects | (none)                                                            | `spectator_count` + `chat_history`                                   |
-| Player abandons                | `leaderboard_update`                                              | `leaderboard_update` + `chat_message` (system)                       |
-| Player auto-abandoned          | `leaderboard_update`                                              | `leaderboard_update` + `chat_message` (system)                       |
-| Chat message sent              | (none)                                                            | `chat_message` (to channel subscribers)                              |
+| Event                          | Mods                                                                     | Spectators                                                           |
+| ------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| Mod connects/disconnects       | `leaderboard_update`                                                     | `leaderboard_update`                                                 |
+| `ready`                        | `leaderboard_update`                                                     | `leaderboard_update`                                                 |
+| `status_update` (periodic)     | `player_update`                                                          | `player_update`                                                      |
+| `status_update` (READY→PLAY)   | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (spawn)                        |
+| `status_update` (death delta)  | `player_update` + `death_counts`                                         | `player_update` + `zone_history` (deaths update)                     |
+| `event_flag` (new node)        | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (fog)                          |
+| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                                | `player_update` + `zone_history` (fog)                               |
+| `event_flag` (finish)          | `leaderboard_update`                                                     | `race_state` + status change + `chat_message` (system)               |
+| `zone_query` (same zone)       | `zone_update` (unicast) + `player_update`                                | `player_update`                                                      |
+| `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update`        | `leaderboard_update` or `player_update` + `zone_history` (backtrack) |
+| Race starts                    | `race_start` + `zone_update` + `race_status_change` + `race_info_update` | `race_state` + `race_status_change` + `race_info_update`             |
+| Race finishes                  | `race_status_change`                                                     | `race_state` + `race_status_change`                                  |
+| Seeds released                 | (none)                                                                   | `race_state`                                                         |
+| `PATCH /races` (field changes) | `race_info_update`                                                       | `race_info_update`                                                   |
+| Spectator connects/disconnects | (none)                                                                   | `spectator_count` + `chat_history`                                   |
+| Player abandons                | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system)                       |
+| Player auto-abandoned          | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system)                       |
+| Chat message sent              | (none)                                                                   | `chat_message` (to channel subscribers)                              |
 
 Note: `zone_history` snapshots are emitted only to spectators (mods don't consume `zone_history`). `leaderboard_update` and `player_update` carry `zone_history: null` in every broadcast; the full history is only seeded via `race_state` on connect, plus these snapshot messages. See [zone_history updates](#zone_history-updates).
