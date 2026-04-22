@@ -320,3 +320,58 @@ async def test_admin_feedback_filters(test_client, async_session):
         assert r.status_code == 200
         ratings = [it["rating"] for it in r.json()["items"]]
         assert ratings == [5]
+
+
+@pytest.mark.asyncio
+async def test_admin_feedback_filter_by_source(test_client, async_session):
+    admin = await _create_admin(async_session)
+    author = await _create_user(async_session, "src_filter_author")
+    async with async_session() as db:
+        # Create a race + participant so we can have a POST_FIRST_RACE feedback.
+        race = Race(name="r_src", status=RaceStatus.FINISHED, organizer_id=author.id)
+        db.add(race)
+        await db.commit()
+        await db.refresh(race)
+        db.add(Participant(race_id=race.id, user_id=author.id, status=ParticipantStatus.FINISHED))
+        db.add(
+            Feedback(
+                user_id=author.id,
+                rating=3,
+                source=FeedbackSource.USER_MENU,
+                races_played_at_feedback=1,
+            )
+        )
+        db.add(
+            Feedback(
+                user_id=author.id,
+                rating=5,
+                source=FeedbackSource.POST_FIRST_RACE,
+                race_id=race.id,
+                races_played_at_feedback=1,
+            )
+        )
+        await db.commit()
+
+    async with test_client as client:
+        r = await client.get(
+            "/api/admin/feedback?source=user_menu",
+            headers=_auth_headers(admin),
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["source"] == "user_menu"
+
+
+@pytest.mark.asyncio
+async def test_admin_feedback_empty_state(test_client, async_session):
+    admin = await _create_admin(async_session)
+    async with test_client as client:
+        r = await client.get("/api/admin/feedback", headers=_auth_headers(admin))
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 0
+        assert body["items"] == []
+        assert body["average_rating"] is None
+        assert body["distribution"] == {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}

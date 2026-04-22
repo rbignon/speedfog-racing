@@ -581,7 +581,9 @@ async def admin_list_feedback(
 
     total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
 
-    page_stmt = stmt.order_by(Feedback.created_at.desc()).limit(limit).offset(offset)
+    page_stmt = (
+        stmt.order_by(Feedback.created_at.desc(), Feedback.id.desc()).limit(limit).offset(offset)
+    )
     items = list((await db.execute(page_stmt)).scalars().all())
 
     avg = await db.scalar(select(func.avg(Feedback.rating)))
