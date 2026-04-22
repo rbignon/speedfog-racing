@@ -58,6 +58,8 @@ messmerskindling = true
 
 [enemy]
 randomize_bosses = "none"
+ignore_arena_size = false
+swap_boss = true
 
 [item_randomizer]
 difficulty = 50

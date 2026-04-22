@@ -55,4 +55,3 @@ nerf_malenia = true
 
 [enemy]
 randomize_bosses = "minor"
-swap_boss = true
