@@ -14,7 +14,7 @@ from speedfog_racing.services.race_lifecycle import finalize_race
 
 logger = logging.getLogger(__name__)
 
-POLL_INTERVAL = 30  # seconds
+POLL_INTERVAL = 10  # seconds
 
 
 def _deadline_reached(started_at: datetime | None, duration_min: int | None, now: datetime) -> bool:
