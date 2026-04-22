@@ -3,6 +3,7 @@
 import secrets
 import time
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -57,6 +58,7 @@ class UserPublicResponse(BaseModel):
     role: str
     locale: str | None = None
     overlay_settings: dict[str, float] | None = None
+    feedback_prompted_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

@@ -225,3 +225,19 @@ async def test_mark_prompted_requires_auth(test_client):
     async with test_client as client:
         r = await client.post("/api/feedback/mark-prompted")
         assert r.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_auth_me_exposes_feedback_prompted_at(test_client, async_session):
+    user = await _create_user(async_session, "me_exposure")
+    async with test_client as client:
+        r = await client.get("/api/auth/me", headers=_auth_headers(user))
+        assert r.status_code == 200
+        assert r.json()["feedback_prompted_at"] is None
+
+        r = await client.post("/api/feedback/mark-prompted", headers=_auth_headers(user))
+        assert r.status_code == 204
+
+        r = await client.get("/api/auth/me", headers=_auth_headers(user))
+        assert r.status_code == 200
+        assert r.json()["feedback_prompted_at"] is not None
