@@ -390,6 +390,22 @@
 	let liveMaxParticipants = $derived(
 		raceStore.race?.max_participants ?? initialRace.max_participants
 	);
+	// null is a meaningful value for these three (= "disabled" / "to be defined"),
+	// so gate on raceStore.race's presence rather than using ?? which would fall
+	// back to initialRace when the WS pushes an explicit null.
+	let liveLateJoinWindow = $derived(
+		raceStore.race
+			? (raceStore.race.late_join_window_minutes ?? null)
+			: initialRace.late_join_window_minutes
+	);
+	let liveRaceDuration = $derived(
+		raceStore.race
+			? (raceStore.race.race_duration_minutes ?? null)
+			: initialRace.race_duration_minutes
+	);
+	let liveScheduledAt = $derived(
+		raceStore.race ? (raceStore.race.scheduled_at ?? null) : initialRace.scheduled_at
+	);
 
 	// Pending invites: use the WS list (drops accepted/revoked entries live)
 	// for presence, enriched from initialRace to keep the organizer's invite
@@ -537,7 +553,7 @@
 	}
 
 	function startEditSchedule() {
-		scheduleInput = initialRace.scheduled_at ?? '';
+		scheduleInput = liveScheduledAt ?? '';
 		scheduleError = null;
 		editingSchedule = true;
 	}
@@ -558,7 +574,7 @@
 	}
 
 	function startEditLateJoin() {
-		lateJoinInput = initialRace.late_join_window_minutes ?? 30;
+		lateJoinInput = liveLateJoinWindow ?? 30;
 		lateJoinError = null;
 		editingLateJoin = true;
 	}
@@ -578,7 +594,7 @@
 	}
 
 	function startEditDuration() {
-		durationInput = initialRace.race_duration_minutes ?? 120;
+		durationInput = liveRaceDuration ?? 120;
 		durationError = null;
 		editingDuration = true;
 	}
@@ -987,9 +1003,9 @@
 										<span class="schedule-error">{scheduleError}</span>
 									{/if}
 								</div>
-							{:else if initialRace.scheduled_at}
+							{:else if liveScheduledAt}
 								<span class="value">
-									{formatDate(initialRace.scheduled_at)}
+									{formatDate(liveScheduledAt)}
 									{#if isOrganizer}
 										<button class="btn-edit" onclick={startEditSchedule}>Edit</button>
 									{/if}
@@ -1003,7 +1019,7 @@
 								<span class="value">To be defined</span>
 							{/if}
 						</div>
-						{#if isOrganizer || initialRace.late_join_window_minutes !== null}
+						{#if isOrganizer || liveLateJoinWindow !== null}
 							<div class="info-item">
 								<span class="label">Late join</span>
 								{#if editingLateJoin}
@@ -1012,7 +1028,7 @@
 											<input
 												type="number"
 												min="1"
-												max={initialRace.race_duration_minutes ?? undefined}
+												max={liveRaceDuration ?? undefined}
 												bind:value={lateJoinInput}
 												disabled={lateJoinSaving}
 												aria-label="Late join window in minutes"
@@ -1035,7 +1051,7 @@
 											>
 												Cancel
 											</button>
-											{#if initialRace.late_join_window_minutes !== null}
+											{#if liveLateJoinWindow !== null}
 												<button
 													class="btn-inline btn-inline-secondary"
 													onclick={() => saveLateJoin(null)}
@@ -1049,9 +1065,9 @@
 											<span class="schedule-error">{lateJoinError}</span>
 										{/if}
 									</div>
-								{:else if initialRace.late_join_window_minutes !== null}
+								{:else if liveLateJoinWindow !== null}
 									<span class="value">
-										{initialRace.late_join_window_minutes} min
+										{liveLateJoinWindow} min
 										{#if isOrganizer}
 											<button class="btn-edit" onclick={startEditLateJoin}>Edit</button>
 										{/if}
@@ -1059,7 +1075,7 @@
 								{:else}
 									<span class="value">
 										Disabled
-										{#if initialRace.race_duration_minutes === null}
+										{#if liveRaceDuration === null}
 											<button
 												class="btn-edit"
 												disabled
@@ -1074,7 +1090,7 @@
 								{/if}
 							</div>
 						{/if}
-						{#if isOrganizer || initialRace.race_duration_minutes !== null}
+						{#if isOrganizer || liveRaceDuration !== null}
 							<div class="info-item">
 								<span class="label">Duration</span>
 								{#if editingDuration}
@@ -1082,7 +1098,7 @@
 										<div class="inline-minutes">
 											<input
 												type="number"
-												min={initialRace.late_join_window_minutes ?? 1}
+												min={liveLateJoinWindow ?? 1}
 												bind:value={durationInput}
 												disabled={durationSaving}
 												aria-label="Race duration in minutes"
@@ -1105,7 +1121,7 @@
 											>
 												Cancel
 											</button>
-											{#if initialRace.race_duration_minutes !== null && initialRace.late_join_window_minutes === null}
+											{#if liveRaceDuration !== null && liveLateJoinWindow === null}
 												<button
 													class="btn-inline btn-inline-secondary"
 													onclick={() => saveDuration(null)}
@@ -1119,9 +1135,9 @@
 											<span class="schedule-error">{durationError}</span>
 										{/if}
 									</div>
-								{:else if initialRace.race_duration_minutes !== null}
+								{:else if liveRaceDuration !== null}
 									<span class="value">
-										{initialRace.race_duration_minutes} min
+										{liveRaceDuration} min
 										{#if isOrganizer}
 											<button class="btn-edit" onclick={startEditDuration}>Edit</button>
 										{/if}
