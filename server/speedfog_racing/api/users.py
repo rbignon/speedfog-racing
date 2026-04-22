@@ -1,6 +1,5 @@
 """User API routes."""
 
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -72,28 +71,6 @@ async def search_users(
     )
     users = result.scalars().all()
     return [user_response(u) for u in users]
-
-
-class MyProfileResponse(BaseModel):
-    """Current user's profile response (used by /me)."""
-
-    id: str
-    twitch_username: str
-    twitch_display_name: str | None
-    twitch_avatar_url: str | None
-    role: str
-    overlay_settings: dict[str, float] | None = None
-    feedback_prompted_at: datetime | None = None
-
-    model_config = {"from_attributes": True}
-
-
-@router.get("/me", response_model=MyProfileResponse)
-async def get_my_profile(
-    user: Annotated[User, Depends(get_current_user)],
-) -> User:
-    """Get current user's profile."""
-    return user
 
 
 class UpdateLocaleRequest(BaseModel):

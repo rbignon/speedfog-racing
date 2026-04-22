@@ -115,15 +115,6 @@ async def test_get_profile_is_public(test_client, sample_user):
 
 
 @pytest.mark.asyncio
-async def test_get_profile_does_not_shadow_me(test_client, sample_user):
-    """GET /api/users/me should hit the /me endpoint, not /{username}."""
-    async with test_client as client:
-        # /me requires auth, so without auth we should get 401, not 404
-        response = await client.get("/api/users/me")
-        assert response.status_code == 401
-
-
-@pytest.mark.asyncio
 async def test_get_profile_does_not_shadow_search(test_client, sample_user):
     """GET /api/users/search should hit the /search endpoint, not /{username}."""
     async with test_client as client:
