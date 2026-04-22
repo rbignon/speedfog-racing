@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
@@ -1347,7 +1347,9 @@ async def start_race(
         race,
         [RaceStatus.SETUP],
         RaceStatus.RUNNING,
-        started_at=datetime.now(UTC),
+        # started_at is the effective gameplay start (after countdown), so
+        # race_ends_at and registration_closes_at reflect real play time.
+        started_at=datetime.now(UTC) + timedelta(seconds=settings.countdown_seconds),
     )
 
     start_msg = "The race has started."

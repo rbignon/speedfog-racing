@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from speedfog_racing.api.helpers import race_response
+from speedfog_racing.config import settings
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
     Participant,
@@ -1394,6 +1395,7 @@ async def test_start_race_broadcasts_race_info_update_with_race_ends_at(
         "speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()
     ) as broadcast_mock:
         async with lj_test_client as client:
+            before = datetime.now(UTC)
             resp = await client.post(
                 f"/api/races/{race_id}/start",
                 headers={"Authorization": f"Bearer {lj_organizer.api_token}"},
@@ -1411,6 +1413,9 @@ async def test_start_race_broadcasts_race_info_update_with_race_ends_at(
         if started.tzinfo is None:
             started = started.replace(tzinfo=UTC)
         assert race_ends_at - started == timedelta(minutes=180)
+        # started_at is the effective gameplay start (shifted by the
+        # countdown), so it must be in the future relative to the POST.
+        assert started >= before + timedelta(seconds=settings.countdown_seconds - 1)
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import sentry_sdk
@@ -61,14 +61,13 @@ logger = logging.getLogger(__name__)
 # Race-specific utilities (kept module-level, used externally or by handler)
 # ---------------------------------------------------------------------------
 def _is_countdown_active(race: Race) -> bool:
-    """Check if the race is still in the countdown period after starting."""
-    if not race.started_at or settings.countdown_seconds <= 0:
+    """Check if the race is still in the countdown period before effective start."""
+    if not race.started_at:
         return False
     started = race.started_at
     if started.tzinfo is None:
         started = started.replace(tzinfo=UTC)
-    effective_start = started + timedelta(seconds=settings.countdown_seconds)
-    return datetime.now(UTC) < effective_start
+    return datetime.now(UTC) < started
 
 
 def _get_graph_json(participant: Participant) -> dict[str, Any] | None:

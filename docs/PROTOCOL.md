@@ -280,7 +280,7 @@ Authentication successful. Contains initial race state.
 
 `items_spawned_flag`: (int, optional) Event flag ID for runtime item spawn prevention. When present, the mod checks this flag before spawning items, and sets it after. Persists in save file (saved flag range). `null` if not provided by graph.json (backward compat: mod skips flag check).
 
-**Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`. `race_ends_at` is `null` until the race transitions to `running` (it is computed from `started_at + race_duration_minutes`); when the race starts, the server pushes a [`race_info_update`](#race_info_update) so mods that authed in `setup` pick up the now-populated value.
+**Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`. `started_at` is the effective gameplay start: on race launch the server sets it to `now + countdown_seconds` so the countdown window doesn't eat into the configured duration. `race_ends_at` is `null` until the race transitions to `running` (it is computed from `started_at + race_duration_minutes`); when the race starts, the server pushes a [`race_info_update`](#race_info_update) so mods that authed in `setup` pick up the now-populated value.
 
 #### `auth_error`
 
@@ -356,11 +356,11 @@ Race status changed. Broadcast to all mods and spectators. Includes `started_at`
 }
 ```
 
-| Field               | Type      | Description                                                    |
-| ------------------- | --------- | -------------------------------------------------------------- |
-| `status`            | `string`  | New race status (`running`, `finished`)                        |
-| `started_at`        | `string?` | ISO 8601 timestamp, included when status is `running`          |
-| `countdown_seconds` | `int?`    | Cosmetic countdown duration in seconds, included for `running` |
+| Field               | Type      | Description                                                                                                                |
+| ------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `status`            | `string`  | New race status (`running`, `finished`)                                                                                    |
+| `started_at`        | `string?` | ISO 8601 timestamp of effective gameplay start (already shifted by `countdown_seconds`); included when status is `running` |
+| `countdown_seconds` | `int?`    | Cosmetic countdown duration in seconds, included for `running`                                                             |
 
 **Note:** The mod does not currently consume `started_at` from this message; the field is silently ignored by serde. The mod refreshes the rest of its cached RaceInfo from a separate `race_info_update` broadcast (see below).
 
@@ -855,14 +855,14 @@ Shared schema across all WebSocket messages:
 
 Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full payload is rebroadcast on change rather than diffed, so receivers replace their cached copy wholesale.
 
-| Field               | Type      | Description                                                             |
-| ------------------- | --------- | ----------------------------------------------------------------------- |
-| `id`                | `string`  | Race UUID                                                               |
-| `name`              | `string`  | Race name                                                               |
-| `status`            | `string`  | Race status (see above)                                                 |
-| `started_at`        | `string?` | ISO 8601 timestamp when race started                                    |
-| `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                             |
-| `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff) |
+| Field               | Type      | Description                                                                                                 |
+| ------------------- | --------- | ----------------------------------------------------------------------------------------------------------- |
+| `id`                | `string`  | Race UUID                                                                                                   |
+| `name`              | `string`  | Race name                                                                                                   |
+| `status`            | `string`  | Race status (see above)                                                                                     |
+| `started_at`        | `string?` | ISO 8601 timestamp of effective gameplay start (server sets it to `now + countdown_seconds` at race launch) |
+| `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                                                                 |
+| `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff)                                     |
 
 **Note:** The mod's overlay reads `id`, `name`, `status`, and `race_ends_at` (countdown warning when less than 1h remains). Other fields are present on the wire but currently unused by the mod.
 

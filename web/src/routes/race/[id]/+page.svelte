@@ -188,15 +188,15 @@
 		fetchRace(raceId).then((r) => (initialRace = r));
 	});
 
-	// Wall-clock elapsed timer based on server's started_at timestamp
+	// Wall-clock elapsed timer based on server's started_at timestamp.
+	// started_at is the effective gameplay start (server already shifted it
+	// by countdown_seconds), so no extra subtraction is needed.
 	let startedAt = $derived(liveRace?.started_at ?? initialRace.started_at);
-
-	let countdownSeconds = $derived(liveRace?.countdown_seconds ?? 0);
 
 	let elapsedSeconds = $derived.by(() => {
 		if (raceStatus !== 'running' || !startedAt) return 0;
 		const raw = Math.floor((now - new Date(startedAt).getTime()) / 1000);
-		return Math.max(0, raw - countdownSeconds);
+		return Math.max(0, raw);
 	});
 
 	$effect(() => {

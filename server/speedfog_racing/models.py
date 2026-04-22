@@ -187,6 +187,9 @@ class Race(Base):
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Effective gameplay start: when the race transitions to RUNNING, the
+    # /start endpoint sets this to ``now + countdown_seconds`` so the
+    # countdown window does not eat into the configured race duration.
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     seeds_released_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
