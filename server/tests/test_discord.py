@@ -350,6 +350,60 @@ async def test_sends_training_notification(race_kwargs):
 
 
 @pytest.mark.asyncio
+async def test_race_started_includes_late_registration_field(race_kwargs):
+    """Should append a Late registration field when late-join is configured."""
+    from datetime import UTC, datetime
+
+    closes = datetime(2026, 4, 22, 20, 15, tzinfo=UTC)
+    race_kwargs["registration_closes_at"] = closes
+    ts = int(closes.timestamp())
+    mock_response = AsyncMock()
+    mock_response.status_code = 204
+
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
+        mock_settings.base_url = "https://speedfog.racing"
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        await notify_race_started(**race_kwargs)
+
+        embed = mock_client.post.call_args[1]["json"]["embeds"][0]
+        fields = {f["name"]: f["value"] for f in embed["fields"]}
+        assert fields["Late registration"] == f"Open until <t:{ts}:t> (<t:{ts}:R>)"
+
+
+@pytest.mark.asyncio
+async def test_race_started_omits_late_registration_when_absent(race_kwargs):
+    """Should not render Late registration field when late-join is not configured."""
+    mock_response = AsyncMock()
+    mock_response.status_code = 204
+
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
+        mock_settings.base_url = "https://speedfog.racing"
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        await notify_race_started(**race_kwargs)
+
+        field_names = {
+            f["name"] for f in mock_client.post.call_args[1]["json"]["embeds"][0]["fields"]
+        }
+        assert "Late registration" not in field_names
+
+
+@pytest.mark.asyncio
 async def test_no_avatar(race_kwargs):
     """Should omit thumbnail when no avatar URL."""
     race_kwargs["organizer_avatar_url"] = None

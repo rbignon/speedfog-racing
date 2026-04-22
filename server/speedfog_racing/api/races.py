@@ -1384,6 +1384,7 @@ async def start_race(
 
     # Fire-and-forget Discord notification (public races only)
     if race.is_public:
+        registration_closes_at, _ = compute_late_join_deadlines(race)
         task = asyncio.create_task(
             notify_race_started(
                 race_name=race.name,
@@ -1392,6 +1393,7 @@ async def start_race(
                 participant_count=len(race.participants),
                 organizer_name=race.organizer.twitch_display_name or race.organizer.twitch_username,
                 organizer_avatar_url=race.organizer.twitch_avatar_url,
+                registration_closes_at=registration_closes_at,
             )
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

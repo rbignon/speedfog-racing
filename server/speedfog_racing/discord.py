@@ -306,6 +306,7 @@ async def notify_race_started(
     participant_count: int,
     organizer_name: str,
     organizer_avatar_url: str | None,
+    registration_closes_at: datetime | None = None,
 ) -> None:
     """Send Discord notification when a race is started."""
     label, color = _race_label_and_color(pool)
@@ -313,15 +314,26 @@ async def notify_race_started(
     safe_name = _escape_discord_md(race_name)
     safe_organizer = _escape_discord_md(organizer_name)
 
+    fields: list[dict[str, object]] = [
+        {"name": "Mode", "value": display_pool, "inline": True},
+        {"name": "Participants", "value": str(participant_count), "inline": True},
+        {"name": "Organizer", "value": safe_organizer, "inline": True},
+    ]
+    if registration_closes_at is not None:
+        ts = int(registration_closes_at.timestamp())
+        fields.append(
+            {
+                "name": "Late registration",
+                "value": f"Open until <t:{ts}:t> (<t:{ts}:R>)",
+                "inline": False,
+            }
+        )
+
     embed: dict[str, object] = {
         "title": f"🏁 {label} Started: {safe_name}",
         "url": _race_url(race_id),
         "color": color,
-        "fields": [
-            {"name": "Mode", "value": display_pool, "inline": True},
-            {"name": "Participants", "value": str(participant_count), "inline": True},
-            {"name": "Organizer", "value": safe_organizer, "inline": True},
-        ],
+        "fields": fields,
     }
     if organizer_avatar_url:
         embed["thumbnail"] = {"url": organizer_avatar_url}
