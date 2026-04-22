@@ -1199,6 +1199,73 @@ async def test_finalize_race_abandons_registered_and_ready(hc_async_session):
 
 
 # ---------------------------------------------------------------------------
+# finalize_race must broadcast a leaderboard_update after the auto-abandon
+# transitions, otherwise mods keep stale "playing" status for participants
+# the hard-close just bumped to ABANDONED and the in-game overlay can't react
+# to its own auto-abandon.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_finalize_race_broadcasts_leaderboard_with_abandons(hc_async_session):
+    """finalize_race must push the post-abandon participant list to mods."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    from sqlalchemy.orm import selectinload
+
+    now = datetime.now(UTC)
+    async with hc_async_session() as db:
+        organizer = await _make_db_user(db, twitch_id="org_finalize_lb", role=UserRole.ORGANIZER)
+        playing = await _make_db_user(db, twitch_id="finalize_lb_playing")
+        seed = await _make_db_seed(db, suffix="finalize_lb")
+        race = Race(
+            name="Finalize broadcasts leaderboard",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=now - timedelta(hours=1),
+            finished_at=now,
+            race_duration_minutes=60,
+        )
+        db.add(race)
+        await db.flush()
+        db.add(
+            Participant(
+                race_id=race.id,
+                user_id=playing.id,
+                status=ParticipantStatus.PLAYING,
+                color_index=0,
+            )
+        )
+        await db.commit()
+        race_id = race.id
+
+    async with hc_async_session() as db:
+        race = (
+            await db.execute(
+                select(Race)
+                .where(Race.id == race_id)
+                .options(
+                    selectinload(Race.participants).selectinload(Participant.user),
+                    selectinload(Race.seed),
+                )
+            )
+        ).scalar_one()
+        with mock_patch(
+            "speedfog_racing.websocket.race.manager.manager.broadcast_leaderboard",
+            new=AsyncMock(),
+        ) as broadcast_mock:
+            await finalize_race(db, race, forced=True)
+
+    broadcast_mock.assert_awaited_once()
+    args, _kwargs = broadcast_mock.await_args
+    assert args[0] == race_id
+    statuses = {p.user_id: p.status for p in args[1]}
+    assert statuses[playing.id] == ParticipantStatus.ABANDONED
+
+
+# ---------------------------------------------------------------------------
 # PATCH /races must broadcast a race_info_update so connected mods and
 # spectators see field changes without reconnecting.
 # ---------------------------------------------------------------------------

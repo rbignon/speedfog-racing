@@ -79,8 +79,11 @@ async def finalize_race(
     - posts the public chat "race has finished" message
     - clears is_playing on spectator connections
     - triggers ELO update and trait recomputation (background)
-    - broadcasts race_state + race_status + chat
+    - broadcasts leaderboard + race_state + race_status + chat
     - fires Discord notifications
+
+    Caller must also have eagerly loaded ``race.seed`` so the leaderboard
+    broadcast can ship the graph_json mods need for layer naming.
     """
     from speedfog_racing.discord import fire_race_finished_notifications
     from speedfog_racing.websocket.race.manager import manager
@@ -114,6 +117,14 @@ async def finalize_race(
 
     task = asyncio.create_task(recompute_traits_for_race_async(race.id))
     task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+    # Push the post-abandon participant list to mods. broadcast_race_state_update
+    # below handles spectators (race_state carries the full participants), but
+    # mods only consume leaderboard_update / player_update; without this they
+    # keep stale "playing" status for participants the hard-close just bumped
+    # to ABANDONED, so the in-game overlay can't react to its own auto-abandon.
+    graph_json = race.seed.graph_json if race.seed else None
+    await manager.broadcast_leaderboard(race.id, race.participants, graph_json=graph_json)
 
     await broadcast_race_state_update(race.id, race)
     await manager.broadcast_race_status(race.id, "finished")
