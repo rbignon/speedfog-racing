@@ -13,18 +13,21 @@
 		fetchReportedSeeds,
 		resolveReportedSeed,
 		fetchAdminAnalytics,
+		adminListFeedback,
 		type AdminUser,
 		type AdminPool,
 		type ActivityTimeline,
 		type ReportedSeed,
-		type AdminAnalytics
+		type AdminAnalytics,
+		type AdminFeedbackItem,
+		type FeedbackSource
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
 	import { formatPoolName } from '$lib/utils/format';
 	import { Chart, registerables } from 'chart.js';
 	Chart.register(...registerables);
 
-	type Tab = 'users' | 'seeds' | 'stats' | 'activity';
+	type Tab = 'users' | 'seeds' | 'stats' | 'activity' | 'feedback';
 	let activeTab: Tab = $state('stats');
 
 	let users: AdminUser[] = $state([]);
@@ -88,6 +91,16 @@
 
 	let analytics: AdminAnalytics | null = $state(null);
 	let analyticsLoading = $state(false);
+
+	let feedbackItems: AdminFeedbackItem[] = $state([]);
+	let feedbackTotal = $state(0);
+	let feedbackAvg: number | null = $state(null);
+	let feedbackDist: Record<string, number> = $state({});
+	let feedbackRatingFilter: '' | '1-2' | '3' | '4-5' = $state('');
+	let feedbackSourceFilter: '' | FeedbackSource = $state('');
+	let feedbackLoading = $state(false);
+	let feedbackLoaded = $state(false);
+	let feedbackError: string | null = $state(null);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -180,6 +193,9 @@
 		if (tab === 'activity' && !activity) {
 			loadActivity();
 		}
+		if (tab === 'feedback' && !feedbackLoaded) {
+			loadFeedback();
+		}
 	}
 
 	async function loadReportedSeeds() {
@@ -201,6 +217,37 @@
 			error = e instanceof Error ? e.message : 'Failed to load analytics.';
 		} finally {
 			analyticsLoading = false;
+		}
+	}
+
+	async function loadFeedback() {
+		feedbackLoading = true;
+		feedbackError = null;
+		try {
+			const params: Parameters<typeof adminListFeedback>[0] = { limit: 50 };
+			if (feedbackSourceFilter) params.source = feedbackSourceFilter;
+			if (feedbackRatingFilter === '1-2') {
+				params.rating_min = 1;
+				params.rating_max = 2;
+			}
+			if (feedbackRatingFilter === '3') {
+				params.rating_min = 3;
+				params.rating_max = 3;
+			}
+			if (feedbackRatingFilter === '4-5') {
+				params.rating_min = 4;
+				params.rating_max = 5;
+			}
+			const res = await adminListFeedback(params);
+			feedbackItems = res.items;
+			feedbackTotal = res.total;
+			feedbackAvg = res.average_rating;
+			feedbackDist = res.distribution;
+			feedbackLoaded = true;
+		} catch (e) {
+			feedbackError = e instanceof Error ? e.message : 'Failed to load feedback.';
+		} finally {
+			feedbackLoading = false;
 		}
 	}
 
@@ -529,6 +576,13 @@
 			onclick={() => switchTab('activity')}
 		>
 			Activity
+		</button>
+		<button
+			class="tab"
+			class:active={activeTab === 'feedback'}
+			onclick={() => switchTab('feedback')}
+		>
+			Feedback
 		</button>
 	</div>
 
@@ -1053,6 +1107,92 @@
 				</button>
 			{/if}
 		{/if}
+	{:else if activeTab === 'feedback'}
+		<div class="feedback-stats">
+			<span class="feedback-stat">
+				<span class="feedback-stat-label">Total</span>
+				<span class="feedback-stat-value">{feedbackTotal}</span>
+			</span>
+			<span class="feedback-stat">
+				<span class="feedback-stat-label">Average</span>
+				<span class="feedback-stat-value"
+					>{feedbackAvg !== null ? feedbackAvg.toFixed(2) : '-'}</span
+				>
+			</span>
+			{#each [1, 2, 3, 4, 5] as r}
+				<span class="feedback-stat">
+					<span class="feedback-stat-label">{r}★</span>
+					<span class="feedback-stat-value">{feedbackDist[String(r)] ?? 0}</span>
+				</span>
+			{/each}
+		</div>
+
+		<div class="feedback-filters">
+			<label>
+				Rating
+				<select bind:value={feedbackRatingFilter} onchange={loadFeedback}>
+					<option value="">All</option>
+					<option value="1-2">1-2★</option>
+					<option value="3">3★</option>
+					<option value="4-5">4-5★</option>
+				</select>
+			</label>
+			<label>
+				Source
+				<select bind:value={feedbackSourceFilter} onchange={loadFeedback}>
+					<option value="">All</option>
+					<option value="post_first_race">Post first race</option>
+					<option value="user_menu">User menu</option>
+				</select>
+			</label>
+		</div>
+
+		{#if feedbackError}
+			<p class="empty">{feedbackError}</p>
+		{:else if feedbackLoading && feedbackItems.length === 0}
+			<p class="loading">Loading feedback...</p>
+		{:else if feedbackItems.length === 0}
+			<p class="empty">No feedback yet.</p>
+		{:else}
+			<div class="table-wrapper">
+				<table>
+					<thead>
+						<tr>
+							<th>Date</th>
+							<th>User</th>
+							<th>Rating</th>
+							<th>Comment</th>
+							<th>Source</th>
+							<th>Race</th>
+							<th class="num-col">Races played</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each feedbackItems as item (item.id)}
+							<tr>
+								<td class="date-cell">{formatFullDate(item.created_at)}</td>
+								<td>
+									<a href="/user/{item.user.twitch_username}" class="username-link">
+										{item.user.twitch_display_name || item.user.twitch_username}
+									</a>
+								</td>
+								<td class="rating-cell">{'★'.repeat(item.rating)}{'☆'.repeat(5 - item.rating)}</td>
+								<td class="comment-cell">{item.comment ?? ''}</td>
+								<td>{item.source}</td>
+								<td class="mono">
+									{#if item.race}
+										<a href="/race/{item.race.id}" class="username-link"
+											>{item.race.id.slice(0, 8)}</a
+										>
+									{/if}
+								</td>
+								<td class="num-cell">{item.races_played_at_feedback}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
 	{/if}
 </main>
 
@@ -1534,6 +1674,65 @@
 
 	.reported-section {
 		margin-bottom: 2rem;
+	}
+
+	.feedback-stats {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+	}
+
+	.feedback-stat {
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 0.5rem 0.9rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		min-width: 4rem;
+	}
+
+	.feedback-stat-label {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.feedback-stat-value {
+		font-size: var(--font-size-lg);
+		font-weight: 600;
+		color: var(--color-text);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.feedback-filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.feedback-filters label {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+	}
+
+	.rating-cell {
+		color: var(--color-gold);
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.comment-cell {
+		max-width: 40ch;
+		white-space: pre-wrap;
+		word-break: break-word;
 	}
 
 	.reason-cell {
