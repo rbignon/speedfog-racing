@@ -7,8 +7,11 @@
 	import { getTwitchLoginUrl, fetchJoinableRaces } from '$lib/api';
 	import { joinableStore } from '$lib/stores/joinable.svelte';
 	import NavUserSearch from '$lib/components/NavUserSearch.svelte';
+	import FeedbackModal from '$lib/components/FeedbackModal.svelte';
 
 	let { children } = $props();
+
+	let showFeedback = $state(false);
 
 	let isOverlay = $derived(page.url.pathname.startsWith('/overlay/'));
 	let isRaceDetailPage = $derived(page.route.id === '/race/[id]');
@@ -119,6 +122,13 @@
 										onclick={closeUserMenu}>Profile</a
 									>
 									<a href="/settings" class="dropdown-item" onclick={closeUserMenu}>Settings</a>
+									<button
+										class="dropdown-item"
+										onclick={() => {
+											closeUserMenu();
+											showFeedback = true;
+										}}>Donner mon avis</button
+									>
 									<hr class="dropdown-divider" />
 									<button
 										class="dropdown-item"
@@ -166,6 +176,10 @@
 			</footer>
 		{/if}
 	</div>
+{/if}
+
+{#if showFeedback}
+	<FeedbackModal source="user_menu" onClose={() => (showFeedback = false)} />
 {/if}
 
 <style>
