@@ -325,12 +325,16 @@
 	let showFeedback = $state(false);
 	let feedbackShown = $state(false);
 	$effect(() => {
+		// Read myWsParticipant + status + igt_ms unconditionally so Svelte
+		// tracks them as effect dependencies on every run. With early returns
+		// before the reads, a short-circuited run registered only the upstream
+		// deps, and later status changes never re-triggered the effect.
+		const ws = myWsParticipant;
+		const played =
+			ws != null && (ws.status === 'finished' || (ws.status === 'abandoned' && ws.igt_ms > 0));
 		if (showFeedback || feedbackShown) return;
 		if (!auth.user) return;
-		if (auth.user.feedback_prompted_at !== null) return;
-		const ws = myWsParticipant;
-		if (!ws) return;
-		const played = ws.status === 'finished' || (ws.status === 'abandoned' && ws.igt_ms > 0);
+		if (auth.user.feedback_prompted_at) return;
 		if (played) {
 			feedbackShown = true;
 			showFeedback = true;
