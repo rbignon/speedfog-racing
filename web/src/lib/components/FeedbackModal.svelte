@@ -18,9 +18,7 @@
 	let error: string | null = $state(null);
 	let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
-	const subtitle = $derived(
-		source === 'post_first_race' ? 'How was your race?' : 'Share your feedback'
-	);
+	const subtitle = $derived(source === 'post_first_race' ? 'How was your race?' : null);
 
 	$effect(() => {
 		if (source === 'post_first_race') {
@@ -78,11 +76,13 @@
 			<p class="thanks">Thanks for your feedback!</p>
 		{:else}
 			<div class="modal-header">
-				<h2>Your feedback matters</h2>
+				<h2>Feedback</h2>
 				<button class="close-btn" onclick={onClose} aria-label="Close">&times;</button>
 			</div>
 
-			<p class="subtitle">{subtitle}</p>
+			{#if subtitle}
+				<p class="subtitle">{subtitle}</p>
+			{/if}
 
 			<div class="rating-row">
 				<StarRating value={rating} onChange={(v) => (rating = v)} />
