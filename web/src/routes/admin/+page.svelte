@@ -1677,21 +1677,20 @@
 	}
 
 	.feedback-stats {
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
+		grid-template-columns: repeat(7, 1fr);
 		gap: 0.75rem;
 		margin-bottom: 1rem;
 	}
 
 	.feedback-stat {
-		display: inline-flex;
+		display: flex;
 		flex-direction: column;
 		align-items: center;
 		padding: 0.5rem 0.9rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-md);
-		min-width: 4rem;
 	}
 
 	.feedback-stat-label {
@@ -2067,6 +2066,10 @@
 
 		.kpi-grid {
 			grid-template-columns: repeat(2, 1fr);
+		}
+
+		.feedback-stats {
+			grid-template-columns: repeat(4, 1fr);
 		}
 
 		.charts-grid,
