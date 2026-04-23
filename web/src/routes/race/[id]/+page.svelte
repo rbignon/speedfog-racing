@@ -323,14 +323,16 @@
 	});
 
 	let showFeedback = $state(false);
+	let feedbackShown = $state(false);
 	$effect(() => {
-		if (showFeedback) return;
+		if (showFeedback || feedbackShown) return;
 		if (!auth.user) return;
 		if (auth.user.feedback_prompted_at !== null) return;
 		const ws = myWsParticipant;
 		if (!ws) return;
 		const played = ws.status === 'finished' || (ws.status === 'abandoned' && ws.igt_ms > 0);
 		if (played) {
+			feedbackShown = true;
 			showFeedback = true;
 		}
 	});
