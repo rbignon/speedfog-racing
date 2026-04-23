@@ -16,6 +16,7 @@
 	let submitting = $state(false);
 	let done = $state(false);
 	let error: string | null = $state(null);
+	let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const subtitle = $derived(
 		source === 'post_first_race' ? "Comment s'est passée ta course ?" : 'Partage ton retour'
@@ -32,6 +33,15 @@
 		}
 	});
 
+	$effect(() => {
+		return () => {
+			if (closeTimer !== null) {
+				clearTimeout(closeTimer);
+				closeTimer = null;
+			}
+		};
+	});
+
 	async function submit() {
 		if (rating === null || submitting) return;
 		submitting = true;
@@ -44,7 +54,7 @@
 				race_id: source === 'post_first_race' ? raceId : null
 			});
 			done = true;
-			setTimeout(onClose, 1500);
+			closeTimer = setTimeout(onClose, 1500);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Erreur';
 		} finally {
