@@ -17,6 +17,7 @@
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
+	import FeedbackModal from '$lib/components/FeedbackModal.svelte';
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 	import { formatPoolName } from '$lib/utils/format';
 	import { formatIgt } from '$lib/utils/training';
@@ -42,6 +43,7 @@
 	let downloading = $state(false);
 	let showAbandonConfirm = $state(false);
 	let showObsModal = $state(false);
+	let showFeedback = $state(false);
 	let ghosts = $state<Ghost[]>([]);
 	let dagView = $state<'map' | 'replay'>('map');
 
@@ -208,6 +210,15 @@
 			</div>
 			<div class="header-right">
 				<ShareButtons />
+				{#if auth.isLoggedIn}
+					<button
+						type="button"
+						class="btn btn-secondary btn-sm"
+						onclick={() => (showFeedback = true)}
+					>
+						Feedback
+					</button>
+				{/if}
 				{#if session.seed_number}
 					<span class="seed-badge">Seed {session.seed_number}</span>
 				{/if}
@@ -356,6 +367,10 @@
 
 {#if showObsModal}
 	<ObsOverlayModal mode="training" {sessionId} onClose={() => (showObsModal = false)} />
+{/if}
+
+{#if showFeedback}
+	<FeedbackModal source="user_menu" onClose={() => (showFeedback = false)} />
 {/if}
 
 <style>
