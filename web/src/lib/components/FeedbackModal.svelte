@@ -19,7 +19,7 @@
 	let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const subtitle = $derived(
-		source === 'post_first_race' ? "Comment s'est passée ta course ?" : 'Partage ton retour'
+		source === 'post_first_race' ? 'How was your race?' : 'Share your feedback'
 	);
 
 	$effect(() => {
@@ -56,7 +56,7 @@
 			done = true;
 			closeTimer = setTimeout(onClose, 1500);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Erreur';
+			error = e instanceof Error ? e.message : 'Error';
 		} finally {
 			submitting = false;
 		}
@@ -75,11 +75,11 @@
 		onclick={(e) => e.stopPropagation()}
 	>
 		{#if done}
-			<p class="thanks">Merci pour ton retour !</p>
+			<p class="thanks">Thanks for your feedback!</p>
 		{:else}
 			<div class="modal-header">
-				<h2>Ton avis compte</h2>
-				<button class="close-btn" onclick={onClose} aria-label="Fermer">&times;</button>
+				<h2>Your feedback matters</h2>
+				<button class="close-btn" onclick={onClose} aria-label="Close">&times;</button>
 			</div>
 
 			<p class="subtitle">{subtitle}</p>
@@ -91,7 +91,7 @@
 			<textarea
 				bind:value={comment}
 				maxlength="1000"
-				placeholder="Ce qui t'a plu, déplu, une suggestion... (optionnel)"
+				placeholder="What you liked, disliked, a suggestion... (optional)"
 			></textarea>
 
 			{#if error}
@@ -99,9 +99,9 @@
 			{/if}
 
 			<div class="actions">
-				<button class="btn btn-secondary" onclick={onClose} disabled={submitting}> Fermer </button>
+				<button class="btn btn-secondary" onclick={onClose} disabled={submitting}> Close </button>
 				<button class="btn btn-primary" onclick={submit} disabled={rating === null || submitting}>
-					{submitting ? 'Envoi...' : 'Envoyer'}
+					{submitting ? 'Sending...' : 'Send'}
 				</button>
 			</div>
 		{/if}

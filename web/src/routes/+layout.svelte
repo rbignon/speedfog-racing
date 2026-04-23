@@ -127,7 +127,7 @@
 										onclick={() => {
 											closeUserMenu();
 											showFeedback = true;
-										}}>Donner mon avis</button
+										}}>Give feedback</button
 									>
 									<hr class="dropdown-divider" />
 									<button
