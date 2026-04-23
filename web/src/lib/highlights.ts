@@ -120,6 +120,7 @@ export interface NodeInfo {
   tier: number;
   layer: number;
   displayName: string;
+  bossName?: string;
   type: string;
 }
 
@@ -132,10 +133,12 @@ export function buildNodeInfo(
   ).nodes;
   if (!nodes) return map;
   for (const [id, data] of Object.entries(nodes)) {
+    const bossName = data.boss_name as string | undefined;
     map.set(id, {
       tier: (data.tier as number) ?? 1,
       layer: (data.layer as number) ?? 0,
       displayName: (data.display_name as string) ?? id,
+      bossName: bossName || undefined,
       type: (data.type as string) ?? "mini_dungeon",
     });
   }
@@ -160,11 +163,12 @@ export function zSeg(
   nodeId: string,
   nodeInfo: Map<string, NodeInfo>,
 ): DescriptionSegment {
-  const full = nodeInfo.get(nodeId)?.displayName ?? nodeId;
+  const info = nodeInfo.get(nodeId);
+  const name = info?.bossName ?? shortName(info?.displayName ?? nodeId);
   return {
     type: "zone",
     nodeId,
-    name: shortName(full),
+    name,
   };
 }
 

@@ -3,6 +3,8 @@ import {
   computeZoneTimes,
   computeHighlights,
   descriptionText,
+  buildNodeInfo,
+  zSeg,
   type ZoneTime,
   type Highlight,
 } from "$lib/highlights";
@@ -65,6 +67,87 @@ function nodeInfoMap(
   }
   return map;
 }
+
+describe("buildNodeInfo", () => {
+  it("extracts boss_name when present", () => {
+    const info = buildNodeInfo({
+      nodes: {
+        margit: {
+          type: "major_boss",
+          display_name: "Stormveil - Margit",
+          boss_name: "Margit, the Fell Omen",
+          tier: 3,
+          layer: 1,
+        },
+        dungeon: {
+          type: "mini_dungeon",
+          display_name: "Altus Tunnel",
+          tier: 2,
+          layer: 2,
+        },
+      },
+    });
+    expect(info.get("margit")?.bossName).toBe("Margit, the Fell Omen");
+    expect(info.get("dungeon")?.bossName).toBeUndefined();
+  });
+
+  it("treats empty-string boss_name as absent", () => {
+    const info = buildNodeInfo({
+      nodes: {
+        n: {
+          type: "major_boss",
+          display_name: "Some Boss",
+          boss_name: "",
+          tier: 3,
+          layer: 1,
+        },
+      },
+    });
+    expect(info.get("n")?.bossName).toBeUndefined();
+  });
+});
+
+describe("zSeg", () => {
+  const zoneName = (seg: ReturnType<typeof zSeg>) => {
+    if (seg.type !== "zone") {
+      throw new Error(`expected zone segment, got ${seg.type}`);
+    }
+    return seg.name;
+  };
+
+  it("prefers boss_name over display_name when present", () => {
+    const info = buildNodeInfo({
+      nodes: {
+        bayle: {
+          type: "major_boss",
+          display_name: "Jagged Peak - Bayle",
+          boss_name: "Bayle the Dread",
+          tier: 3,
+          layer: 1,
+        },
+      },
+    });
+    expect(zoneName(zSeg("bayle", info))).toBe("Bayle the Dread");
+  });
+
+  it("falls back to shortName(display_name) when boss_name is missing", () => {
+    const info = buildNodeInfo({
+      nodes: {
+        dungeon: {
+          type: "mini_dungeon",
+          display_name: "Limgrave - Stormfoot Catacombs",
+          tier: 2,
+          layer: 2,
+        },
+      },
+    });
+    expect(zoneName(zSeg("dungeon", info))).toBe("Stormfoot Catacombs");
+  });
+
+  it("falls back to nodeId when node is unknown", () => {
+    expect(zoneName(zSeg("missing", new Map()))).toBe("missing");
+  });
+});
 
 describe("computeZoneTimes", () => {
   it("computes time spent in each zone from zone_history", () => {
@@ -378,6 +461,54 @@ describe("speed highlights", () => {
     expect(sprint).toBeDefined();
     expect(sprint!.playerIds).toContain("alice");
     expect(descriptionText(sprint!)).toContain("boss");
+  });
+
+  it("Sprint Final: uses boss_name in the description when present", () => {
+    const sprintGraph = {
+      nodes: {
+        start: {
+          type: "start",
+          display_name: "start",
+          tier: 1,
+          layer: 0,
+          zones: [],
+          weight: 1,
+        },
+        boss: {
+          type: "final_boss",
+          display_name: "Haligtree - Loretta Arena",
+          boss_name: "Loretta, Knight of the Haligtree",
+          tier: 3,
+          layer: 1,
+          zones: [],
+          weight: 1,
+        },
+      },
+      edges: [],
+      total_layers: 2,
+    };
+    const players = [
+      participant("alice", {
+        igt_ms: 60000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "boss", igt_ms: 5000 },
+        ],
+      }),
+      participant("bob", {
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "boss", igt_ms: 5000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, sprintGraph);
+    const sprint = highlights.find((h) => h.type === "sprint_final");
+    expect(sprint).toBeDefined();
+    const text = descriptionText(sprint!);
+    expect(text).toContain("Loretta, Knight of the Haligtree");
+    expect(text).not.toContain("Loretta Arena");
   });
 
   it("Sprint Final: does not fire when no player cleared the final boss", () => {
