@@ -23,6 +23,7 @@
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+	import FeedbackModal from '$lib/components/FeedbackModal.svelte';
 	import { goto } from '$app/navigation';
 	import { deleteRace, getTwitchLoginUrl } from '$lib/api';
 	import DateTimePicker from '$lib/components/DateTimePicker.svelte';
@@ -319,6 +320,19 @@
 			chatActiveTab = 'participants';
 		}
 		prevPlaying = isParticipantPlaying;
+	});
+
+	let showFeedback = $state(false);
+	$effect(() => {
+		if (showFeedback) return;
+		if (!auth.user) return;
+		if (auth.user.feedback_prompted_at !== null) return;
+		const ws = myWsParticipant;
+		if (!ws) return;
+		const played = ws.status === 'finished' || (ws.status === 'abandoned' && ws.igt_ms > 0);
+		if (played) {
+			showFeedback = true;
+		}
 	});
 
 	// Debug: force full DAG view even as participant (call __debugDagFull() in console)
@@ -1212,6 +1226,14 @@
 				loading={abandoning}
 				onConfirm={handleAbandon}
 				onCancel={() => (showAbandonConfirm = false)}
+			/>
+		{/if}
+
+		{#if showFeedback}
+			<FeedbackModal
+				source="post_first_race"
+				raceId={initialRace.id}
+				onClose={() => (showFeedback = false)}
 			/>
 		{/if}
 	</div>
