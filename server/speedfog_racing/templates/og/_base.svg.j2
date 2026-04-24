@@ -31,20 +31,20 @@
         {% endfor %}{% endfor %}
       </g>
     </g>
-    <text x="68" y="37" font-family="Inter, sans-serif" font-size="34" font-weight="600" fill="#e8e6e1">SpeedFog Racing</text>
+    <text x="68" y="39" font-family="Inter, sans-serif" font-size="38" font-weight="600" fill="#e8e6e1">SpeedFog Racing</text>
   </g>
 
   {# Status badge (top right). Site convention: small radius, tinted bg, uppercase. #}
   {% set badge_bg = {"Upcoming": "#1d3050", "Live": "#3a1818", "Finished": "#0f3c2c"}[status_label] %}
-  <g transform="translate(1140, 58)">
-    {% set badge_w = (status_label|length * 15) + 40 %}
-    <rect x="-{{ badge_w }}" y="0" width="{{ badge_w }}" height="48" rx="6" fill="{{ badge_bg }}"/>
-    <text x="-{{ badge_w / 2 }}" y="32" text-anchor="middle" font-family="Inter, sans-serif" font-size="22" font-weight="600" letter-spacing="1.2" fill="{{ accent }}">{{ status_label.upper() }}</text>
+  <g transform="translate(1140, 56)">
+    {% set badge_w = (status_label|length * 16) + 44 %}
+    <rect x="-{{ badge_w }}" y="0" width="{{ badge_w }}" height="52" rx="6" fill="{{ badge_bg }}"/>
+    <text x="-{{ badge_w / 2 }}" y="35" text-anchor="middle" font-family="Inter, sans-serif" font-size="24" font-weight="600" letter-spacing="1.2" fill="{{ accent }}">{{ status_label.upper() }}</text>
   </g>
 
   {% block body %}{% endblock %}
 
   {# Meta row (bottom) #}
-  <text x="60" y="570" font-family="Inter, sans-serif" font-size="30" fill="#9ca3af">{{ participant_count_label }} · <tspan fill="#e8e6e1">{{ pool_name }}</tspan></text>
+  <text x="60" y="572" font-family="Inter, sans-serif" font-size="33" fill="#9ca3af">{{ participant_count_label }} · <tspan fill="#e8e6e1">{{ pool_name }}</tspan></text>
   {% block meta_right %}{% endblock %}
 </svg>
