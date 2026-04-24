@@ -79,7 +79,7 @@ async def create_scheduled_event(
         "POST",
         f"/guilds/{guild_id}/scheduled-events",
         json={
-            "name": _escape_discord_md(race_name),
+            "name": race_name,
             "entity_type": 3,  # EXTERNAL
             "scheduled_start_time": scheduled_at.isoformat(),
             "scheduled_end_time": (scheduled_at + EVENT_DURATION).isoformat(),
