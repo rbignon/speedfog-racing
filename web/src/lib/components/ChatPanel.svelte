@@ -9,14 +9,14 @@
 
 	let { messages, canSend, onSend }: Props = $props();
 
-	const TRAIT_META: Record<string, { icon: string; color: string }> = {
-		rusher: { icon: '\u26A1', color: '#EF4444' },
-		cautious: { icon: '\uD83D\uDEE1\uFE0F', color: '#10B981' },
-		boss_slayer: { icon: '\u2694\uFE0F', color: '#FBBF24' },
-		resilient: { icon: '\uD83D\uDCAA', color: '#C8A44E' },
-		explorer: { icon: '\uD83C\uDF10', color: '#3B82F6' },
-		pathfinder: { icon: '\uD83E\uDDED', color: '#A78BFA' },
-		rage_quitter: { icon: '\uD83D\uDCA5', color: '#DC2626' }
+	const TRAIT_META: Record<string, { icon: string; color: string; label: string }> = {
+		rusher: { icon: '\u26A1', color: '#EF4444', label: 'Rusher' },
+		cautious: { icon: '\uD83D\uDEE1\uFE0F', color: '#10B981', label: 'Cautious' },
+		boss_slayer: { icon: '\u2694\uFE0F', color: '#FBBF24', label: 'Boss Slayer' },
+		resilient: { icon: '\uD83D\uDCAA', color: '#C8A44E', label: 'Resilient' },
+		explorer: { icon: '\uD83C\uDF10', color: '#3B82F6', label: 'Explorer' },
+		pathfinder: { icon: '\uD83E\uDDED', color: '#A78BFA', label: 'Pathfinder' },
+		rage_quitter: { icon: '\uD83D\uDCA5', color: '#DC2626', label: 'Rage Quitter' }
 	};
 
 	let inputValue = $state('');
@@ -90,6 +90,8 @@
 									<span
 										class="badge badge-trait"
 										style="background: {trait.color}20; color: {trait.color}"
+										title={trait.label}
+										aria-label={trait.label}
 									>{trait.icon}</span>
 								{/if}
 								<span class="timestamp">{formatTime(msg.timestamp)}</span>
