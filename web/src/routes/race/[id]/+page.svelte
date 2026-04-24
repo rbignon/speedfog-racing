@@ -513,6 +513,13 @@
 		return `${s}s`;
 	}
 
+	function formatMinutes(minutes: number): string {
+		if (minutes <= 60) return `${minutes} min`;
+		const h = Math.floor(minutes / 60);
+		const m = minutes % 60;
+		return m === 0 ? `${h}h` : `${h}h${m}m`;
+	}
+
 	let raceFull = $derived(
 		liveOpenRegistration &&
 			liveMaxParticipants !== null &&
@@ -1088,7 +1095,7 @@
 									</div>
 								{:else if liveLateJoinWindow !== null}
 									<span class="value">
-										{liveLateJoinWindow} min
+										{formatMinutes(liveLateJoinWindow)}
 										{#if isOrganizer}
 											<button class="btn-edit" onclick={startEditLateJoin}>Edit</button>
 										{/if}
@@ -1148,7 +1155,7 @@
 									</div>
 								{:else if liveRaceDuration !== null}
 									<span class="value">
-										{liveRaceDuration} min
+										{formatMinutes(liveRaceDuration)}
 										{#if isOrganizer}
 											<button class="btn-edit" onclick={startEditDuration}>Edit</button>
 										{/if}
