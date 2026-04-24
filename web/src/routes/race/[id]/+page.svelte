@@ -688,10 +688,11 @@
 						participants={raceStore.leaderboard}
 						{totalLayers}
 						mode={raceStatus === 'finished' ? 'finished' : 'running'}
-						zoneNames={raceStatus === 'running' &&
-						myWsParticipantId &&
-						!myParticipantFinished &&
-						!forceFullDag
+						zoneNames={(raceStatus === 'running' &&
+							myWsParticipantId &&
+							!myParticipantFinished &&
+							!forceFullDag) ||
+						dagHiddenByRunningRules
 							? null
 							: zoneNames}
 						selectedIds={selectedParticipantIds}
