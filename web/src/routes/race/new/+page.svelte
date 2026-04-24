@@ -316,7 +316,10 @@
 									min after start
 								{/if}
 							</label>
-							<p class="hint">Counted from the actual start time.</p>
+							<p class="hint">
+								Counted from the actual start time. The map stays hidden from non-participants until
+								the window closes.
+							</p>
 						</div>
 
 						<div class="form-group">
