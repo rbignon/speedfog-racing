@@ -64,7 +64,7 @@
 		{/if}
 		<div class="info-item">
 			<span class="label">Starting Weapons</span>
-			<span class="value">+{poolConfig.weapon_upgrade}</span>
+			<span class="value">+{poolConfig.weapon_upgrade || 0}</span>
 		</div>
 		{#if poolConfig.items_randomized != null}
 			<div class="info-item">
