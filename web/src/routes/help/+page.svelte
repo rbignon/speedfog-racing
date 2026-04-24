@@ -37,7 +37,8 @@
 		standard: {
 			label: 'Standard',
 			duration: '~1h',
-			pitch: 'The balanced format. Good variety of zones, fair resources, straightforward difficulty curve.',
+			pitch:
+				'The balanced format. Good variety of zones, fair resources, straightforward difficulty curve.',
 			layers: '25–30',
 			majorBosses: 'Medium',
 			finalTier: 18,
@@ -51,7 +52,8 @@
 		sprint: {
 			label: 'Sprint',
 			duration: '~30min',
-			pitch: 'Short and fast. Less depth, quicker to the final boss. Great for warmups or time-limited sessions.',
+			pitch:
+				'Short and fast. Less depth, quicker to the final boss. Great for warmups or time-limited sessions.',
 			layers: '10–15',
 			majorBosses: 'Medium',
 			finalTier: 13,
@@ -95,8 +97,7 @@
 		boss_shuffle: {
 			label: 'Boss Shuffle',
 			duration: '~1h',
-			pitch:
-				'Same structure as Standard, but every boss is randomized, majors included.',
+			pitch: 'Same structure as Standard, but every boss is randomized, majors included.',
 			layers: '25–30',
 			majorBosses: 'Medium',
 			finalTier: 18,
@@ -127,7 +128,10 @@
 
 <svelte:head>
 	<title>How to Play – SpeedFog Racing</title>
-	<meta name="description" content="How to play SpeedFog Racing. Setup guide, game mode descriptions, and instructions for joining competitive Elden Ring fog gate races." />
+	<meta
+		name="description"
+		content="How to play SpeedFog Racing. Setup guide, game mode descriptions, and instructions for joining competitive Elden Ring fog gate races."
+	/>
 	<link rel="canonical" href="{PUBLIC_BASE_URL}/help" />
 </svelte:head>
 
@@ -191,8 +195,7 @@
 				<ol>
 					<li>An organizer sends you an <strong>invite link</strong>. Click it to join.</li>
 					<li>
-						<strong>Download your seed pack</strong> from the race page once seeds are
-						released.
+						<strong>Download your seed pack</strong> from the race page once seeds are released.
 					</li>
 					<li>Unzip and run <code>launch_speedfog.bat</code>.</li>
 					<li>Wait for the organizer to start the race.</li>
@@ -214,9 +217,9 @@
 		</div>
 
 		<p class="path-note">
-			Solo is the best way to discover SpeedFog. No invite needed, no waiting, just pick a
-			mode and go. Your times, deaths, and route maps are saved so you can track your
-			progress. You can mark a session as a <em>slow run</em> to exclude it from your stats.
+			Solo is the best way to discover SpeedFog. No invite needed, no waiting, just pick a mode and
+			go. Your times, deaths, and route maps are saved so you can track your progress. You can mark
+			a session as a <em>slow run</em> to exclude it from your stats.
 		</p>
 	</section>
 
@@ -235,28 +238,28 @@
 		<h3>Starting Equipment</h3>
 		<p>
 			Every player on the same seed gets <strong>the same starting build</strong>: randomized
-			weapons, armor, spells, talismans, key items, runes, and smithing stones. The exact
-			care package depends on the <a href="#game-modes">game mode</a>.
+			weapons, armor, spells, talismans, key items, runes, and smithing stones. The exact care
+			package depends on the <a href="#game-modes">game mode</a>.
 		</p>
 
 		<h3>Route Map</h3>
 		<p>
 			The route map is organized by <strong>increasing depth</strong>. Paths can
-			<strong>split and merge</strong>, and occasional <strong>cross-links</strong> create
-			shortcuts between distant branches. At each depth, parallel paths have the
+			<strong>split and merge</strong>, and occasional <strong>cross-links</strong> create shortcuts
+			between distant branches. At each depth, parallel paths have the
 			<strong>same difficulty</strong>, only the specific zones differ.
 		</p>
 		<p>
-			Fog gates are <strong>one-way</strong>: you can only walk through them in one direction.
-			You can always <strong>fast travel back</strong> to a previous grace if you need to return
-			to an earlier zone.
+			Fog gates are <strong>one-way</strong>: you can only walk through them in one direction. You
+			can always <strong>fast travel back</strong> to a previous grace if you need to return to an earlier
+			zone.
 		</p>
 		<div class="dag-demo">
 			<MetroDag graphJson={heroSeed} />
 		</div>
 		<p class="dag-caption">
-			An example route map. During a race, participants don't see the map. It is revealed once
-			the race ends.
+			An example route map. During a race, participants don't see the map. It is revealed once the
+			race ends.
 		</p>
 
 		<h3>Zones &amp; Enemies</h3>
@@ -264,22 +267,22 @@
 			Zones include mini dungeons, legacy dungeons, and boss arenas. Enemy difficulty
 			<strong>scales with zone depth</strong>. Item and enemy locations are
 			<strong>randomized</strong>, and stat requirements are removed, so you can use
-			<strong>any weapon regardless of stats</strong>. Weapons found in the world are
-			automatically upgraded to match your progression.
+			<strong>any weapon regardless of stats</strong>. Weapons found in the world are automatically
+			upgraded to match your progression.
 		</p>
 
 		<h3>Bosses</h3>
 		<p>
-			All players face the <strong>same number of bosses</strong> on balanced parallel paths.
-			Bosses drop <strong>weapons, talismans, Golden Seeds, and Sacred Tears</strong>. Whether
-			bosses are shuffled depends on the <a href="#game-modes">game mode</a>.
+			All players face the <strong>same number of bosses</strong> on balanced parallel paths. Bosses
+			drop <strong>weapons, talismans, Golden Seeds, and Sacred Tears</strong>. Whether bosses are
+			shuffled depends on the <a href="#game-modes">game mode</a>.
 		</p>
 		<h3>Victory</h3>
 		<p>
-			All paths converge toward a single <strong>final boss</strong>, a random major boss
-			(Radagon, Malenia, Mohg, Radahn...) that changes with every seed. Defeat it to finish.
-			Your time is recorded via <strong>in-game timer (IGT)</strong>, which pauses during
-			loading screens, death animations, and menus.
+			All paths converge toward a single <strong>final boss</strong>, a random major boss (Radagon,
+			Malenia, Mohg, Radahn...) that changes with every seed. Defeat it to finish. Your time is
+			recorded via <strong>in-game timer (IGT)</strong>, which pauses during loading screens, death
+			animations, and menus.
 		</p>
 
 		<!-- Accordion: Race rules -->
@@ -325,12 +328,12 @@
 				<ul>
 					<li><strong>Kalé</strong> has moved to the Roundtable Hold.</li>
 					<li>
-						<strong>Merchants</strong> from the open world are relocated inside the
-						zones. Keep an eye out, they can have useful gear.
+						<strong>Merchants</strong> from the open world are relocated inside the zones. Keep an eye
+						out, they can have useful gear.
 					</li>
 					<li>
-						After defeating <strong>Radahn</strong>, make sure to activate the grace or
-						you won't be able to progress to the next zone.
+						After defeating <strong>Radahn</strong>, make sure to activate the grace or you won't be
+						able to progress to the next zone.
 					</li>
 				</ul>
 			</div>
@@ -419,15 +422,15 @@
 				<h3>In-Game Overlay</h3>
 				<p>
 					A compact overlay sits in the corner of your screen, so there's no need to alt-tab. It
-					shows your current zone, in-game time, tier, death count, progression, and a
-					live leaderboard with all participants.
+					shows your current zone, in-game time, tier, death count, progression, and a live
+					leaderboard with all participants.
 				</p>
 
 				<h3>Zone Tracking</h3>
 				<p>
-					Your progress is tracked <strong>automatically</strong> as you walk through fog
-					gates, no manual action needed. The mod detects fog gate traversals and reports
-					them to the server, which updates the leaderboard in real time.
+					Your progress is tracked <strong>automatically</strong> as you walk through fog gates, no manual
+					action needed. The mod detects fog gate traversals and reports them to the server, which updates
+					the leaderboard in real time.
 				</p>
 			</div>
 			<div class="overlay-screenshot">
@@ -438,9 +441,7 @@
 						class="screenshot"
 					/>
 				</div>
-				<p class="screenshot-caption">
-					The in-game overlay during a race.
-				</p>
+				<p class="screenshot-caption">The in-game overlay during a race.</p>
 			</div>
 		</div>
 
@@ -457,23 +458,21 @@
 		{#if isOpen('gap-timing')}
 			<div class="panel">
 				<p>
-					The leaderboard shows <strong>time gaps</strong> relative to the leader's pace
-					on each depth, similar to LiveSplit splits.
+					The leaderboard shows <strong>time gaps</strong> relative to the leader's pace on each depth,
+					similar to LiveSplit splits.
 				</p>
 				<ul>
 					<li>
-						<strong style="color: var(--color-success)">Green</strong> = you entered
-						this depth faster than the leader did
+						<strong style="color: var(--color-success)">Green</strong> = you entered this depth faster
+						than the leader did
 					</li>
 					<li>
-						<strong style="color: var(--color-danger)">Red</strong> = you entered this
-						depth slower
+						<strong style="color: var(--color-danger)">Red</strong> = you entered this depth slower
 					</li>
 				</ul>
 				<p>
-					The gap is fixed when you enter a new depth (based on entry time difference). It
-					only starts growing in real time if you exceed the leader's time budget for that
-					depth.
+					The gap is fixed when you enter a new depth (based on entry time difference). It only
+					starts growing in real time if you exceed the leader's time budget for that depth.
 				</p>
 			</div>
 		{/if}
@@ -510,17 +509,15 @@
 		{#if isOpen('overlay-settings')}
 			<div class="panel">
 				<p>
-					Go to <a href="/settings"><strong>Settings</strong></a> to customize the
-					in-game overlay before downloading your seed pack:
+					Go to <a href="/settings"><strong>Settings</strong></a> to customize the in-game overlay before
+					downloading your seed pack:
 				</p>
 				<ul>
 					<li><strong>Overlay size</strong>: adjust the scale to fit your resolution</li>
 					<li><strong>Zone language</strong>: display zone names in your language</li>
 					<li><strong>Tips language</strong>: in-game tips in your language</li>
 				</ul>
-				<p>
-					These settings are baked into your seed pack, so change them before downloading.
-				</p>
+				<p>These settings are baked into your seed pack, so change them before downloading.</p>
 			</div>
 		{/if}
 	</section>
@@ -543,8 +540,8 @@
 		{#if isOpen('faq-respec')}
 			<div class="panel">
 				<p>
-					Yes. You start with Larval Tears and can respec at any Site of Grace (no need to
-					find Rennala).
+					Yes. You start with Larval Tears and can respec at any Site of Grace (no need to find
+					Rennala).
 				</p>
 			</div>
 		{/if}
@@ -561,9 +558,8 @@
 		{#if isOpen('faq-smithing')}
 			<div class="panel">
 				<p>
-					All smithing stones are available at the Roundtable Hold shop in unlimited stock
-					from the start. Weapons found in the world are automatically upgraded to match
-					your progression.
+					All smithing stones are available at the Roundtable Hold shop in unlimited stock from the
+					start. Weapons found in the world are automatically upgraded to match your progression.
 				</p>
 			</div>
 		{/if}
@@ -580,9 +576,9 @@
 		{#if isOpen('faq-igt')}
 			<div class="panel">
 				<p>
-					IGT (In-Game Time) is Elden Ring's internal timer. It ticks while you play, and
-					pauses during loading screens, death animations, and menus. Deaths increment a
-					counter but don't add to your time.
+					IGT (In-Game Time) is Elden Ring's internal timer. It ticks while you play, and pauses
+					during loading screens, death animations, and menus. Deaths increment a counter but don't
+					add to your time.
 				</p>
 			</div>
 		{/if}
@@ -601,13 +597,13 @@
 				<p>Same game, different context:</p>
 				<ul>
 					<li>
-						<strong>Solo</strong>: you play alone, at your own pace. No opponents, no
-						waiting. The route map is visible from the start. Seeds aren't consumed, so
-						you can practice as much as you want.
+						<strong>Solo</strong>: you play alone, at your own pace. No opponents, no waiting. The
+						route map is visible from the start. Seeds aren't consumed, so you can practice as much
+						as you want.
 					</li>
 					<li>
-						<strong>Racing</strong>: synchronized start, live leaderboard, route map
-						hidden until the race ends. Competitive results recorded.
+						<strong>Racing</strong>: synchronized start, live leaderboard, route map hidden until
+						the race ends. Competitive results recorded.
 					</li>
 				</ul>
 			</div>
@@ -628,8 +624,8 @@
 			<div class="panel">
 				<p>
 					The mod injects into Elden Ring's process, which antivirus software can flag as
-					suspicious. This is expected behavior for game mods. Allow the file in Windows
-					Defender (or your antivirus) and re-run <code>launch_speedfog.bat</code>.
+					suspicious. This is expected behavior for game mods. Allow the file in Windows Defender
+					(or your antivirus) and re-run <code>launch_speedfog.bat</code>.
 				</p>
 			</div>
 		{/if}
@@ -646,8 +642,8 @@
 		{#if isOpen('faq-stale')}
 			<div class="panel">
 				<p>
-					The organizer changed the seed after you downloaded. Go back to the race page
-					and download the new zip.
+					The organizer changed the seed after you downloaded. Go back to the race page and download
+					the new zip.
 				</p>
 			</div>
 		{/if}
@@ -664,8 +660,8 @@
 		{#if isOpen('faq-overlay')}
 			<div class="panel">
 				<p>
-					Press <kbd>F9</kbd> to toggle it. If that doesn't work, make sure you launched
-					with <code>launch_speedfog.bat</code> (not the regular game shortcut).
+					Press <kbd>F9</kbd> to toggle it. If that doesn't work, make sure you launched with
+					<code>launch_speedfog.bat</code> (not the regular game shortcut).
 				</p>
 			</div>
 		{/if}
@@ -682,8 +678,8 @@
 		{#if isOpen('faq-disconnect')}
 			<div class="panel">
 				<p>
-					The mod reconnects automatically. Your progress is not lost: the server replays
-					any missed zone events on reconnect.
+					The mod reconnects automatically. Your progress is not lost: the server replays any missed
+					zone events on reconnect.
 				</p>
 			</div>
 		{/if}
@@ -700,8 +696,8 @@
 		{#if isOpen('faq-crash-save')}
 			<div class="panel">
 				<p>
-					A crash during a modded warp can corrupt the save file. If Elden Ring crashes
-					again when you reload, use the built-in recovery tool:
+					A crash during a modded warp can corrupt the save file. If Elden Ring crashes again when
+					you reload, use the built-in recovery tool:
 				</p>
 				<ol>
 					<li>
@@ -711,9 +707,8 @@
 					<li>Relaunch with <code>launch_speedfog.bat</code>.</li>
 				</ol>
 				<p>
-					Backups are created automatically every minute while the game is running. A
-					pre-run backup is also saved before each session, so you can always roll back
-					to the start.
+					Backups are created automatically every minute while the game is running. A pre-run backup
+					is also saved before each session, so you can always roll back to the start.
 				</p>
 			</div>
 		{/if}
@@ -730,13 +725,11 @@
 		{#if isOpen('faq-abandon')}
 			<div class="panel">
 				<p>
-					If your IGT doesn't change for 30 minutes (game closed, stuck, or AFK), the
-					server marks you as abandoned. The race can finish once all participants are done
-					or abandoned.
+					If your IGT doesn't change for 30 minutes (game closed, stuck, or AFK), the server marks
+					you as abandoned. The race can finish once all participants are done or abandoned.
 				</p>
 			</div>
 		{/if}
-
 	</section>
 
 	<!-- ==================== ORGANIZING ==================== -->
@@ -748,16 +741,15 @@
 				Click <strong>Create Race</strong> from the navigation bar.
 			</li>
 			<li>
-				Choose a name, select a <strong>game mode</strong>, and configure
-				options: participate yourself or organize only, schedule a time, set public or private
-				visibility.
+				Choose a name, select a <strong>game mode</strong>, and configure options: participate
+				yourself or organize only, schedule a time, set public or private visibility.
 			</li>
 			<li>
 				<strong>Invite players</strong>: send them an invite link from the race page.
 			</li>
 			<li>
-				<strong>Release seed packs</strong>, typically ~10 minutes before start. Players
-				can then download and install.
+				<strong>Release seed packs</strong>, typically ~10 minutes before start. Players can then
+				download and install.
 			</li>
 			<li>
 				When everyone is ready, click <strong>Start Race</strong>. All connected players are
@@ -773,7 +765,7 @@
 			<span class="lifecycle-arrow">&rarr;</span>
 			<div class="lifecycle-step">
 				<strong>Running</strong>
-				<p>Live tracking and leaderboard active.</p>
+				<p>Live tracking and leaderboard active. Late joiners can still register if enabled.</p>
 			</div>
 			<span class="lifecycle-arrow">&rarr;</span>
 			<div class="lifecycle-step">
@@ -781,6 +773,70 @@
 				<p>Results and full route map revealed.</p>
 			</div>
 		</div>
+
+		<!-- Accordion: Late joiners -->
+		<button
+			class="accordion"
+			class:open={isOpen('orga-late-join')}
+			aria-expanded={isOpen('orga-late-join')}
+			onclick={() => toggleDetail('orga-late-join')}
+		>
+			<span>Late joiners</span>
+			<span class="chevron"></span>
+		</button>
+		{#if isOpen('orga-late-join')}
+			<div class="panel">
+				<p>
+					Under <strong>Advanced options</strong> on the creation form, allow players to register after
+					the race starts within a configurable window (counted from the actual start time). Useful for
+					viewers who discover a race live and want to jump in.
+				</p>
+				<p>
+					While the window is open, the route map stays hidden from non-participants to avoid
+					spoiling latecomers. It is revealed once the window closes.
+				</p>
+			</div>
+		{/if}
+
+		<!-- Accordion: Auto-end -->
+		<button
+			class="accordion"
+			class:open={isOpen('orga-auto-end')}
+			aria-expanded={isOpen('orga-auto-end')}
+			onclick={() => toggleDetail('orga-auto-end')}
+		>
+			<span>Auto-end</span>
+			<span class="chevron"></span>
+		</button>
+		{#if isOpen('orga-auto-end')}
+			<div class="panel">
+				<p>
+					Under <strong>Advanced options</strong>, set a maximum duration after which the race
+					finalizes automatically. Useful for time-boxed community events. The organizer can still
+					finalize earlier manually.
+				</p>
+			</div>
+		{/if}
+
+		<!-- Accordion: Spoiler protection -->
+		<button
+			class="accordion"
+			class:open={isOpen('orga-private-dag')}
+			aria-expanded={isOpen('orga-private-dag')}
+			onclick={() => toggleDetail('orga-private-dag')}
+		>
+			<span>Spoiler protection (private map)</span>
+			<span class="chevron"></span>
+		</button>
+		{#if isOpen('orga-private-dag')}
+			<div class="panel">
+				<p>
+					Under <strong>Advanced options</strong>, hide the route map from non-participants for the
+					entire race. The map is only revealed once the race is finished. Useful for asynchronous
+					formats where spectators may later want to play the same seed.
+				</p>
+			</div>
+		{/if}
 
 		<!-- Accordion: Seed management -->
 		<button
@@ -795,9 +851,9 @@
 		{#if isOpen('orga-seeds')}
 			<div class="panel">
 				<p>
-					A seed is assigned when you create the race. You can <strong>reroll</strong> to
-					get a different seed as long as you haven't released the seed packs yet. Once
-					packs are released and players have downloaded, the seed is locked.
+					A seed is assigned when you create the race. You can <strong>reroll</strong> to get a different
+					seed as long as you haven't released the seed packs yet. Once packs are released and players
+					have downloaded, the seed is locked.
 				</p>
 				<p>
 					If you reroll after someone downloaded, their mod will show a
@@ -805,7 +861,6 @@
 				</p>
 			</div>
 		{/if}
-
 	</section>
 
 	<!-- ==================== CASTING ==================== -->
@@ -817,14 +872,16 @@
 			Anyone can open a race page and watch live. During setup, the route map is
 			<strong>hidden</strong> to avoid spoilers. Once the race is running, spectators see the
 			<strong>full route map</strong> with real-time player positions, zone progression, and
-			<strong>time gaps</strong> between players.
+			<strong>time gaps</strong> between players, unless the organizer enabled
+			<a href="#organizing">spoiler protection</a> or a late-join window is still open, in which case
+			the map stays hidden until then.
 		</p>
 
 		<h3>Casters</h3>
 		<p>
-			Casters have <strong>full route map visibility at all times</strong>, including during
-			setup. This lets streamers prepare and commentate the race live. Anyone can request
-			the caster role from the race page, or the organizer can add them.
+			Casters have <strong>full route map visibility at all times</strong>, including during setup.
+			This lets streamers prepare and commentate the race live. Anyone can request the caster role
+			from the race page, or the organizer can add them.
 		</p>
 
 		<!-- Accordion: OBS overlays -->
@@ -840,22 +897,22 @@
 		{#if isOpen('cast-obs')}
 			<div class="panel">
 				<p>
-					The race page has an <strong>OBS Overlays</strong> button with Browser Source
-					URLs. Two overlays are available:
+					The race page has an <strong>OBS Overlays</strong> button with Browser Source URLs. Two overlays
+					are available:
 				</p>
 				<ul>
 					<li>
-						<strong>Route map</strong>: live metro map with player positions
-						(recommended: 800 x 600). Supports auto-follow mode.
+						<strong>Route map</strong>: live metro map with player positions (recommended: 800 x
+						600). Supports auto-follow mode.
 					</li>
 					<li>
-						<strong>Leaderboard</strong>: ranked standings with progression and IGT
-						(recommended: 400 x 800).
+						<strong>Leaderboard</strong>: ranked standings with progression and IGT (recommended:
+						400 x 800).
 					</li>
 				</ul>
 				<p>
-					Both use a <strong>transparent background</strong> and work as OBS Browser
-					Sources. Also available for solo sessions.
+					Both use a <strong>transparent background</strong> and work as OBS Browser Sources. Also available
+					for solo sessions.
 				</p>
 			</div>
 		{/if}
