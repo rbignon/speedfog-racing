@@ -219,6 +219,7 @@ class RaceParticipantActivity(ActivityItemBase):
     igt_ms: int
     death_count: int
     is_mod_connected: bool = False
+    is_organizer: bool = False
 
 
 class RaceOrganizerActivity(ActivityItemBase):

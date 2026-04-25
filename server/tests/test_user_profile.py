@@ -319,6 +319,61 @@ async def test_activity_caster_has_status(test_client, user_with_activity):
 
 
 @pytest.mark.asyncio
+async def test_activity_merges_self_organized_race(test_client, async_session):
+    """When the user organizes a race they also play, only one row is emitted."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="self_host_1",
+            twitch_username="self_host",
+            twitch_display_name="Self Host",
+            api_token="self_host_token",
+        )
+        db.add(user)
+        await db.flush()
+
+        seed = Seed(
+            seed_number="self_host_seed",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/seed/path",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Self-Hosted",
+            organizer_id=user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        db.add(race)
+        await db.flush()
+
+        db.add(
+            Participant(
+                race_id=race.id,
+                user_id=user.id,
+                status=ParticipantStatus.FINISHED,
+                igt_ms=120000,
+            )
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/users/self_host/activity")
+        assert response.status_code == 200
+        data = response.json()
+
+    types = [i["type"] for i in data["items"]]
+    assert types.count("race_participant") == 1
+    assert "race_organizer" not in types
+    participant_item = next(i for i in data["items"] if i["type"] == "race_participant")
+    assert participant_item["is_organizer"] is True
+
+
+@pytest.mark.asyncio
 async def test_profile_stats_counts(test_client, user_with_activity):
     """Profile stats reflect real race/training/caster/organizer activity."""
     async with test_client as client:

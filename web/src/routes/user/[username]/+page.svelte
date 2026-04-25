@@ -217,6 +217,9 @@
 									<div class="activity-body">
 										<div class="badge-row">
 											<span class="activity-badge participant">Race</span>
+											{#if item.is_organizer}
+												<span class="activity-badge organizer">Organized</span>
+											{/if}
 											<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
 										</div>
 										<a href="/race/{item.race_id}" class="activity-title">

@@ -412,7 +412,12 @@
 						<a href={activityLink(item)} class="activity-row">
 							<span class="activity-badge badge-{item.type === 'training' ? 'training' : item.status}">{activityBadge(item)}</span>
 							<div class="activity-content">
-								<span class="activity-name">{activityLabel(item)}</span>
+								<span class="activity-name">
+									{activityLabel(item)}
+									{#if item.type === 'race_participant' && item.is_organizer}
+										<span class="organizer-tag">Organized</span>
+									{/if}
+								</span>
 								<span class="activity-details">
 									{#if item.type === 'race_participant'}
 										{#if item.status === 'finished' && item.placement}
@@ -1016,6 +1021,18 @@
 	.activity-name {
 		color: var(--color-text);
 		font-size: var(--font-size-sm);
+	}
+
+	.organizer-tag {
+		margin-left: 0.4rem;
+		padding: 0.05rem 0.35rem;
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-text-secondary);
+		background: var(--color-surface-2, rgba(255, 255, 255, 0.06));
+		border-radius: var(--radius-sm);
 	}
 
 	.activity-details {

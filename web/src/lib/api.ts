@@ -916,6 +916,7 @@ export interface RaceParticipantActivity extends ActivityItemBase {
   igt_ms: number;
   death_count: number;
   is_mod_connected: boolean;
+  is_organizer: boolean;
 }
 
 export interface RaceOrganizerActivity extends ActivityItemBase {

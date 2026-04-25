@@ -579,6 +579,82 @@ async def test_activity_mod_connected_true(test_client, admin_user, activity_dat
 
 
 @pytest.mark.asyncio
+async def test_activity_merges_organizer_into_participant(
+    test_client, admin_user, regular_user, async_session
+):
+    """Mixed scenario: a self-hosted race is merged, a hosted-only race keeps both rows."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="merge_seed_001",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/seed/path",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        # Race A: admin organizes and plays — should produce a single merged row.
+        race_a = Race(
+            name="Self-Hosted",
+            organizer_id=admin_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        # Race B: admin only organizes (regular_user plays) — should keep both rows.
+        race_b = Race(
+            name="Hosted Only",
+            organizer_id=admin_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        db.add_all([race_a, race_b])
+        await db.flush()
+
+        db.add_all(
+            [
+                Participant(
+                    race_id=race_a.id,
+                    user_id=admin_user.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=60000,
+                ),
+                Participant(
+                    race_id=race_b.id,
+                    user_id=regular_user.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=70000,
+                ),
+            ]
+        )
+        await db.commit()
+
+        race_a_id = str(race_a.id)
+        race_b_id = str(race_b.id)
+
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/activity",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+    by_race: dict[str, dict[str, dict]] = {}
+    for item in data["items"]:
+        by_race.setdefault(item["race_id"], {})[item["type"]] = item
+
+    # Race A: merged into a single participant row tagged as organizer.
+    assert "race_organizer" not in by_race[race_a_id]
+    assert by_race[race_a_id]["race_participant"]["is_organizer"] is True
+
+    # Race B: organizer and participant rows are both kept; participant is not the organizer.
+    assert "race_organizer" in by_race[race_b_id]
+    assert by_race[race_b_id]["race_participant"]["is_organizer"] is False
+
+
+@pytest.mark.asyncio
 async def test_activity_pagination(test_client, admin_user, activity_data):
     """Activity endpoint supports offset and limit."""
     async with test_client as client:

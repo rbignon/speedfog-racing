@@ -396,6 +396,11 @@ async def get_global_activity(
     all_race_ids = list({p.race_id for p in all_participants} | {r.id for r in all_races})
     total_by_race, placements = await compute_race_stats(db, all_race_ids)
 
+    # Pairs of (race_id, user_id) where the user participated in the race. Used
+    # to merge the organizer entry into the participant entry when they are the
+    # same person, instead of producing two cards.
+    participant_pairs = {(p.race_id, p.user_id) for p in all_participants}
+
     for p in all_participants:
         race = p.race
         items.append(
@@ -410,10 +415,13 @@ async def get_global_activity(
                 igt_ms=p.igt_ms,
                 death_count=p.death_count,
                 is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
+                is_organizer=p.user_id == race.organizer_id,
             )
         )
 
     for race in all_races:
+        if (race.id, race.organizer_id) in participant_pairs:
+            continue
         items.append(
             RaceOrganizerActivity(
                 date=race_date(race),

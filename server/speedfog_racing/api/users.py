@@ -301,6 +301,10 @@ async def get_user_activity(
     all_race_ids = list({p.race_id for p in participations} | {r.id for r in organized_races})
     total_by_race, placements = await compute_race_stats(db, all_race_ids)
 
+    # Race ids the user also participated in: merge the organizer entry into
+    # the participant entry instead of producing two cards.
+    participated_race_ids = {p.race_id for p in participations}
+
     for p in participations:
         race = p.race
         items.append(
@@ -313,10 +317,13 @@ async def get_user_activity(
                 total_participants=total_by_race.get(race.id, 0),
                 igt_ms=p.igt_ms,
                 death_count=p.death_count,
+                is_organizer=race.organizer_id == user_id,
             )
         )
 
     for race in organized_races:
+        if race.id in participated_race_ids:
+            continue
         items.append(
             RaceOrganizerActivity(
                 date=race_date(race),

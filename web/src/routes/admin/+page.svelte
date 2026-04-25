@@ -1073,6 +1073,9 @@
 							<div class="badge-row">
 								{#if item.type === 'race_participant'}
 									<span class="activity-badge participant">Race</span>
+									{#if item.is_organizer}
+										<span class="activity-badge organizer">Organized</span>
+									{/if}
 								{:else if item.type === 'race_organizer'}
 									<span class="activity-badge organizer">Organized</span>
 								{:else if item.type === 'race_caster'}
