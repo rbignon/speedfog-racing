@@ -534,6 +534,51 @@ async def test_activity_items_include_user(test_client, admin_user, activity_dat
 
 
 @pytest.mark.asyncio
+async def test_activity_includes_mod_connected(test_client, admin_user, activity_data):
+    """Activity items expose is_mod_connected (False when no live mod is connected)."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/activity",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        for item in data["items"]:
+            if item["type"] in ("race_participant", "training"):
+                assert item["is_mod_connected"] is False
+            else:
+                assert "is_mod_connected" not in item
+
+
+@pytest.mark.asyncio
+async def test_activity_mod_connected_true(test_client, admin_user, activity_data, monkeypatch):
+    """When the in-memory manager reports a connected mod, the flag is True."""
+    from speedfog_racing.api import admin as admin_module
+
+    monkeypatch.setattr(
+        admin_module.race_manager,
+        "is_mod_connected",
+        lambda race_id, participant_id: True,
+    )
+    monkeypatch.setattr(
+        admin_module.training_manager,
+        "is_mod_connected",
+        lambda session_id: True,
+    )
+
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/activity",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        for item in data["items"]:
+            if item["type"] in ("race_participant", "training"):
+                assert item["is_mod_connected"] is True
+
+
+@pytest.mark.asyncio
 async def test_activity_pagination(test_client, admin_user, activity_data):
     """Activity endpoint supports offset and limit."""
     async with test_client as client:

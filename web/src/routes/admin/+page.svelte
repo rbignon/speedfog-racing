@@ -280,6 +280,7 @@
 	}
 
 	function formatIgt(ms: number): string {
+		if (ms === 0) return '--:--';
 		const totalSec = Math.floor(ms / 1000);
 		const h = Math.floor(totalSec / 3600);
 		const m = Math.floor((totalSec % 3600) / 60);
@@ -1052,6 +1053,14 @@
 							<span class="activity-date">{formatFullDate(item.date)}</span>
 						</div>
 						<div class="col-what">
+							{#if (item.type === 'race_participant' || item.type === 'training') && item.is_mod_connected}
+								<span
+									class="conn-dot connected"
+									role="img"
+									aria-label="Mod connected"
+									title="Mod connected"
+								></span>
+							{/if}
 							{#if item.type === 'race_participant' || item.type === 'race_organizer' || item.type === 'race_caster'}
 								<a href="/race/{item.race_id}" class="activity-title">{item.race_name}</a>
 							{:else if item.type === 'training'}
@@ -1514,6 +1523,9 @@
 
 	.col-what {
 		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
 	}
 
 	.activity-title {
@@ -1523,7 +1535,15 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		display: block;
+		min-width: 0;
+	}
+
+	.conn-dot.connected {
+		flex-shrink: 0;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--color-success, #22c55e);
 	}
 
 	.activity-title:hover {

@@ -49,6 +49,8 @@ from speedfog_racing.services import (
 )
 from speedfog_racing.services.analytics_service import compute_analytics
 from speedfog_racing.services.stats_service import recalculate_all_stats
+from speedfog_racing.websocket.race.manager import manager as race_manager
+from speedfog_racing.websocket.training.manager import training_manager
 
 router = APIRouter()
 
@@ -407,6 +409,7 @@ async def get_global_activity(
                 total_participants=total_by_race.get(race.id, 0),
                 igt_ms=p.igt_ms,
                 death_count=p.death_count,
+                is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
             )
         )
 
@@ -459,6 +462,7 @@ async def get_global_activity(
                 igt_ms=t.igt_ms,
                 death_count=t.death_count,
                 exclude_from_stats=t.exclude_from_stats,
+                is_mod_connected=training_manager.is_mod_connected(t.id),
             )
         )
 

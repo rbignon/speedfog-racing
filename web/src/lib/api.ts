@@ -915,6 +915,7 @@ export interface RaceParticipantActivity extends ActivityItemBase {
   total_participants: number;
   igt_ms: number;
   death_count: number;
+  is_mod_connected: boolean;
 }
 
 export interface RaceOrganizerActivity extends ActivityItemBase {
@@ -941,6 +942,7 @@ export interface TrainingActivityItem extends ActivityItemBase {
   igt_ms: number;
   death_count: number;
   exclude_from_stats: boolean;
+  is_mod_connected: boolean;
 }
 
 export type ActivityItem =
