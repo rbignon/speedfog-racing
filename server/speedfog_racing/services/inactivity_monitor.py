@@ -25,22 +25,17 @@ async def abandon_inactive_participants(
 ) -> tuple[list[uuid.UUID], set[uuid.UUID]]:
     """Find and abandon inactive participants in running races.
 
-    Covers two cases:
-    - PLAYING participants whose IGT hasn't changed in INACTIVITY_TIMEOUT
-    - REGISTERED/READY participants who never connected after race started,
-      but only on races without race_duration_minutes (otherwise the
-      hard-close loop is responsible for sweeping non-terminal participants
-      via finalize_race when the race deadline is reached).
-
-    The no-show cutoff is scoped per-participant: a late-joiner must not be
-    abandoned based on Race.started_at alone, and an early registrant must
-    not be abandoned the moment the race starts. We require both
-    Race.started_at < cutoff AND Participant.created_at < cutoff, which is
-    equivalent to max(started_at, created_at) < cutoff.
+    Two branches:
+    - PLAYING with stale IGT (older than INACTIVITY_TIMEOUT).
+    - No-show REGISTERED/READY: gated on race_duration_minutes IS NULL
+      (hard-close handles sweeping otherwise). Cutoff is per-participant
+      via ``max(Race.started_at, Participant.created_at) < cutoff``,
+      expressed as two ANDed conditions, so neither a late-joiner nor an
+      early registrant gets abandoned spuriously at race start.
 
     Returns (race_ids with abandonments, participant_ids that were just
-    abandoned). The caller is responsible for the follow-up auto-finish
-    check and broadcasts.
+    abandoned). Caller is responsible for the auto-finish check and
+    broadcasts.
     """
     cutoff = datetime.now(UTC) - INACTIVITY_TIMEOUT
     affected_race_ids: list[uuid.UUID] = []

@@ -119,7 +119,6 @@ async def close_late_join_done_races(
     function performs the deferred close.
     """
     now = datetime.now(UTC)
-    candidate_ids: list[uuid.UUID] = []
     affected: list[uuid.UUID] = []
 
     async with session_maker() as db:
@@ -130,13 +129,13 @@ async def close_late_join_done_races(
                 Race.late_join_window_minutes.isnot(None),
             )
         )
-        candidate_ids = [
+        race_ids = [
             row_id
             for row_id, started_at, window in result.all()
             if _deadline_reached(started_at, window, now)
         ]
 
-    for race_id in candidate_ids:
+    for race_id in race_ids:
         async with session_maker() as db:
             race = (
                 await db.execute(

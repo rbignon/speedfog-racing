@@ -44,6 +44,7 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
             started_at = started_at.replace(tzinfo=UTC)
         if now < started_at + timedelta(minutes=race.late_join_window_minutes):
             return False
+
     result = await db.execute(
         update(Race)
         .where(
