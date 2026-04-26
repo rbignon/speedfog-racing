@@ -635,7 +635,7 @@ async def test_cannot_add_duplicate_participant(test_client, organizer, player, 
 
 
 @pytest.mark.asyncio
-async def test_remove_participant(test_client, organizer, player, seed):
+async def test_remove_participant(test_client, organizer, player, seed, async_session):
     """Organizer can remove a participant."""
     async with test_client as client:
         # Create race and add participant
@@ -663,6 +663,18 @@ async def test_remove_participant(test_client, organizer, player, seed):
         # Verify removed
         race_response = await client.get(f"/api/races/{race_id}")
         assert len(race_response.json()["participants"]) == 0
+
+    # Verify a system message was persisted in the participants channel
+    async with async_session() as db:
+        result = await db.execute(
+            select(ChatMessage).where(
+                ChatMessage.race_id == uuid.UUID(race_id),
+                ChatMessage.channel == ChatChannel.PARTICIPANTS,
+                ChatMessage.user_id.is_(None),
+            )
+        )
+        sys_msgs = result.scalars().all()
+        assert any("Player One has been removed from the race" == m.message for m in sys_msgs)
 
 
 # =============================================================================

@@ -755,6 +755,9 @@ The server broadcasts system notifications for the following events:
 | --------------------------- | --------------------- | ------------------------------------------------------------ |
 | Race starts                 | participants + public | `"The race has started."`                                    |
 | Race finishes               | public                | `"The race has finished."`                                   |
+| Player joins                | participants          | `"{display_name} has joined the race"`                       |
+| Player leaves               | participants          | `"{display_name} has left the race"`                         |
+| Player removed by organizer | participants          | `"{display_name} has been removed from the race"`            |
 | Player finishes             | public                | `"{display_name} has finished the race!"`                    |
 | Player abandons             | public                | `"{display_name} has abandoned the race."`                   |
 | Player inactive (abandoned) | public                | `"{display_name} has abandoned the race due to inactivity."` |

@@ -883,10 +883,12 @@ async def remove_participant(
 
     # Find participant
     result = await db.execute(
-        select(Participant).where(
+        select(Participant)
+        .where(
             Participant.id == participant_id,
             Participant.race_id == race_id,
         )
+        .options(selectinload(Participant.user))
     )
     participant = result.scalar_one_or_none()
 
@@ -896,9 +898,17 @@ async def remove_participant(
             detail="Participant not found",
         )
 
+    display = participant.user.twitch_display_name or participant.user.twitch_username
     await db.delete(participant)
+    sys_json = await persist_system_chat(
+        db, race_id, ChatChannel.PARTICIPANTS, f"{display} has been removed from the race"
+    )
     await db.commit()
     logger.info("Participant removed: race=%s, participant=%s", race_id, participant_id)
+
+    room = manager.get_room(race_id)
+    if room:
+        await room.broadcast_chat_participants(sys_json)
 
     # Broadcast updated state to spectators and mods
     race = await _get_race_or_404(db, race_id, load_participants=True)
