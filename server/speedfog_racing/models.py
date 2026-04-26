@@ -273,6 +273,11 @@ class Participant(Base):
     layer_entry_igts: Mapped[dict[str, int]] = mapped_column(
         JSON, nullable=False, default=dict, server_default="{}"
     )
+    # Used by inactivity_monitor to scope the no-show timeout per-participant
+    # (late-joiners must not be abandoned based on Race.started_at alone).
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="participants")
