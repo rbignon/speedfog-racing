@@ -1,6 +1,6 @@
 """Tests for race lifecycle helpers."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -122,6 +122,54 @@ async def test_auto_finish_when_all_done(async_session, race_setup):
     async with async_session() as db:
         p2 = await db.get(Participant, p2_id)
         p2.status = ParticipantStatus.ABANDONED
+        await db.commit()
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(Race).where(Race.id == race_id).options(selectinload(Race.participants))
+        )
+        race = result.scalar_one()
+        transitioned = await check_race_auto_finish(db, race)
+        assert transitioned is True
+        await db.refresh(race)
+        assert race.status == RaceStatus.FINISHED
+
+
+@pytest.mark.asyncio
+async def test_auto_finish_blocked_during_late_join_window(async_session, race_setup):
+    """When late_join_window_minutes is set and the window is still open,
+    auto-finish must hold off so a late-joiner can still register even if
+    every currently-registered participant is already terminal."""
+    race_id, _, p2_id = race_setup
+    async with async_session() as db:
+        p2 = await db.get(Participant, p2_id)
+        p2.status = ParticipantStatus.ABANDONED
+        race = await db.get(Race, race_id)
+        race.started_at = datetime.now(UTC) - timedelta(minutes=10)
+        race.late_join_window_minutes = 60
+        await db.commit()
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(Race).where(Race.id == race_id).options(selectinload(Race.participants))
+        )
+        race = result.scalar_one()
+        transitioned = await check_race_auto_finish(db, race)
+        assert transitioned is False
+        await db.refresh(race)
+        assert race.status == RaceStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_auto_finish_allowed_after_late_join_window(async_session, race_setup):
+    """Past the late-join window, auto-finish proceeds normally."""
+    race_id, _, p2_id = race_setup
+    async with async_session() as db:
+        p2 = await db.get(Participant, p2_id)
+        p2.status = ParticipantStatus.ABANDONED
+        race = await db.get(Race, race_id)
+        race.started_at = datetime.now(UTC) - timedelta(minutes=90)
+        race.late_join_window_minutes = 60
         await db.commit()
 
     async with async_session() as db:

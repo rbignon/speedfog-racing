@@ -27,7 +27,10 @@ from speedfog_racing.models import (
     compute_late_join_deadlines,
 )
 from speedfog_racing.schemas import CreateRaceRequest
-from speedfog_racing.services.hard_close_loop import close_expired_races
+from speedfog_racing.services.hard_close_loop import (
+    close_expired_races,
+    close_late_join_done_races,
+)
 from speedfog_racing.services.race_lifecycle import finalize_race
 
 
@@ -414,6 +417,128 @@ async def test_close_expired_races_skips_non_expired(hc_async_session):
 
     affected = await close_expired_races(hc_async_session)
     assert race_id not in affected
+
+
+@pytest.mark.asyncio
+async def test_close_late_join_done_races_finalizes_after_window(hc_async_session):
+    """Once the late-join window has elapsed and every participant is in a
+    terminal status, close_late_join_done_races finalizes the race."""
+    now = datetime.now(UTC)
+    async with hc_async_session() as db:
+        organizer = await _make_db_user(db, twitch_id="org_lj_done", role=UserRole.ORGANIZER)
+        player = await _make_db_user(db, twitch_id="player_lj_done")
+        seed = await _make_db_seed(db, suffix="lj_done")
+
+        race = Race(
+            name="LateJoinAllDone",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now - timedelta(minutes=90),
+            late_join_window_minutes=60,
+        )
+        db.add(race)
+        await db.flush()
+        db.add(
+            Participant(
+                race_id=race.id,
+                user_id=player.id,
+                status=ParticipantStatus.FINISHED,
+                igt_ms=300_000,
+                finished_at=now - timedelta(minutes=20),
+                color_index=0,
+            )
+        )
+        await db.commit()
+        race_id = race.id
+
+    affected = await close_late_join_done_races(hc_async_session)
+    assert race_id in affected
+
+    async with hc_async_session() as db:
+        race = (await db.execute(select(Race).where(Race.id == race_id))).scalar_one()
+        assert race.status == RaceStatus.FINISHED
+        assert race.finished_at is not None
+
+
+@pytest.mark.asyncio
+async def test_close_late_join_done_races_skips_during_window(hc_async_session):
+    """All participants are done but the late-join window is still open: the
+    race must stay RUNNING so a late-joiner can still register."""
+    now = datetime.now(UTC)
+    async with hc_async_session() as db:
+        organizer = await _make_db_user(db, twitch_id="org_lj_open", role=UserRole.ORGANIZER)
+        player = await _make_db_user(db, twitch_id="player_lj_open")
+        seed = await _make_db_seed(db, suffix="lj_open")
+
+        race = Race(
+            name="LateJoinOpen",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now - timedelta(minutes=10),
+            late_join_window_minutes=60,
+        )
+        db.add(race)
+        await db.flush()
+        db.add(
+            Participant(
+                race_id=race.id,
+                user_id=player.id,
+                status=ParticipantStatus.FINISHED,
+                igt_ms=300_000,
+                finished_at=now - timedelta(minutes=2),
+                color_index=0,
+            )
+        )
+        await db.commit()
+        race_id = race.id
+
+    affected = await close_late_join_done_races(hc_async_session)
+    assert race_id not in affected
+
+    async with hc_async_session() as db:
+        race = (await db.execute(select(Race).where(Race.id == race_id))).scalar_one()
+        assert race.status == RaceStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_close_late_join_done_races_skips_when_not_all_done(hc_async_session):
+    """Window has elapsed but a participant is still PLAYING: race stays open."""
+    now = datetime.now(UTC)
+    async with hc_async_session() as db:
+        organizer = await _make_db_user(db, twitch_id="org_lj_play", role=UserRole.ORGANIZER)
+        player = await _make_db_user(db, twitch_id="player_lj_play")
+        seed = await _make_db_seed(db, suffix="lj_play")
+
+        race = Race(
+            name="LateJoinStillPlaying",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now - timedelta(minutes=90),
+            late_join_window_minutes=60,
+        )
+        db.add(race)
+        await db.flush()
+        db.add(
+            Participant(
+                race_id=race.id,
+                user_id=player.id,
+                status=ParticipantStatus.PLAYING,
+                igt_ms=100_000,
+                color_index=0,
+            )
+        )
+        await db.commit()
+        race_id = race.id
+
+    affected = await close_late_join_done_races(hc_async_session)
+    assert race_id not in affected
+
+    async with hc_async_session() as db:
+        race = (await db.execute(select(Race).where(Race.id == race_id))).scalar_one()
+        assert race.status == RaceStatus.RUNNING
 
 
 @pytest.mark.asyncio

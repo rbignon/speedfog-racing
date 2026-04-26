@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,11 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     Uses optimistic locking (version column) to handle concurrent updates.
     Returns True if the race was transitioned.
 
+    If the race has a late_join_window, auto-finish is held off until the
+    window has elapsed, so a late-joiner can still enter even when every
+    currently-registered participant has finished. The hard_close_loop is
+    responsible for re-running this check once the window expires.
+
     Requires: race.participants must be eagerly loaded.
     """
     all_done = all(
@@ -32,6 +37,13 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
         return False
 
     now = datetime.now(UTC)
+
+    if race.late_join_window_minutes is not None and race.started_at is not None:
+        started_at = race.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=UTC)
+        if now < started_at + timedelta(minutes=race.late_join_window_minutes):
+            return False
     result = await db.execute(
         update(Race)
         .where(
