@@ -147,6 +147,7 @@ async def test_abandons_noshow_participant(async_session, noshow_status):
             status=noshow_status,
             igt_ms=0,
             last_igt_change_at=None,
+            created_at=datetime.now(UTC) - timedelta(minutes=35),
         )
         db.add(p)
         await db.commit()
@@ -336,6 +337,192 @@ async def test_does_not_abandon_null_last_igt(async_session):
     async with async_session() as db:
         p = await db.get(Participant, p_id)
         assert p.status == ParticipantStatus.PLAYING
+
+
+@pytest.mark.asyncio
+async def test_does_not_abandon_late_joiner_within_window(async_session):
+    """A late-joiner whose own created_at is recent must not be abandoned even
+    if Race.started_at is older than the inactivity timeout."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="latejoin1",
+            twitch_username="latejoin_player",
+            api_token="latejoin_tok",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="org_latejoin",
+            twitch_username="org_latejoin",
+            api_token="org_latejoin_tok",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="s_latejoin",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/latejoin",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Late Join Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC) - timedelta(minutes=45),
+            late_join_window_minutes=60,
+        )
+        db.add(race)
+        await db.flush()
+
+        p = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.REGISTERED,
+            igt_ms=0,
+            last_igt_change_at=None,
+            created_at=datetime.now(UTC) - timedelta(minutes=2),
+        )
+        db.add(p)
+        await db.commit()
+        p_id = p.id
+
+    abandoned_race_ids, _ = await abandon_inactive_participants(async_session)
+    assert len(abandoned_race_ids) == 0
+
+    async with async_session() as db:
+        p = await db.get(Participant, p_id)
+        assert p.status == ParticipantStatus.REGISTERED
+
+
+@pytest.mark.asyncio
+async def test_does_not_abandon_early_registrant_at_race_start(async_session):
+    """A participant who registered well before the race started must not be
+    abandoned the moment the race starts (the cutoff is per-participant, but
+    capped by Race.started_at)."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="early1",
+            twitch_username="early_player",
+            api_token="early_tok",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="org_early",
+            twitch_username="org_early",
+            api_token="org_early_tok",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="s_early",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/early",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Early Registrant Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC) - timedelta(minutes=5),
+        )
+        db.add(race)
+        await db.flush()
+
+        p = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.REGISTERED,
+            igt_ms=0,
+            last_igt_change_at=None,
+            created_at=datetime.now(UTC) - timedelta(hours=2),
+        )
+        db.add(p)
+        await db.commit()
+        p_id = p.id
+
+    abandoned_race_ids, _ = await abandon_inactive_participants(async_session)
+    assert len(abandoned_race_ids) == 0
+
+    async with async_session() as db:
+        p = await db.get(Participant, p_id)
+        assert p.status == ParticipantStatus.REGISTERED
+
+
+@pytest.mark.asyncio
+async def test_skips_noshow_when_race_duration_set(async_session):
+    """When race_duration_minutes is set, the no-show branch is skipped:
+    hard_close_loop will sweep non-terminal participants at the deadline."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="hcnoshow1",
+            twitch_username="hcnoshow_player",
+            api_token="hcnoshow_tok",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="org_hcnoshow",
+            twitch_username="org_hcnoshow",
+            api_token="org_hcnoshow_tok",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="s_hcnoshow",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/hcnoshow",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="HC No-Show Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC) - timedelta(minutes=45),
+            race_duration_minutes=240,
+        )
+        db.add(race)
+        await db.flush()
+
+        p = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.REGISTERED,
+            igt_ms=0,
+            last_igt_change_at=None,
+            created_at=datetime.now(UTC) - timedelta(minutes=45),
+        )
+        db.add(p)
+        await db.commit()
+        p_id = p.id
+
+    abandoned_race_ids, _ = await abandon_inactive_participants(async_session)
+    assert len(abandoned_race_ids) == 0
+
+    async with async_session() as db:
+        p = await db.get(Participant, p_id)
+        assert p.status == ParticipantStatus.REGISTERED
 
 
 @pytest.mark.asyncio

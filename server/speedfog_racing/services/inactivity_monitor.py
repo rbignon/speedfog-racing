@@ -27,7 +27,16 @@ async def abandon_inactive_participants(
 
     Covers two cases:
     - PLAYING participants whose IGT hasn't changed in INACTIVITY_TIMEOUT
-    - REGISTERED/READY participants who never connected after race started
+    - REGISTERED/READY participants who never connected after race started,
+      but only on races without race_duration_minutes (otherwise the
+      hard-close loop is responsible for sweeping non-terminal participants
+      via finalize_race when the race deadline is reached).
+
+    The no-show cutoff is scoped per-participant: a late-joiner must not be
+    abandoned based on Race.started_at alone, and an early registrant must
+    not be abandoned the moment the race starts. We require both
+    Race.started_at < cutoff AND Participant.created_at < cutoff, which is
+    equivalent to max(started_at, created_at) < cutoff.
 
     Returns (race_ids with abandonments, participant_ids that were just
     abandoned). The caller is responsible for the follow-up auto-finish
@@ -48,10 +57,15 @@ async def abandon_inactive_participants(
                     (Participant.status == ParticipantStatus.PLAYING)
                     & Participant.last_igt_change_at.isnot(None)
                     & (Participant.last_igt_change_at < cutoff),
-                    # Never connected (still REGISTERED/READY after race started)
+                    # Never connected (still REGISTERED/READY after race started).
+                    # Skipped when race_duration_minutes is set: hard_close_loop
+                    # will move non-terminal participants to ABANDONED at the
+                    # deadline via finalize_race.
                     Participant.status.in_([ParticipantStatus.REGISTERED, ParticipantStatus.READY])
+                    & Race.race_duration_minutes.is_(None)
                     & Race.started_at.isnot(None)
-                    & (Race.started_at < cutoff),
+                    & (Race.started_at < cutoff)
+                    & (Participant.created_at < cutoff),
                 ),
             )
         )
