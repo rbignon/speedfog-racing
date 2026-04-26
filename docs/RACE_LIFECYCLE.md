@@ -24,11 +24,14 @@ SETUP ──→ RUNNING ──→ FINISHED
 - Broadcasts `race_start` to mods, `zone_update` for start node (per-mod, localized), `race_status_change` to all, and full `race_state` to each spectator.
 - Discord notification: `notify_race_started()` + event status set to ACTIVE.
 
-**RUNNING → FINISHED** (three paths)
+**RUNNING → FINISHED** (four paths)
 
-1. **Auto-finish**: when all participants reach `FINISHED` or `ABANDONED`, `check_race_auto_finish()` transitions the race. Uses optimistic locking (see below).
+1. **Auto-finish**: when all participants reach `FINISHED` or `ABANDONED`, `check_race_auto_finish()` transitions the race. Uses optimistic locking (see below). When `late_join_window_minutes` is set and the window is still open, the transition is deferred so a late-joiner can still register even if the currently-registered field has all finished; the hard-close loop performs the deferred close once the window has elapsed (see [Late-join Window & Race Duration](#late-join-window--race-duration)).
 2. **Force-finish**: `POST /races/{id}/finish` (organizer). Same optimistic lock mechanism.
-3. **Inactivity monitor**: when the last active participant is auto-abandoned (15 min stale IGT or no-show), the monitor calls `check_race_auto_finish()`.
+3. **Inactivity monitor**: when the last active participant is auto-abandoned (30 min stale IGT, or 30 min no-show on races without `race_duration_minutes`), the monitor calls `check_race_auto_finish()`.
+4. **Hard-close loop** (`hard_close_loop`, polls every 10s):
+   - For races with `race_duration_minutes` set, force-finishes any race past `started_at + race_duration_minutes` (`close_expired_races`); non-terminal participants are swept to `ABANDONED` via `finalize_race`.
+   - For races with `late_join_window_minutes` set, finalizes races whose late-join window has elapsed and whose participants are all already terminal (`close_late_join_done_races`), closing the gap left by the auto-finish guard above.
 
 **RUNNING or FINISHED → SETUP** (`POST /races/{id}/reset`, organizer only)
 
@@ -48,6 +51,25 @@ WHERE id = :id AND status IN (:allowed) AND version = :v
 ```
 
 If `rowcount == 0`, the transition was lost to a concurrent update → HTTP 409 or silent no-op (for auto-finish). This prevents duplicate finish broadcasts when two participants finish simultaneously.
+
+### Late-join Window & Race Duration
+
+Two optional fields on Race tune end-of-race behavior:
+
+| Field                      | Type          | Effect                                                                                                                                                                                                                                                             |
+| -------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `late_join_window_minutes` | `int \| None` | Players can register up to `started_at + late_join_window_minutes`, and `check_race_auto_finish()` will not close the race before that deadline even if everyone currently registered is already terminal. Required: `<= race_duration_minutes` when both are set. |
+| `race_duration_minutes`    | `int \| None` | Hard cap. The hard-close loop force-finishes the race at `started_at + race_duration_minutes`. While set, the inactivity monitor's no-show branch (REGISTERED/READY) is skipped because `finalize_race` will sweep non-terminal participants at the deadline.      |
+
+The two fields are independent: a race may have either, both, or neither.
+
+The deferred-close handoff between auto-finish and hard-close looks like this:
+
+1. A participant finishes during the late-join window → `check_race_auto_finish()` is called → returns `False` because the window is still open → race stays `RUNNING`.
+2. The late-join window elapses → `close_late_join_done_races()` (every 10s) re-runs the all-terminal check, transitions to `FINISHED`, calls `finalize_race`.
+3. If the race also has `race_duration_minutes` and that deadline arrives first, `close_expired_races()` force-finishes via the same path (any non-terminal participant is bumped to `ABANDONED`).
+
+Both hard-close paths use the same optimistic-lock pattern as `check_race_auto_finish`, so concurrent transitions from `/finish`, the inactivity monitor, or the other hard-close path collapse to a single winner without duplicate ELO updates or chat messages.
 
 ---
 
@@ -85,11 +107,12 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 - Calls `check_race_auto_finish()` for the race.
 - Implementation note: the finish handler uses two separate DB sessions to avoid nested-session deadlocks in SQLite tests. The `event_flag` handler commits progress, exits its session, then calls `handle_finished()` in a new session.
 
-**REGISTERED / READY / PLAYING → ABANDONED**: three paths:
+**REGISTERED / READY / PLAYING → ABANDONED**: four paths:
 
-1. **Inactivity monitor** (PLAYING): background loop checks every 60s for participants with `last_igt_change_at < now - 15min`. Marks them `ABANDONED` and triggers auto-finish check.
-2. **No-show monitor** (REGISTERED/READY): same loop also catches participants who never started playing when `race.started_at < now - 15min`. Marks them `ABANDONED`.
-3. **Voluntary abandon**: `POST /races/{id}/abandon` (participant). Accepts REGISTERED, READY, or PLAYING status. Triggers auto-finish check.
+1. **Inactivity monitor** (PLAYING): background loop checks every 60s for participants with `last_igt_change_at < now - 30min`. Marks them `ABANDONED` and triggers auto-finish check.
+2. **No-show monitor** (REGISTERED/READY): same loop also catches participants who never started playing. The cutoff is per-participant: both `Race.started_at < now - 30min` AND `Participant.created_at < now - 30min` must hold (equivalent to `max(started_at, created_at) < now - 30min`). This ensures a late-joiner is not abandoned the moment they register, and an early registrant is not abandoned the moment the race starts. Skipped entirely when `race_duration_minutes` is set: the hard-close loop sweeps non-terminal participants at the deadline via `finalize_race`.
+3. **Hard-close loop** (REGISTERED/READY/PLAYING): when `close_expired_races` or `close_late_join_done_races` finalizes a race, `finalize_race` moves any remaining non-terminal participant to `ABANDONED`.
+4. **Voluntary abandon**: `POST /races/{id}/abandon` (participant). Accepts REGISTERED, READY, or PLAYING status. Triggers auto-finish check.
 
 ### Terminal States
 
