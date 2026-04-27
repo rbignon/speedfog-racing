@@ -21,7 +21,33 @@ major_bosses = 4
 min_layers = 10
 max_layers = 15
 final_tier = 13
-final_boss_candidates = ["all"]
+
+[structure.final_boss_candidates]
+# Base game remembrance bosses
+stormveil_godrick = 1      # through-pass
+academy_library = 1        # through-pass
+caelid_radahn = 1          # through-pass
+leyndell_throne = 1        # through-pass
+volcano_rykard = 1         # through-pass
+flamepeak_firegiant = 1    # through-pass
+mohgwyn_boss = 1           # through-pass
+farumazula_maliketh = 1    # through-pass
+leyndell2_throne = 1       # through-pass
+haligtree_malenia = 4      # through-pass
+farumazula_placidusax = 4  # dead-end
+leyndell_erdtree = 6       # dead-end
+# DLC remembrance bosses + Bayle
+belurat_boss = 1           # through-pass
+ensis_boss = 1             # through-pass
+fissure_boss = 1           # through-pass
+scaduview_gaius = 1        # through-pass
+midramanse_boss = 1        # through-pass
+scadutree_base = 1         # through-pass
+storehouse_messmer = 2     # through-pass
+rauhruins_romina = 1       # through-pass
+fingergrounds = 2          # dead-end
+jaggedpeak_bayle = 2       # through-pass
+enirilim_radahn = 6        # dead-end
 
 [starting_items]
 whetblades = true
