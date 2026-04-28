@@ -1193,9 +1193,9 @@
 				historyVersion={raceStore.chatHistoryVersion}
 				canSend={canSendChat}
 				collapsed={chatCollapsed}
-				showParticipants={hasParticipantsAccess}
-				{publicEnabled}
-				publicWillLockDuringRace={!!myParticipant && publicEnabled && !myParticipantFinished}
+				participantsAccess={hasParticipantsAccess}
+				publicAccess={publicEnabled ? 'readable' : 'locked'}
+				publicLockedReason="Public chat is locked."
 				activeTab={effectiveActiveTab}
 				onSend={sendChatMessage}
 				onToggle={() => (chatCollapsed = !chatCollapsed)}

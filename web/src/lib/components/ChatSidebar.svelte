@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { chatSidebarLayout, type ChatTab, type PublicAccess } from '$lib/chat-sidebar-layout';
 	import type { ChatMessage } from '$lib/websocket';
 	import ChatPanel from './ChatPanel.svelte';
 
@@ -7,14 +8,15 @@
 		messagesPublic: ChatMessage[];
 		canSend: boolean;
 		collapsed: boolean;
-		showParticipants: boolean;
-		publicEnabled: boolean;
-		publicWillLockDuringRace: boolean;
-		activeTab: 'participants' | 'public';
+		participantsAccess: boolean;
+		publicAccess: PublicAccess;
+		publicLockedReason?: string;
+		showPublicOnly?: boolean;
+		activeTab: ChatTab;
 		historyVersion: number;
-		onSend: (message: string, channel: 'participants' | 'public') => void;
+		onSend: (message: string, channel: ChatTab) => void;
 		onToggle: () => void;
-		onTabChange: (tab: 'participants' | 'public') => void;
+		onTabChange: (tab: ChatTab) => void;
 	}
 
 	let {
@@ -22,15 +24,20 @@
 		messagesPublic,
 		canSend,
 		collapsed,
-		showParticipants,
-		publicEnabled,
-		publicWillLockDuringRace,
+		participantsAccess,
+		publicAccess,
+		publicLockedReason,
+		showPublicOnly = false,
 		activeTab,
 		historyVersion,
 		onSend,
 		onToggle,
 		onTabChange
 	}: Props = $props();
+
+	let layout = $derived(
+		chatSidebarLayout({ publicAccess, participantsAccess, showPublicOnly, activeTab })
+	);
 
 	let lastSeenCount = $state(0);
 	let unreadCount = $state(0);
@@ -40,10 +47,12 @@
 	let lastSeenPublic = $state(0);
 
 	let activeMessages = $derived(
-		activeTab === 'participants' ? messagesParticipants : messagesPublic
+		layout.effectiveTab === 'participants' ? messagesParticipants : messagesPublic
 	);
 
-	// When chat history is loaded (initial connect or reconnect), treat all messages as seen
+	// When chat history is loaded (initial connect, reconnect, or pull
+	// after access unlock), treat all messages as seen so the badge does
+	// not jump.
 	let lastHistoryVersion = $state(0);
 	$effect(() => {
 		if (historyVersion !== lastHistoryVersion) {
@@ -68,7 +77,7 @@
 
 	// Track per-tab unread
 	$effect(() => {
-		if (activeTab === 'participants' && !collapsed) {
+		if (layout.effectiveTab === 'participants' && !collapsed) {
 			lastSeenParticipants = messagesParticipants.length;
 			unreadParticipants = 0;
 		} else {
@@ -78,7 +87,7 @@
 	});
 
 	$effect(() => {
-		if (activeTab === 'public' && !collapsed) {
+		if (layout.effectiveTab === 'public' && !collapsed && !layout.showLockedPane) {
 			lastSeenPublic = messagesPublic.length;
 			unreadPublic = 0;
 		} else {
@@ -88,7 +97,7 @@
 	});
 
 	function handleSend(message: string) {
-		onSend(message, activeTab);
+		onSend(message, layout.effectiveTab);
 	}
 </script>
 
@@ -115,33 +124,32 @@
 	{:else}
 		<div class="sidebar-content">
 			<div class="chat-header">
-				{#if showParticipants}
+				{#if layout.showTabs}
 					<div class="tab-bar">
 						<button
 							class="tab"
-							class:active={activeTab === 'participants'}
+							class:active={layout.effectiveTab === 'participants'}
 							onclick={() => onTabChange('participants')}
 						>
 							Participants
-							{#if unreadParticipants > 0 && activeTab !== 'participants'}
-								<span class="tab-badge"
-									>{unreadParticipants > 99 ? '99+' : unreadParticipants}</span
+							{#if unreadParticipants > 0 && layout.effectiveTab !== 'participants'}
+								<span class="tab-badge">{unreadParticipants > 99 ? '99+' : unreadParticipants}</span
 								>
 							{/if}
 						</button>
 						<button
 							class="tab"
-							class:active={activeTab === 'public'}
-							class:disabled={!publicEnabled}
-							disabled={!publicEnabled}
-							onclick={() => publicEnabled && onTabChange('public')}
-							title={!publicEnabled ? 'Available after finishing the race' : ''}
+							class:active={layout.effectiveTab === 'public'}
+							class:disabled={layout.publicTabDisabled}
+							disabled={layout.publicTabDisabled}
+							onclick={() => !layout.publicTabDisabled && onTabChange('public')}
+							title={layout.publicTabDisabled
+								? (publicLockedReason ?? 'Public chat is locked.')
+								: ''}
 						>
 							Spoilers
-							{#if unreadPublic > 0 && activeTab !== 'public'}
-								<span class="tab-badge"
-									>{unreadPublic > 99 ? '99+' : unreadPublic}</span
-								>
+							{#if unreadPublic > 0 && layout.effectiveTab !== 'public' && !layout.publicTabDisabled}
+								<span class="tab-badge">{unreadPublic > 99 ? '99+' : unreadPublic}</span>
 							{/if}
 						</button>
 					</div>
@@ -165,17 +173,38 @@
 					</svg>
 				</button>
 			</div>
-			{#if showParticipants}
+			{#if layout.showTabs && !layout.showLockedPane}
 				<div class="channel-hint">
-					{#if activeTab === 'participants'}
-						Private chat between participants. Avoid sharing spoilers here. {#if !publicEnabled} The Spoilers tab unlocks once you finish the race.{/if}
+					{#if layout.effectiveTab === 'participants'}
+						Private chat between participants. Avoid sharing spoilers here.
 					{:else}
-						Open discussion, spoilers allowed. Visible to everyone. {#if publicWillLockDuringRace} This tab will be locked during the race until you finish.{/if}
+						Open discussion, spoilers allowed. Visible to everyone.
 					{/if}
 				</div>
 			{/if}
 			<div class="chat-area">
-				<ChatPanel messages={activeMessages} {canSend} onSend={handleSend} />
+				{#if layout.showLockedPane}
+					<div class="locked-pane">
+						<svg
+							class="lock-icon"
+							width="32"
+							height="32"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.6"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+							<path d="M7 11V7a5 5 0 0 1 10 0v4" />
+						</svg>
+						<p>{publicLockedReason ?? 'Public chat is locked.'}</p>
+					</div>
+				{:else}
+					<ChatPanel messages={activeMessages} {canSend} onSend={handleSend} />
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -351,6 +380,29 @@
 		min-height: 0;
 		display: flex;
 		flex-direction: column;
+	}
+
+	.locked-pane {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		padding: 1.5rem 1.25rem;
+		text-align: center;
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+		line-height: 1.4;
+	}
+
+	.lock-icon {
+		opacity: 0.55;
+	}
+
+	.locked-pane p {
+		margin: 0;
+		max-width: 22ch;
 	}
 
 	@media (max-width: 768px) {
