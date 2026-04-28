@@ -337,6 +337,20 @@ class SendChatMessage(BaseModel):
     message: str = Field(max_length=500)
 
 
+class RequestChatHistoryMessage(BaseModel):
+    """Client request to (re)load history for a chat channel.
+
+    Sent by the frontend when a viewer's local access state transitions
+    from locked to readable: the late-join window expired, the viewer
+    just finished or abandoned, etc. The server is authoritative and
+    revalidates access before sending the history; if access is still
+    refused, the request is ignored silently.
+    """
+
+    type: Literal["request_chat_history"] = "request_chat_history"
+    channel: str = Field(pattern=r"^(participants|public)$")
+
+
 # --- Server -> Client Messages (Chat) ---
 
 

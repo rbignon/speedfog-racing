@@ -51,6 +51,7 @@ from speedfog_racing.websocket.schemas import (
     PendingInviteInfo,
     RaceInfoUpdateMessage,
     RaceStateMessage,
+    RequestChatHistoryMessage,
     SeedInfo,
     SendChatMessage,
     build_race_info,
@@ -201,6 +202,7 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
         self._conn = SpectatorConnection(websocket=websocket, locale=self.locale)
         self._chat_info: dict[str, str | None] | None = None
         self._message_handlers["chat"] = self._handle_chat
+        self._message_handlers["request_chat_history"] = self._handle_request_chat_history
 
     async def _auth_and_setup(self) -> bool:
         async with self.session_maker() as db:
@@ -358,6 +360,80 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
         else:
             assert race is not None  # validated above
             await room.broadcast_chat_public(msg_json, race)
+
+    async def _handle_request_chat_history(self, msg: dict[str, Any]) -> None:
+        """Re-send chat history to a viewer whose access just unlocked.
+
+        The frontend computes ``publicAccess`` locally and sends this
+        request when it transitions from locked to readable (late-join
+        window expired, viewer just finished/abandoned). The server
+        revalidates with the chat_access helpers; rejection is silent.
+
+        For the public channel we also refresh the cached
+        ``participant_status`` from DB so a participant who finished
+        between auth and now sees the unlock without needing a reconnect.
+        """
+        try:
+            req = RequestChatHistoryMessage.model_validate(msg)
+        except Exception:
+            return
+
+        channel = req.channel
+        now = datetime.now(UTC)
+
+        if channel == "participants":
+            if not can_read_participants_chat(role=self._conn.role):
+                return
+            async with self.session_maker() as db:
+                race = await get_race_with_details(db, self.entity_id)  # type: ignore[arg-type]
+            if race is None:
+                return
+            history = await load_chat_history(
+                self.session_maker,
+                self.entity_id,  # type: ignore[arg-type]
+                race,
+                ChatChannel.PARTICIPANTS,
+            )
+            await self.websocket.send_text(history.model_dump_json())
+            return
+
+        # channel == "public"
+        async with self.session_maker() as db:
+            race = await get_race_with_details(db, self.entity_id)  # type: ignore[arg-type]
+            if race is None:
+                return
+            if self._conn.user_id is not None:
+                fresh_participant = next(
+                    (p for p in race.participants if p.user_id == self._conn.user_id),
+                    None,
+                )
+                if fresh_participant is not None:
+                    self._conn.participant_status = fresh_participant.status
+                    # Keep the legacy is_playing flag in sync with terminal
+                    # transitions so any code path that still consults it
+                    # (mod.py finish-side helpers, until the field is
+                    # removed) does not lag behind chat access.
+                    if fresh_participant.status in (
+                        ParticipantStatus.FINISHED,
+                        ParticipantStatus.ABANDONED,
+                    ):
+                        self._conn.is_playing = False
+
+        if not can_read_public_chat(
+            race,
+            role=self._conn.role,
+            participant_status=self._conn.participant_status,
+            now=now,
+        ):
+            return
+
+        history = await load_chat_history(
+            self.session_maker,
+            self.entity_id,  # type: ignore[arg-type]
+            race,
+            ChatChannel.PUBLIC,
+        )
+        await self.websocket.send_text(history.model_dump_json())
 
     async def _try_auth(self, db: AsyncSession) -> User | None:
         """Wait briefly for an auth message. Returns User or None.
