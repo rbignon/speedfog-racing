@@ -19,10 +19,8 @@ from speedfog_racing.models import (
     ChatChannel,
     Invite,
     Participant,
-    ParticipantStatus,
     PlayerTraitScores,
     Race,
-    RaceStatus,
     User,
     UserRole,
 )
@@ -233,10 +231,6 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
                         if participant:
                             self._conn.participant_id = participant.id
                             self._conn.participant_status = participant.status
-                            self._conn.is_playing = (
-                                race.status == RaceStatus.RUNNING
-                                and participant.status == ParticipantStatus.PLAYING
-                            )
 
                 # Load dominant_trait from PlayerTraitScores
                 trait_scores = await db.get(PlayerTraitScores, user_id)
@@ -409,15 +403,6 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
                 )
                 if fresh_participant is not None:
                     self._conn.participant_status = fresh_participant.status
-                    # Keep the legacy is_playing flag in sync with terminal
-                    # transitions so any code path that still consults it
-                    # (mod.py finish-side helpers, until the field is
-                    # removed) does not lag behind chat access.
-                    if fresh_participant.status in (
-                        ParticipantStatus.FINISHED,
-                        ParticipantStatus.ABANDONED,
-                    ):
-                        self._conn.is_playing = False
 
         if not can_read_public_chat(
             race,

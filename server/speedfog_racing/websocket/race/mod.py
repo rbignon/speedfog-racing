@@ -41,7 +41,7 @@ from speedfog_racing.websocket.race.manager import (
     participant_to_info,
     sort_leaderboard,
 )
-from speedfog_racing.websocket.race.spectator import broadcast_race_state_update, load_chat_history
+from speedfog_racing.websocket.race.spectator import broadcast_race_state_update
 from speedfog_racing.websocket.schemas import (
     AuthOkMessage,
     DeathCountsMessage,
@@ -692,27 +692,16 @@ async def handle_finished(
         graph_json=_get_graph_json(participant),
     )
 
-    # Chat broadcasts + unlock PUBLIC channel for the finished participant.
-    # Per-player message first, then the race-finished notice (when applicable)
-    # so spectators see them in chronological order.
+    # Unlock the PUBLIC channel for the finished participant before
+    # broadcasting so they receive their own "X has finished" notice.
+    # Past public chat history is pulled by the client via the
+    # request_chat_history WS message once it detects the transition.
     room = manager.get_room(participant.race_id)
     if room:
+        room.set_participant_status(participant.user_id, ParticipantStatus.FINISHED)
         await room.broadcast_chat_public(participant_finished_public_json, participant.race)
         if race_finished_public_json is not None:
             await room.broadcast_chat_public(race_finished_public_json, participant.race)
-        spec_conn = room.get_spectator_by_user_id(participant.user_id)
-        if spec_conn and spec_conn.is_playing:
-            spec_conn.is_playing = False
-            try:
-                hist = await load_chat_history(
-                    session_maker,
-                    participant.race_id,
-                    participant.race,
-                    ChatChannel.PUBLIC,
-                )
-                await spec_conn.websocket.send_text(hist.model_dump_json())
-            except Exception:
-                logger.warning("Failed to send public chat history to finished participant")
 
 
 # ---------------------------------------------------------------------------

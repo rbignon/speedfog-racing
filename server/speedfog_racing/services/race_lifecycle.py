@@ -90,10 +90,13 @@ async def finalize_race(
     finalize_race then:
     - marks any non-terminal participant (REGISTERED, READY, PLAYING) as ABANDONED
     - posts the public chat "race has finished" message
-    - clears is_playing on spectator connections
     - triggers ELO update and trait recomputation (background)
     - broadcasts leaderboard + race_state + race_status + chat
     - fires Discord notifications
+
+    No per-connection participant_status refresh is needed here: once the
+    race is FINISHED the chat-access predicate short-circuits to True for
+    everyone, so the cached connection state is no longer consulted.
 
     Caller must also have eagerly loaded ``race.seed`` so the leaderboard
     broadcast can ship the graph_json mods need for layer naming.
@@ -123,8 +126,6 @@ async def finalize_race(
     await db.commit()
 
     room = manager.get_room(race.id)
-    if room:
-        room.clear_all_playing()
 
     await update_elo_ratings(race.id, db)
 

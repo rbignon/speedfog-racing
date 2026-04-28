@@ -125,7 +125,9 @@ async def inactivity_monitor_loop(
                         if room:
                             for p in race.participants:
                                 if p.status == ParticipantStatus.ABANDONED:
-                                    room.clear_is_playing(p.user_id)
+                                    room.set_participant_status(
+                                        p.user_id, ParticipantStatus.ABANDONED
+                                    )
 
                         # Persist "abandoned due to inactivity" messages for
                         # newly abandoned participants (persist unconditionally

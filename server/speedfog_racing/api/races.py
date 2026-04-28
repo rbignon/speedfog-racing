@@ -1667,7 +1667,7 @@ async def abandon_race(
     # Unlock PUBLIC chat channel for abandoned participant
     room = manager.get_room(race_id)
     if room:
-        room.clear_is_playing(user.id)
+        room.set_participant_status(user.id, ParticipantStatus.ABANDONED)
 
     if room:
         await room.broadcast_chat_public(sys_json, race)

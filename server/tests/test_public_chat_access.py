@@ -281,3 +281,78 @@ class TestSpectatorConnectionShape:
             participant_status=ParticipantStatus.PLAYING,
         )
         assert conn.participant_status == ParticipantStatus.PLAYING
+
+
+# -- room.set_participant_status (C4 transition hook) -----------------------
+
+
+class TestSetParticipantStatus:
+    @pytest.mark.parametrize(
+        "terminal_status", [ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED]
+    )
+    def test_updates_all_connections_for_user(self, terminal_status):
+        """Multi-tab: every connection of the user gets the new status.
+
+        Parametrized over the two terminal statuses so the abandon path
+        (api/races.py + inactivity_monitor.py) is covered alongside the
+        finish path (mod.py).
+        """
+        room = RaceRoom(race_id=uuid4())
+        user_id = uuid4()
+        tab1 = SpectatorConnection(
+            websocket=AsyncMock(),
+            user_id=user_id,
+            role="participant",
+            participant_status=ParticipantStatus.PLAYING,
+        )
+        tab2 = SpectatorConnection(
+            websocket=AsyncMock(),
+            user_id=user_id,
+            role="participant",
+            participant_status=ParticipantStatus.PLAYING,
+        )
+        unrelated = SpectatorConnection(
+            websocket=AsyncMock(),
+            user_id=uuid4(),
+            role="participant",
+            participant_status=ParticipantStatus.PLAYING,
+        )
+        for c in (tab1, tab2, unrelated):
+            room.spectators[c.connection_id] = c
+
+        room.set_participant_status(user_id, terminal_status)
+
+        assert tab1.participant_status == terminal_status
+        assert tab2.participant_status == terminal_status
+        # Unrelated user untouched.
+        assert unrelated.participant_status == ParticipantStatus.PLAYING
+
+    def test_no_match_is_a_noop(self):
+        room = RaceRoom(race_id=uuid4())
+        room.set_participant_status(uuid4(), ParticipantStatus.FINISHED)
+        # Should not raise, and no connection to inspect; reaching here is enough.
+
+    @pytest.mark.asyncio
+    async def test_finish_then_broadcast_reaches_just_finished_participant(self):
+        """After set_participant_status(FINISHED), the broadcast filter
+        includes the connection of the just-finished participant."""
+        race = _running_race(late_join_open=True)
+        room = RaceRoom(race_id=race.id)
+        user_id = uuid4()
+        finisher = SpectatorConnection(
+            websocket=AsyncMock(),
+            user_id=user_id,
+            role="participant",
+            participant_status=ParticipantStatus.PLAYING,
+        )
+        room.spectators[finisher.connection_id] = finisher
+
+        # Pre-state: locked (active participant during late-join).
+        await room.broadcast_chat_public("first", race)
+        finisher.websocket.send_text.assert_not_called()
+
+        # Transition.
+        room.set_participant_status(user_id, ParticipantStatus.FINISHED)
+
+        await room.broadcast_chat_public("you finished!", race)
+        finisher.websocket.send_text.assert_called_once()

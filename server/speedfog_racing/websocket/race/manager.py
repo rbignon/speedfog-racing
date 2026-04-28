@@ -54,7 +54,6 @@ class SpectatorConnection:
     # ``None`` for non-participants. Populated at auth and refreshed when
     # the participant transitions (race start, finish, abandon).
     participant_status: ParticipantStatus | None = None
-    is_playing: bool = False  # True if participant currently in PLAYING status during RUNNING
     # Unique id for O(1) removal from RaceRoom.spectators dict.
     connection_id: uuid.UUID = field(default_factory=uuid.uuid4)
 
@@ -187,21 +186,20 @@ class RaceRoom:
         return None
 
     def mark_participants_playing(self) -> None:
-        """Set is_playing=True on all participant spectator connections."""
+        """Set participant_status to PLAYING on every participant connection."""
         for conn in self.spectators.values():
             if conn.role == "participant":
-                conn.is_playing = True
+                conn.participant_status = ParticipantStatus.PLAYING
 
-    def clear_is_playing(self, user_id: uuid.UUID) -> None:
-        """Clear is_playing for a specific user's spectator connection."""
-        conn = self.get_spectator_by_user_id(user_id)
-        if conn:
-            conn.is_playing = False
+    def set_participant_status(self, user_id: uuid.UUID, status: ParticipantStatus) -> None:
+        """Update the cached participant status for every connection of a user.
 
-    def clear_all_playing(self) -> None:
-        """Clear is_playing on all spectator connections."""
+        Multi-tab users have multiple spectator connections sharing the
+        same user_id, all of which need to see the transition.
+        """
         for conn in self.spectators.values():
-            conn.is_playing = False
+            if conn.user_id == user_id:
+                conn.participant_status = status
 
 
 class ConnectionManager:
