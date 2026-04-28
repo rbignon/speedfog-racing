@@ -20,6 +20,13 @@
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import AddToCalendar from '$lib/components/AddToCalendar.svelte';
 	import ChatSidebar from '$lib/components/ChatSidebar.svelte';
+	import {
+		computePublicAccess,
+		computePublicLockedReason,
+		type ParticipantStatus as PCAParticipantStatus,
+		type RaceRole,
+		type RaceStatus as PCARaceStatus
+	} from '$lib/public-chat-access';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -298,13 +305,6 @@
 	let isParticipantPlaying = $derived(
 		!!myParticipant && raceStatus === 'running' && !myParticipantFinished
 	);
-	let publicEnabled = $derived(!isParticipantPlaying);
-	let effectiveActiveTab = $derived(hasParticipantsAccess ? chatActiveTab : 'public');
-	let canSendChat = $derived(
-		effectiveActiveTab === 'participants'
-			? hasParticipantsAccess
-			: auth.isLoggedIn && !isParticipantPlaying
-	);
 
 	let prevFinished = $state(false);
 	$effect(() => {
@@ -402,6 +402,60 @@
 	let liveRegistrationClosesAt = $derived(
 		raceStore.race?.registration_closes_at ?? initialRace.registration_closes_at
 	);
+
+	let myRole = $derived<RaceRole>(
+		isOrganizer
+			? 'organizer'
+			: auth.isAdmin
+				? 'admin'
+				: isCaster
+					? 'caster'
+					: myParticipant
+						? 'participant'
+						: null
+	);
+	let myParticipantStatus = $derived<PCAParticipantStatus | null>(
+		(myWsParticipant?.status as PCAParticipantStatus | undefined) ?? null
+	);
+	let publicAccess = $derived(
+		computePublicAccess({
+			raceStatus: raceStatus as PCARaceStatus,
+			registrationClosesAt: liveRegistrationClosesAt,
+			role: myRole,
+			participantStatus: myParticipantStatus,
+			now: new Date(now)
+		})
+	);
+	let publicLockedReason = $derived(
+		computePublicLockedReason({
+			raceStatus: raceStatus as PCARaceStatus,
+			registrationClosesAt: liveRegistrationClosesAt,
+			role: myRole,
+			participantStatus: myParticipantStatus,
+			now: new Date(now)
+		})
+	);
+	let effectiveActiveTab = $derived(hasParticipantsAccess ? chatActiveTab : 'public');
+	let canSendChat = $derived(
+		effectiveActiveTab === 'participants'
+			? hasParticipantsAccess
+			: auth.isLoggedIn && publicAccess === 'readable' && !isParticipantPlaying
+	);
+
+	// Pull public chat history when local access transitions from locked
+	// to readable (late-join window expired, viewer just finished). The
+	// server revalidates and silently ignores if the transition is wrong.
+	// Skip the very first computation: on initial connection the server
+	// already shipped history if we were eligible at auth time.
+	let prevPublicAccess = $state<'locked' | 'readable' | null>(null);
+	$effect(() => {
+		const current = publicAccess;
+		if (prevPublicAccess === 'locked' && current === 'readable') {
+			raceStore.requestChatHistory('public');
+		}
+		prevPublicAccess = current;
+	});
+
 	let liveRaceEndsAt = $derived(raceStore.race?.race_ends_at ?? initialRace.race_ends_at);
 	let livePrivateDag = $derived(raceStore.race?.private_dag ?? initialRace.private_dag);
 	let liveOpenRegistration = $derived(
@@ -1194,8 +1248,8 @@
 				canSend={canSendChat}
 				collapsed={chatCollapsed}
 				participantsAccess={hasParticipantsAccess}
-				publicAccess={publicEnabled ? 'readable' : 'locked'}
-				publicLockedReason="Public chat is locked."
+				{publicAccess}
+				{publicLockedReason}
 				activeTab={effectiveActiveTab}
 				onSend={sendChatMessage}
 				onToggle={() => (chatCollapsed = !chatCollapsed)}

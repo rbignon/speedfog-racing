@@ -305,6 +305,18 @@ export class RaceWebSocket {
   }
 
   /**
+   * Ask the server to (re)send chat history for a channel.
+   *
+   * Triggered by the page when a viewer's locally-computed access
+   * transitions from locked to readable (late-join window expired,
+   * viewer just finished/abandoned). The server revalidates and
+   * silently ignores if access is still refused.
+   */
+  requestChatHistory(channel: "participants" | "public"): void {
+    this.send({ type: "request_chat_history", channel });
+  }
+
+  /**
    * Check if connected.
    */
   isConnected(): boolean {
