@@ -697,9 +697,9 @@ async def handle_finished(
     # so spectators see them in chronological order.
     room = manager.get_room(participant.race_id)
     if room:
-        await room.broadcast_chat_public(participant_finished_public_json)
+        await room.broadcast_chat_public(participant_finished_public_json, participant.race)
         if race_finished_public_json is not None:
-            await room.broadcast_chat_public(race_finished_public_json)
+            await room.broadcast_chat_public(race_finished_public_json, participant.race)
         spec_conn = room.get_spectator_by_user_id(participant.user_id)
         if spec_conn and spec_conn.is_playing:
             spec_conn.is_playing = False

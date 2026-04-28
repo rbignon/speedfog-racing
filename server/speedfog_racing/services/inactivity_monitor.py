@@ -152,7 +152,7 @@ async def inactivity_monitor_loop(
 
                         if room:
                             for sys_json in abandon_messages:
-                                await room.broadcast_chat_public(sys_json)
+                                await room.broadcast_chat_public(sys_json, race)
 
                         graph_json = race.seed.graph_json if race.seed else None
                         await manager.broadcast_leaderboard(
@@ -162,7 +162,7 @@ async def inactivity_monitor_loop(
                         if race.status == RaceStatus.FINISHED:
                             await manager.broadcast_race_status(race_id, "finished")
                             if room and finish_public_json is not None:
-                                await room.broadcast_chat_public(finish_public_json)
+                                await room.broadcast_chat_public(finish_public_json, race)
                             fire_race_finished_notifications(race)
         except Exception:
             logger.exception("Inactivity monitor error")

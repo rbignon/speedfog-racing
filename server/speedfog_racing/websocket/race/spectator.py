@@ -29,6 +29,12 @@ from speedfog_racing.models import (
 from speedfog_racing.models import (
     ChatMessage as ChatMessageModel,
 )
+from speedfog_racing.services.chat_access import (
+    can_read_participants_chat,
+    can_read_public_chat,
+    can_write_public_chat,
+    race_role,
+)
 from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.websocket.handler import BaseSpectatorHandler
 from speedfog_racing.websocket.race.manager import (
@@ -214,17 +220,7 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
                     self._conn.locale = user_obj.locale
                     self.locale = user_obj.locale
 
-                # Determine role in this race
-                role: str | None = None
-                if race.organizer_id == user_id:
-                    role = "organizer"
-                elif user_obj.role == UserRole.ADMIN:
-                    role = "admin"
-                elif any(c.user_id == user_id for c in race.casters):
-                    role = "caster"
-                elif any(p.user_id == user_id for p in race.participants):
-                    role = "participant"
-
+                role = race_role(race, user_obj)
                 if role is not None:
                     self._conn.role = role
 
@@ -234,6 +230,7 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
                         )
                         if participant:
                             self._conn.participant_id = participant.id
+                            self._conn.participant_status = participant.status
                             self._conn.is_playing = (
                                 race.status == RaceStatus.RUNNING
                                 and participant.status == ParticipantStatus.PLAYING
@@ -255,9 +252,12 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
             await send_race_state(self.websocket, race, locale=self._conn.locale)
         # Session closed, released back to pool within ~2s of connect
 
-        # Load chat history in parallel, send sequentially (safe for single WS)
+        # Load chat history in parallel, send sequentially (safe for single WS).
+        # Both gates go through the same chat_access helpers used by the
+        # send and broadcast paths so server authorization is consistent.
+        now = datetime.now(UTC)
         chat_loads: list[Any] = []
-        if self._conn.role is not None:
+        if can_read_participants_chat(role=self._conn.role):
             chat_loads.append(
                 load_chat_history(
                     self.session_maker,
@@ -266,7 +266,12 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
                     ChatChannel.PARTICIPANTS,
                 )
             )
-        if self._conn.user_id is not None and not self._conn.is_playing:
+        if can_read_public_chat(
+            race,
+            role=self._conn.role,
+            participant_status=self._conn.participant_status,
+            now=now,
+        ):
             chat_loads.append(
                 load_chat_history(
                     self.session_maker,
@@ -297,16 +302,32 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
         except Exception:
             return
 
-        # Validate channel access
         channel = chat_msg.channel
-        if channel == "participants" and self._conn.role is None:
-            return  # Spectators cannot write to participants channel
-        if channel == "public" and self._conn.is_playing:
-            return  # Playing participants cannot write to public
-
         room = manager.get_room(self.entity_id)  # type: ignore[arg-type]
         if room is None:
             return
+
+        # Validate channel access via the shared chat_access helpers. Public
+        # chat additionally needs a fresh race row for the late-join
+        # deadline; load it once here and reuse for the broadcast filter.
+        now = datetime.now(UTC)
+        race: Race | None = None
+        if channel == "participants":
+            if not can_read_participants_chat(role=self._conn.role):
+                return
+        else:  # "public"
+            async with self.session_maker() as db:
+                race = await db.get(Race, self.entity_id)
+            if race is None:
+                return
+            if not can_write_public_chat(
+                race,
+                user_id=self._conn.user_id,
+                role=self._conn.role,
+                participant_status=self._conn.participant_status,
+                now=now,
+            ):
+                return
 
         broadcast = ChatBroadcastMessage(
             channel=channel,
@@ -335,7 +356,8 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
         if channel == "participants":
             await room.broadcast_chat_participants(msg_json)
         else:
-            await room.broadcast_chat_public(msg_json)
+            assert race is not None  # validated above
+            await room.broadcast_chat_public(msg_json, race)
 
     async def _try_auth(self, db: AsyncSession) -> User | None:
         """Wait briefly for an auth message. Returns User or None.

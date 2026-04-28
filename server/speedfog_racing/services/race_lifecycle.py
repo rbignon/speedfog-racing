@@ -142,6 +142,6 @@ async def finalize_race(
     await broadcast_race_state_update(race.id, race)
     await manager.broadcast_race_status(race.id, "finished")
     if room:
-        await room.broadcast_chat_public(finished_public_json)
+        await room.broadcast_chat_public(finished_public_json, race)
 
     fire_race_finished_notifications(race, forced=forced)

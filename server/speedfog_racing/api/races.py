@@ -1390,7 +1390,7 @@ async def start_race(
     if room:
         room.mark_participants_playing()
         await room.broadcast_chat_participants(start_participants_json)
-        await room.broadcast_chat_public(start_public_json)
+        await room.broadcast_chat_public(start_public_json, race)
 
     # Fire-and-forget Discord notification (public races only)
     if race.is_public:
@@ -1670,7 +1670,7 @@ async def abandon_race(
         room.clear_is_playing(user.id)
 
     if room:
-        await room.broadcast_chat_public(sys_json)
+        await room.broadcast_chat_public(sys_json, race)
 
     # Broadcast updates
     graph_json = race.seed.graph_json if race.seed else None
@@ -1688,7 +1688,7 @@ async def abandon_race(
         await broadcast_race_state_update(race_id, race)
         await manager.broadcast_race_status(race_id, "finished")
         if room:
-            await room.broadcast_chat_public(fin_public_json)
+            await room.broadcast_chat_public(fin_public_json, race)
         fire_race_finished_notifications(race)
 
     return race_response(race, user)

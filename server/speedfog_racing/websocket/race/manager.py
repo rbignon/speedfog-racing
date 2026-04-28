@@ -4,11 +4,16 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import WebSocket
 
-from speedfog_racing.models import Participant
+from speedfog_racing.models import Participant, ParticipantStatus, Race
+from speedfog_racing.services.chat_access import (
+    can_read_participants_chat,
+    can_read_public_chat,
+)
 from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
 from speedfog_racing.services.twitch_live import twitch_live_service
 from speedfog_racing.websocket.schemas import (
@@ -44,6 +49,11 @@ class SpectatorConnection:
     locale: str = "en"
     role: str | None = None  # "organizer" | "admin" | "caster" | "participant"
     participant_id: uuid.UUID | None = None
+    # Cached participant status, used by chat_access helpers to evaluate
+    # public-chat access without iterating race.participants per broadcast.
+    # ``None`` for non-participants. Populated at auth and refreshed when
+    # the participant transitions (race start, finish, abandon).
+    participant_status: ParticipantStatus | None = None
     is_playing: bool = False  # True if participant currently in PLAYING status during RUNNING
     # Unique id for O(1) removal from RaceRoom.spectators dict.
     connection_id: uuid.UUID = field(default_factory=uuid.uuid4)
@@ -115,11 +125,12 @@ class RaceRoom:
         )
 
     async def broadcast_chat_participants(self, message: str) -> None:
-        """Broadcast to spectator connections with a race role (participant/organizer/caster/admin).
+        """Broadcast to spectator connections with a race role.
 
-        Only sends to connections where role is not None.
+        Routed through ``can_read_participants_chat`` so the filter stays
+        in lockstep with the helpers used at history load and send.
         """
-        snapshot = [c for c in self.spectators.values() if c.role is not None]
+        snapshot = [c for c in self.spectators.values() if can_read_participants_chat(role=c.role)]
         if not snapshot:
             return
         failed: list[SpectatorConnection] = []
@@ -134,10 +145,25 @@ class RaceRoom:
         for conn in failed:
             self.spectators.pop(conn.connection_id, None)
 
-    async def broadcast_chat_public(self, message: str) -> None:
-        """Broadcast to authenticated spectators, excluding playing participants."""
+    async def broadcast_chat_public(self, message: str, race: Race) -> None:
+        """Broadcast public chat respecting per-connection access.
+
+        ``race`` is the current race row (used for status and the late-join
+        deadline). Caller is responsible for passing a fresh-enough race;
+        for the public-chat use case, status and ``started_at`` change
+        infrequently (race start, finish), so callers that already hold a
+        loaded race object can pass it directly.
+        """
+        now = datetime.now(UTC)
         snapshot = [
-            c for c in self.spectators.values() if c.user_id is not None and not c.is_playing
+            c
+            for c in self.spectators.values()
+            if can_read_public_chat(
+                race,
+                role=c.role,
+                participant_status=c.participant_status,
+                now=now,
+            )
         ]
         if not snapshot:
             return
