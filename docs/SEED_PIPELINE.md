@@ -38,11 +38,11 @@ python tools/generate_pool.py \
 
 1. **Generate seed number**: `uuid4().hex[:12]` (e.g., `a1b2c3d4e5f6`). Stored as `seed_number` in the DB.
 
-2. **Run speedfog**: subprocess call via `uv run speedfog <config> -o <temp_dir> --spoiler --game-dir <path>`. Each seed gets its own temp directory. Output is streamed to `<temp>/generation.log` (and optionally to stdout with `--verbose`).
+2. **Run speedfog**: subprocess call via `uv run speedfog <config> -o <temp_dir> --logs --game-dir <path>`. Each seed gets its own temp directory. Output is streamed to `<temp>/generation.log` (and optionally to stdout with `--verbose`).
 
 3. **Post-process the seed directory**:
    - Copy `speedfog_racing.dll` from `tools/assets/` to `<seed_dir>/lib/`.
-   - Inject DLL path into `config_speedfog.toml`'s `external_dlls` array via regex replacement.
+   - Register the DLL in `me3/config_speedfog.me3` as a ME3 `[[natives]]` entry (`path = "../lib/speedfog_racing.dll"`). `generate_pool.py` still has a ModEngine 2 fallback for old artifacts kept for investigation.
    - Ensure `RandomizerHelper_config.ini` exists in `lib/` with safe racing defaults (no auto-equip, auto-upgrade enabled). This covers the case where item randomizer was disabled, as the DLL is always present but may lack config.
 
 4. **Create zip**: all files under a top-level `speedfog_<slug>/` directory. Named `seed_<slug>.zip`.
@@ -268,8 +268,10 @@ tools/
 seed_a1b2c3d4e5f6.zip
 └── speedfog_a1b2c3d4e5f6/
     ├── graph.json               # DAG definition (nodes, edges, event_map, ...)
-    ├── config_speedfog.toml     # ModEngine config (includes racing DLL)
     ├── regulation.bin           # Game data overrides
+    ├── me3/
+    │   ├── config_speedfog.me3    # ME3 profile (includes racing DLL as a native)
+    │   └── bin/                   # ME3 runtime
     ├── lib/
     │   ├── speedfog_racing.dll    # Racing overlay mod
     │   ├── RandomizerHelper.dll     # Item rando helper

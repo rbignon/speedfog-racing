@@ -2,7 +2,7 @@
 """Generate seed pools for SpeedFog Racing.
 
 Calls the speedfog tool to generate seeds, then adds the racing mod DLL
-to each seed's ModEngine configuration. Supports generating multiple pools
+to each seed's ME3 profile. Supports generating multiple pools
 in parallel via a shared thread pool.
 
 Usage:
@@ -335,12 +335,53 @@ def copy_mod_dll(seed_dir: Path, dll_source: Path) -> bool:
         return False
 
 
-def add_dll_to_config(seed_dir: Path) -> bool:
-    """Add the racing mod DLL to config_speedfog.toml's external_dlls.
+def add_dll_to_me3_config(seed_dir: Path) -> bool:
+    """Add the racing mod DLL to config_speedfog.me3's natives.
 
-    Uses string manipulation to avoid external TOML dependencies.
+    ME3 loads native DLLs from ``[[natives]]`` entries. The base SpeedFog
+    package only knows about its own helper DLLs, so the racing overlay DLL
+    must be registered after it is copied to ``lib/``.
     Returns True on success, False on failure.
     """
+    config_path = seed_dir / "me3" / "config_speedfog.me3"
+    dll_path = f"../lib/{DLL_NAME}"
+
+    if not config_path.exists():
+        print("  Error: me3/config_speedfog.me3 not found")
+        return False
+
+    try:
+        content = config_path.read_text(encoding="utf-8")
+
+        if dll_path in content:
+            return True
+
+        native_entry = f'[[natives]]\npath = "{dll_path}"'
+        supports_match = re.search(
+            r'(\[\[supports\]\]\s*\ngame\s*=\s*"eldenring"\s*)',
+            content,
+        )
+
+        if supports_match:
+            insert_at = supports_match.end()
+            new_content = (
+                content[:insert_at]
+                + f"{native_entry}\n\n"
+                + content[insert_at:].lstrip("\n")
+            )
+        else:
+            new_content = content.rstrip() + f"\n{native_entry}\n"
+
+        config_path.write_text(new_content, encoding="utf-8")
+        return True
+
+    except OSError as e:
+        print(f"  Error modifying ME3 config: {e}")
+        return False
+
+
+def add_dll_to_legacy_config(seed_dir: Path) -> bool:
+    """Add the racing mod DLL to config_speedfog.toml's external_dlls."""
     config_path = seed_dir / "config_speedfog.toml"
 
     if not config_path.exists():
@@ -349,12 +390,7 @@ def add_dll_to_config(seed_dir: Path) -> bool:
 
     try:
         content = config_path.read_text(encoding="utf-8")
-
-        # Find the external_dlls line and add our DLL
-        # Pattern matches: external_dlls = [...]
         dll_entry = f'    "lib\\\\{DLL_NAME}",'
-
-        # Look for existing external_dlls array
         pattern = r"(external_dlls\s*=\s*\[)([^\]]*?)(\])"
 
         def add_dll(match: re.Match[str]) -> str:
@@ -362,23 +398,15 @@ def add_dll_to_config(seed_dir: Path) -> bool:
             existing = match.group(2)
             suffix = match.group(3)
 
-            # Check if our DLL is already there
             if DLL_NAME in existing:
                 return match.group(0)
 
-            # Add our DLL to the array
             if existing.strip():
-                # There are existing entries, add ours after the last one
-                # Find the last entry and add ours after
                 existing = existing.rstrip()
                 if not existing.endswith(","):
                     existing += ","
-                new_content = f"{prefix}{existing}\n{dll_entry}\n{suffix}"
-            else:
-                # Empty array, add our entry
-                new_content = f"{prefix}\n{dll_entry}\n{suffix}"
-
-            return new_content
+                return f"{prefix}{existing}\n{dll_entry}\n{suffix}"
+            return f"{prefix}\n{dll_entry}\n{suffix}"
 
         new_content, count = re.subn(pattern, add_dll, content)
 
@@ -392,6 +420,17 @@ def add_dll_to_config(seed_dir: Path) -> bool:
     except OSError as e:
         print(f"  Error modifying config: {e}")
         return False
+
+
+def add_dll_to_config(seed_dir: Path) -> bool:
+    """Add the racing mod DLL to the generated launcher config.
+
+    Prefer the current ME3 profile, with a legacy ModEngine 2 fallback for
+    old generated seeds kept around for debugging or migration.
+    """
+    if (seed_dir / "me3" / "config_speedfog.me3").exists():
+        return add_dll_to_me3_config(seed_dir)
+    return add_dll_to_legacy_config(seed_dir)
 
 
 def zip_seed_dir(seed_dir: Path, output_zip: Path, top_dir: str) -> None:
@@ -454,7 +493,7 @@ def process_seed(
     if not copy_mod_dll(seed_dir, dll_source):
         return False
 
-    # Modify config_speedfog.toml
+    # Modify me3/config_speedfog.me3 (or legacy configs)
     if not add_dll_to_config(seed_dir):
         return False
 

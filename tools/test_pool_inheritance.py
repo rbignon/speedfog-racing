@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from generate_pool import (
     POOLS_DIR,
+    add_dll_to_config,
     deep_merge,
     resolve_pool_config,
     validate_pool_config,
@@ -201,3 +202,62 @@ class TestValidation:
             resolved = resolve_pool_config(toml_path.stem)
             errors = validate_pool_config(resolved, toml_path.stem)
             assert errors == [], f"{toml_path.stem}: {errors}"
+
+
+class TestModConfig:
+    def test_add_dll_to_me3_config(self, tmp_path):
+        me3_dir = tmp_path / "me3"
+        me3_dir.mkdir()
+        config = me3_dir / "config_speedfog.me3"
+        config.write_text(
+            "# SpeedFog ME3 Profile\n"
+            'profileVersion = "v1"\n\n'
+            "[[supports]]\n"
+            'game = "eldenring"\n\n'
+            "[[natives]]\n"
+            'path = "lib/RandomizerCrashFix.dll"\n\n'
+            "[[packages]]\n"
+            'id = "fogmod"\n'
+            'path = "mods/fogmod"\n',
+            encoding="utf-8",
+        )
+
+        assert add_dll_to_config(tmp_path) is True
+
+        content = config.read_text(encoding="utf-8")
+        assert 'path = "../lib/speedfog_racing.dll"' in content
+        assert content.index('path = "../lib/speedfog_racing.dll"') < content.index(
+            'path = "lib/RandomizerCrashFix.dll"'
+        )
+
+    def test_add_dll_to_me3_config_is_idempotent(self, tmp_path):
+        me3_dir = tmp_path / "me3"
+        me3_dir.mkdir()
+        config = me3_dir / "config_speedfog.me3"
+        config.write_text(
+            'profileVersion = "v1"\n\n'
+            "[[supports]]\n"
+            'game = "eldenring"\n\n'
+            "[[natives]]\n"
+            'path = "../lib/speedfog_racing.dll"\n',
+            encoding="utf-8",
+        )
+
+        assert add_dll_to_config(tmp_path) is True
+        assert (
+            config.read_text(encoding="utf-8").count(
+                'path = "../lib/speedfog_racing.dll"'
+            )
+            == 1
+        )
+
+    def test_add_dll_to_legacy_config_fallback(self, tmp_path):
+        config = tmp_path / "config_speedfog.toml"
+        config.write_text(
+            '[modengine]\nexternal_dlls = [\n    "lib\\\\RandomizerHelper.dll",\n]\n',
+            encoding="utf-8",
+        )
+
+        assert add_dll_to_config(tmp_path) is True
+
+        assert '    "lib\\\\speedfog_racing.dll",' in config.read_text(encoding="utf-8")
