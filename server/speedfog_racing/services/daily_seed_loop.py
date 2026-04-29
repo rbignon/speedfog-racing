@@ -124,20 +124,22 @@ async def create_daily_seed_if_needed(
             started_at=start_at,
             seeds_released_at=start_at,
         )
+        # Postgres enforces the partial unique index when the INSERT
+        # statement executes (i.e. on flush), so wrap the whole
+        # add/flush/assign/commit in the same IntegrityError guard.
         db.add(race)
-        await db.flush()
         try:
-            await assign_seed_to_race(db, race, schedule.pool_name)
-        except ValueError:
-            logger.exception(
-                "No available seeds in pool %r for daily %s",
-                schedule.pool_name,
-                today,
-            )
-            await db.rollback()
-            return None
-
-        try:
+            await db.flush()
+            try:
+                await assign_seed_to_race(db, race, schedule.pool_name)
+            except ValueError:
+                logger.exception(
+                    "No available seeds in pool %r for daily %s",
+                    schedule.pool_name,
+                    today,
+                )
+                await db.rollback()
+                return None
             await db.commit()
         except IntegrityError:
             await db.rollback()

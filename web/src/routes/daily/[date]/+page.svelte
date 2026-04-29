@@ -74,6 +74,19 @@
 	let publicAccess = $derived(computePublicAccess(publicAccessInputs));
 	let publicLockedReason = $derived(computePublicLockedReason(publicAccessInputs));
 
+	// Pull public chat history when local access transitions from locked to
+	// readable (e.g. the viewer's run just transitioned to FINISHED, or
+	// registration window closed). The server already shipped history at
+	// auth time when we were eligible; this re-pulls only on the lift.
+	let prevPublicAccess = $state<'locked' | 'readable' | null>(null);
+	$effect(() => {
+		const current = publicAccess;
+		if (prevPublicAccess === 'locked' && current === 'readable') {
+			raceStore.send({ type: 'request_chat_history', channel: 'public' });
+		}
+		prevPublicAccess = current;
+	});
+
 	$effect(() => {
 		if (!auth.initialized) return;
 		raceStore.connect(initialRace.id);

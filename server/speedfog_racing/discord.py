@@ -467,7 +467,10 @@ def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> Non
     current implementation ignores it.
     """
     del forced  # currently unused, reserved for future copy differentiation
-    if race.is_public:
+    # Daily Seeds already announced themselves at creation (notify_daily_seed_created
+    # carries yesterday's podium). Posting the regular finished-race embed again at
+    # T+24h would double the channel traffic, so we suppress it here.
+    if race.is_public and race.daily_date is None:
         task = asyncio.create_task(
             notify_race_finished(
                 race_name=race.name,

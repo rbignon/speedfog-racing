@@ -122,7 +122,9 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
             )
         )
 
-    # Community stats (public races only)
+    # Community stats (public races only).
+    # Daily Seeds (exclude_from_elo=True) are intentionally included here:
+    # community KPIs describe total racing activity, not only ELO-rated runs.
     public_finished = (Race.status == RaceStatus.FINISHED) & (Race.is_public == True)  # noqa: E712
 
     total_races = (

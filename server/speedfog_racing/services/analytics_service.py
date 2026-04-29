@@ -77,6 +77,9 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
     ).scalar_one()
     active_users_pct = round(active_users_30d / total_users * 100, 1) if total_users > 0 else 0.0
 
+    # Daily Seeds (daily_date IS NOT NULL, exclude_from_elo=True) are kept
+    # in admin analytics on purpose: this surface measures all racing
+    # activity, not only ELO-rated runs.
     total_races_finished = (
         await db.execute(select(func.count(Race.id)).where(Race.status == RaceStatus.FINISHED))
     ).scalar_one()

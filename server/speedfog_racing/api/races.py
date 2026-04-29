@@ -1512,6 +1512,9 @@ async def reroll_seed(
             p.finished_at = None
             p.zone_history = None
             p.last_igt_change_at = None
+            # Empty dict, not None: ``layer_entry_igts`` is NOT NULL with a
+            # ``{}`` server_default; sort_leaderboard reads it for gap math.
+            p.layer_entry_igts = {}
 
     channel = ChatChannel.PUBLIC if is_daily else ChatChannel.PARTICIPANTS
     message = (

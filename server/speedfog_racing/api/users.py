@@ -126,6 +126,9 @@ async def get_my_races(
     db: AsyncSession = Depends(get_db),
 ) -> RaceListResponse:
     """Get races where the user is organizer or participant."""
+    # Personal history intentionally includes Daily Seed participations so
+    # users see every race they actually played; the listings under
+    # /api/races/* are the surface that filters them out.
     participant_race_ids = select(Participant.race_id).where(Participant.user_id == user.id)
     query = (
         select(Race)
