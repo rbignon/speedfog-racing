@@ -205,8 +205,19 @@ Each spectator connection carries:
 
 - `user_id`: set from auth or None (anonymous)
 - `locale`: initially from `?locale=` query param (default `"en"`), overridden by user's DB `locale` field if auth succeeds
+- `role`: race role for this user (`"organizer"`, `"admin"`, `"caster"`, `"participant"`, or `None`), resolved at auth via `services/chat_access.race_role`
+- `participant_id`: set when `role == "participant"`
+- `participant_status`: cached `ParticipantStatus` of the user in this race, used by the chat-access helpers to evaluate broadcasts without re-iterating `race.participants`. Set at auth, refreshed by `RaceRoom.set_participant_status` on race start (`mark_participants_playing`) and on per-user finish/abandon transitions, and lazily refreshed from DB inside `_handle_request_chat_history` for the public channel.
 
 `race_state` messages are sent individually per connection (not broadcast as a single shared message) because `graph_json` visibility and locale differ per viewer.
+
+### Chat Access
+
+Chat send, history load, and per-message broadcast all flow through the same `services/chat_access` predicates (`can_read_participants_chat`, `can_read_public_chat`, `can_write_public_chat`) so the three paths cannot drift. The server is authoritative; the frontend mirrors the same matrix locally to drive its UI but cannot grant access the server denies.
+
+Public-chat unlocks during a race (late-join window closing for a spectator, participant finishing or abandoning, race transitioning to FINISHED) are detected by the client from data it already receives: the registration deadline travels in `race_info`, participant status updates ride on `player_update`/`leaderboard_update`, and the race status flip rides on `race_status_change`. When the locally-computed access flips from locked to readable, the client sends a `request_chat_history` (see `docs/PROTOCOL.md`); the server revalidates and replies with a `chat_history` for the requested channel, or silently drops the request. No server-initiated push or scheduled task is involved, which keeps the lifecycle robust to server restart and avoids divergence between the broadcast filter and any out-of-band history-push code path.
+
+The frontend mirror of the access matrix lives in `web/src/lib/public-chat-access.ts` (`computePublicAccess`, `computePublicLockedReason`); the locked-pane UX and the `showPublicOnly` Daily-Seeds variant live in `web/src/lib/components/ChatSidebar.svelte` and `web/src/lib/chat-sidebar-layout.ts`.
 
 ---
 

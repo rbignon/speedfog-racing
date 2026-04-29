@@ -547,7 +547,24 @@ Send a chat message to a channel. Requires authentication. Rate-limited to 500 c
 | `channel` | `string` | `"participants"` or `"public"`    |
 | `message` | `string` | Message text (max 500 characters) |
 
-See [Chat System](#chat-system) for channel access rules.
+See [Chat System](#chat-system) for channel access rules. Sends that violate the matrix are silently dropped by the server.
+
+#### `request_chat_history`
+
+Ask the server to (re)send chat history for a channel. The frontend emits this when its locally-computed access transitions from locked to readable. The server revalidates against the [Chat System](#chat-system) matrix; on accept it replies with a `chat_history` message for the requested channel, otherwise the request is silently dropped.
+
+```json
+{
+  "type": "request_chat_history",
+  "channel": "public"
+}
+```
+
+| Field     | Type     | Description                    |
+| --------- | -------- | ------------------------------ |
+| `channel` | `string` | `"participants"` or `"public"` |
+
+For the `public` channel the server also refreshes the connection's cached participant status from the database before evaluating access, so a participant who finished mid-race no longer needs to reconnect to see the unlock.
 
 ### Server → Client
 
@@ -669,7 +686,7 @@ Clients replace their local `zone_history[participant_id]` with the payload. Sen
 
 #### `chat_message`
 
-A chat message broadcast to the room. Sent when a user posts in a channel, or when the server generates a system notification (e.g., player finished or abandoned).
+A chat message broadcast to the connections that have read access to the channel (see [Chat System](#chat-system)). Sent when a user posts in a channel, or when the server generates a system notification (e.g., player finished or abandoned).
 
 ```json
 {
@@ -700,7 +717,7 @@ A chat message broadcast to the room. Sent when a user posts in a channel, or wh
 
 #### `chat_history`
 
-Sent on connection for each accessible channel. Contains all persisted messages for that channel. Also sent when a participant finishes or abandons (unlocking the public channel for them).
+Sent on connection for each accessible channel. Contains all persisted messages for that channel. Also sent in response to a [`request_chat_history`](#request_chat_history) message when a viewer's local access for that channel has just unlocked.
 
 ```json
 {
@@ -736,16 +753,30 @@ Heartbeat ping. Sent every 30 seconds.
 
 ## Chat System
 
-Chat operates on the spectator WebSocket (`/ws/race/{race_id}`). Two channels with different access rules:
+Chat operates on the spectator WebSocket (`/ws/race/{race_id}`). Two channels with different access rules. The server is authoritative for every send, history load, and broadcast; the frontend mirrors these rules locally to drive the UI but cannot grant access the server denies.
 
-### Channels
+### Participants channel
 
-| Channel        | Send Access                               | Receive Access                                   |
-| -------------- | ----------------------------------------- | ------------------------------------------------ |
-| `participants` | Organizer, casters, participants          | Organizer, casters, participants (any race role) |
-| `public`       | Authenticated users not currently playing | Authenticated users not currently playing        |
+Readable and writable by authenticated viewers with a race role: participant, organizer, admin, or caster. Anonymous viewers and authenticated viewers without a race role never receive history or broadcasts on this channel.
 
-**Playing participants** (status `playing`) are excluded from the public channel. When a participant finishes or abandons, their `is_playing` flag is cleared and they receive a `chat_history` for the public channel, catching them up on messages sent during the race.
+### Public channel
+
+Readability follows the matrix below. Race role (organizer, admin, caster) does NOT unlock public chat by itself: privileged users follow the same rules as authenticated spectators. Writability adds two requirements on top of readability: the viewer must be authenticated and must not be an active participant.
+
+| Race state                  | Viewer                         | Public chat |
+| --------------------------- | ------------------------------ | ----------- |
+| `SETUP`                     | anyone                         | locked      |
+| `RUNNING`, late-join open   | active participant             | locked      |
+| `RUNNING`, late-join open   | finished/abandoned participant | yes         |
+| `RUNNING`, late-join open   | spectator (incl. priv. role)   | locked      |
+| `RUNNING`, late-join closed | active participant             | locked      |
+| `RUNNING`, late-join closed | finished/abandoned participant | yes         |
+| `RUNNING`, late-join closed | spectator (incl. priv. role)   | yes         |
+| `FINISHED`                  | anyone                         | yes         |
+
+When a participant finishes or abandons mid-race the server flips the connection's cached status so subsequent broadcasts pass the filter. Past public messages are pulled by the client via [`request_chat_history`](#request_chat_history) once it detects the local transition. Late-join window unlocks for a connected spectator are also driven by the client: it ticks its own clock against the deadline and sends `request_chat_history` when the window closes.
+
+See `docs/specs/2026-04-28-public-chat-lock-design.md` for the full rationale.
 
 ### System Messages
 
@@ -764,9 +795,11 @@ The server broadcasts system notifications for the following events:
 
 System messages use `role: "system"` with empty `username`, `null` `display_name` and `avatar_url`.
 
+The "Channels" column lists the channel a message is persisted to. Live delivery on `public` still goes through the per-connection access filter: viewers for whom the public channel is locked at broadcast time will only see the message after their access unlocks and they pull `chat_history`. This is why "Race starts" lands on `public` even though no public viewer is unlocked at that moment.
+
 ### Persistence
 
-Both user-sent and system messages are persisted to the database (indexed by `race_id`, `channel`, `created_at`) and replayed as `chat_history` on connection.
+Both user-sent and system messages are persisted to the database (indexed by `race_id`, `channel`, `created_at`) and replayed as `chat_history` on connection or in response to a `request_chat_history`.
 
 ---
 
@@ -1026,6 +1059,8 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 | Spectator connects/disconnects | (none)                                                                   | `spectator_count` + `chat_history`                                   |
 | Player abandons                | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system)                       |
 | Player auto-abandoned          | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system)                       |
-| Chat message sent              | (none)                                                                   | `chat_message` (to channel subscribers)                              |
+| Chat message sent              | (none)                                                                   | `chat_message` (filtered per [Chat System](#chat-system) matrix)     |
 
 Note: `zone_history` snapshots are emitted only to spectators (mods don't consume `zone_history`). `leaderboard_update` and `player_update` carry `zone_history: null` in every broadcast; the full history is only seeded via `race_state` on connect, plus these snapshot messages. See [zone_history updates](#zone_history-updates).
+
+Note on chat unlocks: when a participant finishes/abandons, when the late-join window closes, and when the race transitions to `FINISHED`, the public chat unlocks for some viewers without any dedicated server-initiated push. The client recomputes its local access from data it already receives (participant status updates, `race_info_update`, the registration deadline) and sends a `request_chat_history` to pull the prior messages. See [Chat System](#chat-system).
