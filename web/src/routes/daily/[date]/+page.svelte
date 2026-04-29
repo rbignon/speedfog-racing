@@ -25,6 +25,7 @@
 	import PoolSettingsCard from '$lib/components/PoolSettingsCard.svelte';
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import ChatSidebar from '$lib/components/ChatSidebar.svelte';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
 
 	let { data } = $props();
@@ -35,6 +36,9 @@
 	let downloadError = $state<string | null>(null);
 	let joining = $state(false);
 	let joinError = $state<string | null>(null);
+	let showAbandonConfirm = $state(false);
+	let abandoning = $state(false);
+	let abandonError = $state<string | null>(null);
 	let chatCollapsed = $state(typeof window !== 'undefined' ? window.innerWidth < 1600 : true);
 	let chatActiveTab = $state<'participants' | 'public'>('participants');
 
@@ -68,6 +72,13 @@
 		myParticipantStatus === 'registered' ||
 			myParticipantStatus === 'ready' ||
 			myParticipantStatus === 'playing'
+	);
+	let canAbandon = $derived(
+		raceStatus === 'running' &&
+			!!myParticipant &&
+			(myParticipantStatus === 'playing' ||
+				myParticipantStatus === 'ready' ||
+				myParticipantStatus === 'registered')
 	);
 	let graphJson = $derived(raceStore.seed?.graph_json ?? null);
 	let countdownLabel = $derived.by(() => {
@@ -149,8 +160,17 @@
 	}
 
 	async function handleAbandon() {
-		await abandonRace(initialRace.id);
-		initialRace = await fetchDailyByDate(initialRace.daily_date!);
+		abandoning = true;
+		abandonError = null;
+		try {
+			await abandonRace(initialRace.id);
+			initialRace = await fetchDailyByDate(initialRace.daily_date!);
+			showAbandonConfirm = false;
+		} catch (e) {
+			abandonError = e instanceof Error ? e.message : 'Failed to abandon';
+		} finally {
+			abandoning = false;
+		}
 	}
 
 	function sendChatMessage(message: string, channel: 'participants' | 'public') {
@@ -172,33 +192,39 @@
 			/>
 		</div>
 
-		<div class="daily-actions">
-			{#if myParticipantStatus === 'playing'}
-				<button class="btn btn-danger" onclick={handleAbandon}>Rage quit</button>
-			{/if}
-			{#if myParticipant}
-				<button
-					class="sidebar-download-btn"
-					onclick={() => {
-						downloadError = null;
-						showDownloadModal = true;
-					}}
-					disabled={downloading}
-				>
-					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-						<path
-							d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
-							stroke="currentColor"
-							stroke-width="1.5"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							fill="none"
-						/>
-					</svg>
-					{downloading ? 'Preparing...' : 'Download Daily Seed Pack'}
+		{#if canAbandon}
+			<div class="abandon-section">
+				<button class="abandon-btn" onclick={() => (showAbandonConfirm = true)}>
+					Rage quit
 				</button>
-			{/if}
-		</div>
+				{#if abandonError}
+					<p class="abandon-error">{abandonError}</p>
+				{/if}
+			</div>
+		{/if}
+
+		{#if myParticipant}
+			<button
+				class="sidebar-download-btn"
+				onclick={() => {
+					downloadError = null;
+					showDownloadModal = true;
+				}}
+				disabled={downloading}
+			>
+				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+					<path
+						d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						fill="none"
+					/>
+				</svg>
+				{downloading ? 'Preparing...' : 'Download Daily Seed Pack'}
+			</button>
+		{/if}
 
 		{#if data.recent.length > 0}
 			<section class="recent-dailies">
@@ -235,7 +261,7 @@
 
 		<div class="dag-wrapper">
 			{#if !myParticipant && !dailyEnded}
-				<button class="play-now-cta" onclick={handlePlayNow} disabled={joining}>
+				<button class="dag-placeholder play-now-cta" onclick={handlePlayNow} disabled={joining}>
 					<span class="play-now-label">{joining ? 'Joining...' : 'Play now'}</span>
 					{#if joinError}
 						<span class="play-now-error">{joinError}</span>
@@ -250,7 +276,9 @@
 					myParticipantId={myWsParticipant?.id ?? ''}
 				/>
 			{:else}
-				<div class="dag-placeholder">Loading map...</div>
+				<div class="dag-placeholder">
+					<p class="dag-note">Loading map...</p>
+				</div>
 			{/if}
 		</div>
 
@@ -315,6 +343,18 @@
 	/>
 {/if}
 
+{#if showAbandonConfirm}
+	<ConfirmModal
+		title="Rage Quit"
+		message="Are you sure? This is irreversible."
+		confirmLabel="Rage quit"
+		danger
+		loading={abandoning}
+		onConfirm={handleAbandon}
+		onCancel={() => (showAbandonConfirm = false)}
+	/>
+{/if}
+
 <style>
 	.daily-page {
 		display: flex;
@@ -342,10 +382,78 @@
 		min-height: 0;
 	}
 
-	.daily-actions {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
+	.abandon-section {
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	/* Intentional departure from flat design charter:
+	   skeuomorphic "big red button" for dramatic effect. Mirrors /race/[id]. */
+	.abandon-btn {
+		width: 100%;
+		padding: 0.75rem 1rem;
+		border: none;
+		border-radius: var(--radius-md);
+		background: radial-gradient(
+			ellipse at 50% 35%,
+			#f87171 0%,
+			var(--color-danger-dark, #dc2626) 50%,
+			#991b1b 100%
+		);
+		color: #fff;
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+		cursor: pointer;
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.15),
+			0 4px 0 #7f1d1d,
+			0 5px 8px rgba(0, 0, 0, 0.4),
+			0 0 20px rgba(239, 68, 68, 0.3);
+		transition: all 0.1s ease;
+	}
+
+	.abandon-btn:hover {
+		background: radial-gradient(
+			ellipse at 50% 35%,
+			#fca5a5 0%,
+			var(--color-danger, #ef4444) 50%,
+			#b91c1c 100%
+		);
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.2),
+			0 4px 0 #7f1d1d,
+			0 5px 8px rgba(0, 0, 0, 0.4),
+			0 0 28px rgba(239, 68, 68, 0.45);
+	}
+
+	.abandon-btn:active {
+		background: radial-gradient(
+			ellipse at 50% 55%,
+			var(--color-danger-dark, #dc2626) 0%,
+			#b91c1c 50%,
+			#7f1d1d 100%
+		);
+		transform: translateY(3px);
+		box-shadow:
+			inset 0 2px 3px rgba(0, 0, 0, 0.3),
+			0 1px 0 #7f1d1d,
+			0 2px 4px rgba(0, 0, 0, 0.3),
+			0 0 15px rgba(239, 68, 68, 0.2);
+	}
+
+	.abandon-btn:focus-visible {
+		outline: 2px solid var(--color-danger, #ef4444);
+		outline-offset: 2px;
+	}
+
+	.abandon-error {
+		margin: 0.5rem 0 0;
+		color: var(--color-danger, #ef4444);
+		font-size: var(--font-size-sm);
 	}
 
 	.sidebar-download-btn {
@@ -457,38 +565,59 @@
 	}
 
 	.dag-wrapper {
-		min-height: 320px;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-md);
-		background: var(--color-surface);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		overflow: hidden;
+		position: relative;
 	}
 
-	.play-now-cta {
-		all: unset;
-		cursor: pointer;
+	/* Match the race page's DAG sizing: ZoomableSvg ships with a 200px
+	   minimum but our layout has the room for 400. Scoped to .daily-page
+	   so other surfaces (overlays, dashboards) keep their own defaults. */
+	:global(.daily-page .zoomable-container) {
+		min-height: 400px;
+	}
+
+	:global(.daily-page .zoomable-container svg) {
+		min-height: 400px;
+	}
+
+	.dag-placeholder {
+		background: var(--color-surface);
+		border: 2px dashed var(--color-border);
+		border-radius: var(--radius-lg);
 		display: flex;
-		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		padding: 3rem;
+		min-height: 400px;
+	}
+
+	.dag-note {
+		color: var(--color-text-disabled);
+		font-size: 0.85rem;
+		font-style: italic;
+		margin: 0;
+	}
+
+	/* The Play now CTA reuses .dag-placeholder's box and turns it into a
+	   clickable affordance with the gold daily palette. */
+	.play-now-cta {
+		flex-direction: column;
+		gap: 0.5rem;
+		width: 100%;
+		text-align: center;
 		color: var(--color-gold);
+		border-color: var(--color-gold);
+		font-family: inherit;
 		font-size: var(--font-size-xl);
 		font-weight: 700;
-		width: 100%;
-		align-self: stretch;
-		min-height: 320px;
-		text-align: center;
+		cursor: pointer;
 		transition:
 			background var(--transition),
-			color var(--transition);
+			color var(--transition),
+			border-color var(--transition);
 	}
 
-	.play-now-cta:hover {
+	.play-now-cta:hover:not(:disabled) {
 		color: var(--color-gold-hover);
+		border-color: var(--color-gold-hover);
 		background: rgba(234, 179, 8, 0.08);
 	}
 
@@ -498,13 +627,9 @@
 	}
 
 	.play-now-error {
-		margin-top: 0.5rem;
 		font-size: var(--font-size-sm);
+		font-weight: 400;
 		color: var(--color-danger);
-	}
-
-	.dag-placeholder {
-		color: var(--color-text-disabled);
 	}
 
 	@media (max-width: 768px) {
