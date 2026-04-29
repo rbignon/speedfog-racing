@@ -27,7 +27,6 @@ from speedfog_racing.models import (
     compute_late_join_deadlines,
 )
 
-PRIVILEGED_RACE_ROLES = frozenset({"organizer", "admin", "caster"})
 RACE_ROLES = frozenset({"organizer", "admin", "caster", "participant"})
 
 
@@ -103,23 +102,28 @@ def can_read_public_chat(
     """True when the viewer may receive public chat history and broadcasts.
 
     Locked while spoilers could reach a late-joiner or an active racer;
-    unlocked for finished/abandoned participants, privileged race roles,
-    once the late-join window has closed (for non-active viewers), or
-    after the race is fully ``FINISHED``.
+    unlocked for finished/abandoned participants, after the late-join
+    window has closed (for non-active viewers), or once the race is
+    ``FINISHED``. Race role does not unlock by itself: organizers,
+    admins, and casters follow the same rules as authenticated
+    spectators, so they cannot accidentally read spoilers while the
+    window is still open.
     """
     if race.status == RaceStatus.FINISHED:
         return True
     if race.status != RaceStatus.RUNNING:
         return False
-    if role in PRIVILEGED_RACE_ROLES:
+    if is_active_participant_status(participant_status):
+        # Active racer: locked until they finish or abandon, regardless
+        # of late-join state or race role.
+        return False
+    if participant_status is not None:
+        # Finished or abandoned participant: unlocked even while the
+        # late-join window is still open.
         return True
-    if role == "participant" and not is_active_participant_status(participant_status):
-        return True
-    if not registration_open_window(race, now) and not is_active_participant_status(
-        participant_status
-    ):
-        return True
-    return False
+    # Non-participant viewer (spectator or any race role not also
+    # playing): unlocked only once the late-join window has closed.
+    return not registration_open_window(race, now)
 
 
 def can_write_public_chat(

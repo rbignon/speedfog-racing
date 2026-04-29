@@ -16,7 +16,6 @@ function inputs(
   return {
     raceStatus: "setup",
     registrationClosesAt: null,
-    role: null,
     participantStatus: null,
     now: NOW,
     ...overrides,
@@ -30,13 +29,9 @@ describe("computePublicAccess", () => {
         "locked",
       );
       expect(
-        computePublicAccess(inputs({ raceStatus: "setup", role: "organizer" })),
-      ).toBe("locked");
-      expect(
         computePublicAccess(
           inputs({
             raceStatus: "setup",
-            role: "participant",
             participantStatus: "registered",
           }),
         ),
@@ -59,8 +54,31 @@ describe("computePublicAccess", () => {
         computePublicAccess(
           inputs({
             ...base,
-            role: "participant",
             participantStatus: "playing",
+          }),
+        ),
+      ).toBe("locked");
+    });
+
+    it("locked for registered late-joiner", () => {
+      // Late-joiner who just signed up: still active, must not see
+      // spoilers from the public channel.
+      expect(
+        computePublicAccess(
+          inputs({
+            ...base,
+            participantStatus: "registered",
+          }),
+        ),
+      ).toBe("locked");
+    });
+
+    it("locked for ready participant", () => {
+      expect(
+        computePublicAccess(
+          inputs({
+            ...base,
+            participantStatus: "ready",
           }),
         ),
       ).toBe("locked");
@@ -71,7 +89,6 @@ describe("computePublicAccess", () => {
         computePublicAccess(
           inputs({
             ...base,
-            role: "participant",
             participantStatus: "finished",
           }),
         ),
@@ -83,17 +100,10 @@ describe("computePublicAccess", () => {
         computePublicAccess(
           inputs({
             ...base,
-            role: "participant",
             participantStatus: "abandoned",
           }),
         ),
       ).toBe("readable");
-    });
-
-    it("readable for organizer/admin/caster", () => {
-      for (const role of ["organizer", "admin", "caster"] as const) {
-        expect(computePublicAccess(inputs({ ...base, role }))).toBe("readable");
-      }
     });
   });
 
@@ -112,7 +122,6 @@ describe("computePublicAccess", () => {
         computePublicAccess(
           inputs({
             ...base,
-            role: "participant",
             participantStatus: "playing",
           }),
         ),
@@ -124,7 +133,6 @@ describe("computePublicAccess", () => {
         computePublicAccess(
           inputs({
             ...base,
-            role: "participant",
             participantStatus: "finished",
           }),
         ),
@@ -147,7 +155,6 @@ describe("computePublicAccess", () => {
           inputs({
             raceStatus: "running",
             registrationClosesAt: null,
-            role: "participant",
             participantStatus: "playing",
           }),
         ),
@@ -164,11 +171,26 @@ describe("computePublicAccess", () => {
         computePublicAccess(
           inputs({
             raceStatus: "finished",
-            role: "participant",
             participantStatus: "finished",
           }),
         ),
       ).toBe("readable");
+    });
+  });
+
+  describe("race role does not bypass the lock", () => {
+    it("organizer/admin/caster locked during late-join open if not playing", () => {
+      // Verifies the rule that race roles do NOT grant moderation
+      // access while public chat is locked for everyone else.
+      expect(
+        computePublicAccess(
+          inputs({
+            raceStatus: "running",
+            registrationClosesAt: REG_OPEN,
+            participantStatus: null,
+          }),
+        ),
+      ).toBe("locked");
     });
   });
 });
@@ -185,7 +207,6 @@ describe("computePublicLockedReason", () => {
       inputs({
         raceStatus: "running",
         registrationClosesAt: REG_OPEN,
-        role: "participant",
         participantStatus: "playing",
       }),
     );
@@ -204,7 +225,6 @@ describe("computePublicLockedReason", () => {
       inputs({
         raceStatus: "running",
         registrationClosesAt: REG_CLOSED,
-        role: "participant",
         participantStatus: "playing",
       }),
     );
@@ -214,7 +234,7 @@ describe("computePublicLockedReason", () => {
   it("falls back to a generic message for unenumerated cases", () => {
     // Should not normally render in practice; just covers the fallback.
     const r = computePublicLockedReason(
-      inputs({ raceStatus: "finished", role: null, participantStatus: null }),
+      inputs({ raceStatus: "finished", participantStatus: null }),
     );
     expect(r).toBe("Public chat is locked.");
   });

@@ -205,8 +205,9 @@ async def test_public_request_for_unknown_race_silently_ignored(session_maker):
 
 
 @pytest.mark.asyncio
-async def test_public_request_unlocked_for_organizer_during_late_join(session_maker):
-    """Privileged role: organizer reads public chat even with late-join open."""
+async def test_public_request_locked_for_organizer_during_late_join(session_maker):
+    """Race role does not unlock by itself: organizers follow the same
+    spectator rules (locked while late-join is open)."""
     race_id, _ = await _seed_race_and_participant(
         session_maker,
         race_status=RaceStatus.RUNNING,
@@ -222,10 +223,7 @@ async def test_public_request_unlocked_for_organizer_during_late_join(session_ma
         {"type": "request_chat_history", "channel": "public"}
     )
 
-    payload = await _last_sent_payload(handler)
-    assert payload is not None
-    assert payload["type"] == "chat_history"
-    assert payload["channel"] == "public"
+    handler.websocket.send_text.assert_not_called()
 
 
 @pytest.mark.asyncio

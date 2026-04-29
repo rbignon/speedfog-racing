@@ -17,22 +17,16 @@ export type ParticipantStatus =
   | "finished"
   | "abandoned";
 
-export type RaceRole = "organizer" | "admin" | "caster" | "participant" | null;
-
 export type PublicAccess = "locked" | "readable";
-
-const PRIVILEGED_ROLES: ReadonlySet<RaceRole> = new Set<RaceRole>([
-  "organizer",
-  "admin",
-  "caster",
-]);
 
 export interface PublicAccessInputs {
   raceStatus: RaceStatus;
   /** ISO datetime string from the server, or null when no late-join
    * window is configured / the race has not started yet. */
   registrationClosesAt: string | null;
-  role: RaceRole;
+  /** Status of the viewer's own participation, or null if the viewer
+   * is not a participant. Race role (organizer/admin/caster) does not
+   * influence public-chat access by itself. */
   participantStatus: ParticipantStatus | null;
   now: Date;
 }
@@ -54,25 +48,28 @@ function registrationOpenWindow(
 }
 
 export function computePublicAccess(inputs: PublicAccessInputs): PublicAccess {
-  const { raceStatus, role, participantStatus } = inputs;
+  const { raceStatus, participantStatus } = inputs;
 
   if (raceStatus === "finished") return "readable";
   if (raceStatus !== "running") return "locked";
-  if (role !== null && PRIVILEGED_ROLES.has(role)) return "readable";
-  if (role === "participant" && !isActiveParticipant(participantStatus)) {
+  if (isActiveParticipant(participantStatus)) {
+    // Active racer: locked until they finish or abandon.
+    return "locked";
+  }
+  if (participantStatus !== null) {
+    // Finished or abandoned participant: unlocked even while the
+    // late-join window is still open.
     return "readable";
   }
-  if (
-    !registrationOpenWindow(
-      raceStatus,
-      inputs.registrationClosesAt,
-      inputs.now,
-    ) &&
-    !isActiveParticipant(participantStatus)
-  ) {
-    return "readable";
-  }
-  return "locked";
+  // Non-participant viewer (spectator or any race role not also
+  // playing): unlocked only once the late-join window has closed.
+  return registrationOpenWindow(
+    raceStatus,
+    inputs.registrationClosesAt,
+    inputs.now,
+  )
+    ? "locked"
+    : "readable";
 }
 
 /**
@@ -81,20 +78,20 @@ export function computePublicAccess(inputs: PublicAccessInputs): PublicAccess {
  * `computePublicAccess(...) === "locked"`.
  */
 export function computePublicLockedReason(inputs: PublicAccessInputs): string {
-  const { raceStatus, role, participantStatus } = inputs;
+  const { raceStatus, participantStatus } = inputs;
 
   if (raceStatus === "setup") {
     return "Public chat unlocks after the race starts and registration closes.";
   }
 
-  // RUNNING from here. Active participant cases.
-  if (role === "participant" && isActiveParticipant(participantStatus)) {
+  // RUNNING from here. Active racers wait for their own finish.
+  if (isActiveParticipant(participantStatus)) {
     return "Public chat unlocks when you finish.";
   }
 
-  // Spectator (no role) during the late-join window.
+  // Everyone else who is locked is waiting for the late-join window
+  // to close (spectators and any non-playing privileged role).
   if (
-    role === null &&
     registrationOpenWindow(raceStatus, inputs.registrationClosesAt, inputs.now)
   ) {
     return "Public chat unlocks when late join closes.";

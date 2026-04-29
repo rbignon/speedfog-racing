@@ -24,7 +24,6 @@
 		computePublicAccess,
 		computePublicLockedReason,
 		type ParticipantStatus as PCAParticipantStatus,
-		type RaceRole,
 		type RaceStatus as PCARaceStatus
 	} from '$lib/public-chat-access';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
@@ -403,17 +402,6 @@
 		raceStore.race?.registration_closes_at ?? initialRace.registration_closes_at
 	);
 
-	let myRole = $derived<RaceRole>(
-		isOrganizer
-			? 'organizer'
-			: auth.isAdmin
-				? 'admin'
-				: isCaster
-					? 'caster'
-					: myParticipant
-						? 'participant'
-						: null
-	);
 	let myParticipantStatus = $derived<PCAParticipantStatus | null>(
 		(myWsParticipant?.status as PCAParticipantStatus | undefined) ?? null
 	);
@@ -421,7 +409,6 @@
 		computePublicAccess({
 			raceStatus: raceStatus as PCARaceStatus,
 			registrationClosesAt: liveRegistrationClosesAt,
-			role: myRole,
 			participantStatus: myParticipantStatus,
 			now: new Date(now)
 		})
@@ -430,7 +417,6 @@
 		computePublicLockedReason({
 			raceStatus: raceStatus as PCARaceStatus,
 			registrationClosesAt: liveRegistrationClosesAt,
-			role: myRole,
 			participantStatus: myParticipantStatus,
 			now: new Date(now)
 		})

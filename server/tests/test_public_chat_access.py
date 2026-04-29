@@ -151,17 +151,19 @@ class TestBroadcastChatPublic:
 
         await room.broadcast_chat_public("spoiler!", race)
 
-        # Locked: anonymous, authenticated spectator (could late-join), active participant.
+        # Locked while late-join is still open: anonymous, authenticated
+        # spectator (could late-join), active participant, and every
+        # privileged role that is not also a terminated participant.
         anonymous.websocket.send_text.assert_not_called()
         spectator.websocket.send_text.assert_not_called()
         active_participant.websocket.send_text.assert_not_called()
+        organizer.websocket.send_text.assert_not_called()
+        admin.websocket.send_text.assert_not_called()
+        caster.websocket.send_text.assert_not_called()
 
-        # Unlocked: terminal-status participants and privileged roles.
+        # Unlocked: terminal-status participants only.
         finished_participant.websocket.send_text.assert_called_once()
         abandoned_participant.websocket.send_text.assert_called_once()
-        organizer.websocket.send_text.assert_called_once()
-        admin.websocket.send_text.assert_called_once()
-        caster.websocket.send_text.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_running_late_join_closed_filters_correctly(self):

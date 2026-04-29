@@ -253,6 +253,30 @@ class TestPublicReadRunningLateJoinOpen:
             is False
         )
 
+    def test_registered_participant_locked(self):
+        # Late-joiner who just registered: still active, must not see
+        # spoilers from the public channel.
+        assert (
+            can_read_public_chat(
+                self.race,
+                role="participant",
+                participant_status=ParticipantStatus.REGISTERED,
+                now=self.now,
+            )
+            is False
+        )
+
+    def test_ready_participant_locked(self):
+        assert (
+            can_read_public_chat(
+                self.race,
+                role="participant",
+                participant_status=ParticipantStatus.READY,
+                now=self.now,
+            )
+            is False
+        )
+
     def test_finished_participant_unlocked(self):
         assert (
             can_read_public_chat(
@@ -281,22 +305,24 @@ class TestPublicReadRunningLateJoinOpen:
             is False
         )
 
-    def test_organizer_unlocked(self):
+    def test_organizer_locked(self):
+        # Race role does not unlock public chat: organizers, admins,
+        # and casters follow the same spectator rules.
         assert (
             can_read_public_chat(self.race, role="organizer", participant_status=None, now=self.now)
-            is True
+            is False
         )
 
-    def test_admin_unlocked(self):
+    def test_admin_locked(self):
         assert (
             can_read_public_chat(self.race, role="admin", participant_status=None, now=self.now)
-            is True
+            is False
         )
 
-    def test_caster_unlocked(self):
+    def test_caster_locked(self):
         assert (
             can_read_public_chat(self.race, role="caster", participant_status=None, now=self.now)
-            is True
+            is False
         )
 
 
@@ -406,8 +432,10 @@ class TestCanWritePublicChat:
             is False
         )
 
-    def test_active_participant_cannot_write_even_when_unlocked_via_role(self):
+    def test_active_participant_cannot_write_even_with_role(self):
         # Edge case: organizer who is also playing as a participant.
+        # They are an active participant, so they cannot write whether
+        # the late-join window is open or closed.
         race, now = _running_race(late_join_open=False)
         assert (
             can_write_public_chat(
@@ -459,8 +487,11 @@ class TestCanWritePublicChat:
             is True
         )
 
-    def test_organizer_can_write_when_not_active_participant(self):
-        race, now = _running_race(late_join_open=True)
+    def test_organizer_can_write_after_late_join_closes(self):
+        # Organizers do not bypass the late-join lock: they only gain
+        # public-write access once the window has closed (or the race
+        # has finished).
+        race, now = _running_race(late_join_open=False)
         assert (
             can_write_public_chat(
                 race,
@@ -470,6 +501,19 @@ class TestCanWritePublicChat:
                 now=now,
             )
             is True
+        )
+
+    def test_organizer_cannot_write_during_late_join(self):
+        race, now = _running_race(late_join_open=True)
+        assert (
+            can_write_public_chat(
+                race,
+                user_id=uuid4(),
+                role="organizer",
+                participant_status=None,
+                now=now,
+            )
+            is False
         )
 
     def test_finished_race_authenticated_spectator_can_write(self):
