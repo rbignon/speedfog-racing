@@ -39,6 +39,10 @@
 	let chatCollapsed = $state(typeof window !== 'undefined' ? window.innerWidth < 1600 : true);
 	let chatActiveTab = $state<'participants' | 'public'>('participants');
 
+	$effect(() => {
+		initialRace = data.race;
+	});
+
 	let raceStatus = $derived(raceStore.race?.status ?? initialRace.status);
 	let raceEndsAt = $derived(raceStore.race?.race_ends_at ?? initialRace.race_ends_at);
 	let dailyEnded = $derived(
@@ -164,18 +168,15 @@
 	<title>{dailyTitle(initialRace.daily_date!)}</title>
 </svelte:head>
 
-<main class="daily-page">
-	<aside class="daily-sidebar">
-		<div class="daily-meta">
-			<strong>{dailyTheme(initialRace)}</strong>
-			<span class="pool">{initialRace.pool_name ?? 'Unknown'}</span>
+<div class="daily-page">
+	<aside class="sidebar">
+		<div class="sidebar-section">
+			<Leaderboard
+				participants={raceStore.leaderboard}
+				totalLayers={initialRace.seed_total_layers ?? 0}
+				mode={dailyEnded ? 'finished' : 'running'}
+			/>
 		</div>
-
-		<Leaderboard
-			participants={raceStore.leaderboard}
-			totalLayers={initialRace.seed_total_layers ?? 0}
-			mode={dailyEnded ? 'finished' : 'running'}
-		/>
 
 		<div class="daily-actions">
 			{#if myParticipant && myParticipantStatus === 'registered'}
@@ -210,7 +211,7 @@
 		<SpectatorCount count={raceStore.spectatorCount} />
 	</aside>
 
-	<section class="daily-main">
+	<main class="main-content">
 		<header class="daily-header">
 			<div class="daily-title">
 				<h1>{dailyTitle(initialRace.daily_date!)}</h1>
@@ -276,7 +277,7 @@
 				onDeleteRace={() => goto('/daily')}
 			/>
 		{/if}
-	</section>
+	</main>
 
 	{#if showChatSidebar}
 		<ChatSidebar
@@ -294,7 +295,7 @@
 			onTabChange={(tab) => (chatActiveTab = tab)}
 		/>
 	{/if}
-</main>
+</div>
 
 {#if showDownloadModal}
 	<DownloadModal
@@ -308,34 +309,29 @@
 
 <style>
 	.daily-page {
-		display: grid;
-		grid-template-columns: 280px 1fr auto;
-		gap: 1.5rem;
-		padding: 1.5rem 2rem;
-		min-height: 100%;
+		display: flex;
+		flex: 1;
+		min-height: 0;
 	}
 
-	.daily-sidebar {
+	.sidebar {
+		width: 280px;
+		background: var(--color-surface);
+		border-right: 1px solid var(--color-border);
+		padding: 1.5rem;
+		flex-shrink: 0;
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
+		min-height: 0;
 	}
 
-	.daily-meta {
+	.sidebar-section {
+		flex: 1;
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.daily-meta strong {
-		color: var(--color-gold);
-	}
-
-	.daily-meta .pool {
-		color: var(--color-text-disabled);
-		font-size: var(--font-size-sm);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		overflow-y: auto;
+		min-height: 0;
 	}
 
 	.daily-actions {
@@ -373,10 +369,13 @@
 		margin-left: 0.25rem;
 	}
 
-	.daily-main {
+	.main-content {
+		flex: 1;
+		padding: 2rem;
 		display: flex;
 		flex-direction: column;
 		gap: 1.5rem;
+		overflow-y: auto;
 		min-width: 0;
 	}
 
@@ -390,8 +389,9 @@
 
 	.daily-title h1 {
 		margin: 0;
-		font-size: var(--font-size-xl);
 		color: var(--color-gold);
+		font-size: var(--font-size-2xl);
+		font-weight: 600;
 	}
 
 	.daily-title p {
@@ -464,9 +464,27 @@
 		color: var(--color-text-disabled);
 	}
 
-	@media (max-width: 1024px) {
+	@media (max-width: 768px) {
 		.daily-page {
-			grid-template-columns: 1fr;
+			flex-direction: column;
+			flex: initial;
+		}
+
+		.sidebar {
+			width: 100%;
+			border-right: none;
+			border-bottom: 1px solid var(--color-border);
+			padding: 1rem;
+		}
+
+		.main-content {
+			padding: 1rem;
+			overflow-y: visible;
+		}
+
+		.daily-header {
+			flex-direction: column;
+			gap: 0.5rem;
 		}
 	}
 </style>
