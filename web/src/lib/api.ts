@@ -17,6 +17,8 @@ export interface User {
 
 export interface ParticipantPreview extends User {
   placement: number | null;
+  status: ParticipantStatus;
+  igt_ms: number | null;
 }
 
 export interface AuthUser extends User {
@@ -46,6 +48,8 @@ export interface Race {
   registration_closes_at: string | null;
   race_ends_at: string | null;
   private_dag: boolean;
+  daily_date: string | null;
+  exclude_from_elo: boolean;
   participant_count: number;
   participant_previews: ParticipantPreview[];
   casters: Caster[];
@@ -272,6 +276,49 @@ export async function fetchJoinableRaces(): Promise<Race[]> {
   const response = await fetch(`${API_BASE}/races/joinable`, {
     headers: getAuthHeaders(),
   });
+  const data = await handleResponse<RaceListResponse>(response);
+  return data.races;
+}
+
+/**
+ * Fetch the running Daily Seed for the current UTC rotation day.
+ * 404 when no daily is active.
+ */
+export async function fetchTodayDaily(
+  customFetch: typeof fetch = fetch,
+): Promise<RaceDetail> {
+  const response = await customFetch(`${API_BASE}/daily/today`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<RaceDetail>(response);
+}
+
+/**
+ * Fetch a Daily Seed by its rotation date (YYYY-MM-DD).
+ */
+export async function fetchDailyByDate(
+  date: string,
+  customFetch: typeof fetch = fetch,
+): Promise<RaceDetail> {
+  const response = await customFetch(`${API_BASE}/daily/${date}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<RaceDetail>(response);
+}
+
+/**
+ * Fetch the most recent past Daily Seeds (excluding today).
+ */
+export async function fetchRecentDailies(
+  limit = 7,
+  customFetch: typeof fetch = fetch,
+): Promise<Race[]> {
+  const response = await customFetch(
+    `${API_BASE}/daily/recent?limit=${limit}`,
+    {
+      headers: getAuthHeaders(),
+    },
+  );
   const data = await handleResponse<RaceListResponse>(response);
   return data.races;
 }
