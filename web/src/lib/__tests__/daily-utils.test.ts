@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   currentUserParticipant,
+  dailyCloseLabel,
   dailyPathForDate,
   dailyTheme,
   dailyTitle,
+  dailyUserResultPreview,
   dailyUserStatus,
+  dailyWinner,
   fastestFinishedIgt,
 } from "$lib/daily";
-import type { Participant, ParticipantPreview, RaceDetail } from "$lib/api";
+import type {
+  Participant,
+  ParticipantPreview,
+  Race,
+  RaceDetail,
+} from "$lib/api";
 
 const baseParticipant = {
   current_layer: 0,
@@ -104,5 +112,85 @@ describe("daily helpers", () => {
     });
     expect(dailyUserStatus(detail([me]), "me")).toContain("Finished");
     expect(dailyUserStatus(detail([me]), "stranger")).toBe("Not played yet");
+  });
+
+  it("picks the placement-1 finished preview as the winner", () => {
+    const winner: ParticipantPreview = {
+      id: "w",
+      twitch_username: "winner",
+      twitch_display_name: "Winner",
+      twitch_avatar_url: null,
+      placement: 1,
+      status: "finished",
+      igt_ms: 1_200_000,
+    };
+    const second: ParticipantPreview = {
+      ...winner,
+      id: "s",
+      placement: 2,
+      twitch_username: "s",
+    };
+    const race = { participant_previews: [second, winner] } as Pick<
+      Race,
+      "participant_previews"
+    >;
+    expect(dailyWinner(race)?.id).toBe("w");
+  });
+
+  it("returns null when no preview is finished", () => {
+    const race = {
+      participant_previews: [
+        {
+          id: "p",
+          twitch_username: "p",
+          twitch_display_name: null,
+          twitch_avatar_url: null,
+          placement: null,
+          status: "playing",
+          igt_ms: null,
+        } as ParticipantPreview,
+      ],
+    };
+    expect(dailyWinner(race)).toBeNull();
+  });
+
+  it("formats the user's recent result with placement when finished", () => {
+    const me: ParticipantPreview = {
+      id: "me",
+      twitch_username: "me",
+      twitch_display_name: "Me",
+      twitch_avatar_url: null,
+      placement: 3,
+      status: "finished",
+      igt_ms: 1_500_000,
+    };
+    expect(dailyUserResultPreview({ participant_previews: [me] }, "me")).toBe(
+      "25:00 (#3)",
+    );
+  });
+
+  it("returns null when the user is not in the preview window", () => {
+    expect(
+      dailyUserResultPreview({ participant_previews: [] }, "me"),
+    ).toBeNull();
+    expect(
+      dailyUserResultPreview({ participant_previews: [] }, null),
+    ).toBeNull();
+  });
+
+  it("formats the close label as hours and minutes", () => {
+    const now = new Date("2026-04-27T08:00:00Z").getTime();
+    const ends = "2026-04-27T13:30:00Z";
+    expect(dailyCloseLabel(ends, now)).toBe("Closes in 5h 30m");
+  });
+
+  it("clamps the close label at 0h 0m past the deadline", () => {
+    const now = new Date("2026-04-28T00:00:00Z").getTime();
+    const ends = "2026-04-27T08:00:00Z";
+    expect(dailyCloseLabel(ends, now)).toBe("Closes in 0h 0m");
+  });
+
+  it("returns null when no race_ends_at is set", () => {
+    expect(dailyCloseLabel(null, Date.now())).toBeNull();
   });
 });

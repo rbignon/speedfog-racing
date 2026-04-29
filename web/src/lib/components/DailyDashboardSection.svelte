@@ -1,6 +1,14 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { Race, RaceDetail } from "$lib/api";
-  import { dailyPathForDate, dailyTheme, dailyUserStatus } from "$lib/daily";
+  import {
+    dailyCloseLabel,
+    dailyPathForDate,
+    dailyTheme,
+    dailyUserResultPreview,
+    dailyUserStatus,
+    dailyWinner,
+  } from "$lib/daily";
 
   interface Props {
     today: RaceDetail | null;
@@ -9,6 +17,14 @@
   }
 
   let { today, recent, userId }: Props = $props();
+
+  let now = $state(Date.now());
+  onMount(() => {
+    const timer = setInterval(() => (now = Date.now()), 60_000);
+    return () => clearInterval(timer);
+  });
+
+  let countdown = $derived(today ? dailyCloseLabel(today.race_ends_at, now) : null);
 </script>
 
 <section class="dashboard-section">
@@ -17,7 +33,12 @@
   </div>
   {#if today}
     <a class="daily-card" href="/daily">
-      <strong>Today's Daily</strong>
+      <div class="card-row">
+        <strong>Today's Daily</strong>
+        {#if countdown}
+          <span class="countdown">{countdown}</span>
+        {/if}
+      </div>
       <span>{dailyTheme(today)}</span>
       <span class="status">{dailyUserStatus(today, userId)}</span>
     </a>
@@ -26,14 +47,26 @@
   {/if}
 
   {#if recent.length > 0}
-    <div class="recent-dailies">
+    <ul class="recent-dailies">
       {#each recent as race (race.id)}
-        <a class="recent-link" href={dailyPathForDate(race.daily_date!)}>
-          <span>{race.daily_date}</span>
-          <span class="theme">· {dailyTheme(race)}</span>
-        </a>
+        {@const winner = dailyWinner(race)}
+        {@const userResult = dailyUserResultPreview(race, userId)}
+        <li>
+          <a class="recent-link" href={dailyPathForDate(race.daily_date!)}>
+            <span class="date">{race.daily_date}</span>
+            <span class="theme">· {dailyTheme(race)}</span>
+            {#if winner}
+              <span class="winner">
+                · 🥇 {winner.twitch_display_name ?? winner.twitch_username}
+              </span>
+            {/if}
+            {#if userResult}
+              <span class="user-result">· you: {userResult}</span>
+            {/if}
+          </a>
+        </li>
       {/each}
-    </div>
+    </ul>
   {/if}
 </section>
 
@@ -74,6 +107,18 @@
     color: var(--color-gold);
   }
 
+  .card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .countdown {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
   .daily-card .status {
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
@@ -87,13 +132,18 @@
   }
 
   .recent-dailies {
-    margin-top: 0.75rem;
+    margin: 0.75rem 0 0;
+    padding: 0;
+    list-style: none;
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1rem;
+    flex-direction: column;
+    gap: 0.25rem;
   }
 
   .recent-link {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
     color: var(--color-text-secondary);
     text-decoration: none;
     font-size: var(--font-size-sm);
@@ -103,8 +153,20 @@
     color: var(--color-purple);
   }
 
+  .recent-link .date {
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+  }
+
   .recent-link .theme {
     color: var(--color-text-disabled);
-    margin-left: 0.25rem;
+  }
+
+  .recent-link .winner {
+    color: var(--color-gold);
+  }
+
+  .recent-link .user-result {
+    color: var(--color-purple);
   }
 </style>

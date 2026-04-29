@@ -72,3 +72,46 @@ export function dailyUserStatus(
   }
   return "Not started";
 }
+
+/** First-placed finisher in a race preview, or null if nobody finished. */
+export function dailyWinner(
+  race: Pick<Race, "participant_previews">,
+): ParticipantPreview | null {
+  const winner = race.participant_previews.find(
+    (p) => p.placement === 1 && p.status === "finished",
+  );
+  return winner ?? null;
+}
+
+/**
+ * Short result label for ``userId`` on a recent daily preview.
+ * Returns null when the user has no preview row (didn't play or
+ * finished outside the top-5 preview window).
+ */
+export function dailyUserResultPreview(
+  race: Pick<Race, "participant_previews">,
+  userId: string | null | undefined,
+): string | null {
+  if (!userId) return null;
+  const preview = race.participant_previews.find((p) => p.id === userId);
+  if (!preview) return null;
+  if (preview.status === "finished" && preview.igt_ms != null) {
+    const placement = preview.placement ? ` (#${preview.placement})` : "";
+    return `${formatIgt(preview.igt_ms)}${placement}`;
+  }
+  if (preview.status === "abandoned") return "Abandoned";
+  if (preview.status === "playing") return "Playing";
+  return "Registered";
+}
+
+/** "Closes in 5h 23m" string for an absolute end timestamp. */
+export function dailyCloseLabel(
+  raceEndsAt: string | null,
+  now: number,
+): string | null {
+  if (!raceEndsAt) return null;
+  const remainingMs = Math.max(0, new Date(raceEndsAt).getTime() - now);
+  const hours = Math.floor(remainingMs / 3_600_000);
+  const minutes = Math.floor((remainingMs % 3_600_000) / 60_000);
+  return `Closes in ${hours}h ${minutes}m`;
+}

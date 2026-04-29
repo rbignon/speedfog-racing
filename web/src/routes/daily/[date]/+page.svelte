@@ -37,7 +37,7 @@
 	let joining = $state(false);
 	let joinError = $state<string | null>(null);
 	let chatCollapsed = $state(typeof window !== 'undefined' ? window.innerWidth < 1600 : true);
-	let chatActiveTab = $state<'participants' | 'public'>('public');
+	let chatActiveTab = $state<'participants' | 'public'>('participants');
 
 	let raceStatus = $derived(raceStore.race?.status ?? initialRace.status);
 	let raceEndsAt = $derived(raceStore.race?.race_ends_at ?? initialRace.race_ends_at);
@@ -49,6 +49,15 @@
 		raceStore.participants.find((p) => p.id === myParticipant?.id) ?? null
 	);
 	let myParticipantStatus = $derived(myWsParticipant?.status ?? myParticipant?.status ?? null);
+	let myParticipantFinished = $derived(
+		myParticipantStatus === 'finished' || myParticipantStatus === 'abandoned'
+	);
+	// The daily has no organizer/caster surface, so participants access is
+	// purely "do you have a participant row?" plus the admin override.
+	let hasParticipantsAccess = $derived(auth.isAdmin || !!myParticipant);
+	let isParticipantPlaying = $derived(
+		!!myParticipant && raceStatus === 'running' && !myParticipantFinished
+	);
 	let canShowFullDag = $derived(
 		dailyEnded || myParticipantStatus === 'finished' || myParticipantStatus === 'abandoned'
 	);
@@ -73,6 +82,13 @@
 	});
 	let publicAccess = $derived(computePublicAccess(publicAccessInputs));
 	let publicLockedReason = $derived(computePublicLockedReason(publicAccessInputs));
+	let effectiveActiveTab = $derived(hasParticipantsAccess ? chatActiveTab : 'public');
+	let canSendChat = $derived(
+		effectiveActiveTab === 'participants'
+			? hasParticipantsAccess
+			: auth.isLoggedIn && publicAccess === 'readable' && !isParticipantPlaying
+	);
+	let showChatSidebar = $derived(auth.isLoggedIn || publicAccess === 'readable');
 
 	// Pull public chat history when local access transitions from locked to
 	// readable (e.g. the viewer's run just transitioned to FINISHED, or
@@ -262,21 +278,22 @@
 		{/if}
 	</section>
 
-	<ChatSidebar
-		messagesParticipants={[]}
-		messagesPublic={raceStore.chatMessagesPublic}
-		canSend={auth.isLoggedIn && publicAccess === 'readable'}
-		collapsed={chatCollapsed}
-		participantsAccess={false}
-		{publicAccess}
-		{publicLockedReason}
-		showPublicOnly={true}
-		activeTab={chatActiveTab}
-		historyVersion={raceStore.chatHistoryVersion}
-		onSend={sendChatMessage}
-		onToggle={() => (chatCollapsed = !chatCollapsed)}
-		onTabChange={(tab) => (chatActiveTab = tab)}
-	/>
+	{#if showChatSidebar}
+		<ChatSidebar
+			messagesParticipants={raceStore.chatMessagesParticipants}
+			messagesPublic={raceStore.chatMessagesPublic}
+			canSend={canSendChat}
+			collapsed={chatCollapsed}
+			participantsAccess={hasParticipantsAccess}
+			{publicAccess}
+			{publicLockedReason}
+			activeTab={effectiveActiveTab}
+			historyVersion={raceStore.chatHistoryVersion}
+			onSend={sendChatMessage}
+			onToggle={() => (chatCollapsed = !chatCollapsed)}
+			onTabChange={(tab) => (chatActiveTab = tab)}
+		/>
+	{/if}
 </main>
 
 {#if showDownloadModal}

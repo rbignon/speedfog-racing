@@ -223,6 +223,22 @@ async def test_running_daily_reroll_resets_participants_and_releases_seed(
         assert participant.finished_at is None
         assert participant.zone_history is None
 
+        # The reroll message lives on the participants channel, which the
+        # daily page surfaces to every participant row (including those just
+        # reset by the reroll). The public channel stays empty.
+        participants_messages = (
+            (
+                await db.execute(
+                    select(ChatMessage).where(
+                        ChatMessage.race_id == race.id,
+                        ChatMessage.channel == ChatChannel.PARTICIPANTS,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert any("rerolled" in m.message.lower() for m in participants_messages)
         public_messages = (
             (
                 await db.execute(
@@ -235,4 +251,4 @@ async def test_running_daily_reroll_resets_participants_and_releases_seed(
             .scalars()
             .all()
         )
-        assert any("rerolled" in m.message.lower() for m in public_messages)
+        assert public_messages == []

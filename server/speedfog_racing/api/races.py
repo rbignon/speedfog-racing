@@ -1516,21 +1516,20 @@ async def reroll_seed(
             # ``{}`` server_default; sort_leaderboard reads it for gap math.
             p.layer_entry_igts = {}
 
-    channel = ChatChannel.PUBLIC if is_daily else ChatChannel.PARTICIPANTS
+    # Reroll always announces in the participants chat. The daily page
+    # surfaces that channel to anyone with a participant row, so affected
+    # players see the message even though spectators never read it.
     message = (
         "Seed has been rerolled. All previous runs are invalidated."
         if is_daily
         else "Seed has been rerolled"
     )
-    sys_json = await persist_system_chat(db, race_id, channel, message)
+    sys_json = await persist_system_chat(db, race_id, ChatChannel.PARTICIPANTS, message)
     await db.commit()
 
     room = manager.get_room(race_id)
     if room:
-        if is_daily:
-            await room.broadcast_chat_public(sys_json, race)
-        else:
-            await room.broadcast_chat_participants(sys_json)
+        await room.broadcast_chat_participants(sys_json)
 
     # Re-fetch with all relationships before broadcasting downstream state.
     race = await _get_race_or_404(
