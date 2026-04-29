@@ -48,6 +48,16 @@
 	});
 
 	let raceStatus = $derived(raceStore.race?.status ?? initialRace.status);
+	let kickerLabel = $derived(
+		`DAILY · ${new Date(`${initialRace.daily_date}T00:00:00Z`)
+			.toLocaleDateString('en-US', {
+				weekday: 'short',
+				month: 'short',
+				day: 'numeric',
+				timeZone: 'UTC'
+			})
+			.toUpperCase()}`
+	);
 	let raceEndsAt = $derived(raceStore.race?.race_ends_at ?? initialRace.race_ends_at);
 	let dailyEnded = $derived(
 		raceEndsAt ? new Date(raceEndsAt).getTime() <= now : raceStatus === 'finished'
@@ -249,8 +259,8 @@
 	<main class="main-content">
 		<header class="daily-header">
 			<div class="daily-title">
-				<h1>{dailyTitle(initialRace.daily_date!)}</h1>
-				<p>{dailyTheme(initialRace)}</p>
+				<span class="kicker">{kickerLabel}</span>
+				<h1>{dailyTheme(initialRace)}</h1>
 			</div>
 			<div class="daily-meta-right">
 				<ShareButtons />
@@ -536,16 +546,21 @@
 		flex-wrap: wrap;
 	}
 
+	.daily-title .kicker {
+		display: block;
+		color: var(--color-gold);
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		margin-bottom: 0.25rem;
+	}
+
 	.daily-title h1 {
 		margin: 0;
 		color: var(--color-text);
 		font-size: var(--font-size-2xl);
 		font-weight: 600;
-	}
-
-	.daily-title p {
-		margin: 0.25rem 0 0;
-		color: var(--color-text-secondary);
 	}
 
 	.daily-meta-right {
