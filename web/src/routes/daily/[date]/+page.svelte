@@ -10,7 +10,6 @@
 		fetchDailyByDate,
 		getTwitchLoginUrl,
 		joinRace,
-		leaveRace,
 		type ParticipantStatus as ApiParticipantStatus,
 		type RaceDetail,
 		type RaceStatus as ApiRaceStatus
@@ -149,11 +148,6 @@
 		}
 	}
 
-	async function handleLeave() {
-		await leaveRace(initialRace.id);
-		initialRace = await fetchDailyByDate(initialRace.daily_date!);
-	}
-
 	async function handleAbandon() {
 		await abandonRace(initialRace.id);
 		initialRace = await fetchDailyByDate(initialRace.daily_date!);
@@ -179,15 +173,29 @@
 		</div>
 
 		<div class="daily-actions">
-			{#if myParticipant && myParticipantStatus === 'registered'}
-				<button class="btn btn-secondary" onclick={handleLeave}>Leave</button>
-			{/if}
 			{#if myParticipantStatus === 'playing'}
 				<button class="btn btn-danger" onclick={handleAbandon}>Rage quit</button>
 			{/if}
 			{#if myParticipant}
-				<button class="btn btn-secondary" onclick={() => (showDownloadModal = true)}>
-					Download Daily Seed Pack
+				<button
+					class="sidebar-download-btn"
+					onclick={() => {
+						downloadError = null;
+						showDownloadModal = true;
+					}}
+					disabled={downloading}
+				>
+					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+						<path
+							d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							fill="none"
+						/>
+					</svg>
+					{downloading ? 'Preparing...' : 'Download Daily Seed Pack'}
 				</button>
 			{/if}
 		</div>
@@ -336,8 +344,37 @@
 
 	.daily-actions {
 		display: flex;
-		flex-wrap: wrap;
+		flex-direction: column;
 		gap: 0.5rem;
+	}
+
+	.sidebar-download-btn {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		padding: 0.65rem 1rem;
+		border: 2px solid var(--color-purple);
+		border-radius: var(--radius-sm);
+		background: rgba(139, 92, 246, 0.1);
+		color: var(--color-purple);
+		font-family: var(--font-family);
+		font-size: var(--font-size-base);
+		font-weight: 500;
+		cursor: pointer;
+		transition: all var(--transition);
+	}
+
+	.sidebar-download-btn:hover:not(:disabled) {
+		background: rgba(139, 92, 246, 0.2);
+		border-color: var(--color-purple-hover);
+		color: var(--color-purple-hover);
+	}
+
+	.sidebar-download-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.recent-dailies h2 {
@@ -389,7 +426,7 @@
 
 	.daily-title h1 {
 		margin: 0;
-		color: var(--color-gold);
+		color: var(--color-text);
 		font-size: var(--font-size-2xl);
 		font-weight: 600;
 	}
@@ -442,11 +479,17 @@
 		font-size: var(--font-size-xl);
 		font-weight: 700;
 		width: 100%;
+		align-self: stretch;
+		min-height: 320px;
 		text-align: center;
+		transition:
+			background var(--transition),
+			color var(--transition);
 	}
 
 	.play-now-cta:hover {
 		color: var(--color-gold-hover);
+		background: rgba(234, 179, 8, 0.08);
 	}
 
 	.play-now-cta:disabled {
