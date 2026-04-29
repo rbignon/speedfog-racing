@@ -3,12 +3,13 @@
 import enum
 import secrets
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -18,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -31,6 +33,7 @@ class UserRole(enum.StrEnum):
     USER = "user"
     ORGANIZER = "organizer"
     ADMIN = "admin"
+    SYSTEM = "system"
 
 
 class RaceStatus(enum.Enum):
@@ -91,8 +94,8 @@ class User(Base):
     twitch_username: Mapped[str] = mapped_column(String(100), nullable=False)
     twitch_display_name: Mapped[str | None] = mapped_column(String(100))
     twitch_avatar_url: Mapped[str | None] = mapped_column(String(500))
-    api_token: Mapped[str] = mapped_column(
-        String(100), unique=True, nullable=False, default=generate_token
+    api_token: Mapped[str | None] = mapped_column(
+        String(100), unique=True, nullable=True, default=generate_token
     )
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.ORGANIZER)
     locale: Mapped[str | None] = mapped_column(String(10), nullable=True)
@@ -130,6 +133,20 @@ class Pool(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     seeds: Mapped[list["Seed"]] = relationship(back_populates="pool")
+
+
+class DailySeedSchedule(Base):
+    """Weekday to pool rotation for Daily Seeds.
+
+    Monday=0, Sunday=6 (Python ``date.weekday()`` convention). The daily
+    creation loop picks the row matching ``today.weekday()`` to decide
+    which pool the next Daily Seed should draw from.
+    """
+
+    __tablename__ = "daily_seed_schedule"
+
+    weekday: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pool_name: Mapped[str] = mapped_column(String(50), ForeignKey("pools.name"), nullable=False)
 
 
 class Seed(Base):
@@ -177,6 +194,16 @@ class Race(Base):
         Index("ix_races_status", "status"),
         # Date-range filters in analytics and stats endpoints.
         Index("ix_races_started_at", "started_at"),
+        # At most one Daily Seed race per UTC day; partial unique index so
+        # regular races (daily_date IS NULL) are unaffected.
+        Index(
+            "uq_races_daily_date",
+            "daily_date",
+            unique=True,
+            postgresql_where=text("daily_date IS NOT NULL"),
+            sqlite_where=text("daily_date IS NOT NULL"),
+        ),
+        Index("ix_races_daily_date", "daily_date"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -211,6 +238,14 @@ class Race(Base):
     late_join_window_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     race_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     private_dag: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
+    # Daily Seed marker: NULL for regular races, the UTC rotation date for
+    # the one race auto-created per day. Combined with the partial unique
+    # index above, this enforces at most one daily per day.
+    daily_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Skip ELO updates for this race (Daily Seeds, calibration runs, etc.).
+    exclude_from_elo: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
 

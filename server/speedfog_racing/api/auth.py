@@ -180,7 +180,11 @@ async def twitch_callback(
     user = await get_or_create_user(db, twitch_user, browser_locale=browser_locale)
     await db.commit()
 
-    # Generate ephemeral code instead of leaking the API token in the URL
+    # Generate ephemeral code instead of leaking the API token in the URL.
+    # api_token is nullable only for system users, which have no Twitch OAuth
+    # path; reaching here without a token would be a programming error rather
+    # than a user-facing failure mode.
+    assert user.api_token is not None, "Twitch-authenticated user must have an api_token"
     ephemeral_code = secrets.token_urlsafe(32)
     _auth_codes[ephemeral_code] = (user.api_token, time.monotonic() + _AUTH_CODE_TTL)
 

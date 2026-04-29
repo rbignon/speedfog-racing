@@ -125,6 +125,7 @@ def _make_race(
         late_join_window_minutes=late_join_window_minutes,
         race_duration_minutes=race_duration_minutes,
         private_dag=private_dag,
+        exclude_from_elo=False,
         created_at=datetime.now(UTC),
     )
     race.participants = []

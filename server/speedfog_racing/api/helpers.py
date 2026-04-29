@@ -69,14 +69,28 @@ def user_response(user: User) -> UserResponse:
     )
 
 
-def participant_preview(user: User, placement: int | None = None) -> ParticipantPreview:
-    """Convert User model to ParticipantPreview."""
+def participant_preview(
+    participant: Participant, placement: int | None = None
+) -> ParticipantPreview:
+    """Convert Participant model to ParticipantPreview.
+
+    ``igt_ms`` is only meaningful for finished runs; for any other status
+    the participant has not produced a final time yet, so we surface
+    ``None`` to keep the daily-page leaderboard honest.
+    """
+    user = participant.user
     return ParticipantPreview(
         id=user.id,
         twitch_username=user.twitch_username,
         twitch_display_name=user.twitch_display_name,
         twitch_avatar_url=user.twitch_avatar_url,
         placement=placement,
+        status=participant.status,
+        igt_ms=(
+            participant.igt_ms
+            if participant.status == ParticipantStatus.FINISHED and participant.igt_ms
+            else None
+        ),
     )
 
 
@@ -112,12 +126,12 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
             key=lambda p: p.igt_ms,
         )
         non_finished = [p for p in race.participants if p.status != ParticipantStatus.FINISHED]
-        all_previews = [
-            participant_preview(p.user, placement=i + 1) for i, p in enumerate(finished)
-        ] + [participant_preview(p.user) for p in non_finished]
+        all_previews = [participant_preview(p, placement=i + 1) for i, p in enumerate(finished)] + [
+            participant_preview(p) for p in non_finished
+        ]
         previews = all_previews[:5]
     else:
-        previews = [participant_preview(p.user) for p in race.participants[:5]]
+        previews = [participant_preview(p) for p in race.participants[:5]]
 
     # Compute can_join and my_role
     now = datetime.now(UTC)
@@ -162,6 +176,8 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         registration_closes_at=registration_closes_at,
         race_ends_at=race_ends_at,
         private_dag=race.private_dag,
+        daily_date=race.daily_date,
+        exclude_from_elo=race.exclude_from_elo,
         participant_count=participant_count,
         participant_previews=previews,
         casters=[caster_response(c) for c in race.casters] if "casters" in race.__dict__ else [],

@@ -1,6 +1,6 @@
 """Pydantic schemas for API requests and responses."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
@@ -149,9 +149,15 @@ class UserResponse(BaseModel):
 
 
 class ParticipantPreview(UserResponse):
-    """User with optional placement for race previews."""
+    """User with optional placement for race previews.
+
+    ``status`` and ``igt_ms`` let the daily-page leaderboard render finished
+    runs without paying for the full ``ParticipantResponse`` payload.
+    """
 
     placement: int | None = None
+    status: ParticipantStatus
+    igt_ms: int | None = None
 
 
 class UserStatsResponse(BaseModel):
@@ -307,6 +313,8 @@ class RaceResponse(BaseModel):
     registration_closes_at: datetime | None = None
     race_ends_at: datetime | None = None
     private_dag: bool = False
+    daily_date: date | None = None
+    exclude_from_elo: bool = False
     participant_count: int
     participant_previews: list[ParticipantPreview] = []
     seed_total_layers: int | None = None
@@ -376,6 +384,8 @@ class RaceDetailResponse(BaseModel):
     registration_closes_at: datetime | None = None
     race_ends_at: datetime | None = None
     private_dag: bool = False
+    daily_date: date | None = None
+    exclude_from_elo: bool = False
     participant_count: int
     seed_number: str | None = None
     seed_total_layers: int | None
