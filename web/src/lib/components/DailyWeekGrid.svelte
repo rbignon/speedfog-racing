@@ -29,6 +29,7 @@
 	}
 
 	function userResultLabel(day: DailyWeekDay): string | null {
+		if (day.state === 'today') return null;
 		if (!userId) return null;
 		const r = day.my_result;
 		if (!r) return null;
@@ -38,6 +39,26 @@
 		if (r.status === 'abandoned') return 'You: abandoned';
 		if (r.status === 'playing') return 'You: playing';
 		return 'You: signed up';
+	}
+
+	type TodayStrip = {
+		text: string;
+		variant: 'play-now' | 'in-progress' | 'finished' | 'abandoned';
+	} | null;
+
+	function todayStrip(day: DailyWeekDay): TodayStrip {
+		if (day.state !== 'today') return null;
+		const r = day.my_result;
+		if (!r) return { text: 'Play now', variant: 'play-now' };
+		if (r.status === 'finished' && r.placement) {
+			return {
+				text: `Finished ${r.placement}/${r.total_finishers}`,
+				variant: 'finished'
+			};
+		}
+		if (r.status === 'abandoned') return { text: 'Abandoned', variant: 'abandoned' };
+		// registered, ready, playing
+		return { text: 'In progress', variant: 'in-progress' };
 	}
 
 	function hrefFor(day: DailyWeekDay): string | null {
@@ -117,8 +138,12 @@
 					{/if}
 					{#if result}
 						<span class="me">{result}</span>
-					{:else if day.state === 'today' && !played}
-						<span class="play-now">Play now</span>
+					{/if}
+					{#if day.state === 'today'}
+						{@const strip = todayStrip(day)}
+						{#if strip}
+							<span class="strip strip-{strip.variant}">{strip.text}</span>
+						{/if}
 					{/if}
 				{/if}
 			</svelte:element>
@@ -161,16 +186,12 @@
 		border-color: var(--color-gold-hover);
 	}
 
-	.cell.today {
-		border-color: var(--color-gold);
-		background: rgba(234, 179, 8, 0.06);
-	}
 	.cell.future,
 	.cell.missing-past {
 		border-style: dashed;
 		opacity: 0.55;
 	}
-	.cell.played {
+	.cell.past.played {
 		border-left: 3px solid var(--color-success);
 	}
 
@@ -185,9 +206,6 @@
 		letter-spacing: 0.05em;
 		font-weight: 600;
 		color: var(--color-text-secondary);
-	}
-	.cell.today .weekday {
-		color: var(--color-gold);
 	}
 	.meta {
 		font-size: var(--font-size-xs);
@@ -238,12 +256,10 @@
 		color: var(--color-purple);
 		font-size: var(--font-size-xs);
 	}
-	.play-now {
+	.strip {
 		margin-top: auto;
 		padding: 0.4rem 0;
 		text-align: center;
-		background: rgba(16, 185, 129, 0.12);
-		color: var(--color-success);
 		font-weight: 700;
 		font-size: var(--font-size-sm);
 		text-transform: uppercase;
@@ -252,6 +268,22 @@
 		margin-left: -0.875rem;
 		margin-right: -0.875rem;
 		margin-bottom: -0.75rem;
+	}
+	.strip-play-now {
+		background: rgba(16, 185, 129, 0.12);
+		color: var(--color-success);
+	}
+	.strip-finished {
+		background: rgba(16, 185, 129, 0.12);
+		color: var(--color-success);
+	}
+	.strip-in-progress {
+		background: rgba(234, 179, 8, 0.12);
+		color: var(--color-warning);
+	}
+	.strip-abandoned {
+		background: rgba(107, 114, 128, 0.18);
+		color: var(--color-text-disabled);
 	}
 	.countdown {
 		margin-top: auto;

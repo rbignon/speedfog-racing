@@ -162,4 +162,117 @@ describe("DailyWeekGrid", () => {
     const cell = container.querySelector('[data-cell-state="future"]');
     expect(cell?.textContent ?? "").toMatch(/Opens in/);
   });
+
+  it("renders the play-now strip on today when the viewer has no result", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: { week: mockWeek, userId: "me", variant: "home" },
+    });
+    const todayCell = container.querySelector('[data-cell-state="today"]');
+    const strip = todayCell?.querySelector(".strip");
+    expect(strip?.classList.contains("strip-play-now")).toBe(true);
+    expect(strip?.textContent ?? "").toMatch(/Play now/i);
+  });
+
+  it("renders the in-progress strip on today when the viewer is registered", () => {
+    const week: DailyWeekResponse = {
+      ...mockWeek,
+      days: mockWeek.days.map((d) =>
+        d.state === "today"
+          ? {
+              ...d,
+              my_result: {
+                status: "registered",
+                placement: null,
+                total_finishers: 0,
+                igt_ms: null,
+                death_count: 0,
+              },
+            }
+          : d,
+      ),
+    };
+    const { container } = render(DailyWeekGrid, {
+      props: { week, userId: "me", variant: "home" },
+    });
+    const strip = container.querySelector('[data-cell-state="today"] .strip');
+    expect(strip?.classList.contains("strip-in-progress")).toBe(true);
+    expect(strip?.textContent ?? "").toMatch(/In progress/i);
+  });
+
+  it("renders the finished strip on today with placement/total", () => {
+    const week: DailyWeekResponse = {
+      ...mockWeek,
+      days: mockWeek.days.map((d) =>
+        d.state === "today"
+          ? {
+              ...d,
+              my_result: {
+                status: "finished",
+                placement: 4,
+                total_finishers: 17,
+                igt_ms: 2_468_000,
+                death_count: 0,
+              },
+            }
+          : d,
+      ),
+    };
+    const { container } = render(DailyWeekGrid, {
+      props: { week, userId: "me", variant: "home" },
+    });
+    const strip = container.querySelector('[data-cell-state="today"] .strip');
+    expect(strip?.classList.contains("strip-finished")).toBe(true);
+    expect(strip?.textContent ?? "").toMatch(/Finished 4\/17/i);
+  });
+
+  it("renders the abandoned strip on today when the viewer abandoned", () => {
+    const week: DailyWeekResponse = {
+      ...mockWeek,
+      days: mockWeek.days.map((d) =>
+        d.state === "today"
+          ? {
+              ...d,
+              my_result: {
+                status: "abandoned",
+                placement: null,
+                total_finishers: 0,
+                igt_ms: null,
+                death_count: 0,
+              },
+            }
+          : d,
+      ),
+    };
+    const { container } = render(DailyWeekGrid, {
+      props: { week, userId: "me", variant: "home" },
+    });
+    const strip = container.querySelector('[data-cell-state="today"] .strip');
+    expect(strip?.classList.contains("strip-abandoned")).toBe(true);
+    expect(strip?.textContent ?? "").toMatch(/Abandoned/i);
+  });
+
+  it("does not render the .me footer on the today cell", () => {
+    const week: DailyWeekResponse = {
+      ...mockWeek,
+      days: mockWeek.days.map((d) =>
+        d.state === "today"
+          ? {
+              ...d,
+              my_result: {
+                status: "registered",
+                placement: null,
+                total_finishers: 0,
+                igt_ms: null,
+                death_count: 0,
+              },
+            }
+          : d,
+      ),
+    };
+    const { container } = render(DailyWeekGrid, {
+      props: { week, userId: "me", variant: "home" },
+    });
+    const me = container.querySelector('[data-cell-state="today"] .me');
+    expect(me).toBeNull();
+  });
 });
