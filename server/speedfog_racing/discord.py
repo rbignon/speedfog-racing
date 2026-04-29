@@ -403,6 +403,59 @@ async def notify_race_finished(
     await _send_webhook(embed)
 
 
+async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> None:
+    """Announce the new Daily Seed and (optionally) yesterday's podium.
+
+    The link points at the dedicated daily landing page, not the regular
+    race route, so the message ages gracefully once the day rolls over.
+    """
+    from speedfog_racing.models import ParticipantStatus  # avoid circular import at module load
+
+    pool = race.seed.pool if race.seed else None
+    pool_display = format_pool_display_name(pool)
+    base_url = settings.base_url.rstrip("/")
+    daily_url = f"{base_url}/daily"
+
+    title_date = race.daily_date.strftime("%B %-d") if race.daily_date is not None else race.name
+    title = f"🌅 Daily Seed - {title_date}"
+
+    closes_at = race.started_at + timedelta(hours=24) if race.started_at else None
+    closes_text = f"<t:{int(closes_at.timestamp())}:R>" if closes_at else "in 24 hours"
+
+    description_lines = [
+        f"Today's pool: **{_escape_discord_md(pool_display)}**",
+        f"Closes {closes_text}.",
+        f"[Play now]({daily_url})",
+    ]
+
+    if previous_race is not None:
+        finishers = sorted(
+            [p for p in previous_race.participants if p.status == ParticipantStatus.FINISHED],
+            key=lambda p: p.igt_ms,
+        )
+        if finishers:
+            podium_lines = []
+            medals = ["🥇", "🥈", "🥉"]
+            for i, p in enumerate(finishers[:3]):
+                medal = medals[i] if i < len(medals) else f"{i + 1}."
+                safe_player = _escape_discord_md(
+                    p.user.twitch_display_name or p.user.twitch_username
+                )
+                podium_lines.append(f"{medal} **{safe_player}** - {_format_igt(p.igt_ms)}")
+            description_lines.append("")
+            description_lines.append("**Yesterday's podium**")
+            description_lines.extend(podium_lines)
+            description_lines.append(f"_{len(finishers)} finishers total._")
+
+    embed: dict[str, object] = {
+        "title": title,
+        "url": daily_url,
+        "color": 0x22C55E,
+        "description": "\n".join(description_lines),
+    }
+    await _send_webhook(embed, allowed_mentions={"parse": []})
+
+
 def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> None:
     """Fire-and-forget Discord notifications for a finished race.
 

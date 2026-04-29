@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from speedfog_racing.api.admin import router as admin_router
 from speedfog_racing.api.auth import router as auth_router
+from speedfog_racing.api.daily import router as daily_router
 from speedfog_racing.api.discord import router as discord_router
 from speedfog_racing.api.feedback import router as feedback_router
 from speedfog_racing.api.i18n import router as i18n_router
@@ -20,6 +21,7 @@ api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 api_router.include_router(i18n_router, prefix="/i18n", tags=["i18n"])
 api_router.include_router(races_router, prefix="/races", tags=["races"])
+api_router.include_router(daily_router, prefix="/daily", tags=["daily"])
 api_router.include_router(pools_router, prefix="/pools", tags=["pools"])
 api_router.include_router(og_router, prefix="/og", tags=["og"])
 api_router.include_router(users_router, prefix="/users", tags=["users"])

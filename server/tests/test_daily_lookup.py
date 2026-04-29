@@ -1,6 +1,6 @@
 """Tests for the Daily Seed lookup API and response shape changes."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -202,3 +202,73 @@ async def _make_regular_race(session_maker, *, name: str = "Regular Race") -> Ra
         await db.commit()
         await db.refresh(race)
         return race
+
+
+def _today_daily() -> date:
+    """Match the rotation clock the API uses, so /today resolves to our row."""
+    from speedfog_racing.services.daily_seed_loop import daily_date_for
+
+    return daily_date_for(datetime.now(UTC))
+
+
+@pytest.mark.asyncio
+async def test_get_daily_today_returns_current_daily(
+    dl_test_client, dl_async_session_maker
+) -> None:
+    today = _today_daily()
+    daily = await _make_daily_db(dl_async_session_maker, day=today)
+    response = await dl_test_client.get("/api/daily/today")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == str(daily.id)
+    assert body["daily_date"] == today.isoformat()
+    assert body["exclude_from_elo"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_daily_today_returns_404_when_missing(dl_test_client) -> None:
+    response = await dl_test_client.get("/api/daily/today")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_daily_by_date_returns_matching_daily(
+    dl_test_client, dl_async_session_maker
+) -> None:
+    target = date(2026, 4, 27)
+    daily = await _make_daily_db(dl_async_session_maker, day=target)
+    response = await dl_test_client.get(f"/api/daily/{target.isoformat()}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == str(daily.id)
+    assert body["daily_date"] == target.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_get_daily_by_date_404_for_unknown_date(dl_test_client) -> None:
+    response = await dl_test_client.get("/api/daily/2026-04-01")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_daily_by_date_404_for_invalid_date(dl_test_client) -> None:
+    response = await dl_test_client.get("/api/daily/not-a-date")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_recent_daily_returns_past_dailies_only(
+    dl_test_client, dl_async_session_maker
+) -> None:
+    today = _today_daily()
+    yesterday = today - timedelta(days=1)
+    two_days_ago = today - timedelta(days=2)
+    await _make_daily_db(dl_async_session_maker, day=today)
+    await _make_daily_db(dl_async_session_maker, day=yesterday, status=RaceStatus.FINISHED)
+    await _make_daily_db(dl_async_session_maker, day=two_days_ago, status=RaceStatus.FINISHED)
+
+    response = await dl_test_client.get("/api/daily/recent?limit=2")
+    assert response.status_code == 200
+    body = response.json()
+    daily_dates = [r["daily_date"] for r in body["races"]]
+    assert daily_dates == [yesterday.isoformat(), two_days_ago.isoformat()]
