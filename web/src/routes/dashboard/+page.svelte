@@ -8,16 +8,16 @@
 		fetchMyRaces,
 		fetchTrainingSessions,
 		fetchJoinableRaces,
-		fetchTodayDaily,
-		fetchRecentDailies,
+		fetchDailyWeek,
 		type UserProfile,
 		type UserPoolStats,
 		type ActivityItem,
 		type ActivityTimeline,
 		type Race,
 		type TrainingSession,
+		type DailyWeekResponse
 	} from '$lib/api';
-	import DailyDashboardSection from '$lib/components/DailyDashboardSection.svelte';
+	import DailyWeekGrid from '$lib/components/DailyWeekGrid.svelte';
 	import { timeAgo, raceDisplayDate } from '$lib/utils/time';
 	import { formatIgt } from '$lib/utils/training';
 	import { formatPoolName } from '$lib/utils/format';
@@ -32,8 +32,7 @@
 	let myRaces: Race[] = $state([]);
 	let trainingSessions: TrainingSession[] = $state([]);
 	let joinableRaces: Race[] = $state([]);
-	let todayDaily: Race | null = $state(null);
-	let recentDailies: Race[] = $state([]);
+	let dailyWeek: DailyWeekResponse | null = $state(null);
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let error = $state<string | null>(null);
@@ -52,7 +51,7 @@
 	// Welcome card dismissal
 	const WELCOME_CARD_KEY = 'speedfog_welcome_dismissed';
 	let welcomeDismissed = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem(WELCOME_CARD_KEY) === '1',
+		typeof localStorage !== 'undefined' && localStorage.getItem(WELCOME_CARD_KEY) === '1'
 	);
 	let showWelcome = $derived(isNewUser && !welcomeDismissed);
 
@@ -64,7 +63,7 @@
 	// One-time settings banner
 	const SETTINGS_BANNER_KEY = 'speedfog_settings_banner_dismissed';
 	let bannerDismissed = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem(SETTINGS_BANNER_KEY) === '1',
+		typeof localStorage !== 'undefined' && localStorage.getItem(SETTINGS_BANNER_KEY) === '1'
 	);
 
 	function dismissBanner() {
@@ -92,18 +91,16 @@
 			fetchTrainingSessions(),
 			fetchUserPoolStats(username),
 			fetchJoinableRaces(),
-			fetchTodayDaily().catch(() => null),
-			fetchRecentDailies(7).catch(() => [] as Race[]),
+			fetchDailyWeek().catch(() => null)
 		])
-			.then(([p, a, r, t, ps, jr, daily, recent]) => {
+			.then(([p, a, r, t, ps, jr, week]) => {
 				profile = p;
 				activity = a;
 				myRaces = r;
 				trainingSessions = t;
 				poolStats = ps;
 				joinableRaces = jr;
-				todayDaily = daily;
-				recentDailies = recent;
+				dailyWeek = week;
 			})
 			.catch((e) => {
 				console.error('Dashboard fetch error:', e);
@@ -120,7 +117,7 @@
 			activity = {
 				items: [...activity.items, ...more.items],
 				total: more.total,
-				has_more: more.has_more,
+				has_more: more.has_more
 			};
 		} catch (e) {
 			console.error('Load more activity error:', e);
@@ -198,7 +195,9 @@
 						<strong>language</strong> for zone names and exit descriptions.
 					</p>
 				</div>
-				<button class="settings-banner-close" onclick={dismissBanner} aria-label="Dismiss">&times;</button>
+				<button class="settings-banner-close" onclick={dismissBanner} aria-label="Dismiss"
+					>&times;</button
+				>
 			</div>
 		{/if}
 
@@ -209,14 +208,30 @@
 					<div class="welcome-header">
 						<div>
 							<h2 class="welcome-title">Get started</h2>
-							<p class="welcome-subtitle">Play your first seed in minutes. No setup, no configuration.</p>
+							<p class="welcome-subtitle">
+								Play your first seed in minutes. No setup, no configuration.
+							</p>
 						</div>
-						<button class="welcome-dismiss" onclick={dismissWelcome} aria-label="Dismiss">&times;</button>
+						<button class="welcome-dismiss" onclick={dismissWelcome} aria-label="Dismiss"
+							>&times;</button
+						>
 					</div>
 					<div class="welcome-steps">
 						<div class="welcome-step">
 							<div class="welcome-step-icon">
-								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
+								<svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									width="20"
+									height="20"
+									><circle cx="12" cy="12" r="10" /><polygon
+										points="10 8 16 12 10 16 10 8"
+										fill="currentColor"
+										stroke="none"
+									/></svg
+								>
 							</div>
 							<div class="welcome-step-text">
 								<div class="welcome-step-label">1. Start a solo</div>
@@ -226,7 +241,17 @@
 						</div>
 						<div class="welcome-step">
 							<div class="welcome-step-icon">
-								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+								<svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									width="20"
+									height="20"
+									><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline
+										points="7 10 12 15 17 10"
+									/><line x1="12" y1="15" x2="12" y2="3" /></svg
+								>
 							</div>
 							<div class="welcome-step-text">
 								<div class="welcome-step-label">2. Download</div>
@@ -235,7 +260,20 @@
 						</div>
 						<div class="welcome-step">
 							<div class="welcome-step-icon">
-								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+								<svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									width="20"
+									height="20"
+									><rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line
+										x1="8"
+										y1="21"
+										x2="16"
+										y2="21"
+									/><line x1="12" y1="17" x2="12" y2="21" /></svg
+								>
 							</div>
 							<div class="welcome-step-text">
 								<div class="welcome-step-label">3. Run and play</div>
@@ -247,9 +285,15 @@
 						<h3 class="welcome-tips-title">Tips</h3>
 						<ul class="welcome-tips-list">
 							<li><strong>Touch every grace</strong> you find, even if you don't plan to sit</li>
-							<li>If you're stuck, <strong>backtrack</strong> to a previous zone and try a different path</li>
+							<li>
+								If you're stuck, <strong>backtrack</strong> to a previous zone and try a different path
+							</li>
 							<li>Use the <strong>metro map</strong> to plan your route and spot alternatives</li>
-							<li>Check the mode settings before starting to see your <strong>starting items and upgrades</strong></li>
+							<li>
+								Check the mode settings before starting to see your <strong
+									>starting items and upgrades</strong
+								>
+							</li>
 						</ul>
 					</div>
 					<div class="welcome-actions">
@@ -261,7 +305,11 @@
 							target="_blank"
 							rel="noopener noreferrer"
 						>
-							<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/></svg>
+							<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"
+								><path
+									d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"
+								/></svg
+							>
 							Discord
 						</a>
 					</div>
@@ -290,11 +338,9 @@
 			</section>
 		{/if}
 
-		<DailyDashboardSection
-			today={todayDaily}
-			recent={recentDailies}
-			userId={auth.user?.id}
-		/>
+		{#if dailyWeek}
+			<DailyWeekGrid week={dailyWeek} userId={auth.user?.id ?? null} variant="dashboard" />
+		{/if}
 
 		<!-- Active Now Section (hidden when empty) -->
 		{#if activeRaces.length > 0 || activeTraining.length > 0}
@@ -302,9 +348,15 @@
 				<h2>Active Now</h2>
 				<div class="active-cards">
 					{#each activeRaces as race}
-						{@const overflowCount = Math.max(0, race.participant_count - race.participant_previews.length)}
+						{@const overflowCount = Math.max(
+							0,
+							race.participant_count - race.participant_previews.length
+						)}
 						{@const relativeTime = raceDisplayDate(race)}
-						<a href="/race/{race.id}" class="active-card border-{race.status === 'running' ? 'running' : 'setup'}">
+						<a
+							href="/race/{race.id}"
+							class="active-card border-{race.status === 'running' ? 'running' : 'setup'}"
+						>
 							<div class="active-card-header">
 								<div class="active-title">
 									{#if race.status === 'running'}
@@ -324,9 +376,17 @@
 									<div class="avatar-stack">
 										{#each race.participant_previews as user}
 											{#if user.twitch_avatar_url}
-												<img src={user.twitch_avatar_url} alt={user.twitch_display_name || user.twitch_username} class="avatar" />
+												<img
+													src={user.twitch_avatar_url}
+													alt={user.twitch_display_name || user.twitch_username}
+													class="avatar"
+												/>
 											{:else}
-												<span class="avatar avatar-placeholder">{(user.twitch_display_name || user.twitch_username).charAt(0).toUpperCase()}</span>
+												<span class="avatar avatar-placeholder"
+													>{(user.twitch_display_name || user.twitch_username)
+														.charAt(0)
+														.toUpperCase()}</span
+												>
 											{/if}
 										{/each}
 										{#if overflowCount > 0}
@@ -342,13 +402,25 @@
 								</div>
 							{/if}
 							<div class="active-card-meta">
-								<span>{race.participant_count} player{race.participant_count !== 1 ? 's' : ''}{#if race.pool_name} &middot; {formatPoolName(race.pool_name)}{/if}</span>
+								<span
+									>{race.participant_count} player{race.participant_count !== 1
+										? 's'
+										: ''}{#if race.pool_name}
+										&middot; {formatPoolName(race.pool_name)}{/if}</span
+								>
 								<span class="race-organizer">
 									by
 									{#if race.organizer.twitch_avatar_url}
 										<img src={race.organizer.twitch_avatar_url} alt="" class="organizer-avatar" />
 									{/if}
-									<button class="organizer-link" onclick={(e) => { e.preventDefault(); e.stopPropagation(); goto(`/user/${race.organizer.twitch_username}`); }}>
+									<button
+										class="organizer-link"
+										onclick={(e) => {
+											e.preventDefault();
+											e.stopPropagation();
+											goto(`/user/${race.organizer.twitch_username}`);
+										}}
+									>
 										{race.organizer.twitch_display_name || race.organizer.twitch_username}
 									</button>
 								</span>
@@ -366,7 +438,9 @@
 					{#each activeTraining as session}
 						<a href="/training/{session.id}" class="active-card border-training">
 							<div class="active-card-header">
-								<span class="active-name">{session.pool_display_name || formatPoolName(session.pool_name)}</span>
+								<span class="active-name"
+									>{session.pool_display_name || formatPoolName(session.pool_name)}</span
+								>
 								<div class="active-badges">
 									<span class="badge badge-training-ghost">Solo</span>
 								</div>
@@ -425,7 +499,10 @@
 				<div class="activity-list">
 					{#each activity.items as item}
 						<a href={activityLink(item)} class="activity-row">
-							<span class="activity-badge badge-{item.type === 'training' ? 'training' : item.status}">{activityBadge(item)}</span>
+							<span
+								class="activity-badge badge-{item.type === 'training' ? 'training' : item.status}"
+								>{activityBadge(item)}</span
+							>
 							<div class="activity-content">
 								<span class="activity-name">
 									{activityLabel(item)}
