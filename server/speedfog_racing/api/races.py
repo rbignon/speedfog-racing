@@ -408,6 +408,8 @@ async def list_joinable_races(
             ),
             Race.open_registration.is_(True),
             Race.is_public.is_(True),
+            # Daily Seeds have their own discovery surface at /daily.
+            Race.daily_date.is_(None),
             Race.scheduled_at.is_not(None),
             Race.organizer_id != user.id,
             Race.id.notin_(my_participant_races),
@@ -444,6 +446,8 @@ async def list_races(
         selectinload(Race.participants).selectinload(Participant.user),
         selectinload(Race.casters).selectinload(Caster.user),
     )
+    # Daily Seeds are listed under /api/daily; keep them out of the regular feed.
+    query = query.where(Race.daily_date.is_(None))
 
     # Public races visible to all; private races visible to their participants,
     # organizers, and casters only

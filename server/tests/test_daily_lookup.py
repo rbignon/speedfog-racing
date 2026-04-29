@@ -257,6 +257,94 @@ async def test_get_daily_by_date_404_for_invalid_date(dl_test_client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_regular_races_list_excludes_daily_races(
+    dl_test_client, dl_async_session_maker
+) -> None:
+    today = _today_daily()
+    daily = await _make_daily_db(dl_async_session_maker, day=today)
+    regular = await _make_regular_race(dl_async_session_maker, name="Public Setup")
+
+    response = await dl_test_client.get("/api/races")
+    assert response.status_code == 200
+    ids = {r["id"] for r in response.json()["races"]}
+    assert str(regular.id) in ids
+    assert str(daily.id) not in ids
+
+
+@pytest.mark.asyncio
+async def test_joinable_races_list_excludes_daily_races(
+    dl_test_client, dl_async_session_maker
+) -> None:
+    """Even when a daily looks joinable on paper (open registration, running,
+    late-join window) it must not appear in /api/races/joinable."""
+    today = _today_daily()
+    started = datetime(today.year, today.month, today.day, 8, 0, tzinfo=UTC)
+
+    async with dl_async_session_maker() as db:
+        sys_user = User(
+            twitch_id="sys-joinable",
+            twitch_username="sys_join",
+            twitch_display_name="System",
+            api_token=None,
+            role=UserRole.SYSTEM,
+        )
+        organizer = User(
+            twitch_id="org-joinable",
+            twitch_username="org_join",
+            twitch_display_name="Org",
+            api_token=f"tok-org-{uuid4().hex[:6]}",
+            role=UserRole.ORGANIZER,
+        )
+        viewer = User(
+            twitch_id="viewer-joinable",
+            twitch_username="viewer_join",
+            twitch_display_name="Viewer",
+            api_token=f"tok-view-{uuid4().hex[:6]}",
+            role=UserRole.USER,
+        )
+        db.add_all([sys_user, organizer, viewer])
+        await db.flush()
+
+        daily = Race(
+            name=f"Daily Seed - {today.isoformat()}",
+            organizer_id=sys_user.id,
+            status=RaceStatus.RUNNING,
+            is_public=True,
+            open_registration=True,
+            daily_date=today,
+            exclude_from_elo=True,
+            started_at=started,
+            seeds_released_at=started,
+            scheduled_at=started,  # forces /joinable's scheduled_at filter to pass
+            late_join_window_minutes=1440,
+            race_duration_minutes=1440,
+            max_participants=64,
+        )
+        joinable = Race(
+            name="Joinable Race",
+            organizer_id=organizer.id,
+            status=RaceStatus.SETUP,
+            is_public=True,
+            open_registration=True,
+            scheduled_at=started,
+            max_participants=8,
+        )
+        db.add_all([daily, joinable])
+        await db.commit()
+        viewer_token = viewer.api_token
+        joinable_id = joinable.id
+        daily_id = daily.id
+
+    response = await dl_test_client.get(
+        "/api/races/joinable", headers={"Authorization": f"Bearer {viewer_token}"}
+    )
+    assert response.status_code == 200
+    ids = {r["id"] for r in response.json()["races"]}
+    assert str(joinable_id) in ids
+    assert str(daily_id) not in ids
+
+
+@pytest.mark.asyncio
 async def test_recent_daily_returns_past_dailies_only(
     dl_test_client, dl_async_session_maker
 ) -> None:

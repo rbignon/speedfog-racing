@@ -172,6 +172,11 @@ async def update_elo_ratings(
     if race is None:
         return
 
+    # Races flagged exclude_from_elo (Daily Seeds, calibration runs, etc.)
+    # never affect ratings, even when they are public and finished.
+    if race.exclude_from_elo:
+        return
+
     # Private races don't affect ELO (not verifiable by the community)
     if not race.is_public:
         return
@@ -246,6 +251,7 @@ async def update_elo_ratings(
                     Seed.id.in_(
                         select(Race.seed_id).where(
                             Race.is_public.is_(True),
+                            Race.exclude_from_elo.is_(False),
                             Race.status == RaceStatus.FINISHED,
                             Race.seed_id.is_not(None),
                         )
@@ -687,7 +693,10 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
         (
             await db.execute(
                 select(Race.id)
-                .where(Race.status == RaceStatus.FINISHED)
+                .where(
+                    Race.status == RaceStatus.FINISHED,
+                    Race.exclude_from_elo.is_(False),
+                )
                 .order_by(Race.started_at.asc())
             )
         )
@@ -704,6 +713,7 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
             Seed.id.in_(
                 select(Race.seed_id).where(
                     Race.is_public.is_(True),
+                    Race.exclude_from_elo.is_(False),
                     Race.status == RaceStatus.FINISHED,
                     Race.seed_id.is_not(None),
                 )
