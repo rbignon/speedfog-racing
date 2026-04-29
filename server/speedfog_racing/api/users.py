@@ -32,6 +32,7 @@ from speedfog_racing.models import (
 from speedfog_racing.schemas import (
     ActivityItem,
     ActivityTimelineResponse,
+    DailyParticipantActivity,
     PoolTypeStatsResponse,
     RaceCasterActivity,
     RaceListResponse,
@@ -292,11 +293,14 @@ async def get_user_activity(
     user_id = user.id
     items: list[ActivityItem] = []
 
-    # 1. Race participations (no Race.participants loaded, use batch stats)
+    # 1. Race participations (no Race.participants loaded, use batch stats).
+    # ``Race.seed`` is eager-loaded so the daily-vs-regular branch below can
+    # read pool info without triggering N+1 lazy loads. ``Seed.pool`` is
+    # already ``lazy="joined"`` on the model, so it comes for free.
     part_q = await db.execute(
         select(Participant)
         .where(Participant.user_id == user_id)
-        .options(selectinload(Participant.race))
+        .options(selectinload(Participant.race).selectinload(Race.seed))
     )
     participations = part_q.scalars().all()
 
@@ -314,20 +318,41 @@ async def get_user_activity(
 
     for p in participations:
         race = p.race
-        items.append(
-            RaceParticipantActivity(
-                date=race_date(race),
-                race_id=race.id,
-                race_name=race.name,
-                status=race.status.value,
-                placement=placements.get((race.id, p.id)),
-                total_participants=total_by_race.get(race.id, 0),
-                igt_ms=p.igt_ms,
-                death_count=p.death_count,
-                is_organizer=race.organizer_id == user_id,
+        if race.daily_date is not None:
+            items.append(
+                DailyParticipantActivity(
+                    date=race_date(race),
+                    race_id=race.id,
+                    daily_date=race.daily_date,
+                    pool_name=race.seed.pool_name if race.seed else "",
+                    pool_display_name=(
+                        format_pool_display_name(race.seed.pool) if race.seed else None
+                    ),
+                    status=race.status.value,
+                    placement=placements.get((race.id, p.id)),
+                    total_participants=total_by_race.get(race.id, 0),
+                    igt_ms=p.igt_ms,
+                    death_count=p.death_count,
+                )
             )
-        )
+        else:
+            items.append(
+                RaceParticipantActivity(
+                    date=race_date(race),
+                    race_id=race.id,
+                    race_name=race.name,
+                    status=race.status.value,
+                    placement=placements.get((race.id, p.id)),
+                    total_participants=total_by_race.get(race.id, 0),
+                    igt_ms=p.igt_ms,
+                    death_count=p.death_count,
+                    is_organizer=race.organizer_id == user_id,
+                )
+            )
 
+    # The organizer of every Daily Seed is the system user ``system:daily``,
+    # so a real user will never satisfy ``Race.organizer_id == user_id`` for
+    # a daily race; the loop below therefore never emits a daily entry.
     for race in organized_races:
         if race.id in participated_race_ids:
             continue

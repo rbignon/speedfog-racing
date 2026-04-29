@@ -1,6 +1,7 @@
 """Tests for user profile endpoint."""
 
 import os
+from datetime import date
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
@@ -386,6 +387,84 @@ async def test_profile_stats_counts(test_client, user_with_activity):
         assert stats["training_count"] == 1  # 1 training session
         assert stats["organized_count"] == 1  # organized 1 race
         assert stats["casted_count"] == 1  # casted 1 race
+
+
+@pytest.mark.asyncio
+async def test_activity_emits_daily_participant_for_daily_seeds(test_client, async_session):
+    """Daily Seed participations surface as ``daily_participant`` items so
+    the frontend can deep-link to ``/daily/[date]`` and stop visually mixing
+    them with regular race entries."""
+    async with async_session() as db:
+        player = User(
+            twitch_id="daily_activity_user",
+            twitch_username="daily_activity",
+            api_token="daily_activity_token",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="daily_activity_org",
+            twitch_username="system:daily",
+            api_token="daily_activity_org_token",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([player, organizer])
+        await db.flush()
+
+        # The conftest ``after_create`` listener auto-seeds a ``standard``
+        # Pool row with ``config={"name": "Standard"}`` for every test DB,
+        # so ``format_pool_display_name`` will return ``"Standard"`` here.
+        seed = Seed(
+            seed_number="daily_activity_001",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=3,
+            folder_path="/fake/daily_activity",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        daily_race = Race(
+            name="Daily 2026-04-29",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            daily_date=date(2026, 4, 29),
+        )
+        db.add(daily_race)
+        await db.flush()
+
+        db.add(
+            Participant(
+                race_id=daily_race.id,
+                user_id=player.id,
+                status=ParticipantStatus.FINISHED,
+                igt_ms=180000,
+                death_count=2,
+            )
+        )
+
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/users/daily_activity/activity")
+        assert response.status_code == 200
+        data = response.json()
+
+    types = [i["type"] for i in data["items"]]
+    assert "daily_participant" in types
+    # The same race must NOT also surface as a regular race_participant.
+    assert "race_participant" not in types
+
+    daily_item = next(i for i in data["items"] if i["type"] == "daily_participant")
+    assert daily_item["daily_date"] == "2026-04-29"
+    assert daily_item["pool_name"] == "standard"
+    assert daily_item["pool_display_name"] == "Standard"
+    assert daily_item["status"] == "finished"
+    assert daily_item["placement"] == 1
+    assert daily_item["total_participants"] == 1
+    assert daily_item["igt_ms"] == 180000
+    assert daily_item["death_count"] == 2
 
 
 @pytest.mark.asyncio

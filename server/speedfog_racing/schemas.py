@@ -228,6 +228,20 @@ class RaceParticipantActivity(ActivityItemBase):
     is_organizer: bool = False
 
 
+class DailyParticipantActivity(ActivityItemBase):
+    type: str = "daily_participant"
+    race_id: UUID
+    daily_date: date
+    pool_name: str
+    pool_display_name: str | None = None
+    status: str
+    placement: int | None = None
+    total_participants: int
+    igt_ms: int
+    death_count: int
+    is_mod_connected: bool = False
+
+
 class RaceOrganizerActivity(ActivityItemBase):
     type: str = "race_organizer"
     race_id: UUID
@@ -256,7 +270,11 @@ class TrainingActivity(ActivityItemBase):
 
 
 ActivityItem = (
-    RaceParticipantActivity | RaceOrganizerActivity | RaceCasterActivity | TrainingActivity
+    RaceParticipantActivity
+    | RaceOrganizerActivity
+    | RaceCasterActivity
+    | TrainingActivity
+    | DailyParticipantActivity
 )
 
 
