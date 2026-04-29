@@ -281,11 +281,12 @@
 									<div class="activity-body">
 										<div class="badge-row">
 											<span class="activity-badge daily">Daily</span>
-											<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+											{#if item.status === 'running'}
+												<span class="activity-badge daily-active">Active</span>
+											{/if}
 										</div>
 										<a href="/daily/{item.daily_date}" class="activity-title">
-											Daily Seed {item.daily_date} - {item.pool_display_name ||
-												formatPoolName(item.pool_name)}
+											{item.pool_display_name || formatPoolName(item.pool_name)}
 										</a>
 										<div class="activity-details">
 											{#if item.placement}
@@ -606,7 +607,12 @@
 	}
 
 	.activity-badge.daily {
-		background: rgba(234, 179, 8, 0.15);
+		background: rgba(45, 212, 191, 0.15);
+		color: #2dd4bf;
+	}
+
+	.activity-badge.daily-active {
+		background: rgba(200, 164, 78, 0.15);
 		color: var(--color-gold);
 	}
 

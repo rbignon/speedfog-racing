@@ -138,7 +138,7 @@
 		if (item.type === 'race_caster') return item.race_name;
 		if (item.type === 'training') return item.pool_display_name || formatPoolName(item.pool_name);
 		if (item.type === 'daily_participant')
-			return `Daily Seed - ${item.pool_display_name || formatPoolName(item.pool_name)}`;
+			return item.pool_display_name || formatPoolName(item.pool_name);
 		return '';
 	}
 
@@ -1123,8 +1123,8 @@
 	}
 
 	.badge-daily {
-		background: rgba(234, 179, 8, 0.15);
-		color: var(--color-gold);
+		background: rgba(45, 212, 191, 0.15);
+		color: #2dd4bf;
 	}
 
 	.activity-content {
