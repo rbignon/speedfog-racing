@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
+    DailySeedSchedule,
     Participant,
     ParticipantStatus,
     Race,
@@ -231,3 +232,64 @@ async def test_week_endpoint_populates_my_result_for_authenticated_user(
     # Cells with no participation must not carry my_result.
     other_index = (past_date.weekday() + 1) % 7
     assert data["days"][other_index]["my_result"] is None
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_today_pending_when_loop_has_not_run(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    """When no Race row exists for today (loop has not fired yet).
+
+    The cell must still render with state='today', race_id=None, empty podium,
+    and finishers_count=0. Pool information comes from the schedule row.
+    """
+    today = daily_date_for(datetime.now(UTC))
+
+    async with dw_async_session_maker() as db:
+        # No races, no setup needed. Just commit an empty session.
+        await db.commit()
+
+    response = await dw_test_client.get("/api/daily/week")
+    assert response.status_code == 200, response.text
+    data = response.json()
+
+    today_cell = data["days"][today.weekday()]
+    assert today_cell["state"] == "today"
+    assert today_cell["race_id"] is None
+    assert today_cell["podium"] == []
+    assert today_cell["finishers_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_handles_missing_schedule_row(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    """If a daily_seed_schedule row is missing, the cell still renders.
+
+    When no schedule row exists for a given weekday, pool_name and
+    pool_display_name must be None (not crash). Frontend will display "TBD".
+    """
+    today = daily_date_for(datetime.now(UTC))
+
+    if today.weekday() == 6:
+        pytest.skip("Need at least one future weekday in the current week")
+
+    target_weekday = today.weekday() + 1
+
+    async with dw_async_session_maker() as db:
+        # Delete the schedule row for target_weekday (if it exists).
+        # Use the table's delete statement.
+        stmt = DailySeedSchedule.__table__.delete().where(
+            DailySeedSchedule.weekday == target_weekday
+        )
+        await db.execute(stmt)
+        await db.commit()
+
+    response = await dw_test_client.get("/api/daily/week")
+    assert response.status_code == 200, response.text
+    data = response.json()
+
+    cell = data["days"][target_weekday]
+    assert cell["state"] == "future"
+    assert cell["pool_name"] is None
+    assert cell["pool_display_name"] is None
