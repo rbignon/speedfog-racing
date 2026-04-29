@@ -281,6 +281,58 @@ export async function fetchJoinableRaces(): Promise<Race[]> {
   return data.races;
 }
 
+export interface DailyPodiumEntry {
+  placement: number;
+  twitch_username: string;
+  twitch_display_name: string | null;
+  twitch_avatar_url: string | null;
+  igt_ms: number;
+}
+
+export interface DailyMyResult {
+  status: ParticipantStatus;
+  placement: number | null;
+  total_finishers: number;
+  igt_ms: number | null;
+  death_count: number;
+}
+
+export type DailyWeekDayState = "missing_past" | "past" | "today" | "future";
+
+export interface DailyWeekDay {
+  weekday: number;
+  date: string;
+  state: DailyWeekDayState;
+  pool_name: string | null;
+  pool_display_name: string | null;
+  race_id: string | null;
+  started_at: string | null;
+  ends_at: string | null;
+  finishers_count: number;
+  participants_count: number;
+  podium: DailyPodiumEntry[];
+  my_result: DailyMyResult | null;
+}
+
+export interface DailyWeekResponse {
+  week_start: string;
+  today: string;
+  days: DailyWeekDay[];
+}
+
+/**
+ * Fetch the seven-cell weekly grid (Monday through Sunday in ISO order)
+ * for the home page and dashboard.
+ */
+export async function fetchDailyWeek(
+  customFetch: typeof fetch = fetch,
+): Promise<DailyWeekResponse> {
+  const response = await customFetch(`${API_BASE}/daily/week`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<DailyWeekResponse>(response);
+}
+
 /**
  * Fetch the running Daily Seed for the current UTC rotation day.
  * 404 when no daily is active.
