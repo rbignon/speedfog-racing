@@ -158,3 +158,76 @@ async def test_week_endpoint_returns_seven_days(dw_test_client, dw_async_session
             continue
         assert data["days"][i]["state"] == "missing_past"
         assert data["days"][i]["race_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_populates_my_result_for_authenticated_user(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    today = daily_date_for(datetime.now(UTC))
+    week_start = today - timedelta(days=today.weekday())
+    if today.weekday() == 0:
+        pytest.skip("Need at least one past weekday in the current week")
+    past_date = week_start  # Monday of the current week
+
+    async with dw_async_session_maker() as db:
+        organizer = _user()
+        db.add(organizer)
+        await db.flush()
+
+        me = _user(api_token="my-token")
+        db.add(me)
+        await db.flush()
+
+        other = _user()
+        db.add(other)
+        await db.flush()
+
+        past_race = _daily_race(organizer=organizer, the_date=past_date, status=RaceStatus.FINISHED)
+        db.add(past_race)
+        await db.flush()
+
+        started = past_race.started_at
+        other_part = Participant(
+            id=uuid4(),
+            race_id=past_race.id,
+            user_id=other.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=2_520_000,
+            current_layer=4,
+            death_count=1,
+            finished_at=started + timedelta(minutes=42),
+        )
+        me_part = Participant(
+            id=uuid4(),
+            race_id=past_race.id,
+            user_id=me.id,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=2_700_000,
+            current_layer=4,
+            death_count=2,
+            finished_at=started + timedelta(minutes=45),
+        )
+        db.add(other_part)
+        db.add(me_part)
+
+        await db.commit()
+
+    response = await dw_test_client.get(
+        "/api/daily/week", headers={"Authorization": "Bearer my-token"}
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+
+    past_cell = data["days"][past_date.weekday()]
+    my = past_cell["my_result"]
+    assert my is not None
+    assert my["status"] == "finished"
+    assert my["placement"] == 2
+    assert my["total_finishers"] == 2
+    assert my["igt_ms"] == 2_700_000
+    assert my["death_count"] == 2
+
+    # Cells with no participation must not carry my_result.
+    other_index = (past_date.weekday() + 1) % 7
+    assert data["days"][other_index]["my_result"] is None
