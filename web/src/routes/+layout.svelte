@@ -4,7 +4,7 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { getTwitchLoginUrl, fetchJoinableRaces } from '$lib/api';
+	import { getTwitchLoginUrl, fetchJoinableRaces, fetchTodayDaily } from '$lib/api';
 	import { joinableStore } from '$lib/stores/joinable.svelte';
 	import NavUserSearch from '$lib/components/NavUserSearch.svelte';
 	import FeedbackModal from '$lib/components/FeedbackModal.svelte';
@@ -17,6 +17,7 @@
 	let isRaceDetailPage = $derived(page.route.id === '/race/[id]');
 
 	let joinableCount = $state(0);
+	let dailyUnplayed = $state(false);
 
 	let userMenuOpen = $state(false);
 	let userMenuEl: HTMLDivElement | undefined = $state();
@@ -49,10 +50,22 @@
 		joinableStore.refreshKey;
 		if (auth.isLoggedIn) {
 			fetchJoinableRaces()
-				.then((races) => { joinableCount = races.length; })
-				.catch(() => { joinableCount = 0; });
+				.then((races) => {
+					joinableCount = races.length;
+				})
+				.catch(() => {
+					joinableCount = 0;
+				});
+			fetchTodayDaily()
+				.then((daily) => {
+					dailyUnplayed = !daily.participants.some((p) => p.user.id === auth.user?.id);
+				})
+				.catch(() => {
+					dailyUnplayed = false;
+				});
 		} else {
 			joinableCount = 0;
+			dailyUnplayed = false;
 		}
 	});
 </script>
@@ -94,6 +107,12 @@
 							<a href="/admin" class="btn btn-secondary">Admin</a>
 						{/if}
 						<a href="/training" class="btn btn-secondary">Solo</a>
+						<a href="/daily" class="btn btn-secondary btn-with-badge">
+							Daily
+							{#if dailyUnplayed}
+								<span class="nav-dot" aria-label="Daily seed not played"></span>
+							{/if}
+						</a>
 						<a href="/races" class="btn btn-secondary btn-with-badge">
 							Races
 							{#if joinableCount > 0}
@@ -288,6 +307,16 @@
 		justify-content: center;
 		padding: 0 4px;
 		line-height: 1;
+	}
+
+	.nav-dot {
+		position: absolute;
+		top: -3px;
+		right: -3px;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--color-success);
 	}
 
 	.user-menu {

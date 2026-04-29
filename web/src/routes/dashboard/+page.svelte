@@ -8,13 +8,17 @@
 		fetchMyRaces,
 		fetchTrainingSessions,
 		fetchJoinableRaces,
+		fetchTodayDaily,
+		fetchRecentDailies,
 		type UserProfile,
 		type UserPoolStats,
 		type ActivityItem,
 		type ActivityTimeline,
 		type Race,
+		type RaceDetail,
 		type TrainingSession,
 	} from '$lib/api';
+	import DailyDashboardSection from '$lib/components/DailyDashboardSection.svelte';
 	import { timeAgo, raceDisplayDate } from '$lib/utils/time';
 	import { formatIgt } from '$lib/utils/training';
 	import { formatPoolName } from '$lib/utils/format';
@@ -29,6 +33,8 @@
 	let myRaces: Race[] = $state([]);
 	let trainingSessions: TrainingSession[] = $state([]);
 	let joinableRaces: Race[] = $state([]);
+	let todayDaily: RaceDetail | null = $state(null);
+	let recentDailies: Race[] = $state([]);
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let error = $state<string | null>(null);
@@ -87,14 +93,18 @@
 			fetchTrainingSessions(),
 			fetchUserPoolStats(username),
 			fetchJoinableRaces(),
+			fetchTodayDaily().catch(() => null),
+			fetchRecentDailies(7).catch(() => [] as Race[]),
 		])
-			.then(([p, a, r, t, ps, jr]) => {
+			.then(([p, a, r, t, ps, jr, daily, recent]) => {
 				profile = p;
 				activity = a;
 				myRaces = r;
 				trainingSessions = t;
 				poolStats = ps;
 				joinableRaces = jr;
+				todayDaily = daily;
+				recentDailies = recent;
 			})
 			.catch((e) => {
 				console.error('Dashboard fetch error:', e);
@@ -280,6 +290,12 @@
 				</div>
 			</section>
 		{/if}
+
+		<DailyDashboardSection
+			today={todayDaily}
+			recent={recentDailies}
+			userId={auth.user?.id}
+		/>
 
 		<!-- Active Now Section (hidden when empty) -->
 		{#if activeRaces.length > 0 || activeTraining.length > 0}

@@ -3,10 +3,18 @@
 	import { page } from '$app/state';
 	import { PUBLIC_BASE_URL } from '$env/static/public';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { fetchRaces, fetchRacesPaginated, getTwitchLoginUrl, type Race } from '$lib/api';
+	import {
+		fetchRaces,
+		fetchRacesPaginated,
+		fetchTodayDaily,
+		getTwitchLoginUrl,
+		type Race,
+		type RaceDetail
+	} from '$lib/api';
 	import MetroDagAnimated from '$lib/dag/MetroDagAnimated.svelte';
 	import RaceCard from '$lib/components/RaceCard.svelte';
 	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
+	import DailyBanner from '$lib/components/DailyBanner.svelte';
 	import heroSeed from '$lib/data/hero-seed.json';
 
 	let races: Race[] = $state([]);
@@ -14,6 +22,8 @@
 	let recentRaces: Race[] = $state([]);
 	let loadingRecent = $state(true);
 	let errorMessage = $state<string | null>(null);
+	let todayDaily: RaceDetail | null = $state(null);
+	let now = $state(Date.now());
 
 	let liveRaces = $derived(races.filter((r) => r.status === 'running'));
 	let upcomingRaces = $derived(
@@ -38,6 +48,13 @@
 			.then((data) => (recentRaces = data.races))
 			.catch((e) => console.error('Failed to fetch recent races:', e))
 			.finally(() => (loadingRecent = false));
+
+		fetchTodayDaily()
+			.then((daily) => (todayDaily = daily))
+			.catch(() => (todayDaily = null));
+
+		const timer = setInterval(() => (now = Date.now()), 60_000);
+		return () => clearInterval(timer);
 	});
 
 	function getErrorMessage(error: string): string {
@@ -104,6 +121,9 @@
 </div>
 
 <main class="public-section">
+	{#if todayDaily}
+		<DailyBanner race={todayDaily} {now} />
+	{/if}
 	{#if !loadingRaces}
 		{#if liveRaces.length > 0}
 			<section class="public-races">
