@@ -264,32 +264,41 @@ async def test_week_endpoint_today_pending_when_loop_has_not_run(
 async def test_week_endpoint_handles_missing_schedule_row(
     dw_test_client, dw_async_session_maker
 ) -> None:
-    """If a daily_seed_schedule row is missing, the cell still renders.
+    """Schedule rows that exist are reflected; missing rows return null pool.
 
-    When no schedule row exists for a given weekday, pool_name and
-    pool_display_name must be None (not crash). Frontend will display "TBD".
+    When a schedule row exists for a weekday, pool_name and pool_display_name
+    must reflect that row's pool. When missing, both must be None (not crash).
     """
     today = daily_date_for(datetime.now(UTC))
 
-    if today.weekday() == 6:
-        pytest.skip("Need at least one future weekday in the current week")
+    # Find two distinct future weekdays in the current week.
+    if today.weekday() >= 5:
+        pytest.skip("Need at least two future weekdays in the current week")
 
-    target_weekday = today.weekday() + 1
+    seeded_weekday = today.weekday() + 1
+    missing_weekday = today.weekday() + 2
 
     async with dw_async_session_maker() as db:
-        # Delete the schedule row for target_weekday (if it exists).
-        # Use the table's delete statement.
-        stmt = DailySeedSchedule.__table__.delete().where(
-            DailySeedSchedule.weekday == target_weekday
-        )
-        await db.execute(stmt)
+        # The "standard" Pool is auto-seeded by conftest's after_create listener.
+        # Just add a schedule row pointing at it for seeded_weekday.
+        schedule = DailySeedSchedule(weekday=seeded_weekday, pool_name="standard")
+        db.add(schedule)
+        # missing_weekday: do NOT add a row.
+
         await db.commit()
 
     response = await dw_test_client.get("/api/daily/week")
     assert response.status_code == 200, response.text
     data = response.json()
 
-    cell = data["days"][target_weekday]
-    assert cell["state"] == "future"
-    assert cell["pool_name"] is None
-    assert cell["pool_display_name"] is None
+    # Seeded weekday should have pool information.
+    seeded_cell = data["days"][seeded_weekday]
+    assert seeded_cell["state"] == "future"
+    assert seeded_cell["pool_name"] == "standard"
+    assert seeded_cell["pool_display_name"] == "Standard"
+
+    # Missing weekday should have null pool fields.
+    missing_cell = data["days"][missing_weekday]
+    assert missing_cell["state"] == "future"
+    assert missing_cell["pool_name"] is None
+    assert missing_cell["pool_display_name"] is None
