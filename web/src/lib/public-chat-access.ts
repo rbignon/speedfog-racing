@@ -8,14 +8,7 @@
  * `docs/specs/2026-04-28-public-chat-lock-design.md` (matrix lines 60 to 75).
  */
 
-export type RaceStatus = "setup" | "running" | "finished";
-
-export type ParticipantStatus =
-  | "registered"
-  | "ready"
-  | "playing"
-  | "finished"
-  | "abandoned";
+import type { ParticipantStatus, RaceStatus } from "$lib/api";
 
 export type PublicAccess = "locked" | "readable";
 

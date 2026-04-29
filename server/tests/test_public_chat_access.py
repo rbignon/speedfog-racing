@@ -285,7 +285,7 @@ class TestSpectatorConnectionShape:
         assert conn.participant_status == ParticipantStatus.PLAYING
 
 
-# -- room.set_participant_status (C4 transition hook) -----------------------
+# -- room.set_participant_status --------------------------------------------
 
 
 class TestSetParticipantStatus:
@@ -293,12 +293,7 @@ class TestSetParticipantStatus:
         "terminal_status", [ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED]
     )
     def test_updates_all_connections_for_user(self, terminal_status):
-        """Multi-tab: every connection of the user gets the new status.
-
-        Parametrized over the two terminal statuses so the abandon path
-        (api/races.py + inactivity_monitor.py) is covered alongside the
-        finish path (mod.py).
-        """
+        """Multi-tab: every connection of the user gets the new status."""
         room = RaceRoom(race_id=uuid4())
         user_id = uuid4()
         tab1 = SpectatorConnection(

@@ -136,13 +136,10 @@ def can_write_public_chat(
 ) -> bool:
     """True when the viewer may post on the public chat.
 
-    Writers must be authenticated, must satisfy
-    ``can_read_public_chat``, and must not be an active participant.
+    Writers must be authenticated and must satisfy ``can_read_public_chat``.
+    The active-participant exclusion is already covered by the readability
+    check (active racers are always locked).
     """
     if user_id is None:
         return False
-    if not can_read_public_chat(race, role=role, participant_status=participant_status, now=now):
-        return False
-    if is_active_participant_status(participant_status):
-        return False
-    return True
+    return can_read_public_chat(race, role=role, participant_status=participant_status, now=now)

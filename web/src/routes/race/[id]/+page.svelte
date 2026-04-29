@@ -20,12 +20,11 @@
 	import ShareButtons from '$lib/components/ShareButtons.svelte';
 	import AddToCalendar from '$lib/components/AddToCalendar.svelte';
 	import ChatSidebar from '$lib/components/ChatSidebar.svelte';
-	import {
-		computePublicAccess,
-		computePublicLockedReason,
-		type ParticipantStatus as PCAParticipantStatus,
-		type RaceStatus as PCARaceStatus
-	} from '$lib/public-chat-access';
+	import type {
+		ParticipantStatus as ApiParticipantStatus,
+		RaceStatus as ApiRaceStatus
+	} from '$lib/api';
+	import { computePublicAccess, computePublicLockedReason } from '$lib/public-chat-access';
 	import ObsOverlayModal from '$lib/components/ObsOverlayModal.svelte';
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -402,25 +401,17 @@
 		raceStore.race?.registration_closes_at ?? initialRace.registration_closes_at
 	);
 
-	let myParticipantStatus = $derived<PCAParticipantStatus | null>(
-		(myWsParticipant?.status as PCAParticipantStatus | undefined) ?? null
+	let myParticipantStatus = $derived(
+		(myWsParticipant?.status as ApiParticipantStatus | undefined) ?? null
 	);
-	let publicAccess = $derived(
-		computePublicAccess({
-			raceStatus: raceStatus as PCARaceStatus,
-			registrationClosesAt: liveRegistrationClosesAt,
-			participantStatus: myParticipantStatus,
-			now: new Date(now)
-		})
-	);
-	let publicLockedReason = $derived(
-		computePublicLockedReason({
-			raceStatus: raceStatus as PCARaceStatus,
-			registrationClosesAt: liveRegistrationClosesAt,
-			participantStatus: myParticipantStatus,
-			now: new Date(now)
-		})
-	);
+	let publicAccessInputs = $derived({
+		raceStatus: raceStatus as ApiRaceStatus,
+		registrationClosesAt: liveRegistrationClosesAt,
+		participantStatus: myParticipantStatus,
+		now: new Date(now)
+	});
+	let publicAccess = $derived(computePublicAccess(publicAccessInputs));
+	let publicLockedReason = $derived(computePublicLockedReason(publicAccessInputs));
 	let effectiveActiveTab = $derived(hasParticipantsAccess ? chatActiveTab : 'public');
 	let canSendChat = $derived(
 		effectiveActiveTab === 'participants'
@@ -437,7 +428,7 @@
 	$effect(() => {
 		const current = publicAccess;
 		if (prevPublicAccess === 'locked' && current === 'readable') {
-			raceStore.requestChatHistory('public');
+			raceStore.send({ type: 'request_chat_history', channel: 'public' });
 		}
 		prevPublicAccess = current;
 	});

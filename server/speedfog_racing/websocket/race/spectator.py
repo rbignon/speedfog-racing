@@ -22,7 +22,6 @@ from speedfog_racing.models import (
     PlayerTraitScores,
     Race,
     User,
-    UserRole,
 )
 from speedfog_racing.models import (
     ChatMessage as ChatMessageModel,
@@ -136,21 +135,8 @@ async def load_chat_history(
             if user is not None and traits is not None
         }
 
-    # Build role lookup from race relationships
-    # (already loaded, detached with expire_on_commit=False)
-    participant_user_ids = {p.user_id for p in race.participants}
-    caster_user_ids = {c.user_id for c in race.casters}
-
     def _resolve_role(user: User) -> str:
-        if race.organizer_id == user.id:
-            return "organizer"
-        if user.role == UserRole.ADMIN:
-            return "admin"
-        if user.id in caster_user_ids:
-            return "caster"
-        if user.id in participant_user_ids:
-            return "participant"
-        return "spectator"
+        return race_role(race, user) or "spectator"
 
     messages = []
     for chat_msg, user, _traits in rows:
@@ -307,23 +293,8 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
         # chat additionally needs a fresh race row for the late-join
         # deadline; load it once here and reuse for the broadcast filter.
         now = datetime.now(UTC)
-        race: Race | None = None
-        if channel == "participants":
-            if not can_read_participants_chat(role=self._conn.role):
-                return
-        else:  # "public"
-            async with self.session_maker() as db:
-                race = await db.get(Race, self.entity_id)
-            if race is None:
-                return
-            if not can_write_public_chat(
-                race,
-                user_id=self._conn.user_id,
-                role=self._conn.role,
-                participant_status=self._conn.participant_status,
-                now=now,
-            ):
-                return
+        if channel == "participants" and not can_read_participants_chat(role=self._conn.role):
+            return
 
         broadcast = ChatBroadcastMessage(
             channel=channel,
@@ -336,18 +307,33 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
             timestamp=datetime.now(UTC).isoformat(),
         )
 
-        # Persist to DB
+        # For the public channel we need a fresh race row to evaluate the
+        # late-join deadline; load it in the same session that persists
+        # the message so the handler does a single DB round trip.
+        race: Race | None = None
         async with self.session_maker() as db:
-            db_msg = ChatMessageModel(
-                race_id=self.entity_id,
-                channel=ChatChannel(channel),
-                user_id=self._conn.user_id,
-                message=chat_msg.message,
+            if channel == "public":
+                race = await db.get(Race, self.entity_id)
+                if race is None:
+                    return
+                if not can_write_public_chat(
+                    race,
+                    user_id=self._conn.user_id,
+                    role=self._conn.role,
+                    participant_status=self._conn.participant_status,
+                    now=now,
+                ):
+                    return
+            db.add(
+                ChatMessageModel(
+                    race_id=self.entity_id,
+                    channel=ChatChannel(channel),
+                    user_id=self._conn.user_id,
+                    message=chat_msg.message,
+                )
             )
-            db.add(db_msg)
             await db.commit()
 
-        # Broadcast to appropriate connections
         msg_json = broadcast.model_dump_json()
         if channel == "participants":
             await room.broadcast_chat_participants(msg_json)
@@ -373,7 +359,6 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
             return
 
         channel = req.channel
-        now = datetime.now(UTC)
 
         if channel == "participants":
             if not can_read_participants_chat(role=self._conn.role):
@@ -408,7 +393,7 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
             race,
             role=self._conn.role,
             participant_status=self._conn.participant_status,
-            now=now,
+            now=datetime.now(UTC),
         ):
             return
 

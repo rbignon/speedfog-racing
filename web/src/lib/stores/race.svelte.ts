@@ -270,13 +270,6 @@ class RaceStore {
   }
 
   /**
-   * Pull chat history for a channel after a local access unlock.
-   */
-  requestChatHistory(channel: "participants" | "public"): void {
-    this.ws?.requestChatHistory(channel);
-  }
-
-  /**
    * After the race finishes, verify that zone_history arrived.
    * If not, force a WS reconnect to get the full state.
    */
