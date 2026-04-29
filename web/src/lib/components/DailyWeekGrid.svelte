@@ -278,8 +278,8 @@
 		color: var(--color-success);
 	}
 	.strip-in-progress {
-		background: rgba(234, 179, 8, 0.12);
-		color: var(--color-warning);
+		background: rgba(245, 158, 11, 0.14);
+		color: #f59e0b;
 	}
 	.strip-abandoned {
 		background: rgba(107, 114, 128, 0.18);
