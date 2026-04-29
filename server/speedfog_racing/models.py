@@ -483,7 +483,18 @@ class ChatMessage(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     message: Mapped[str] = mapped_column(String(500), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Python-side default so each row gets a distinct microsecond stamp at
+    # INSERT time. ``server_default=func.now()`` (Postgres ``now()``,
+    # SQLite ``CURRENT_TIMESTAMP``) returns the transaction start time, so
+    # two messages persisted in the same endpoint shared a timestamp and
+    # the leaderboard / chat history ORDER BY had to fall back on the
+    # random UUID ``id`` to break ties. The Python callable is invoked
+    # once per INSERT, giving stable insertion order.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
 
     race: Mapped["Race"] = relationship()
     user: Mapped["User | None"] = relationship()
