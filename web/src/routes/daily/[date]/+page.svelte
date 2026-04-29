@@ -6,6 +6,7 @@
 	import { computePublicAccess, computePublicLockedReason } from '$lib/public-chat-access';
 	import {
 		abandonRace,
+		deleteRace,
 		downloadMySeedPack,
 		fetchDailyByDate,
 		getTwitchLoginUrl,
@@ -303,7 +304,10 @@
 				race={initialRace}
 				{raceStatus}
 				onRaceUpdated={(race) => (initialRace = race)}
-				onDeleteRace={() => goto('/daily')}
+				onDeleteRace={async () => {
+					await deleteRace(initialRace.id);
+					goto('/daily');
+				}}
 			/>
 		{/if}
 
