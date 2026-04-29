@@ -148,6 +148,8 @@ class DailySeedSchedule(Base):
     weekday: Mapped[int] = mapped_column(Integer, primary_key=True)
     pool_name: Mapped[str] = mapped_column(String(50), ForeignKey("pools.name"), nullable=False)
 
+    pool: Mapped["Pool"] = relationship(lazy="joined")
+
 
 class Seed(Base):
     """A SpeedFog seed available for racing."""

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.base import ExecutableOption
 
-from speedfog_racing.api.helpers import race_response
+from speedfog_racing.api.helpers import format_pool_display_name, race_response
 from speedfog_racing.api.races import _race_detail_response
 from speedfog_racing.auth import get_current_user_optional
 from speedfog_racing.database import get_db
@@ -99,12 +99,6 @@ async def get_recent_dailies(
     return RaceListResponse(races=[race_response(r, user) for r in races])
 
 
-def _format_pool_name(name: str) -> str:
-    """Title-cased pool label. The server has no central helper; the
-    frontend's ``formatPoolName`` does the same transformation."""
-    return name.replace("_", " ").title()
-
-
 def _start_at_utc(d: date_type) -> datetime:
     return datetime(d.year, d.month, d.day, 8, 0, tzinfo=UTC)
 
@@ -180,22 +174,29 @@ async def get_daily_week(
     }
 
     schedule_result = await db.execute(select(DailySeedSchedule))
-    schedule_by_weekday: dict[int, str] = {
-        row.weekday: row.pool_name for row in schedule_result.scalars().all()
+    schedule_by_weekday: dict[int, DailySeedSchedule] = {
+        row.weekday: row for row in schedule_result.scalars().all()
     }
 
     days: list[DailyWeekDay] = []
     for d in week_dates:
         weekday = d.weekday()
         race = races_by_date.get(d)
-        scheduled_pool = schedule_by_weekday.get(weekday)
-        scheduled_display = _format_pool_name(scheduled_pool) if scheduled_pool else None
+        schedule_row = schedule_by_weekday.get(weekday)
+        scheduled_pool_name = schedule_row.pool_name if schedule_row else None
+        scheduled_display = format_pool_display_name(schedule_row.pool) if schedule_row else None
 
         if race is not None:
             ranked = _ranked_finishers(race.participants)
             finishers_count = len(ranked)
-            cell_pool_name = race.seed.pool_name if race.seed else scheduled_pool
-            cell_pool_display = _format_pool_name(cell_pool_name) if cell_pool_name else None
+            cell_pool_name: str | None
+            cell_pool_display: str | None
+            if race.seed is not None:
+                cell_pool_name = race.seed.pool_name
+                cell_pool_display = format_pool_display_name(race.seed.pool)
+            else:
+                cell_pool_name = scheduled_pool_name
+                cell_pool_display = scheduled_display
             _, race_ends_at = compute_late_join_deadlines(race)
             cell_state: Literal["past", "today", "future", "missing_past"] = (
                 "today" if d == today else "past"
@@ -232,7 +233,7 @@ async def get_daily_week(
                 weekday=weekday,
                 date=d,
                 state=cell_state,
-                pool_name=scheduled_pool,
+                pool_name=scheduled_pool_name,
                 pool_display_name=scheduled_display,
                 race_id=None,
                 started_at=started_at,
