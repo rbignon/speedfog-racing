@@ -1,6 +1,7 @@
 """Tests for dashboard-related API enhancements."""
 
 import os
+from datetime import date
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
@@ -159,3 +160,92 @@ async def test_my_races_includes_progress(test_client, dashboard_user):
         assert running[0]["my_igt_ms"] == 90000
         assert running[0]["my_death_count"] == 3
         assert running[0]["seed_total_layers"] == 3
+
+
+@pytest.mark.asyncio
+async def test_my_races_excludes_daily_seeds(test_client, async_session):
+    """Daily Seed participations are filtered out of /me/races to avoid
+    duplicating the today cell of the dashboard's weekly grid."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="daily_user_1",
+            twitch_username="daily_player",
+            api_token="daily_test_token",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="daily_org_1",
+            twitch_username="system:daily",
+            api_token="daily_org_token",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="daily_seed_001",
+            pool_name="standard",
+            graph_json=SAMPLE_GRAPH,
+            total_layers=3,
+            folder_path="/fake/seed/daily",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        # Daily Seed race in which the user participated.
+        daily_race = Race(
+            name="Daily 2026-04-29",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            daily_date=date(2026, 4, 29),
+        )
+        db.add(daily_race)
+        await db.flush()
+
+        db.add(
+            Participant(
+                race_id=daily_race.id,
+                user_id=user.id,
+                status=ParticipantStatus.PLAYING,
+                igt_ms=42000,
+                death_count=1,
+            )
+        )
+
+        # Regular race in which the user also participated, to confirm we
+        # only filter out daily ones.
+        regular_race = Race(
+            name="Regular Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(regular_race)
+        await db.flush()
+
+        db.add(
+            Participant(
+                race_id=regular_race.id,
+                user_id=user.id,
+                status=ParticipantStatus.PLAYING,
+                igt_ms=10000,
+                death_count=0,
+            )
+        )
+
+        await db.commit()
+        await db.refresh(user)
+
+    async with test_client as client:
+        response = await client.get(
+            "/api/users/me/races",
+            headers={"Authorization": f"Bearer {user.api_token}"},
+        )
+        assert response.status_code == 200
+        races = response.json()["races"]
+        names = [r["name"] for r in races]
+        assert "Regular Race" in names
+        assert "Daily 2026-04-29" not in names
+        assert all(r.get("daily_date") is None for r in races)

@@ -125,14 +125,19 @@ async def get_my_races(
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ) -> RaceListResponse:
-    """Get races where the user is organizer or participant."""
-    # Personal history intentionally includes Daily Seed participations so
-    # users see every race they actually played; the listings under
-    # /api/races/* are the surface that filters them out.
+    """Get races where the user is organizer or participant.
+
+    Excludes Daily Seeds: those are surfaced by the dedicated weekly grid
+    (``DailyWeekGrid``) on the home and dashboard, so showing them here
+    would duplicate the today cell into the Active Now section.
+    """
     participant_race_ids = select(Participant.race_id).where(Participant.user_id == user.id)
     query = (
         select(Race)
-        .where(or_(Race.organizer_id == user.id, Race.id.in_(participant_race_ids)))
+        .where(
+            or_(Race.organizer_id == user.id, Race.id.in_(participant_race_ids)),
+            Race.daily_date.is_(None),
+        )
         .options(
             selectinload(Race.organizer),
             selectinload(Race.seed),
