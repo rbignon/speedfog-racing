@@ -26,6 +26,8 @@
 	let error = $state<string | null>(null);
 	let seedsReleased = $derived(race.seeds_released_at !== null);
 	let canStart = $derived(race.participants.length >= 2 || auth.isAdmin);
+	let isDaily = $derived(race.daily_date !== null);
+	let canReroll = $derived(raceStatus === 'setup' || (isDaily && raceStatus === 'running'));
 
 	let reportBuggy = $state(false);
 	let reportReason = $state('');
@@ -73,13 +75,18 @@
 	}
 
 	function handleReroll() {
-		reportBuggy = false;
+		// Daily reroll discards every in-flight run, so the bug-report opt-in
+		// is on by default; for setup races we keep the legacy "ask me" flow.
+		reportBuggy = isDaily;
 		reportReason = '';
+		const message = isDaily
+			? 'Rerolling will discard all current and finished runs for this Daily Seed. The new seed will be released immediately. Continue?'
+			: seedsReleased
+				? 'Participants may have already downloaded. Re-rolling will require everyone to re-download. Continue?'
+				: 'Re-roll the seed? Participants will need to download a new seed pack.';
 		requestConfirm({
 			title: 'Re-roll Seed',
-			message: seedsReleased
-				? 'Participants may have already downloaded. Re-rolling will require everyone to re-download. Continue?'
-				: 'Re-roll the seed? Participants will need to download a new seed pack.',
+			message,
 			confirmLabel: 'Re-roll',
 			async action() {
 				loading = true;
@@ -283,9 +290,15 @@
 					{loading ? 'Re-rolling...' : 'Re-roll Seed'}
 				</button>
 			{:else if raceStatus === 'running'}
-				<button class="btn btn-secondary" onclick={handleForceFinish} disabled={loading}>
-					{loading ? 'Finishing...' : 'Force Finish'}
-				</button>
+				{#if canReroll}
+					<button class="btn btn-secondary" onclick={handleReroll} disabled={loading}>
+						{loading ? 'Re-rolling...' : 'Re-roll Seed'}
+					</button>
+				{:else}
+					<button class="btn btn-secondary" onclick={handleForceFinish} disabled={loading}>
+						{loading ? 'Finishing...' : 'Force Finish'}
+					</button>
+				{/if}
 			{/if}
 
 			{#if error}

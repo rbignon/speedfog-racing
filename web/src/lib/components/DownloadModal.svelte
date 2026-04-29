@@ -4,9 +4,16 @@
 		onDownload: () => void;
 		downloading: boolean;
 		error: string | null;
+		actionLabel?: string;
 	}
 
-	let { onClose, onDownload, downloading, error }: Props = $props();
+	let {
+		onClose,
+		onDownload,
+		downloading,
+		error,
+		actionLabel = 'Download Race Package'
+	}: Props = $props();
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -61,7 +68,7 @@
 					fill="none"
 				/>
 			</svg>
-			{downloading ? 'Preparing...' : 'Download Race Package'}
+			{downloading ? 'Preparing...' : actionLabel}
 		</button>
 		{#if error}
 			<span class="download-error">{error}</span>
