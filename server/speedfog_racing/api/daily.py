@@ -19,7 +19,7 @@ from speedfog_racing.api.races import _race_detail_response
 from speedfog_racing.auth import get_current_user_optional
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Caster, Participant, Race, User
-from speedfog_racing.schemas import RaceDetailResponse, RaceListResponse
+from speedfog_racing.schemas import RaceDetailResponse, RaceListResponse, RaceResponse
 from speedfog_racing.services.daily_seed_loop import daily_date_for
 
 router = APIRouter()
@@ -36,19 +36,24 @@ def _detail_options() -> tuple[ExecutableOption, ...]:
     )
 
 
-@router.get("/today", response_model=RaceDetailResponse)
+@router.get("/today", response_model=RaceResponse)
 async def get_today_daily(
     db: AsyncSession = Depends(get_db),
     user: User | None = Depends(get_current_user_optional),
-) -> RaceDetailResponse:
-    """Return the running Daily Seed for the current UTC rotation day."""
+) -> RaceResponse:
+    """Return the running Daily Seed for the current UTC rotation day.
+
+    Returns a ``Race`` summary (not ``RaceDetail``) because the home / dashboard
+    surfaces only need the preview shape, and the dedicated ``/daily/{date}``
+    page already pulls the full detail when needed.
+    """
     today = daily_date_for(datetime.now(UTC))
     race = (
         await db.execute(select(Race).where(Race.daily_date == today).options(*_detail_options()))
     ).scalar_one_or_none()
     if race is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No daily seed today")
-    return _race_detail_response(race, user=user)
+    return race_response(race, user=user)
 
 
 @router.get("/recent", response_model=RaceListResponse)

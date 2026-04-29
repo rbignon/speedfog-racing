@@ -142,10 +142,12 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
     casters = race.casters if "casters" in race.__dict__ else []
 
     my_role: str | None = None
+    my_participant: Participant | None = None
     if user is not None:
+        my_participant = next((p for p in race.participants if p.user_id == user.id), None)
         if race.organizer_id == user.id:
             my_role = "organizing"
-        elif any(p.user_id == user.id for p in race.participants):
+        elif my_participant is not None:
             my_role = "participating"
         elif any(c.user_id == user.id for c in casters):
             my_role = "casting"
@@ -183,6 +185,10 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         casters=[caster_response(c) for c in race.casters] if "casters" in race.__dict__ else [],
         can_join=can_join,
         my_role=my_role,
+        my_participant_status=my_participant.status if my_participant else None,
+        my_current_layer=my_participant.current_layer if my_participant else None,
+        my_igt_ms=my_participant.igt_ms if my_participant else None,
+        my_death_count=my_participant.death_count if my_participant else None,
     )
 
 

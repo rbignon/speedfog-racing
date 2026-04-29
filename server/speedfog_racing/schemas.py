@@ -321,6 +321,7 @@ class RaceResponse(BaseModel):
     casters: list[CasterResponse] = []
     can_join: bool = False
     my_role: str | None = None
+    my_participant_status: ParticipantStatus | None = None
     my_current_layer: int | None = None
     my_igt_ms: int | None = None
     my_death_count: int | None = None

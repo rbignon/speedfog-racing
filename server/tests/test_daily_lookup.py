@@ -91,6 +91,63 @@ def test_participant_preview_includes_status_and_igt() -> None:
     assert preview.placement == 1
 
 
+def test_race_response_populates_my_fields_for_participant() -> None:
+    """When the auth'd user is a participant, ``race_response`` mirrors their
+    participant row into the ``my_*`` fields so summary surfaces (home,
+    dashboard) can render per-user state without needing the full detail."""
+    organizer = _user()
+    player = _user()
+    participant = Participant(
+        id=uuid4(),
+        user=player,
+        user_id=player.id,
+        status=ParticipantStatus.PLAYING,
+        igt_ms=720_000,
+        current_layer=3,
+        death_count=2,
+    )
+    race = _daily_race(organizer=organizer, participants=[participant])
+    response = race_response(race, user=player)
+    assert response.my_role == "participating"
+    assert response.my_participant_status == ParticipantStatus.PLAYING
+    assert response.my_current_layer == 3
+    assert response.my_igt_ms == 720_000
+    assert response.my_death_count == 2
+
+
+def test_race_response_my_fields_when_organizer_is_also_participant() -> None:
+    """``my_role`` keeps its organizer precedence even if the caller also has
+    a participant row, but ``my_*`` still mirror that participant row so the
+    UI can surface their progress."""
+    organizer = _user()
+    participant = Participant(
+        id=uuid4(),
+        user=organizer,
+        user_id=organizer.id,
+        status=ParticipantStatus.PLAYING,
+        igt_ms=480_000,
+        current_layer=2,
+        death_count=1,
+    )
+    race = _daily_race(organizer=organizer, participants=[participant])
+    response = race_response(race, user=organizer)
+    assert response.my_role == "organizing"
+    assert response.my_participant_status == ParticipantStatus.PLAYING
+    assert response.my_igt_ms == 480_000
+
+
+def test_race_response_my_fields_none_for_non_participant() -> None:
+    organizer = _user()
+    bystander = _user()
+    race = _daily_race(organizer=organizer)
+    response = race_response(race, user=bystander)
+    assert response.my_role is None
+    assert response.my_participant_status is None
+    assert response.my_current_layer is None
+    assert response.my_igt_ms is None
+    assert response.my_death_count is None
+
+
 def test_participant_preview_omits_igt_when_not_finished() -> None:
     organizer = _user()
     player = _user()
