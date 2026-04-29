@@ -23,7 +23,11 @@
 		if (!targetIso) return '';
 		const target = new Date(targetIso).getTime();
 		const remainingMs = Math.max(0, target - now);
-		const hours = Math.floor(remainingMs / 3_600_000);
+		const days = Math.floor(remainingMs / 86_400_000);
+		const hours = Math.floor((remainingMs % 86_400_000) / 3_600_000);
+		if (days >= 1) {
+			return `${days}d ${hours}h`;
+		}
 		const minutes = Math.floor((remainingMs % 3_600_000) / 60_000);
 		return `${hours}h ${String(minutes).padStart(2, '0')}m`;
 	}
