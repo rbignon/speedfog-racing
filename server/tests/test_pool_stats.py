@@ -1,6 +1,7 @@
 """Tests for user pool stats endpoint."""
 
 import os
+from datetime import date
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
@@ -264,6 +265,71 @@ async def test_pool_stats_empty_user(test_client, async_session):
         response = await client.get("/api/users/empty_user/pool-stats")
         assert response.status_code == 200
         data = response.json()
+        assert data["pools"] == []
+
+
+@pytest.mark.asyncio
+async def test_pool_stats_excludes_daily_seeds(test_client, async_session):
+    """Finished Daily Seed participations don't show up in per-mode pool stats.
+
+    Daily Seeds are a community challenge format (no ELO) and bucketing
+    them under their underlying pool would silently inflate per-mode stats.
+    """
+    async with async_session() as db:
+        player = User(
+            twitch_id="daily_only_player",
+            twitch_username="daily_only_player",
+            api_token="daily_only_token",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="daily_only_org",
+            twitch_username="system:daily",
+            api_token="daily_only_org_token",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([player, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="daily_only_001",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=5,
+            folder_path="/fake/daily_only",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        # Finished Daily Seed participation, the user's only race activity.
+        daily_race = Race(
+            name="Daily 2026-04-29",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            daily_date=date(2026, 4, 29),
+        )
+        db.add(daily_race)
+        await db.flush()
+
+        db.add(
+            Participant(
+                race_id=daily_race.id,
+                user_id=player.id,
+                status=ParticipantStatus.FINISHED,
+                igt_ms=200000,
+                death_count=4,
+            )
+        )
+
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/users/daily_only_player/pool-stats")
+        assert response.status_code == 200
+        data = response.json()
+        # The daily-only finish must not surface as a "standard" pool entry.
         assert data["pools"] == []
 
 

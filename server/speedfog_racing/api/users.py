@@ -190,6 +190,10 @@ async def get_user_pool_stats(
         .join(Seed, Race.seed_id == Seed.id)
         .where(
             Participant.user_id == user_id,
+            # Daily Seeds are a different format (community challenge, no
+            # ELO) and should not inflate the per-mode stats of their
+            # underlying pool.
+            Race.daily_date.is_(None),
             or_(
                 Participant.status == ParticipantStatus.FINISHED,
                 (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
