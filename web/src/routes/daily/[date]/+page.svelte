@@ -298,19 +298,19 @@
 			{/if}
 		{/if}
 
-		{#if initialRace.pool_name && initialRace.pool_config}
-			<PoolSettingsCard
-				poolName={initialRace.pool_name}
-				poolConfig={initialRace.pool_config}
-			/>
-		{/if}
-
 		{#if auth.isAdmin}
 			<RaceControls
 				race={initialRace}
 				{raceStatus}
 				onRaceUpdated={(race) => (initialRace = race)}
 				onDeleteRace={() => goto('/daily')}
+			/>
+		{/if}
+
+		{#if initialRace.pool_name && initialRace.pool_config}
+			<PoolSettingsCard
+				poolName={initialRace.pool_name}
+				poolConfig={initialRace.pool_config}
 			/>
 		{/if}
 	</main>
@@ -596,18 +596,23 @@
 		margin: 0;
 	}
 
-	/* The Play now CTA reuses .dag-placeholder's box and turns it into a
-	   clickable affordance with the gold daily palette. */
+	/* The Play now CTA reuses .dag-placeholder's box but adopts a
+	   "button label" type ramp (uppercase, letter-spaced, muted) so it
+	   reads differently from the H1, plus a slightly elevated surface
+	   so it stands out from the other cards on the page. */
 	.play-now-cta {
 		flex-direction: column;
 		gap: 0.5rem;
 		width: 100%;
 		text-align: center;
-		color: var(--color-gold);
-		border-color: var(--color-gold);
+		background: var(--color-surface-elevated);
+		border: 1px solid var(--color-border);
+		color: var(--color-text-secondary);
 		font-family: inherit;
-		font-size: var(--font-size-xl);
-		font-weight: 700;
+		font-size: var(--font-size-lg);
+		font-weight: 600;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
 		cursor: pointer;
 		transition:
 			background var(--transition),
@@ -616,9 +621,9 @@
 	}
 
 	.play-now-cta:hover:not(:disabled) {
-		color: var(--color-gold-hover);
-		border-color: var(--color-gold-hover);
-		background: rgba(234, 179, 8, 0.08);
+		border-color: var(--color-purple);
+		color: var(--color-purple-hover);
+		background: rgba(139, 92, 246, 0.1);
 	}
 
 	.play-now-cta:disabled {
