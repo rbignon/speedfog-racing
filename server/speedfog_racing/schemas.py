@@ -1,7 +1,7 @@
 """Pydantic schemas for API requests and responses."""
 
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -404,6 +404,56 @@ class RaceListResponse(BaseModel):
     races: list[RaceResponse]
     total: int | None = None
     has_more: bool | None = None
+
+
+# =============================================================================
+# Daily Week Grid Schemas
+# =============================================================================
+
+
+class DailyPodiumEntry(BaseModel):
+    """Podium entry for a daily race."""
+
+    placement: int
+    twitch_username: str
+    twitch_display_name: str | None
+    twitch_avatar_url: str | None
+    igt_ms: int
+
+
+class DailyMyResult(BaseModel):
+    """Current user's result in a daily race."""
+
+    status: ParticipantStatus
+    placement: int | None  # only when status == FINISHED
+    total_finishers: int
+    igt_ms: int | None  # only when status == FINISHED
+    death_count: int
+
+
+class DailyWeekDay(BaseModel):
+    """Information about a single day in the daily week grid."""
+
+    weekday: int  # 0=Mon .. 6=Sun
+    date: date
+    state: Literal["missing_past", "past", "today", "future"]
+    pool_name: str | None
+    pool_display_name: str | None
+    race_id: str | None  # uuid; None for missing_past, future, today-pending
+    started_at: datetime | None
+    ends_at: datetime | None
+    finishers_count: int
+    participants_count: int
+    podium: list[DailyPodiumEntry]
+    my_result: DailyMyResult | None
+
+
+class DailyWeekResponse(BaseModel):
+    """Response for the daily week grid endpoint."""
+
+    week_start: date
+    today: date
+    days: list[DailyWeekDay]
 
 
 class InviteInfoResponse(BaseModel):
