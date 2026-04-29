@@ -128,6 +128,7 @@
 
 	function activityLink(item: ActivityItem): string {
 		if (item.type === 'training') return `/training/${item.session_id}`;
+		if (item.type === 'daily_participant') return `/daily/${item.daily_date}`;
 		return `/race/${item.race_id}`;
 	}
 
@@ -136,6 +137,8 @@
 		if (item.type === 'race_organizer') return item.race_name;
 		if (item.type === 'race_caster') return item.race_name;
 		if (item.type === 'training') return item.pool_display_name || formatPoolName(item.pool_name);
+		if (item.type === 'daily_participant')
+			return `Daily Seed - ${item.pool_display_name || formatPoolName(item.pool_name)}`;
 		return '';
 	}
 
@@ -149,6 +152,10 @@
 		if (item.type === 'race_organizer') return 'Organized';
 		if (item.type === 'race_caster') return 'Casted';
 		if (item.type === 'training') return 'Solo';
+		if (item.type === 'daily_participant') {
+			if (item.status === 'finished' && item.placement) return placementMedal(item.placement);
+			return 'Daily';
+		}
 		return '';
 	}
 
@@ -404,8 +411,8 @@
 							<div class="active-card-meta">
 								<span
 									>{race.participant_count} player{race.participant_count !== 1
-										? 's'
-										: ''}{#if race.pool_name}
+										? 's '
+										: ' '}{#if race.pool_name}
 										&middot; {formatPoolName(race.pool_name)}{/if}</span
 								>
 								<span class="race-organizer">
@@ -500,8 +507,11 @@
 					{#each activity.items as item}
 						<a href={activityLink(item)} class="activity-row">
 							<span
-								class="activity-badge badge-{item.type === 'training' ? 'training' : item.status}"
-								>{activityBadge(item)}</span
+								class="activity-badge badge-{item.type === 'training'
+									? 'training'
+									: item.type === 'daily_participant'
+										? 'daily'
+										: item.status}">{activityBadge(item)}</span
 							>
 							<div class="activity-content">
 								<span class="activity-name">
@@ -526,6 +536,16 @@
 									{:else if item.type === 'race_organizer'}
 										{item.participant_count} player{item.participant_count !== 1 ? 's' : ''}
 									{:else if item.type === 'training'}
+										{#if item.igt_ms > 0}
+											{formatIgt(item.igt_ms)} &middot; {item.death_count} deaths
+										{/if}
+									{:else if item.type === 'daily_participant'}
+										{#if item.status === 'finished' && item.placement}
+											{placementMedal(item.placement)}/{item.total_participants}
+											&middot;
+										{:else if item.status === 'finished'}
+											DNF &middot;
+										{/if}
 										{#if item.igt_ms > 0}
 											{formatIgt(item.igt_ms)} &middot; {item.death_count} deaths
 										{/if}
@@ -1100,6 +1120,11 @@
 	.badge-training {
 		background: rgba(139, 92, 246, 0.15);
 		color: var(--color-purple);
+	}
+
+	.badge-daily {
+		background: rgba(234, 179, 8, 0.15);
+		color: var(--color-gold);
 	}
 
 	.activity-content {

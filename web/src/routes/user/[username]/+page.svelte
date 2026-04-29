@@ -277,6 +277,28 @@
 											<span>{item.death_count} deaths</span>
 										</div>
 									</div>
+								{:else if item.type === 'daily_participant'}
+									<div class="activity-body">
+										<div class="badge-row">
+											<span class="activity-badge daily">Daily</span>
+											<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
+										</div>
+										<a href="/daily/{item.daily_date}" class="activity-title">
+											Daily Seed {item.daily_date} - {item.pool_display_name ||
+												formatPoolName(item.pool_name)}
+										</a>
+										<div class="activity-details">
+											{#if item.placement}
+												<span class="placement {placementClass(item.placement)}">
+													{placementLabel(item.placement)} / {item.total_participants}
+												</span>
+											{:else if item.status === 'finished'}
+												<span class="placement-dnf">DNF / {item.total_participants}</span>
+											{/if}
+											<span class="mono">{formatIgt(item.igt_ms)}</span>
+											<span>{item.death_count} deaths</span>
+										</div>
+									</div>
 								{/if}
 							</div>
 						{/each}
@@ -581,6 +603,11 @@
 	.activity-badge.training {
 		background: rgba(139, 92, 246, 0.15);
 		color: var(--color-purple);
+	}
+
+	.activity-badge.daily {
+		background: rgba(234, 179, 8, 0.15);
+		color: var(--color-gold);
 	}
 
 	.badge-row {

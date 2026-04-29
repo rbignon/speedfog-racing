@@ -1002,7 +1002,8 @@ export type ActivityType =
   | "race_participant"
   | "race_organizer"
   | "race_caster"
-  | "training";
+  | "training"
+  | "daily_participant";
 
 export interface ActivityItemBase {
   type: ActivityType;
@@ -1021,6 +1022,20 @@ export interface RaceParticipantActivity extends ActivityItemBase {
   death_count: number;
   is_mod_connected: boolean;
   is_organizer: boolean;
+}
+
+export interface DailyParticipantActivity extends ActivityItemBase {
+  type: "daily_participant";
+  race_id: string;
+  daily_date: string;
+  pool_name: string;
+  pool_display_name: string | null;
+  status: string;
+  placement: number | null;
+  total_participants: number;
+  igt_ms: number;
+  death_count: number;
+  is_mod_connected: boolean;
 }
 
 export interface RaceOrganizerActivity extends ActivityItemBase {
@@ -1054,7 +1069,8 @@ export type ActivityItem =
   | RaceParticipantActivity
   | RaceOrganizerActivity
   | RaceCasterActivity
-  | TrainingActivityItem;
+  | TrainingActivityItem
+  | DailyParticipantActivity;
 
 export interface ActivityTimeline {
   items: ActivityItem[];
