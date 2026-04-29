@@ -183,7 +183,8 @@
 		transition: border-color var(--transition);
 	}
 	a.cell:hover {
-		border-color: var(--color-gold-hover);
+		border-color: var(--color-purple);
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 	}
 
 	.cell.future,
