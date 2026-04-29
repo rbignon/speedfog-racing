@@ -117,6 +117,65 @@ async def _last_sent_payload(handler: RaceSpectatorHandler) -> dict | None:
     return json.loads(handler.websocket.send_text.await_args_list[-1].args[0])
 
 
+@pytest.mark.asyncio
+async def test_auth_populates_participant_status_for_organizer_who_is_playing(session_maker):
+    """Organizer role must not hide the fact that the viewer is also an active participant."""
+    api_token = uuid.uuid4().hex
+    async with session_maker() as db:
+        organizer = User(
+            twitch_id=f"org-player-{uuid.uuid4()}",
+            twitch_username=f"orgp-{uuid.uuid4().hex[:6]}",
+            twitch_display_name="Org Player",
+            api_token=api_token,
+            role=UserRole.ORGANIZER,
+        )
+        db.add(organizer)
+        await db.flush()
+
+        race = Race(
+            name="R",
+            organizer_id=organizer.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC) - timedelta(minutes=45),
+            late_join_window_minutes=30,
+            race_duration_minutes=240,
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=organizer.id,
+            status=ParticipantStatus.PLAYING,
+        )
+        db.add(participant)
+        db.add(
+            ChatMessage(
+                race_id=race.id,
+                channel=ChatChannel.PUBLIC,
+                user_id=organizer.id,
+                message="public spoiler",
+            )
+        )
+        await db.commit()
+
+    handler = _make_handler(session_maker, race.id)
+    handler.websocket.receive_text = AsyncMock(
+        return_value=json.dumps({"type": "auth", "token": api_token})
+    )
+
+    assert await handler._auth_and_setup() is True
+    assert handler._conn.role == "organizer"
+    assert handler._conn.participant_id == participant.id
+    assert handler._conn.participant_status == ParticipantStatus.PLAYING
+
+    sent = [json.loads(call.args[0]) for call in handler.websocket.send_text.await_args_list]
+    public_histories = [
+        msg for msg in sent if msg.get("type") == "chat_history" and msg.get("channel") == "public"
+    ]
+    assert public_histories == []
+
+
 # -- public channel ---------------------------------------------------------
 
 

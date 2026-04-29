@@ -418,6 +418,7 @@
 			? hasParticipantsAccess
 			: auth.isLoggedIn && publicAccess === 'readable' && !isParticipantPlaying
 	);
+	let showChatSidebar = $derived(auth.isLoggedIn || publicAccess === 'readable');
 
 	// Pull public chat history when local access transitions from locked
 	// to readable (late-join window expired, viewer just finished). The
@@ -1217,7 +1218,7 @@
 			{/if}
 		</main>
 
-		{#if auth.isLoggedIn}
+		{#if showChatSidebar}
 			<ChatSidebar
 				messagesParticipants={raceStore.chatMessagesParticipants}
 				messagesPublic={raceStore.chatMessagesPublic}

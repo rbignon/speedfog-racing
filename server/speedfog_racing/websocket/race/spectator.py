@@ -210,13 +210,10 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
                 if role is not None:
                     self._conn.role = role
 
-                    if role == "participant":
-                        participant = next(
-                            (p for p in race.participants if p.user_id == user_id), None
-                        )
-                        if participant:
-                            self._conn.participant_id = participant.id
-                            self._conn.participant_status = participant.status
+                participant = next((p for p in race.participants if p.user_id == user_id), None)
+                if participant:
+                    self._conn.participant_id = participant.id
+                    self._conn.participant_status = participant.status
 
                 # Load dominant_trait from PlayerTraitScores
                 trait_scores = await db.get(PlayerTraitScores, user_id)
