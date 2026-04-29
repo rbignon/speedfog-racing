@@ -33,10 +33,11 @@ export function fastestFinishedIgt(
   return times.length ? Math.min(...times) : null;
 }
 
-/** Localized "Daily Seed - April 27, 2026" style title for a rotation date. */
+/** Localized "Daily Seed - Monday, April 27, 2026" style title for a rotation date. */
 export function dailyTitle(date: string): string {
   const parsed = new Date(`${date}T00:00:00Z`);
   return `Daily Seed - ${parsed.toLocaleDateString(undefined, {
+    weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
@@ -58,17 +59,23 @@ export function currentUserParticipant(
   return race.participants.find((p) => p.user.id === userId) ?? null;
 }
 
-/** Short status label for the Daily card / nav dot. */
+/**
+ * Short status label for the Daily card / nav dot.
+ *
+ * Reads the ``my_*`` fields populated by ``race_response`` for the
+ * authenticated user. Works on either ``Race`` summaries (home, dashboard)
+ * or ``RaceDetail`` since both share the same fields.
+ */
 export function dailyUserStatus(
-  race: RaceDetail,
-  userId: string | null | undefined,
+  race: Pick<Race, "my_role" | "my_participant_status" | "my_igt_ms">,
 ): string {
-  const participant = currentUserParticipant(race, userId);
-  if (!participant) return "Not played yet";
-  if (participant.status === "playing") return "Playing";
-  if (participant.status === "abandoned") return "Abandoned";
-  if (participant.status === "finished") {
-    return `Finished in ${formatIgt(participant.igt_ms)}`;
+  if (race.my_role !== "participating" || !race.my_participant_status) {
+    return "Not played yet";
+  }
+  if (race.my_participant_status === "playing") return "Playing";
+  if (race.my_participant_status === "abandoned") return "Abandoned";
+  if (race.my_participant_status === "finished") {
+    return `Finished in ${formatIgt(race.my_igt_ms ?? 0)}`;
   }
   return "Not started";
 }

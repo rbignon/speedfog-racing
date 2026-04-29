@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Race, RaceDetail } from "$lib/api";
+  import type { Race } from "$lib/api";
   import {
     dailyCloseLabel,
     dailyPathForDate,
@@ -11,7 +11,7 @@
   } from "$lib/daily";
 
   interface Props {
-    today: RaceDetail | null;
+    today: Race | null;
     recent: Race[];
     userId: string | null | undefined;
   }
@@ -40,7 +40,7 @@
         {/if}
       </div>
       <span>{dailyTheme(today)}</span>
-      <span class="status">{dailyUserStatus(today, userId)}</span>
+      <span class="status">{dailyUserStatus(today)}</span>
     </a>
   {:else}
     <div class="empty-card">No daily seed today.</div>

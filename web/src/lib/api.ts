@@ -54,6 +54,7 @@ export interface Race {
   participant_previews: ParticipantPreview[];
   casters: Caster[];
   seed_total_layers?: number | null;
+  my_participant_status?: ParticipantStatus | null;
   my_current_layer?: number | null;
   my_igt_ms?: number | null;
   my_death_count?: number | null;
@@ -283,14 +284,18 @@ export async function fetchJoinableRaces(): Promise<Race[]> {
 /**
  * Fetch the running Daily Seed for the current UTC rotation day.
  * 404 when no daily is active.
+ *
+ * Returns the ``Race`` summary shape (with ``participant_previews`` and the
+ * ``my_*`` fields scoped to the current user). Surfaces that need the full
+ * detail (e.g. the dedicated daily page) call ``fetchDailyByDate`` instead.
  */
 export async function fetchTodayDaily(
   customFetch: typeof fetch = fetch,
-): Promise<RaceDetail> {
+): Promise<Race> {
   const response = await customFetch(`${API_BASE}/daily/today`, {
     headers: getAuthHeaders(),
   });
-  return handleResponse<RaceDetail>(response);
+  return handleResponse<Race>(response);
 }
 
 /**

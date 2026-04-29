@@ -81,6 +81,8 @@ describe("daily helpers", () => {
   it("titles dailies using the rotation date", () => {
     expect(dailyTitle("2026-04-27")).toContain("2026");
     expect(dailyTitle("2026-04-27")).toContain("Daily Seed");
+    // Includes weekday so the player can spot Mon vs Sun at a glance.
+    expect(dailyTitle("2026-04-27")).toContain("Monday");
   });
 
   it("uses the pool name for the theme label", () => {
@@ -103,15 +105,35 @@ describe("daily helpers", () => {
     expect(currentUserParticipant(detail([me, other]), null)).toBeNull();
   });
 
-  it("describes the status of the current user", () => {
-    const me = participant({
-      id: "x",
-      user: { ...baseParticipant.user, id: "me" },
-      status: "finished",
-      igt_ms: 600_000,
-    });
-    expect(dailyUserStatus(detail([me]), "me")).toContain("Finished");
-    expect(dailyUserStatus(detail([me]), "stranger")).toBe("Not played yet");
+  it("describes the status of the current user from my_* fields", () => {
+    expect(
+      dailyUserStatus({
+        my_role: "participating",
+        my_participant_status: "finished",
+        my_igt_ms: 600_000,
+      }),
+    ).toContain("Finished");
+    expect(
+      dailyUserStatus({
+        my_role: "participating",
+        my_participant_status: "playing",
+        my_igt_ms: null,
+      }),
+    ).toBe("Playing");
+    expect(
+      dailyUserStatus({
+        my_role: null,
+        my_participant_status: null,
+        my_igt_ms: null,
+      }),
+    ).toBe("Not played yet");
+    expect(
+      dailyUserStatus({
+        my_role: "participating",
+        my_participant_status: "registered",
+        my_igt_ms: null,
+      }),
+    ).toBe("Not started");
   });
 
   it("picks the placement-1 finished preview as the winner", () => {

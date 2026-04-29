@@ -14,7 +14,9 @@
 	let showFeedback = $state(false);
 
 	let isOverlay = $derived(page.url.pathname.startsWith('/overlay/'));
-	let isRaceDetailPage = $derived(page.route.id === '/race/[id]');
+	let isImmersivePage = $derived(
+		page.route.id === '/race/[id]' || page.route.id === '/daily/[date]'
+	);
 
 	let joinableCount = $state(0);
 	let dailyUnplayed = $state(false);
@@ -58,7 +60,7 @@
 				});
 			fetchTodayDaily()
 				.then((daily) => {
-					dailyUnplayed = !daily.participants.some((p) => p.user.id === auth.user?.id);
+					dailyUnplayed = daily.my_role !== 'participating';
 				})
 				.catch(() => {
 					dailyUnplayed = false;
@@ -75,7 +77,7 @@
 {#if isOverlay}
 	{@render children()}
 {:else}
-	<div class="app" class:app-fixed={isRaceDetailPage}>
+	<div class="app" class:app-fixed={isImmersivePage}>
 		<header>
 			<div class="header-content">
 				<a href={auth.isLoggedIn ? '/dashboard' : '/'} class="logo"
@@ -173,7 +175,7 @@
 			{@render children()}
 		</div>
 
-		{#if !isRaceDetailPage}
+		{#if !isImmersivePage}
 			<footer>
 				<div class="footer-content">
 					<p class="footer-credit">

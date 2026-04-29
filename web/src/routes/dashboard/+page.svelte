@@ -15,7 +15,6 @@
 		type ActivityItem,
 		type ActivityTimeline,
 		type Race,
-		type RaceDetail,
 		type TrainingSession,
 	} from '$lib/api';
 	import DailyDashboardSection from '$lib/components/DailyDashboardSection.svelte';
@@ -33,7 +32,7 @@
 	let myRaces: Race[] = $state([]);
 	let trainingSessions: TrainingSession[] = $state([]);
 	let joinableRaces: Race[] = $state([]);
-	let todayDaily: RaceDetail | null = $state(null);
+	let todayDaily: Race | null = $state(null);
 	let recentDailies: Race[] = $state([]);
 	let loading = $state(true);
 	let loadingMore = $state(false);

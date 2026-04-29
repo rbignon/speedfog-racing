@@ -8,8 +8,7 @@
 		fetchRacesPaginated,
 		fetchTodayDaily,
 		getTwitchLoginUrl,
-		type Race,
-		type RaceDetail
+		type Race
 	} from '$lib/api';
 	import MetroDagAnimated from '$lib/dag/MetroDagAnimated.svelte';
 	import RaceCard from '$lib/components/RaceCard.svelte';
@@ -22,7 +21,7 @@
 	let recentRaces: Race[] = $state([]);
 	let loadingRecent = $state(true);
 	let errorMessage = $state<string | null>(null);
-	let todayDaily: RaceDetail | null = $state(null);
+	let todayDaily: Race | null = $state(null);
 	let now = $state(Date.now());
 
 	let liveRaces = $derived(races.filter((r) => r.status === 'running'));

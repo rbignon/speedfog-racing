@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { RaceDetail } from "$lib/api";
+  import type { Race } from "$lib/api";
   import { dailyTheme, fastestFinishedIgt } from "$lib/daily";
   import { formatIgt } from "$lib/utils/training";
 
   interface Props {
-    race: RaceDetail;
+    race: Race;
     now: number;
   }
 
