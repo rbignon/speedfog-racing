@@ -37,7 +37,7 @@
 		}
 		if (r.status === 'abandoned') return 'You: abandoned';
 		if (r.status === 'playing') return 'You: playing';
-		return 'You: registered';
+		return 'You: signed up';
 	}
 
 	function hrefFor(day: DailyWeekDay): string | null {
@@ -79,7 +79,7 @@
 					<span class="weekday">{WEEKDAY_LABELS[day.weekday]}</span>
 					{#if day.state === 'today'}
 						<span class="badge today">Today</span>
-					{:else if day.state === 'past'}
+					{:else if day.state === 'past' && day.finishers_count > 0}
 						<span class="meta">{day.finishers_count} finishers</span>
 					{/if}
 				</div>
@@ -104,18 +104,21 @@
 							{/each}
 						</ul>
 					{:else if day.state === 'today'}
-						<span class="muted">
-							{day.participants_count > 0
-								? `${day.participants_count} playing`
-								: 'Daily seed incoming'}
-						</span>
+						{#if day.race_id === null}
+							<span class="muted">Daily seed incoming</span>
+						{:else if day.participants_count > 0}
+							<span class="muted">
+								{day.participants_count}
+								{day.participants_count === 1 ? 'player' : 'players'}
+							</span>
+						{/if}
 					{:else}
 						<span class="muted">No finishers</span>
 					{/if}
 					{#if result}
 						<span class="me">{result}</span>
 					{:else if day.state === 'today' && !played}
-						<span class="cta">Play now &rarr;</span>
+						<span class="play-now">Play now</span>
 					{/if}
 				{/if}
 			</svelte:element>
@@ -235,11 +238,20 @@
 		color: var(--color-purple);
 		font-size: var(--font-size-xs);
 	}
-	.cta {
+	.play-now {
 		margin-top: auto;
-		color: var(--color-gold);
-		font-size: var(--font-size-xs);
-		font-weight: 600;
+		padding: 0.4rem 0;
+		text-align: center;
+		background: rgba(16, 185, 129, 0.12);
+		color: var(--color-success);
+		font-weight: 700;
+		font-size: var(--font-size-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		border-radius: 0 0 calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px);
+		margin-left: -0.875rem;
+		margin-right: -0.875rem;
+		margin-bottom: -0.75rem;
 	}
 	.countdown {
 		margin-top: auto;
