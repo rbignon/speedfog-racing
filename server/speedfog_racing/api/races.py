@@ -1430,24 +1430,37 @@ async def reroll_seed(
     user: User = Depends(get_current_user),
     _sentry: None = Depends(sentry_race_context),
 ) -> RaceDetailResponse:
-    """Re-roll the seed for a SETUP race."""
+    """Re-roll the seed.
+
+    Regular races may only be rerolled while in SETUP. Daily Seeds, by
+    contrast, may be rerolled while RUNNING by an admin to recover from a
+    bad seed; in that case every participant's progress is reset and the
+    public chat receives an explicit invalidation message.
+    """
     race = await _get_race_or_404(
         db, race_id, load_participants=True, load_casters=True, load_invites=True
     )
     _require_organizer(race, user)
 
-    if race.status not in (RaceStatus.SETUP,):
+    is_daily = race.daily_date is not None
+    if not is_daily and race.status != RaceStatus.SETUP:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Can only re-roll seed for setup races",
         )
+    if is_daily and race.status != RaceStatus.RUNNING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only re-roll a daily seed while it is running",
+        )
 
     report_buggy = body.report_buggy if body else False
     logger.info(
-        "Seed reroll requested: race=%s, by=%s, report=%s",
+        "Seed reroll requested: race=%s, by=%s, report=%s, daily=%s",
         race_id,
         user.twitch_username,
         report_buggy,
+        is_daily,
     )
     try:
         await reroll_seed_for_race(
@@ -1462,15 +1475,24 @@ async def reroll_seed(
             detail=str(e),
         ) from e
 
-    # Optimistic locking: atomic version bump
+    # Optimistic locking: atomic version bump.
+    # For dailies, seeds are released immediately so participants can grab
+    # the new pack without waiting for an organizer; for setup races we
+    # keep seeds gated until the explicit /release-seeds call.
+    now = datetime.now(UTC)
     current_version = race.version
+    new_seeds_released_at = now if is_daily else None
     result = await db.execute(
         update(Race)
         .where(
             Race.id == race.id,
             Race.version == current_version,
         )
-        .values(version=current_version + 1, seed_id=race.seed_id, seeds_released_at=None)
+        .values(
+            version=current_version + 1,
+            seed_id=race.seed_id,
+            seeds_released_at=new_seeds_released_at,
+        )
     )
     if result.rowcount == 0:  # type: ignore[attr-defined]
         raise HTTPException(
@@ -1478,22 +1500,44 @@ async def reroll_seed(
             detail="Race was modified concurrently, please retry",
         )
     race.version = current_version + 1
-    race.seeds_released_at = None
-    sys_json = await persist_system_chat(
-        db, race_id, ChatChannel.PARTICIPANTS, "Seed has been rerolled"
+    race.seeds_released_at = new_seeds_released_at
+
+    if is_daily:
+        for p in race.participants:
+            p.status = ParticipantStatus.REGISTERED
+            p.current_zone = None
+            p.current_layer = 0
+            p.igt_ms = 0
+            p.death_count = 0
+            p.finished_at = None
+            p.zone_history = None
+            p.last_igt_change_at = None
+
+    channel = ChatChannel.PUBLIC if is_daily else ChatChannel.PARTICIPANTS
+    message = (
+        "Seed has been rerolled. All previous runs are invalidated."
+        if is_daily
+        else "Seed has been rerolled"
     )
+    sys_json = await persist_system_chat(db, race_id, channel, message)
     await db.commit()
+
     room = manager.get_room(race_id)
     if room:
-        await room.broadcast_chat_participants(sys_json)
+        if is_daily:
+            await room.broadcast_chat_public(sys_json, race)
+        else:
+            await room.broadcast_chat_participants(sys_json)
 
-    # Notify connected clients
-    await broadcast_race_state_update(race_id, race)
-
-    # Re-fetch with all relationships
+    # Re-fetch with all relationships before broadcasting downstream state.
     race = await _get_race_or_404(
         db, race_id, load_participants=True, load_casters=True, load_invites=True
     )
+    if is_daily:
+        graph_json = race.seed.graph_json if race.seed else None
+        await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
+    await broadcast_race_state_update(race_id, race)
+
     return _race_detail_response(race, user=user)
 
 
