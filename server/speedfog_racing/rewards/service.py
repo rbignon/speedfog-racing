@@ -7,8 +7,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from speedfog_racing.models import BadgeGrant, RewardNotification
-from speedfog_racing.rewards.catalog import BADGES
+from speedfog_racing.models import BadgeGrant, NameTemplateUnlock, RewardNotification
+from speedfog_racing.rewards.catalog import BADGES, DEFAULT_TEMPLATE_ID, NAME_TEMPLATES
 
 
 class UnknownRewardError(ValueError):
@@ -65,3 +65,42 @@ class RewardsService:
         )
         await self.session.flush()
         return grant
+
+    async def grant_name_template(
+        self,
+        user_id: uuid.UUID,
+        template_id: str,
+        granted_by: uuid.UUID | None = None,
+        reason: str | None = None,
+    ) -> NameTemplateUnlock | None:
+        template = NAME_TEMPLATES.get(template_id)
+        if template is None:
+            raise UnknownRewardError(f"Unknown template_id={template_id!r}")
+        if template_id == DEFAULT_TEMPLATE_ID:
+            return None
+
+        existing = await self.session.execute(
+            select(NameTemplateUnlock).where(
+                NameTemplateUnlock.user_id == user_id,
+                NameTemplateUnlock.template_id == template_id,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            return None
+
+        unlock = NameTemplateUnlock(
+            user_id=user_id,
+            template_id=template_id,
+            granted_by=granted_by,
+            reason=reason,
+        )
+        self.session.add(unlock)
+        self.session.add(
+            RewardNotification(
+                user_id=user_id,
+                kind="name_template_unlocked",
+                reward_id=template_id,
+            )
+        )
+        await self.session.flush()
+        return unlock
