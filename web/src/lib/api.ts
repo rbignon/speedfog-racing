@@ -1623,6 +1623,48 @@ export async function fetchUserTraits(
 }
 
 // =============================================================================
+// Rewards
+// =============================================================================
+
+export interface BadgeDef {
+  id: string;
+  name: string;
+  description?: string;
+  icon_filename: string;
+  lifecycle: "permanent" | "transient";
+  sort_order: number;
+}
+
+export interface NameTemplateDef {
+  id: string;
+  name: string;
+  description?: string;
+  color: string | null;
+  gradient: [string, string] | null;
+  background_css: string | null;
+  sort_order: number;
+}
+
+export interface RewardsCatalog {
+  badges: BadgeDef[];
+  name_templates: NameTemplateDef[];
+}
+
+export interface RewardNotificationDto {
+  id: string;
+  kind: "badge_granted" | "badge_revoked" | "name_template_unlocked";
+  reward_id: string;
+  created_at: string;
+}
+
+export interface MyInventoryDto {
+  held_badges: { id: string; name: string; icon_filename: string }[];
+  unlocked_templates: NameTemplateDef[];
+  equipped_badge_id: string | null;
+  equipped_name_template_id: string | null;
+}
+
+// =============================================================================
 // Feedback API
 // =============================================================================
 
