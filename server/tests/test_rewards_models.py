@@ -25,64 +25,68 @@ async def async_engine():
 
 @pytest.fixture
 async def async_session(async_engine):
-    """Yield a single AsyncSession for the test."""
-    session_factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
-    async with session_factory() as session:
-        yield session
+    return async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
-@pytest.fixture
-async def user(async_session):
-    u = User(
-        twitch_id="tid-1",
-        twitch_username="alice",
-        twitch_display_name="Alice",
-    )
-    async_session.add(u)
-    await async_session.commit()
-    await async_session.refresh(u)
-    return u
+async def _make_user(async_session) -> User:
+    async with async_session() as db:
+        u = User(
+            twitch_id="tid-1",
+            twitch_username="alice",
+            twitch_display_name="Alice",
+        )
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        return u
 
 
-async def test_user_has_equip_columns(async_session, user):
+async def test_user_has_equip_columns(async_session):
+    user = await _make_user(async_session)
     assert user.equipped_badge_id is None
     assert user.equipped_name_template_id is None
 
 
-async def test_badge_grant_round_trip(async_session, user):
-    grant = BadgeGrant(
-        user_id=user.id,
-        badge_id="early_adopter",
-        reason="test",
-    )
-    async_session.add(grant)
-    await async_session.commit()
-    await async_session.refresh(grant)
-    assert grant.id is not None
-    assert grant.granted_at is not None
-    assert grant.revoked_at is None
+async def test_badge_grant_round_trip(async_session):
+    user = await _make_user(async_session)
+    async with async_session() as db:
+        grant = BadgeGrant(
+            user_id=user.id,
+            badge_id="early_adopter",
+            reason="test",
+        )
+        db.add(grant)
+        await db.commit()
+        await db.refresh(grant)
+        assert grant.id is not None
+        assert grant.granted_at is not None
+        assert grant.revoked_at is None
 
 
-async def test_name_template_unlock_unique(async_session, user):
-    a = NameTemplateUnlock(user_id=user.id, template_id="elo_crown")
-    async_session.add(a)
-    await async_session.commit()
+async def test_name_template_unlock_unique(async_session):
+    user = await _make_user(async_session)
+    async with async_session() as db:
+        a = NameTemplateUnlock(user_id=user.id, template_id="elo_crown")
+        db.add(a)
+        await db.commit()
 
-    b = NameTemplateUnlock(user_id=user.id, template_id="elo_crown")
-    async_session.add(b)
-    with pytest.raises(IntegrityError):
-        await async_session.commit()
-    await async_session.rollback()
+    async with async_session() as db:
+        b = NameTemplateUnlock(user_id=user.id, template_id="elo_crown")
+        db.add(b)
+        with pytest.raises(IntegrityError):
+            await db.commit()
 
 
-async def test_reward_notification_round_trip(async_session, user):
-    n = RewardNotification(
-        user_id=user.id,
-        kind="badge_granted",
-        reward_id="early_adopter",
-    )
-    async_session.add(n)
-    await async_session.commit()
-    await async_session.refresh(n)
-    assert n.created_at is not None
-    assert n.dismissed_at is None
+async def test_reward_notification_round_trip(async_session):
+    user = await _make_user(async_session)
+    async with async_session() as db:
+        n = RewardNotification(
+            user_id=user.id,
+            kind="badge_granted",
+            reward_id="early_adopter",
+        )
+        db.add(n)
+        await db.commit()
+        await db.refresh(n)
+        assert n.created_at is not None
+        assert n.dismissed_at is None

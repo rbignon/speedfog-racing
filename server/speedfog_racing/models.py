@@ -540,7 +540,7 @@ class BadgeGrant(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     badge_id: Mapped[str] = mapped_column(String(50), nullable=False)
     granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -551,6 +551,7 @@ class BadgeGrant(Base):
     reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     __table_args__ = (
+        Index("ix_badge_grants_user_id", "user_id"),
         Index(
             "ix_badge_grants_active",
             "badge_id",
@@ -568,7 +569,7 @@ class NameTemplateUnlock(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     template_id: Mapped[str] = mapped_column(String(50), nullable=False)
     unlocked_at: Mapped[datetime] = mapped_column(
@@ -580,6 +581,7 @@ class NameTemplateUnlock(Base):
     reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     __table_args__ = (
+        Index("ix_name_template_unlocks_user_id", "user_id"),
         UniqueConstraint("user_id", "template_id", name="uq_name_template_unlocks_user_template"),
     )
 
@@ -591,9 +593,11 @@ class RewardNotification(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     kind: Mapped[str] = mapped_column(String(40), nullable=False)
     reward_id: Mapped[str] = mapped_column(String(50), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("ix_reward_notifications_user_id", "user_id"),)
