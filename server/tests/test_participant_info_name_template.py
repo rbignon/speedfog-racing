@@ -80,7 +80,9 @@ async def _setup_participant(async_session, user: User) -> Participant:
         return participant
 
 
-async def test_participant_info_default_template_when_unset(async_session):
+async def test_participant_info_no_template_when_unset(async_session):
+    """A user without an equipped template gets name_template=None so the mod
+    and web fall back to the status color (preserves functional readability)."""
     async with async_session() as db:
         u = User(twitch_id="t1", twitch_username="alice")
         db.add(u)
@@ -89,11 +91,27 @@ async def test_participant_info_default_template_when_unset(async_session):
     participant = await _setup_participant(async_session, u)
 
     info = participant_to_info(participant)
-    assert info.name_template is not None
-    assert info.name_template.color == "#FFFFFF"
-    assert info.name_template.gradient is None
+    assert info.name_template is None
     assert info.equipped_badge_id is None
     assert info.equipped_name_template_id is None
+
+
+async def test_participant_info_no_template_when_default(async_session):
+    """The 'default' template id is a sentinel for 'no override'."""
+    async with async_session() as db:
+        u = User(
+            twitch_id="t1b",
+            twitch_username="dave",
+            equipped_name_template_id="default",
+        )
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+    participant = await _setup_participant(async_session, u)
+
+    info = participant_to_info(participant)
+    assert info.name_template is None
+    assert info.equipped_name_template_id == "default"
 
 
 async def test_participant_info_carries_gradient_when_equipped(async_session):

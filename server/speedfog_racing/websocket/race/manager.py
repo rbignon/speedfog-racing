@@ -575,12 +575,19 @@ def participant_to_info(
     if graph_json and participant.current_zone:
         tier = get_tier_for_node(participant.current_zone, graph_json)
 
-    template_id = participant.user.equipped_name_template_id or DEFAULT_TEMPLATE_ID
-    template = NAME_TEMPLATES.get(template_id) or NAME_TEMPLATES[DEFAULT_TEMPLATE_ID]
-    name_template_payload = NameTemplatePayload(
-        color=template.color,
-        gradient=list(template.gradient) if template.gradient is not None else None,
-    )
+    # The default template is a sentinel for "no override": the mod and web
+    # render the name in its status color (preserving functional readability).
+    # We only emit name_template when the user has explicitly equipped a
+    # non-default one.
+    equipped_template_id = participant.user.equipped_name_template_id
+    name_template_payload: NameTemplatePayload | None = None
+    if equipped_template_id is not None and equipped_template_id != DEFAULT_TEMPLATE_ID:
+        template = NAME_TEMPLATES.get(equipped_template_id)
+        if template is not None:
+            name_template_payload = NameTemplatePayload(
+                color=template.color,
+                gradient=list(template.gradient) if template.gradient is not None else None,
+            )
 
     return ParticipantInfo(
         id=str(participant.id),
