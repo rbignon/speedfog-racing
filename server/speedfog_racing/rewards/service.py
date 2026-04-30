@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
@@ -354,3 +354,41 @@ class RewardsService:
         max_wins = max(r.wins for r in rows)
         holders = {r.user_id for r in rows if r.wins == max_wins}
         await self.sync_transient_holders("weekly_daily_champion", holders, reason=reason)
+
+    async def revoke_badge(self, user_id: uuid.UUID, badge_id: str) -> None:
+        if badge_id not in BADGES:
+            raise UnknownRewardError(f"Unknown badge_id={badge_id!r}")
+        await self.session.execute(
+            update(BadgeGrant)
+            .where(
+                BadgeGrant.user_id == user_id,
+                BadgeGrant.badge_id == badge_id,
+                BadgeGrant.revoked_at.is_(None),
+            )
+            .values(revoked_at=datetime.now(UTC))
+        )
+        await self.session.execute(
+            update(User)
+            .where(User.id == user_id, User.equipped_badge_id == badge_id)
+            .values(equipped_badge_id=None)
+        )
+
+    async def revoke_name_template(self, user_id: uuid.UUID, template_id: str) -> None:
+        if template_id not in NAME_TEMPLATES:
+            raise UnknownRewardError(f"Unknown template_id={template_id!r}")
+        if template_id == DEFAULT_TEMPLATE_ID:
+            return
+        await self.session.execute(
+            delete(NameTemplateUnlock).where(
+                NameTemplateUnlock.user_id == user_id,
+                NameTemplateUnlock.template_id == template_id,
+            )
+        )
+        await self.session.execute(
+            update(User)
+            .where(
+                User.id == user_id,
+                User.equipped_name_template_id == template_id,
+            )
+            .values(equipped_name_template_id=None)
+        )

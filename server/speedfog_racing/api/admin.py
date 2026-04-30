@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +29,11 @@ from speedfog_racing.models import (
     TrainingSession,
     User,
     UserRole,
+)
+from speedfog_racing.rewards.service import (
+    LifecycleMismatchError,
+    RewardsService,
+    UnknownRewardError,
 )
 from speedfog_racing.schemas import (
     ActivityItem,
@@ -611,3 +616,94 @@ async def admin_list_feedback(
         average_rating=float(avg) if avg is not None else None,
         distribution=distribution,
     )
+
+
+# =============================================================================
+# Rewards Management
+# =============================================================================
+
+
+class AdminGrantBadgePayload(BaseModel):
+    """Request body for granting a badge to a user."""
+
+    badge_id: str
+    reason: str | None = None
+
+
+class AdminGrantTemplatePayload(BaseModel):
+    """Request body for granting a name template to a user."""
+
+    template_id: str
+    reason: str | None = None
+
+
+@router.post("/users/{user_id}/badges", status_code=201)
+async def admin_grant_badge(
+    user_id: uuid.UUID,
+    payload: AdminGrantBadgePayload,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """Grant a permanent badge to a user. Requires admin role."""
+    svc = RewardsService(db)
+    try:
+        grant = await svc.grant_permanent_badge(
+            user_id, payload.badge_id, granted_by=admin.id, reason=payload.reason
+        )
+    except (UnknownRewardError, LifecycleMismatchError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.commit()
+    return {"granted": grant is not None, "badge_id": payload.badge_id}
+
+
+@router.delete("/users/{user_id}/badges/{badge_id}", status_code=204)
+async def admin_revoke_badge(
+    user_id: uuid.UUID,
+    badge_id: str,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Revoke a badge from a user (soft-delete). Requires admin role."""
+    svc = RewardsService(db)
+    try:
+        await svc.revoke_badge(user_id, badge_id)
+    except UnknownRewardError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/users/{user_id}/templates", status_code=201)
+async def admin_grant_template(
+    user_id: uuid.UUID,
+    payload: AdminGrantTemplatePayload,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """Grant a name template to a user. Requires admin role."""
+    svc = RewardsService(db)
+    try:
+        unlock = await svc.grant_name_template(
+            user_id, payload.template_id, granted_by=admin.id, reason=payload.reason
+        )
+    except UnknownRewardError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.commit()
+    return {"granted": unlock is not None, "template_id": payload.template_id}
+
+
+@router.delete("/users/{user_id}/templates/{template_id}", status_code=204)
+async def admin_revoke_template(
+    user_id: uuid.UUID,
+    template_id: str,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Revoke a name template from a user. Requires admin role."""
+    svc = RewardsService(db)
+    try:
+        await svc.revoke_name_template(user_id, template_id)
+    except UnknownRewardError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.commit()
+    return Response(status_code=204)
