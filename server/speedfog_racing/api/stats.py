@@ -119,6 +119,8 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
                 elo_races=u.elo_races,
                 trend_delta=trends.get(u.id, 0),
                 avg_opponent_elo=sos.get(u.id),
+                equipped_badge_id=u.equipped_badge_id,
+                equipped_name_template_id=u.equipped_name_template_id,
             )
         )
 

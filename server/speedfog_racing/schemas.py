@@ -605,6 +605,8 @@ class LeaderboardPlayer(BaseModel):
     elo_races: int
     trend_delta: int
     avg_opponent_elo: int | None = None
+    equipped_badge_id: str | None = None
+    equipped_name_template_id: str | None = None
 
 
 class CommunityStats(BaseModel):
