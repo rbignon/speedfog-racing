@@ -146,6 +146,8 @@ class UserResponse(BaseModel):
     twitch_username: str
     twitch_display_name: str | None
     twitch_avatar_url: str | None
+    equipped_badge_id: str | None = None
+    equipped_name_template_id: str | None = None
 
 
 class ParticipantPreview(UserResponse):
