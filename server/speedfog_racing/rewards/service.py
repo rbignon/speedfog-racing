@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import BadgeGrant, NameTemplateUnlock, RewardNotification, User
 from speedfog_racing.rewards.catalog import BADGES, DEFAULT_TEMPLATE_ID, NAME_TEMPLATES
+from speedfog_racing.rewards.models_data import Badge, NameTemplate
 
 
 class UnknownRewardError(ValueError):
@@ -21,10 +22,22 @@ class LifecycleMismatchError(ValueError):
     pass
 
 
+class NotOwnedError(ValueError):
+    pass
+
+
 @dataclass
 class SyncResult:
     granted: set[uuid.UUID]
     revoked: set[uuid.UUID]
+
+
+@dataclass
+class Inventory:
+    held_badges: list[Badge]
+    unlocked_templates: list[NameTemplate]
+    equipped_badge_id: str | None
+    equipped_name_template_id: str | None
 
 
 class RewardsService:
@@ -175,3 +188,85 @@ class RewardsService:
 
         await self.session.flush()
         return SyncResult(granted=to_grant, revoked=to_revoke)
+
+    async def set_equipped_badge(self, user_id: uuid.UUID, badge_id: str | None) -> None:
+        if badge_id is not None:
+            if badge_id not in BADGES:
+                raise UnknownRewardError(f"Unknown badge_id={badge_id!r}")
+            owned = await self.session.execute(
+                select(BadgeGrant).where(
+                    BadgeGrant.user_id == user_id,
+                    BadgeGrant.badge_id == badge_id,
+                    BadgeGrant.revoked_at.is_(None),
+                )
+            )
+            if owned.scalar_one_or_none() is None:
+                raise NotOwnedError(f"User does not hold badge {badge_id!r}")
+
+        await self.session.execute(
+            update(User).where(User.id == user_id).values(equipped_badge_id=badge_id)
+        )
+
+    async def set_equipped_name_template(self, user_id: uuid.UUID, template_id: str | None) -> None:
+        target = template_id if template_id is not None else DEFAULT_TEMPLATE_ID
+        if target not in NAME_TEMPLATES:
+            raise UnknownRewardError(f"Unknown template_id={target!r}")
+        if target != DEFAULT_TEMPLATE_ID:
+            owned = await self.session.execute(
+                select(NameTemplateUnlock).where(
+                    NameTemplateUnlock.user_id == user_id,
+                    NameTemplateUnlock.template_id == target,
+                )
+            )
+            if owned.scalar_one_or_none() is None:
+                raise NotOwnedError(f"User has not unlocked template {target!r}")
+
+        await self.session.execute(
+            update(User).where(User.id == user_id).values(equipped_name_template_id=target)
+        )
+
+    async def get_user_inventory(self, user_id: uuid.UUID) -> Inventory:
+        held = await self.session.execute(
+            select(BadgeGrant.badge_id).where(
+                BadgeGrant.user_id == user_id, BadgeGrant.revoked_at.is_(None)
+            )
+        )
+        held_ids = [row[0] for row in held.all()]
+        held_badges = [BADGES[bid] for bid in held_ids if bid in BADGES]
+
+        unlocks = await self.session.execute(
+            select(NameTemplateUnlock.template_id).where(NameTemplateUnlock.user_id == user_id)
+        )
+        unlocked_ids: set[str] = {row[0] for row in unlocks.all()}
+        unlocked_ids.add(DEFAULT_TEMPLATE_ID)
+        unlocked_templates = [NAME_TEMPLATES[tid] for tid in unlocked_ids if tid in NAME_TEMPLATES]
+
+        user = await self.session.get(User, user_id)
+        return Inventory(
+            held_badges=sorted(held_badges, key=lambda b: b.sort_order),
+            unlocked_templates=sorted(unlocked_templates, key=lambda t: t.sort_order),
+            equipped_badge_id=user.equipped_badge_id if user else None,
+            equipped_name_template_id=(user.equipped_name_template_id if user else None),
+        )
+
+    async def get_pending_notifications(self, user_id: uuid.UUID) -> list[RewardNotification]:
+        rows = await self.session.execute(
+            select(RewardNotification)
+            .where(
+                RewardNotification.user_id == user_id,
+                RewardNotification.dismissed_at.is_(None),
+            )
+            .order_by(RewardNotification.created_at)
+        )
+        return list(rows.scalars().all())
+
+    async def dismiss_notifications(self, user_id: uuid.UUID) -> int:
+        result = await self.session.execute(
+            update(RewardNotification)
+            .where(
+                RewardNotification.user_id == user_id,
+                RewardNotification.dismissed_at.is_(None),
+            )
+            .values(dismissed_at=datetime.now(UTC))
+        )
+        return result.rowcount or 0  # type: ignore[attr-defined]

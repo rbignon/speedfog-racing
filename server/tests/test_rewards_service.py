@@ -6,6 +6,7 @@ from speedfog_racing.database import Base
 from speedfog_racing.models import BadgeGrant, NameTemplateUnlock, RewardNotification, User
 from speedfog_racing.rewards.service import (
     LifecycleMismatchError,
+    NotOwnedError,
     RewardsService,
     UnknownRewardError,
 )
@@ -247,3 +248,113 @@ async def test_sync_transient_rejects_permanent_badge(async_session):
         svc = RewardsService(db)
         with pytest.raises(LifecycleMismatchError):
             await svc.sync_transient_holders("early_adopter", {a.id})
+
+
+async def test_set_equipped_badge_validates_ownership(async_session):
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        with pytest.raises(NotOwnedError):
+            await svc.set_equipped_badge(a.id, "early_adopter")
+
+
+async def test_set_equipped_badge_accepts_owned(async_session):
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_permanent_badge(a.id, "early_adopter")
+        await db.commit()
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.set_equipped_badge(a.id, "early_adopter")
+        await db.commit()
+
+    async with async_session() as db:
+        user = await db.get(User, a.id)
+        assert user.equipped_badge_id == "early_adopter"
+
+
+async def test_set_equipped_badge_accepts_none(async_session):
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        user = await db.get(User, a.id)
+        user.equipped_badge_id = "early_adopter"
+        await db.commit()
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.set_equipped_badge(a.id, None)
+        await db.commit()
+
+    async with async_session() as db:
+        user = await db.get(User, a.id)
+        assert user.equipped_badge_id is None
+
+
+async def test_set_equipped_template_default_always_allowed(async_session):
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.set_equipped_name_template(a.id, "default")
+        await db.commit()
+
+    async with async_session() as db:
+        user = await db.get(User, a.id)
+        assert user.equipped_name_template_id == "default"
+
+
+async def test_set_equipped_template_validates_ownership(async_session):
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        with pytest.raises(NotOwnedError):
+            await svc.set_equipped_name_template(a.id, "elo_crown")
+
+
+async def test_set_equipped_template_none_falls_back_to_default(async_session):
+    """Passing None falls back to DEFAULT_TEMPLATE_ID, not NULL."""
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.set_equipped_name_template(a.id, None)
+        await db.commit()
+
+    async with async_session() as db:
+        user = await db.get(User, a.id)
+        assert user.equipped_name_template_id == "default"
+
+
+async def test_dismiss_notifications_sets_dismissed_at(async_session):
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_permanent_badge(a.id, "early_adopter")
+        await svc.grant_permanent_badge(a.id, "contributor")
+        await db.commit()
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        count = await svc.dismiss_notifications(a.id)
+        await db.commit()
+        assert count == 2
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        pending = await svc.get_pending_notifications(a.id)
+        assert pending == []
+
+
+async def test_get_user_inventory_returns_held_badges_and_unlocks(async_session):
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_permanent_badge(a.id, "early_adopter")
+        await svc.grant_name_template(a.id, "elo_crown")
+        await db.commit()
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        inv = await svc.get_user_inventory(a.id)
+        assert "early_adopter" in {b.id for b in inv.held_badges}
+        assert "elo_crown" in {t.id for t in inv.unlocked_templates}
