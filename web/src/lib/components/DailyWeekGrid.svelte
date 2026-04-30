@@ -222,6 +222,7 @@
 		color: var(--color-text-secondary);
 	}
 	.badge.today {
+		padding: 0;
 		font-size: var(--font-size-xs);
 		color: var(--color-gold);
 		font-weight: 600;
