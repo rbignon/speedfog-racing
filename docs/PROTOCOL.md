@@ -876,26 +876,39 @@ Live web UI updates during training. Accepts both authenticated and anonymous sp
 
 Shared schema across all WebSocket messages:
 
-| Field                 | Type      | Description                                                                                                                                                           |
-| --------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                  | `string`  | Participant UUID                                                                                                                                                      |
-| `twitch_username`     | `string`  | Twitch login name                                                                                                                                                     |
-| `twitch_display_name` | `string?` | Twitch display name                                                                                                                                                   |
-| `status`              | `string`  | Participant status (see above)                                                                                                                                        |
-| `current_zone`        | `string?` | Current DAG node ID (e.g. `m60_51_36_00`)                                                                                                                             |
-| `current_layer`       | `int`     | Current layer in the DAG (0 = start)                                                                                                                                  |
-| `current_layer_tier`  | `int?`    | Tier of the current node (computed from graph)                                                                                                                        |
-| `igt_ms`              | `int`     | In-game time in milliseconds                                                                                                                                          |
-| `death_count`         | `int`     | Total deaths                                                                                                                                                          |
-| `color_index`         | `int`     | Player color assignment (0-indexed)                                                                                                                                   |
-| `mod_connected`       | `bool`    | Whether the mod client is currently connected                                                                                                                         |
-| `zone_history`        | `list?`   | Zone visit history: included in `race_state` bootstrap, `null` in `leaderboard_update`/`player_update` broadcasts (see [zone_history updates](#zone_history-updates)) |
-| `gap_ms`              | `int?`    | Gap to the leader in milliseconds (see below)                                                                                                                         |
-| `layer_entry_igt`     | `int?`    | Player's IGT when entering their current layer                                                                                                                        |
+| Field                       | Type      | Description                                                                                                                                                                       |
+| --------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                        | `string`  | Participant UUID                                                                                                                                                                  |
+| `twitch_username`           | `string`  | Twitch login name                                                                                                                                                                 |
+| `twitch_display_name`       | `string?` | Twitch display name                                                                                                                                                               |
+| `status`                    | `string`  | Participant status (see above)                                                                                                                                                    |
+| `current_zone`              | `string?` | Current DAG node ID (e.g. `m60_51_36_00`)                                                                                                                                         |
+| `current_layer`             | `int`     | Current layer in the DAG (0 = start)                                                                                                                                              |
+| `current_layer_tier`        | `int?`    | Tier of the current node (computed from graph)                                                                                                                                    |
+| `igt_ms`                    | `int`     | In-game time in milliseconds                                                                                                                                                      |
+| `death_count`               | `int`     | Total deaths                                                                                                                                                                      |
+| `color_index`               | `int`     | Player color assignment (0-indexed)                                                                                                                                               |
+| `mod_connected`             | `bool`    | Whether the mod client is currently connected                                                                                                                                     |
+| `zone_history`              | `list?`   | Zone visit history: included in `race_state` bootstrap, `null` in `leaderboard_update`/`player_update` broadcasts (see [zone_history updates](#zone_history-updates))             |
+| `gap_ms`                    | `int?`    | Gap to the leader in milliseconds (see below)                                                                                                                                     |
+| `layer_entry_igt`           | `int?`    | Player's IGT when entering their current layer                                                                                                                                    |
+| `equipped_badge_id`         | `string?` | Logical id of the badge the user has equipped (web resolves the icon via `GET /api/rewards/catalog`). `null` when no badge is equipped.                                           |
+| `equipped_name_template_id` | `string?` | Logical id of the active name template (web resolves `background_css` via the catalog). `null` or `"default"` means no override; render with the default style.                   |
+| `name_template`             | `object?` | Pre-resolved render payload for the mod overlay: `{ color?: "#RRGGBB", gradient?: ["#RRGGBB","#RRGGBB"] }`. `null` for default users; backgrounds are not transmitted (web-only). |
 
 `zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack", "message_id"?: 17 }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). `message_id` is optional and only present on newer `"fog"` entries; it is used server-side to make replayed `event_flag` messages idempotent after reconnect. Entries without `type` are treated as `"fog"` for backward compatibility.
 
-**Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`, `gap_ms`, `layer_entry_igt`). Extra fields like `color_index`, `mod_connected`, and `zone_history` are present on the wire but silently ignored by serde.
+`name_template` example:
+
+```json
+{
+  "name_template": { "color": null, "gradient": ["#FFFFFF", "#FFD700"] }
+}
+```
+
+The mod parses the hex strings to RGBA on receipt and caches the resolved colors per participant; the per-frame leaderboard render reads from that cache. The `default` template is intentionally serialized as `null` (rather than a solid white payload) so the mod and web fall back to the surrounding status color, preserving the functional readability of the leaderboard.
+
+**Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`, `gap_ms`, `layer_entry_igt`, `name_template`). Extra fields like `color_index`, `mod_connected`, `zone_history`, `equipped_badge_id`, and `equipped_name_template_id` are present on the wire but silently ignored by serde.
 
 ### RaceInfo
 
