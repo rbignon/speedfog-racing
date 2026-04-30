@@ -51,7 +51,7 @@
 		if (day.state === 'today') {
 			const r = day.my_result;
 			if (!r) return { text: 'Play now', variant: 'play-now' };
-			if (r.status === 'finished') return { text: 'Done', variant: 'finished' };
+			if (r.status === 'finished') return { text: '✓ Done', variant: 'finished' };
 			if (r.status === 'abandoned') return { text: 'Abandoned', variant: 'abandoned' };
 			// registered, ready, playing
 			return { text: 'In progress', variant: 'in-progress' };
@@ -59,7 +59,7 @@
 		if (day.state === 'past') {
 			const r = day.my_result;
 			if (!r) return null;
-			if (r.status === 'finished') return { text: 'Done', variant: 'finished' };
+			if (r.status === 'finished') return { text: '✓ Done', variant: 'finished' };
 			if (r.status === 'playing') return { text: 'In progress', variant: 'in-progress' };
 			// abandoned, registered, ready (signed up but never played)
 			return { text: 'Abandoned', variant: 'abandoned' };
@@ -189,6 +189,15 @@
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 	}
 
+	.cell.today {
+		box-shadow: 0 0 20px rgba(200, 164, 78, 0.18);
+	}
+	a.cell.today:hover {
+		box-shadow:
+			0 0 20px rgba(200, 164, 78, 0.18),
+			0 2px 8px rgba(0, 0, 0, 0.2);
+	}
+
 	.cell.future,
 	.cell.missing-past {
 		border-style: dashed;
@@ -275,7 +284,7 @@
 		color: var(--color-success);
 	}
 	.strip-finished {
-		background: rgba(16, 185, 129, 0.12);
+		background: rgba(107, 114, 128, 0.18);
 		color: var(--color-success);
 	}
 	.strip-in-progress {
