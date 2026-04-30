@@ -66,6 +66,8 @@ def user_response(user: User) -> UserResponse:
         twitch_username=user.twitch_username,
         twitch_display_name=user.twitch_display_name,
         twitch_avatar_url=user.twitch_avatar_url,
+        equipped_badge_id=user.equipped_badge_id,
+        equipped_name_template_id=user.equipped_name_template_id,
     )
 
 
@@ -84,6 +86,8 @@ def participant_preview(
         twitch_username=user.twitch_username,
         twitch_display_name=user.twitch_display_name,
         twitch_avatar_url=user.twitch_avatar_url,
+        equipped_badge_id=user.equipped_badge_id,
+        equipped_name_template_id=user.equipped_name_template_id,
         placement=placement,
         status=participant.status,
         igt_ms=(
