@@ -75,9 +75,6 @@
 					class="participant-badge"
 				/>
 			{/if}
-			{#if isCurrentUser}
-				<span class="you-badge">You</span>
-			{/if}
 		</span>
 		<span class="status-text">{effectiveStatus}</span>
 	</div>
@@ -166,18 +163,6 @@
 
 	.name-link:hover {
 		color: var(--color-purple);
-	}
-
-	.you-badge {
-		padding: 0.1rem 0.35rem;
-		border-radius: var(--radius-sm);
-		font-size: var(--font-size-xs);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		background: rgba(139, 92, 246, 0.15);
-		color: var(--color-purple);
-		flex-shrink: 0;
 	}
 
 	.status-text {
