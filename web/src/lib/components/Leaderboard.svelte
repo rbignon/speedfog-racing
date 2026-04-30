@@ -1,434 +1,444 @@
 <script lang="ts">
-	import type { WsParticipant } from '$lib/websocket';
-	import { PLAYER_COLORS } from '$lib/dag/constants';
-	import LiveBadge from './LiveBadge.svelte';
-	import { rewards } from '$lib/stores/rewards.svelte';
+  import type { WsParticipant } from "$lib/websocket";
+  import { PLAYER_COLORS } from "$lib/dag/constants";
+  import LiveBadge from "./LiveBadge.svelte";
+  import { rewards } from "$lib/stores/rewards.svelte";
 
-	interface Props {
-		participants: WsParticipant[];
-		totalLayers?: number | null;
-		mode?: 'running' | 'finished';
-		zoneNames?: Map<string, string> | null;
-		selectedIds?: Set<string>;
-		onToggle?: (id: string, ctrlKey: boolean) => void;
-		onClearSelection?: () => void;
-	}
+  interface Props {
+    participants: WsParticipant[];
+    totalLayers?: number | null;
+    mode?: "running" | "finished";
+    zoneNames?: Map<string, string> | null;
+    selectedIds?: Set<string>;
+    onToggle?: (id: string, ctrlKey: boolean) => void;
+    onClearSelection?: () => void;
+  }
 
-	let {
-		participants,
-		totalLayers = null,
-		mode = 'running',
-		zoneNames = null,
-		selectedIds,
-		onToggle,
-		onClearSelection
-	}: Props = $props();
+  let {
+    participants,
+    totalLayers = null,
+    mode = "running",
+    zoneNames = null,
+    selectedIds,
+    onToggle,
+    onClearSelection,
+  }: Props = $props();
 
-	let hasSelection = $derived(selectedIds != null && selectedIds.size > 0);
+  let hasSelection = $derived(selectedIds != null && selectedIds.size > 0);
 
-	function zoneName(zone: string | null): string | null {
-		if (!zone || !zoneNames) return null;
-		const name = zoneNames.get(zone);
-		if (!name) return null;
-		const short = name.includes(' - ') ? name.split(' - ').pop()! : name;
-		if (short.length > 20) return short.slice(0, 19) + '\u2026';
-		return short;
-	}
+  function zoneName(zone: string | null): string | null {
+    if (!zone || !zoneNames) return null;
+    const name = zoneNames.get(zone);
+    if (!name) return null;
+    const short = name.includes(" - ") ? name.split(" - ").pop()! : name;
+    if (short.length > 20) return short.slice(0, 19) + "\u2026";
+    return short;
+  }
 
-	function playerColor(participant: WsParticipant): string {
-		return PLAYER_COLORS[participant.color_index % PLAYER_COLORS.length];
-	}
+  function playerColor(participant: WsParticipant): string {
+    return PLAYER_COLORS[participant.color_index % PLAYER_COLORS.length];
+  }
 
-	function formatIgt(ms: number): string {
-		const totalSeconds = Math.floor(ms / 1000);
-		const hours = Math.floor(totalSeconds / 3600);
-		const minutes = Math.floor((totalSeconds % 3600) / 60);
-		const seconds = totalSeconds % 60;
-		if (hours > 0) {
-			return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-		}
-		return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-	}
+  function formatIgt(ms: number): string {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+    }
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  }
 
-	function getStatusClass(status: string): string {
-		switch (status) {
-			case 'finished':
-				return 'finished';
-			case 'playing':
-				return 'playing';
-			case 'ready':
-				return 'ready';
-			case 'abandoned':
-				return 'abandoned';
-			default:
-				return '';
-		}
-	}
+  function getStatusClass(status: string): string {
+    switch (status) {
+      case "finished":
+        return "finished";
+      case "playing":
+        return "playing";
+      case "ready":
+        return "ready";
+      case "abandoned":
+        return "abandoned";
+      default:
+        return "";
+    }
+  }
 
-	function templateFor(participant: WsParticipant) {
-		const id = participant.equipped_name_template_id;
-		if (!id || id === 'default') return null;
-		return rewards.lookupTemplate(id);
-	}
+  function templateFor(participant: WsParticipant) {
+    const id = participant.equipped_name_template_id;
+    if (!id || id === "default") return null;
+    return rewards.lookupTemplate(id);
+  }
 
-	function nameStyleFor(participant: WsParticipant, fallbackColor: string): string {
-		const t = templateFor(participant);
-		if (t?.gradient) {
-			return `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]}); -webkit-background-clip: text; background-clip: text; color: transparent;`;
-		}
-		if (t?.color) {
-			return `color: ${t.color};`;
-		}
-		return `color: ${fallbackColor};`;
-	}
+  function nameStyleFor(participant: WsParticipant, fallbackColor: string): string {
+    const t = templateFor(participant);
+    const parts: string[] = [];
+    if (t?.gradient) {
+      parts.push(
+        `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]});`,
+        "-webkit-background-clip: text;",
+        "background-clip: text;",
+        "color: transparent;",
+      );
+    } else if (t?.color) {
+      parts.push(`color: ${t.color};`);
+    } else {
+      parts.push(`color: ${fallbackColor};`);
+    }
+    if (t?.name_css) {
+      parts.push(t.name_css);
+    }
+    return parts.join(" ");
+  }
 
-	function backgroundStyleFor(participant: WsParticipant): string {
-		const t = templateFor(participant);
-		return t?.background_css ? `background: ${t.background_css};` : '';
-	}
+  function backgroundStyleFor(participant: WsParticipant): string {
+    const t = templateFor(participant);
+    return t?.background_css ? `background: ${t.background_css};` : "";
+  }
 </script>
 
 <svelte:window
-	onkeydown={(e) => {
-		if (e.key === 'Escape' && hasSelection && onClearSelection) {
-			onClearSelection();
-		}
-	}}
+  onkeydown={(e) => {
+    if (e.key === "Escape" && hasSelection && onClearSelection) {
+      onClearSelection();
+    }
+  }}
 />
 
 <div class="leaderboard">
-	<div class="leaderboard-header">
-		<h2>{mode === 'finished' ? 'Results' : 'Leaderboard'}</h2>
-		{#if hasSelection && onClearSelection}
-			<button class="show-all-btn" onclick={onClearSelection}>Show all</button>
-		{/if}
-	</div>
+  <div class="leaderboard-header">
+    <h2>{mode === "finished" ? "Results" : "Leaderboard"}</h2>
+    {#if hasSelection && onClearSelection}
+      <button class="show-all-btn" onclick={onClearSelection}>Show all</button>
+    {/if}
+  </div>
 
-	{#if participants.length === 0}
-		<p class="empty">No participants yet</p>
-	{:else}
-		<ol class="list">
-			{#each participants as participant, index (participant.id)}
-				{@const color = playerColor(participant)}
-				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-				<li
-					class="participant {getStatusClass(participant.status)}"
-					class:selected={hasSelection && selectedIds!.has(participant.id)}
-					style="border-left: 3px solid {color}; {backgroundStyleFor(participant)}"
-					onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
-					role={onToggle ? 'button' : undefined}
-					tabindex={onToggle ? 0 : undefined}
-				>
-					<span class="rank" style="background: {color}; color: #1a1a2e;">{index + 1}</span>
-					<div class="info">
-						{#if participant.status === 'playing' || participant.status === 'abandoned'}
-							{@const zone =
-								participant.status === 'playing' ? zoneName(participant.current_zone) : null}
-							{@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
-							<div class="name-row">
-								<span class="name name-container">
-									<a
-										href="/user/{participant.twitch_username}"
-										target="_blank"
-										class="name-link"
-										style={nameStyleFor(participant, color)}
-										onclick={(e) => e.stopPropagation()}
-									>
-										{#if mode === 'running' && participant.status === 'playing'}
-											<span
-												class="conn-dot"
-												class:connected={participant.mod_connected}
-												title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}
-											></span>
-										{/if}
-										{participant.twitch_display_name || participant.twitch_username}
-									</a>
-									{#if badge}
-										<img
-											src="/badges/{badge.icon_filename}"
-											alt={badge.name}
-											title={badge.name}
-											class="participant-badge"
-										/>
-									{/if}
-								</span>
-								<span class="layer-fraction"
-									>{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers
-										? `/${totalLayers}`
-										: ''}</span
-								>
-							</div>
-							{#if participant.status === 'abandoned'}
-								<span class="zone abandoned-label">Abandoned</span>
-							{:else if zone}
-								<span class="zone" title={zoneNames?.get(participant.current_zone ?? '') ?? ''}
-									>{zone}</span
-								>
-							{/if}
-							<span class="stats">
-								{formatIgt(participant.igt_ms)}
-								{#if participant.death_count > 0}
-									<span class="death-count">{participant.death_count}</span>
-								{/if}
-							</span>
-						{:else}
-							{@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
-							<span class="name name-container">
-								<a
-									href="/user/{participant.twitch_username}"
-									target="_blank"
-									class="name-link"
-									style={nameStyleFor(participant, color)}
-									onclick={(e) => e.stopPropagation()}
-								>
-									{#if mode === 'running' && (participant.status === 'ready' || participant.status === 'registered')}
-										<span
-											class="conn-dot"
-											class:connected={participant.mod_connected}
-											title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}
-										></span>
-									{/if}
-									{participant.twitch_display_name || participant.twitch_username}
-								</a>
-								{#if badge}
-									<img
-										src="/badges/{badge.icon_filename}"
-										alt={badge.name}
-										title={badge.name}
-										class="participant-badge"
-									/>
-								{/if}
-							</span>
-							<span class="stats">
-								{#if participant.status === 'finished'}
-									<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
-									{#if participant.death_count > 0}
-										<span class="death-count">{participant.death_count}</span>
-									{/if}
-								{:else}
-									<span class="status-text">{participant.status}</span>
-								{/if}
-							</span>
-						{/if}
-					</div>
-					{#if participant.is_live}
-						<LiveBadge
-							href={participant.stream_url ?? `https://twitch.tv/${participant.twitch_username}`}
-							small
-							onclick={(e) => e.stopPropagation()}
-						/>
-					{/if}
-					{#if mode === 'running' && participant.status === 'finished'}
-						<span class="finish-icon">✓</span>
-					{/if}
-				</li>
-			{/each}
-		</ol>
-	{/if}
+  {#if participants.length === 0}
+    <p class="empty">No participants yet</p>
+  {:else}
+    <ol class="list">
+      {#each participants as participant, index (participant.id)}
+        {@const color = playerColor(participant)}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <li
+          class="participant {getStatusClass(participant.status)}"
+          class:selected={hasSelection && selectedIds!.has(participant.id)}
+          style="border-left: 3px solid {color}; {backgroundStyleFor(participant)}"
+          onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
+          role={onToggle ? "button" : undefined}
+          tabindex={onToggle ? 0 : undefined}
+        >
+          <span class="rank" style="background: {color}; color: #1a1a2e;">{index + 1}</span>
+          <div class="info">
+            {#if participant.status === "playing" || participant.status === "abandoned"}
+              {@const zone =
+                participant.status === "playing" ? zoneName(participant.current_zone) : null}
+              {@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
+              <div class="name-row">
+                <span class="name name-container">
+                  <a
+                    href="/user/{participant.twitch_username}"
+                    target="_blank"
+                    class="name-link"
+                    style={nameStyleFor(participant, color)}
+                    onclick={(e) => e.stopPropagation()}
+                  >
+                    {#if mode === "running" && participant.status === "playing"}
+                      <span
+                        class="conn-dot"
+                        class:connected={participant.mod_connected}
+                        title={participant.mod_connected ? "Mod connected" : "Mod disconnected"}
+                      ></span>
+                    {/if}
+                    {participant.twitch_display_name || participant.twitch_username}
+                  </a>
+                  {#if badge}
+                    <img
+                      src="/badges/{badge.icon_filename}"
+                      alt={badge.name}
+                      title={badge.name}
+                      class="participant-badge"
+                    />
+                  {/if}
+                </span>
+                <span class="layer-fraction"
+                  >{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers
+                    ? `/${totalLayers}`
+                    : ""}</span
+                >
+              </div>
+              {#if participant.status === "abandoned"}
+                <span class="zone abandoned-label">Abandoned</span>
+              {:else if zone}
+                <span class="zone" title={zoneNames?.get(participant.current_zone ?? "") ?? ""}
+                  >{zone}</span
+                >
+              {/if}
+              <span class="stats">
+                {formatIgt(participant.igt_ms)}
+                {#if participant.death_count > 0}
+                  <span class="death-count">{participant.death_count}</span>
+                {/if}
+              </span>
+            {:else}
+              {@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
+              <span class="name name-container">
+                <a
+                  href="/user/{participant.twitch_username}"
+                  target="_blank"
+                  class="name-link"
+                  style={nameStyleFor(participant, color)}
+                  onclick={(e) => e.stopPropagation()}
+                >
+                  {#if mode === "running" && (participant.status === "ready" || participant.status === "registered")}
+                    <span
+                      class="conn-dot"
+                      class:connected={participant.mod_connected}
+                      title={participant.mod_connected ? "Mod connected" : "Mod disconnected"}
+                    ></span>
+                  {/if}
+                  {participant.twitch_display_name || participant.twitch_username}
+                </a>
+                {#if badge}
+                  <img
+                    src="/badges/{badge.icon_filename}"
+                    alt={badge.name}
+                    title={badge.name}
+                    class="participant-badge"
+                  />
+                {/if}
+              </span>
+              <span class="stats">
+                {#if participant.status === "finished"}
+                  <span class="finished-time">{formatIgt(participant.igt_ms)}</span>
+                  {#if participant.death_count > 0}
+                    <span class="death-count">{participant.death_count}</span>
+                  {/if}
+                {:else}
+                  <span class="status-text">{participant.status}</span>
+                {/if}
+              </span>
+            {/if}
+          </div>
+          {#if participant.is_live}
+            <LiveBadge
+              href={participant.stream_url ?? `https://twitch.tv/${participant.twitch_username}`}
+              small
+              onclick={(e) => e.stopPropagation()}
+            />
+          {/if}
+          {#if mode === "running" && participant.status === "finished"}
+            <span class="finish-icon">✓</span>
+          {/if}
+        </li>
+      {/each}
+    </ol>
+  {/if}
 </div>
 
 <style>
-	.leaderboard {
-		height: 100%;
-		display: flex;
-		flex-direction: column;
-	}
+  .leaderboard {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
 
-	.leaderboard-header {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		margin-bottom: 1rem;
-	}
+  .leaderboard-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
 
-	.leaderboard-header h2 {
-		color: var(--color-gold);
-		margin: 0;
-		font-size: var(--font-size-lg);
-		font-weight: 600;
-	}
+  .leaderboard-header h2 {
+    color: var(--color-gold);
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+  }
 
-	.show-all-btn {
-		background: none;
-		border: none;
-		padding: 0;
-		color: var(--color-text-secondary);
-		font-family: var(--font-family);
-		font-size: var(--font-size-sm);
-		cursor: pointer;
-		transition: color var(--transition);
-	}
+  .show-all-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--color-text-secondary);
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: color var(--transition);
+  }
 
-	.show-all-btn:hover {
-		color: var(--color-text);
-	}
+  .show-all-btn:hover {
+    color: var(--color-text);
+  }
 
-	.list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		overflow-y: auto;
-		flex: 1;
-	}
+  .list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    overflow-y: auto;
+    flex: 1;
+  }
 
-	.participant {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		padding: 0.75rem;
-		background: var(--color-bg);
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--color-border);
-		transition: border-color var(--transition);
-		cursor: pointer;
-	}
+  .participant {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    transition: border-color var(--transition);
+    cursor: pointer;
+  }
 
-	.participant:hover {
-		background: var(--color-surface-elevated);
-	}
+  .participant:hover {
+    background: var(--color-surface-elevated);
+  }
 
-	.participant.selected {
-		background: var(--color-surface-elevated);
-	}
+  .participant.selected {
+    background: var(--color-surface-elevated);
+  }
 
-	.participant.abandoned {
-		opacity: 0.5;
-	}
+  .participant.abandoned {
+    opacity: 0.5;
+  }
 
-	.rank {
-		width: 24px;
-		height: 24px;
-		background: var(--color-border);
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: var(--font-size-sm);
-		font-weight: bold;
-		flex-shrink: 0;
-		color: var(--color-text-secondary);
-	}
+  .rank {
+    width: 24px;
+    height: 24px;
+    background: var(--color-border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--font-size-sm);
+    font-weight: bold;
+    flex-shrink: 0;
+    color: var(--color-text-secondary);
+  }
 
-	.info {
-		flex: 1;
-		min-width: 0;
-	}
+  .info {
+    flex: 1;
+    min-width: 0;
+  }
 
-	.name {
-		display: block;
-		font-weight: 500;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
+  .name {
+    display: block;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
-	.name-link {
-		display: inline;
-		text-decoration: none;
-		color: inherit;
-	}
+  .name-link {
+    display: inline;
+    text-decoration: none;
+    color: inherit;
+  }
 
-	.name-link:hover {
-		text-decoration: underline;
-	}
+  .name-link:hover {
+    text-decoration: underline;
+  }
 
-	.stats {
-		display: block;
-		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
-		font-variant-numeric: tabular-nums;
-	}
+  .stats {
+    display: block;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
 
-	.finished-time {
-		color: var(--color-success);
-		font-weight: 500;
-		font-variant-numeric: tabular-nums;
-	}
+  .finished-time {
+    color: var(--color-success);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
 
-	.status-text {
-		text-transform: capitalize;
-	}
+  .status-text {
+    text-transform: capitalize;
+  }
 
-	.finish-icon {
-		color: var(--color-success);
-		font-size: 1.2rem;
-	}
+  .finish-icon {
+    color: var(--color-success);
+    font-size: 1.2rem;
+  }
 
-	.death-count {
-		color: var(--color-danger, #ef4444);
-		font-size: var(--font-size-sm);
-	}
+  .death-count {
+    color: var(--color-danger, #ef4444);
+    font-size: var(--font-size-sm);
+  }
 
-	.death-count::before {
-		content: '\1F480';
-		margin-left: 0.25em;
-	}
+  .death-count::before {
+    content: "\1F480";
+    margin-left: 0.25em;
+  }
 
-	.dnf {
-		color: var(--color-text-disabled);
-		font-style: italic;
-	}
+  .dnf {
+    color: var(--color-text-disabled);
+    font-style: italic;
+  }
 
-	.zone.abandoned-label {
-		color: var(--color-text-secondary);
-	}
+  .zone.abandoned-label {
+    color: var(--color-text-secondary);
+  }
 
-	.name-row {
-		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
-	}
+  .name-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
 
-	.name-row .name {
-		flex: 1;
-		min-width: 0;
-	}
+  .name-row .name {
+    flex: 1;
+    min-width: 0;
+  }
 
-	.layer-fraction {
-		font-size: var(--font-size-sm);
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
-		color: var(--color-text-secondary);
-		flex-shrink: 0;
-	}
+  .layer-fraction {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+  }
 
-	.zone {
-		display: block;
-		font-size: var(--font-size-sm);
-		color: var(--color-text);
-		font-weight: 500;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
+  .zone {
+    display: block;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
-	.conn-dot {
-		display: inline-block;
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: var(--color-text-disabled, #555);
-		margin-right: 0.25rem;
-		vertical-align: middle;
-	}
+  .conn-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-text-disabled, #555);
+    margin-right: 0.25rem;
+    vertical-align: middle;
+  }
 
-	.conn-dot.connected {
-		background: var(--color-success, #22c55e);
-	}
+  .conn-dot.connected {
+    background: var(--color-success, #22c55e);
+  }
 
-	.empty {
-		color: var(--color-text-disabled);
-		font-style: italic;
-	}
+  .empty {
+    color: var(--color-text-disabled);
+    font-style: italic;
+  }
 
-	.participant-badge {
-		width: 16px;
-		height: 16px;
-		vertical-align: middle;
-		margin-left: 0.25rem;
-		flex-shrink: 0;
-	}
+  .participant-badge {
+    width: 16px;
+    height: 16px;
+    vertical-align: middle;
+    margin-left: 0.25rem;
+    flex-shrink: 0;
+  }
 </style>

@@ -20,6 +20,7 @@ const seedCatalog = () => {
         name: "Default",
         color: "#FFFFFF",
         gradient: null,
+        name_css: null,
         background_css: null,
         sort_order: 0,
       },
@@ -27,9 +28,10 @@ const seedCatalog = () => {
         id: "elo_crown",
         name: "ELO Crown",
         color: null,
-        gradient: ["#FFFFFF", "#FFD700"],
+        gradient: ["#FFE9A8", "#C8A44E"],
+        name_css: "font-family: Georgia, serif; font-style: italic;",
         background_css:
-          "linear-gradient(90deg, rgba(255,255,255,0.1), rgba(255,215,0,0.06))",
+          "radial-gradient(ellipse 60% 100% at 25% 50%, rgba(200,164,78,0.18), transparent 70%)",
         sort_order: 10,
       },
     ],
@@ -74,7 +76,7 @@ describe("Leaderboard rewards integration", () => {
       },
     });
     const li = container.querySelector("li.participant");
-    expect(li?.getAttribute("style") ?? "").toContain("linear-gradient");
+    expect(li?.getAttribute("style") ?? "").toContain("radial-gradient");
   });
 
   it("does not apply template background to a default participant", () => {

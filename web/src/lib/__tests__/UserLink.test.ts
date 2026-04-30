@@ -20,6 +20,7 @@ const seedCatalog = () => {
         name: "Default",
         color: "#FFFFFF",
         gradient: null,
+        name_css: null,
         background_css: null,
         sort_order: 0,
       },
@@ -27,7 +28,8 @@ const seedCatalog = () => {
         id: "elo_crown",
         name: "ELO Crown",
         color: null,
-        gradient: ["#FFFFFF", "#FFD700"],
+        gradient: ["#FFE9A8", "#C8A44E"],
+        name_css: "font-family: Georgia, serif; font-style: italic;",
         background_css: null,
         sort_order: 10,
       },
@@ -90,8 +92,27 @@ describe("UserLink", () => {
     expect(nameSpan?.getAttribute("data-name-style")).toBe("gradient");
     const style = nameSpan?.getAttribute("style") ?? "";
     expect(style).toContain("linear-gradient");
-    expect(style).toContain("#FFFFFF");
-    expect(style).toContain("#FFD700");
+    expect(style).toContain("#FFE9A8");
+    expect(style).toContain("#C8A44E");
+  });
+
+  it("appends name_css to the inline style when provided", () => {
+    seedCatalog();
+    const { container } = render(UserLink, {
+      props: {
+        user: {
+          id: "u5",
+          twitch_username: "erin",
+          twitch_display_name: "Erin",
+          twitch_avatar_url: null,
+          equipped_name_template_id: "elo_crown",
+        },
+      },
+    });
+    const style =
+      container.querySelector(".user-link-name")?.getAttribute("style") ?? "";
+    expect(style).toContain("Georgia");
+    expect(style).toContain("italic");
   });
 
   it("renders a badge icon when showBadge is true and equipped", () => {

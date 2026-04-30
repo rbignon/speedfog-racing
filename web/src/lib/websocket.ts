@@ -108,6 +108,8 @@ export interface ChatMessage {
   avatar_url: string | null;
   role: string; // "organizer" | "admin" | "caster" | "participant" | "system"
   dominant_trait: string | null;
+  equipped_badge_id?: string | null;
+  equipped_name_template_id?: string | null;
   message: string;
   timestamp: string;
 }

@@ -984,6 +984,7 @@ export interface ProfileNameTemplateDto {
   name: string;
   color: string | null;
   gradient: [string, string] | null;
+  name_css: string | null;
   background_css: string | null;
 }
 
@@ -1498,6 +1499,8 @@ export interface LeaderboardPlayer {
   elo_races: number;
   trend_delta: number;
   avg_opponent_elo: number | null;
+  equipped_badge_id?: string | null;
+  equipped_name_template_id?: string | null;
 }
 
 export interface CommunityStats {
@@ -1660,6 +1663,7 @@ export interface NameTemplateDef {
   description?: string;
   color: string | null;
   gradient: [string, string] | null;
+  name_css: string | null;
   background_css: string | null;
   sort_order: number;
 }
