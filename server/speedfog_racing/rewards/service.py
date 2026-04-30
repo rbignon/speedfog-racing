@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import BadgeGrant, NameTemplateUnlock, RewardNotification, User
 from speedfog_racing.rewards.catalog import BADGES, DEFAULT_TEMPLATE_ID, NAME_TEMPLATES
 from speedfog_racing.rewards.models_data import Badge, NameTemplate
+from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
 
 
 class UnknownRewardError(ValueError):
@@ -270,3 +271,84 @@ class RewardsService:
             .values(dismissed_at=datetime.now(UTC))
         )
         return result.rowcount or 0  # type: ignore[attr-defined]
+
+    async def refresh_top1_elo_holders(self, reason: str | None = None) -> None:
+        """Sync the top1_elo badge to the current set of users with the highest ELO.
+
+        Filters out provisional players (elo_races < PROVISIONAL_THRESHOLD).
+        Ties grant the badge to all tied users.
+        Each holder also receives the elo_crown name template (idempotent permanent unlock).
+        """
+        max_q = await self.session.execute(
+            select(User.elo_rating)
+            .where(User.elo_races >= PROVISIONAL_THRESHOLD)
+            .order_by(User.elo_rating.desc())
+            .limit(1)
+        )
+        top_elo = max_q.scalar_one_or_none()
+        if top_elo is None:
+            await self.sync_transient_holders("top1_elo", set(), reason=reason)
+            return
+
+        holder_q = await self.session.execute(
+            select(User.id).where(
+                User.elo_races >= PROVISIONAL_THRESHOLD,
+                User.elo_rating == top_elo,
+            )
+        )
+        holders: set[uuid.UUID] = {row[0] for row in holder_q.all()}
+
+        await self.sync_transient_holders("top1_elo", holders, reason=reason)
+        for uid in holders:
+            await self.grant_name_template(uid, "elo_crown", reason="reached top 1 ELO")
+
+    async def refresh_weekly_daily_champion(
+        self, week_starting: date, reason: str | None = None
+    ) -> None:
+        """Sync weekly_daily_champion to the user(s) who won the most daily seeds in
+        the [week_starting, week_starting + 7d) range.
+
+        A "win" is a Participant in a daily race (Race.daily_date IN that range)
+        with status FINISHED and the lowest igt_ms among finishers (one winner per day).
+        """
+        from speedfog_racing.models import (
+            Participant,
+            ParticipantStatus,
+            Race,
+        )
+
+        week_end = week_starting + timedelta(days=7)
+
+        finishers = (
+            select(
+                Participant.race_id.label("race_id"),
+                func.min(Participant.igt_ms).label("min_igt"),
+            )
+            .join(Race, Race.id == Participant.race_id)
+            .where(
+                Race.daily_date >= week_starting,
+                Race.daily_date < week_end,
+                Participant.status == ParticipantStatus.FINISHED,
+            )
+            .group_by(Participant.race_id)
+            .subquery()
+        )
+
+        winners = (
+            select(Participant.user_id, func.count().label("wins"))
+            .join(
+                finishers,
+                (Participant.race_id == finishers.c.race_id)
+                & (Participant.igt_ms == finishers.c.min_igt),
+            )
+            .where(Participant.status == ParticipantStatus.FINISHED)
+            .group_by(Participant.user_id)
+        )
+        rows = (await self.session.execute(winners)).all()
+        if not rows:
+            await self.sync_transient_holders("weekly_daily_champion", set(), reason=reason)
+            return
+
+        max_wins = max(r.wins for r in rows)
+        holders = {r.user_id for r in rows if r.wins == max_wins}
+        await self.sync_transient_holders("weekly_daily_champion", holders, reason=reason)

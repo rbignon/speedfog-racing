@@ -358,3 +358,120 @@ async def test_get_user_inventory_returns_held_badges_and_unlocks(async_session)
         inv = await svc.get_user_inventory(a.id)
         assert "early_adopter" in {b.id for b in inv.held_badges}
         assert "elo_crown" in {t.id for t in inv.unlocked_templates}
+
+
+async def test_refresh_top1_elo_holders_picks_highest_above_threshold(async_session):
+    from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
+
+    async with async_session() as db:
+        veteran_high = User(
+            twitch_id="tid-vh",
+            twitch_username="vh",
+            elo_rating=1800,
+            elo_races=PROVISIONAL_THRESHOLD,
+        )
+        veteran_low = User(
+            twitch_id="tid-vl",
+            twitch_username="vl",
+            elo_rating=1700,
+            elo_races=PROVISIONAL_THRESHOLD,
+        )
+        rookie = User(
+            twitch_id="tid-r",
+            twitch_username="r",
+            elo_rating=1900,
+            elo_races=1,
+        )
+        db.add_all([veteran_high, veteran_low, rookie])
+        await db.commit()
+        await db.refresh(veteran_high)
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.refresh_top1_elo_holders()
+        await db.commit()
+
+    async with async_session() as db:
+        holders = (
+            (
+                await db.execute(
+                    select(BadgeGrant.user_id).where(
+                        BadgeGrant.badge_id == "top1_elo",
+                        BadgeGrant.revoked_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert holders == [veteran_high.id]
+
+
+async def test_refresh_top1_elo_holders_handles_ties(async_session):
+    from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
+
+    async with async_session() as db:
+        a = User(
+            twitch_id="tid-a", twitch_username="a", elo_rating=1800, elo_races=PROVISIONAL_THRESHOLD
+        )
+        b = User(
+            twitch_id="tid-b", twitch_username="b", elo_rating=1800, elo_races=PROVISIONAL_THRESHOLD
+        )
+        db.add_all([a, b])
+        await db.commit()
+        await db.refresh(a)
+        await db.refresh(b)
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.refresh_top1_elo_holders()
+        await db.commit()
+
+    async with async_session() as db:
+        holders = (
+            (
+                await db.execute(
+                    select(BadgeGrant.user_id).where(
+                        BadgeGrant.badge_id == "top1_elo",
+                        BadgeGrant.revoked_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert set(holders) == {a.id, b.id}
+
+
+async def test_refresh_top1_elo_holders_grants_elo_crown_template(async_session):
+    from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
+
+    async with async_session() as db:
+        a = User(
+            twitch_id="tid-a", twitch_username="a", elo_rating=1800, elo_races=PROVISIONAL_THRESHOLD
+        )
+        db.add(a)
+        await db.commit()
+        await db.refresh(a)
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.refresh_top1_elo_holders()
+        await db.commit()
+
+    async with async_session() as db:
+        from speedfog_racing.models import NameTemplateUnlock
+
+        rows = (
+            (
+                await db.execute(
+                    select(NameTemplateUnlock).where(
+                        NameTemplateUnlock.user_id == a.id,
+                        NameTemplateUnlock.template_id == "elo_crown",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
