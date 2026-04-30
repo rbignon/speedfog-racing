@@ -8,6 +8,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import ChatChannel, ParticipantStatus, Race, RaceStatus
+from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services.stats_service import (
     recompute_traits_for_race_async,
     update_elo_ratings,
@@ -67,6 +68,8 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     logger.info("Race %s auto-finished (all participants done)", race.id)
 
     await update_elo_ratings(race.id, db)
+    await RewardsService(db).refresh_top1_elo_holders(reason=f"after race {race.id}")
+    await db.commit()
     # Trait recomputation rescans each finisher's full race history, so
     # run it in the background to keep the request/tick responsive.
     task = asyncio.create_task(recompute_traits_for_race_async(race.id))
@@ -128,6 +131,8 @@ async def finalize_race(
     room = manager.get_room(race.id)
 
     await update_elo_ratings(race.id, db)
+    await RewardsService(db).refresh_top1_elo_holders(reason=f"after race {race.id}")
+    await db.commit()
 
     task = asyncio.create_task(recompute_traits_for_race_async(race.id))
     task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
