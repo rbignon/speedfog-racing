@@ -22,6 +22,10 @@ export interface PublicAccessInputs {
    * influence public-chat access by itself. */
   participantStatus: ParticipantStatus | null;
   now: Date;
+  /** True for Daily Seed pages. Only changes the locked-reason copy:
+   * on a daily, "late join closes" coincides with "the daily ends"
+   * (both windows are 24h), so the race-flavored phrasing is misleading. */
+  isDaily?: boolean;
 }
 
 function isActiveParticipant(status: ParticipantStatus | null): boolean {
@@ -87,7 +91,9 @@ export function computePublicLockedReason(inputs: PublicAccessInputs): string {
   if (
     registrationOpenWindow(raceStatus, inputs.registrationClosesAt, inputs.now)
   ) {
-    return "Public chat unlocks when late join closes.";
+    return inputs.isDaily
+      ? "Public chat unlocks once the daily ends."
+      : "Public chat unlocks when late join closes.";
   }
 
   // Fallback: covers any locked combination not enumerated above

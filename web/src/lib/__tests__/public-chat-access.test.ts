@@ -220,6 +220,17 @@ describe("computePublicLockedReason", () => {
     expect(r).toBe("Public chat unlocks when late join closes.");
   });
 
+  it("running spectator on a daily: daily-flavored message", () => {
+    const r = computePublicLockedReason(
+      inputs({
+        raceStatus: "running",
+        registrationClosesAt: REG_OPEN,
+        isDaily: true,
+      }),
+    );
+    expect(r).toBe("Public chat unlocks once the daily ends.");
+  });
+
   it("running active participant after late join closed: finish message", () => {
     const r = computePublicLockedReason(
       inputs({

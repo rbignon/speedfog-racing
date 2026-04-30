@@ -103,7 +103,8 @@
 		raceStatus: raceStatus as ApiRaceStatus,
 		registrationClosesAt: initialRace.registration_closes_at,
 		participantStatus: myParticipantStatus as ApiParticipantStatus | null,
-		now: new Date(now)
+		now: new Date(now),
+		isDaily: true
 	});
 	let publicAccess = $derived(computePublicAccess(publicAccessInputs));
 	let publicLockedReason = $derived(computePublicLockedReason(publicAccessInputs));
