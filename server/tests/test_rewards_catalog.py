@@ -1,5 +1,7 @@
 """Tests for the static rewards catalog (badges and name templates)."""
 
+import dataclasses
+
 from speedfog_racing.rewards.catalog import BADGES, NAME_TEMPLATES
 
 
@@ -37,8 +39,6 @@ def test_elo_crown_has_gradient():
 
 def test_badge_dataclass_is_frozen():
     badge = BADGES["early_adopter"]
-    import dataclasses
-
     assert dataclasses.is_dataclass(badge)
     try:
         badge.name = "x"  # type: ignore[misc]

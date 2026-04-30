@@ -4,6 +4,8 @@ Adding an entry here is the only path to introduce a new reward.
 Icons live under web/static/badges/ and must be deployed alongside any new badge.
 """
 
+from typing import Final
+
 from speedfog_racing.rewards.models_data import Badge, NameTemplate
 
 BADGES: dict[str, Badge] = {
@@ -41,7 +43,7 @@ BADGES: dict[str, Badge] = {
     ),
 }
 
-DEFAULT_TEMPLATE_ID = "default"
+DEFAULT_TEMPLATE_ID: Final = "default"
 
 NAME_TEMPLATES: dict[str, NameTemplate] = {
     "default": NameTemplate(
