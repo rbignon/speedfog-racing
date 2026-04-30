@@ -129,7 +129,7 @@ async def test_participant_info_carries_gradient_when_equipped(async_session):
     info = participant_to_info(participant)
     assert info.equipped_name_template_id == "elo_crown"
     assert info.name_template is not None
-    assert info.name_template.gradient == ["#FFD700", "#FFA500"]
+    assert info.name_template.gradient == ["#FFFFFF", "#FFD700"]
     assert info.name_template.color is None
 
 

@@ -30,7 +30,7 @@ def test_catalog_template_carries_color_or_gradient():
         assert default["color"] == "#FFFFFF"
         assert default["gradient"] is None
         crown = next(t for t in data["name_templates"] if t["id"] == "elo_crown")
-        assert crown["gradient"] == ["#FFD700", "#FFA500"]
+        assert crown["gradient"] == ["#FFFFFF", "#FFD700"]
         assert crown["background_css"] is not None
 
 

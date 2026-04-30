@@ -57,8 +57,8 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         id="elo_crown",
         name="ELO Crown",
         description="Granted permanently the first time you reach top 1 ELO.",
-        gradient=("#FFD700", "#FFA500"),
-        background_css="linear-gradient(90deg, rgba(255,215,0,0.10), rgba(255,140,0,0.04))",
+        gradient=("#FFFFFF", "#FFD700"),
+        background_css="linear-gradient(90deg, rgba(255,255,255,0.10), rgba(255,215,0,0.06))",
         sort_order=10,
     ),
 }
