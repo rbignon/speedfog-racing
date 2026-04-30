@@ -108,6 +108,8 @@ class User(Base):
     )
     elo_rating: Mapped[float] = mapped_column(default=1500.0)
     elo_races: Mapped[int] = mapped_column(default=0)
+    equipped_badge_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    equipped_name_template_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
     organized_races: Mapped[list["Race"]] = relationship(back_populates="organizer")
@@ -529,3 +531,69 @@ def compute_late_join_deadlines(race: Race) -> tuple[datetime | None, datetime |
         else None
     )
     return closes, ends
+
+
+class BadgeGrant(Base):
+    """A grant of a badge to a user. revoked_at IS NULL means currently held."""
+
+    __tablename__ = "badge_grants"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    badge_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    granted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_badge_grants_active",
+            "badge_id",
+            "user_id",
+            postgresql_where=text("revoked_at IS NULL"),
+            sqlite_where=text("revoked_at IS NULL"),
+        ),
+    )
+
+
+class NameTemplateUnlock(Base):
+    """A user's permanent unlock of a name template."""
+
+    __tablename__ = "name_template_unlocks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    template_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    unlocked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    granted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "template_id", name="uq_name_template_unlocks_user_template"),
+    )
+
+
+class RewardNotification(Base):
+    """Pending or dismissed notification surfaced as a dashboard banner."""
+
+    __tablename__ = "reward_notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    reward_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
