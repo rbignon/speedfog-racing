@@ -18,8 +18,10 @@ from speedfog_racing.api.helpers import (
 from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
+    BadgeGrant,
     Caster,
     EloHistory,
+    NameTemplateUnlock,
     Participant,
     ParticipantStatus,
     PlayerTraitScores,
@@ -29,11 +31,14 @@ from speedfog_racing.models import (
     TrainingSessionStatus,
     User,
 )
+from speedfog_racing.rewards.catalog import BADGES, DEFAULT_TEMPLATE_ID, NAME_TEMPLATES
 from speedfog_racing.schemas import (
     ActivityItem,
     ActivityTimelineResponse,
     DailyParticipantActivity,
     PoolTypeStatsResponse,
+    ProfileBadge,
+    ProfileNameTemplate,
     RaceCasterActivity,
     RaceListResponse,
     RaceOrganizerActivity,
@@ -475,6 +480,50 @@ async def get_user_profile(
         casted_count=casted_count,
     )
 
+    # Held badges (active grants only).
+    held_q = await db.execute(
+        select(BadgeGrant.badge_id).where(
+            BadgeGrant.user_id == user_id,
+            BadgeGrant.revoked_at.is_(None),
+        )
+    )
+    held_ids = [row[0] for row in held_q.all()]
+    held_badges = sorted(
+        (BADGES[bid] for bid in held_ids if bid in BADGES),
+        key=lambda b: b.sort_order,
+    )
+
+    # Unlocked templates (always include "default").
+    unlocks_q = await db.execute(
+        select(NameTemplateUnlock.template_id).where(NameTemplateUnlock.user_id == user_id)
+    )
+    unlocked_ids = {row[0] for row in unlocks_q.all()}
+    unlocked_ids.add(DEFAULT_TEMPLATE_ID)
+    unlocked_templates = sorted(
+        (NAME_TEMPLATES[tid] for tid in unlocked_ids if tid in NAME_TEMPLATES),
+        key=lambda t: t.sort_order,
+    )
+
+    profile_badges = [
+        ProfileBadge(
+            id=b.id,
+            name=b.name,
+            icon_filename=b.icon_filename,
+            description=b.description,
+        )
+        for b in held_badges
+    ]
+    profile_templates = [
+        ProfileNameTemplate(
+            id=t.id,
+            name=t.name,
+            color=t.color,
+            gradient=list(t.gradient) if t.gradient is not None else None,
+            background_css=t.background_css,
+        )
+        for t in unlocked_templates
+    ]
+
     return UserProfileDetailResponse(
         id=user.id,
         twitch_username=user.twitch_username,
@@ -483,6 +532,8 @@ async def get_user_profile(
         role=user.role.value if hasattr(user.role, "value") else str(user.role),
         created_at=user.created_at,
         stats=stats,
+        held_badges=profile_badges,
+        unlocked_templates=profile_templates,
     )
 
 

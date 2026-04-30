@@ -195,6 +195,25 @@ class UserPoolStatsResponse(BaseModel):
     pools: list[UserPoolStatsEntry]
 
 
+class ProfileBadge(BaseModel):
+    """A badge displayed on a user's profile page."""
+
+    id: str
+    name: str
+    icon_filename: str
+    description: str | None = None
+
+
+class ProfileNameTemplate(BaseModel):
+    """A name template displayed on a user's profile page."""
+
+    id: str
+    name: str
+    color: str | None = None
+    gradient: list[str] | None = None
+    background_css: str | None = None
+
+
 class UserProfileDetailResponse(BaseModel):
     """Public user profile with stats."""
 
@@ -207,6 +226,8 @@ class UserProfileDetailResponse(BaseModel):
     role: str
     created_at: datetime
     stats: UserStatsResponse
+    held_badges: list[ProfileBadge] = []
+    unlocked_templates: list[ProfileNameTemplate] = []
 
 
 class ActivityItemBase(BaseModel):
