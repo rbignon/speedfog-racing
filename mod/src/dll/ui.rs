@@ -523,6 +523,9 @@ impl RaceTracker {
                         let n = char_count as f32;
                         let mut buf = [0u8; 4];
                         for (i, ch) in name_part.chars().enumerate() {
+                            if i > 0 {
+                                ui.same_line_with_spacing(0.0, 0.0);
+                            }
                             let t = i as f32 / (n - 1.0);
                             let lerped = [
                                 c0[0] + (c1[0] - c0[0]) * t,
@@ -532,9 +535,6 @@ impl RaceTracker {
                             ];
                             let s = ch.encode_utf8(&mut buf);
                             ui.text_colored(lerped, s);
-                            if i + 1 < char_count {
-                                ui.same_line_with_spacing(0.0, 0.0);
-                            }
                         }
                     }
                 }
