@@ -25,6 +25,7 @@
 	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
 	import PoolStatsTable from '$lib/components/PoolStatsTable.svelte';
 	import RaceCard from '$lib/components/RaceCard.svelte';
+	import RewardsBanner from '$lib/components/RewardsBanner.svelte';
 
 	let profile: UserProfile | null = $state(null);
 	let poolStats: UserPoolStats | null = $state(null);
@@ -190,6 +191,8 @@
 			<button class="btn btn-secondary" onclick={() => location.reload()}>Retry</button>
 		</div>
 	{:else}
+		<RewardsBanner />
+
 		<!-- Settings banner (one-time) -->
 		{#if !bannerDismissed}
 			<div class="settings-banner">

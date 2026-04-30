@@ -1666,6 +1666,34 @@ export interface MyInventoryDto {
   equipped_name_template_id: string | null;
 }
 
+/**
+ * Fetch pending reward notifications for the current user.
+ * Returns an empty array when unauthenticated or on error.
+ */
+export async function fetchRewardNotifications(): Promise<
+  RewardNotificationDto[]
+> {
+  const token = getStoredToken();
+  if (!token) return [];
+  const resp = await fetch(`${API_BASE}/rewards/notifications`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) return [];
+  return resp.json();
+}
+
+/**
+ * Bulk-dismiss all pending reward notifications for the current user.
+ */
+export async function dismissRewardNotifications(): Promise<void> {
+  const token = getStoredToken();
+  if (!token) return;
+  await fetch(`${API_BASE}/rewards/notifications/dismiss`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 // =============================================================================
 // Feedback API
 // =============================================================================
