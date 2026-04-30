@@ -1694,6 +1694,45 @@ export async function dismissRewardNotifications(): Promise<void> {
   });
 }
 
+/**
+ * Fetch the current user's reward inventory (held badges + unlocked templates + equipped ids).
+ * Returns null when unauthenticated or on error.
+ */
+export async function fetchMyInventory(): Promise<MyInventoryDto | null> {
+  const token = getStoredToken();
+  if (!token) return null;
+  const resp = await fetch(`${API_BASE}/rewards/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) return null;
+  return resp.json();
+}
+
+/**
+ * Update the current user's equipped badge and/or name template.
+ * Pass null for a field to actively clear it; omit it to leave it unchanged.
+ */
+export async function patchEquipped(payload: {
+  equipped_badge_id?: string | null;
+  equipped_name_template_id?: string | null;
+}): Promise<{
+  equipped_badge_id: string | null;
+  equipped_name_template_id: string | null;
+} | null> {
+  const token = getStoredToken();
+  if (!token) return null;
+  const resp = await fetch(`${API_BASE}/rewards/me/equipped`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) return null;
+  return resp.json();
+}
+
 // =============================================================================
 // Feedback API
 // =============================================================================

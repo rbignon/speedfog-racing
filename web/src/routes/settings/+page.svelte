@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { fetchLocales, updateLocale, updateOverlaySettings, type LocaleInfo } from '$lib/api';
+	import RewardsBadgePicker from '$lib/components/RewardsBadgePicker.svelte';
+	import RewardsTemplatePicker from '$lib/components/RewardsTemplatePicker.svelte';
 
 	let locales = $state<LocaleInfo[]>([]);
 	let selectedLocale = $state('en');
@@ -53,7 +55,10 @@
 
 	<section class="setting-group">
 		<h2>Overlay</h2>
-		<p class="description">Customize the in-game overlay that displays race information. It automatically applies when you download seeds</p>
+		<p class="description">
+			Customize the in-game overlay that displays race information. It automatically applies when
+			you download seeds
+		</p>
 
 		<div class="setting-field">
 			<label class="field-label" for="font-size">Font size</label>
@@ -85,6 +90,14 @@
 				{/each}
 			</div>
 		</div>
+	</section>
+
+	<section class="setting-group" id="rewards">
+		<h2>Rewards</h2>
+		<p class="description">Pick a badge and a name template among the rewards you have unlocked.</p>
+
+		<RewardsBadgePicker />
+		<RewardsTemplatePicker />
 	</section>
 
 	<div class="actions">
