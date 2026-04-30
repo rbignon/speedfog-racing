@@ -13,6 +13,8 @@ export interface User {
   twitch_username: string;
   twitch_display_name: string | null;
   twitch_avatar_url: string | null;
+  equipped_badge_id?: string | null;
+  equipped_name_template_id?: string | null;
 }
 
 export interface ParticipantPreview extends User {
