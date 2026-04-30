@@ -62,8 +62,8 @@ def main() -> None:
     args = parser.parse_args()
     # Import lazily to avoid a circular-import chain triggered by the app's
     # services/__init__.py when this module is loaded as a standalone script.
-    from speedfog_racing.database import (
-        async_session_maker as default_session_maker,  # noqa: PLC0415
+    from speedfog_racing.database import (  # noqa: PLC0415
+        async_session_maker as default_session_maker,
     )
 
     asyncio.run(backfill_rewards(default_session_maker, cutoff=args.cutoff))
