@@ -24,6 +24,32 @@ def test_chat_message_schema():
     assert data["message"] == "Hello race!"
     assert data["role"] == "participant"
     assert data["dominant_trait"] == "rusher"
+    # Equipped reward ids default to None and round-trip into the payload so
+    # the frontend can render name templates and badges without a separate
+    # lookup.
+    assert data["equipped_badge_id"] is None
+    assert data["equipped_name_template_id"] is None
+
+
+def test_chat_message_schema_carries_equipped_rewards():
+    """ChatBroadcastMessage forwards equipped badge and template ids."""
+    from speedfog_racing.websocket.schemas import ChatBroadcastMessage
+
+    msg = ChatBroadcastMessage(
+        channel="public",
+        username="champ",
+        display_name="Champ",
+        avatar_url=None,
+        role="participant",
+        dominant_trait=None,
+        equipped_badge_id="early_adopter",
+        equipped_name_template_id="elo_crown",
+        message="gg",
+        timestamp="2026-04-30T12:00:00+00:00",
+    )
+    data = msg.model_dump()
+    assert data["equipped_badge_id"] == "early_adopter"
+    assert data["equipped_name_template_id"] == "elo_crown"
 
 
 def test_send_chat_message_schema():

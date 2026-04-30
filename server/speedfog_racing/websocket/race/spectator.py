@@ -163,6 +163,8 @@ async def load_chat_history(
                     avatar_url=user.twitch_avatar_url,
                     role=_resolve_role(user),
                     dominant_trait=traits_by_user.get(chat_msg.user_id),
+                    equipped_badge_id=user.equipped_badge_id,
+                    equipped_name_template_id=user.equipped_name_template_id,
                     message=chat_msg.message,
                     timestamp=chat_msg.created_at.isoformat(),
                 )
@@ -219,12 +221,18 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
                 trait_scores = await db.get(PlayerTraitScores, user_id)
                 dominant_trait = trait_scores.dominant_trait if trait_scores else None
 
+                # Snapshot of identity at WS auth time. Changes to equipped
+                # rewards mid-session only land in new live broadcasts after
+                # a reconnect, but ``load_chat_history`` joins ``User`` so
+                # later viewers see the up-to-date values.
                 self._chat_info = {
                     "username": user_obj.twitch_username,
                     "display_name": user_obj.twitch_display_name,
                     "avatar_url": user_obj.twitch_avatar_url,
                     "role": role or "spectator",
                     "dominant_trait": dominant_trait,
+                    "equipped_badge_id": user_obj.equipped_badge_id,
+                    "equipped_name_template_id": user_obj.equipped_name_template_id,
                 }
 
             # Send initial race state (session still open for lazy access)
@@ -300,6 +308,8 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
             avatar_url=self._chat_info["avatar_url"],
             role=self._chat_info["role"],  # type: ignore[arg-type]
             dominant_trait=self._chat_info["dominant_trait"],
+            equipped_badge_id=self._chat_info["equipped_badge_id"],
+            equipped_name_template_id=self._chat_info["equipped_name_template_id"],
             message=chat_msg.message,
             timestamp=datetime.now(UTC).isoformat(),
         )

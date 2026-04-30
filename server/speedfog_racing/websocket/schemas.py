@@ -377,6 +377,8 @@ class ChatBroadcastMessage(BaseModel):
     avatar_url: str | None
     role: str  # "organizer" | "admin" | "caster" | "participant"
     dominant_trait: str | None  # e.g. "rusher", "explorer", null
+    equipped_badge_id: str | None = None
+    equipped_name_template_id: str | None = None
     message: str
     timestamp: str  # ISO format from server
 
