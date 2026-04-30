@@ -189,6 +189,49 @@
 			</div>
 		</div>
 
+		{#if profile.held_badges?.length || (profile.unlocked_templates && profile.unlocked_templates.length > 1)}
+			<section class="profile-section profile-rewards">
+				<h2>Rewards</h2>
+				{#if profile.held_badges && profile.held_badges.length > 0}
+					<div class="rewards-block">
+						<h3>Badges</h3>
+						<ul class="rewards-grid">
+							{#each profile.held_badges as badge (badge.id)}
+								<li class="reward-tile" title={badge.description ?? ''}>
+									<img src="/badges/{badge.icon_filename}" alt="" class="reward-icon" />
+									<span class="reward-name">{badge.name}</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+				{#if profile.unlocked_templates && profile.unlocked_templates.filter((t) => t.id !== 'default').length > 0}
+					<div class="rewards-block">
+						<h3>Name Templates</h3>
+						<ul class="rewards-grid">
+							{#each profile.unlocked_templates.filter((t) => t.id !== 'default') as t (t.id)}
+								<li
+									class="reward-tile template-tile"
+									style={t.background_css ? `background: ${t.background_css};` : ''}
+								>
+									<span
+										class="reward-name template-preview"
+										style={t.gradient
+											? `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]}); -webkit-background-clip: text; background-clip: text; color: transparent;`
+											: t.color
+												? `color: ${t.color};`
+												: ''}
+									>
+										{t.name}
+									</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			</section>
+		{/if}
+
 		{#if traits}
 			<section class="play-style-section">
 				<h2>Play Style</h2>
@@ -668,6 +711,59 @@
 	.load-more {
 		margin-top: 1rem;
 		width: 100%;
+	}
+
+	.profile-rewards {
+		margin-bottom: 1.5rem;
+	}
+
+	.profile-rewards h2 {
+		font-size: var(--font-size-lg);
+		font-weight: 600;
+		margin: 0 0 0.25rem;
+		color: var(--color-gold);
+	}
+
+	.rewards-block {
+		margin-top: 0.75rem;
+	}
+
+	.rewards-block h3 {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		margin: 0 0 0.5rem;
+	}
+
+	.rewards-grid {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.reward-tile {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		background: var(--color-surface);
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--color-border);
+	}
+
+	.reward-icon {
+		width: 20px;
+		height: 20px;
+	}
+
+	.reward-name {
+		font-size: var(--font-size-sm);
+	}
+
+	.template-preview {
+		font-weight: 600;
 	}
 
 	@media (max-width: 640px) {

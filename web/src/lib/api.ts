@@ -972,6 +972,21 @@ export interface UserStats {
   casted_count: number;
 }
 
+export interface ProfileBadgeDto {
+  id: string;
+  name: string;
+  icon_filename: string;
+  description?: string | null;
+}
+
+export interface ProfileNameTemplateDto {
+  id: string;
+  name: string;
+  color: string | null;
+  gradient: [string, string] | null;
+  background_css: string | null;
+}
+
 export interface UserProfile {
   id: string;
   twitch_username: string;
@@ -980,6 +995,8 @@ export interface UserProfile {
   role: string;
   created_at: string;
   stats: UserStats;
+  held_badges?: ProfileBadgeDto[];
+  unlocked_templates?: ProfileNameTemplateDto[];
 }
 
 export interface PoolTypeStats {
