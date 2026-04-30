@@ -2,6 +2,7 @@
 	import type { WsParticipant } from '$lib/websocket';
 	import { PLAYER_COLORS } from '$lib/dag/constants';
 	import LiveBadge from './LiveBadge.svelte';
+	import { rewards } from '$lib/stores/rewards.svelte';
 
 	interface Props {
 		participants: WsParticipant[];
@@ -63,6 +64,28 @@
 				return '';
 		}
 	}
+
+	function templateFor(participant: WsParticipant) {
+		const id = participant.equipped_name_template_id;
+		if (!id || id === 'default') return null;
+		return rewards.lookupTemplate(id);
+	}
+
+	function nameStyleFor(participant: WsParticipant, fallbackColor: string): string {
+		const t = templateFor(participant);
+		if (t?.gradient) {
+			return `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]}); -webkit-background-clip: text; background-clip: text; color: transparent;`;
+		}
+		if (t?.color) {
+			return `color: ${t.color};`;
+		}
+		return `color: ${fallbackColor};`;
+	}
+
+	function backgroundStyleFor(participant: WsParticipant): string {
+		const t = templateFor(participant);
+		return t?.background_css ? `background: ${t.background_css};` : '';
+	}
 </script>
 
 <svelte:window
@@ -88,33 +111,59 @@
 			{#each participants as participant, index (participant.id)}
 				{@const color = playerColor(participant)}
 				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-			<li
-				class="participant {getStatusClass(participant.status)}"
-				class:selected={hasSelection && selectedIds!.has(participant.id)}
-				style="border-left: 3px solid {color};"
-				onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
-				role={onToggle ? 'button' : undefined}
-				tabindex={onToggle ? 0 : undefined}
-			>
-						<span class="rank" style="background: {color}; color: #1a1a2e;"
-							>{index + 1}</span
-						>
+				<li
+					class="participant {getStatusClass(participant.status)}"
+					class:selected={hasSelection && selectedIds!.has(participant.id)}
+					style="border-left: 3px solid {color}; {backgroundStyleFor(participant)}"
+					onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
+					role={onToggle ? 'button' : undefined}
+					tabindex={onToggle ? 0 : undefined}
+				>
+					<span class="rank" style="background: {color}; color: #1a1a2e;">{index + 1}</span>
 					<div class="info">
 						{#if participant.status === 'playing' || participant.status === 'abandoned'}
-							{@const zone = participant.status === 'playing' ? zoneName(participant.current_zone) : null}
+							{@const zone =
+								participant.status === 'playing' ? zoneName(participant.current_zone) : null}
+							{@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
 							<div class="name-row">
-								<a href="/user/{participant.twitch_username}" target="_blank" class="name name-link" style="color: {color};" onclick={(e) => e.stopPropagation()}>
-									{#if mode === 'running' && participant.status === 'playing'}
-										<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
+								<span class="name name-container">
+									<a
+										href="/user/{participant.twitch_username}"
+										target="_blank"
+										class="name-link"
+										style={nameStyleFor(participant, color)}
+										onclick={(e) => e.stopPropagation()}
+									>
+										{#if mode === 'running' && participant.status === 'playing'}
+											<span
+												class="conn-dot"
+												class:connected={participant.mod_connected}
+												title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}
+											></span>
+										{/if}
+										{participant.twitch_display_name || participant.twitch_username}
+									</a>
+									{#if badge}
+										<img
+											src="/rewards/badges/{badge.icon_filename}"
+											alt={badge.name}
+											title={badge.name}
+											class="participant-badge"
+										/>
 									{/if}
-									{participant.twitch_display_name || participant.twitch_username}
-								</a>
-								<span class="layer-fraction">{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers ? `/${totalLayers}` : ''}</span>
+								</span>
+								<span class="layer-fraction"
+									>{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers
+										? `/${totalLayers}`
+										: ''}</span
+								>
 							</div>
 							{#if participant.status === 'abandoned'}
 								<span class="zone abandoned-label">Abandoned</span>
 							{:else if zone}
-								<span class="zone" title={zoneNames?.get(participant.current_zone ?? '') ?? ''}>{zone}</span>
+								<span class="zone" title={zoneNames?.get(participant.current_zone ?? '') ?? ''}
+									>{zone}</span
+								>
 							{/if}
 							<span class="stats">
 								{formatIgt(participant.igt_ms)}
@@ -123,12 +172,33 @@
 								{/if}
 							</span>
 						{:else}
-							<a href="/user/{participant.twitch_username}" target="_blank" class="name name-link" style="color: {color};" onclick={(e) => e.stopPropagation()}>
-								{#if mode === 'running' && (participant.status === 'ready' || participant.status === 'registered')}
-									<span class="conn-dot" class:connected={participant.mod_connected} title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}></span>
+							{@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
+							<span class="name name-container">
+								<a
+									href="/user/{participant.twitch_username}"
+									target="_blank"
+									class="name-link"
+									style={nameStyleFor(participant, color)}
+									onclick={(e) => e.stopPropagation()}
+								>
+									{#if mode === 'running' && (participant.status === 'ready' || participant.status === 'registered')}
+										<span
+											class="conn-dot"
+											class:connected={participant.mod_connected}
+											title={participant.mod_connected ? 'Mod connected' : 'Mod disconnected'}
+										></span>
+									{/if}
+									{participant.twitch_display_name || participant.twitch_username}
+								</a>
+								{#if badge}
+									<img
+										src="/rewards/badges/{badge.icon_filename}"
+										alt={badge.name}
+										title={badge.name}
+										class="participant-badge"
+									/>
 								{/if}
-								{participant.twitch_display_name || participant.twitch_username}
-							</a>
+							</span>
 							<span class="stats">
 								{#if participant.status === 'finished'}
 									<span class="finished-time">{formatIgt(participant.igt_ms)}</span>
@@ -352,5 +422,13 @@
 	.empty {
 		color: var(--color-text-disabled);
 		font-style: italic;
+	}
+
+	.participant-badge {
+		width: 16px;
+		height: 16px;
+		vertical-align: middle;
+		margin-left: 0.25rem;
+		flex-shrink: 0;
 	}
 </style>

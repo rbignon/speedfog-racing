@@ -23,6 +23,8 @@ export interface WsParticipant {
   zone_history: ZoneHistoryEntry[] | null;
   is_live?: boolean;
   stream_url?: string | null;
+  equipped_badge_id?: string | null;
+  equipped_name_template_id?: string | null;
 }
 
 export interface WsRaceInfo {

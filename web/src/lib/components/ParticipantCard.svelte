@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Participant } from '$lib/api';
 	import LiveBadge from './LiveBadge.svelte';
+	import { rewards } from '$lib/stores/rewards.svelte';
 
 	interface Props {
 		participant: Participant;
@@ -25,9 +26,32 @@
 	}: Props = $props();
 
 	let effectiveStatus = $derived(liveStatus ?? participant.status);
+	let equippedBadge = $derived(rewards.lookupBadge(participant.user.equipped_badge_id));
+
+	function templateFor() {
+		const id = participant.user.equipped_name_template_id;
+		if (!id || id === 'default') return null;
+		return rewards.lookupTemplate(id);
+	}
+
+	function nameStyleFor(): string {
+		const t = templateFor();
+		if (t?.gradient) {
+			return `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]}); -webkit-background-clip: text; background-clip: text; color: transparent;`;
+		}
+		if (t?.color) {
+			return `color: ${t.color};`;
+		}
+		return '';
+	}
+
+	function backgroundStyleFor(): string {
+		const t = templateFor();
+		return t?.background_css ? `background: ${t.background_css};` : '';
+	}
 </script>
 
-<div class="participant-card" class:current-user={isCurrentUser}>
+<div class="participant-card" class:current-user={isCurrentUser} style={backgroundStyleFor()}>
 	<span class="status-dot" class:ready={effectiveStatus === 'ready'}></span>
 	{#if participant.user.twitch_avatar_url}
 		<img src={participant.user.twitch_avatar_url} alt="" class="avatar" />
@@ -36,9 +60,21 @@
 	{/if}
 	<div class="info">
 		<span class="name">
-			<a href="/user/{participant.user.twitch_username}" class="name-text name-link">
+			<a
+				href="/user/{participant.user.twitch_username}"
+				class="name-text name-link"
+				style={nameStyleFor()}
+			>
 				{participant.user.twitch_display_name || participant.user.twitch_username}
 			</a>
+			{#if equippedBadge}
+				<img
+					src="/rewards/badges/{equippedBadge.icon_filename}"
+					alt={equippedBadge.name}
+					title={equippedBadge.name}
+					class="participant-badge"
+				/>
+			{/if}
 			{#if isCurrentUser}
 				<span class="you-badge">You</span>
 			{/if}
@@ -176,5 +212,12 @@
 
 	.remove-btn:hover {
 		color: var(--color-danger);
+	}
+
+	.participant-badge {
+		width: 16px;
+		height: 16px;
+		vertical-align: middle;
+		flex-shrink: 0;
 	}
 </style>

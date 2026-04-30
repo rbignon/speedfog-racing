@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { WsParticipant } from '$lib/websocket';
 	import { PLAYER_COLORS } from '$lib/dag/constants';
+	import { rewards } from '$lib/stores/rewards.svelte';
 
 	interface Props {
 		participants: WsParticipant[];
@@ -33,15 +34,45 @@
 	function displayName(p: WsParticipant): string {
 		return p.twitch_display_name || p.twitch_username;
 	}
+
+	function templateFor(p: WsParticipant) {
+		const id = p.equipped_name_template_id;
+		if (!id || id === 'default') return null;
+		return rewards.lookupTemplate(id);
+	}
+
+	function nameStyleFor(p: WsParticipant): string {
+		const t = templateFor(p);
+		if (t?.gradient) {
+			return `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]}); -webkit-background-clip: text; background-clip: text; color: transparent;`;
+		}
+		if (t?.color) {
+			return `color: ${t.color};`;
+		}
+		return '';
+	}
+
+	function backgroundStyleFor(p: WsParticipant): string {
+		const t = templateFor(p);
+		return t?.background_css ? `background: ${t.background_css};` : '';
+	}
 </script>
 
 <ol class="overlay-leaderboard">
 	{#each visibleParticipants as participant, index (participant.id)}
 		{@const color = playerColor(participant)}
-		<li class="row">
+		{@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
+		<li class="row" style={backgroundStyleFor(participant)}>
 			<span class="rank">{index + 1}</span>
 			<span class="dot" style="background: {color};"></span>
-			<span class="name">{displayName(participant)}</span>
+			<span class="name" style={nameStyleFor(participant)}
+				>{displayName(participant)}{#if badge}<img
+						src="/rewards/badges/{badge.icon_filename}"
+						alt={badge.name}
+						title={badge.name}
+						class="participant-badge"
+					/>{/if}</span
+			>
 			<span class="stats">
 				{#if participant.status === 'playing'}
 					<span class="layer"
@@ -154,5 +185,13 @@
 	.waiting {
 		text-transform: capitalize;
 		opacity: 0.6;
+	}
+
+	.participant-badge {
+		width: 16px;
+		height: 16px;
+		vertical-align: middle;
+		margin-left: 0.25rem;
+		flex-shrink: 0;
 	}
 </style>
