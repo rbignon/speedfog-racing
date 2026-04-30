@@ -48,6 +48,17 @@ pub enum ClientMessage {
 // SERVER -> CLIENT MESSAGES
 // =============================================================================
 
+/// Visual customization payload for the participant's username on the in-game
+/// leaderboard. Only color/gradient is delivered to the mod; backgrounds are
+/// web-only.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NameTemplate {
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub gradient: Option<(String, String)>,
+}
+
 /// Participant info in leaderboard
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParticipantInfo {
@@ -65,6 +76,8 @@ pub struct ParticipantInfo {
     pub gap_ms: Option<i32>,
     #[serde(default)]
     pub layer_entry_igt: Option<i32>,
+    #[serde(default)]
+    pub name_template: Option<NameTemplate>,
 }
 
 /// Race info from server.
@@ -1003,6 +1016,60 @@ mod tests {
             ServerMessage::ZoneQueryAck { message_id } => assert_eq!(message_id, 55),
             _ => panic!("Expected ZoneQueryAck"),
         }
+    }
+
+    #[test]
+    fn test_participant_info_with_name_template_solid() {
+        let json = r##"{
+            "id": "p1",
+            "twitch_username": "u",
+            "twitch_display_name": null,
+            "status": "registered",
+            "current_zone": null,
+            "current_layer": 0,
+            "igt_ms": 0,
+            "death_count": 0,
+            "name_template": { "color": "#FFFFFF", "gradient": null }
+        }"##;
+        let info: ParticipantInfo = serde_json::from_str(json).unwrap();
+        let nt = info.name_template.expect("name_template present");
+        assert_eq!(nt.color.as_deref(), Some("#FFFFFF"));
+        assert!(nt.gradient.is_none());
+    }
+
+    #[test]
+    fn test_participant_info_with_name_template_gradient() {
+        let json = r##"{
+            "id": "p1",
+            "twitch_username": "u",
+            "twitch_display_name": null,
+            "status": "registered",
+            "current_zone": null,
+            "current_layer": 0,
+            "igt_ms": 0,
+            "death_count": 0,
+            "name_template": { "color": null, "gradient": ["#FFD700","#FFA500"] }
+        }"##;
+        let info: ParticipantInfo = serde_json::from_str(json).unwrap();
+        let nt = info.name_template.unwrap();
+        let g = nt.gradient.unwrap();
+        assert_eq!(g, ("#FFD700".to_string(), "#FFA500".to_string()));
+    }
+
+    #[test]
+    fn test_participant_info_without_name_template() {
+        let json = r#"{
+            "id": "p1",
+            "twitch_username": "u",
+            "twitch_display_name": null,
+            "status": "registered",
+            "current_zone": null,
+            "current_layer": 0,
+            "igt_ms": 0,
+            "death_count": 0
+        }"#;
+        let info: ParticipantInfo = serde_json::from_str(json).unwrap();
+        assert!(info.name_template.is_none());
     }
 
     #[test]
