@@ -141,3 +141,109 @@ async def test_grant_default_name_template_is_noop(async_session):
     async with async_session() as db:
         rows = (await db.execute(select(NameTemplateUnlock))).scalars().all()
         assert len(rows) == 0
+
+
+async def test_sync_transient_grants_to_new_holders(async_session):
+    a = await _make_user(async_session, "a")
+    b = await _make_user(async_session, "b")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.sync_transient_holders("top1_elo", {a.id, b.id}, reason="initial")
+        await db.commit()
+
+    async with async_session() as db:
+        grants = (
+            (await db.execute(select(BadgeGrant).where(BadgeGrant.revoked_at.is_(None))))
+            .scalars()
+            .all()
+        )
+        assert {g.user_id for g in grants} == {a.id, b.id}
+
+        notifs = (await db.execute(select(RewardNotification))).scalars().all()
+        assert sum(1 for n in notifs if n.kind == "badge_granted") == 2
+        assert sum(1 for n in notifs if n.kind == "badge_revoked") == 0
+
+
+async def test_sync_transient_diffs_holder_set(async_session):
+    a = await _make_user(async_session, "a")
+    b = await _make_user(async_session, "b")
+    c = await _make_user(async_session, "c")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.sync_transient_holders("top1_elo", {a.id, b.id})
+        await db.commit()
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.sync_transient_holders("top1_elo", {b.id, c.id})
+        await db.commit()
+
+    async with async_session() as db:
+        active = (
+            (await db.execute(select(BadgeGrant).where(BadgeGrant.revoked_at.is_(None))))
+            .scalars()
+            .all()
+        )
+        assert {g.user_id for g in active} == {b.id, c.id}
+
+        revoked = (
+            (await db.execute(select(BadgeGrant).where(BadgeGrant.revoked_at.is_not(None))))
+            .scalars()
+            .all()
+        )
+        assert {g.user_id for g in revoked} == {a.id}
+
+        notifs = (await db.execute(select(RewardNotification))).scalars().all()
+        granted = [n for n in notifs if n.kind == "badge_granted"]
+        revoked_n = [n for n in notifs if n.kind == "badge_revoked"]
+        assert {n.user_id for n in granted} == {a.id, b.id, c.id}
+        assert {n.user_id for n in revoked_n} == {a.id}
+
+
+async def test_sync_transient_clears_equipped_badge_on_revoke(async_session):
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.sync_transient_holders("top1_elo", {a.id})
+        await db.commit()
+
+    async with async_session() as db:
+        user = await db.get(User, a.id)
+        user.equipped_badge_id = "top1_elo"
+        await db.commit()
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.sync_transient_holders("top1_elo", set())
+        await db.commit()
+
+    async with async_session() as db:
+        user = await db.get(User, a.id)
+        assert user.equipped_badge_id is None
+
+
+async def test_sync_transient_no_op_for_unchanged_set(async_session):
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.sync_transient_holders("top1_elo", {a.id})
+        await db.commit()
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.sync_transient_holders("top1_elo", {a.id})
+        await db.commit()
+
+    async with async_session() as db:
+        grants = (await db.execute(select(BadgeGrant))).scalars().all()
+        assert len(grants) == 1
+        notifs = (await db.execute(select(RewardNotification))).scalars().all()
+        assert len(notifs) == 1
+
+
+async def test_sync_transient_rejects_permanent_badge(async_session):
+    a = await _make_user(async_session, "a")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        with pytest.raises(LifecycleMismatchError):
+            await svc.sync_transient_holders("early_adopter", {a.id})
