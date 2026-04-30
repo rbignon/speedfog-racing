@@ -460,14 +460,145 @@ async def test_refresh_top1_elo_holders_grants_elo_crown_template(async_session)
         await db.commit()
 
     async with async_session() as db:
-        from speedfog_racing.models import NameTemplateUnlock
-
         rows = (
             (
                 await db.execute(
                     select(NameTemplateUnlock).where(
                         NameTemplateUnlock.user_id == a.id,
                         NameTemplateUnlock.template_id == "elo_crown",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+
+
+async def test_refresh_top1_elo_holders_grants_runebearer_to_top5(async_session):
+    from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
+
+    async with async_session() as db:
+        # Top 5 settled players (descending ELO) and one provisional player
+        # whose high ELO should be ignored.
+        ranked = [
+            User(
+                twitch_id=f"tid-r{i}",
+                twitch_username=f"r{i}",
+                elo_rating=2000 - i * 50,
+                elo_races=PROVISIONAL_THRESHOLD,
+            )
+            for i in range(5)
+        ]
+        sixth = User(
+            twitch_id="tid-r5",
+            twitch_username="r5",
+            elo_rating=1700,
+            elo_races=PROVISIONAL_THRESHOLD,
+        )
+        provisional = User(
+            twitch_id="tid-p",
+            twitch_username="p",
+            elo_rating=2500,
+            elo_races=1,
+        )
+        db.add_all([*ranked, sixth, provisional])
+        await db.commit()
+        for u in [*ranked, sixth, provisional]:
+            await db.refresh(u)
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.refresh_top1_elo_holders()
+        await db.commit()
+
+    async with async_session() as db:
+        unlocked = {
+            row[0]
+            for row in (
+                await db.execute(
+                    select(NameTemplateUnlock.user_id).where(
+                        NameTemplateUnlock.template_id == "runebearer",
+                    )
+                )
+            ).all()
+        }
+        assert unlocked == {u.id for u in ranked}
+        assert sixth.id not in unlocked
+        assert provisional.id not in unlocked
+
+
+async def test_refresh_top1_elo_holders_runebearer_includes_rank5_ties(async_session):
+    from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
+
+    async with async_session() as db:
+        # Four players strictly above, three tied at the rank-5 ELO.
+        above = [
+            User(
+                twitch_id=f"tid-a{i}",
+                twitch_username=f"a{i}",
+                elo_rating=2000 - i * 50,
+                elo_races=PROVISIONAL_THRESHOLD,
+            )
+            for i in range(4)
+        ]
+        tied = [
+            User(
+                twitch_id=f"tid-t{i}",
+                twitch_username=f"t{i}",
+                elo_rating=1700,
+                elo_races=PROVISIONAL_THRESHOLD,
+            )
+            for i in range(3)
+        ]
+        db.add_all([*above, *tied])
+        await db.commit()
+        for u in [*above, *tied]:
+            await db.refresh(u)
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.refresh_top1_elo_holders()
+        await db.commit()
+
+    async with async_session() as db:
+        unlocked = {
+            row[0]
+            for row in (
+                await db.execute(
+                    select(NameTemplateUnlock.user_id).where(
+                        NameTemplateUnlock.template_id == "runebearer",
+                    )
+                )
+            ).all()
+        }
+        assert unlocked == {u.id for u in (*above, *tied)}
+
+
+async def test_refresh_top1_elo_holders_runebearer_idempotent(async_session):
+    from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
+
+    async with async_session() as db:
+        a = User(
+            twitch_id="tid-a", twitch_username="a", elo_rating=1800, elo_races=PROVISIONAL_THRESHOLD
+        )
+        db.add(a)
+        await db.commit()
+        await db.refresh(a)
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.refresh_top1_elo_holders()
+        await svc.refresh_top1_elo_holders()
+        await db.commit()
+
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(NameTemplateUnlock).where(
+                        NameTemplateUnlock.user_id == a.id,
+                        NameTemplateUnlock.template_id == "runebearer",
                     )
                 )
             )

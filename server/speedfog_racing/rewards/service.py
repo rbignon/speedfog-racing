@@ -281,11 +281,15 @@ class RewardsService:
         return result.rowcount or 0  # type: ignore[attr-defined]
 
     async def refresh_top1_elo_holders(self, reason: str | None = None) -> None:
-        """Sync the top1_elo badge to the current set of users with the highest ELO.
+        """Sync the top1_elo badge and grant ELO-rank souvenir templates.
 
         Filters out provisional players (elo_races < PROVISIONAL_THRESHOLD).
-        Ties grant the badge to all tied users.
-        Each holder also receives the elo_crown name template (idempotent permanent unlock).
+
+        - top1_elo (transient badge): granted to all users tied at the highest ELO.
+          Each holder also receives the elo_crown name template (permanent, idempotent).
+        - runebearer (permanent name template): granted to every user currently in the
+          top 5 ELO. Ties at the rank-5 boundary pull all tied users in. Once granted,
+          the template stays unlocked even if the user later drops out of the top 5.
         """
         max_q = await self.session.execute(
             select(User.elo_rating)
@@ -309,6 +313,24 @@ class RewardsService:
         await self.sync_transient_holders("top1_elo", holders, reason=reason)
         for uid in holders:
             await self.grant_name_template(uid, "elo_crown", reason="reached top 1 ELO")
+
+        top5_rows = await self.session.execute(
+            select(User.elo_rating)
+            .where(User.elo_races >= PROVISIONAL_THRESHOLD)
+            .order_by(User.elo_rating.desc())
+            .limit(5)
+        )
+        elo_window = list(top5_rows.scalars().all())
+        if elo_window:
+            fifth_elo = elo_window[-1]
+            top5_q = await self.session.execute(
+                select(User.id).where(
+                    User.elo_races >= PROVISIONAL_THRESHOLD,
+                    User.elo_rating >= fifth_elo,
+                )
+            )
+            for uid in {row[0] for row in top5_q.all()}:
+                await self.grant_name_template(uid, "runebearer", reason="entered top 5 ELO")
 
     async def refresh_weekly_daily_champion(
         self, week_starting: date, reason: str | None = None

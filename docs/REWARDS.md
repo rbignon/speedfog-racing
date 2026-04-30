@@ -36,11 +36,11 @@ Ties are allowed: when the qualifying condition selects multiple players (e.g. s
 
 #### Name templates
 
-| id           | description                          | unlock                                                                                                                                                         |
-| ------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default`    | Solid white name                     | Always unlocked, never revocable                                                                                                                               |
-| `elo_crown`  | Gold gradient + warm gold backdrop   | Granted permanently the first time a player reaches top 1 ELO                                                                                                  |
-| `runebearer` | Silver gradient (top 5 ELO souvenir) | Planned: granted permanently the first time a player enters the top 5 ELO. Currently only available via admin grant; the auto-detection hook is not yet wired. |
+| id           | description                          | unlock                                                            |
+| ------------ | ------------------------------------ | ----------------------------------------------------------------- |
+| `default`    | Solid white name                     | Always unlocked, never revocable                                  |
+| `elo_crown`  | Gold gradient + warm gold backdrop   | Granted permanently the first time a player reaches top 1 ELO     |
+| `runebearer` | Silver gradient (top 5 ELO souvenir) | Granted permanently the first time a player enters the top 5 ELO. |
 
 Name templates are **always permanent**. Once unlocked, they remain unlocked even if the player no longer meets the original condition (the gold-on-the-name memento outlasts the dynamic badge).
 
@@ -141,15 +141,15 @@ server/speedfog_racing/
 
 ### Integration points
 
-- **Top 1 ELO** (`services/race_lifecycle.py`): after each `update_elo_ratings(...)` call, invoke `refresh_top1_elo_holders()`. The `runebearer` (top 5) auto-grant is planned to live next to this hook but is not yet wired (see [Top 5 ELO unlock](#top-5-elo-unlock-planned) below).
+- **Top 1 ELO** (`services/race_lifecycle.py`): after each `update_elo_ratings(...)` call, invoke `refresh_top1_elo_holders()`. This also handles the `runebearer` (top 5) unlock when a player enters the top 5 (see [Top 5 ELO unlock](#top-5-elo-unlock) below).
 - **Weekly daily champion** (`services/daily_seed_loop.py`): when generating a daily seed for a Monday, call `refresh_weekly_daily_champion(week_starting=monday-7d)`. Past weeks before the rollout are not backfilled.
 - **Account deletion**: any `delete_user` flow must call `refresh_top1_elo_holders()` and `refresh_weekly_daily_champion(current_week_start)` after the deletion to reseat the holder sets.
 
-#### Top 5 ELO unlock (planned)
+#### Top 5 ELO unlock
 
-`runebearer` is intended as a permanent souvenir for any player who has entered the top 5 ELO at least once. The wiring is **not yet implemented**: the catalog entry exists, but no detection hook grants it automatically. Admins can grant it manually in the meantime via the existing `POST /api/admin/users/{user_id}/templates` endpoint.
+`runebearer` is a permanent souvenir for any player who has entered the top 5 ELO at least once. The detection runs at the bottom of `refresh_top1_elo_holders`: after computing the top-1 holders, the helper fetches the top 5 settled players (`elo_races >= PROVISIONAL_THRESHOLD`, ordered by `elo_rating DESC`) and idempotently calls `grant_name_template(user_id, "runebearer")` for each. Ties at the rank-5 boundary pull all tied users in.
 
-When the auto-grant lands, the natural place is alongside `refresh_top1_elo_holders`: after computing the top ELO holders, fetch the top 5 (filtered by `elo_races >= PROVISIONAL_THRESHOLD`, ordered by `elo_rating DESC`) and idempotently call `grant_name_template(user_id, "runebearer")` for each. The two unlocks (`elo_crown` and `runebearer`) would remain independent: a player who reaches top 1 directly receives both; a player who only ever floats around #3-#5 keeps `runebearer` for life.
+The two unlocks (`elo_crown` and `runebearer`) are independent: a player who reaches top 1 directly receives both; a player who only ever floats around #3-#5 keeps `runebearer` for life.
 
 ### REST endpoints
 
@@ -272,7 +272,7 @@ Readability is owned by the catalog: each template is hand-tuned to contrast ade
 `uv run python -m speedfog_racing.scripts.backfill_rewards` is idempotent and is run once after the Alembic migration:
 
 1. Grant `early_adopter` to every user with `created_at < 2026-04-01`.
-2. Run `refresh_top1_elo_holders()` to grant the current top 1 ELO badge and the `elo_crown` template. The `runebearer` (top 5) auto-grant is not yet wired and will be added when the detection hook lands.
+2. Run `refresh_top1_elo_holders()` to grant the current top 1 ELO badge, the `elo_crown` template (top 1), and the `runebearer` template (top 5).
 3. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
 
 Each grant emits a `RewardNotification`, so each affected user sees their consolidated banner on their next visit.
