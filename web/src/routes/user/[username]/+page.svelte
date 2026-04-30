@@ -24,6 +24,9 @@
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let error = $state<string | null>(null);
+	let nonDefaultTemplates = $derived(
+		profile?.unlocked_templates?.filter((t) => t.id !== 'default') ?? []
+	);
 
 	$effect(() => {
 		loadProfile();
@@ -189,7 +192,7 @@
 			</div>
 		</div>
 
-		{#if profile.held_badges?.length || (profile.unlocked_templates && profile.unlocked_templates.length > 1)}
+		{#if profile.held_badges?.length || nonDefaultTemplates.length}
 			<section class="profile-section profile-rewards">
 				<h2>Rewards</h2>
 				{#if profile.held_badges && profile.held_badges.length > 0}
@@ -205,13 +208,13 @@
 						</ul>
 					</div>
 				{/if}
-				{#if profile.unlocked_templates && profile.unlocked_templates.filter((t) => t.id !== 'default').length > 0}
+				{#if nonDefaultTemplates.length > 0}
 					<div class="rewards-block">
 						<h3>Name Templates</h3>
 						<ul class="rewards-grid">
-							{#each profile.unlocked_templates.filter((t) => t.id !== 'default') as t (t.id)}
+							{#each nonDefaultTemplates as t (t.id)}
 								<li
-									class="reward-tile template-tile"
+									class="reward-tile"
 									style={t.background_css ? `background: ${t.background_css};` : ''}
 								>
 									<span
