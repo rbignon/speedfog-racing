@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
-from speedfog_racing.models import BadgeGrant, NameTemplateUnlock, User
+from speedfog_racing.models import BadgeGrant, NameTemplateUnlock, User, UserRole
 from speedfog_racing.scripts.backfill_rewards import backfill_rewards
 from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
 
@@ -138,3 +138,108 @@ async def test_backfill_grants_top1_elo_to_current_holder(async_session_maker):
             .all()
         )
         assert crown_unlocks == [a_id]
+
+
+async def test_backfill_grants_pioneer_alongside_early_adopter(async_session_maker):
+    """Old accounts receive the pioneer name template alongside the early_adopter badge."""
+    async with async_session_maker() as db:
+        old = User(twitch_id="t-old", twitch_username="old")
+        new = User(twitch_id="t-new", twitch_username="new")
+        db.add_all([old, new])
+        await db.commit()
+        await db.refresh(old)
+        await db.refresh(new)
+        old_id = old.id
+        new_id = new.id
+
+        await db.execute(
+            update(User)
+            .where(User.id == old_id)
+            .values(created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        )
+        await db.execute(
+            update(User)
+            .where(User.id == new_id)
+            .values(created_at=datetime(2026, 4, 15, tzinfo=UTC))
+        )
+        await db.commit()
+
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+
+    async with async_session_maker() as db:
+        unlocks = (
+            (
+                await db.execute(
+                    select(NameTemplateUnlock.user_id).where(
+                        NameTemplateUnlock.template_id == "pioneer"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert set(unlocks) == {old_id}
+
+
+async def test_backfill_grants_archon_to_admins(async_session_maker):
+    """Users with role=admin get the archon template; non-admins do not."""
+    async with async_session_maker() as db:
+        admin = User(twitch_id="t-admin", twitch_username="boss", role=UserRole.ADMIN)
+        regular = User(twitch_id="t-reg", twitch_username="reg", role=UserRole.ORGANIZER)
+        db.add_all([admin, regular])
+        await db.commit()
+        await db.refresh(admin)
+        await db.refresh(regular)
+        admin_id = admin.id
+        regular_id = regular.id
+
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+
+    async with async_session_maker() as db:
+        unlocks = (
+            (
+                await db.execute(
+                    select(NameTemplateUnlock.user_id).where(
+                        NameTemplateUnlock.template_id == "archon"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert set(unlocks) == {admin_id}
+        assert regular_id not in set(unlocks)
+
+
+async def test_backfill_pioneer_and_archon_idempotent(async_session_maker):
+    """Re-running the backfill does not duplicate pioneer or archon unlocks."""
+    async with async_session_maker() as db:
+        old_admin = User(twitch_id="t-oa", twitch_username="oa", role=UserRole.ADMIN)
+        db.add(old_admin)
+        await db.commit()
+        await db.refresh(old_admin)
+        await db.execute(
+            update(User)
+            .where(User.id == old_admin.id)
+            .values(created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        )
+        await db.commit()
+
+    cutoff = date(2026, 4, 1)
+    await backfill_rewards(async_session_maker, cutoff=cutoff)
+    await backfill_rewards(async_session_maker, cutoff=cutoff)
+
+    async with async_session_maker() as db:
+        for template_id in ("pioneer", "archon"):
+            rows = (
+                (
+                    await db.execute(
+                        select(NameTemplateUnlock).where(
+                            NameTemplateUnlock.template_id == template_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(rows) == 1, f"{template_id} should be granted exactly once"

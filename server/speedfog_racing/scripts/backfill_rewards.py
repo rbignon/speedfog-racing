@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from speedfog_racing.database import async_session_maker as default_session_maker
-from speedfog_racing.models import User
+from speedfog_racing.models import User, UserRole
 from speedfog_racing.rewards.service import RewardsService
 
 logger = logging.getLogger(__name__)
@@ -36,8 +36,22 @@ async def backfill_rewards(
                 "early_adopter",
                 reason=f"backfill: account < {cutoff.isoformat()}",
             )
+            await svc.grant_name_template(
+                u.id,
+                "pioneer",
+                reason=f"backfill: account < {cutoff.isoformat()}",
+            )
         await db.commit()
-        logger.info("Granted early_adopter to %d account(s)", len(users))
+        logger.info("Granted early_adopter + pioneer to %d account(s)", len(users))
+
+    async with session_maker() as db:
+        svc = RewardsService(db)
+        admins = await db.execute(select(User).where(User.role == UserRole.ADMIN))
+        admin_users = list(admins.scalars().all())
+        for u in admin_users:
+            await svc.grant_name_template(u.id, "archon", reason="backfill: admin role")
+        await db.commit()
+        logger.info("Granted archon to %d admin(s)", len(admin_users))
 
     async with session_maker() as db:
         svc = RewardsService(db)

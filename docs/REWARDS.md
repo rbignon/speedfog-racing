@@ -36,11 +36,13 @@ Ties are allowed: when the qualifying condition selects multiple players (e.g. s
 
 #### Name templates
 
-| id           | description                          | unlock                                                            |
-| ------------ | ------------------------------------ | ----------------------------------------------------------------- |
-| `default`    | Solid white name                     | Always unlocked, never revocable                                  |
-| `elo_crown`  | Gold gradient + warm gold backdrop   | Granted permanently the first time a player reaches top 1 ELO     |
-| `runebearer` | Silver gradient (top 5 ELO souvenir) | Granted permanently the first time a player enters the top 5 ELO. |
+| id           | description                          | unlock                                                           |
+| ------------ | ------------------------------------ | ---------------------------------------------------------------- |
+| `default`    | Solid white name                     | Always unlocked, never revocable                                 |
+| `archon`     | Violet mono gradient (admin marker)  | Granted to platform administrators                               |
+| `elo_crown`  | Gold gradient + warm gold backdrop   | Granted permanently the first time a player reaches top 1 ELO    |
+| `runebearer` | Silver gradient (top 5 ELO souvenir) | Granted permanently the first time a player enters the top 5 ELO |
+| `pioneer`    | Bronze gradient (origin scroll)      | Granted to accounts created before the rewards system launched   |
 
 Name templates are **always permanent**. Once unlocked, they remain unlocked even if the player no longer meets the original condition (the gold-on-the-name memento outlasts the dynamic badge).
 
@@ -271,9 +273,10 @@ Readability is owned by the catalog: each template is hand-tuned to contrast ade
 
 `uv run python -m speedfog_racing.scripts.backfill_rewards` is idempotent and is run once after the Alembic migration:
 
-1. Grant `early_adopter` to every user with `created_at < 2026-04-01`.
-2. Run `refresh_top1_elo_holders()` to grant the current top 1 ELO badge, the `elo_crown` template (top 1), and the `runebearer` template (top 5).
-3. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
+1. Grant `early_adopter` badge and `pioneer` template to every user with `created_at < 2026-04-01`.
+2. Grant `archon` template to every user with `role == admin`. Future admin promotions are not auto-granted: an operator manually issues the template via `POST /api/admin/users/{id}/templates`. This is intentional, the case is rare.
+3. Run `refresh_top1_elo_holders()` to grant the current top 1 ELO badge, the `elo_crown` template (top 1), and the `runebearer` template (top 5).
+4. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
 
 Each grant emits a `RewardNotification`, so each affected user sees their consolidated banner on their next visit.
 
@@ -407,6 +410,8 @@ System fonts only. No web font loading (avoids network cost, FOIT/FOUT, and thir
 | `default`    | Solid `#E8E6E1` (charter primary text) | none                                                                                                                                                | none                                                                                       | Charter primary text. Always available, never revocable.                                                                                                                                                                                                                                                                                                                                                            |
 | `elo_crown`  | `("#FFE9A8", "#C8A44E")`               | `font-family: Georgia, "Times New Roman", Times, serif; font-style: italic; letter-spacing: 0.02em; text-shadow: 0 0 6px rgba(200, 164, 78, 0.35);` | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(200, 164, 78, 0.18), transparent 70%)`  | Champion souvenir. Serif italic + warm gold + soft glow evokes the lore typography of the Lands Between. Strongest tier signal in the catalog.                                                                                                                                                                                                                                                                      |
 | `runebearer` | `("#B8C5D6", "#6F87A6")`               | `font-style: italic; text-shadow: 0 0 5px rgba(184, 197, 214, 0.28);`                                                                               | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(184, 197, 214, 0.14), transparent 70%)` | Top 5 ELO souvenir. Same Inter font as default; the silver gradient + italic + faint blue glow differentiate it without reaching for serif typography. Both gradient stops sit fully in the silver-blue family (no off-white start) so the pseudo reads "silver" end-to-end, including in the in-game mod overlay where italic and shadow are not applied. Keeps the tier gap with `elo_crown` legible at a glance. |
+| `pioneer`    | `("#E8DCC4", "#A88B5C")`               | `font-style: italic; text-shadow: 0 0 4px rgba(168, 139, 92, 0.28);`                                                                                | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(168, 139, 92, 0.14), transparent 70%)`  | Early adopter souvenir. Inter italic in the bronze family, distinct from `elo_crown`'s metallic gold (more organic, "aged parchment" feel). Broad-tier signal: many users carry it, so it stays subdued (no font swap, modest shadow).                                                                                                                                                                              |
+| `archon`     | `("#C4B5FD", "#7C3AED")`               | `font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace; font-weight: 600; text-shadow: 0 0 6px rgba(124, 58, 237, 0.35);` | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(124, 58, 237, 0.18), transparent 70%)`  | Administrator marker. Mono semi-bold in charter purple; the only template using the mono font slot. Visually unambiguous at a glance and disjoint from the serif italic "champion" axis (`elo_crown`), so the two top-tier signals do not compete.                                                                                                                                                                  |
 
 **Note on color tuning**: silver-blue templates need stronger pigmentation than warmer-tone templates. The default text color `#E8E6E1` is itself a warm off-white; any template gradient with stops near that value will read as plain default text in renderers without backdrop support (the in-game mod). Templates in distant color families (gold, crimson, emerald) tolerate a brighter / more washed-out start stop because the hue itself differentiates from default. Templates in cool greys, off-whites, or pale tones must pick stops that are _fully saturated_ in their family.
 

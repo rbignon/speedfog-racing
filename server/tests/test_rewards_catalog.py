@@ -23,6 +23,8 @@ def test_v1_templates_present():
     assert "default" in NAME_TEMPLATES
     assert "elo_crown" in NAME_TEMPLATES
     assert "runebearer" in NAME_TEMPLATES
+    assert "pioneer" in NAME_TEMPLATES
+    assert "archon" in NAME_TEMPLATES
 
 
 def test_default_template_is_solid_white():
@@ -50,6 +52,22 @@ def test_runebearer_has_silver_gradient_and_italic_name_css():
     assert "italic" in rune.name_css
     # runebearer keeps the default Inter font (no font-family override)
     assert "font-family" not in rune.name_css
+
+
+def test_pioneer_has_bronze_gradient_and_italic_inter():
+    pioneer = NAME_TEMPLATES["pioneer"]
+    assert pioneer.gradient == ("#E8DCC4", "#A88B5C")
+    assert pioneer.name_css is not None
+    assert "italic" in pioneer.name_css
+    assert "font-family" not in pioneer.name_css
+
+
+def test_archon_uses_mono_font_in_violet():
+    archon = NAME_TEMPLATES["archon"]
+    assert archon.gradient == ("#C4B5FD", "#7C3AED")
+    assert archon.name_css is not None
+    assert "ui-monospace" in archon.name_css
+    assert "font-weight: 600" in archon.name_css
 
 
 def test_badge_dataclass_is_frozen():

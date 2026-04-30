@@ -82,4 +82,33 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         ),
         sort_order=20,
     ),
+    "pioneer": NameTemplate(
+        id="pioneer",
+        name="Pioneer",
+        description="Granted to accounts created before the rewards system launched.",
+        gradient=("#E8DCC4", "#A88B5C"),
+        name_css="font-style: italic; text-shadow: 0 0 4px rgba(168, 139, 92, 0.28);",
+        background_css=(
+            "radial-gradient(ellipse 60% 100% at 25% 50%,"
+            " rgba(168, 139, 92, 0.14), transparent 70%)"
+        ),
+        sort_order=30,
+    ),
+    "archon": NameTemplate(
+        id="archon",
+        name="Archon",
+        description="Reserved for platform administrators.",
+        gradient=("#C4B5FD", "#7C3AED"),
+        name_css=(
+            'font-family: ui-monospace, "SF Mono", Menlo, Consolas,'
+            ' "Courier New", monospace;'
+            " font-weight: 600;"
+            " text-shadow: 0 0 6px rgba(124, 58, 237, 0.35);"
+        ),
+        background_css=(
+            "radial-gradient(ellipse 60% 100% at 25% 50%,"
+            " rgba(124, 58, 237, 0.18), transparent 70%)"
+        ),
+        sort_order=5,
+    ),
 }
