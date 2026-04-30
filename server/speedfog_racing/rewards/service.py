@@ -9,7 +9,15 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from speedfog_racing.models import BadgeGrant, NameTemplateUnlock, RewardNotification, User
+from speedfog_racing.models import (
+    BadgeGrant,
+    NameTemplateUnlock,
+    Participant,
+    ParticipantStatus,
+    Race,
+    RewardNotification,
+    User,
+)
 from speedfog_racing.rewards.catalog import BADGES, DEFAULT_TEMPLATE_ID, NAME_TEMPLATES
 from speedfog_racing.rewards.models_data import Badge, NameTemplate
 from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
@@ -311,12 +319,6 @@ class RewardsService:
         A "win" is a Participant in a daily race (Race.daily_date IN that range)
         with status FINISHED and the lowest igt_ms among finishers (one winner per day).
         """
-        from speedfog_racing.models import (
-            Participant,
-            ParticipantStatus,
-            Race,
-        )
-
         week_end = week_starting + timedelta(days=7)
 
         finishers = (
