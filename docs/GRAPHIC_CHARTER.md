@@ -108,7 +108,9 @@
 - Text: `#EF4444`
 - Hover: background `rgba(220, 38, 38, 0.1)`
 
-**Rage Quit**, intentional exception to the flat design rule. Skeuomorphic 3D "big red button" (radial gradient, multi-layer box-shadow, press-down animation) for dramatic effect. The only component that uses gradients.
+**Rage Quit**, intentional exception to the flat design rule. Skeuomorphic 3D "big red button" (radial gradient, multi-layer box-shadow, press-down animation) for dramatic effect.
+
+The Rage Quit button and the rewards system's name templates are the **only** documented exceptions to the flat / no-gradient / single-font rules. See `docs/REWARDS.md` for the name template exception scope (gradient text, translucent backdrops, alternative font family from a documented short-list).
 
 ### Cards (race cards)
 
