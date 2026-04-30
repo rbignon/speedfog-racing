@@ -135,11 +135,21 @@ impl Default for DebugInfo {
     }
 }
 
+/// Pre-resolved name color for the leaderboard row (parsed once on
+/// receipt; consumed per-frame by the renderer). `None` means "use the
+/// row's status color" (the existing default behavior).
+#[derive(Debug, Clone)]
+pub(crate) enum ResolvedNameColor {
+    Solid([f32; 4]),
+    Gradient([f32; 4], [f32; 4]),
+}
+
 #[derive(Default)]
 pub(crate) struct LeaderboardRowCache {
     pub right_text: String,
     pub gap_text: Option<String>,
     pub computed_gap_ms: Option<i32>,
+    pub name_color: Option<ResolvedNameColor>,
 }
 
 #[derive(Default)]

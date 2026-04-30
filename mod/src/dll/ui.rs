@@ -461,6 +461,7 @@ impl RaceTracker {
         gap_text: Option<&str>,
         computed_gap_ms: Option<i32>,
         left_buf: &mut String,
+        name_color: Option<&crate::dll::tracker::ResolvedNameColor>,
     ) {
         let name = p
             .twitch_display_name
@@ -495,7 +496,53 @@ impl RaceTracker {
         write!(left_buf, "{:2}. {}", rank, name).ok();
         let left_max = gap_x - spacing;
         let truncated = truncate_to_width(ui, left_buf, left_max);
-        ui.text_colored(color, &truncated);
+
+        // Split "12. NAME" into the rank prefix (status-colored) and the name
+        // (template-colored or status-colored fallback).
+        // The prefix is "{rank:2}. ": always 4 bytes (2-char padded rank + ". ")
+        // for any rank 1-99. Using a constant avoids a per-frame heap allocation.
+        const PREFIX_LEN: usize = 4; // "{:2}. " is always 4 bytes
+        let truncated_str: &str = truncated.as_ref();
+        if truncated_str.len() <= PREFIX_LEN {
+            // Pathological narrow column: render the whole thing in status color.
+            ui.text_colored(color, truncated_str);
+        } else {
+            let (prefix, name_part) = truncated_str.split_at(PREFIX_LEN);
+            ui.text_colored(color, prefix);
+            ui.same_line_with_spacing(0.0, 0.0);
+            match name_color {
+                Some(crate::dll::tracker::ResolvedNameColor::Solid(c)) => {
+                    ui.text_colored(*c, name_part);
+                }
+                Some(crate::dll::tracker::ResolvedNameColor::Gradient(c0, c1)) => {
+                    let char_count = name_part.chars().count();
+                    if char_count <= 1 {
+                        ui.text_colored(*c0, name_part);
+                    } else {
+                        profile_span!("render_name_gradient");
+                        let n = char_count as f32;
+                        let mut buf = [0u8; 4];
+                        for (i, ch) in name_part.chars().enumerate() {
+                            let t = i as f32 / (n - 1.0);
+                            let lerped = [
+                                c0[0] + (c1[0] - c0[0]) * t,
+                                c0[1] + (c1[1] - c0[1]) * t,
+                                c0[2] + (c1[2] - c0[2]) * t,
+                                c0[3] + (c1[3] - c0[3]) * t,
+                            ];
+                            let s = ch.encode_utf8(&mut buf);
+                            ui.text_colored(lerped, s);
+                            if i + 1 < char_count {
+                                ui.same_line_with_spacing(0.0, 0.0);
+                            }
+                        }
+                    }
+                }
+                None => {
+                    ui.text_colored(color, name_part);
+                }
+            }
+        }
 
         // Gap (right-aligned within gap column, color-coded)
         if let Some(gt) = gap_text {
@@ -554,6 +601,7 @@ impl RaceTracker {
                     row.gap_text.as_deref(),
                     row.computed_gap_ms,
                     buf_left,
+                    row.name_color.as_ref(),
                 );
             };
 
@@ -667,6 +715,20 @@ impl RaceTracker {
                 row.gap_text = Some(gap_text);
             }
             row.computed_gap_ms = computed_gap_ms;
+            row.name_color = p.name_template.as_ref().and_then(|nt| {
+                if let Some((a, b)) = nt.gradient.as_ref() {
+                    Some(crate::dll::tracker::ResolvedNameColor::Gradient(
+                        crate::core::parse_hex_color(a, 1.0),
+                        crate::core::parse_hex_color(b, 1.0),
+                    ))
+                } else if let Some(c) = nt.color.as_ref() {
+                    Some(crate::dll::tracker::ResolvedNameColor::Solid(
+                        crate::core::parse_hex_color(c, 1.0),
+                    ))
+                } else {
+                    None
+                }
+            });
             cache.rows.push(row);
         }
 
