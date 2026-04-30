@@ -499,15 +499,15 @@ impl RaceTracker {
 
         // Split "12. NAME" into the rank prefix (status-colored) and the name
         // (template-colored or status-colored fallback).
-        // The prefix is "{rank:2}. ": always 4 bytes (2-char padded rank + ". ")
-        // for any rank 1-99. Using a constant avoids a per-frame heap allocation.
-        const PREFIX_LEN: usize = 4; // "{:2}. " is always 4 bytes
+        // Prefix is "{rank:2}. ", 4 bytes for ranks 1-99 but 5+ for 100+, so we
+        // locate ". " dynamically rather than hardcoding the length.
         let truncated_str: &str = truncated.as_ref();
-        if truncated_str.len() <= PREFIX_LEN {
-            // Pathological narrow column: render the whole thing in status color.
+        let prefix_len = truncated_str.find(". ").map(|i| i + 2).unwrap_or(0);
+        if prefix_len == 0 || truncated_str.len() <= prefix_len {
+            // Pathological narrow column or no separator found: render the whole thing in status color.
             ui.text_colored(color, truncated_str);
         } else {
-            let (prefix, name_part) = truncated_str.split_at(PREFIX_LEN);
+            let (prefix, name_part) = truncated_str.split_at(prefix_len);
             ui.text_colored(color, prefix);
             ui.same_line_with_spacing(0.0, 0.0);
             match name_color {
