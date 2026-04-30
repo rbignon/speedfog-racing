@@ -45,10 +45,14 @@ class MockUser:
         id: uuid.UUID | None = None,
         twitch_username: str = "testuser",
         twitch_display_name: str | None = "TestUser",
+        equipped_badge_id: str | None = None,
+        equipped_name_template_id: str | None = None,
     ):
         self.id = id or uuid.uuid4()
         self.twitch_username = twitch_username
         self.twitch_display_name = twitch_display_name
+        self.equipped_badge_id = equipped_badge_id
+        self.equipped_name_template_id = equipped_name_template_id
 
 
 class MockSeed:

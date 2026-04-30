@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import WebSocket
 
 from speedfog_racing.models import Participant, ParticipantStatus, Race
+from speedfog_racing.rewards.catalog import DEFAULT_TEMPLATE_ID, NAME_TEMPLATES
 from speedfog_racing.services.chat_access import (
     can_read_participants_chat,
     can_read_public_chat,
@@ -18,6 +19,7 @@ from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_
 from speedfog_racing.services.twitch_live import twitch_live_service
 from speedfog_racing.websocket.schemas import (
     LeaderboardUpdateMessage,
+    NameTemplatePayload,
     ParticipantInfo,
     PlayerUpdateMessage,
     RaceStatusChangeMessage,
@@ -573,6 +575,13 @@ def participant_to_info(
     if graph_json and participant.current_zone:
         tier = get_tier_for_node(participant.current_zone, graph_json)
 
+    template_id = participant.user.equipped_name_template_id or DEFAULT_TEMPLATE_ID
+    template = NAME_TEMPLATES.get(template_id) or NAME_TEMPLATES[DEFAULT_TEMPLATE_ID]
+    name_template_payload = NameTemplatePayload(
+        color=template.color,
+        gradient=list(template.gradient) if template.gradient is not None else None,
+    )
+
     return ParticipantInfo(
         id=str(participant.id),
         twitch_username=participant.user.twitch_username,
@@ -590,6 +599,9 @@ def participant_to_info(
         layer_entry_igt=layer_entry_igt,
         is_live=twitch_live_service.is_live(participant.user.twitch_username),
         stream_url=twitch_live_service.stream_url(participant.user.twitch_username),
+        equipped_badge_id=participant.user.equipped_badge_id,
+        equipped_name_template_id=participant.user.equipped_name_template_id,
+        name_template=name_template_payload,
     )
 
 

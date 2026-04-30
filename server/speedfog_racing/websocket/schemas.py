@@ -72,6 +72,16 @@ def extract_spawn_items(graph_json: dict[str, Any]) -> list[SpawnItem]:
 # --- Server -> Client Messages ---
 
 
+class NameTemplatePayload(BaseModel):
+    """Mod-side render payload for a name template (color/gradient only).
+
+    Background CSS is web-only and is not transmitted over WebSocket.
+    """
+
+    color: str | None = None
+    gradient: list[str] | None = None
+
+
 class ParticipantInfo(BaseModel):
     """Participant info for leaderboard."""
 
@@ -91,6 +101,9 @@ class ParticipantInfo(BaseModel):
     layer_entry_igt: int | None = None
     is_live: bool = False
     stream_url: str | None = None
+    equipped_badge_id: str | None = None
+    equipped_name_template_id: str | None = None
+    name_template: NameTemplatePayload | None = None
 
 
 class RaceInfo(BaseModel):
