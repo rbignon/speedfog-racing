@@ -23,5 +23,6 @@ class NameTemplate:
     description: str
     color: str | None = None
     gradient: tuple[str, str] | None = None
+    name_css: str | None = None
     background_css: str | None = None
     sort_order: int = 0

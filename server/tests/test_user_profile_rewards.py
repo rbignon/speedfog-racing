@@ -109,6 +109,7 @@ async def test_profile_returns_held_badges_and_unlocked_templates(
     assert elo_crown["gradient"] is not None
     assert len(elo_crown["gradient"]) == 2
     assert elo_crown["background_css"] is not None
+    assert elo_crown["name_css"] is not None
 
 
 @pytest.mark.asyncio

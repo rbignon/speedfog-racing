@@ -19,7 +19,7 @@ def test_catalog_returns_badges_and_templates():
         badge_ids = {b["id"] for b in data["badges"]}
         assert {"early_adopter", "contributor", "top1_elo", "weekly_daily_champion"} <= badge_ids
         template_ids = {t["id"] for t in data["name_templates"]}
-        assert {"default", "elo_crown"} <= template_ids
+        assert {"default", "elo_crown", "runebearer"} <= template_ids
 
 
 def test_catalog_template_carries_color_or_gradient():
@@ -29,9 +29,24 @@ def test_catalog_template_carries_color_or_gradient():
         default = next(t for t in data["name_templates"] if t["id"] == "default")
         assert default["color"] == "#FFFFFF"
         assert default["gradient"] is None
+        assert default["name_css"] is None
         crown = next(t for t in data["name_templates"] if t["id"] == "elo_crown")
-        assert crown["gradient"] == ["#FFFFFF", "#FFD700"]
+        assert crown["gradient"] == ["#FFE9A8", "#C8A44E"]
         assert crown["background_css"] is not None
+        assert crown["name_css"] is not None
+        assert "Georgia" in crown["name_css"]
+        assert "italic" in crown["name_css"]
+
+
+def test_catalog_runebearer_template():
+    with TestClient(app) as client:
+        resp = client.get("/api/rewards/catalog")
+        data = resp.json()
+        rune = next(t for t in data["name_templates"] if t["id"] == "runebearer")
+        assert rune["gradient"] == ["#B8C5D6", "#6F87A6"]
+        assert rune["name_css"] is not None
+        assert "italic" in rune["name_css"]
+        assert rune["background_css"] is not None
 
 
 def test_catalog_badge_carries_lifecycle_and_icon():

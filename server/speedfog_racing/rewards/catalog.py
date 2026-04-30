@@ -57,8 +57,29 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         id="elo_crown",
         name="ELO Crown",
         description="Granted permanently the first time you reach top 1 ELO.",
-        gradient=("#FFFFFF", "#FFD700"),
-        background_css="linear-gradient(90deg, rgba(255,255,255,0.10), rgba(255,215,0,0.06))",
+        gradient=("#FFE9A8", "#C8A44E"),
+        name_css=(
+            'font-family: Georgia, "Times New Roman", Times, serif;'
+            " font-style: italic;"
+            " letter-spacing: 0.02em;"
+            " text-shadow: 0 0 6px rgba(200, 164, 78, 0.35);"
+        ),
+        background_css=(
+            "radial-gradient(ellipse 60% 100% at 25% 50%,"
+            " rgba(200, 164, 78, 0.18), transparent 70%)"
+        ),
         sort_order=10,
+    ),
+    "runebearer": NameTemplate(
+        id="runebearer",
+        name="Runebearer",
+        description="Granted permanently the first time you enter the top 5 ELO.",
+        gradient=("#B8C5D6", "#6F87A6"),
+        name_css="font-style: italic; text-shadow: 0 0 5px rgba(184, 197, 214, 0.28);",
+        background_css=(
+            "radial-gradient(ellipse 60% 100% at 25% 50%,"
+            " rgba(184, 197, 214, 0.14), transparent 70%)"
+        ),
+        sort_order=20,
     ),
 }

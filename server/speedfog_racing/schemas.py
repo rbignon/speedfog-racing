@@ -211,6 +211,7 @@ class ProfileNameTemplate(BaseModel):
     name: str
     color: str | None = None
     gradient: list[str] | None = None
+    name_css: str | None = None
     background_css: str | None = None
 
 

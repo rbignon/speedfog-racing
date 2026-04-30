@@ -34,6 +34,7 @@ async def get_catalog() -> dict:  # type: ignore[type-arg]
                 "description": t.description,
                 "color": t.color,
                 "gradient": list(t.gradient) if t.gradient is not None else None,
+                "name_css": t.name_css,
                 "background_css": t.background_css,
                 "sort_order": t.sort_order,
             }
@@ -64,6 +65,7 @@ async def get_my_inventory(
                 "name": t.name,
                 "color": t.color,
                 "gradient": list(t.gradient) if t.gradient else None,
+                "name_css": t.name_css,
                 "background_css": t.background_css,
             }
             for t in inv.unlocked_templates

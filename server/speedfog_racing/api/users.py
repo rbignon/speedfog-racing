@@ -519,6 +519,7 @@ async def get_user_profile(
             name=t.name,
             color=t.color,
             gradient=list(t.gradient) if t.gradient is not None else None,
+            name_css=t.name_css,
             background_css=t.background_css,
         )
         for t in unlocked_templates
