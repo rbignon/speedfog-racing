@@ -8,7 +8,11 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import ChatChannel, ParticipantStatus, Race, RaceStatus
-from speedfog_racing.rewards.service import RewardsService
+
+# `rewards.service` imports back into `services.stats_service`; importing it at
+# module top would re-enter `services/__init__.py` mid-load and crash anything
+# that loads `rewards.service` first (e.g. the backfill CLI). We import lazily
+# inside the two call sites instead.
 from speedfog_racing.services.stats_service import (
     recompute_traits_for_race_async,
     update_elo_ratings,
@@ -68,6 +72,8 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     logger.info("Race %s auto-finished (all participants done)", race.id)
 
     await update_elo_ratings(race.id, db)
+    from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
+
     await RewardsService(db).refresh_top1_elo_holders(reason=f"after race {race.id}")
     await db.commit()
     # Trait recomputation rescans each finisher's full race history, so
@@ -131,6 +137,8 @@ async def finalize_race(
     room = manager.get_room(race.id)
 
     await update_elo_ratings(race.id, db)
+    from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
+
     await RewardsService(db).refresh_top1_elo_holders(reason=f"after race {race.id}")
     await db.commit()
 

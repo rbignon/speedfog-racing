@@ -10,7 +10,9 @@ from datetime import UTC, date, datetime, time
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from speedfog_racing.database import async_session_maker as default_session_maker
 from speedfog_racing.models import User
+from speedfog_racing.rewards.service import RewardsService
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +24,6 @@ async def backfill_rewards(
     cutoff: date = DEFAULT_CUTOFF,
 ) -> None:
     """Idempotent: re-running produces no duplicates."""
-    # Lazy import: rewards.service <-> services.race_lifecycle is a circular dependency.
-    # Importing here (rather than at module top) avoids the partial-initialization error
-    # when this script is executed as a standalone __main__ before the services package
-    # has been fully loaded.
-    from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
-
     cutoff_dt = datetime.combine(cutoff, time.min, tzinfo=UTC)
 
     async with session_maker() as db:
@@ -60,12 +56,6 @@ def main() -> None:
         help="Early-adopter cutoff (YYYY-MM-DD).",
     )
     args = parser.parse_args()
-    # Import lazily to avoid a circular-import chain triggered by the app's
-    # services/__init__.py when this module is loaded as a standalone script.
-    from speedfog_racing.database import (  # noqa: PLC0415
-        async_session_maker as default_session_maker,
-    )
-
     asyncio.run(backfill_rewards(default_session_maker, cutoff=args.cutoff))
 
 
