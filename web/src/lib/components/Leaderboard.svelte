@@ -145,7 +145,7 @@
 									</a>
 									{#if badge}
 										<img
-											src="/rewards/badges/{badge.icon_filename}"
+											src="/badges/{badge.icon_filename}"
 											alt={badge.name}
 											title={badge.name}
 											class="participant-badge"
@@ -192,7 +192,7 @@
 								</a>
 								{#if badge}
 									<img
-										src="/rewards/badges/{badge.icon_filename}"
+										src="/badges/{badge.icon_filename}"
 										alt={badge.name}
 										title={badge.name}
 										class="participant-badge"

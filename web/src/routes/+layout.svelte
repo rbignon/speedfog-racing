@@ -6,6 +6,7 @@
 	import { page } from '$app/state';
 	import { getTwitchLoginUrl, fetchJoinableRaces, fetchTodayDaily } from '$lib/api';
 	import { joinableStore } from '$lib/stores/joinable.svelte';
+	import { rewards } from '$lib/stores/rewards.svelte';
 	import NavUserSearch from '$lib/components/NavUserSearch.svelte';
 	import FeedbackModal from '$lib/components/FeedbackModal.svelte';
 
@@ -46,6 +47,9 @@
 
 	onMount(() => {
 		auth.init();
+		rewards.ensureLoaded().catch(() => {
+			// Silently ignore: rewards rendering falls back to inherit/default colors when the catalog is unavailable.
+		});
 	});
 
 	$effect(() => {

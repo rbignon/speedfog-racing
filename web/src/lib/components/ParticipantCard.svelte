@@ -69,7 +69,7 @@
 			</a>
 			{#if equippedBadge}
 				<img
-					src="/rewards/badges/{equippedBadge.icon_filename}"
+					src="/badges/{equippedBadge.icon_filename}"
 					alt={equippedBadge.name}
 					title={equippedBadge.name}
 					class="participant-badge"

@@ -67,7 +67,7 @@
 			<span class="dot" style="background: {color};"></span>
 			<span class="name" style={nameStyleFor(participant)}
 				>{displayName(participant)}{#if badge}<img
-						src="/rewards/badges/{badge.icon_filename}"
+						src="/badges/{badge.icon_filename}"
 						alt={badge.name}
 						title={badge.name}
 						class="participant-badge"
