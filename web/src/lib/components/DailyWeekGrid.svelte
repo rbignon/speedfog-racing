@@ -195,6 +195,7 @@
 	.cell.missing-past {
 		border-style: dashed;
 		opacity: 0.55;
+		cursor: not-allowed;
 	}
 	.cell.past.played {
 		border-left: 3px solid var(--color-success);
