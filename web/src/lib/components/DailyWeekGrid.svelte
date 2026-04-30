@@ -33,36 +33,38 @@
 	}
 
 	function userResultLabel(day: DailyWeekDay): string | null {
-		if (day.state === 'today') return null;
 		if (!userId) return null;
 		const r = day.my_result;
 		if (!r) return null;
 		if (r.status === 'finished' && r.placement && r.igt_ms != null) {
-			return `You: ${r.placement}/${r.total_finishers} - ${formatIgt(r.igt_ms)}`;
+			return `${r.placement}/${r.total_finishers} - ${formatIgt(r.igt_ms)}`;
 		}
-		if (r.status === 'abandoned') return 'You: abandoned';
-		if (r.status === 'playing') return 'You: playing';
-		return 'You: signed up';
+		return null;
 	}
 
-	type TodayStrip = {
+	type CellStrip = {
 		text: string;
 		variant: 'play-now' | 'in-progress' | 'finished' | 'abandoned';
 	} | null;
 
-	function todayStrip(day: DailyWeekDay): TodayStrip {
-		if (day.state !== 'today') return null;
-		const r = day.my_result;
-		if (!r) return { text: 'Play now', variant: 'play-now' };
-		if (r.status === 'finished' && r.placement) {
-			return {
-				text: `Finished ${r.placement}/${r.total_finishers}`,
-				variant: 'finished'
-			};
+	function cellStrip(day: DailyWeekDay): CellStrip {
+		if (day.state === 'today') {
+			const r = day.my_result;
+			if (!r) return { text: 'Play now', variant: 'play-now' };
+			if (r.status === 'finished') return { text: 'Done', variant: 'finished' };
+			if (r.status === 'abandoned') return { text: 'Abandoned', variant: 'abandoned' };
+			// registered, ready, playing
+			return { text: 'In progress', variant: 'in-progress' };
 		}
-		if (r.status === 'abandoned') return { text: 'Abandoned', variant: 'abandoned' };
-		// registered, ready, playing
-		return { text: 'In progress', variant: 'in-progress' };
+		if (day.state === 'past') {
+			const r = day.my_result;
+			if (!r) return null;
+			if (r.status === 'finished') return { text: 'Done', variant: 'finished' };
+			if (r.status === 'playing') return { text: 'In progress', variant: 'in-progress' };
+			// abandoned, registered, ready (signed up but never played)
+			return { text: 'Abandoned', variant: 'abandoned' };
+		}
+		return null;
 	}
 
 	function hrefFor(day: DailyWeekDay): string | null {
@@ -87,7 +89,6 @@
 	<div class="grid" bind:this={scrollContainer}>
 		{#each week.days as day (day.date)}
 			{@const href = hrefFor(day)}
-			{@const played = day.my_result != null}
 			{@const result = userResultLabel(day)}
 			<svelte:element
 				this={href ? 'a' : 'div'}
@@ -97,7 +98,6 @@
 				class:today={day.state === 'today'}
 				class:future={day.state === 'future'}
 				class:missing-past={day.state === 'missing_past'}
-				class:played
 				data-cell-state={day.state}
 			>
 				<div class="header">
@@ -143,11 +143,9 @@
 					{#if result}
 						<span class="me">{result}</span>
 					{/if}
-					{#if day.state === 'today'}
-						{@const strip = todayStrip(day)}
-						{#if strip}
-							<span class="strip strip-{strip.variant}">{strip.text}</span>
-						{/if}
+					{@const strip = cellStrip(day)}
+					{#if strip}
+						<span class="strip strip-{strip.variant}">{strip.text}</span>
 					{/if}
 				{/if}
 			</svelte:element>
@@ -196,9 +194,6 @@
 		border-style: dashed;
 		opacity: 0.55;
 		cursor: not-allowed;
-	}
-	.cell.past.played {
-		border-left: 3px solid var(--color-success);
 	}
 
 	.header {
@@ -256,11 +251,11 @@
 	}
 
 	.me {
-		margin-top: auto;
 		padding-top: 0.4rem;
 		border-top: 1px dashed var(--color-border);
-		color: var(--color-purple);
+		color: var(--color-text-secondary);
 		font-size: var(--font-size-xs);
+		font-variant-numeric: tabular-nums;
 	}
 	.strip {
 		margin-top: auto;
