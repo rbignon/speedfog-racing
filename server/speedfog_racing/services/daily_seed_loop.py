@@ -23,6 +23,7 @@ from speedfog_racing.models import (
     RaceStatus,
     User,
 )
+from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services import assign_seed_to_race, get_pool
 from speedfog_racing.services.hard_close_loop import close_expired_races
 
@@ -145,6 +146,14 @@ async def create_daily_seed_if_needed(
             await db.rollback()
             logger.info("Daily seed for %s was created concurrently", today)
             return None
+
+        if today.weekday() == 0:  # Monday: roll up the previous week's daily wins.
+            week_starting = today - timedelta(days=7)
+            await RewardsService(db).refresh_weekly_daily_champion(
+                week_starting=week_starting,
+                reason="weekly daily rollup",
+            )
+            await db.commit()
 
         # Re-fetch with the relationships finalize_race / Discord copy expects
         # so callers (and the notification) see a consistent eager-loaded row.
