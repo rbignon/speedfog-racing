@@ -36,7 +36,8 @@
 				`background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]});`,
 				'-webkit-background-clip: text;',
 				'background-clip: text;',
-				'color: transparent;'
+				'color: transparent;',
+				'padding-inline-end: 0.1em;'
 			);
 		} else if (t.color) {
 			parts.push(`color: ${t.color};`);

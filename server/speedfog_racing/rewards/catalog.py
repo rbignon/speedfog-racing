@@ -58,12 +58,7 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         name="ELO Crown",
         description="Granted permanently the first time you reach top 1 ELO.",
         gradient=("#FFE9A8", "#C8A44E"),
-        name_css=(
-            'font-family: Georgia, "Times New Roman", Times, serif;'
-            " font-style: italic;"
-            " letter-spacing: 0.02em;"
-            " text-shadow: 0 0 6px rgba(200, 164, 78, 0.35);"
-        ),
+        name_css="font-style: italic; text-shadow: 0 0 4px rgba(168, 139, 92, 0.28);",
         background_css=(
             "radial-gradient(ellipse 60% 100% at 25% 50%,"
             " rgba(200, 164, 78, 0.18), transparent 70%)"
@@ -86,11 +81,15 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         id="pioneer",
         name="Pioneer",
         description="Granted to accounts created before the rewards system launched.",
-        gradient=("#E8DCC4", "#A88B5C"),
-        name_css="font-style: italic; text-shadow: 0 0 4px rgba(168, 139, 92, 0.28);",
+        name_css=(
+            'font-family: Georgia, "Times New Roman", Times, serif;'
+            " font-style: italic;"
+            " letter-spacing: 0.02em;"
+            " text-shadow: 0 0 6px rgba(200, 164, 78, 0.35);"
+        ),
         background_css=(
-            "radial-gradient(ellipse 60% 100% at 25% 50%,"
-            " rgba(168, 139, 92, 0.14), transparent 70%)"
+            "radial-gradient(ellipse 50% 80% at 25% 50%,"
+            " rgba(232, 220, 196, 0.12), transparent 60%)"
         ),
         sort_order=30,
     ),
@@ -109,6 +108,6 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
             "radial-gradient(ellipse 60% 100% at 25% 50%,"
             " rgba(124, 58, 237, 0.18), transparent 70%)"
         ),
-        sort_order=5,
+        sort_order=40,
     ),
 }

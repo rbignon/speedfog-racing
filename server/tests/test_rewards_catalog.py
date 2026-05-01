@@ -35,31 +35,36 @@ def test_default_template_is_solid_white():
     assert default.background_css is None
 
 
-def test_elo_crown_has_gradient_and_serif_name_css():
+def test_elo_crown_belongs_to_inter_italic_elo_family():
+    """elo_crown shares Inter italic with runebearer (same data axis: ELO rank)."""
     crown = NAME_TEMPLATES["elo_crown"]
-    assert crown.gradient is not None
-    assert len(crown.gradient) == 2
+    assert crown.gradient == ("#FFE9A8", "#C8A44E")
     assert crown.name_css is not None
-    assert "Georgia" in crown.name_css
     assert "italic" in crown.name_css
+    # No font-family override: keeps the charter Inter, like runebearer.
+    assert "font-family" not in crown.name_css
 
 
-def test_runebearer_has_silver_gradient_and_italic_name_css():
+def test_runebearer_belongs_to_inter_italic_elo_family():
     rune = NAME_TEMPLATES["runebearer"]
     assert rune.gradient is not None
     assert len(rune.gradient) == 2
     assert rune.name_css is not None
     assert "italic" in rune.name_css
-    # runebearer keeps the default Inter font (no font-family override)
     assert "font-family" not in rune.name_css
 
 
-def test_pioneer_has_bronze_gradient_and_italic_inter():
+def test_pioneer_has_no_gradient_and_uses_georgia():
+    """pioneer is web-only by design: no gradient means the mod overlay
+    keeps the player's status color, while the web renders the parchment
+    look via name_css and background_css.
+    """
     pioneer = NAME_TEMPLATES["pioneer"]
-    assert pioneer.gradient == ("#E8DCC4", "#A88B5C")
+    assert pioneer.gradient is None
+    assert pioneer.color is None
     assert pioneer.name_css is not None
+    assert "Georgia" in pioneer.name_css
     assert "italic" in pioneer.name_css
-    assert "font-family" not in pioneer.name_css
 
 
 def test_archon_uses_mono_font_in_violet():

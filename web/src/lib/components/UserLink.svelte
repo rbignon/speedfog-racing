@@ -31,6 +31,9 @@
         "-webkit-background-clip: text;",
         "background-clip: text;",
         "color: transparent;",
+        // Italic glyphs slant past the text bounding box, so the gradient
+        // would clip the last letter without this padding.
+        "padding-inline-end: 0.1em;",
       );
     } else if (template?.color) {
       parts.push(`color: ${template.color};`);

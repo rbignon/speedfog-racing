@@ -34,7 +34,6 @@ def test_catalog_template_carries_color_or_gradient():
         assert crown["gradient"] == ["#FFE9A8", "#C8A44E"]
         assert crown["background_css"] is not None
         assert crown["name_css"] is not None
-        assert "Georgia" in crown["name_css"]
         assert "italic" in crown["name_css"]
 
 

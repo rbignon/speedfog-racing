@@ -59,6 +59,7 @@
         "-webkit-background-clip: text;",
         "background-clip: text;",
         "color: transparent;",
+        "padding-inline-end: 0.1em;",
       );
     } else if (t?.color) {
       parts.push(`color: ${t.color};`);
