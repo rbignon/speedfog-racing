@@ -18,7 +18,12 @@ from speedfog_racing.models import (
     RewardNotification,
     User,
 )
-from speedfog_racing.rewards.catalog import BADGES, DEFAULT_TEMPLATE_ID, NAME_TEMPLATES
+from speedfog_racing.rewards.catalog import (
+    BADGES,
+    DEFAULT_TEMPLATE_ID,
+    NAME_TEMPLATES,
+    VETERAN_RACE_THRESHOLD,
+)
 from speedfog_racing.rewards.models_data import Badge, NameTemplate
 from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
 
@@ -389,6 +394,21 @@ class RewardsService:
         max_wins = max(r.wins for r in rows)
         holders = {r.user_id for r in rows if r.wins == max_wins}
         await self.sync_transient_holders("weekly_daily_champion", holders, reason=reason)
+
+    async def check_veteran_eligibility(self, user_id: uuid.UUID) -> None:
+        """Grant the veteran badge if the user has finished VETERAN_RACE_THRESHOLD races.
+
+        Idempotent: grant_permanent_badge no-ops on re-grant. Safe to call after every
+        race finish; counts only Participant rows with status=FINISHED across all races.
+        """
+        count = await self.session.scalar(
+            select(func.count(Participant.id)).where(
+                Participant.user_id == user_id,
+                Participant.status == ParticipantStatus.FINISHED,
+            )
+        )
+        if (count or 0) >= VETERAN_RACE_THRESHOLD:
+            await self.grant_permanent_badge(user_id, "veteran", reason=f"finished {count} races")
 
     async def revoke_badge(self, user_id: uuid.UUID, badge_id: str) -> None:
         if badge_id not in BADGES:

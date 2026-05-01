@@ -74,7 +74,11 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     await update_elo_ratings(race.id, db)
     from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
 
-    await RewardsService(db).refresh_top1_elo_holders(reason=f"after race {race.id}")
+    rewards_svc = RewardsService(db)
+    await rewards_svc.refresh_top1_elo_holders(reason=f"after race {race.id}")
+    for p in race.participants:
+        if p.status == ParticipantStatus.FINISHED:
+            await rewards_svc.check_veteran_eligibility(p.user_id)
     await db.commit()
     # Trait recomputation rescans each finisher's full race history, so
     # run it in the background to keep the request/tick responsive.
@@ -139,7 +143,11 @@ async def finalize_race(
     await update_elo_ratings(race.id, db)
     from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
 
-    await RewardsService(db).refresh_top1_elo_holders(reason=f"after race {race.id}")
+    rewards_svc = RewardsService(db)
+    await rewards_svc.refresh_top1_elo_holders(reason=f"after race {race.id}")
+    for p in race.participants:
+        if p.status == ParticipantStatus.FINISHED:
+            await rewards_svc.check_veteran_eligibility(p.user_id)
     await db.commit()
 
     task = asyncio.create_task(recompute_traits_for_race_async(race.id))

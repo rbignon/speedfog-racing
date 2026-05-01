@@ -7,7 +7,17 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
-from speedfog_racing.models import BadgeGrant, NameTemplateUnlock, User, UserRole
+from speedfog_racing.models import (
+    BadgeGrant,
+    NameTemplateUnlock,
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    User,
+    UserRole,
+)
+from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
 from speedfog_racing.scripts.backfill_rewards import backfill_rewards
 from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
 
@@ -243,3 +253,77 @@ async def test_backfill_pioneer_and_archon_idempotent(async_session_maker):
                 .all()
             )
             assert len(rows) == 1, f"{template_id} should be granted exactly once"
+
+
+async def test_backfill_grants_veteran_to_users_above_threshold(async_session_maker):
+    """Users with at least VETERAN_RACE_THRESHOLD finished races receive veteran."""
+    async with async_session_maker() as db:
+        veteran = User(twitch_id="t-vet", twitch_username="vet")
+        rookie = User(twitch_id="t-rook", twitch_username="rook")
+        db.add_all([veteran, rookie])
+        await db.commit()
+        await db.refresh(veteran)
+        await db.refresh(rookie)
+        veteran_id = veteran.id
+        rookie_id = rookie.id
+
+        for i in range(VETERAN_RACE_THRESHOLD):
+            race = Race(name=f"v-{i}", status=RaceStatus.FINISHED, organizer_id=veteran_id)
+            db.add(race)
+            await db.flush()
+            db.add(
+                Participant(race_id=race.id, user_id=veteran_id, status=ParticipantStatus.FINISHED)
+            )
+
+        for i in range(VETERAN_RACE_THRESHOLD - 1):
+            race = Race(name=f"r-{i}", status=RaceStatus.FINISHED, organizer_id=rookie_id)
+            db.add(race)
+            await db.flush()
+            db.add(
+                Participant(race_id=race.id, user_id=rookie_id, status=ParticipantStatus.FINISHED)
+            )
+        await db.commit()
+
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+
+    async with async_session_maker() as db:
+        grants = (
+            (await db.execute(select(BadgeGrant.user_id).where(BadgeGrant.badge_id == "veteran")))
+            .scalars()
+            .all()
+        )
+        assert set(grants) == {veteran_id}
+        assert rookie_id not in set(grants)
+
+
+async def test_backfill_veteran_idempotent(async_session_maker):
+    """Re-running the backfill does not duplicate veteran grants."""
+    async with async_session_maker() as db:
+        u = User(twitch_id="t-vetidem", twitch_username="vetidem")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        for i in range(VETERAN_RACE_THRESHOLD):
+            race = Race(name=f"i-{i}", status=RaceStatus.FINISHED, organizer_id=u.id)
+            db.add(race)
+            await db.flush()
+            db.add(Participant(race_id=race.id, user_id=u.id, status=ParticipantStatus.FINISHED))
+        await db.commit()
+
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+
+    async with async_session_maker() as db:
+        grants = (
+            (
+                await db.execute(
+                    select(BadgeGrant).where(
+                        BadgeGrant.user_id == u.id,
+                        BadgeGrant.badge_id == "veteran",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(grants) == 1

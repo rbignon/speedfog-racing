@@ -8,6 +8,8 @@ from typing import Final
 
 from speedfog_racing.rewards.models_data import Badge, NameTemplate
 
+VETERAN_RACE_THRESHOLD: Final = 25
+
 BADGES: dict[str, Badge] = {
     "early_adopter": Badge(
         id="early_adopter",
@@ -24,6 +26,14 @@ BADGES: dict[str, Badge] = {
         icon_filename="contributor.svg",
         lifecycle="permanent",
         sort_order=20,
+    ),
+    "veteran": Badge(
+        id="veteran",
+        name="Veteran",
+        description=f"Granted after finishing {VETERAN_RACE_THRESHOLD} races.",
+        icon_filename="veteran.svg",
+        lifecycle="permanent",
+        sort_order=30,
     ),
     "top1_elo": Badge(
         id="top1_elo",

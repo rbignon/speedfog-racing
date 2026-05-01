@@ -3,7 +3,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
-from speedfog_racing.models import BadgeGrant, NameTemplateUnlock, RewardNotification, User
+from speedfog_racing.models import (
+    BadgeGrant,
+    NameTemplateUnlock,
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    RewardNotification,
+    User,
+)
 from speedfog_racing.rewards.service import (
     LifecycleMismatchError,
     NotOwnedError,
@@ -606,3 +615,132 @@ async def test_refresh_top1_elo_holders_runebearer_idempotent(async_session):
             .all()
         )
         assert len(rows) == 1
+
+
+async def _seed_finished_participations(db, user_id, count, *, status=None):
+    """Create `count` Race + Participant rows for the user. Defaults to FINISHED."""
+    if status is None:
+        status = ParticipantStatus.FINISHED
+    for i in range(count):
+        race = Race(name=f"r-{i}", status=RaceStatus.FINISHED, organizer_id=user_id)
+        db.add(race)
+        await db.flush()
+        db.add(Participant(race_id=race.id, user_id=user_id, status=status))
+    await db.commit()
+
+
+async def test_check_veteran_below_threshold_does_not_grant(async_session):
+    from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
+
+    async with async_session() as db:
+        u = User(twitch_id="tv1", twitch_username="v1")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD - 1)
+
+    async with async_session() as db:
+        await RewardsService(db).check_veteran_eligibility(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        grants = (
+            (await db.execute(select(BadgeGrant).where(BadgeGrant.user_id == u.id))).scalars().all()
+        )
+        assert grants == []
+
+
+async def test_check_veteran_at_threshold_grants_once(async_session):
+    from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
+
+    async with async_session() as db:
+        u = User(twitch_id="tv2", twitch_username="v2")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD)
+
+    async with async_session() as db:
+        await RewardsService(db).check_veteran_eligibility(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        grants = (
+            (
+                await db.execute(
+                    select(BadgeGrant).where(
+                        BadgeGrant.user_id == u.id,
+                        BadgeGrant.badge_id == "veteran",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(grants) == 1
+
+
+async def test_check_veteran_idempotent_after_grant(async_session):
+    from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
+
+    async with async_session() as db:
+        u = User(twitch_id="tv3", twitch_username="v3")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD + 5)
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.check_veteran_eligibility(u.id)
+        await svc.check_veteran_eligibility(u.id)
+        await svc.check_veteran_eligibility(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        grants = (
+            (
+                await db.execute(
+                    select(BadgeGrant).where(
+                        BadgeGrant.user_id == u.id,
+                        BadgeGrant.badge_id == "veteran",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(grants) == 1
+
+
+async def test_check_veteran_excludes_abandoned_participations(async_session):
+    from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
+
+    async with async_session() as db:
+        u = User(twitch_id="tv4", twitch_username="v4")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        # All ABANDONED, even past threshold count: should not qualify.
+        await _seed_finished_participations(
+            db, u.id, VETERAN_RACE_THRESHOLD + 5, status=ParticipantStatus.ABANDONED
+        )
+
+    async with async_session() as db:
+        await RewardsService(db).check_veteran_eligibility(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        grants = (
+            (
+                await db.execute(
+                    select(BadgeGrant).where(
+                        BadgeGrant.user_id == u.id,
+                        BadgeGrant.badge_id == "veteran",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert grants == []

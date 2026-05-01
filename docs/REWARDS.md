@@ -19,13 +19,13 @@ The catalog is static Python configuration in [`server/speedfog_racing/rewards/c
 
 #### Badges
 
-| id                      | name           | lifecycle | source                                                                        |
-| ----------------------- | -------------- | --------- | ----------------------------------------------------------------------------- |
-| `early_adopter`         | Early Adopter  | permanent | Backfill: accounts created before `2026-04-01`.                               |
-| `veteran`               | Veteran        | permanent | Auto: granted on the first race finish past `N` total races.                  |
-| `contributor`           | Contributor    | permanent | Admin grant only.                                                             |
-| `top1_elo`              | ELO Champion   | transient | Auto: holder(s) of the highest ELO with `elo_races >= PROVISIONAL_THRESHOLD`. |
-| `weekly_daily_champion` | Daily Champion | transient | Auto: most daily wins over the previous Mon-Sun week.                         |
+| id                      | name           | lifecycle | source                                                                                                                                                                                                     |
+| ----------------------- | -------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `early_adopter`         | Early Adopter  | permanent | Backfill: accounts created before `2026-04-01`.                                                                                                                                                            |
+| `veteran`               | Veteran        | permanent | Auto: granted to users with at least `VETERAN_RACE_THRESHOLD` (currently `25`) finished race participations across all races. Checked after each race finish; the threshold lives in `rewards/catalog.py`. |
+| `contributor`           | Contributor    | permanent | Admin grant only.                                                                                                                                                                                          |
+| `top1_elo`              | ELO Champion   | transient | Auto: holder(s) of the highest ELO with `elo_races >= PROVISIONAL_THRESHOLD`.                                                                                                                              |
+| `weekly_daily_champion` | Daily Champion | transient | Auto: most daily wins over the previous Mon-Sun week.                                                                                                                                                      |
 
 Lifecycle:
 
@@ -135,6 +135,7 @@ server/speedfog_racing/
 - `sync_transient_holders(badge_id, new_holder_ids: set[UUID], reason=None) -> SyncResult`: atomic diff against current holders. Auto-clears `equipped_badge_id` on revoked users. Emits `badge_granted` / `badge_revoked` notifications.
 - `refresh_top1_elo_holders(reason=None)`: queries the top ELO from `users` (filtered by `elo_races >= PROVISIONAL_THRESHOLD`), syncs `top1_elo`, then idempotently grants `elo_crown` to each holder.
 - `refresh_weekly_daily_champion(week_starting: date, reason=None)`: aggregates daily wins over `[week_starting, week_starting + 7d)`, syncs `weekly_daily_champion` to the top winner(s).
+- `check_veteran_eligibility(user_id)`: counts the user's `Participant` rows with `status=FINISHED` and grants `veteran` (idempotent) when the count is at least `VETERAN_RACE_THRESHOLD` (defined in `rewards/catalog.py`).
 - `set_equipped_badge(user_id, badge_id: str | None)`: validates ownership, updates `users.equipped_badge_id`. Raises `NotOwnedError` if the user does not currently hold the badge.
 - `set_equipped_name_template(user_id, template_id: str | None)`: validates ownership (`default` is always allowed), updates `users.equipped_name_template_id`.
 - `get_user_inventory(user_id) -> Inventory`: held badges + unlocked templates + equip state, sorted by `sort_order`.
@@ -144,6 +145,7 @@ server/speedfog_racing/
 ### Integration points
 
 - **Top 1 ELO** (`services/race_lifecycle.py`): after each `update_elo_ratings(...)` call, invoke `refresh_top1_elo_holders()`. This also handles the `runebearer` (top 5) unlock when a player enters the top 5 (see [Top 5 ELO unlock](#top-5-elo-unlock) below).
+- **Veteran** (`services/race_lifecycle.py`): in the same hook (after `refresh_top1_elo_holders`), iterate every participant who just transitioned to FINISHED and call `check_veteran_eligibility(user_id)`. The service counts `Participant` rows with `status=FINISHED` for that user across all races; once the count reaches `VETERAN_RACE_THRESHOLD` the badge is granted (idempotent, so calling on every race finish is safe).
 - **Weekly daily champion** (`services/daily_seed_loop.py`): when generating a daily seed for a Monday, call `refresh_weekly_daily_champion(week_starting=monday-7d)`. Past weeks before the rollout are not backfilled.
 - **Account deletion**: any `delete_user` flow must call `refresh_top1_elo_holders()` and `refresh_weekly_daily_champion(current_week_start)` after the deletion to reseat the holder sets.
 
@@ -276,7 +278,8 @@ Readability is owned by the catalog: each template is hand-tuned to contrast ade
 1. Grant `early_adopter` badge and `pioneer` template to every user with `created_at < 2026-04-01`.
 2. Grant `archon` template to every user with `role == admin`. Future admin promotions are not auto-granted: an operator manually issues the template via `POST /api/admin/users/{id}/templates`. This is intentional, the case is rare.
 3. Run `refresh_top1_elo_holders()` to grant the current top 1 ELO badge, the `elo_crown` template (top 1), and the `runebearer` template (top 5).
-4. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
+4. Grant `veteran` to every user whose count of FINISHED participations is at least `VETERAN_RACE_THRESHOLD`.
+5. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
 
 Each grant emits a `RewardNotification`, so each affected user sees their consolidated banner on their next visit.
 
@@ -313,6 +316,7 @@ All badges share these constraints:
 - **Format**: SVG, `viewBox="0 0 24 24"`, intrinsic size 24x24. Real render size is 16x16 next to the name.
 - **Padding**: artwork lives inside a 20x20 box (2px margin on each side) so it does not crop at small sizes.
 - **Style**: filled silhouettes only. No internal gradient. No drop shadow. Optional 0.5px stroke in `#0F1923` (background color) for readability over light surfaces.
+- **Color count**: one fill per badge by default. A second fill is allowed when the icon depicts a composite physical object whose two parts are naturally distinct in real life (e.g. metal head + wood/dark handle on `contributor`'s hammer). Stay within the same color family for the second fill (a darker shade of the badge's primary color); do not pull arbitrary hues.
 - **Detail count**: minimal. 1 to 3 paths per icon. At 16x16 anything finer is mush.
 - **Theme**: a clean Elden Ring nod, not a literal asset rip. "Recognizable in a leaderboard row, evocative of the lore."
 
@@ -330,13 +334,13 @@ Restricted, mapped to badge "kind":
 
 Mapping today:
 
-| id                      | fill      | rationale                                             |
-| ----------------------- | --------- | ----------------------------------------------------- |
-| `early_adopter`         | `#E8E6E1` | Origin / "first light", neutral but not invisible     |
-| `veteran`               | `#9CA3AF` | Endurance, weathered steel                            |
-| `contributor`           | `#A78BFA` | Craft / authorship, ties to charter purple            |
-| `top1_elo`              | `#C8A44E` | Champion = the only true gold use in the badge set    |
-| `weekly_daily_champion` | `#DDB95F` | Time-bound gold derivative, subordinate to `top1_elo` |
+| id                      | fill                                  | rationale                                                                |
+| ----------------------- | ------------------------------------- | ------------------------------------------------------------------------ |
+| `early_adopter`         | `#E8E6E1`                             | Origin / "first light", neutral but not invisible                        |
+| `veteran`               | `#9CA3AF`                             | Endurance, weathered steel                                               |
+| `contributor`           | `#A78BFA` (head) + `#5B21B6` (handle) | Craft / authorship, ties to charter purple. Bicolor: see exception above |
+| `top1_elo`              | `#C8A44E`                             | Champion = the only true gold use in the badge set                       |
+| `weekly_daily_champion` | `#DDB95F`                             | Time-bound gold derivative, subordinate to `top1_elo`                    |
 
 The `top1_elo` icon is the **only** badge using `#C8A44E`. This keeps the charter's "gold appears sparingly as punctuation" principle intact: the top ELO holder is the one place where gold marks a person, just as it marks the #1 leaderboard rank elsewhere.
 
@@ -344,15 +348,15 @@ The `top1_elo` icon is the **only** badge using `#C8A44E`. This keeps the charte
 
 Each entry below describes the iconographic intent. Implementation files in `web/static/badges/<id>.svg`.
 
-| id                      | concept                                                     |
-| ----------------------- | ----------------------------------------------------------- |
-| `early_adopter`         | Stylized Erdtree leaf, single silhouette                    |
-| `veteran`               | Faceted shield with a small notch (battle-worn, simple)     |
-| `contributor`           | Quill stroke shaped to suggest both writing and a flame tip |
-| `top1_elo`              | 3-fleuron crown, symmetrical, no decorative jewels          |
-| `weekly_daily_champion` | Sun disk with 7 short rays (one per day of the week)        |
+| id                      | concept                                                                                                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `early_adopter`         | Shooting star: 5-point star at upper-right with a trail of 3 decreasing diamond particles toward lower-left                                                                                            |
+| `veteran`               | Three stacked chevrons (military rank stripes pointing up), evokes "rank earned through service"                                                                                                       |
+| `contributor`           | Tilted war hammer: trapezoidal head with a small triangular pick on one side, thick handle, rotated -25°. The only bicolor badge: head in `#A78BFA`, handle in darker `#5B21B6` for tool-relief depth. |
+| `top1_elo`              | 3-fleuron crown, symmetrical, with a thin horizontal moulding cutout across the base band                                                                                                              |
+| `weekly_daily_champion` | Sun disk (centered circle) with 7 small triangular rays evenly spaced around it (one per day of the week)                                                                                              |
 
-The current SVGs are placeholders and need to be redrawn against this spec. The `top1_elo` placeholder uses `#FFD700` (pure yellow) which is brighter than the charter's warm amber `#C8A44E`; this needs to be corrected during the rework.
+`veteran` deliberately avoids any shield silhouette (the `Cautious` play-style trait already uses one); chevrons keep it disjoint. `contributor` is a hammer rather than the originally proposed quill because at 16x16 a feather/quill silhouette degrades into "ambiguous diagonal blade" without legible barbs. `early_adopter`'s trail-of-particles design replaces an earlier "comet trail" attempt that read as a magic wand at small sizes.
 
 ### Name template spec
 

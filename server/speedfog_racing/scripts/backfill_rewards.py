@@ -7,11 +7,12 @@ import asyncio
 import logging
 from datetime import UTC, date, datetime, time
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from speedfog_racing.database import async_session_maker as default_session_maker
-from speedfog_racing.models import User, UserRole
+from speedfog_racing.models import Participant, ParticipantStatus, User, UserRole
+from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
 from speedfog_racing.rewards.service import RewardsService
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,24 @@ async def backfill_rewards(
         await svc.refresh_top1_elo_holders(reason="backfill: initial top 1 sync")
         await db.commit()
         logger.info("Refreshed top1_elo holders")
+
+    async with session_maker() as db:
+        svc = RewardsService(db)
+        eligible = await db.execute(
+            select(Participant.user_id, func.count(Participant.id).label("finished"))
+            .where(Participant.status == ParticipantStatus.FINISHED)
+            .group_by(Participant.user_id)
+            .having(func.count(Participant.id) >= VETERAN_RACE_THRESHOLD)
+        )
+        veteran_users = list(eligible.all())
+        for row in veteran_users:
+            await svc.grant_permanent_badge(
+                row.user_id,
+                "veteran",
+                reason=f"backfill: finished {row.finished} races",
+            )
+        await db.commit()
+        logger.info("Granted veteran to %d account(s)", len(veteran_users))
 
 
 def main() -> None:
