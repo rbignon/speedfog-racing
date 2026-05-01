@@ -142,6 +142,7 @@
 
 	async function handlePlayNow() {
 		if (!auth.isLoggedIn) {
+			sessionStorage.setItem('redirect_after_login', window.location.pathname);
 			goto(getTwitchLoginUrl());
 			return;
 		}
