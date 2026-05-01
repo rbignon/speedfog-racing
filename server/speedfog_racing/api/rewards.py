@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
-from speedfog_racing.models import User
+from speedfog_racing.models import User, UserRole
 from speedfog_racing.rewards.catalog import BADGES, NAME_TEMPLATES
 from speedfog_racing.rewards.service import NotOwnedError, RewardsService, UnknownRewardError
 
@@ -55,9 +55,21 @@ async def get_my_inventory(
 ) -> dict:  # type: ignore[type-arg]
     svc = RewardsService(db)
     inv = await svc.get_user_inventory(user.id)
+    # Admin debug override: surface the full catalog so admins can preview any
+    # badge/template without holding it. Not a real ownership claim. The
+    # equipped_* fields below remain the truthful DB state, so an admin who
+    # PATCHes a force-equip will see that exact value back here AND on every
+    # public surface (chat, leaderboard, spectator, profile). That is intended:
+    # the debug knob exists to test how rewards render in the real frontends.
+    if user.role == UserRole.ADMIN:
+        held_badges = sorted(BADGES.values(), key=lambda b: b.sort_order)
+        unlocked_templates = sorted(NAME_TEMPLATES.values(), key=lambda t: t.sort_order)
+    else:
+        held_badges = inv.held_badges
+        unlocked_templates = inv.unlocked_templates
     return {
         "held_badges": [
-            {"id": b.id, "name": b.name, "icon_filename": b.icon_filename} for b in inv.held_badges
+            {"id": b.id, "name": b.name, "icon_filename": b.icon_filename} for b in held_badges
         ],
         "unlocked_templates": [
             {
@@ -68,7 +80,7 @@ async def get_my_inventory(
                 "name_css": t.name_css,
                 "background_css": t.background_css,
             }
-            for t in inv.unlocked_templates
+            for t in unlocked_templates
         ],
         "equipped_badge_id": inv.equipped_badge_id,
         "equipped_name_template_id": inv.equipped_name_template_id,
@@ -83,11 +95,18 @@ async def patch_equipped(
 ) -> dict:  # type: ignore[type-arg]
     svc = RewardsService(db)
     body = payload.model_dump(exclude_unset=True)
+    enforce_ownership = user.role != UserRole.ADMIN
     try:
         if "equipped_badge_id" in body:
-            await svc.set_equipped_badge(user.id, body["equipped_badge_id"])
+            await svc.set_equipped_badge(
+                user.id, body["equipped_badge_id"], enforce_ownership=enforce_ownership
+            )
         if "equipped_name_template_id" in body:
-            await svc.set_equipped_name_template(user.id, body["equipped_name_template_id"])
+            await svc.set_equipped_name_template(
+                user.id,
+                body["equipped_name_template_id"],
+                enforce_ownership=enforce_ownership,
+            )
     except (NotOwnedError, UnknownRewardError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     await db.commit()

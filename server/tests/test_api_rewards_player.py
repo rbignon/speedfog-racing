@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
-from speedfog_racing.models import User, generate_token
+from speedfog_racing.models import User, UserRole, generate_token
+from speedfog_racing.rewards.catalog import BADGES, NAME_TEMPLATES
 
 
 @pytest.fixture
@@ -37,6 +38,23 @@ async def user_with_token(async_session):
             twitch_username="rewardsuser",
             twitch_display_name="Rewards User",
             api_token=token,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user, token
+
+
+@pytest.fixture
+async def admin_with_token(async_session):
+    async with async_session() as db:
+        token = generate_token()
+        user = User(
+            twitch_id="twitch_rewards_admin",
+            twitch_username="rewardsadmin",
+            twitch_display_name="Rewards Admin",
+            api_token=token,
+            role=UserRole.ADMIN,
         )
         db.add(user)
         await db.commit()
@@ -150,3 +168,63 @@ async def test_post_dismiss_clears_pending(test_client, user_with_token, async_s
 
         resp2 = await client.get("/api/rewards/notifications", headers=headers)
         assert resp2.json() == []
+
+
+async def test_get_me_returns_full_catalog_for_admins(test_client, admin_with_token):
+    """Admins see the entire catalog under held_badges/unlocked_templates so they
+    can preview any badge/template via the existing settings picker. The
+    equipped_* fields stay truthful and reflect the real DB row, not the
+    inflated catalog."""
+    _, token = admin_with_token
+    headers = {"Authorization": f"Bearer {token}"}
+    async with test_client as client:
+        resp = await client.get("/api/rewards/me", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        held_ids = {b["id"] for b in data["held_badges"]}
+        template_ids = {t["id"] for t in data["unlocked_templates"]}
+        assert held_ids == set(BADGES.keys())
+        assert template_ids == set(NAME_TEMPLATES.keys())
+        assert data["equipped_badge_id"] is None
+        assert data["equipped_name_template_id"] is None
+
+
+async def test_patch_equipped_allows_admin_without_grant(test_client, admin_with_token):
+    """Admins can equip any badge or template without holding it (debug override).
+    Non-admins still get the existing 400 NotOwnedError path."""
+    _, token = admin_with_token
+    headers = {"Authorization": f"Bearer {token}"}
+    async with test_client as client:
+        resp = await client.patch(
+            "/api/rewards/me/equipped",
+            json={
+                "equipped_badge_id": "early_adopter",
+                "equipped_name_template_id": "elo_crown",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "equipped_badge_id": "early_adopter",
+            "equipped_name_template_id": "elo_crown",
+        }
+
+
+async def test_patch_equipped_admin_can_force_transient_badge(test_client, admin_with_token):
+    """The ownership bypass also covers transient badges (the original motivation:
+    debug what a transient badge looks like without joining the auto-grant set)."""
+    _, token = admin_with_token
+    transient_id = next(
+        (bid for bid, b in BADGES.items() if b.lifecycle == "transient"),
+        None,
+    )
+    assert transient_id is not None, "expected at least one transient badge in the catalog"
+    headers = {"Authorization": f"Bearer {token}"}
+    async with test_client as client:
+        resp = await client.patch(
+            "/api/rewards/me/equipped",
+            json={"equipped_badge_id": transient_id},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["equipped_badge_id"] == transient_id

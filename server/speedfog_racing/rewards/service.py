@@ -198,29 +198,42 @@ class RewardsService:
         await self.session.flush()
         return SyncResult(granted=to_grant, revoked=to_revoke)
 
-    async def set_equipped_badge(self, user_id: uuid.UUID, badge_id: str | None) -> None:
+    async def set_equipped_badge(
+        self,
+        user_id: uuid.UUID,
+        badge_id: str | None,
+        *,
+        enforce_ownership: bool = True,
+    ) -> None:
         if badge_id is not None:
             if badge_id not in BADGES:
                 raise UnknownRewardError(f"Unknown badge_id={badge_id!r}")
-            owned = await self.session.execute(
-                select(BadgeGrant).where(
-                    BadgeGrant.user_id == user_id,
-                    BadgeGrant.badge_id == badge_id,
-                    BadgeGrant.revoked_at.is_(None),
+            if enforce_ownership:
+                owned = await self.session.execute(
+                    select(BadgeGrant).where(
+                        BadgeGrant.user_id == user_id,
+                        BadgeGrant.badge_id == badge_id,
+                        BadgeGrant.revoked_at.is_(None),
+                    )
                 )
-            )
-            if owned.scalar_one_or_none() is None:
-                raise NotOwnedError(f"User does not hold badge {badge_id!r}")
+                if owned.scalar_one_or_none() is None:
+                    raise NotOwnedError(f"User does not hold badge {badge_id!r}")
 
         await self.session.execute(
             update(User).where(User.id == user_id).values(equipped_badge_id=badge_id)
         )
 
-    async def set_equipped_name_template(self, user_id: uuid.UUID, template_id: str | None) -> None:
+    async def set_equipped_name_template(
+        self,
+        user_id: uuid.UUID,
+        template_id: str | None,
+        *,
+        enforce_ownership: bool = True,
+    ) -> None:
         target = template_id if template_id is not None else DEFAULT_TEMPLATE_ID
         if target not in NAME_TEMPLATES:
             raise UnknownRewardError(f"Unknown template_id={target!r}")
-        if target != DEFAULT_TEMPLATE_ID:
+        if target != DEFAULT_TEMPLATE_ID and enforce_ownership:
             owned = await self.session.execute(
                 select(NameTemplateUnlock).where(
                     NameTemplateUnlock.user_id == user_id,
