@@ -1,4 +1,4 @@
-"""Tests for held badges and unlocked templates on the user profile endpoint."""
+"""Tests for the rewards-related fields on the user profile endpoint."""
 
 import os
 
@@ -60,28 +60,20 @@ def test_client(async_session):
 
 @pytest.mark.asyncio
 async def test_profile_returns_empty_rewards_for_user_with_none(test_client, target_user):
-    """A fresh user with no grants returns empty lists."""
+    """A fresh user with no grants returns an empty held_badges list."""
     async with test_client as client:
         resp = await client.get(f"/api/users/{target_user.twitch_username}")
     assert resp.status_code == 200
     data = resp.json()
     assert data["held_badges"] == []
-    # unlocked_templates always includes "default" via the service convention, but since
-    # there are no NameTemplateUnlock rows, the endpoint adds DEFAULT_TEMPLATE_ID in the
-    # unlocked_ids set, so we expect exactly [default].
-    template_ids = [t["id"] for t in data["unlocked_templates"]]
-    assert template_ids == ["default"]
 
 
 @pytest.mark.asyncio
-async def test_profile_returns_held_badges_and_unlocked_templates(
-    test_client, target_user, async_session
-):
-    """After granting a badge and a name template, the profile endpoint reflects them."""
+async def test_profile_returns_held_badges(test_client, target_user, async_session):
+    """After granting a badge, the profile endpoint reflects it with full shape."""
     async with async_session() as db:
         svc = RewardsService(db)
         await svc.grant_permanent_badge(target_user.id, "contributor", reason="test")
-        await svc.grant_name_template(target_user.id, "elo_crown", reason="test")
         await db.commit()
 
     async with test_client as client:
@@ -93,23 +85,10 @@ async def test_profile_returns_held_badges_and_unlocked_templates(
     badge_ids = [b["id"] for b in data["held_badges"]]
     assert "contributor" in badge_ids
 
-    # Verify badge shape
     contributor = next(b for b in data["held_badges"] if b["id"] == "contributor")
     assert contributor["name"] == "Contributor"
     assert contributor["icon_filename"] == "contributor.svg"
     assert contributor["description"] is not None
-
-    template_ids = [t["id"] for t in data["unlocked_templates"]]
-    assert "default" in template_ids
-    assert "elo_crown" in template_ids
-
-    # Verify elo_crown template shape
-    elo_crown = next(t for t in data["unlocked_templates"] if t["id"] == "elo_crown")
-    assert elo_crown["name"] == "ELO Crown"
-    assert elo_crown["gradient"] is not None
-    assert len(elo_crown["gradient"]) == 2
-    assert elo_crown["background_css"] is not None
-    assert elo_crown["name_css"] is not None
 
 
 @pytest.mark.asyncio

@@ -204,17 +204,6 @@ class ProfileBadge(BaseModel):
     description: str | None = None
 
 
-class ProfileNameTemplate(BaseModel):
-    """A name template displayed on a user's profile page."""
-
-    id: str
-    name: str
-    color: str | None = None
-    gradient: list[str] | None = None
-    name_css: str | None = None
-    background_css: str | None = None
-
-
 class UserProfileDetailResponse(BaseModel):
     """Public user profile with stats."""
 
@@ -228,7 +217,6 @@ class UserProfileDetailResponse(BaseModel):
     created_at: datetime
     stats: UserStatsResponse
     held_badges: list[ProfileBadge] = []
-    unlocked_templates: list[ProfileNameTemplate] = []
     equipped_name_template_id: str | None = None
 
 

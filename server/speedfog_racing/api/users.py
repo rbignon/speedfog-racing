@@ -21,7 +21,6 @@ from speedfog_racing.models import (
     BadgeGrant,
     Caster,
     EloHistory,
-    NameTemplateUnlock,
     Participant,
     ParticipantStatus,
     PlayerTraitScores,
@@ -31,14 +30,13 @@ from speedfog_racing.models import (
     TrainingSessionStatus,
     User,
 )
-from speedfog_racing.rewards.catalog import BADGES, DEFAULT_TEMPLATE_ID, NAME_TEMPLATES
+from speedfog_racing.rewards.catalog import BADGES
 from speedfog_racing.schemas import (
     ActivityItem,
     ActivityTimelineResponse,
     DailyParticipantActivity,
     PoolTypeStatsResponse,
     ProfileBadge,
-    ProfileNameTemplate,
     RaceCasterActivity,
     RaceListResponse,
     RaceOrganizerActivity,
@@ -493,17 +491,6 @@ async def get_user_profile(
         key=lambda b: b.sort_order,
     )
 
-    # Unlocked templates (always include "default").
-    unlocks_q = await db.execute(
-        select(NameTemplateUnlock.template_id).where(NameTemplateUnlock.user_id == user_id)
-    )
-    unlocked_ids = {row[0] for row in unlocks_q.all()}
-    unlocked_ids.add(DEFAULT_TEMPLATE_ID)
-    unlocked_templates = sorted(
-        (NAME_TEMPLATES[tid] for tid in unlocked_ids if tid in NAME_TEMPLATES),
-        key=lambda t: t.sort_order,
-    )
-
     profile_badges = [
         ProfileBadge(
             id=b.id,
@@ -512,17 +499,6 @@ async def get_user_profile(
             description=b.description,
         )
         for b in held_badges
-    ]
-    profile_templates = [
-        ProfileNameTemplate(
-            id=t.id,
-            name=t.name,
-            color=t.color,
-            gradient=list(t.gradient) if t.gradient is not None else None,
-            name_css=t.name_css,
-            background_css=t.background_css,
-        )
-        for t in unlocked_templates
     ]
 
     return UserProfileDetailResponse(
@@ -534,7 +510,6 @@ async def get_user_profile(
         created_at=user.created_at,
         stats=stats,
         held_badges=profile_badges,
-        unlocked_templates=profile_templates,
         equipped_name_template_id=user.equipped_name_template_id,
     )
 
