@@ -132,3 +132,30 @@ async def test_profile_held_badges_excludes_revoked(test_client, target_user, as
     data = resp.json()
     badge_ids = [b["id"] for b in data["held_badges"]]
     assert "contributor" not in badge_ids
+
+
+@pytest.mark.asyncio
+async def test_profile_exposes_equipped_name_template_id(test_client, target_user, async_session):
+    """The profile endpoint surfaces the user's equipped name template id so the
+    page heading can apply the matching style."""
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_name_template(target_user.id, "elo_crown", reason="test")
+        await svc.set_equipped_name_template(target_user.id, "elo_crown")
+        await db.commit()
+
+    async with test_client as client:
+        resp = await client.get(f"/api/users/{target_user.twitch_username}")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["equipped_name_template_id"] == "elo_crown"
+
+
+@pytest.mark.asyncio
+async def test_profile_equipped_name_template_id_null_by_default(test_client, target_user):
+    async with test_client as client:
+        resp = await client.get(f"/api/users/{target_user.twitch_username}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["equipped_name_template_id"] is None

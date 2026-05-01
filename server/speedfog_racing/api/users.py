@@ -535,6 +535,7 @@ async def get_user_profile(
         stats=stats,
         held_badges=profile_badges,
         unlocked_templates=profile_templates,
+        equipped_name_template_id=user.equipped_name_template_id,
     )
 
 

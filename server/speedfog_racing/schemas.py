@@ -229,6 +229,7 @@ class UserProfileDetailResponse(BaseModel):
     stats: UserStatsResponse
     held_badges: list[ProfileBadge] = []
     unlocked_templates: list[ProfileNameTemplate] = []
+    equipped_name_template_id: str | None = None
 
 
 class ActivityItemBase(BaseModel):

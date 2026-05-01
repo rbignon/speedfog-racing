@@ -988,6 +988,7 @@ export interface UserProfile {
   created_at: string;
   stats: UserStats;
   held_badges?: ProfileBadgeDto[];
+  equipped_name_template_id?: string | null;
 }
 
 export interface PoolTypeStats {

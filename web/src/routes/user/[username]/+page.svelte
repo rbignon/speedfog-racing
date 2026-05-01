@@ -13,6 +13,7 @@
 	import { statusLabel } from '$lib/format';
 	import { formatPoolName } from '$lib/utils/format';
 	import { formatIgt } from '$lib/utils/training';
+	import { rewards } from '$lib/stores/rewards.svelte';
 	import PoolStatsTable from '$lib/components/PoolStatsTable.svelte';
 	import PlayStyle from '$lib/components/PlayStyle.svelte';
 
@@ -24,6 +25,29 @@
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let error = $state<string | null>(null);
+
+	let nameStyle = $derived.by(() => {
+		const id = profile?.equipped_name_template_id;
+		if (!id || id === 'default') return '';
+		const t = rewards.lookupTemplate(id);
+		if (!t) return '';
+		const parts: string[] = [];
+		if (t.gradient) {
+			parts.push(
+				`background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]});`,
+				'-webkit-background-clip: text;',
+				'background-clip: text;',
+				'color: transparent;',
+				'padding-inline-end: 0.1em;'
+			);
+		} else if (t.color) {
+			parts.push(`color: ${t.color};`);
+		}
+		if (t.name_css) {
+			parts.push(t.name_css);
+		}
+		return parts.join(' ');
+	});
 
 	$effect(() => {
 		loadProfile();
@@ -37,7 +61,8 @@
 				fetchUserProfile(username),
 				fetchUserActivity(username),
 				fetchUserPoolStats(username),
-				fetchUserTraits(username).catch(() => null)
+				fetchUserTraits(username).catch(() => null),
+				rewards.ensureLoaded().catch(() => undefined)
 			]);
 			profile = p;
 			activity = a;
@@ -122,7 +147,10 @@
 				{/if}
 				<div class="profile-info">
 					<div class="profile-name-row">
-						<h1>{profile.twitch_display_name || profile.twitch_username}</h1>
+						<h1>
+							<span style={nameStyle}>{profile.twitch_display_name || profile.twitch_username}</span
+							>
+						</h1>
 						<a
 							href="https://twitch.tv/{profile.twitch_username}"
 							target="_blank"
