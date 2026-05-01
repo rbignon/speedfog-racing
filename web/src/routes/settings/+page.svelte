@@ -2,13 +2,24 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { fetchLocales, updateLocale, updateOverlaySettings, type LocaleInfo } from '$lib/api';
-	import RewardsBadgePicker from '$lib/components/RewardsBadgePicker.svelte';
-	import RewardsTemplatePicker from '$lib/components/RewardsTemplatePicker.svelte';
+	import {
+		fetchLocales,
+		fetchMyInventory,
+		patchEquipped,
+		updateLocale,
+		updateOverlaySettings,
+		type LocaleInfo,
+		type MyInventoryDto
+	} from '$lib/api';
+	import { rewards } from '$lib/stores/rewards.svelte';
+	import RewardsPicker from '$lib/components/RewardsPicker.svelte';
 
 	let locales = $state<LocaleInfo[]>([]);
 	let selectedLocale = $state('en');
 	let fontSize = $state(18);
+	let inventory = $state<MyInventoryDto | null>(null);
+	let selectedTemplateId = $state('default');
+	let selectedBadgeId = $state<string | null>(null);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 	let success = $state(false);
@@ -18,9 +29,19 @@
 			goto('/');
 			return;
 		}
-		locales = await fetchLocales();
 		selectedLocale = auth.user?.locale ?? 'en';
 		fontSize = auth.user?.overlay_settings?.font_size ?? 18;
+		const [loadedLocales, loadedInventory] = await Promise.all([
+			fetchLocales(),
+			fetchMyInventory(),
+			rewards.ensureLoaded().catch(() => undefined)
+		]);
+		locales = loadedLocales;
+		inventory = loadedInventory;
+		if (loadedInventory) {
+			selectedTemplateId = loadedInventory.equipped_name_template_id ?? 'default';
+			selectedBadgeId = loadedInventory.equipped_badge_id;
+		}
 	});
 
 	async function handleSave() {
@@ -28,14 +49,31 @@
 		error = null;
 		success = false;
 		try {
-			const [localeResult, overlayResult] = await Promise.all([
-				updateLocale(selectedLocale),
-				updateOverlaySettings({ font_size: fontSize })
-			]);
-			if (auth.user) {
-				auth.user.locale = localeResult.locale;
-				auth.user.overlay_settings = overlayResult.overlay_settings;
+			const calls: Promise<unknown>[] = [
+				updateLocale(selectedLocale).then((r) => {
+					if (auth.user) auth.user.locale = r.locale;
+				}),
+				updateOverlaySettings({ font_size: fontSize }).then((r) => {
+					if (auth.user) auth.user.overlay_settings = r.overlay_settings;
+				})
+			];
+			if (inventory) {
+				calls.push(
+					patchEquipped({
+						equipped_name_template_id: selectedTemplateId,
+						equipped_badge_id: selectedBadgeId
+					}).then((result) => {
+						if (!result || !inventory) return;
+						inventory.equipped_name_template_id = result.equipped_name_template_id;
+						inventory.equipped_badge_id = result.equipped_badge_id;
+						if (auth.user) {
+							auth.user.equipped_name_template_id = result.equipped_name_template_id;
+							auth.user.equipped_badge_id = result.equipped_badge_id;
+						}
+					})
+				);
 			}
+			await Promise.all(calls);
 			success = true;
 			setTimeout(() => (success = false), 3000);
 		} catch (e) {
@@ -96,8 +134,11 @@
 		<h2>Rewards</h2>
 		<p class="description">Pick a badge and a name template among the rewards you have unlocked.</p>
 
-		<RewardsBadgePicker />
-		<RewardsTemplatePicker />
+		{#if inventory && auth.user}
+			<RewardsPicker {inventory} user={auth.user} bind:selectedTemplateId bind:selectedBadgeId />
+		{:else}
+			<p class="hint">Loading…</p>
+		{/if}
 	</section>
 
 	<div class="actions">
