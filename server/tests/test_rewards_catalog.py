@@ -25,6 +25,7 @@ def test_v1_templates_present():
     assert "runebearer" in NAME_TEMPLATES
     assert "pioneer" in NAME_TEMPLATES
     assert "archon" in NAME_TEMPLATES
+    assert "weathered" in NAME_TEMPLATES
 
 
 def test_default_template_is_solid_white():
@@ -73,6 +74,17 @@ def test_archon_uses_mono_font_in_violet():
     assert archon.name_css is not None
     assert "ui-monospace" in archon.name_css
     assert "font-weight: 600" in archon.name_css
+
+
+def test_weathered_uses_steel_gradient_and_semibold():
+    weathered = NAME_TEMPLATES["weathered"]
+    assert weathered.gradient == ("#D6DCE0", "#7A8590")
+    assert weathered.name_css is not None
+    assert "font-weight: 600" in weathered.name_css
+    # weathered keeps Inter (no font-family override) and is not italic;
+    # those signals are reserved for other tiers (serif=lore, italic=ELO).
+    assert "font-family" not in weathered.name_css
+    assert "italic" not in weathered.name_css
 
 
 def test_badge_dataclass_is_frozen():

@@ -396,10 +396,11 @@ class RewardsService:
         await self.sync_transient_holders("weekly_daily_champion", holders, reason=reason)
 
     async def check_veteran_eligibility(self, user_id: uuid.UUID) -> None:
-        """Grant the veteran badge if the user has finished VETERAN_RACE_THRESHOLD races.
+        """Grant the veteran badge and weathered template at VETERAN_RACE_THRESHOLD finishes.
 
-        Idempotent: grant_permanent_badge no-ops on re-grant. Safe to call after every
-        race finish; counts only Participant rows with status=FINISHED across all races.
+        Idempotent: grant_permanent_badge and grant_name_template both no-op on
+        re-grant. Safe to call after every race finish; counts only Participant
+        rows with status=FINISHED across all races.
         """
         count = await self.session.scalar(
             select(func.count(Participant.id)).where(
@@ -408,7 +409,9 @@ class RewardsService:
             )
         )
         if (count or 0) >= VETERAN_RACE_THRESHOLD:
-            await self.grant_permanent_badge(user_id, "veteran", reason=f"finished {count} races")
+            reason = f"finished {count} races"
+            await self.grant_permanent_badge(user_id, "veteran", reason=reason)
+            await self.grant_name_template(user_id, "weathered", reason=reason)
 
     async def revoke_badge(self, user_id: uuid.UUID, badge_id: str) -> None:
         if badge_id not in BADGES:

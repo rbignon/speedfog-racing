@@ -680,6 +680,65 @@ async def test_check_veteran_at_threshold_grants_once(async_session):
         assert len(grants) == 1
 
 
+async def test_check_veteran_grants_weathered_template_alongside_badge(async_session):
+    from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
+
+    async with async_session() as db:
+        u = User(twitch_id="tv2b", twitch_username="v2b")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD)
+
+    async with async_session() as db:
+        await RewardsService(db).check_veteran_eligibility(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        unlocks = (
+            (
+                await db.execute(
+                    select(NameTemplateUnlock).where(
+                        NameTemplateUnlock.user_id == u.id,
+                        NameTemplateUnlock.template_id == "weathered",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(unlocks) == 1
+
+
+async def test_check_veteran_below_threshold_skips_template(async_session):
+    from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
+
+    async with async_session() as db:
+        u = User(twitch_id="tv2c", twitch_username="v2c")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD - 1)
+
+    async with async_session() as db:
+        await RewardsService(db).check_veteran_eligibility(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        unlocks = (
+            (
+                await db.execute(
+                    select(NameTemplateUnlock).where(
+                        NameTemplateUnlock.user_id == u.id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert unlocks == []
+
+
 async def test_check_veteran_idempotent_after_grant(async_session):
     from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
 

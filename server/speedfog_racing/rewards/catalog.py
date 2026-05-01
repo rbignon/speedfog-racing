@@ -103,6 +103,22 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         ),
         sort_order=30,
     ),
+    "weathered": NameTemplate(
+        id="weathered",
+        name="Weathered",
+        description="Granted to veteran racers as a souvenir of their tenure.",
+        gradient=("#D6DCE0", "#7A8590"),
+        name_css=(
+            "font-weight: 600;"
+            " letter-spacing: 0.02em;"
+            " text-shadow: 0 0 4px rgba(122, 133, 144, 0.28);"
+        ),
+        background_css=(
+            "radial-gradient(ellipse 60% 100% at 25% 50%,"
+            " rgba(122, 133, 144, 0.14), transparent 70%)"
+        ),
+        sort_order=35,
+    ),
     "archon": NameTemplate(
         id="archon",
         name="Archon",
