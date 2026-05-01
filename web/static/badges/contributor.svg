@@ -1,3 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#5cd6a8">
-  <path d="M14.7 6.3 L17.7 9.3 L9 18 L5 19 L6 15 Z M16 4.5 L19.5 8 L21 6.5 C21.6 5.9 21.6 4.9 21 4.3 L19.7 3 C19.1 2.4 18.1 2.4 17.5 3 Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <g transform="rotate(-25 12 12)">
+    <path d="M4 4 L18 4 L20 6.5 L18 9 L4 9 Z" fill="#A78BFA"/>
+    <path d="M10 9 L14 9 L14 21 L10 21 Z" fill="#5B21B6"/>
+  </g>
 </svg>
