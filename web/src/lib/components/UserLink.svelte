@@ -86,8 +86,8 @@
   }
 
   .user-link-badge {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     flex-shrink: 0;
   }
 </style>

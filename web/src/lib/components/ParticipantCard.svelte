@@ -209,8 +209,8 @@
   }
 
   .participant-badge {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     vertical-align: middle;
     flex-shrink: 0;
   }
