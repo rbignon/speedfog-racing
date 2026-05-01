@@ -139,19 +139,22 @@ describe("DailyWeekGrid", () => {
     expect(todayCell).not.toBeNull();
   });
 
-  it("renders the done strip on a past finished cell with placement/IGT line above", () => {
+  it("renders the finished strip on a past cell split into icon + score", () => {
     const { container } = render(DailyWeekGrid, {
       props: { week: mockWeek, userId: "me", variant: "home" },
     });
     const pastCell = container.querySelector('[data-cell-state="past"]');
     const strip = pastCell?.querySelector(".strip");
     expect(strip?.classList.contains("strip-finished")).toBe(true);
-    expect(strip?.textContent ?? "").toMatch(/Done/i);
-    const me = pastCell?.querySelector(".me");
-    expect(me?.textContent ?? "").toMatch(/2\/3/);
+    expect(strip?.querySelector(".strip-icon")?.textContent ?? "").toBe("✓");
+    expect(strip?.querySelector(".strip-score")?.textContent ?? "").toMatch(
+      /2\/3/,
+    );
+    expect(strip?.textContent ?? "").not.toMatch(/Done/i);
+    expect(pastCell?.querySelector(".me")).toBeNull();
   });
 
-  it("renders the abandoned strip on a past abandoned cell with no result line", () => {
+  it("renders the abandoned strip on a past abandoned cell", () => {
     const week: DailyWeekResponse = {
       ...mockWeek,
       days: mockWeek.days.map((d) =>
@@ -176,10 +179,9 @@ describe("DailyWeekGrid", () => {
     const strip = pastCell?.querySelector(".strip");
     expect(strip?.classList.contains("strip-abandoned")).toBe(true);
     expect(strip?.textContent ?? "").toMatch(/Abandoned/i);
-    expect(pastCell?.querySelector(".me")).toBeNull();
   });
 
-  it("renders no strip on a past cell the viewer did not participate in", () => {
+  it("renders an invisible placeholder strip on a past cell the viewer did not participate in", () => {
     const week: DailyWeekResponse = {
       ...mockWeek,
       days: mockWeek.days.map((d) =>
@@ -190,7 +192,11 @@ describe("DailyWeekGrid", () => {
       props: { week, userId: "me", variant: "home" },
     });
     const pastCell = container.querySelector('[data-cell-state="past"]');
-    expect(pastCell?.querySelector(".strip")).toBeNull();
+    const strip = pastCell?.querySelector(".strip");
+    expect(strip).not.toBeNull();
+    expect(strip?.classList.contains("strip-placeholder")).toBe(true);
+    expect(strip?.classList.contains("strip-finished")).toBe(false);
+    expect(strip?.classList.contains("strip-abandoned")).toBe(false);
   });
 
   it("renders missing_past placeholder without a link", () => {
@@ -245,7 +251,7 @@ describe("DailyWeekGrid", () => {
     expect(strip?.textContent ?? "").toMatch(/In progress/i);
   });
 
-  it("renders the finished strip on today with placement/IGT line above", () => {
+  it("renders the finished strip on today with placement/IGT merged in", () => {
     const week: DailyWeekResponse = {
       ...mockWeek,
       days: mockWeek.days.map((d) =>
@@ -269,9 +275,11 @@ describe("DailyWeekGrid", () => {
     const todayCell = container.querySelector('[data-cell-state="today"]');
     const strip = todayCell?.querySelector(".strip");
     expect(strip?.classList.contains("strip-finished")).toBe(true);
-    expect(strip?.textContent ?? "").toMatch(/Done/i);
-    const me = todayCell?.querySelector(".me");
-    expect(me?.textContent ?? "").toMatch(/4\/17/);
+    expect(strip?.querySelector(".strip-icon")?.textContent ?? "").toBe("✓");
+    expect(strip?.querySelector(".strip-score")?.textContent ?? "").toMatch(
+      /4\/17/,
+    );
+    expect(todayCell?.querySelector(".me")).toBeNull();
   });
 
   it("renders the abandoned strip on today when the viewer abandoned", () => {
@@ -300,7 +308,7 @@ describe("DailyWeekGrid", () => {
     expect(strip?.textContent ?? "").toMatch(/Abandoned/i);
   });
 
-  it("does not render the .me footer on the today cell", () => {
+  it("does not bleed placement/IGT into a non-finished strip", () => {
     const week: DailyWeekResponse = {
       ...mockWeek,
       days: mockWeek.days.map((d) =>
@@ -321,7 +329,52 @@ describe("DailyWeekGrid", () => {
     const { container } = render(DailyWeekGrid, {
       props: { week, userId: "me", variant: "home" },
     });
-    const me = container.querySelector('[data-cell-state="today"] .me');
-    expect(me).toBeNull();
+    const strip = container.querySelector('[data-cell-state="today"] .strip');
+    expect(strip?.textContent ?? "").not.toContain("✓");
+    expect(strip?.textContent ?? "").not.toMatch(/\d+\/\d+/);
+  });
+
+  it("renders only the winner on past cells, not full top 3", () => {
+    const week: DailyWeekResponse = {
+      ...mockWeek,
+      days: mockWeek.days.map((d) =>
+        d.state === "past"
+          ? {
+              ...d,
+              podium: [
+                {
+                  placement: 1,
+                  twitch_username: "alice",
+                  twitch_display_name: "Alice",
+                  twitch_avatar_url: null,
+                  igt_ms: 2_400_000,
+                },
+                {
+                  placement: 2,
+                  twitch_username: "bob",
+                  twitch_display_name: "Bob",
+                  twitch_avatar_url: null,
+                  igt_ms: 2_500_000,
+                },
+                {
+                  placement: 3,
+                  twitch_username: "carol",
+                  twitch_display_name: "Carol",
+                  twitch_avatar_url: null,
+                  igt_ms: 2_600_000,
+                },
+              ],
+            }
+          : d,
+      ),
+    };
+    const { container } = render(DailyWeekGrid, {
+      props: { week, userId: "me", variant: "home" },
+    });
+    const pastCell = container.querySelector('[data-cell-state="past"]');
+    const winner = pastCell?.querySelector(".winner");
+    expect(winner?.textContent ?? "").toContain("Alice");
+    expect(pastCell?.textContent ?? "").not.toContain("Bob");
+    expect(pastCell?.textContent ?? "").not.toContain("Carol");
   });
 });

@@ -32,37 +32,44 @@
 		return `${hours}h ${String(minutes).padStart(2, '0')}m`;
 	}
 
-	function userResultLabel(day: DailyWeekDay): string | null {
-		if (!userId) return null;
-		const r = day.my_result;
-		if (!r) return null;
-		if (r.status === 'finished' && r.placement && r.igt_ms != null) {
-			return `${r.placement}/${r.total_finishers} - ${formatIgt(r.igt_ms)}`;
-		}
-		return null;
-	}
+	type CellStrip =
+		| {
+				kind: 'label';
+				text: string;
+				variant: 'play-now' | 'in-progress' | 'abandoned';
+		  }
+		| {
+				kind: 'finished';
+				score: string;
+		  }
+		| null;
 
-	type CellStrip = {
-		text: string;
-		variant: 'play-now' | 'in-progress' | 'finished' | 'abandoned';
-	} | null;
+	function finishedScore(day: DailyWeekDay): string {
+		const r = day.my_result;
+		if (r && r.status === 'finished' && r.placement && r.igt_ms != null) {
+			return `${r.placement}/${r.total_finishers} · ${formatIgt(r.igt_ms)}`;
+		}
+		return 'Done';
+	}
 
 	function cellStrip(day: DailyWeekDay): CellStrip {
 		if (day.state === 'today') {
 			const r = day.my_result;
-			if (!r) return { text: 'Play now', variant: 'play-now' };
-			if (r.status === 'finished') return { text: '✓ Done', variant: 'finished' };
-			if (r.status === 'abandoned') return { text: 'Abandoned', variant: 'abandoned' };
+			if (!r) return { kind: 'label', text: 'Play now', variant: 'play-now' };
+			if (r.status === 'finished') return { kind: 'finished', score: finishedScore(day) };
+			if (r.status === 'abandoned')
+				return { kind: 'label', text: 'Abandoned', variant: 'abandoned' };
 			// registered, ready, playing
-			return { text: 'In progress', variant: 'in-progress' };
+			return { kind: 'label', text: 'In progress', variant: 'in-progress' };
 		}
 		if (day.state === 'past') {
 			const r = day.my_result;
 			if (!r) return null;
-			if (r.status === 'finished') return { text: '✓ Done', variant: 'finished' };
-			if (r.status === 'playing') return { text: 'In progress', variant: 'in-progress' };
+			if (r.status === 'finished') return { kind: 'finished', score: finishedScore(day) };
+			if (r.status === 'playing')
+				return { kind: 'label', text: 'In progress', variant: 'in-progress' };
 			// abandoned, registered, ready (signed up but never played)
-			return { text: 'Abandoned', variant: 'abandoned' };
+			return { kind: 'label', text: 'Abandoned', variant: 'abandoned' };
 		}
 		return null;
 	}
@@ -89,7 +96,6 @@
 	<div class="grid" bind:this={scrollContainer}>
 		{#each week.days as day (day.date)}
 			{@const href = hrefFor(day)}
-			{@const result = userResultLabel(day)}
 			<svelte:element
 				this={href ? 'a' : 'div'}
 				href={href ?? undefined}
@@ -116,36 +122,37 @@
 					<span class="countdown">Opens in {countdown(day.started_at)}</span>
 				{:else}
 					<span class="pool">{day.pool_display_name ?? 'TBD'}</span>
-					{#if day.podium.length > 0}
-						<ul class="podium">
-							{#each day.podium as entry}
-								<li>
-									<span class="medal" aria-hidden="true">
-										{entry.placement === 1 ? '🥇' : entry.placement === 2 ? '🥈' : '🥉'}
-									</span>
-									<span class="name">{entry.twitch_display_name ?? entry.twitch_username}</span>
-									<span class="igt">{formatIgt(entry.igt_ms)}</span>
-								</li>
-							{/each}
-						</ul>
-					{:else if day.state === 'today'}
-						{#if day.race_id === null}
-							<span class="muted">Daily seed incoming</span>
-						{:else if day.participants_count > 0}
-							<span class="muted">
-								{day.participants_count}
-								{day.participants_count === 1 ? 'player' : 'players'}
-							</span>
+					{@const winner = day.podium.find((e) => e.placement === 1) ?? null}
+					<div class="body">
+						{#if winner}
+							<div class="winner">
+								<span class="medal" aria-hidden="true">🥇</span>
+								<span class="name">{winner.twitch_display_name ?? winner.twitch_username}</span>
+								<span class="igt">{formatIgt(winner.igt_ms)}</span>
+							</div>
+						{:else if day.state === 'today'}
+							{#if day.race_id === null}
+								<span class="muted">Daily seed incoming</span>
+							{:else if day.participants_count > 0}
+								<span class="muted">
+									{day.participants_count}
+									{day.participants_count === 1 ? 'player' : 'players'}
+								</span>
+							{/if}
+						{:else}
+							<span class="muted">No finishers</span>
 						{/if}
-					{:else}
-						<span class="muted">No finishers</span>
-					{/if}
-					{#if result}
-						<span class="me">{result}</span>
-					{/if}
+					</div>
 					{@const strip = cellStrip(day)}
-					{#if strip}
+					{#if strip?.kind === 'label'}
 						<span class="strip strip-{strip.variant}">{strip.text}</span>
+					{:else if strip?.kind === 'finished'}
+						<span class="strip strip-finished">
+							<span class="strip-icon" aria-hidden="true">✓</span>
+							<span class="strip-score">{strip.score}</span>
+						</span>
+					{:else}
+						<span class="strip strip-placeholder" aria-hidden="true">&nbsp;</span>
 					{/if}
 				{/if}
 			</svelte:element>
@@ -234,42 +241,33 @@
 		font-size: var(--font-size-sm);
 	}
 
-	.podium {
-		list-style: none;
-		margin: 0;
-		padding: 0;
+	.body {
+		flex: 1;
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
-		font-size: var(--font-size-xs);
+		justify-content: center;
+		min-height: 0;
 	}
-	.podium li {
+	.winner {
 		display: flex;
 		gap: 0.35rem;
 		align-items: baseline;
+		font-size: var(--font-size-xs);
 	}
-	.podium .name {
+	.winner .name {
 		color: var(--color-text);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.podium .igt {
+	.winner .igt {
 		margin-left: auto;
 		color: var(--color-text-secondary);
 		font-variant-numeric: tabular-nums;
 	}
-
-	.me {
-		padding-top: 0.4rem;
-		border-top: 1px dashed var(--color-border);
-		color: var(--color-text-secondary);
-		font-size: var(--font-size-xs);
-		font-variant-numeric: tabular-nums;
-	}
 	.strip {
 		margin-top: auto;
-		padding: 0.4rem 0;
+		padding: 0.4rem 0.5rem;
 		text-align: center;
 		font-weight: 700;
 		font-size: var(--font-size-sm);
@@ -287,6 +285,13 @@
 	.strip-finished {
 		background: rgba(107, 114, 128, 0.18);
 		color: var(--color-success);
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding-left: 0.875rem;
+		padding-right: 0.875rem;
+		letter-spacing: 0.04em;
+		font-variant-numeric: tabular-nums;
 	}
 	.strip-in-progress {
 		background: rgba(245, 158, 11, 0.14);
@@ -296,11 +301,15 @@
 		background: rgba(107, 114, 128, 0.18);
 		color: var(--color-text-disabled);
 	}
+	.strip-placeholder {
+		visibility: hidden;
+	}
 	.countdown {
 		margin-top: auto;
 		color: var(--color-text);
 		font-variant-numeric: tabular-nums;
 		font-size: var(--font-size-sm);
+        text-align: center;
 	}
 	.muted {
 		color: var(--color-text-disabled);
