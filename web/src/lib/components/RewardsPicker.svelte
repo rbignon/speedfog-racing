@@ -81,7 +81,7 @@
 				title="No badge"
 				onclick={() => (selectedBadgeId = null)}
 			>
-				<span class="badge-tile-glyph" aria-hidden="true">🚫</span>
+				<span class="badge-tile-glyph" aria-hidden="true">⊘</span>
 				<span class="badge-tile-name">None</span>
 				{#if inventory.equipped_badge_id === null}
 					<span class="active-pastille">Active</span>
@@ -232,6 +232,7 @@
 	.badge-tile-glyph {
 		font-size: 1.6rem;
 		line-height: 1;
+		color: var(--color-text-secondary);
 	}
 
 	.badge-tile-name {
