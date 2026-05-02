@@ -57,3 +57,40 @@ def test_catalog_badge_carries_lifecycle_and_icon():
         assert ea["icon_filename"] == "early_adopter.svg"
         top1 = next(b for b in data["badges"] if b["id"] == "top1_elo")
         assert top1["lifecycle"] == "transient"
+
+
+def test_catalog_includes_phantom_skins():
+    with TestClient(app) as client:
+        resp = client.get("/api/rewards/catalog")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "phantom_skins" in data
+        ids = [s["id"] for s in data["phantom_skins"]]
+        assert "none" in ids
+        assert "gold-aura" in ids
+        assert "silver-aura" in ids
+        assert "cyan-aura" in ids
+        assert "emerald-aura" in ids
+        assert "crimson-aura" in ids
+        assert "violet-aura" in ids
+
+
+def test_catalog_phantom_skins_sorted_by_sort_order():
+    with TestClient(app) as client:
+        resp = client.get("/api/rewards/catalog")
+        skins = resp.json()["phantom_skins"]
+        orders = [s["sort_order"] for s in skins]
+        assert orders == sorted(orders)
+
+
+def test_catalog_phantom_skin_shape():
+    with TestClient(app) as client:
+        resp = client.get("/api/rewards/catalog")
+        skin = next(s for s in resp.json()["phantom_skins"] if s["id"] == "gold-aura")
+        assert skin == {
+            "id": "gold-aura",
+            "name": "Gold Aura",
+            "description": "Granted the first time you reach top 1 ELO.",
+            "screenshot_filename": "gold-aura.jpg",
+            "sort_order": 10,
+        }

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
 from speedfog_racing.models import User, UserRole
-from speedfog_racing.rewards.catalog import BADGES, NAME_TEMPLATES
+from speedfog_racing.rewards.catalog import BADGES, NAME_TEMPLATES, PHANTOM_SKINS
 from speedfog_racing.rewards.service import NotOwnedError, RewardsService, UnknownRewardError
 
 router = APIRouter()
@@ -39,6 +39,16 @@ async def get_catalog() -> dict:  # type: ignore[type-arg]
                 "sort_order": t.sort_order,
             }
             for t in sorted(NAME_TEMPLATES.values(), key=lambda t: t.sort_order)
+        ],
+        "phantom_skins": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "description": s.description,
+                "screenshot_filename": s.screenshot_filename,
+                "sort_order": s.sort_order,
+            }
+            for s in sorted(PHANTOM_SKINS.values(), key=lambda s: s.sort_order)
         ],
     }
 
