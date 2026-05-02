@@ -185,3 +185,90 @@ async def test_admin_grant_unknown_badge_returns_400(test_client, admin_user, ta
             headers=headers,
         )
         assert resp.status_code == 400
+
+
+async def test_admin_grant_phantom_skin(test_client, admin_user, target_user):
+    headers = {"Authorization": f"Bearer {admin_user.api_token}"}
+    async with test_client as client:
+        resp = await client.post(
+            f"/api/admin/users/{target_user.id}/skins",
+            json={"skin_id": "violet-aura", "reason": "won the league"},
+            headers=headers,
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["granted"] is True
+        assert body["skin_id"] == "violet-aura"
+
+
+async def test_admin_grant_phantom_skin_unknown_400(test_client, admin_user, target_user):
+    headers = {"Authorization": f"Bearer {admin_user.api_token}"}
+    async with test_client as client:
+        resp = await client.post(
+            f"/api/admin/users/{target_user.id}/skins",
+            json={"skin_id": "rainbow-aura"},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+
+
+async def test_admin_grant_phantom_skin_requires_admin(test_client, regular_user, target_user):
+    headers = {"Authorization": f"Bearer {regular_user.api_token}"}
+    async with test_client as client:
+        resp = await client.post(
+            f"/api/admin/users/{target_user.id}/skins",
+            json={"skin_id": "violet-aura"},
+            headers=headers,
+        )
+        assert resp.status_code in (401, 403)
+
+
+async def test_admin_revoke_phantom_skin(test_client, admin_user, target_user, async_session):
+    from speedfog_racing.rewards.service import RewardsService
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(target_user.id, "violet-aura")
+        await db.commit()
+    headers = {"Authorization": f"Bearer {admin_user.api_token}"}
+    async with test_client as client:
+        resp = await client.delete(
+            f"/api/admin/users/{target_user.id}/skins/violet-aura",
+            headers=headers,
+        )
+        assert resp.status_code == 204
+
+
+async def test_admin_revoke_phantom_skin_does_not_emit_notification(
+    test_client, admin_user, target_user, async_session
+):
+    """Admin revoke is silent (no notification) per the spec."""
+    from speedfog_racing.rewards.service import RewardsService
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(target_user.id, "violet-aura")
+        await db.commit()
+        await svc.dismiss_notifications(target_user.id)
+        await db.commit()
+    headers = {"Authorization": f"Bearer {admin_user.api_token}"}
+    async with test_client as client:
+        resp = await client.delete(
+            f"/api/admin/users/{target_user.id}/skins/violet-aura",
+            headers=headers,
+        )
+        assert resp.status_code == 204
+    async with async_session() as db:
+        notifs = (
+            (
+                await db.execute(
+                    select(RewardNotification).where(
+                        RewardNotification.user_id == target_user.id,
+                        RewardNotification.dismissed_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert not any(n.kind.startswith("phantom_skin") for n in notifs)

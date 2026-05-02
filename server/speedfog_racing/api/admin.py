@@ -637,6 +637,13 @@ class AdminGrantTemplatePayload(BaseModel):
     reason: str | None = None
 
 
+class AdminGrantSkinPayload(BaseModel):
+    """Request body for granting a phantom skin to a user."""
+
+    skin_id: str
+    reason: str | None = None
+
+
 @router.post("/users/{user_id}/badges", status_code=201)
 async def admin_grant_badge(
     user_id: uuid.UUID,
@@ -703,6 +710,42 @@ async def admin_revoke_template(
     svc = RewardsService(db)
     try:
         await svc.revoke_name_template(user_id, template_id)
+    except UnknownRewardError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/users/{user_id}/skins", status_code=201)
+async def admin_grant_phantom_skin(
+    user_id: uuid.UUID,
+    payload: AdminGrantSkinPayload,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """Grant a phantom skin to a user. Requires admin role."""
+    svc = RewardsService(db)
+    try:
+        unlock = await svc.grant_phantom_skin(
+            user_id, payload.skin_id, granted_by=admin.id, reason=payload.reason
+        )
+    except UnknownRewardError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.commit()
+    return {"granted": unlock is not None, "skin_id": payload.skin_id}
+
+
+@router.delete("/users/{user_id}/skins/{skin_id}", status_code=204)
+async def admin_revoke_phantom_skin(
+    user_id: uuid.UUID,
+    skin_id: str,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Revoke a phantom skin from a user. Requires admin role."""
+    svc = RewardsService(db)
+    try:
+        await svc.revoke_phantom_skin(user_id, skin_id)
     except UnknownRewardError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     await db.commit()
