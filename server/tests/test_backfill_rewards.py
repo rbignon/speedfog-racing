@@ -12,6 +12,7 @@ from speedfog_racing.models import (
     NameTemplateUnlock,
     Participant,
     ParticipantStatus,
+    PhantomSkinUnlock,
     Race,
     RaceStatus,
     User,
@@ -327,3 +328,80 @@ async def test_backfill_veteran_idempotent(async_session_maker):
             .all()
         )
         assert len(grants) == 1
+
+
+async def test_backfill_grants_emerald_aura_to_early_adopters(async_session_maker):
+    """Users created before cutoff get emerald-aura; newer ones don't."""
+    async with async_session_maker() as db:
+        old = User(twitch_id="t-old-em", twitch_username="oldem")
+        new = User(twitch_id="t-new-em", twitch_username="newem")
+        db.add_all([old, new])
+        await db.commit()
+        await db.refresh(old)
+        await db.refresh(new)
+        old_id = old.id
+        new_id = new.id
+
+        await db.execute(
+            update(User)
+            .where(User.id == old_id)
+            .values(created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        )
+        await db.execute(
+            update(User)
+            .where(User.id == new_id)
+            .values(created_at=datetime(2026, 4, 15, tzinfo=UTC))
+        )
+        await db.commit()
+
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+
+    async with async_session_maker() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.skin_id == "emerald-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        unlocked_user_ids = {r.user_id for r in rows}
+        assert old_id in unlocked_user_ids
+        assert new_id not in unlocked_user_ids
+
+
+async def test_backfill_emerald_aura_idempotent(async_session_maker):
+    """Re-running the backfill does not duplicate emerald-aura unlocks."""
+    async with async_session_maker() as db:
+        u = User(twitch_id="t-rerun-em", twitch_username="rerun_em")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        user_id = u.id
+        await db.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        )
+        await db.commit()
+
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+
+    async with async_session_maker() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == user_id,
+                        PhantomSkinUnlock.skin_id == "emerald-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1

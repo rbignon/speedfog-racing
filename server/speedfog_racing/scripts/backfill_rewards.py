@@ -42,8 +42,13 @@ async def backfill_rewards(
                 "pioneer",
                 reason=f"backfill: account < {cutoff.isoformat()}",
             )
+            await svc.grant_phantom_skin(
+                u.id,
+                "emerald-aura",
+                reason=f"backfill: account < {cutoff.isoformat()}",
+            )
         await db.commit()
-        logger.info("Granted early_adopter + pioneer to %d account(s)", len(users))
+        logger.info("Granted early_adopter + pioneer + emerald-aura to %d account(s)", len(users))
 
     async with session_maker() as db:
         svc = RewardsService(db)
