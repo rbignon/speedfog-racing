@@ -474,6 +474,8 @@ class RewardsService:
         max_wins = max(r.wins for r in rows)
         holders = {r.user_id for r in rows if r.wins == max_wins}
         await self.sync_transient_holders("weekly_daily_champion", holders, reason=reason)
+        for uid in holders:
+            await self.grant_phantom_skin(uid, "cyan-aura", reason="weekly daily champion")
 
     async def check_veteran_eligibility(self, user_id: uuid.UUID) -> None:
         """Grant the veteran badge and weathered template at VETERAN_RACE_THRESHOLD finishes.

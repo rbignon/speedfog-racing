@@ -13,6 +13,7 @@ from speedfog_racing.models import (
     DailySeedSchedule,
     Participant,
     ParticipantStatus,
+    PhantomSkinUnlock,
     Race,
     RaceStatus,
     Seed,
@@ -200,3 +201,81 @@ async def test_non_monday_creation_does_not_touch_weekly_badge(
         )
         # No grants because no rollup ran (and no winners pre-seeded for Tuesday's prior week).
         assert holders == []
+
+
+async def test_monday_creation_grants_cyan_aura_to_top_winner(
+    ds_async_session_maker,
+) -> None:
+    await _seed_pool_and_system_user(ds_async_session_maker)
+    user_a = await _make_user(ds_async_session_maker, "ua_cyan", "alice_cyan")
+    user_b = await _make_user(ds_async_session_maker, "ub_cyan", "bob_cyan")
+    await _create_past_daily_with_winner(
+        ds_async_session_maker, daily_day=date(2026, 4, 22), winner=user_a, other=user_b
+    )
+    await _create_past_daily_with_winner(
+        ds_async_session_maker, daily_day=date(2026, 4, 24), winner=user_a, other=user_b
+    )
+    created = await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
+    assert created is not None
+
+    async with ds_async_session_maker() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.skin_id == "cyan-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        unlocked_user_ids = {r.user_id for r in rows}
+        assert user_a.id in unlocked_user_ids
+        assert user_b.id not in unlocked_user_ids
+
+
+async def test_cyan_aura_persists_when_next_week_has_different_champion(
+    ds_async_session_maker,
+) -> None:
+    """Permanent souvenir: a later weekly rollup does not revoke an earlier
+    champion's cyan-aura, even though the transient badge transitions away."""
+    await _seed_pool_and_system_user(ds_async_session_maker, seeds=10)
+    user_a = await _make_user(ds_async_session_maker, "ua_p1", "alice_p1")
+    user_b = await _make_user(ds_async_session_maker, "ub_p1", "bob_p1")
+
+    # Week 1: A wins twice, B zero. After Monday rollup, A gets cyan-aura.
+    await _create_past_daily_with_winner(
+        ds_async_session_maker, daily_day=date(2026, 4, 22), winner=user_a, other=user_b
+    )
+    await _create_past_daily_with_winner(
+        ds_async_session_maker, daily_day=date(2026, 4, 24), winner=user_a, other=user_b
+    )
+    await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
+
+    # Week 2: B wins twice, A zero. Trigger the next Monday rollup.
+    await _create_past_daily_with_winner(
+        ds_async_session_maker, daily_day=date(2026, 4, 29), winner=user_b, other=user_a
+    )
+    await _create_past_daily_with_winner(
+        ds_async_session_maker, daily_day=date(2026, 5, 1), winner=user_b, other=user_a
+    )
+    next_monday = datetime(2026, 5, 4, 8, 3, tzinfo=UTC)
+    await create_daily_seed_if_needed(ds_async_session_maker, now=next_monday)
+
+    async with ds_async_session_maker() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.skin_id == "cyan-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        unlocked_user_ids = {r.user_id for r in rows}
+        # Both A (week 1 champion) and B (week 2 champion) keep the souvenir.
+        assert user_a.id in unlocked_user_ids
+        assert user_b.id in unlocked_user_ids
