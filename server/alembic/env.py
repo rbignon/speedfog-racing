@@ -17,6 +17,7 @@ from speedfog_racing.models import (  # noqa: F401
     Feedback,
     Invite,
     Participant,
+    PhantomSkinUnlock,
     Pool,
     Race,
     Seed,
