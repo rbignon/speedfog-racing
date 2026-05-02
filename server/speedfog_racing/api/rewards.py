@@ -56,6 +56,7 @@ async def get_catalog() -> dict:  # type: ignore[type-arg]
 class EquipPayload(BaseModel):
     equipped_badge_id: str | None = None
     equipped_name_template_id: str | None = None
+    equipped_phantom_skin_id: str | None = None
 
 
 @router.get("/me")
@@ -74,9 +75,11 @@ async def get_my_inventory(
     if user.role == UserRole.ADMIN:
         held_badges = sorted(BADGES.values(), key=lambda b: b.sort_order)
         unlocked_templates = sorted(NAME_TEMPLATES.values(), key=lambda t: t.sort_order)
+        unlocked_phantom_skins = sorted(PHANTOM_SKINS.values(), key=lambda s: s.sort_order)
     else:
         held_badges = inv.held_badges
         unlocked_templates = inv.unlocked_templates
+        unlocked_phantom_skins = inv.unlocked_phantom_skins
     return {
         "held_badges": [
             {"id": b.id, "name": b.name, "icon_filename": b.icon_filename} for b in held_badges
@@ -92,8 +95,19 @@ async def get_my_inventory(
             }
             for t in unlocked_templates
         ],
+        "unlocked_phantom_skins": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "description": s.description,
+                "screenshot_filename": s.screenshot_filename,
+                "sort_order": s.sort_order,
+            }
+            for s in unlocked_phantom_skins
+        ],
         "equipped_badge_id": inv.equipped_badge_id,
         "equipped_name_template_id": inv.equipped_name_template_id,
+        "equipped_phantom_skin_id": inv.equipped_phantom_skin_id,
     }
 
 
@@ -117,6 +131,12 @@ async def patch_equipped(
                 body["equipped_name_template_id"],
                 enforce_ownership=enforce_ownership,
             )
+        if "equipped_phantom_skin_id" in body:
+            await svc.set_equipped_phantom_skin(
+                user.id,
+                body["equipped_phantom_skin_id"],
+                enforce_ownership=enforce_ownership,
+            )
     except (NotOwnedError, UnknownRewardError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     await db.commit()
@@ -124,6 +144,7 @@ async def patch_equipped(
     return {
         "equipped_badge_id": inv.equipped_badge_id,
         "equipped_name_template_id": inv.equipped_name_template_id,
+        "equipped_phantom_skin_id": inv.equipped_phantom_skin_id,
     }
 
 

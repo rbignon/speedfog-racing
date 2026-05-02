@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import User, UserRole, generate_token
-from speedfog_racing.rewards.catalog import BADGES, NAME_TEMPLATES
+from speedfog_racing.rewards.catalog import BADGES, NAME_TEMPLATES, PHANTOM_SKINS
 
 
 @pytest.fixture
@@ -171,10 +171,9 @@ async def test_post_dismiss_clears_pending(test_client, user_with_token, async_s
 
 
 async def test_get_me_returns_full_catalog_for_admins(test_client, admin_with_token):
-    """Admins see the entire catalog under held_badges/unlocked_templates so they
-    can preview any badge/template via the existing settings picker. The
-    equipped_* fields stay truthful and reflect the real DB row, not the
-    inflated catalog."""
+    """Admins see the entire catalog under held_badges/unlocked_templates/unlocked_phantom_skins
+    so they can preview any reward via the existing settings picker. The equipped_* fields
+    stay truthful and reflect the real DB row, not the inflated catalog."""
     _, token = admin_with_token
     headers = {"Authorization": f"Bearer {token}"}
     async with test_client as client:
@@ -183,10 +182,13 @@ async def test_get_me_returns_full_catalog_for_admins(test_client, admin_with_to
         data = resp.json()
         held_ids = {b["id"] for b in data["held_badges"]}
         template_ids = {t["id"] for t in data["unlocked_templates"]}
+        skin_ids = {s["id"] for s in data["unlocked_phantom_skins"]}
         assert held_ids == set(BADGES.keys())
         assert template_ids == set(NAME_TEMPLATES.keys())
+        assert skin_ids == set(PHANTOM_SKINS.keys())
         assert data["equipped_badge_id"] is None
         assert data["equipped_name_template_id"] is None
+        assert data["equipped_phantom_skin_id"] is None
 
 
 async def test_patch_equipped_allows_admin_without_grant(test_client, admin_with_token):
@@ -207,6 +209,7 @@ async def test_patch_equipped_allows_admin_without_grant(test_client, admin_with
         assert resp.json() == {
             "equipped_badge_id": "early_adopter",
             "equipped_name_template_id": "elo_crown",
+            "equipped_phantom_skin_id": None,
         }
 
 
@@ -228,3 +231,97 @@ async def test_patch_equipped_admin_can_force_transient_badge(test_client, admin
         )
         assert resp.status_code == 200
         assert resp.json()["equipped_badge_id"] == transient_id
+
+
+async def test_me_returns_unlocked_phantom_skins(test_client, user_with_token, async_session):
+    user, token = user_with_token
+    async with async_session() as db:
+        from speedfog_racing.rewards.service import RewardsService
+
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    async with test_client as client:
+        resp = await client.get("/api/rewards/me", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "unlocked_phantom_skins" in data
+        ids = [s["id"] for s in data["unlocked_phantom_skins"]]
+        assert "gold-aura" in ids
+        assert data["equipped_phantom_skin_id"] is None
+
+
+async def test_patch_equip_phantom_skin(test_client, user_with_token, async_session):
+    user, token = user_with_token
+    async with async_session() as db:
+        from speedfog_racing.rewards.service import RewardsService
+
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    async with test_client as client:
+        resp = await client.patch(
+            "/api/rewards/me/equipped",
+            json={"equipped_phantom_skin_id": "gold-aura"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["equipped_phantom_skin_id"] == "gold-aura"
+
+
+async def test_patch_equip_phantom_skin_not_owned_400(test_client, user_with_token):
+    _, token = user_with_token
+    headers = {"Authorization": f"Bearer {token}"}
+    async with test_client as client:
+        resp = await client.patch(
+            "/api/rewards/me/equipped",
+            json={"equipped_phantom_skin_id": "gold-aura"},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+
+
+async def test_patch_equip_phantom_skin_clear_with_null(
+    test_client, user_with_token, async_session
+):
+    user, token = user_with_token
+    async with async_session() as db:
+        from speedfog_racing.rewards.service import RewardsService
+
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(user.id, "gold-aura")
+        await svc.set_equipped_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    async with test_client as client:
+        resp = await client.patch(
+            "/api/rewards/me/equipped",
+            json={"equipped_phantom_skin_id": None},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["equipped_phantom_skin_id"] is None
+
+
+async def test_patch_equip_phantom_skin_string_none_clears(
+    test_client, user_with_token, async_session
+):
+    user, token = user_with_token
+    async with async_session() as db:
+        from speedfog_racing.rewards.service import RewardsService
+
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(user.id, "gold-aura")
+        await svc.set_equipped_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    async with test_client as client:
+        resp = await client.patch(
+            "/api/rewards/me/equipped",
+            json={"equipped_phantom_skin_id": "none"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["equipped_phantom_skin_id"] is None
