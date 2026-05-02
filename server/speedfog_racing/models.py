@@ -110,6 +110,7 @@ class User(Base):
     elo_races: Mapped[int] = mapped_column(default=0)
     equipped_badge_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     equipped_name_template_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    equipped_phantom_skin_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
     organized_races: Mapped[list["Race"]] = relationship(back_populates="organizer")
@@ -583,6 +584,30 @@ class NameTemplateUnlock(Base):
     __table_args__ = (
         Index("ix_name_template_unlocks_user_id", "user_id"),
         UniqueConstraint("user_id", "template_id", name="uq_name_template_unlocks_user_template"),
+    )
+
+
+class PhantomSkinUnlock(Base):
+    """A user's permanent unlock of a phantom skin."""
+
+    __tablename__ = "phantom_skin_unlocks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    skin_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    unlocked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    granted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    __table_args__ = (
+        Index("ix_phantom_skin_unlocks_user_id", "user_id"),
+        UniqueConstraint("user_id", "skin_id", name="uq_phantom_skin_unlocks_user_skin"),
     )
 
 

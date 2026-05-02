@@ -8,6 +8,7 @@ from speedfog_racing.database import Base
 from speedfog_racing.models import (
     BadgeGrant,
     NameTemplateUnlock,
+    PhantomSkinUnlock,
     RewardNotification,
     User,
 )
@@ -90,3 +91,57 @@ async def test_reward_notification_round_trip(async_session):
         await db.refresh(n)
         assert n.created_at is not None
         assert n.dismissed_at is None
+
+
+async def test_user_has_equipped_phantom_skin_id_column(async_session):
+    async with async_session() as db:
+        user = User(
+            twitch_id="phantom_eq",
+            twitch_username="alice_phantom",
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        assert user.equipped_phantom_skin_id is None
+        user.equipped_phantom_skin_id = "gold-aura"
+        await db.commit()
+        await db.refresh(user)
+        assert user.equipped_phantom_skin_id == "gold-aura"
+
+
+async def test_phantom_skin_unlock_unique_per_user_and_skin(async_session):
+    async with async_session() as db:
+        user = User(twitch_id="phantom_uniq", twitch_username="bob_phantom")
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        db.add(PhantomSkinUnlock(user_id=user.id, skin_id="gold-aura"))
+        await db.commit()
+    async with async_session() as db:
+        db.add(PhantomSkinUnlock(user_id=user.id, skin_id="gold-aura"))
+        with pytest.raises(IntegrityError):
+            await db.commit()
+
+
+async def test_phantom_skin_unlock_two_skins_same_user(async_session):
+    async with async_session() as db:
+        user = User(twitch_id="phantom_two", twitch_username="carol_phantom")
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        db.add(PhantomSkinUnlock(user_id=user.id, skin_id="gold-aura"))
+        db.add(PhantomSkinUnlock(user_id=user.id, skin_id="silver-aura"))
+        await db.commit()
+    async with async_session() as db:
+        from sqlalchemy import select
+
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(PhantomSkinUnlock.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert {r.skin_id for r in rows} == {"gold-aura", "silver-aura"}
