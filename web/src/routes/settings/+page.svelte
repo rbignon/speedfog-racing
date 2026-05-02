@@ -20,6 +20,7 @@
 	let inventory = $state<MyInventoryDto | null>(null);
 	let selectedTemplateId = $state('default');
 	let selectedBadgeId = $state<string | null>(null);
+	let selectedSkinId = $state<string | null>(null);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 	let success = $state(false);
@@ -41,6 +42,7 @@
 		if (loadedInventory) {
 			selectedTemplateId = loadedInventory.equipped_name_template_id ?? 'default';
 			selectedBadgeId = loadedInventory.equipped_badge_id;
+			selectedSkinId = loadedInventory.equipped_phantom_skin_id;
 		}
 	});
 
@@ -61,14 +63,17 @@
 				calls.push(
 					patchEquipped({
 						equipped_name_template_id: selectedTemplateId,
-						equipped_badge_id: selectedBadgeId
+						equipped_badge_id: selectedBadgeId,
+						equipped_phantom_skin_id: selectedSkinId
 					}).then((result) => {
 						if (!result || !inventory) return;
 						inventory.equipped_name_template_id = result.equipped_name_template_id;
 						inventory.equipped_badge_id = result.equipped_badge_id;
+						inventory.equipped_phantom_skin_id = result.equipped_phantom_skin_id;
 						if (auth.user) {
 							auth.user.equipped_name_template_id = result.equipped_name_template_id;
 							auth.user.equipped_badge_id = result.equipped_badge_id;
+							auth.user.equipped_phantom_skin_id = result.equipped_phantom_skin_id;
 						}
 					})
 				);
@@ -135,7 +140,13 @@
 		<p class="description">Pick a badge and a name template among the rewards you have unlocked.</p>
 
 		{#if inventory && auth.user}
-			<RewardsPicker {inventory} user={auth.user} bind:selectedTemplateId bind:selectedBadgeId />
+			<RewardsPicker
+				{inventory}
+				user={auth.user}
+				bind:selectedTemplateId
+				bind:selectedBadgeId
+				bind:selectedSkinId
+			/>
 		{:else}
 			<p class="hint">Loading…</p>
 		{/if}
