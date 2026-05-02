@@ -254,6 +254,17 @@ pub struct RaceTracker {
     // save that skips spawning leaves this false, allowing retry on the next auth_ok.
     items_spawned: Arc<AtomicBool>,
 
+    // Phantom skin runner thread handle (one per session).
+    phantom_skin_thread: Option<JoinHandle<()>>,
+
+    // Phantom skin runner stop flag (currently always false; reserved for
+    // future mid-session skin changes).
+    phantom_skin_stop: Arc<AtomicBool>,
+
+    // Cached equipped phantom skin name to avoid respawning the runner on
+    // every reconnect's auth_ok.
+    phantom_skin_name: Option<String>,
+
     // Zone update received, waiting for loading screen to end before revealing
     pending_zone_update: Option<ZoneUpdateData>,
 
@@ -393,6 +404,9 @@ impl RaceTracker {
             last_flag_reader_ok: None,
             spawner_thread: None,
             items_spawned: Arc::new(AtomicBool::new(false)),
+            phantom_skin_thread: None,
+            phantom_skin_stop: Arc::new(AtomicBool::new(false)),
+            phantom_skin_name: None,
             pending_zone_update: None,
             pre_reveal_layer: None,
             pending_zone_received_at: None,
@@ -966,6 +980,52 @@ impl RaceTracker {
                 info!(race = %race.name, participant_id = %participant_id, participants = participants.len(), "[WS] Auth OK");
                 if let Some(ref name) = phantom_skin {
                     info!(skin = %name, "[WS] Equipped phantom skin received");
+                }
+                // Phantom skin runtime application: spawn a background thread
+                // that re-applies the SpEffect on every game-world load.
+                // Skipped on subsequent reconnects (same skin already running)
+                // and when the seed predates the phantom_skins catalog (empty
+                // map -> no-op for any name push).
+                if let Some(ref name) = phantom_skin {
+                    let already_running = self.phantom_skin_name.as_ref() == Some(name)
+                        && self
+                            .phantom_skin_thread
+                            .as_ref()
+                            .is_some_and(|h| !h.is_finished());
+                    if already_running {
+                        info!(
+                            skin = %name,
+                            "[PHANTOM_SKIN] Runner already running for this skin, skipping respawn"
+                        );
+                    } else {
+                        match seed.phantom_skins.get(name) {
+                            Some(directive) if !directive.speffects.is_empty() => {
+                                let ids = directive.speffects.clone();
+                                self.phantom_skin_stop = Arc::new(AtomicBool::new(false));
+                                self.phantom_skin_name = Some(name.clone());
+                                self.phantom_skin_thread =
+                                    Some(crate::eldenring::sp_effect_runner::spawn(
+                                        name.clone(),
+                                        ids,
+                                        Arc::clone(&self.phantom_skin_stop),
+                                    ));
+                            }
+                            Some(_) => {
+                                warn!(
+                                    skin = %name,
+                                    "[PHANTOM_SKIN] Seed catalog has the skin but no SpEffects; nothing to apply"
+                                );
+                            }
+                            None => {
+                                let available: Vec<&String> = seed.phantom_skins.keys().collect();
+                                warn!(
+                                    skin = %name,
+                                    available = ?available,
+                                    "[PHANTOM_SKIN] Skin not in this seed's catalog (older seed?), feature disabled"
+                                );
+                            }
+                        }
+                    }
                 }
                 self.last_received_debug = Some(format!(
                     "auth_ok(race={}, {} players)",
