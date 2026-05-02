@@ -1549,3 +1549,55 @@ class TestPhantomSkinResolution:
         from speedfog_racing.websocket.schemas import resolve_phantom_skin_for_auth_ok
 
         assert resolve_phantom_skin_for_auth_ok("gold-aura") == "gold-aura"
+
+    def test_extract_phantom_skins_present(self):
+        from speedfog_racing.websocket.schemas import extract_phantom_skins
+
+        graph = {
+            "phantom_skins": {
+                "gold-aura": {"speffects": [1450700]},
+                "silver-aura": {"speffects": [1450705]},
+            },
+        }
+        result = extract_phantom_skins(graph)
+        assert set(result.keys()) == {"gold-aura", "silver-aura"}
+        assert result["gold-aura"].speffects == [1450700]
+        assert result["silver-aura"].speffects == [1450705]
+
+    def test_extract_phantom_skins_missing_returns_empty(self):
+        from speedfog_racing.websocket.schemas import extract_phantom_skins
+
+        assert extract_phantom_skins({}) == {}
+
+    def test_extract_phantom_skins_skips_malformed_entries(self):
+        from speedfog_racing.websocket.schemas import extract_phantom_skins
+
+        graph = {
+            "phantom_skins": {
+                "gold-aura": {"speffects": [1450700]},
+                "bogus": "not an object",
+                "no-speffects": {"other": "field"},
+                "non-int": {"speffects": ["abc"]},
+            },
+        }
+        result = extract_phantom_skins(graph)
+        assert "gold-aura" in result
+        assert "bogus" not in result
+        # "no-speffects" still present but with empty list (default)
+        assert result["no-speffects"].speffects == []
+        # "non-int" present, non-int values filtered out
+        assert result["non-int"].speffects == []
+
+    def test_seed_info_default_phantom_skins_empty(self):
+        seed = SeedInfo(total_layers=10)
+        assert seed.phantom_skins == {}
+
+    def test_seed_info_serializes_phantom_skins(self):
+        from speedfog_racing.websocket.schemas import PhantomSkinDirective
+
+        seed = SeedInfo(
+            total_layers=10,
+            phantom_skins={"gold-aura": PhantomSkinDirective(speffects=[1450700])},
+        )
+        data = json.loads(seed.model_dump_json())
+        assert data["phantom_skins"]["gold-aura"]["speffects"] == [1450700]

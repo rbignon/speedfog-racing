@@ -30,6 +30,7 @@ from speedfog_racing.websocket.schemas import (
     RaceStatusChangeMessage,
     SeedInfo,
     ZoneHistoryMessage,
+    extract_phantom_skins,
     extract_spawn_items,
     resolve_phantom_skin_for_auth_ok,
 )
@@ -161,6 +162,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         items_spawned_flag = (
             seed.graph_json.get("items_spawned_flag") if seed and seed.graph_json else None
         )
+        phantom_skins = extract_phantom_skins(seed.graph_json) if seed and seed.graph_json else {}
 
         phantom_skin = resolve_phantom_skin_for_auth_ok(
             session.user.equipped_phantom_skin_id if session.user else None
@@ -182,6 +184,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                 spawn_items=spawn_items,
                 death_flags=death_flags,
                 items_spawned_flag=items_spawned_flag,
+                phantom_skins=phantom_skins,
             ),
             participants=[build_training_participant_info(session)],
             phantom_skin=phantom_skin,

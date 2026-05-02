@@ -50,6 +50,7 @@ from speedfog_racing.websocket.schemas import (
     RaceStartMessage,
     SeedInfo,
     build_race_info,
+    extract_phantom_skins,
     extract_spawn_items,
     persist_system_chat,
     resolve_phantom_skin_for_auth_ok,
@@ -297,6 +298,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         items_spawned_flag = (
             seed.graph_json.get("items_spawned_flag") if seed and seed.graph_json else None
         )
+        phantom_skins = extract_phantom_skins(seed.graph_json) if seed and seed.graph_json else {}
 
         room = manager.get_room(race.id)
         connected_ids = set(room.mods.keys()) if room else set()
@@ -322,6 +324,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 spawn_items=spawn_items,
                 death_flags=death_flags,
                 items_spawned_flag=items_spawned_flag,
+                phantom_skins=phantom_skins,
             ),
             participants=participant_infos,
             phantom_skin=phantom_skin,

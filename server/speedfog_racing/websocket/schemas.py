@@ -59,6 +59,38 @@ class SpawnItem(BaseModel):
     qty: int = 1
 
 
+class PhantomSkinDirective(BaseModel):
+    """Directives the mod should apply when the user equips a given skin name.
+
+    Forward-compatible: unknown keys are ignored by the mod, missing keys are no-ops.
+    V1 ships only `speffects`.
+    """
+
+    speffects: list[int] = Field(default_factory=list)
+
+
+def extract_phantom_skins(
+    graph_json: dict[str, Any],
+) -> dict[str, PhantomSkinDirective]:
+    """Extract the per-seed phantom_skins map from graph.json.
+
+    Older seeds without the field return an empty dict; the mod treats that as
+    "feature off for this seed" and silently no-ops on any push.
+    """
+    raw = graph_json.get("phantom_skins") or {}
+    out: dict[str, PhantomSkinDirective] = {}
+    for name, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
+        speffects = entry.get("speffects") or []
+        if not isinstance(speffects, list):
+            continue
+        out[name] = PhantomSkinDirective(
+            speffects=[int(x) for x in speffects if isinstance(x, int)],
+        )
+    return out
+
+
 def extract_spawn_items(graph_json: dict[str, Any]) -> list[SpawnItem]:
     """Extract type-4 (Gem/Ash of War) items from care_package for mod runtime spawning."""
     care_pkg = graph_json.get("care_package", [])
@@ -174,6 +206,7 @@ class SeedInfo(BaseModel):
     spawn_items: list[SpawnItem] = Field(default_factory=list)
     death_flags: dict[str, list[int]] = Field(default_factory=dict)
     items_spawned_flag: int | None = None
+    phantom_skins: dict[str, PhantomSkinDirective] = Field(default_factory=dict)
 
 
 def resolve_phantom_skin_for_auth_ok(equipped: str | None) -> str | None:
