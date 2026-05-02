@@ -15,6 +15,7 @@ export interface User {
   twitch_avatar_url: string | null;
   equipped_badge_id?: string | null;
   equipped_name_template_id?: string | null;
+  equipped_phantom_skin_id?: string | null;
 }
 
 export interface ParticipantPreview extends User {
@@ -1659,14 +1660,27 @@ export interface NameTemplateDef {
   sort_order: number;
 }
 
+export interface PhantomSkinDef {
+  id: string;
+  name: string;
+  description?: string;
+  screenshot_filename: string;
+  sort_order: number;
+}
+
 export interface RewardsCatalog {
   badges: BadgeDef[];
   name_templates: NameTemplateDef[];
+  phantom_skins: PhantomSkinDef[];
 }
 
 export interface RewardNotificationDto {
   id: string;
-  kind: "badge_granted" | "badge_revoked" | "name_template_unlocked";
+  kind:
+    | "badge_granted"
+    | "badge_revoked"
+    | "name_template_unlocked"
+    | "phantom_skin_unlocked";
   reward_id: string;
   created_at: string;
 }
@@ -1674,8 +1688,10 @@ export interface RewardNotificationDto {
 export interface MyInventoryDto {
   held_badges: { id: string; name: string; icon_filename: string }[];
   unlocked_templates: NameTemplateDef[];
+  unlocked_phantom_skins: PhantomSkinDef[];
   equipped_badge_id: string | null;
   equipped_name_template_id: string | null;
+  equipped_phantom_skin_id: string | null;
 }
 
 /**
@@ -1727,9 +1743,11 @@ export async function fetchMyInventory(): Promise<MyInventoryDto | null> {
 export async function patchEquipped(payload: {
   equipped_badge_id?: string | null;
   equipped_name_template_id?: string | null;
+  equipped_phantom_skin_id?: string | null;
 }): Promise<{
   equipped_badge_id: string | null;
   equipped_name_template_id: string | null;
+  equipped_phantom_skin_id: string | null;
 } | null> {
   const token = getStoredToken();
   if (!token) return null;

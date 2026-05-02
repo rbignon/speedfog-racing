@@ -43,6 +43,7 @@ const seedCatalog = () => {
         sort_order: 10,
       },
     ],
+    phantom_skins: [],
   };
 };
 

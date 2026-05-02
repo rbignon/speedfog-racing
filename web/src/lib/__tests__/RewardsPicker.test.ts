@@ -46,6 +46,7 @@ const seedCatalog = () => {
         sort_order: 10,
       },
     ],
+    phantom_skins: [],
   };
 };
 
@@ -93,8 +94,10 @@ const baseInventory: MyInventoryDto = {
       sort_order: 10,
     },
   ],
+  unlocked_phantom_skins: [],
   equipped_badge_id: "early_adopter",
   equipped_name_template_id: "elo_crown",
+  equipped_phantom_skin_id: null,
 };
 
 describe("RewardsPicker", () => {
