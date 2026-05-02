@@ -98,6 +98,42 @@ describe("rewards catalog store", () => {
   });
 });
 
+describe("rewards.lookupPhantomSkin", () => {
+  beforeEach(() => {
+    rewards.catalog = {
+      badges: [],
+      name_templates: [],
+      phantom_skins: [
+        {
+          id: "gold-aura",
+          name: "Gold Aura",
+          description: "Top 1 ELO",
+          screenshot_filename: "gold-aura.jpg",
+          sort_order: 10,
+        },
+      ],
+    };
+  });
+
+  it("returns the entry by id", () => {
+    expect(rewards.lookupPhantomSkin("gold-aura")?.name).toBe("Gold Aura");
+  });
+
+  it("returns null on null/undefined", () => {
+    expect(rewards.lookupPhantomSkin(null)).toBeNull();
+    expect(rewards.lookupPhantomSkin(undefined)).toBeNull();
+  });
+
+  it("returns null when catalog absent", () => {
+    rewards.catalog = null;
+    expect(rewards.lookupPhantomSkin("gold-aura")).toBeNull();
+  });
+
+  it("returns null for unknown id", () => {
+    expect(rewards.lookupPhantomSkin("rainbow-aura")).toBeNull();
+  });
+});
+
 describe("PhantomSkinDef", () => {
   it("compiles with all expected fields", () => {
     const skin: PhantomSkinDef = {

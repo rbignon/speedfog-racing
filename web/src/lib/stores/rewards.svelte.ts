@@ -6,7 +6,12 @@
  * user-specific data, so we cache the first successful fetch in memory.
  */
 
-import type { BadgeDef, NameTemplateDef, RewardsCatalog } from "$lib/api";
+import type {
+  BadgeDef,
+  NameTemplateDef,
+  PhantomSkinDef,
+  RewardsCatalog,
+} from "$lib/api";
 
 class RewardsStore {
   catalog = $state<RewardsCatalog | null>(null);
@@ -39,6 +44,11 @@ class RewardsStore {
     if (!this.catalog) return null;
     const target = id ?? "default";
     return this.catalog.name_templates.find((t) => t.id === target) ?? null;
+  }
+
+  lookupPhantomSkin(id: string | null | undefined): PhantomSkinDef | null {
+    if (!id || !this.catalog) return null;
+    return this.catalog.phantom_skins.find((s) => s.id === id) ?? null;
   }
 }
 
