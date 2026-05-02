@@ -52,6 +52,7 @@ from speedfog_racing.websocket.schemas import (
     build_race_info,
     extract_spawn_items,
     persist_system_chat,
+    resolve_phantom_skin_for_auth_ok,
 )
 
 logger = logging.getLogger(__name__)
@@ -306,6 +307,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             for p in sorted_participants
         ]
 
+        phantom_skin = resolve_phantom_skin_for_auth_ok(
+            participant.user.equipped_phantom_skin_id if participant.user else None
+        )
         message = AuthOkMessage(
             participant_id=str(participant.id),
             race=build_race_info(race, countdown_seconds=settings.countdown_seconds),
@@ -320,6 +324,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 items_spawned_flag=items_spawned_flag,
             ),
             participants=participant_infos,
+            phantom_skin=phantom_skin,
         )
         await self.websocket.send_text(message.model_dump_json())
 

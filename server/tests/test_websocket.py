@@ -208,6 +208,29 @@ class TestSchemas:
         assert data["participant_id"] == "abc-123"
         assert data["race"]["name"] == "Race"
 
+    def test_auth_ok_message_with_phantom_skin(self):
+        """AuthOkMessage serializes the optional phantom_skin field when set."""
+        msg = AuthOkMessage(
+            participant_id="abc-123",
+            race=RaceInfo(id="1", name="Race", status="setup"),
+            seed=SeedInfo(total_layers=10),
+            participants=[],
+            phantom_skin="gold-aura",
+        )
+        data = json.loads(msg.model_dump_json())
+        assert data["phantom_skin"] == "gold-aura"
+
+    def test_auth_ok_message_default_phantom_skin_none(self):
+        """When phantom_skin is not provided, the serialized field is null."""
+        msg = AuthOkMessage(
+            participant_id="abc-123",
+            race=RaceInfo(id="1", name="Race", status="setup"),
+            seed=SeedInfo(total_layers=10),
+            participants=[],
+        )
+        data = json.loads(msg.model_dump_json())
+        assert data["phantom_skin"] is None
+
     def test_auth_error_message(self):
         """Test AuthErrorMessage serialization."""
         msg = AuthErrorMessage(message="Invalid token")
@@ -1507,3 +1530,22 @@ class TestParseZoneQueryInput:
         zq = parse_zone_query_input(msg)
         assert zq is not None
         assert zq.igt_ms is None
+
+
+class TestPhantomSkinResolution:
+    """Test resolve_phantom_skin_for_auth_ok helper."""
+
+    def test_resolves_none_to_none(self):
+        from speedfog_racing.websocket.schemas import resolve_phantom_skin_for_auth_ok
+
+        assert resolve_phantom_skin_for_auth_ok(None) is None
+
+    def test_resolves_string_none_to_none(self):
+        from speedfog_racing.websocket.schemas import resolve_phantom_skin_for_auth_ok
+
+        assert resolve_phantom_skin_for_auth_ok("none") is None
+
+    def test_passes_through_real_skin_id(self):
+        from speedfog_racing.websocket.schemas import resolve_phantom_skin_for_auth_ok
+
+        assert resolve_phantom_skin_for_auth_ok("gold-aura") == "gold-aura"

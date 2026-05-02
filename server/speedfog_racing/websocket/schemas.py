@@ -176,6 +176,13 @@ class SeedInfo(BaseModel):
     items_spawned_flag: int | None = None
 
 
+def resolve_phantom_skin_for_auth_ok(equipped: str | None) -> str | None:
+    """None or the literal 'none' resolves to None; anything else passes through."""
+    if equipped is None or equipped == "none":
+        return None
+    return equipped
+
+
 class AuthOkMessage(BaseModel):
     """Successful authentication response."""
 
@@ -184,6 +191,7 @@ class AuthOkMessage(BaseModel):
     race: RaceInfo
     seed: SeedInfo
     participants: list[ParticipantInfo]
+    phantom_skin: str | None = None
 
 
 class AuthErrorMessage(BaseModel):

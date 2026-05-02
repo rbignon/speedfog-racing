@@ -31,6 +31,7 @@ from speedfog_racing.websocket.schemas import (
     SeedInfo,
     ZoneHistoryMessage,
     extract_spawn_items,
+    resolve_phantom_skin_for_auth_ok,
 )
 from speedfog_racing.websocket.training.manager import training_manager
 
@@ -161,6 +162,9 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
             seed.graph_json.get("items_spawned_flag") if seed and seed.graph_json else None
         )
 
+        phantom_skin = resolve_phantom_skin_for_auth_ok(
+            session.user.equipped_phantom_skin_id if session.user else None
+        )
         message = AuthOkMessage(
             participant_id=str(session.id),
             race=RaceInfo(
@@ -180,6 +184,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                 items_spawned_flag=items_spawned_flag,
             ),
             participants=[build_training_participant_info(session)],
+            phantom_skin=phantom_skin,
         )
         await self.websocket.send_text(message.model_dump_json())
 
