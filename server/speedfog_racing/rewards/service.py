@@ -294,6 +294,32 @@ class RewardsService:
             update(User).where(User.id == user_id).values(equipped_name_template_id=target)
         )
 
+    async def set_equipped_phantom_skin(
+        self,
+        user_id: uuid.UUID,
+        skin_id: str | None,
+        *,
+        enforce_ownership: bool = True,
+    ) -> None:
+        if skin_id is not None and skin_id != DEFAULT_PHANTOM_SKIN_ID:
+            if skin_id not in PHANTOM_SKINS:
+                raise UnknownRewardError(f"Unknown skin_id={skin_id!r}")
+            if enforce_ownership:
+                owned = await self.session.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == user_id,
+                        PhantomSkinUnlock.skin_id == skin_id,
+                    )
+                )
+                if owned.scalar_one_or_none() is None:
+                    raise NotOwnedError(f"User has not unlocked skin {skin_id!r}")
+
+        # "none" or None both clear the column to NULL.
+        stored = None if skin_id is None or skin_id == DEFAULT_PHANTOM_SKIN_ID else skin_id
+        await self.session.execute(
+            update(User).where(User.id == user_id).values(equipped_phantom_skin_id=stored)
+        )
+
     async def get_user_inventory(self, user_id: uuid.UUID) -> Inventory:
         held = await self.session.execute(
             select(BadgeGrant.badge_id).where(
@@ -491,4 +517,24 @@ class RewardsService:
                 User.equipped_name_template_id == template_id,
             )
             .values(equipped_name_template_id=None)
+        )
+
+    async def revoke_phantom_skin(self, user_id: uuid.UUID, skin_id: str) -> None:
+        if skin_id not in PHANTOM_SKINS:
+            raise UnknownRewardError(f"Unknown skin_id={skin_id!r}")
+        if skin_id == DEFAULT_PHANTOM_SKIN_ID:
+            return
+        await self.session.execute(
+            delete(PhantomSkinUnlock).where(
+                PhantomSkinUnlock.user_id == user_id,
+                PhantomSkinUnlock.skin_id == skin_id,
+            )
+        )
+        await self.session.execute(
+            update(User)
+            .where(
+                User.id == user_id,
+                User.equipped_phantom_skin_id == skin_id,
+            )
+            .values(equipped_phantom_skin_id=None)
         )

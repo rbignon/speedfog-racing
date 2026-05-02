@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
@@ -907,3 +907,135 @@ async def test_grant_phantom_skin_rejects_unknown(async_session):
         svc = RewardsService(db)
         with pytest.raises(UnknownRewardError):
             await svc.grant_phantom_skin(user.id, "rainbow-aura")
+
+
+async def test_set_equipped_phantom_skin_owned(async_session):
+    user = await _make_user(async_session, "skineq_alice")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(user.id, "gold-aura")
+        await svc.set_equipped_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    async with async_session() as db:
+        fresh = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert fresh.equipped_phantom_skin_id == "gold-aura"
+
+
+async def test_set_equipped_phantom_skin_not_owned_raises(async_session):
+    user = await _make_user(async_session, "skineq_bob")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        with pytest.raises(NotOwnedError):
+            await svc.set_equipped_phantom_skin(user.id, "gold-aura")
+
+
+async def test_set_equipped_phantom_skin_none_clears_to_null(async_session):
+    user = await _make_user(async_session, "skineq_carol")
+    async with async_session() as db:
+        await db.execute(
+            update(User).where(User.id == user.id).values(equipped_phantom_skin_id="gold-aura")
+        )
+        await db.commit()
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.set_equipped_phantom_skin(user.id, None)
+        await db.commit()
+    async with async_session() as db:
+        fresh = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert fresh.equipped_phantom_skin_id is None
+
+
+async def test_set_equipped_phantom_skin_string_none_clears_to_null(async_session):
+    user = await _make_user(async_session, "skineq_dave")
+    async with async_session() as db:
+        await db.execute(
+            update(User).where(User.id == user.id).values(equipped_phantom_skin_id="gold-aura")
+        )
+        await db.commit()
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.set_equipped_phantom_skin(user.id, "none")
+        await db.commit()
+    async with async_session() as db:
+        fresh = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert fresh.equipped_phantom_skin_id is None
+
+
+async def test_set_equipped_phantom_skin_unknown_raises(async_session):
+    user = await _make_user(async_session, "skineq_erin")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        with pytest.raises(UnknownRewardError):
+            await svc.set_equipped_phantom_skin(user.id, "rainbow-aura")
+
+
+async def test_set_equipped_phantom_skin_admin_bypass(async_session):
+    user = await _make_user(async_session, "skineq_frank")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.set_equipped_phantom_skin(user.id, "gold-aura", enforce_ownership=False)
+        await db.commit()
+    async with async_session() as db:
+        fresh = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert fresh.equipped_phantom_skin_id == "gold-aura"
+
+
+async def test_revoke_phantom_skin_clears_equip_and_unlock(async_session):
+    user = await _make_user(async_session, "skinrv_alice")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(user.id, "gold-aura")
+        await svc.set_equipped_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.revoke_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    async with async_session() as db:
+        fresh = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert fresh.equipped_phantom_skin_id is None
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(PhantomSkinUnlock.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == []
+
+
+async def test_revoke_phantom_skin_does_not_emit_notification(async_session):
+    user = await _make_user(async_session, "skinrv_bob")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.dismiss_notifications(user.id)
+        await svc.revoke_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    async with async_session() as db:
+        notifs = (
+            (
+                await db.execute(
+                    select(RewardNotification).where(
+                        RewardNotification.user_id == user.id,
+                        RewardNotification.dismissed_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert not any(n.reward_id == "gold-aura" for n in notifs)
+
+
+async def test_revoke_phantom_skin_unknown_raises(async_session):
+    user = await _make_user(async_session, "skinrv_erin")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        with pytest.raises(UnknownRewardError):
+            await svc.revoke_phantom_skin(user.id, "rainbow-aura")
