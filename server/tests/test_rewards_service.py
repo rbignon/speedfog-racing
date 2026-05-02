@@ -1039,3 +1039,43 @@ async def test_revoke_phantom_skin_unknown_raises(async_session):
         svc = RewardsService(db)
         with pytest.raises(UnknownRewardError):
             await svc.revoke_phantom_skin(user.id, "rainbow-aura")
+
+
+async def test_inventory_returns_unlocked_phantom_skins_and_equipped(async_session):
+    user = await _make_user(async_session, "inv1_alice")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(user.id, "gold-aura")
+        await svc.grant_phantom_skin(user.id, "silver-aura")
+        await svc.set_equipped_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    async with async_session() as db:
+        svc = RewardsService(db)
+        inv = await svc.get_user_inventory(user.id)
+    ids = {s.id for s in inv.unlocked_phantom_skins}
+    assert ids == {"gold-aura", "silver-aura"}
+    assert inv.equipped_phantom_skin_id == "gold-aura"
+
+
+async def test_inventory_phantom_skins_sorted_by_sort_order(async_session):
+    user = await _make_user(async_session, "inv2_bob")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(user.id, "crimson-aura")  # sort_order=50
+        await svc.grant_phantom_skin(user.id, "gold-aura")  # sort_order=10
+        await svc.grant_phantom_skin(user.id, "silver-aura")  # sort_order=20
+        await db.commit()
+    async with async_session() as db:
+        svc = RewardsService(db)
+        inv = await svc.get_user_inventory(user.id)
+    order = [s.id for s in inv.unlocked_phantom_skins]
+    assert order == ["gold-aura", "silver-aura", "crimson-aura"]
+
+
+async def test_inventory_no_phantom_skins(async_session):
+    user = await _make_user(async_session, "inv3_carol")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        inv = await svc.get_user_inventory(user.id)
+    assert inv.unlocked_phantom_skins == []
+    assert inv.equipped_phantom_skin_id is None

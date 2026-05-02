@@ -27,7 +27,7 @@ from speedfog_racing.rewards.catalog import (
     PHANTOM_SKINS,
     VETERAN_RACE_THRESHOLD,
 )
-from speedfog_racing.rewards.models_data import Badge, NameTemplate
+from speedfog_racing.rewards.models_data import Badge, NameTemplate, PhantomSkin
 from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
 
 
@@ -53,8 +53,10 @@ class SyncResult:
 class Inventory:
     held_badges: list[Badge]
     unlocked_templates: list[NameTemplate]
+    unlocked_phantom_skins: list[PhantomSkin]
     equipped_badge_id: str | None
     equipped_name_template_id: str | None
+    equipped_phantom_skin_id: str | None
 
 
 class RewardsService:
@@ -336,12 +338,20 @@ class RewardsService:
         unlocked_ids.add(DEFAULT_TEMPLATE_ID)
         unlocked_templates = [NAME_TEMPLATES[tid] for tid in unlocked_ids if tid in NAME_TEMPLATES]
 
+        skin_unlocks = await self.session.execute(
+            select(PhantomSkinUnlock.skin_id).where(PhantomSkinUnlock.user_id == user_id)
+        )
+        skin_ids: set[str] = {row[0] for row in skin_unlocks.all()}
+        unlocked_skins = [PHANTOM_SKINS[sid] for sid in skin_ids if sid in PHANTOM_SKINS]
+
         user = await self.session.get(User, user_id)
         return Inventory(
             held_badges=sorted(held_badges, key=lambda b: b.sort_order),
             unlocked_templates=sorted(unlocked_templates, key=lambda t: t.sort_order),
+            unlocked_phantom_skins=sorted(unlocked_skins, key=lambda s: s.sort_order),
             equipped_badge_id=user.equipped_badge_id if user else None,
             equipped_name_template_id=(user.equipped_name_template_id if user else None),
+            equipped_phantom_skin_id=(user.equipped_phantom_skin_id if user else None),
         )
 
     async def get_pending_notifications(self, user_id: uuid.UUID) -> list[RewardNotification]:
