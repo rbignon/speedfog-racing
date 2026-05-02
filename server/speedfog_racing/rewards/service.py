@@ -492,6 +492,7 @@ class RewardsService:
             reason = f"finished {count} races"
             await self.grant_permanent_badge(user_id, "veteran", reason=reason)
             await self.grant_name_template(user_id, "weathered", reason=reason)
+            await self.grant_phantom_skin(user_id, "crimson-aura", reason=reason)
 
     async def revoke_badge(self, user_id: uuid.UUID, badge_id: str) -> None:
         if badge_id not in BADGES:

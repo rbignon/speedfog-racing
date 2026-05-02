@@ -1079,3 +1079,63 @@ async def test_inventory_no_phantom_skins(async_session):
         inv = await svc.get_user_inventory(user.id)
     assert inv.unlocked_phantom_skins == []
     assert inv.equipped_phantom_skin_id is None
+
+
+async def test_check_veteran_grants_crimson_aura_alongside_template(async_session):
+    from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
+
+    async with async_session() as db:
+        u = User(twitch_id="tv_crimson", twitch_username="v_crimson")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD)
+
+    async with async_session() as db:
+        await RewardsService(db).check_veteran_eligibility(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == u.id,
+                        PhantomSkinUnlock.skin_id == "crimson-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+
+
+async def test_check_veteran_below_threshold_skips_crimson_aura(async_session):
+    from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
+
+    async with async_session() as db:
+        u = User(twitch_id="tv_crimson_below", twitch_username="v_crimson_below")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD - 1)
+
+    async with async_session() as db:
+        await RewardsService(db).check_veteran_eligibility(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == u.id,
+                        PhantomSkinUnlock.skin_id == "crimson-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == []
