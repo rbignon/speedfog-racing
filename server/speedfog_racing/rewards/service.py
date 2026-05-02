@@ -409,6 +409,7 @@ class RewardsService:
         await self.sync_transient_holders("top1_elo", holders, reason=reason)
         for uid in holders:
             await self.grant_name_template(uid, "elo_crown", reason="reached top 1 ELO")
+            await self.grant_phantom_skin(uid, "gold-aura", reason="reached top 1 ELO")
 
         top5_rows = await self.session.execute(
             select(User.elo_rating)
@@ -427,6 +428,7 @@ class RewardsService:
             )
             for uid in {row[0] for row in top5_q.all()}:
                 await self.grant_name_template(uid, "runebearer", reason="entered top 5 ELO")
+                await self.grant_phantom_skin(uid, "silver-aura", reason="entered top 5 ELO")
 
     async def refresh_weekly_daily_champion(
         self, week_starting: date, reason: str | None = None

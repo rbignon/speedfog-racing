@@ -13,6 +13,7 @@ from speedfog_racing.models import (
     NameTemplateUnlock,
     Participant,
     ParticipantStatus,
+    PhantomSkinUnlock,
     Race,
     RaceStatus,
     Seed,
@@ -20,6 +21,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
 
@@ -152,3 +154,113 @@ async def test_check_race_auto_finish_refreshes_top1_elo(async_session):
             .all()
         )
         assert set(unlocks) == expected_holders
+
+
+async def test_refresh_top1_elo_grants_gold_aura(async_session):
+    async with async_session() as db:
+        user = User(
+            twitch_id="goldwinner",
+            twitch_username="goldwinner",
+            api_token="tgw",
+            role=UserRole.USER,
+            elo_rating=2000.0,
+            elo_races=PROVISIONAL_THRESHOLD,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.refresh_top1_elo_holders()
+        await db.commit()
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == user.id,
+                        PhantomSkinUnlock.skin_id == "gold-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+
+
+async def test_refresh_top1_elo_grants_silver_aura_to_top5(async_session):
+    user_ids: list = []
+    async with async_session() as db:
+        for i in range(5):
+            u = User(
+                twitch_id=f"top5_{i}",
+                twitch_username=f"top5_{i}",
+                api_token=f"ttop5_{i}",
+                role=UserRole.USER,
+                elo_rating=2000.0 - i * 10,
+                elo_races=PROVISIONAL_THRESHOLD,
+            )
+            db.add(u)
+        await db.commit()
+        users = (
+            (await db.execute(select(User).where(User.twitch_id.like("top5_%")))).scalars().all()
+        )
+        user_ids = [u.id for u in users]
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.refresh_top1_elo_holders()
+        await db.commit()
+    async with async_session() as db:
+        for uid in user_ids:
+            rows = (
+                (
+                    await db.execute(
+                        select(PhantomSkinUnlock).where(
+                            PhantomSkinUnlock.user_id == uid,
+                            PhantomSkinUnlock.skin_id == "silver-aura",
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(rows) == 1, f"user {uid} missing silver-aura"
+
+
+async def test_refresh_top1_elo_does_not_grant_silver_to_rank6(async_session):
+    rank6_id = None
+    async with async_session() as db:
+        for i in range(6):
+            u = User(
+                twitch_id=f"rank_{i}",
+                twitch_username=f"rank_{i}",
+                api_token=f"trank_{i}",
+                role=UserRole.USER,
+                elo_rating=2000.0 - i * 10,
+                elo_races=PROVISIONAL_THRESHOLD,
+            )
+            db.add(u)
+        await db.commit()
+        rank6 = (
+            await db.execute(select(User).where(User.twitch_username == "rank_5"))
+        ).scalar_one()
+        rank6_id = rank6.id
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.refresh_top1_elo_holders()
+        await db.commit()
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == rank6_id,
+                        PhantomSkinUnlock.skin_id == "silver-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == []
