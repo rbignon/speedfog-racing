@@ -480,6 +480,7 @@ fn connect_and_auth(
                     race,
                     seed,
                     participants,
+                    phantom_skin: _,
                 } => {
                     let _ = incoming_tx.send(IncomingMessage::AuthOk {
                         participant_id,

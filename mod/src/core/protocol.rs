@@ -191,6 +191,8 @@ pub enum ServerMessage {
         race: RaceInfo,
         seed: SeedInfo,
         participants: Vec<ParticipantInfo>,
+        #[serde(default)]
+        phantom_skin: Option<String>,
     },
     /// Authentication failed
     AuthError { message: String },
@@ -1070,6 +1072,62 @@ mod tests {
         }"#;
         let info: ParticipantInfo = serde_json::from_str(json).unwrap();
         assert!(info.name_template.is_none());
+    }
+
+    #[test]
+    fn test_auth_ok_with_phantom_skin() {
+        let json = r#"{
+            "type": "auth_ok",
+            "participant_id": "abc-123",
+            "race": {"id": "123", "name": "Test Race", "status": "setup"},
+            "seed": {"total_layers": 5},
+            "participants": [],
+            "phantom_skin": "gold-aura"
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::AuthOk { phantom_skin, .. } => {
+                assert_eq!(phantom_skin, Some("gold-aura".to_string()));
+            }
+            _ => panic!("Expected AuthOk"),
+        }
+    }
+
+    #[test]
+    fn test_auth_ok_without_phantom_skin_field() {
+        let json = r#"{
+            "type": "auth_ok",
+            "participant_id": "abc-123",
+            "race": {"id": "123", "name": "Test Race", "status": "setup"},
+            "seed": {"total_layers": 5},
+            "participants": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::AuthOk { phantom_skin, .. } => {
+                assert_eq!(phantom_skin, None);
+            }
+            _ => panic!("Expected AuthOk"),
+        }
+    }
+
+    #[test]
+    fn test_auth_ok_with_phantom_skin_null() {
+        let json = r#"{
+            "type": "auth_ok",
+            "participant_id": "abc-123",
+            "race": {"id": "123", "name": "Test Race", "status": "setup"},
+            "seed": {"total_layers": 5},
+            "participants": [],
+            "phantom_skin": null
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::AuthOk { phantom_skin, .. } => {
+                assert_eq!(phantom_skin, None);
+            }
+            _ => panic!("Expected AuthOk"),
+        }
     }
 
     #[test]
