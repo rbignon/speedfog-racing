@@ -26,6 +26,9 @@
 	let loadingMore = $state(false);
 	let error = $state<string | null>(null);
 
+	let phantomSkin = $derived(rewards.lookupPhantomSkin(profile?.equipped_phantom_skin_id));
+	let useSkinAsAvatar = $derived(phantomSkin !== null && phantomSkin.id !== 'none');
+
 	let nameStyle = $derived.by(() => {
 		const id = profile?.equipped_name_template_id;
 		if (!id || id === 'default') return '';
@@ -140,7 +143,13 @@
 	{:else if profile}
 		<div class="profile-header">
 			<div class="profile-identity">
-				{#if profile.twitch_avatar_url}
+				{#if useSkinAsAvatar && phantomSkin}
+					<img
+						src="/phantom_skins/{phantomSkin.screenshot_filename}"
+						alt={phantomSkin.name}
+						class="profile-avatar profile-avatar-skin"
+					/>
+				{:else if profile.twitch_avatar_url}
 					<img src={profile.twitch_avatar_url} alt="" class="profile-avatar" />
 				{:else}
 					<div class="profile-avatar-placeholder"></div>
@@ -455,6 +464,14 @@
 		border-radius: 50%;
 		background: var(--color-surface);
 		border: 2px solid var(--color-border);
+	}
+
+	.profile-avatar-skin {
+		width: auto;
+		height: 72px;
+		aspect-ratio: 4 / 5;
+		border-radius: var(--radius-md, 6px);
+		object-fit: cover;
 	}
 
 	.profile-info {

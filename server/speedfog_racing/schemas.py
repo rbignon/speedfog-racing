@@ -218,6 +218,7 @@ class UserProfileDetailResponse(BaseModel):
     stats: UserStatsResponse
     held_badges: list[ProfileBadge] = []
     equipped_name_template_id: str | None = None
+    equipped_phantom_skin_id: str | None = None
 
 
 class ActivityItemBase(BaseModel):

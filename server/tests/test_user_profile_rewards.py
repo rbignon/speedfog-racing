@@ -138,3 +138,31 @@ async def test_profile_equipped_name_template_id_null_by_default(test_client, ta
     assert resp.status_code == 200
     data = resp.json()
     assert data["equipped_name_template_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_profile_exposes_equipped_phantom_skin_id(test_client, target_user, async_session):
+    """The profile endpoint surfaces the user's equipped phantom skin id so the
+    profile page can swap the avatar to the skin portrait."""
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(target_user.id, "gold-aura", reason="test")
+        await svc.set_equipped_phantom_skin(target_user.id, "gold-aura")
+        await db.commit()
+
+    async with test_client as client:
+        resp = await client.get(f"/api/users/{target_user.twitch_username}")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["equipped_phantom_skin_id"] == "gold-aura"
+
+
+@pytest.mark.asyncio
+async def test_profile_equipped_phantom_skin_id_null_by_default(test_client, target_user):
+    """A fresh user with no phantom skin equipped returns null for the field."""
+    async with test_client as client:
+        resp = await client.get(f"/api/users/{target_user.twitch_username}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["equipped_phantom_skin_id"] is None

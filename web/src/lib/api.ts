@@ -990,6 +990,7 @@ export interface UserProfile {
   stats: UserStats;
   held_badges?: ProfileBadgeDto[];
   equipped_name_template_id?: string | null;
+  equipped_phantom_skin_id?: string | null;
 }
 
 export interface PoolTypeStats {
