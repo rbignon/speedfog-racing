@@ -150,6 +150,17 @@ fn default_qty() -> u32 {
     1
 }
 
+/// Mod-side directives for a phantom skin.
+///
+/// V1 ships only `speffects`. New keys (e.g. `fxr_ids`) added in future
+/// versions are no-ops on older mods, and missing keys default to empty so
+/// older seeds without those keys stay compatible.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct PhantomSkin {
+    #[serde(default)]
+    pub speffects: Vec<i32>,
+}
+
 /// Seed info from server
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SeedInfo {
@@ -171,6 +182,11 @@ pub struct SeedInfo {
     /// When None (old server), only in-process guard prevents double-spawn.
     #[serde(default)]
     pub items_spawned_flag: Option<u32>,
+    /// Per-seed map of skin name -> directives. The mod looks up the equipped
+    /// skin name (received in auth_ok.phantom_skin) here to resolve it to
+    /// concrete SpEffect IDs etc.
+    #[serde(default)]
+    pub phantom_skins: HashMap<String, PhantomSkin>,
 }
 
 /// Exit info in zone_update message
@@ -1128,6 +1144,43 @@ mod tests {
             }
             _ => panic!("Expected AuthOk"),
         }
+    }
+
+    #[test]
+    fn test_seed_info_with_phantom_skins() {
+        let json = r#"{
+            "total_layers": 5,
+            "phantom_skins": {
+                "gold-aura": {"speffects": [1450700]},
+                "silver-aura": {"speffects": [1450705]}
+            }
+        }"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(seed.phantom_skins.len(), 2);
+        assert_eq!(seed.phantom_skins["gold-aura"].speffects, vec![1450700]);
+        assert_eq!(seed.phantom_skins["silver-aura"].speffects, vec![1450705]);
+    }
+
+    #[test]
+    fn test_seed_info_phantom_skins_defaults_empty() {
+        let json = r#"{"total_layers": 5}"#;
+        let seed: SeedInfo = serde_json::from_str(json).unwrap();
+        assert!(seed.phantom_skins.is_empty());
+    }
+
+    #[test]
+    fn test_phantom_skin_speffects_default_empty() {
+        let json = r#"{}"#;
+        let skin: PhantomSkin = serde_json::from_str(json).unwrap();
+        assert!(skin.speffects.is_empty());
+    }
+
+    #[test]
+    fn test_phantom_skin_unknown_keys_ignored() {
+        // Forward-compat: the mod must tolerate future keys it doesn't know about.
+        let json = r#"{"speffects": [1], "fxr_ids": [42], "future_field": "anything"}"#;
+        let skin: PhantomSkin = serde_json::from_str(json).unwrap();
+        assert_eq!(skin.speffects, vec![1]);
     }
 
     #[test]

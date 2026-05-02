@@ -66,6 +66,10 @@ pub enum IncomingMessage {
         race: RaceInfo,
         seed: SeedInfo,
         participants: Vec<ParticipantInfo>,
+        /// User's equipped phantom skin name, or None when not equipped or
+        /// when the server sent the literal "none". Resolved to SpEffect IDs
+        /// at apply-time via `seed.phantom_skins[name]`.
+        phantom_skin: Option<String>,
     },
     AuthError(String),
     RaceStart(u32),
@@ -480,13 +484,14 @@ fn connect_and_auth(
                     race,
                     seed,
                     participants,
-                    phantom_skin: _,
+                    phantom_skin,
                 } => {
                     let _ = incoming_tx.send(IncomingMessage::AuthOk {
                         participant_id,
                         race,
                         seed,
                         participants,
+                        phantom_skin,
                     });
                     Ok(socket)
                 }

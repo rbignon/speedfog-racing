@@ -961,8 +961,12 @@ impl RaceTracker {
                 mut race,
                 seed,
                 participants,
+                phantom_skin,
             } => {
                 info!(race = %race.name, participant_id = %participant_id, participants = participants.len(), "[WS] Auth OK");
+                if let Some(ref name) = phantom_skin {
+                    info!(skin = %name, "[WS] Equipped phantom skin received");
+                }
                 self.last_received_debug = Some(format!(
                     "auth_ok(race={}, {} players)",
                     race.name,
