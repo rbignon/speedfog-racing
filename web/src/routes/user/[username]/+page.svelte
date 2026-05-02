@@ -145,9 +145,9 @@
 			<div class="profile-identity">
 				{#if useSkinAsAvatar && phantomSkin}
 					<img
-						src="/phantom_skins/{phantomSkin.screenshot_filename}"
+						src="/phantom_skins/{phantomSkin.id}-avatar.jpg"
 						alt={phantomSkin.name}
-						class="profile-avatar profile-avatar-skin"
+						class="profile-avatar"
 					/>
 				{:else if profile.twitch_avatar_url}
 					<img src={profile.twitch_avatar_url} alt="" class="profile-avatar" />
@@ -464,14 +464,6 @@
 		border-radius: 50%;
 		background: var(--color-surface);
 		border: 2px solid var(--color-border);
-	}
-
-	.profile-avatar-skin {
-		width: auto;
-		height: 72px;
-		aspect-ratio: 4 / 5;
-		border-radius: var(--radius-md, 6px);
-		object-fit: cover;
 	}
 
 	.profile-info {
