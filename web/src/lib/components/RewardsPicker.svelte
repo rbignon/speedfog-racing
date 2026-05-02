@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { AuthUser, MyInventoryDto, NameTemplateDef } from '$lib/api';
+	import type { AuthUser, MyInventoryDto, NameTemplateDef, PhantomSkinDef } from '$lib/api';
 	import { rewards } from '$lib/stores/rewards.svelte';
 
 	interface Props {
@@ -7,13 +7,15 @@
 		user: AuthUser;
 		selectedTemplateId: string;
 		selectedBadgeId: string | null;
+		selectedSkinId?: string | null;
 	}
 
 	let {
 		inventory,
 		user,
 		selectedTemplateId = $bindable(),
-		selectedBadgeId = $bindable()
+		selectedBadgeId = $bindable(),
+		selectedSkinId = $bindable(null)
 	}: Props = $props();
 
 	let displayName = $derived(user.twitch_display_name || user.twitch_username);
@@ -25,6 +27,16 @@
 	let selectedBadge = $derived(
 		selectedBadgeId ? (inventory.held_badges.find((b) => b.id === selectedBadgeId) ?? null) : null
 	);
+
+	let phantomSkins = $derived.by(() => {
+		const catalog = rewards.catalog?.phantom_skins ?? [];
+		const unlockedIds = new Set(inventory.unlocked_phantom_skins.map((s) => s.id));
+		unlockedIds.add('none');
+		const sortAsc = (a: PhantomSkinDef, b: PhantomSkinDef) => a.sort_order - b.sort_order;
+		const unlocked = catalog.filter((s) => unlockedIds.has(s.id)).sort(sortAsc);
+		const locked = catalog.filter((s) => !unlockedIds.has(s.id)).sort(sortAsc);
+		return { unlocked, locked };
+	});
 
 	// Mirror UserLink's nameStyle behavior: default/null falls back to inherited
 	// color so the preview matches what renders in chat and on the leaderboard.
@@ -136,6 +148,40 @@
 				</li>
 			{/each}
 		</ul>
+	</div>
+
+	<div class="subsection">
+		<span class="subsection-label">Phantom skin</span>
+		<p class="subsection-description">
+			Pick the colored aura applied to your character in-game. The change applies at your next race.
+		</p>
+		<div class="skin-grid">
+			{#each phantomSkins.unlocked as s (s.id)}
+				{@const equippedId = inventory.equipped_phantom_skin_id ?? 'none'}
+				{@const selectedKey = selectedSkinId ?? 'none'}
+				<button
+					type="button"
+					class="skin-tile"
+					class:selected={selectedKey === s.id}
+					data-skin-id={s.id}
+					title={s.description}
+					onclick={() => (selectedSkinId = s.id === 'none' ? null : s.id)}
+				>
+					<img src="/phantom_skins/{s.screenshot_filename}" alt="" class="skin-tile-img" />
+					<span class="skin-tile-name">{s.name}</span>
+					{#if equippedId === s.id}
+						<span class="active-pastille">Active</span>
+					{/if}
+				</button>
+			{/each}
+			{#each phantomSkins.locked as s (s.id)}
+				<div class="skin-tile locked" data-skin-id={s.id} title={s.description} aria-disabled="true">
+					<img src="/phantom_skins/{s.screenshot_filename}" alt="" class="skin-tile-img" />
+					<span class="skin-tile-name">{s.name}</span>
+					<span class="skin-tile-desc">{s.description}</span>
+				</div>
+			{/each}
+		</div>
 	</div>
 </div>
 
@@ -302,6 +348,70 @@
 	}
 
 	.badge-tile .active-pastille {
+		position: absolute;
+		top: 0.25rem;
+		right: 0.4rem;
+	}
+
+	.skin-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+		gap: 0.5rem;
+	}
+
+	.skin-tile {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 0.4rem;
+		background: var(--color-bg);
+		border: 2px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text);
+		cursor: pointer;
+		font: inherit;
+		transition: border-color 120ms ease;
+	}
+
+	.skin-tile:hover {
+		border-color: var(--color-text-disabled);
+	}
+
+	.skin-tile.selected {
+		border-color: var(--color-purple);
+	}
+
+	.skin-tile.locked {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
+	.skin-tile.locked:hover {
+		border-color: var(--color-border);
+	}
+
+	.skin-tile-img {
+		width: 100%;
+		aspect-ratio: 4 / 5;
+		object-fit: cover;
+		border-radius: var(--radius-xs, 4px);
+	}
+
+	.skin-tile-name {
+		margin-top: 0.25rem;
+		font-size: var(--font-size-sm);
+	}
+
+	.skin-tile-desc {
+		margin-top: 0.15rem;
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+		text-align: center;
+		line-height: 1.2;
+	}
+
+	.skin-tile .active-pastille {
 		position: absolute;
 		top: 0.25rem;
 		right: 0.4rem;

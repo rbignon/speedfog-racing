@@ -305,3 +305,231 @@ describe("RewardsPicker", () => {
     expect(tiles[2].getAttribute("title")).toBe("Submitted a merged PR.");
   });
 });
+
+const seedCatalogWithPhantomSkins = () => {
+  seedCatalog();
+  rewards.catalog!.phantom_skins = [
+    {
+      id: "none",
+      name: "None",
+      description: "No phantom aura.",
+      screenshot_filename: "none.jpg",
+      sort_order: 0,
+    },
+    {
+      id: "gold-aura",
+      name: "Gold Aura",
+      description: "Granted the first time you reach top 1 ELO.",
+      screenshot_filename: "gold-aura.jpg",
+      sort_order: 10,
+    },
+    {
+      id: "silver-aura",
+      name: "Silver Aura",
+      description: "Granted the first time you enter the top 5 ELO.",
+      screenshot_filename: "silver-aura.jpg",
+      sort_order: 20,
+    },
+    {
+      id: "cyan-aura",
+      name: "Cyan Aura",
+      description:
+        "Granted the first time you finish the week as Daily Champion.",
+      screenshot_filename: "cyan-aura.jpg",
+      sort_order: 30,
+    },
+    {
+      id: "emerald-aura",
+      name: "Emerald Aura",
+      description: "Granted to early adopters.",
+      screenshot_filename: "emerald-aura.jpg",
+      sort_order: 40,
+    },
+    {
+      id: "crimson-aura",
+      name: "Crimson Aura",
+      description: "Granted to veteran racers.",
+      screenshot_filename: "crimson-aura.jpg",
+      sort_order: 50,
+    },
+    {
+      id: "violet-aura",
+      name: "Violet Aura",
+      description: "Special events reward.",
+      screenshot_filename: "violet-aura.jpg",
+      sort_order: 60,
+    },
+  ];
+};
+
+describe("RewardsPicker phantom skins section", () => {
+  beforeEach(() => {
+    rewards.catalog = null;
+  });
+
+  it("renders all catalog skins, unlocked first then locked, sort_order asc within each group", () => {
+    seedCatalogWithPhantomSkins();
+    const inv: MyInventoryDto = {
+      ...baseInventory,
+      unlocked_phantom_skins: [
+        {
+          id: "silver-aura",
+          name: "Silver Aura",
+          description: "",
+          screenshot_filename: "silver-aura.jpg",
+          sort_order: 20,
+        },
+        {
+          id: "crimson-aura",
+          name: "Crimson Aura",
+          description: "",
+          screenshot_filename: "crimson-aura.jpg",
+          sort_order: 50,
+        },
+      ],
+      equipped_phantom_skin_id: null,
+    };
+    const { container } = render(RewardsPicker, {
+      props: {
+        inventory: inv,
+        user: baseUser,
+        selectedTemplateId: "elo_crown",
+        selectedBadgeId: null,
+        selectedSkinId: null,
+      },
+    });
+    const tiles = container.querySelectorAll(".skin-tile");
+    const ids = Array.from(tiles).map((t) => t.getAttribute("data-skin-id"));
+    // Unlocked first (none, silver, crimson, sort asc), then locked (gold, cyan, emerald, violet, sort asc).
+    expect(ids).toEqual([
+      "none",
+      "silver-aura",
+      "crimson-aura",
+      "gold-aura",
+      "cyan-aura",
+      "emerald-aura",
+      "violet-aura",
+    ]);
+  });
+
+  it("renders locked tiles with the .locked class and description caption", () => {
+    seedCatalogWithPhantomSkins();
+    const inv: MyInventoryDto = {
+      ...baseInventory,
+      unlocked_phantom_skins: [],
+      equipped_phantom_skin_id: null,
+    };
+    const { container } = render(RewardsPicker, {
+      props: {
+        inventory: inv,
+        user: baseUser,
+        selectedTemplateId: "elo_crown",
+        selectedBadgeId: null,
+        selectedSkinId: null,
+      },
+    });
+    const goldTile = container.querySelector(
+      '.skin-tile[data-skin-id="gold-aura"]',
+    );
+    expect(goldTile?.classList.contains("locked")).toBe(true);
+    expect(goldTile?.textContent).toContain(
+      "Granted the first time you reach top 1 ELO.",
+    );
+  });
+
+  it("clicking an unlocked skin updates selectedSkinId via two-way binding", async () => {
+    seedCatalogWithPhantomSkins();
+    const inv: MyInventoryDto = {
+      ...baseInventory,
+      unlocked_phantom_skins: [
+        {
+          id: "silver-aura",
+          name: "Silver Aura",
+          description: "",
+          screenshot_filename: "silver-aura.jpg",
+          sort_order: 20,
+        },
+      ],
+      equipped_phantom_skin_id: null,
+    };
+    const { container } = render(RewardsPicker, {
+      props: {
+        inventory: inv,
+        user: baseUser,
+        selectedTemplateId: "elo_crown",
+        selectedBadgeId: null,
+        selectedSkinId: null,
+      },
+    });
+    const silverTile = container.querySelector(
+      '.skin-tile[data-skin-id="silver-aura"]',
+    ) as HTMLElement;
+    expect(silverTile).not.toBeNull();
+    await fireEvent.click(silverTile);
+    expect(silverTile.classList.contains("selected")).toBe(true);
+  });
+
+  it("clicking the 'none' tile sets selectedSkinId to null", async () => {
+    seedCatalogWithPhantomSkins();
+    const inv: MyInventoryDto = {
+      ...baseInventory,
+      unlocked_phantom_skins: [
+        {
+          id: "gold-aura",
+          name: "Gold Aura",
+          description: "",
+          screenshot_filename: "gold-aura.jpg",
+          sort_order: 10,
+        },
+      ],
+      equipped_phantom_skin_id: "gold-aura",
+    };
+    const { container } = render(RewardsPicker, {
+      props: {
+        inventory: inv,
+        user: baseUser,
+        selectedTemplateId: "elo_crown",
+        selectedBadgeId: null,
+        selectedSkinId: "gold-aura",
+      },
+    });
+    const noneTile = container.querySelector(
+      '.skin-tile[data-skin-id="none"]',
+    ) as HTMLElement;
+    expect(noneTile).not.toBeNull();
+    await fireEvent.click(noneTile);
+    expect(noneTile.classList.contains("selected")).toBe(true);
+  });
+
+  it("shows the active pastille on the equipped skin", () => {
+    seedCatalogWithPhantomSkins();
+    const inv: MyInventoryDto = {
+      ...baseInventory,
+      unlocked_phantom_skins: [
+        {
+          id: "silver-aura",
+          name: "Silver Aura",
+          description: "",
+          screenshot_filename: "silver-aura.jpg",
+          sort_order: 20,
+        },
+      ],
+      equipped_phantom_skin_id: "silver-aura",
+    };
+    const { container } = render(RewardsPicker, {
+      props: {
+        inventory: inv,
+        user: baseUser,
+        selectedTemplateId: "elo_crown",
+        selectedBadgeId: null,
+        selectedSkinId: "gold-aura",
+      },
+    });
+    const silverTile = container.querySelector(
+      '.skin-tile[data-skin-id="silver-aura"]',
+    );
+    const noneTile = container.querySelector('.skin-tile[data-skin-id="none"]');
+    expect(silverTile?.textContent).toContain("Active");
+    expect(noneTile?.textContent).not.toContain("Active");
+  });
+});
