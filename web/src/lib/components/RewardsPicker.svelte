@@ -413,7 +413,11 @@
 
 	.skin-tile .active-pastille {
 		position: absolute;
-		top: 0.25rem;
+		top: 0.4rem;
 		right: 0.4rem;
+		padding: 2px 6px;
+		border-radius: 0 0 0 4px;
+		background: rgba(15, 25, 35, 0.85);
+		font-weight: 500;
 	}
 </style>
