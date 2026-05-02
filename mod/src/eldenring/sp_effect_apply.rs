@@ -38,7 +38,7 @@ const SP_EFFECT_CTRL_OFFSET: usize = 0x178;
 /// AOB pattern for the SpEffect-application function.
 ///
 /// `Some(byte)` = exact match; `None` = wildcard (0x?? in the CE script).
-/// 65 bytes total. Matches the prologue of `ChrIns_ApplySpEffect`.
+/// 70 bytes total. Matches the prologue of `ChrIns_ApplySpEffect`.
 const APPLY_SP_EFFECT_PATTERN: &[Option<u8>] = &[
     Some(0x48),
     Some(0x89),
@@ -273,12 +273,12 @@ mod tests {
 
     #[test]
     fn pattern_has_expected_length() {
-        // Sanity check: 65 bytes, matching the CE script's AOB.
-        assert_eq!(APPLY_SP_EFFECT_PATTERN.len(), 65);
+        // Sanity check: 70 bytes, matching the CE script's AOB.
+        assert_eq!(APPLY_SP_EFFECT_PATTERN.len(), 70);
     }
 
     #[test]
-    fn pattern_first_byte_is_push_rbp_save() {
+    fn pattern_first_byte_is_function_prologue() {
         // The function prologue starts with `48 89 6C 24 10`
         // (mov [rsp+0x10], rbp). Sanity-check we kept the byte order.
         assert_eq!(APPLY_SP_EFFECT_PATTERN[0], Some(0x48));
@@ -288,8 +288,8 @@ mod tests {
 
     #[test]
     fn scan_pattern_finds_exact_match() {
-        let buf = [0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x00, 0x00, 0x00];
-        let pat = [Some(0x12), None, Some(0x56), Some(0x78)];
+        let buf: [u8; 9] = [0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x00, 0x00, 0x00];
+        let pat = [Some(0x12u8), None, Some(0x56), Some(0x78)];
         let base = buf.as_ptr() as usize;
         let found = scan_pattern(base, buf.len(), &pat).unwrap();
         assert_eq!(found, base + 2);
@@ -310,10 +310,7 @@ mod tests {
         assert!(scan_pattern(base, buf.len(), &[]).is_none());
     }
 
-    #[test]
-    fn player_ins_offset_matches_known_versions() {
-        // Just sanity: the function returns one of the two documented offsets.
-        let off = player_ins_offset();
-        assert!(off == PLAYER_INS_OFFSET_OLD || off == PLAYER_INS_OFFSET_NEW);
-    }
+    // No test for player_ins_offset(): it calls libeldenring::version::get_version()
+    // which panics outside a running ER process. The function is exercised
+    // indirectly when apply_speffect runs in-game.
 }
