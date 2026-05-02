@@ -6,7 +6,7 @@ Icons live under web/static/badges/ and must be deployed alongside any new badge
 
 from typing import Final
 
-from speedfog_racing.rewards.models_data import Badge, NameTemplate
+from speedfog_racing.rewards.models_data import Badge, NameTemplate, PhantomSkin
 
 VETERAN_RACE_THRESHOLD: Final = 25
 
@@ -54,6 +54,7 @@ BADGES: dict[str, Badge] = {
 }
 
 DEFAULT_TEMPLATE_ID: Final = "default"
+DEFAULT_PHANTOM_SKIN_ID: Final = "none"
 
 NAME_TEMPLATES: dict[str, NameTemplate] = {
     "default": NameTemplate(
@@ -135,5 +136,57 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
             " rgba(124, 58, 237, 0.18), transparent 70%)"
         ),
         sort_order=40,
+    ),
+}
+
+PHANTOM_SKINS: dict[str, PhantomSkin] = {
+    "none": PhantomSkin(
+        id="none",
+        name="None",
+        description="No phantom aura.",
+        screenshot_filename="none.jpg",
+        sort_order=0,
+    ),
+    "gold-aura": PhantomSkin(
+        id="gold-aura",
+        name="Gold Aura",
+        description="Granted the first time you reach top 1 ELO.",
+        screenshot_filename="gold-aura.jpg",
+        sort_order=10,
+    ),
+    "silver-aura": PhantomSkin(
+        id="silver-aura",
+        name="Silver Aura",
+        description="Granted the first time you enter the top 5 ELO.",
+        screenshot_filename="silver-aura.jpg",
+        sort_order=20,
+    ),
+    "cyan-aura": PhantomSkin(
+        id="cyan-aura",
+        name="Cyan Aura",
+        description="Granted the first time you finish the week as Daily Champion.",
+        screenshot_filename="cyan-aura.jpg",
+        sort_order=30,
+    ),
+    "emerald-aura": PhantomSkin(
+        id="emerald-aura",
+        name="Emerald Aura",
+        description="Granted to early adopters.",
+        screenshot_filename="emerald-aura.jpg",
+        sort_order=40,
+    ),
+    "crimson-aura": PhantomSkin(
+        id="crimson-aura",
+        name="Crimson Aura",
+        description="Granted to veteran racers.",
+        screenshot_filename="crimson-aura.jpg",
+        sort_order=50,
+    ),
+    "violet-aura": PhantomSkin(
+        id="violet-aura",
+        name="Violet Aura",
+        description="Special events reward.",
+        screenshot_filename="violet-aura.jpg",
+        sort_order=60,
     ),
 }

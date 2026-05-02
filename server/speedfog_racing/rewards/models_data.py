@@ -26,3 +26,12 @@ class NameTemplate:
     name_css: str | None = None
     background_css: str | None = None
     sort_order: int = 0
+
+
+@dataclass(frozen=True)
+class PhantomSkin:
+    id: str
+    name: str
+    description: str
+    screenshot_filename: str
+    sort_order: int = 0

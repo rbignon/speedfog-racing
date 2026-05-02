@@ -2,7 +2,13 @@
 
 import dataclasses
 
-from speedfog_racing.rewards.catalog import BADGES, NAME_TEMPLATES
+from speedfog_racing.rewards.catalog import (
+    BADGES,
+    DEFAULT_PHANTOM_SKIN_ID,
+    NAME_TEMPLATES,
+    PHANTOM_SKINS,
+)
+from speedfog_racing.rewards.models_data import PhantomSkin
 
 
 def test_v1_badges_present():
@@ -95,3 +101,37 @@ def test_badge_dataclass_is_frozen():
     except dataclasses.FrozenInstanceError:
         return
     raise AssertionError("Badge should be frozen")
+
+
+def test_v1_phantom_skins_present():
+    assert "none" in PHANTOM_SKINS
+    assert "gold-aura" in PHANTOM_SKINS
+    assert "silver-aura" in PHANTOM_SKINS
+    assert "cyan-aura" in PHANTOM_SKINS
+    assert "emerald-aura" in PHANTOM_SKINS
+    assert "crimson-aura" in PHANTOM_SKINS
+    assert "violet-aura" in PHANTOM_SKINS
+
+
+def test_default_phantom_skin_id_is_none():
+    assert DEFAULT_PHANTOM_SKIN_ID == "none"
+    assert PHANTOM_SKINS[DEFAULT_PHANTOM_SKIN_ID].sort_order == 0
+
+
+def test_phantom_skins_have_screenshot_filenames():
+    for skin in PHANTOM_SKINS.values():
+        assert skin.screenshot_filename.endswith(".jpg")
+        assert skin.screenshot_filename == f"{skin.id}.jpg"
+
+
+def test_phantom_skin_dataclass_fields():
+    skin = PHANTOM_SKINS["gold-aura"]
+    assert isinstance(skin, PhantomSkin)
+    assert skin.id == "gold-aura"
+    assert skin.name == "Gold Aura"
+    assert skin.sort_order == 10
+
+
+def test_phantom_skin_sort_order_unique_and_monotonic():
+    orders = sorted(s.sort_order for s in PHANTOM_SKINS.values())
+    assert orders == sorted(set(orders)), "sort_order values must be unique"
