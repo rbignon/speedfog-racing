@@ -47,10 +47,25 @@ Ties are allowed: when the qualifying condition selects multiple players (e.g. s
 
 Name templates are **always permanent**. Once unlocked, they remain unlocked even if the player no longer meets the original condition (the gold-on-the-name memento outlasts the dynamic badge).
 
+#### Phantom skins
+
+| id             | name         | unlock                                                                         |
+| -------------- | ------------ | ------------------------------------------------------------------------------ |
+| `none`         | None         | Always unlocked, never revocable.                                              |
+| `gold-aura`    | Gold Aura    | Granted permanently the first time a player reaches top 1 ELO.                 |
+| `silver-aura`  | Silver Aura  | Granted permanently the first time a player enters the top 5 ELO.              |
+| `cyan-aura`    | Cyan Aura    | Granted permanently the first time a player finishes a week as Daily Champion. |
+| `emerald-aura` | Emerald Aura | Granted to accounts created before the rewards system launched.                |
+| `crimson-aura` | Crimson Aura | Granted alongside the `veteran` badge, same threshold.                         |
+| `violet-aura`  | Violet Aura  | Admin grant only (special events, organized tournaments).                      |
+
+Phantom skins are **always permanent**: once unlocked, they stay unlocked. The mod overlay receives the equipped skin's id via `auth_ok.phantom_skin` and resolves it to a SpEffect through `graph.json` per the speedfog integration spec. The skin is applied to the local player only; the cosmetic does not propagate to other participants on the web.
+
 ### Equip rules
 
 - A player has at most **one badge equipped**. Slot can be empty.
 - A player has exactly **one name template active**. Defaults to `default` (solid white) if nothing is set, or if the equipped one is revoked.
+- A player has at most **one phantom skin equipped**. Slot can be empty (resolves to `none` and the mod applies no SpEffect).
 - When a transient badge is revoked from a player who had it equipped, the equip slot is auto-cleared. The corresponding `elo_crown` / `runebearer` souvenir name template stays unlocked.
 
 ### Notifications
@@ -63,14 +78,15 @@ Admin revokes do **not** emit notifications: they are mistake corrections, not e
 
 ## Data Model
 
-Three tables, plus two scalar columns on `users`.
+Four tables, plus three scalar columns on `users`.
 
 ### `users` (added columns)
 
-| column                      | type              | notes                                                              |
-| --------------------------- | ----------------- | ------------------------------------------------------------------ |
-| `equipped_badge_id`         | `String(50) NULL` | Logical key into the `BADGES` catalog                              |
-| `equipped_name_template_id` | `String(50) NULL` | Logical key into `NAME_TEMPLATES`. `NULL` resolves to `"default"`. |
+| column                      | type              | notes                                                                            |
+| --------------------------- | ----------------- | -------------------------------------------------------------------------------- |
+| `equipped_badge_id`         | `String(50) NULL` | Logical key into the `BADGES` catalog                                            |
+| `equipped_name_template_id` | `String(50) NULL` | Logical key into `NAME_TEMPLATES`. `NULL` resolves to `"default"`.               |
+| `equipped_phantom_skin_id`  | `String(50) NULL` | Logical key into `PHANTOM_SKINS`. `NULL` resolves to `"none"` for the picker UI. |
 
 ### `badge_grants`
 
@@ -99,16 +115,29 @@ Index: `(badge_id, user_id) WHERE revoked_at IS NULL` for fast holder lookup dur
 
 Constraint: `UNIQUE (user_id, template_id)`.
 
+### `phantom_skin_unlocks`
+
+| column        | type                | notes |
+| ------------- | ------------------- | ----- |
+| `id`          | UUID PK             |       |
+| `user_id`     | UUID FK, indexed    |       |
+| `skin_id`     | `String(50)`        |       |
+| `unlocked_at` | `DateTime(tz=True)` |       |
+| `granted_by`  | UUID FK NULL        |       |
+| `reason`      | `String(200) NULL`  |       |
+
+Constraint: `UNIQUE (user_id, skin_id)`.
+
 ### `reward_notifications`
 
-| column         | type                                                             | notes                |
-| -------------- | ---------------------------------------------------------------- | -------------------- |
-| `id`           | UUID PK                                                          |                      |
-| `user_id`      | UUID FK, indexed                                                 |                      |
-| `kind`         | Enum(`badge_granted`, `badge_revoked`, `name_template_unlocked`) |                      |
-| `reward_id`    | `String(50)`                                                     |                      |
-| `created_at`   | `DateTime(tz=True)`                                              |                      |
-| `dismissed_at` | `DateTime(tz=True) NULL`                                         | `NULL` means pending |
+| column         | type                                                                                      | notes                |
+| -------------- | ----------------------------------------------------------------------------------------- | -------------------- |
+| `id`           | UUID PK                                                                                   |                      |
+| `user_id`      | UUID FK, indexed                                                                          |                      |
+| `kind`         | Enum(`badge_granted`, `badge_revoked`, `name_template_unlocked`, `phantom_skin_unlocked`) |                      |
+| `reward_id`    | `String(50)`                                                                              |                      |
+| `created_at`   | `DateTime(tz=True)`                                                                       |                      |
+| `dismissed_at` | `DateTime(tz=True) NULL`                                                                  | `NULL` means pending |
 
 ---
 
@@ -118,7 +147,7 @@ Constraint: `UNIQUE (user_id, template_id)`.
 server/speedfog_racing/
   rewards/
     __init__.py
-    catalog.py          # BADGES, NAME_TEMPLATES dicts (frozen dataclasses)
+    catalog.py          # BADGES, NAME_TEMPLATES, PHANTOM_SKINS dicts (frozen dataclasses)
     models_data.py      # Badge, NameTemplate dataclasses (config types, not ORM)
     service.py          # RewardsService
   models.py             # +BadgeGrant, +NameTemplateUnlock, +RewardNotification
@@ -139,6 +168,9 @@ server/speedfog_racing/
 - `check_veteran_eligibility(user_id)`: counts the user's `Participant` rows with `status=FINISHED` and grants both `veteran` (badge) and `weathered` (name template) idempotently when the count is at least `VETERAN_RACE_THRESHOLD` (defined in `rewards/catalog.py`).
 - `set_equipped_badge(user_id, badge_id: str | None)`: validates ownership, updates `users.equipped_badge_id`. Raises `NotOwnedError` if the user does not currently hold the badge.
 - `set_equipped_name_template(user_id, template_id: str | None)`: validates ownership (`default` is always allowed), updates `users.equipped_name_template_id`.
+- `grant_phantom_skin(user_id, skin_id, granted_by=None, reason=None)`: idempotent. `none` is silently skipped (always unlocked). Emits `phantom_skin_unlocked` only on actual creation.
+- `set_equipped_phantom_skin(user_id, skin_id: str | None)`: validates ownership (`none` and `None` both clear the column to NULL).
+- `revoke_phantom_skin(user_id, skin_id)`: admin escape hatch. Auto-clears matching equip slot. Does not emit notifications.
 - `get_user_inventory(user_id) -> Inventory`: held badges + unlocked templates + equip state, sorted by `sort_order`.
 - `get_pending_notifications(user_id)`, `dismiss_notifications(user_id)`: banner read/clear.
 - `revoke_badge(user_id, badge_id)`, `revoke_name_template(user_id, template_id)`: admin escape hatches. Auto-clear matching equip slots. Do **not** emit notifications.
@@ -148,6 +180,7 @@ server/speedfog_racing/
 - **Top 1 ELO** (`services/race_lifecycle.py`): after each `update_elo_ratings(...)` call, invoke `refresh_top1_elo_holders()`. This also handles the `runebearer` (top 5) unlock when a player enters the top 5 (see [Top 5 ELO unlock](#top-5-elo-unlock) below).
 - **Veteran** (`services/race_lifecycle.py`): in the same hook (after `refresh_top1_elo_holders`), iterate every participant who just transitioned to FINISHED and call `check_veteran_eligibility(user_id)`. The service counts `Participant` rows with `status=FINISHED` for that user across all races; once the count reaches `VETERAN_RACE_THRESHOLD` the badge is granted (idempotent, so calling on every race finish is safe). The matching `weathered` name template is granted in the same call.
 - **Weekly daily champion** (`services/daily_seed_loop.py`): when generating a daily seed for a Monday, call `refresh_weekly_daily_champion(week_starting=monday-7d)`. Past weeks before the rollout are not backfilled.
+- **Phantom skins**: extend the existing detectors in place. `refresh_top1_elo_holders` grants `gold-aura` (top 1) and `silver-aura` (top 5) idempotently alongside `elo_crown` and `runebearer`. `refresh_weekly_daily_champion` grants the **permanent** `cyan-aura` souvenir to current champion(s) (the underlying transient badge stays as-is). `check_veteran_eligibility` grants `crimson-aura` alongside the `weathered` template. `emerald-aura` is backfill-only (no live detector). `violet-aura` has no automatic detector and is granted exclusively via the admin endpoint.
 - **Account deletion**: any `delete_user` flow must call `refresh_top1_elo_holders()` and `refresh_weekly_daily_champion(current_week_start)` after the deletion to reseat the holder sets.
 
 #### Top 5 ELO unlock
@@ -161,9 +194,9 @@ The two unlocks (`elo_crown` and `runebearer`) are independent: a player who rea
 Player (`/api/rewards`):
 
 ```
-GET   /api/rewards/catalog                # public catalog (id, name, description, color, gradient, background_css, icon_filename)
-GET   /api/rewards/me                     # held badges, unlocked templates, equipped_*
-PATCH /api/rewards/me/equipped            # body: {equipped_badge_id?, equipped_name_template_id?}
+GET   /api/rewards/catalog                # public catalog: badges + name_templates + phantom_skins
+GET   /api/rewards/me                     # held badges, unlocked templates, unlocked_phantom_skins, equipped_*
+PATCH /api/rewards/me/equipped            # body: {equipped_badge_id?, equipped_name_template_id?, equipped_phantom_skin_id?}
 GET   /api/rewards/notifications          # pending (dismissed_at IS NULL)
 POST  /api/rewards/notifications/dismiss  # bulk dismiss; 204
 ```
@@ -175,6 +208,8 @@ POST   /api/admin/users/{user_id}/badges                 body: {badge_id, reason
 DELETE /api/admin/users/{user_id}/badges/{badge_id}
 POST   /api/admin/users/{user_id}/templates              body: {template_id, reason?}
 DELETE /api/admin/users/{user_id}/templates/{template_id}
+POST   /api/admin/users/{user_id}/skins                  body: {skin_id, reason?}
+DELETE /api/admin/users/{user_id}/skins/{skin_id}
 ```
 
 ### WebSocket protocol
@@ -196,6 +231,8 @@ pub struct ParticipantInfo {
 Both `name_css` and `background_css` are **web-only** and are not serialized over WS. The mod renders only the color or gradient on the name column. Existing messages (`auth_ok`, `leaderboard_update`) propagate the new field automatically; no new message types.
 
 Equip changes during a race are eventually consistent: the next periodic `leaderboard_update` propagates the new template. No immediate rebroadcast.
+
+The `auth_ok` message also carries an optional `phantom_skin: string | null` field. The server emits the equipped skin id (e.g. `"gold-aura"`), or `null` when the user has nothing equipped or the equipped value is the literal `"none"`. The translation `none -> null` happens in the WebSocket payload builder via `resolve_phantom_skin_for_auth_ok` in `websocket/schemas.py`. The mod resolves the name to a SpEffect via `graph.json` per the phantom skins integration spec; the field is unused by the racing platform itself.
 
 ### Mod rendering
 
@@ -251,6 +288,7 @@ Readability is owned by the catalog: each template is hand-tuned to contrast ade
 
 - **Active Badge**: list of held badges (icon + name + tooltip with `granted_at` and `reason`), an "Equip" button per row, an indicator on the active one, a "Clear" action.
 - **Active Name Template**: list of unlocked templates with previews (rendered with the actual `color`/`gradient`/`background_css`), "Activate" button per row, indicator on the active one. `default` is always present.
+- **Active Phantom Skin**: grid of cards (one per catalog entry, sorted unlocked-then-locked, ascending sort order within each group). Each card shows a 4:5 portrait screenshot of the skin in-game; locked cards are dimmed with the unlock condition shown as caption. The `none` card is always unlocked and selected by default.
 
 ### Dashboard banner
 
@@ -266,6 +304,8 @@ Readability is owned by the catalog: each template is hand-tuned to contrast ade
 
 `/user/[id]` exposes a "Rewards" section: a gallery of currently held badges and a gallery of unlocked name templates. Revoked transient badges are not surfaced (rows kept in DB for audit only).
 
+When the user has a phantom skin equipped (other than `none`), the profile avatar slot is replaced by the skin's screenshot at `/phantom_skins/<id>.jpg`; the Twitch avatar remains accessible via the existing Twitch link button in the name row. When no skin is equipped (or `none`), the Twitch avatar shows as before.
+
 ### Catalog cache
 
 `GET /api/rewards/catalog` is fetched once per session into a Svelte store, so `UserLink` and container components resolve a `template_id` to its visual definition without duplicating the catalog client-side.
@@ -276,11 +316,13 @@ Readability is owned by the catalog: each template is hand-tuned to contrast ade
 
 `uv run python -m speedfog_racing.scripts.backfill_rewards` is idempotent and is run once after the Alembic migration:
 
-1. Grant `early_adopter` badge and `pioneer` template to every user with `created_at < 2026-04-01`.
+1. Grant `early_adopter` badge, `pioneer` template, and `emerald-aura` phantom skin to every user with `created_at < 2026-04-01`.
 2. Grant `archon` template to every user with `role == admin`. Future admin promotions are not auto-granted: an operator manually issues the template via `POST /api/admin/users/{id}/templates`. This is intentional, the case is rare.
 3. Run `refresh_top1_elo_holders()` to grant the current top 1 ELO badge, the `elo_crown` template (top 1), and the `runebearer` template (top 5).
 4. Grant `veteran` to every user whose count of FINISHED participations is at least `VETERAN_RACE_THRESHOLD`.
 5. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
+
+6. `cyan-aura` is **not** retroactively granted to past weekly Daily Champions; the next live `refresh_weekly_daily_champion` rollup grants it to the current week's champion(s).
 
 Each grant emits a `RewardNotification`, so each affected user sees their consolidated banner on their next visit.
 
