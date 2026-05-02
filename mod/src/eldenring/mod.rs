@@ -8,6 +8,7 @@
 mod event_flags;
 mod game_state;
 pub mod item_spawner;
+pub mod sp_effect_apply;
 pub mod warp_hook;
 
 pub use event_flags::{EventFlagReader, FlagReaderStatus};

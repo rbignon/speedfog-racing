@@ -84,6 +84,8 @@ features = [
     "Win32_System_SystemInformation",
     "Win32_System_Memory",
     "Win32_System_Com",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
 ]
 
 [dev-dependencies]
