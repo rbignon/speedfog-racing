@@ -14,14 +14,17 @@ from speedfog_racing.models import (
     NameTemplateUnlock,
     Participant,
     ParticipantStatus,
+    PhantomSkinUnlock,
     Race,
     RewardNotification,
     User,
 )
 from speedfog_racing.rewards.catalog import (
     BADGES,
+    DEFAULT_PHANTOM_SKIN_ID,
     DEFAULT_TEMPLATE_ID,
     NAME_TEMPLATES,
+    PHANTOM_SKINS,
     VETERAN_RACE_THRESHOLD,
 )
 from speedfog_racing.rewards.models_data import Badge, NameTemplate
@@ -135,6 +138,45 @@ class RewardsService:
                 user_id=user_id,
                 kind="name_template_unlocked",
                 reward_id=template_id,
+            )
+        )
+        await self.session.flush()
+        return unlock
+
+    async def grant_phantom_skin(
+        self,
+        user_id: uuid.UUID,
+        skin_id: str,
+        granted_by: uuid.UUID | None = None,
+        reason: str | None = None,
+    ) -> PhantomSkinUnlock | None:
+        skin = PHANTOM_SKINS.get(skin_id)
+        if skin is None:
+            raise UnknownRewardError(f"Unknown skin_id={skin_id!r}")
+        if skin_id == DEFAULT_PHANTOM_SKIN_ID:
+            return None
+
+        existing = await self.session.execute(
+            select(PhantomSkinUnlock).where(
+                PhantomSkinUnlock.user_id == user_id,
+                PhantomSkinUnlock.skin_id == skin_id,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            return None
+
+        unlock = PhantomSkinUnlock(
+            user_id=user_id,
+            skin_id=skin_id,
+            granted_by=granted_by,
+            reason=reason,
+        )
+        self.session.add(unlock)
+        self.session.add(
+            RewardNotification(
+                user_id=user_id,
+                kind="phantom_skin_unlocked",
+                reward_id=skin_id,
             )
         )
         await self.session.flush()

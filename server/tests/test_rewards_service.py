@@ -8,6 +8,7 @@ from speedfog_racing.models import (
     NameTemplateUnlock,
     Participant,
     ParticipantStatus,
+    PhantomSkinUnlock,
     Race,
     RaceStatus,
     RewardNotification,
@@ -803,3 +804,106 @@ async def test_check_veteran_excludes_abandoned_participations(async_session):
             .all()
         )
         assert grants == []
+
+
+async def test_grant_phantom_skin_creates_unlock_and_notification(async_session):
+    user = await _make_user(async_session, "ps_alice")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        unlock = await svc.grant_phantom_skin(user.id, "gold-aura", reason="test")
+        await db.commit()
+        assert unlock is not None
+        assert unlock.skin_id == "gold-aura"
+        assert unlock.reason == "test"
+
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(PhantomSkinUnlock.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        notifs = (
+            (
+                await db.execute(
+                    select(RewardNotification).where(
+                        RewardNotification.user_id == user.id,
+                        RewardNotification.kind == "phantom_skin_unlocked",
+                        RewardNotification.reward_id == "gold-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(notifs) == 1
+
+
+async def test_grant_phantom_skin_is_idempotent(async_session):
+    user = await _make_user(async_session, "ps_bob")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        first = await svc.grant_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+        assert first is not None
+    async with async_session() as db:
+        svc = RewardsService(db)
+        second = await svc.grant_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+        assert second is None
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(PhantomSkinUnlock.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+
+
+async def test_grant_phantom_skin_none_is_skipped(async_session):
+    user = await _make_user(async_session, "ps_carol")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        result = await svc.grant_phantom_skin(user.id, "none")
+        await db.commit()
+        assert result is None
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(PhantomSkinUnlock.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == []
+        notifs = (
+            (
+                await db.execute(
+                    select(RewardNotification).where(
+                        RewardNotification.user_id == user.id,
+                        RewardNotification.kind == "phantom_skin_unlocked",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert notifs == []
+
+
+async def test_grant_phantom_skin_rejects_unknown(async_session):
+    user = await _make_user(async_session, "ps_dave")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        with pytest.raises(UnknownRewardError):
+            await svc.grant_phantom_skin(user.id, "rainbow-aura")
