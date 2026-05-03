@@ -14,7 +14,7 @@ BADGES: dict[str, Badge] = {
     "early_adopter": Badge(
         id="early_adopter",
         name="Early Adopter",
-        description="Account created before the rewards system launched.",
+        description="Account created before April 1st 2026.",
         icon_filename="early_adopter.svg",
         lifecycle="permanent",
         sort_order=10,
@@ -91,7 +91,7 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
     "pioneer": NameTemplate(
         id="pioneer",
         name="Pioneer",
-        description="Granted to accounts created before the rewards system launched.",
+        description="Granted to accounts created before April 1st 2026.",
         name_css=(
             'font-family: Georgia, "Times New Roman", Times, serif;'
             " font-style: italic;"
@@ -171,9 +171,10 @@ PHANTOM_SKINS: dict[str, PhantomSkin] = {
     "emerald-aura": PhantomSkin(
         id="emerald-aura",
         name="Emerald Aura",
-        description="Granted to early adopters.",
+        description="Granted to accounts created before April 1st 2026.",
         screenshot_filename="emerald-aura.jpg",
         sort_order=40,
+        obtainable=False,
     ),
     "crimson-aura": PhantomSkin(
         id="crimson-aura",

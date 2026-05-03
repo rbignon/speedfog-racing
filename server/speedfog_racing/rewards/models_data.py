@@ -35,3 +35,4 @@ class PhantomSkin:
     description: str
     screenshot_filename: str
     sort_order: int = 0
+    obtainable: bool = True

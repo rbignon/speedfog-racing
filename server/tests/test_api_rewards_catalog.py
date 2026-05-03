@@ -93,4 +93,15 @@ def test_catalog_phantom_skin_shape():
             "description": "Granted the first time you reach top 1 ELO.",
             "screenshot_filename": "gold-aura.jpg",
             "sort_order": 10,
+            "obtainable": True,
         }
+
+
+def test_catalog_phantom_skins_include_obtainable_field():
+    with TestClient(app) as client:
+        resp = client.get("/api/rewards/catalog")
+        skins = resp.json()["phantom_skins"]
+        emerald = next(s for s in skins if s["id"] == "emerald-aura")
+        gold = next(s for s in skins if s["id"] == "gold-aura")
+        assert emerald["obtainable"] is False
+        assert gold["obtainable"] is True

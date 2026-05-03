@@ -325,3 +325,22 @@ async def test_patch_equip_phantom_skin_string_none_clears(
         )
         assert resp.status_code == 200
         assert resp.json()["equipped_phantom_skin_id"] is None
+
+
+async def test_me_phantom_skin_carries_obtainable_field(
+    test_client, user_with_token, async_session
+):
+    user, token = user_with_token
+    async with async_session() as db:
+        from speedfog_racing.rewards.service import RewardsService
+
+        svc = RewardsService(db)
+        await svc.grant_phantom_skin(user.id, "gold-aura")
+        await db.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    async with test_client as client:
+        resp = await client.get("/api/rewards/me", headers=headers)
+        skins = resp.json()["unlocked_phantom_skins"]
+        assert skins, "expected at least one unlocked skin"
+        gold = next(s for s in skins if s["id"] == "gold-aura")
+        assert gold["obtainable"] is True

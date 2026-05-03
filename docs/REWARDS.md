@@ -49,15 +49,17 @@ Name templates are **always permanent**. Once unlocked, they remain unlocked eve
 
 #### Phantom skins
 
-| id             | name         | unlock                                                                         |
-| -------------- | ------------ | ------------------------------------------------------------------------------ |
-| `none`         | None         | Always unlocked, never revocable.                                              |
-| `gold-aura`    | Gold Aura    | Granted permanently the first time a player reaches top 1 ELO.                 |
-| `silver-aura`  | Silver Aura  | Granted permanently the first time a player enters the top 5 ELO.              |
-| `cyan-aura`    | Cyan Aura    | Granted permanently the first time a player finishes a week as Daily Champion. |
-| `emerald-aura` | Emerald Aura | Granted to accounts created before the rewards system launched.                |
-| `crimson-aura` | Crimson Aura | Granted alongside the `veteran` badge, same threshold.                         |
-| `violet-aura`  | Violet Aura  | Admin grant only (special events, organized tournaments).                      |
+| id             | name         | unlock                                                                         | obtainable                        |
+| -------------- | ------------ | ------------------------------------------------------------------------------ | --------------------------------- |
+| `none`         | None         | Always unlocked, never revocable.                                              | yes                               |
+| `gold-aura`    | Gold Aura    | Granted permanently the first time a player reaches top 1 ELO.                 | yes                               |
+| `silver-aura`  | Silver Aura  | Granted permanently the first time a player enters the top 5 ELO.              | yes                               |
+| `cyan-aura`    | Cyan Aura    | Granted permanently the first time a player finishes a week as Daily Champion. | yes                               |
+| `emerald-aura` | Emerald Aura | Granted to accounts created before the rewards system launched.                | **no** (cutoff `2026-04-01` past) |
+| `crimson-aura` | Crimson Aura | Granted alongside the `veteran` badge, same threshold.                         | yes                               |
+| `violet-aura`  | Violet Aura  | Admin grant only (special events, organized tournaments).                      | yes                               |
+
+The `obtainable` column drives the picker UI: locked skins flagged `obtainable: false` are hidden from users who don't own them (the unlock condition has lapsed for good and surfacing it would just frustrate). Already-unlocked skins stay visible regardless of the flag.
 
 Phantom skins are **always permanent**: once unlocked, they stay unlocked. The mod overlay receives the equipped skin's id via `auth_ok.phantom_skin` and resolves it to a SpEffect through `graph.json` per the speedfog integration spec. The skin is applied to the local player only; the cosmetic does not propagate to other participants on the web.
 

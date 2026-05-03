@@ -344,6 +344,7 @@ const seedCatalogWithPhantomSkins = () => {
       description: "Granted to early adopters.",
       screenshot_filename: "emerald-aura.jpg",
       sort_order: 40,
+      obtainable: false,
     },
     {
       id: "crimson-aura",
@@ -400,14 +401,14 @@ describe("RewardsPicker phantom skins section", () => {
     });
     const tiles = container.querySelectorAll(".skin-tile");
     const ids = Array.from(tiles).map((t) => t.getAttribute("data-skin-id"));
-    // Unlocked first (none, silver, crimson, sort asc), then locked (gold, cyan, emerald, violet, sort asc).
+    // Unlocked first (none, silver, crimson, sort asc), then locked (gold, cyan, violet, sort asc).
+    // emerald-aura is obtainable=false and not unlocked, so it is hidden from the locked group.
     expect(ids).toEqual([
       "none",
       "silver-aura",
       "crimson-aura",
       "gold-aura",
       "cyan-aura",
-      "emerald-aura",
       "violet-aura",
     ]);
   });
@@ -531,5 +532,58 @@ describe("RewardsPicker phantom skins section", () => {
     const noneTile = container.querySelector('.skin-tile[data-skin-id="none"]');
     expect(silverTile?.textContent).toContain("Active");
     expect(noneTile?.textContent).not.toContain("Active");
+  });
+
+  it("hides locked skins flagged obtainable=false unless already unlocked", () => {
+    seedCatalogWithPhantomSkins();
+    // User owns nothing. emerald-aura (obtainable=false) must NOT appear in the locked group.
+    const inv: MyInventoryDto = {
+      ...baseInventory,
+      unlocked_phantom_skins: [],
+      equipped_phantom_skin_id: null,
+    };
+    const { container } = render(RewardsPicker, {
+      props: {
+        inventory: inv,
+        user: baseUser,
+        selectedTemplateId: "elo_crown",
+        selectedBadgeId: null,
+        selectedSkinId: null,
+      },
+    });
+    const ids = Array.from(container.querySelectorAll(".skin-tile")).map((t) =>
+      t.getAttribute("data-skin-id"),
+    );
+    expect(ids).not.toContain("emerald-aura");
+  });
+
+  it("still shows emerald-aura when already unlocked even if obtainable=false", () => {
+    seedCatalogWithPhantomSkins();
+    const inv: MyInventoryDto = {
+      ...baseInventory,
+      unlocked_phantom_skins: [
+        {
+          id: "emerald-aura",
+          name: "Emerald Aura",
+          description: "",
+          screenshot_filename: "emerald-aura.jpg",
+          sort_order: 40,
+        },
+      ],
+      equipped_phantom_skin_id: null,
+    };
+    const { container } = render(RewardsPicker, {
+      props: {
+        inventory: inv,
+        user: baseUser,
+        selectedTemplateId: "elo_crown",
+        selectedBadgeId: null,
+        selectedSkinId: null,
+      },
+    });
+    const ids = Array.from(container.querySelectorAll(".skin-tile")).map((t) =>
+      t.getAttribute("data-skin-id"),
+    );
+    expect(ids).toContain("emerald-aura");
   });
 });

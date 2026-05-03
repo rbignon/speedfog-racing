@@ -135,3 +135,14 @@ def test_phantom_skin_dataclass_fields():
 def test_phantom_skin_sort_order_unique_and_monotonic():
     orders = sorted(s.sort_order for s in PHANTOM_SKINS.values())
     assert orders == sorted(set(orders)), "sort_order values must be unique"
+
+
+def test_emerald_aura_is_not_obtainable():
+    assert PHANTOM_SKINS["emerald-aura"].obtainable is False
+
+
+def test_other_phantom_skins_are_obtainable():
+    for skin_id, skin in PHANTOM_SKINS.items():
+        if skin_id == "emerald-aura":
+            continue
+        assert skin.obtainable is True, f"{skin_id} should be obtainable by default"

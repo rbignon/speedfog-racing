@@ -34,7 +34,9 @@
 		unlockedIds.add('none');
 		const sortAsc = (a: PhantomSkinDef, b: PhantomSkinDef) => a.sort_order - b.sort_order;
 		const unlocked = catalog.filter((s) => unlockedIds.has(s.id)).sort(sortAsc);
-		const locked = catalog.filter((s) => !unlockedIds.has(s.id)).sort(sortAsc);
+		const locked = catalog
+			.filter((s) => !unlockedIds.has(s.id) && s.obtainable !== false)
+			.sort(sortAsc);
 		return { unlocked, locked };
 	});
 

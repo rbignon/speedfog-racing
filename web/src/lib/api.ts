@@ -1667,6 +1667,7 @@ export interface PhantomSkinDef {
   description?: string;
   screenshot_filename: string;
   sort_order: number;
+  obtainable?: boolean;
 }
 
 export interface RewardsCatalog {
