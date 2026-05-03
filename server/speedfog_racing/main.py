@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 
 from speedfog_racing import __version__
 from speedfog_racing.api import api_router
@@ -143,6 +145,21 @@ def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JS
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)
+
+
+# Default /api/* responses to Cache-Control: no-store. Without this, browsers
+# may heuristically cache successful 200s and, more importantly, status codes
+# considered cacheable by RFC 7231 (e.g. 404, 410), causing stale errors to
+# stick until the user does a hard reload. Endpoints that legitimately want to
+# be cached (e.g. OG image/meta routes) opt out by setting their own
+# Cache-Control header on the response; setdefault preserves that.
+@app.middleware("http")
+async def no_store_api_responses(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
 
 # CORS middleware
 app.add_middleware(
