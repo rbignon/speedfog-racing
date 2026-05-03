@@ -174,9 +174,35 @@ Three-strategy cascade for resolving where the player is after a death/fast-trav
 
 Zone queries do **not** modify `zone_history` (progression). They only update `current_zone` (overlay display pointer) and trigger `player_update` for all connections (mods + spectators).
 
-### Grace Entity ID Capture
+### Grace Entity ID Capture (Warp Hook)
 
-A warp hook (inline detour on `lua_warp`) captures the grace entity ID when the player fast-travels. The entity ID is stored in a global atomic and consumed at loading exit. This is needed because the entity ID is only available at the moment of the warp call. By the time the loading screen exits, the game has already moved past the warp context.
+The grace entity ID is the most reliable signal for resolving where the player landed after a fast travel: it maps directly to a zone via `graces.json`. The catch is that this ID is only available at the _call site_ of the warp function. By the time the loading screen exits and the mod runs its zone-resolution logic, the game has already returned from the warp call and the argument is gone.
+
+To capture it, the mod installs an inline detour on the game's warp function at startup (`eldenring/warp_hook.rs::install`). The detour intercepts every fast-travel call, reads the grace argument, stores it in a global atomic, then forwards to the original function so the warp proceeds normally.
+
+#### Hook Target
+
+The detour is installed on `func_warp = lua_warp + 2`. The `+ 2` skips a trailing `RET` instruction belonging to the previous function (the `lua_warp` symbol from `libeldenring` points two bytes before the actual function entry). The hook is wired up via [`retour::GenericDetour<WarpFn>`](https://docs.rs/retour) which handles the trampoline allocation and the inline jump patch.
+
+The function signature is `extern "system" fn(u64, u64, u32)`, where the third argument is `grace_entity_id - 0x3e8` (the game stores it pre-offset by 1000). The hook adds `0x3e8` back before storing.
+
+#### Re-Entrancy Guard
+
+`IN_HOOK: AtomicBool` guards against re-entry: if the original warp function (or anything it calls) ends up calling our hook again, we log a warn, forward to the original without storing, and skip. The guard uses an RAII drop wrapper (`ReentrancyGuard`) so the flag is always released, even on panic or early return.
+
+#### Panic Safety
+
+The hook body runs inside `catch_unwind` (with `AssertUnwindSafe`). A panic crossing an FFI boundary is undefined behavior, so we catch any unwind, log it, and still call the original function via `call_original_safe` (itself wrapped in `catch_unwind`) to avoid breaking fast travel. The re-entrancy flag is force-reset on the panic path in case the guard's `Drop` didn't run.
+
+#### Storage and Consumption
+
+The captured ID lives in `CAPTURED_GRACE_ENTITY_ID: AtomicU32` (0 = no warp captured). The tracker's loading-exit handler (see "Loading Screen Exit Actions" above):
+
+1. Reads the value via `get_captured_grace_entity_id()`.
+2. Sends it as part of `zone_query` if the loading was a death/respawn/quit-out/fast-travel (no deferred fog flags).
+3. Calls `clear_captured_grace_entity_id()` to reset to 0 so the next non-warp loading screen (e.g. a death) doesn't reuse a stale ID.
+
+The clear also runs in the disconnected branch, so a warp that happens while disconnected doesn't taint the next reconnect's loading exit.
 
 ---
 
