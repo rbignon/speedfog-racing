@@ -14,6 +14,9 @@
 	import { rewards } from '$lib/stores/rewards.svelte';
 	import RewardsPicker from '$lib/components/RewardsPicker.svelte';
 
+	type Tab = 'overlay' | 'rewards';
+
+	let activeTab = $state<Tab>('overlay');
 	let locales = $state<LocaleInfo[]>([]);
 	let selectedLocale = $state('en');
 	let fontSize = $state(18);
@@ -21,14 +24,22 @@
 	let selectedTemplateId = $state('default');
 	let selectedBadgeId = $state<string | null>(null);
 	let selectedSkinId = $state<string | null>(null);
-	let saving = $state(false);
-	let error = $state<string | null>(null);
-	let success = $state(false);
+
+	let savingOverlay = $state(false);
+	let overlayError = $state<string | null>(null);
+	let overlaySuccess = $state(false);
+
+	let savingRewards = $state(false);
+	let rewardsError = $state<string | null>(null);
+	let rewardsSuccess = $state(false);
 
 	onMount(async () => {
 		if (!auth.isLoggedIn) {
 			goto('/');
 			return;
+		}
+		if (typeof window !== 'undefined' && window.location.hash === '#rewards') {
+			activeTab = 'rewards';
 		}
 		selectedLocale = auth.user?.locale ?? 'en';
 		fontSize = auth.user?.overlay_settings?.font_size ?? 18;
@@ -46,45 +57,55 @@
 		}
 	});
 
-	async function handleSave() {
-		saving = true;
-		error = null;
-		success = false;
+	async function saveOverlay() {
+		savingOverlay = true;
+		overlayError = null;
+		overlaySuccess = false;
 		try {
-			const calls: Promise<unknown>[] = [
+			await Promise.all([
 				updateLocale(selectedLocale).then((r) => {
 					if (auth.user) auth.user.locale = r.locale;
 				}),
 				updateOverlaySettings({ font_size: fontSize }).then((r) => {
 					if (auth.user) auth.user.overlay_settings = r.overlay_settings;
 				})
-			];
-			if (inventory) {
-				calls.push(
-					patchEquipped({
-						equipped_name_template_id: selectedTemplateId,
-						equipped_badge_id: selectedBadgeId,
-						equipped_phantom_skin_id: selectedSkinId
-					}).then((result) => {
-						if (!result || !inventory) return;
-						inventory.equipped_name_template_id = result.equipped_name_template_id;
-						inventory.equipped_badge_id = result.equipped_badge_id;
-						inventory.equipped_phantom_skin_id = result.equipped_phantom_skin_id;
-						if (auth.user) {
-							auth.user.equipped_name_template_id = result.equipped_name_template_id;
-							auth.user.equipped_badge_id = result.equipped_badge_id;
-							auth.user.equipped_phantom_skin_id = result.equipped_phantom_skin_id;
-						}
-					})
-				);
-			}
-			await Promise.all(calls);
-			success = true;
-			setTimeout(() => (success = false), 3000);
+			]);
+			overlaySuccess = true;
+			setTimeout(() => (overlaySuccess = false), 3000);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to save';
+			overlayError = e instanceof Error ? e.message : 'Failed to save';
 		} finally {
-			saving = false;
+			savingOverlay = false;
+		}
+	}
+
+	async function saveRewards() {
+		if (!inventory) return;
+		savingRewards = true;
+		rewardsError = null;
+		rewardsSuccess = false;
+		try {
+			const result = await patchEquipped({
+				equipped_name_template_id: selectedTemplateId,
+				equipped_badge_id: selectedBadgeId,
+				equipped_phantom_skin_id: selectedSkinId
+			});
+			if (result && inventory) {
+				inventory.equipped_name_template_id = result.equipped_name_template_id;
+				inventory.equipped_badge_id = result.equipped_badge_id;
+				inventory.equipped_phantom_skin_id = result.equipped_phantom_skin_id;
+				if (auth.user) {
+					auth.user.equipped_name_template_id = result.equipped_name_template_id;
+					auth.user.equipped_badge_id = result.equipped_badge_id;
+					auth.user.equipped_phantom_skin_id = result.equipped_phantom_skin_id;
+				}
+			}
+			rewardsSuccess = true;
+			setTimeout(() => (rewardsSuccess = false), 3000);
+		} catch (e) {
+			rewardsError = e instanceof Error ? e.message : 'Failed to save';
+		} finally {
+			savingRewards = false;
 		}
 	}
 </script>
@@ -96,73 +117,104 @@
 <main class="settings">
 	<h1>Settings</h1>
 
-	<section class="setting-group">
-		<h2>Overlay</h2>
-		<p class="description">
-			Customize the in-game overlay that displays race information. It automatically applies when
-			you download seeds
-		</p>
-
-		<div class="setting-field">
-			<label class="field-label" for="font-size">Font size</label>
-			<p class="field-description">Size of the text displayed on the overlay.</p>
-			<div class="setting-row">
-				<div class="input-with-unit">
-					<input id="font-size" type="number" min="8" max="72" step="1" bind:value={fontSize} />
-					<span class="unit">px</span>
-				</div>
-				<span class="hint">8–72 px (default: 18)</span>
-			</div>
-		</div>
-
-		<div class="setting-field">
-			<span class="field-label">Language</span>
-			<p class="field-description">Zone names and fog gate descriptions displayed in-game.</p>
-			<div class="locale-select">
-				{#each locales as locale}
-					<label>
-						<input
-							type="radio"
-							name="locale"
-							value={locale.code}
-							checked={selectedLocale === locale.code}
-							onchange={() => (selectedLocale = locale.code)}
-						/>
-						{locale.name}
-					</label>
-				{/each}
-			</div>
-		</div>
-	</section>
-
-	<section class="setting-group" id="rewards">
-		<h2>Rewards</h2>
-		<p class="description">Pick a badge and a name template among the rewards you have unlocked.</p>
-
-		{#if inventory && auth.user}
-			<RewardsPicker
-				{inventory}
-				user={auth.user}
-				bind:selectedTemplateId
-				bind:selectedBadgeId
-				bind:selectedSkinId
-			/>
-		{:else}
-			<p class="hint">Loading…</p>
-		{/if}
-	</section>
-
-	<div class="actions">
-		<button class="btn btn-primary" onclick={handleSave} disabled={saving}>
-			{saving ? 'Saving...' : 'Save'}
+	<div class="tabs">
+		<button
+			class="tab"
+			class:active={activeTab === 'overlay'}
+			onclick={() => (activeTab = 'overlay')}
+		>
+			Overlay
 		</button>
-		{#if success}
-			<span class="success-msg">Saved!</span>
-		{/if}
-		{#if error}
-			<span class="error-msg">{error}</span>
-		{/if}
+		<button
+			class="tab"
+			class:active={activeTab === 'rewards'}
+			onclick={() => (activeTab = 'rewards')}
+		>
+			Rewards
+		</button>
 	</div>
+
+	{#if activeTab === 'overlay'}
+		<section class="setting-group">
+			<p class="description">
+				Customize the in-game overlay that displays race information. It automatically applies when
+				you download seeds
+			</p>
+
+			<div class="setting-field">
+				<label class="field-label" for="font-size">Font size</label>
+				<p class="field-description">Size of the text displayed on the overlay.</p>
+				<div class="setting-row">
+					<div class="input-with-unit">
+						<input id="font-size" type="number" min="8" max="72" step="1" bind:value={fontSize} />
+						<span class="unit">px</span>
+					</div>
+					<span class="hint">8–72 px (default: 18)</span>
+				</div>
+			</div>
+
+			<div class="setting-field">
+				<span class="field-label">Language</span>
+				<p class="field-description">Zone names and fog gate descriptions displayed in-game.</p>
+				<div class="locale-select">
+					{#each locales as locale}
+						<label>
+							<input
+								type="radio"
+								name="locale"
+								value={locale.code}
+								checked={selectedLocale === locale.code}
+								onchange={() => (selectedLocale = locale.code)}
+							/>
+							{locale.name}
+						</label>
+					{/each}
+				</div>
+			</div>
+		</section>
+
+		<div class="actions">
+			<button class="btn btn-primary" onclick={saveOverlay} disabled={savingOverlay}>
+				{savingOverlay ? 'Saving...' : 'Save'}
+			</button>
+			{#if overlaySuccess}
+				<span class="success-msg">Saved!</span>
+			{/if}
+			{#if overlayError}
+				<span class="error-msg">{overlayError}</span>
+			{/if}
+		</div>
+	{:else if activeTab === 'rewards'}
+		<section class="setting-group" id="rewards">
+			<p class="description">
+				Pick a badge and a name template among the rewards you have unlocked.
+			</p>
+
+			{#if inventory && auth.user}
+				<RewardsPicker
+					{inventory}
+					user={auth.user}
+					bind:selectedTemplateId
+					bind:selectedBadgeId
+					bind:selectedSkinId
+				/>
+			{:else}
+				<p class="hint">Loading…</p>
+			{/if}
+		</section>
+
+		<div class="actions">
+			<button class="btn btn-primary" onclick={saveRewards} disabled={savingRewards || !inventory}>
+				{savingRewards ? 'Saving...' : 'Save'}
+			</button>
+			{#if rewardsSuccess}
+				<span class="success-msg">Saved!</span>
+			{/if}
+			{#if rewardsError}
+				<span class="error-msg">{rewardsError}</span>
+			{/if}
+		</div>
+	{/if}
 </main>
 
 <style>
@@ -174,7 +226,40 @@
 
 	h1 {
 		font-size: var(--font-size-2xl);
-		margin-bottom: 2rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.tabs {
+		display: flex;
+		gap: 0;
+		margin-bottom: 1.5rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.tab {
+		padding: 0.6rem 1.25rem;
+		background: none;
+		border: none;
+		border-bottom: 2px solid transparent;
+		color: var(--color-text-secondary);
+		font-family: var(--font-family);
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		cursor: pointer;
+		transition:
+			color 0.15s,
+			border-color 0.15s;
+	}
+
+	.tab:hover {
+		color: var(--color-text);
+	}
+
+	.tab.active {
+		color: var(--color-purple);
+		border-bottom-color: var(--color-purple);
 	}
 
 	.setting-group {
@@ -185,13 +270,10 @@
 		margin-bottom: 1.5rem;
 	}
 
-	.setting-group h2 {
-		margin-top: 0;
-	}
-
 	.description {
 		color: var(--color-text-secondary);
 		font-size: var(--font-size-sm);
+		margin-top: 0;
 		margin-bottom: 1rem;
 	}
 
