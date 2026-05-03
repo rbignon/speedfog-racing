@@ -266,6 +266,9 @@
 			</div>
 			<div class="daily-meta-right">
 				<ShareButtons />
+				{#if initialRace.seed_number}
+					<span class="seed-badge">Seed {initialRace.seed_number}</span>
+				{/if}
 				<span class="daily-pill" class:ended={dailyEnded}>
 					{dailyEnded ? 'Ended' : countdownLabel}
 				</span>
@@ -570,6 +573,16 @@
 		align-items: center;
 		gap: 0.75rem;
 		flex-wrap: wrap;
+	}
+
+	.seed-badge {
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-size: var(--font-size-xs);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		padding: 0.2rem 0.5rem;
+		color: var(--color-text-secondary);
 	}
 
 	.daily-pill {
