@@ -15,7 +15,10 @@
 
 	let summary = $derived.by(() => {
 		const granted = notifs.filter(
-			(n) => n.kind === 'badge_granted' || n.kind === 'name_template_unlocked'
+			(n) =>
+				n.kind === 'badge_granted' ||
+				n.kind === 'name_template_unlocked' ||
+				n.kind === 'phantom_skin_unlocked'
 		).length;
 		const revoked = notifs.filter((n) => n.kind === 'badge_revoked').length;
 		const parts: string[] = [];

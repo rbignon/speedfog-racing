@@ -62,6 +62,32 @@ describe("RewardsBanner", () => {
     expect(screen.queryByText(/lost/i)).not.toBeNull();
   });
 
+  it("counts phantom_skin_unlocked alongside other grants", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [
+          {
+            id: "1",
+            kind: "phantom_skin_unlocked",
+            reward_id: "emerald-aura",
+            created_at: "2026-05-02T11:28:33Z",
+          },
+          {
+            id: "2",
+            kind: "badge_granted",
+            reward_id: "veteran",
+            created_at: "2026-05-02T11:28:33Z",
+          },
+        ],
+      }),
+    );
+    render(RewardsBanner);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText(/2 rewards unlocked/i)).not.toBeNull();
+  });
+
   it("shows mixed summary when both grants and revokes are pending", async () => {
     vi.stubGlobal(
       "fetch",
