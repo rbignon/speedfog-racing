@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,9 +20,11 @@ from speedfog_racing.auth import require_admin
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
     Caster,
+    DailySeedSchedule,
     Feedback,
     FeedbackSource,
     Participant,
+    Pool,
     Race,
     Seed,
     SeedStatus,
@@ -47,6 +49,7 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services import (
     discard_pool,
+    get_pool,
     get_pool_stats,
     list_pools,
     scan_pool,
@@ -204,6 +207,130 @@ async def admin_update_pool(
         enabled=pool.enabled,
         last_scanned_at=pool.last_scanned_at,
         **stats,
+    )
+
+
+# =============================================================================
+# Daily Seed Schedule
+# =============================================================================
+
+
+class AdminDailyScheduleEntry(BaseModel):
+    """One row of the weekday -> pool rotation used to create Daily Seeds."""
+
+    weekday: int
+    pool_name: str
+    pool_display_name: str
+
+
+class AdminDailySchedulePoolOption(BaseModel):
+    """A pool eligible to be selected for a Daily Seed weekday slot."""
+
+    name: str
+    display_name: str
+
+
+class AdminDailyScheduleResponse(BaseModel):
+    """Combined payload for the Daily Seed schedule admin UI: the seven rows
+    plus the list of pools an admin is allowed to assign to any weekday.
+
+    ``available_pools`` covers pools that are enabled and not training pools,
+    independently of whether they currently have any AVAILABLE seeds. The
+    daily creation loop will fail later if the chosen pool runs out of
+    seeds, but seedless pools should still be selectable here so admins can
+    schedule a pool ahead of scanning its seeds.
+    """
+
+    schedule: list[AdminDailyScheduleEntry]
+    available_pools: list[AdminDailySchedulePoolOption]
+
+
+class UpdateDailyScheduleRequest(BaseModel):
+    """Request body for PATCH ``/admin/daily-schedule/{weekday}``."""
+
+    pool_name: str
+
+
+def _is_training_pool(pool: Pool) -> bool:
+    return pool.config.get("type") == "training"
+
+
+@router.get("/daily-schedule", response_model=AdminDailyScheduleResponse)
+async def admin_list_daily_schedule(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> AdminDailyScheduleResponse:
+    """Return the seven schedule rows (Mon=0 .. Sun=6) plus the list of pools
+    an admin can assign to any weekday."""
+    rows = (
+        (await db.execute(select(DailySeedSchedule).order_by(DailySeedSchedule.weekday)))
+        .scalars()
+        .all()
+    )
+    schedule = [
+        AdminDailyScheduleEntry(
+            weekday=row.weekday,
+            pool_name=row.pool_name,
+            pool_display_name=format_pool_display_name(row.pool),
+        )
+        for row in rows
+    ]
+
+    pools = await list_pools(db, include_disabled=False)
+    available_pools = sorted(
+        (
+            AdminDailySchedulePoolOption(
+                name=pool.name,
+                display_name=format_pool_display_name(pool),
+            )
+            for pool in pools
+            if not _is_training_pool(pool)
+        ),
+        key=lambda opt: opt.display_name.lower(),
+    )
+
+    return AdminDailyScheduleResponse(schedule=schedule, available_pools=available_pools)
+
+
+@router.patch("/daily-schedule/{weekday}", response_model=AdminDailyScheduleEntry)
+async def admin_update_daily_schedule(
+    request: UpdateDailyScheduleRequest,
+    weekday: int = Path(..., ge=0, le=6),
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> AdminDailyScheduleEntry:
+    """Set the pool used for the given weekday. The change applies to the next
+    Daily Seed created for that weekday (i.e. next week if the weekday is
+    today, since today's race has already been emitted)."""
+    pool = await get_pool(db, request.pool_name)
+    if pool is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Pool {request.pool_name!r} does not exist",
+        )
+    if not pool.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Pool {request.pool_name!r} is disabled",
+        )
+    if _is_training_pool(pool):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Pool {request.pool_name!r} is a training pool",
+        )
+
+    row = await db.get(DailySeedSchedule, weekday)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Schedule row for weekday={weekday} is missing",
+        )
+    row.pool_name = pool.name
+    await db.commit()
+    return AdminDailyScheduleEntry(
+        weekday=row.weekday,
+        pool_name=pool.name,
+        pool_display_name=format_pool_display_name(pool),
     )
 
 

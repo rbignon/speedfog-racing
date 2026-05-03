@@ -15,6 +15,7 @@ from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
     Caster,
+    DailySeedSchedule,
     Participant,
     ParticipantStatus,
     Pool,
@@ -913,3 +914,194 @@ async def test_public_pools_hides_disabled(async_session, seeded_pools):
     data = response.json()
     assert "standard" in data
     assert "sprint" not in data
+
+
+# =============================================================================
+# Daily Seed Schedule Tests
+# =============================================================================
+
+
+@pytest.fixture
+async def daily_schedule_pools(async_session):
+    """Seed pools used by the daily-schedule tests:
+    - ``standard`` is auto-seeded (race, enabled).
+    - ``sprint`` race pool, enabled.
+    - ``boss_rush`` race pool, disabled.
+    - ``training_standard`` training pool, enabled.
+    """
+    async with async_session() as db:
+        db.add(Pool(name="sprint", enabled=True, config={"name": "Sprint"}))
+        db.add(Pool(name="boss_rush", enabled=False, config={"name": "Boss Rush"}))
+        db.add(
+            Pool(
+                name="training_standard",
+                enabled=True,
+                config={"name": "Training Standard", "type": "training"},
+            )
+        )
+        for weekday in range(7):
+            db.add(DailySeedSchedule(weekday=weekday, pool_name="standard"))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_admin_list_daily_schedule(test_client, admin_user, daily_schedule_pools):
+    """GET /admin/daily-schedule returns the 7 schedule rows ordered by weekday
+    plus the list of selectable race pools (enabled, non-training)."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/daily-schedule",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        schedule = body["schedule"]
+        assert [row["weekday"] for row in schedule] == [0, 1, 2, 3, 4, 5, 6]
+        assert all(row["pool_name"] == "standard" for row in schedule)
+        assert all(row["pool_display_name"] == "Standard" for row in schedule)
+
+        available = body["available_pools"]
+        names = {opt["name"] for opt in available}
+        assert "standard" in names
+        assert "sprint" in names
+        # Disabled and training pools must not be selectable.
+        assert "boss_rush" not in names
+        assert "training_standard" not in names
+
+
+@pytest.mark.asyncio
+async def test_admin_list_daily_schedule_keeps_disabled_persisted_pool(
+    test_client, admin_user, daily_schedule_pools, async_session
+):
+    """A schedule row that points to a now-disabled pool still comes back
+    (the frontend renders it as ``(unavailable)``); the disabled pool is
+    just absent from ``available_pools``."""
+    async with async_session() as db:
+        from speedfog_racing.services import set_pool_enabled
+
+        await set_pool_enabled(db, "standard", False)
+
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/daily-schedule",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert all(row["pool_name"] == "standard" for row in body["schedule"])
+        assert "standard" not in {opt["name"] for opt in body["available_pools"]}
+
+
+@pytest.mark.asyncio
+async def test_admin_list_daily_schedule_requires_admin(
+    test_client, regular_user, daily_schedule_pools
+):
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/daily-schedule",
+            headers={"Authorization": f"Bearer {regular_user.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_update_daily_schedule_success(
+    test_client, admin_user, daily_schedule_pools, async_session
+):
+    """PATCH updates the row and persists."""
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/daily-schedule/2",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"pool_name": "sprint"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["weekday"] == 2
+        assert body["pool_name"] == "sprint"
+        assert body["pool_display_name"] == "Sprint"
+
+    async with async_session() as db:
+        row = await db.get(DailySeedSchedule, 2)
+        assert row is not None
+        assert row.pool_name == "sprint"
+
+
+@pytest.mark.asyncio
+async def test_admin_update_daily_schedule_unknown_pool(
+    test_client, admin_user, daily_schedule_pools, async_session
+):
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/daily-schedule/0",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"pool_name": "ghost"},
+        )
+        assert response.status_code == 400
+        assert "does not exist" in response.json()["detail"]
+    async with async_session() as db:
+        row = await db.get(DailySeedSchedule, 0)
+        assert row is not None
+        assert row.pool_name == "standard"
+
+
+@pytest.mark.asyncio
+async def test_admin_update_daily_schedule_disabled_pool(
+    test_client, admin_user, daily_schedule_pools, async_session
+):
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/daily-schedule/0",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"pool_name": "boss_rush"},
+        )
+        assert response.status_code == 400
+        assert "disabled" in response.json()["detail"]
+    async with async_session() as db:
+        row = await db.get(DailySeedSchedule, 0)
+        assert row is not None
+        assert row.pool_name == "standard"
+
+
+@pytest.mark.asyncio
+async def test_admin_update_daily_schedule_training_pool(
+    test_client, admin_user, daily_schedule_pools, async_session
+):
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/daily-schedule/0",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"pool_name": "training_standard"},
+        )
+        assert response.status_code == 400
+        assert "training" in response.json()["detail"]
+    async with async_session() as db:
+        row = await db.get(DailySeedSchedule, 0)
+        assert row is not None
+        assert row.pool_name == "standard"
+
+
+@pytest.mark.asyncio
+async def test_admin_update_daily_schedule_invalid_weekday(
+    test_client, admin_user, daily_schedule_pools
+):
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/daily-schedule/7",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"pool_name": "standard"},
+        )
+        assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_admin_update_daily_schedule_requires_admin(
+    test_client, regular_user, daily_schedule_pools
+):
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/daily-schedule/0",
+            headers={"Authorization": f"Bearer {regular_user.api_token}"},
+            json={"pool_name": "standard"},
+        )
+        assert response.status_code == 403

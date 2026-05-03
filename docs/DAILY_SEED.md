@@ -53,7 +53,7 @@ weekday    int   primary key   -- 0 = Monday, 6 = Sunday
 pool_name  text  not null      -- FK pools.name
 ```
 
-The Alembic migration seeds the seven rows with `pool_name = 'standard'`. Operators rotate themes by editing rows directly (DB shell); there is no admin UI in v1. The pool name capitalized is the theme label rendered in UI and Discord.
+The Alembic migration seeds the seven rows with `pool_name = 'standard'`. Admins rotate themes from the `Daily` tab in `/admin` (see "Pool Rotation Schedule" below). The pool name capitalized is the theme label rendered in UI and Discord.
 
 A weekday-based pattern (Monday = X, Tuesday = Y, ...) is intentional: it gives the community a recognizable rhythm. Per-date overrides are out of scope.
 
@@ -161,11 +161,12 @@ Each tick (`create_daily_seed_if_needed`) does:
 
 ## Pool Rotation Schedule
 
-The schedule is data, not code: `daily_seed_schedule` rows define which pool runs on which weekday. Editing is done with a DB shell (no admin UI):
+The schedule is data, not code: `daily_seed_schedule` rows define which pool runs on which weekday. Admins edit the rotation from the `Daily` tab in `/admin`, which calls:
 
-```sql
-UPDATE daily_seed_schedule SET pool_name = 'hardcore' WHERE weekday = 5; -- Saturday
-```
+- `GET /api/admin/daily-schedule` -> the seven rows plus the list of pools eligible to be assigned (enabled, non-training).
+- `PATCH /api/admin/daily-schedule/{weekday}` with `{ "pool_name": "<name>" }` -> updates one row, validating that the pool exists, is enabled, and is not a training pool.
+
+A change to the row for the _current_ weekday does not affect today's already-emitted Daily Seed (the seed was assigned at creation time and is stored on the race row); it takes effect the next time that weekday rolls around. The admin UI surfaces this with a `Today` badge and an inline note.
 
 The pool must exist in `pools` and be `enabled = True`; otherwise the next 08:00 tick logs an error and skips creation. The fallback seeded by the migration is `standard` for all seven weekdays.
 
