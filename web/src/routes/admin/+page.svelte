@@ -14,20 +14,24 @@
 		resolveReportedSeed,
 		fetchAdminAnalytics,
 		adminListFeedback,
+		fetchAdminDailySchedule,
+		updateAdminDailySchedule,
 		type AdminUser,
 		type AdminPool,
 		type ActivityTimeline,
 		type ReportedSeed,
 		type AdminAnalytics,
 		type AdminFeedbackItem,
-		type FeedbackSource
+		type FeedbackSource,
+		type AdminDailyScheduleEntry,
+		type AdminDailySchedulePoolOption
 	} from '$lib/api';
 	import { statusLabel } from '$lib/format';
 	import { formatPoolName } from '$lib/utils/format';
 	import { Chart, registerables } from 'chart.js';
 	Chart.register(...registerables);
 
-	type Tab = 'users' | 'seeds' | 'stats' | 'activity' | 'feedback';
+	type Tab = 'users' | 'seeds' | 'stats' | 'activity' | 'feedback' | 'daily';
 	let activeTab: Tab = $state('stats');
 
 	let users: AdminUser[] = $state([]);
@@ -101,6 +105,11 @@
 	let feedbackLoading = $state(false);
 	let feedbackLoaded = $state(false);
 	let feedbackError: string | null = $state(null);
+
+	let dailySchedule: AdminDailyScheduleEntry[] = $state([]);
+	let dailyAvailablePools: AdminDailySchedulePoolOption[] = $state([]);
+	let dailyLoading = $state(false);
+	let dailyLoaded = $state(false);
 
 	$effect(() => {
 		if (auth.initialized && !authChecked) {
@@ -195,6 +204,55 @@
 		}
 		if (tab === 'feedback' && !feedbackLoaded) {
 			loadFeedback();
+		}
+		if (tab === 'daily' && !dailyLoaded) {
+			loadDailySchedule();
+		}
+	}
+
+	async function loadDailySchedule() {
+		dailyLoading = true;
+		try {
+			const payload = await fetchAdminDailySchedule();
+			dailySchedule = payload.schedule;
+			dailyAvailablePools = payload.available_pools;
+			dailyLoaded = true;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load daily schedule.';
+		} finally {
+			dailyLoading = false;
+		}
+	}
+
+	const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+	const DAILY_ROTATION_HOUR = 8;
+
+	function todayWeekday(): number {
+		// Mirror the backend's daily_date_for: rotation starts at 08:00 UTC.
+		const shifted = new Date(Date.now() - DAILY_ROTATION_HOUR * 60 * 60 * 1000);
+		const jsDay = shifted.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+		return (jsDay + 6) % 7; // 0=Mon, ..., 6=Sun
+	}
+
+	let currentWeekday = $derived(todayWeekday());
+
+	async function handleScheduleChange(weekday: number, poolName: string) {
+		const key = `daily_${weekday}`;
+		actionLoading = { ...actionLoading, [key]: true };
+		try {
+			const updated = await updateAdminDailySchedule(weekday, poolName);
+			const idx = dailySchedule.findIndex((row) => row.weekday === updated.weekday);
+			if (idx !== -1) {
+				dailySchedule[idx] = updated;
+			}
+			error = null;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to update daily schedule.';
+			// Reload to revert the optimistic <select> value to the persisted one.
+			await loadDailySchedule();
+		} finally {
+			actionLoading = { ...actionLoading, [key]: false };
 		}
 	}
 
@@ -571,6 +629,9 @@
 		<button class="tab" class:active={activeTab === 'seeds'} onclick={() => switchTab('seeds')}>
 			Seeds
 		</button>
+		<button class="tab" class:active={activeTab === 'daily'} onclick={() => switchTab('daily')}>
+			Daily
+		</button>
 		<button
 			class="tab"
 			class:active={activeTab === 'activity'}
@@ -777,6 +838,54 @@
 					</tbody>
 				</table>
 			</div>
+		{/if}
+	{:else if activeTab === 'daily'}
+		{#if dailyLoading && dailySchedule.length === 0}
+			<p class="loading">Loading daily schedule...</p>
+		{:else}
+			<h2 class="section-title">Daily Seed Schedule</h2>
+			<div class="table-wrapper daily-schedule">
+				<table>
+					<thead>
+						<tr>
+							<th>Day</th>
+							<th>Pool</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each dailySchedule as row (row.weekday)}
+							<tr class:today={row.weekday === currentWeekday}>
+								<td class="day-cell">
+									{DAY_LABELS[row.weekday]}
+									{#if row.weekday === currentWeekday}
+										<span class="today-badge">Today</span>
+									{/if}
+								</td>
+								<td>
+									<select
+										value={row.pool_name}
+										disabled={actionLoading[`daily_${row.weekday}`]}
+										onchange={(e) => handleScheduleChange(row.weekday, e.currentTarget.value)}
+									>
+										{#each dailyAvailablePools as opt (opt.name)}
+											<option value={opt.name}>{opt.display_name}</option>
+										{/each}
+										{#if !dailyAvailablePools.some((o) => o.name === row.pool_name)}
+											<option value={row.pool_name}>
+												{row.pool_display_name} (unavailable)
+											</option>
+										{/if}
+									</select>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			<p class="schedule-note">
+				Note: changes to the "Today" row do not affect the current Daily Seed; they take effect next
+				week.
+			</p>
 		{/if}
 	{:else if activeTab === 'stats'}
 		{#if analyticsLoading}
@@ -2099,5 +2208,36 @@
 		.heatmaps-row {
 			grid-template-columns: 1fr;
 		}
+	}
+
+	.daily-schedule {
+		max-width: 28rem;
+	}
+
+	.daily-schedule .day-cell {
+		font-weight: 500;
+	}
+
+	.daily-schedule tr.today td {
+		background: var(--color-bg-elevated, rgba(200, 164, 78, 0.08));
+	}
+
+	.today-badge {
+		display: inline-block;
+		margin-left: 0.5rem;
+		padding: 0.05rem 0.4rem;
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+		color: var(--color-bg, #1a1a1a);
+		background: var(--color-accent, #c8a44e);
+		border-radius: 0.25rem;
+		vertical-align: middle;
+	}
+
+	.schedule-note {
+		margin-top: 0.75rem;
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		max-width: 28rem;
 	}
 </style>

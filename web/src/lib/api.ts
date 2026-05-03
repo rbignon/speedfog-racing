@@ -1259,6 +1259,54 @@ export async function setAdminPoolEnabled(
   return handleResponse<AdminPool>(response);
 }
 
+export interface AdminDailyScheduleEntry {
+  weekday: number;
+  pool_name: string;
+  pool_display_name: string;
+}
+
+export interface AdminDailySchedulePoolOption {
+  name: string;
+  display_name: string;
+}
+
+export interface AdminDailyScheduleResponse {
+  schedule: AdminDailyScheduleEntry[];
+  available_pools: AdminDailySchedulePoolOption[];
+}
+
+/**
+ * Fetch the seven weekday rows (Mon=0 .. Sun=6) of the Daily Seed schedule
+ * along with the list of pools an admin can assign to any weekday.
+ */
+export async function fetchAdminDailySchedule(): Promise<AdminDailyScheduleResponse> {
+  const response = await fetch(`${API_BASE}/admin/daily-schedule`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<AdminDailyScheduleResponse>(response);
+}
+
+/**
+ * Set the pool for a given weekday in the Daily Seed schedule.
+ *
+ * The change applies to the next Daily Seed created for that weekday;
+ * today's already-emitted race is unaffected.
+ */
+export async function updateAdminDailySchedule(
+  weekday: number,
+  poolName: string,
+): Promise<AdminDailyScheduleEntry> {
+  const response = await fetch(`${API_BASE}/admin/daily-schedule/${weekday}`, {
+    method: "PATCH",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pool_name: poolName }),
+  });
+  return handleResponse<AdminDailyScheduleEntry>(response);
+}
+
 export interface ReportedSeed {
   id: string;
   seed_number: string;
