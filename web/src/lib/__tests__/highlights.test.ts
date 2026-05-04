@@ -733,51 +733,6 @@ describe("path highlights", () => {
     expect(sameBrain!.playerIds).toContain("alice");
     expect(sameBrain!.playerIds).toContain("bob");
   });
-
-  it("Road Less Traveled: detects player with most unique path", () => {
-    // Use similar timings across zones to minimize competing highlights
-    const players = [
-      participant("alice", {
-        color_index: 0,
-        igt_ms: 300000,
-        zone_history: [
-          { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_b", igt_ms: 50000 },
-          { node_id: "zone_d", igt_ms: 100000 },
-          { node_id: "final", igt_ms: 300000 },
-        ],
-      }),
-      participant("bob", {
-        color_index: 1,
-        igt_ms: 250000,
-        zone_history: [
-          { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_a", igt_ms: 50000 },
-          { node_id: "zone_c", igt_ms: 100000 },
-          { node_id: "final", igt_ms: 250000 },
-        ],
-      }),
-      participant("charlie", {
-        color_index: 2,
-        igt_ms: 200000,
-        zone_history: [
-          { node_id: "start", igt_ms: 0 },
-          { node_id: "zone_a", igt_ms: 50000 },
-          { node_id: "zone_c", igt_ms: 100000 },
-          { node_id: "final", igt_ms: 200000 },
-        ],
-      }),
-    ];
-    const highlights = computeHighlights(players, graph);
-    const road = highlights.find((h) => h.type === "road_less_traveled");
-    expect(road).toBeDefined();
-    // Alice took zone_b + zone_d while others took zone_a + zone_c
-    expect(road!.playerIds).toContain("alice");
-    // Should mention the unique zones (zone_b and zone_d)
-    const text = descriptionText(road!);
-    expect(text).toContain("zone_b");
-    expect(text).toContain("zone_d");
-  });
 });
 
 describe("outcome-based highlights", () => {

@@ -621,87 +621,6 @@ function detectComebackKid(participants: WsParticipant[]): Highlight | null {
   };
 }
 
-function detectRoadLessTraveled(
-  participants: WsParticipant[],
-  nodeInfo: Map<string, NodeInfo>,
-): Highlight | null {
-  if (participants.length < 3) return null;
-
-  const paths = participants.map((p) => {
-    const orderedNodes = uniqueNodePath(p.zone_history ?? []);
-    return { player: p, nodes: new Set(orderedNodes), orderedNodes };
-  });
-
-  let bestUniqueness = 0;
-  let bestIdx = -1;
-
-  for (let i = 0; i < paths.length; i++) {
-    const myNodes = paths[i].nodes;
-    if (myNodes.size < 2) continue;
-
-    let totalOverlap = 0;
-    for (let j = 0; j < paths.length; j++) {
-      if (i === j) continue;
-      let shared = 0;
-      for (const n of myNodes) {
-        if (paths[j].nodes.has(n)) shared++;
-      }
-      totalOverlap += shared / myNodes.size;
-    }
-    const avgOverlap = totalOverlap / (paths.length - 1);
-    const uniqueness = 1 - avgOverlap;
-
-    if (uniqueness > bestUniqueness) {
-      bestUniqueness = uniqueness;
-      bestIdx = i;
-    }
-  }
-
-  if (bestIdx < 0 || bestUniqueness < 0.3) return null;
-
-  const bestPlayer = paths[bestIdx].player;
-  const orderedNodes = paths[bestIdx].orderedNodes;
-
-  // Find zones unique to this player (not visited by anyone else)
-  const othersNodes = new Set<string>();
-  for (let j = 0; j < paths.length; j++) {
-    if (j === bestIdx) continue;
-    for (const n of paths[j].nodes) othersNodes.add(n);
-  }
-  const uniqueZones = orderedNodes.filter((n) => !othersNodes.has(n));
-
-  let segments: DescriptionSegment[];
-  if (uniqueZones.length >= 2) {
-    segments = [
-      pSeg(bestPlayer),
-      tSeg(" forged a unique path from "),
-      zSeg(uniqueZones[0], nodeInfo),
-      tSeg(" to "),
-      zSeg(uniqueZones[uniqueZones.length - 1], nodeInfo),
-    ];
-  } else if (uniqueZones.length === 1) {
-    segments = [
-      pSeg(bestPlayer),
-      tSeg(" forged a unique path through "),
-      zSeg(uniqueZones[0], nodeInfo),
-    ];
-  } else {
-    segments = [
-      pSeg(bestPlayer),
-      tSeg(" forged a unique path through the fog"),
-    ];
-  }
-
-  return {
-    type: "road_less_traveled",
-    category: "path",
-    title: "Road Less Traveled",
-    segments,
-    playerIds: [bestPlayer.id],
-    score: bestUniqueness * 80,
-  };
-}
-
 function detectSameBrain(participants: WsParticipant[]): Highlight | null {
   for (let i = 0; i < participants.length; i++) {
     if (!participants[i].zone_history) continue;
@@ -1006,7 +925,6 @@ export function computeHighlights(
   push(detectDeathZone(eligible, allZoneTimes, nodeInfo));
   push(detectDeathless(eligible, allZoneTimes, nodeInfo));
   push(detectComebackKid(eligible));
-  push(detectRoadLessTraveled(eligible, nodeInfo));
   push(detectSameBrain(eligible));
   push(detectDetour(eligible, graphJson));
   push(detectPhotoFinish(eligible));

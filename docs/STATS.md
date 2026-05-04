@@ -359,14 +359,6 @@ A zone caused multiple players to abandon the race.
 
 ### Path
 
-#### Road Less Traveled
-
-Player took the most unique path compared to everyone else.
-
-- **Condition:** At least 3 participants; uniqueness >= 0.3, where `uniqueness = 1 - avg_overlap_ratio` across all other players' node sets
-- **Score:** `uniqueness * 80`
-- **Text:** "[Player] forged a unique path from [FirstUniqueZone] to [LastUniqueZone]" (falls back to generic text if no exclusively unique zones)
-
 #### Same Brain
 
 Two players took the exact same path (first-visit order).
