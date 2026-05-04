@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 import uuid
@@ -40,6 +41,7 @@ import tomli_w
 SCRIPT_DIR = Path(__file__).parent.resolve()
 POOLS_DIR = SCRIPT_DIR / "pools"
 DLL_NAME = "speedfog_racing.dll"
+SPEEDFOG_TIMEOUT_SECONDS = 5 * 60
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -297,13 +299,29 @@ def run_speedfog(
         except OSError as e:
             print(f"  Error starting speedfog: {e}")
             return None
-        with proc:
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                log_file.write(line)
-                if verbose:
-                    print(line, end="")
 
+        timed_out = False
+
+        def kill_on_timeout() -> None:
+            nonlocal timed_out
+            timed_out = True
+            proc.kill()
+
+        timer = threading.Timer(SPEEDFOG_TIMEOUT_SECONDS, kill_on_timeout)
+        timer.start()
+        try:
+            with proc:
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    log_file.write(line)
+                    if verbose:
+                        print(line, end="")
+        finally:
+            timer.cancel()
+
+    if timed_out:
+        print(f"  Error: speedfog timed out after {SPEEDFOG_TIMEOUT_SECONDS}s")
+        return None
     if proc.returncode != 0:
         print(f"  Error running speedfog (exit code {proc.returncode})")
         return None
