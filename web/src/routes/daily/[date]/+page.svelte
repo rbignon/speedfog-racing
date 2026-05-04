@@ -17,6 +17,7 @@
 	} from '$lib/api';
 	import { currentUserParticipant, dailyPathForDate, dailyTheme, dailyTitle } from '$lib/daily';
 	import { MetroDagFull, MetroDagProgressive } from '$lib/dag';
+	import { parseDagGraph } from '$lib/dag/types';
 	import Leaderboard from '$lib/components/Leaderboard.svelte';
 	import SpectatorCount from '$lib/components/SpectatorCount.svelte';
 	import RaceControls from '$lib/components/RaceControls.svelte';
@@ -42,6 +43,35 @@
 	let abandonError = $state<string | null>(null);
 	let chatCollapsed = $state(typeof window !== 'undefined' ? window.innerWidth < 1600 : true);
 	let chatActiveTab = $state<'participants' | 'public'>('participants');
+	let selectedParticipantIds = $state<Set<string>>(new Set());
+	let highlightFocusNodeId = $state<string | null>(null);
+
+	function handleLeaderboardToggle(id: string, ctrlKey: boolean) {
+		if (ctrlKey) {
+			const next = new Set(selectedParticipantIds);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			selectedParticipantIds = next;
+		} else {
+			if (selectedParticipantIds.size === 1 && selectedParticipantIds.has(id)) {
+				selectedParticipantIds = new Set();
+			} else {
+				selectedParticipantIds = new Set([id]);
+			}
+		}
+	}
+
+	function clearSelection() {
+		selectedParticipantIds = new Set();
+	}
+
+	function handleHighlightZoneClick(nodeId: string) {
+		// Reset first so re-clicking the same zone re-triggers the $effect
+		highlightFocusNodeId = null;
+		requestAnimationFrame(() => {
+			highlightFocusNodeId = nodeId;
+		});
+	}
 
 	$effect(() => {
 		initialRace = data.race;
@@ -92,6 +122,34 @@
 				myParticipantStatus === 'registered')
 	);
 	let graphJson = $derived(raceStore.seed?.graph_json ?? null);
+	// Build node ID -> display name map so the leaderboard can show competitors'
+	// current zones once the viewer has finished or the daily has ended.
+	let zoneNames: Map<string, string> | null = $derived.by(() => {
+		if (!graphJson) return null;
+		const graph = parseDagGraph(graphJson);
+		const map = new Map<string, string>();
+		for (const node of graph.nodes) {
+			map.set(node.id, node.displayName);
+		}
+		return map;
+	});
+	let registrationOpenWindow = $derived(
+		initialRace.registration_closes_at !== null &&
+			initialRace.registration_closes_at !== undefined &&
+			new Date(initialRace.registration_closes_at).getTime() > now
+	);
+	// Mirrors the race page rule (`dagHiddenByRunningRules` + "I'm still racing"):
+	// hide opponents' zones while the late-join window is open so a potential
+	// late joiner can't gain positional intel by spectating, and hide them from
+	// a participant who hasn't crossed the finish line yet to avoid spoilers.
+	// For a standard daily the late-join window spans the full 24h, so
+	// non-participants only ever see zones after the daily ends.
+	let leaderboardZoneNames = $derived.by(() => {
+		if (canShowFullDag) return zoneNames;
+		if (myParticipant) return null;
+		if (registrationOpenWindow) return null;
+		return zoneNames;
+	});
 	let countdownLabel = $derived.by(() => {
 		if (!raceEndsAt) return 'Closes today';
 		const remainingMs = Math.max(0, new Date(raceEndsAt).getTime() - now);
@@ -202,6 +260,10 @@
 				participants={raceStore.leaderboard}
 				totalLayers={initialRace.seed_total_layers ?? 0}
 				mode={dailyEnded ? 'finished' : 'running'}
+				zoneNames={leaderboardZoneNames}
+				selectedIds={selectedParticipantIds}
+				onToggle={handleLeaderboardToggle}
+				onClearSelection={clearSelection}
 			/>
 		</div>
 
@@ -284,7 +346,13 @@
 					{/if}
 				</button>
 			{:else if graphJson && canShowFullDag}
-				<MetroDagFull {graphJson} participants={raceStore.leaderboard} {raceStatus} />
+				<MetroDagFull
+					{graphJson}
+					participants={raceStore.leaderboard}
+					{raceStatus}
+					highlightIds={selectedParticipantIds}
+					focusNodeId={highlightFocusNodeId}
+				/>
 			{:else if graphJson && canShowProgressiveDag}
 				<MetroDagProgressive
 					{graphJson}
@@ -309,7 +377,7 @@
 					participants={raceStore.leaderboard}
 					{graphJson}
 					myParticipantId={myWsParticipant?.id}
-					onzoneclick={() => {}}
+					onzoneclick={handleHighlightZoneClick}
 				/>
 			{/if}
 		{/if}

@@ -265,7 +265,7 @@ DAG rendering on `/daily/[date]` follows the standard race rules with `late_join
 
 Hiding the DAG from non-participants while the daily is running is intentional: every spectator is a potential player, and exposing the path graph would spoil approach choices that the player should make blind. After T+24h the DAG becomes public for everyone.
 
-The leaderboard, by contrast, is always visible to everyone, even on a running daily, even to non-participants. That visibility is the social pressure that makes the format work.
+The leaderboard, by contrast, is always visible to everyone, even on a running daily, even to non-participants. That visibility is the social pressure that makes the format work. The current-zone label next to a still-playing competitor follows the same rule as `/race/[id]`: hidden while the late-join window is open (so a potential late joiner cannot harvest positional intel by spectating) or while the viewer is still racing themselves; revealed to participants who have finished or abandoned, and to everyone once the daily ends. Selecting a leaderboard row highlights that runner's path on `MetroDagFull`, mirroring the race page (Ctrl/Cmd-click extends the selection, Escape clears it).
 
 ---
 
