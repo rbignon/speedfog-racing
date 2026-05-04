@@ -31,6 +31,7 @@
 	import ChatSidebar from '$lib/components/ChatSidebar.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import DownloadModal from '$lib/components/DownloadModal.svelte';
+	import FeedbackModal from '$lib/components/FeedbackModal.svelte';
 
 	let { data } = $props();
 	let initialRace: RaceDetail = $state(untrack(() => data.race));
@@ -128,6 +129,23 @@
 			chatActiveTab = 'participants';
 		}
 		prevPlaying = isParticipantPlaying;
+	});
+
+	let showFeedback = $state(false);
+	let feedbackShown = $state(false);
+	$effect(() => {
+		// Read deps unconditionally (see /race/[id]) so Svelte tracks status
+		// transitions even after early returns short-circuit a run.
+		const ws = myWsParticipant;
+		const played =
+			ws != null && (ws.status === 'finished' || (ws.status === 'abandoned' && ws.igt_ms > 0));
+		if (showFeedback || feedbackShown) return;
+		if (!auth.user) return;
+		if (auth.user.feedback_prompted_at) return;
+		if (played) {
+			feedbackShown = true;
+			showFeedback = true;
+		}
 	});
 	let canShowFullDag = $derived(
 		dailyEnded || myParticipantStatus === 'finished' || myParticipantStatus === 'abandoned'
@@ -480,6 +498,15 @@
 		loading={abandoning}
 		onConfirm={handleAbandon}
 		onCancel={() => (showAbandonConfirm = false)}
+	/>
+{/if}
+
+{#if showFeedback}
+	<FeedbackModal
+		source="post_first_race"
+		raceId={initialRace.id}
+		entityKind="daily"
+		onClose={() => (showFeedback = false)}
 	/>
 {/if}
 {/if}

@@ -6,10 +6,11 @@
 	interface Props {
 		source: FeedbackSource;
 		raceId?: string | null;
+		entityKind?: 'race' | 'daily';
 		onClose: () => void;
 	}
 
-	let { source, raceId = null, onClose }: Props = $props();
+	let { source, raceId = null, entityKind = 'race', onClose }: Props = $props();
 
 	let rating: number | null = $state(null);
 	let comment = $state('');
@@ -18,7 +19,9 @@
 	let error: string | null = $state(null);
 	let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
-	const subtitle = $derived(source === 'post_first_race' ? 'How was your race?' : null);
+	const subtitle = $derived(
+		source === 'post_first_race' ? `How was your ${entityKind}?` : null
+	);
 
 	$effect(() => {
 		if (source === 'post_first_race') {
