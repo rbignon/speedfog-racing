@@ -145,7 +145,7 @@
 			</section>
 		{/if}
 
-		{#if liveRaces.length === 0 && upcomingRaces.length === 0}
+		{#if liveRaces.length === 0 && upcomingRaces.length === 0 && !dailyWeek}
 			<div class="empty-hero">
 				<svg
 					class="empty-icon"
