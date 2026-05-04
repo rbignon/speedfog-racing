@@ -231,8 +231,13 @@
 						</label>
 					</div>
 					<p class="hint">
-						Private races don't appear on the homepage and don't count towards rankings. Players can
-						still join via direct link or invite.
+						{#if isPublic}
+							Announced on Discord and listed on the homepage so players can find and join. Counts
+							towards rankings.
+						{:else}
+							Hidden from the homepage and excluded from rankings. Players can still join via direct
+							link or invite.
+						{/if}
 					</p>
 				</div>
 			</div>
