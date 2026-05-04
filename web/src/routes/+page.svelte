@@ -93,13 +93,19 @@
 		<p class="hero-tagline">Competitive Elden Ring racing through randomized fog gates</p>
 		<div class="hero-buttons">
 			{#if auth.isLoggedIn}
-				<a href="/training" class="btn btn-primary btn-lg">Play Solo</a>
+				{#if auth.canCreateRace}
+					<a href="/race/new" class="btn btn-primary btn-lg">Create Race</a>
+					<a href="/training" class="btn btn-secondary btn-lg">Play Solo</a>
+				{:else}
+					<a href="/training" class="btn btn-primary btn-lg">Play Solo</a>
+					<a href="/about" class="btn btn-secondary btn-lg">Learn more</a>
+				{/if}
 			{:else}
 				<a href={getTwitchLoginUrl()} class="btn btn-primary btn-lg" data-sveltekit-reload
 					>Try a seed</a
 				>
+				<a href="/about" class="btn btn-secondary btn-lg">Learn more</a>
 			{/if}
-			<a href="/about" class="btn btn-secondary btn-lg">Learn more</a>
 		</div>
 		<a
 			href="https://discord.gg/Qmw67J3mR9"
