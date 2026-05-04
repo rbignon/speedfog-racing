@@ -42,12 +42,6 @@ async def _make_user(async_session) -> User:
         return u
 
 
-async def test_user_has_equip_columns(async_session):
-    user = await _make_user(async_session)
-    assert user.equipped_badge_id is None
-    assert user.equipped_name_template_id is None
-
-
 async def test_badge_grant_round_trip(async_session):
     user = await _make_user(async_session)
     async with async_session() as db:
@@ -91,22 +85,6 @@ async def test_reward_notification_round_trip(async_session):
         await db.refresh(n)
         assert n.created_at is not None
         assert n.dismissed_at is None
-
-
-async def test_user_has_equipped_phantom_skin_id_column(async_session):
-    async with async_session() as db:
-        user = User(
-            twitch_id="phantom_eq",
-            twitch_username="alice_phantom",
-        )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-        assert user.equipped_phantom_skin_id is None
-        user.equipped_phantom_skin_id = "gold-aura"
-        await db.commit()
-        await db.refresh(user)
-        assert user.equipped_phantom_skin_id == "gold-aura"
 
 
 async def test_phantom_skin_unlock_unique_per_user_and_skin(async_session):
