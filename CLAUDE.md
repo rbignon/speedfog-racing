@@ -104,3 +104,18 @@ Rust DLL entry point in `lib.rs`. `dll/` has the main loop (`mod.rs`), ImGui ove
 - Backend tests use SQLite via aiosqlite (no PostgreSQL setup needed). Fixtures in `server/tests/conftest.py`.
 - Frontend tests use Vitest, located in `web/src/lib/__tests__/`.
 - pytest is configured with `asyncio_mode = "auto"` and 30s timeout per test.
+
+### What to test (and what not to)
+
+A test should fail when a real bug is introduced, not when the code under test is edited in a way that's also reflected in the test. Before adding a test, ask: "if this assertion fails, did something break, or did someone just change a value?"
+
+Avoid these tautological patterns:
+
+- **Mirror tests on constants/catalogs.** Re-asserting that `BADGES["x"].color == "#FFFFFF"` when the catalog literally defines it that way only catches "the constant changed", which is exactly what we want when we edit the catalog. Test invariants instead (uniqueness, derivation rules, structural constraints).
+- **Framework default tests.** Asserting that a Pydantic field with `default=0` returns `0`, that an SQLAlchemy nullable column defaults to `None`, or that serde `#[serde(default)]` produces the declared default. Those exercise the framework, not our code. Backward-compat deserialization tests with a specific old-shape JSON payload are fine: they pin a wire contract.
+- **Pure getter tests.** A test that calls `pos.pos()` and asserts it returns the `(x, y, z)` it was just constructed with tests nothing.
+- **Round-trip-through-nothing tests.** Constructing an object with field `x = "foo"` then asserting `obj.x == "foo"` two lines later. Real round-trips go through DB constraints, serializers with edge cases, or schema validation.
+- **Asset snapshot tests.** Asserting an SVG path's `d=` substring or a hardcoded HTML fragment that mirrors the template. They break on any cosmetic edit.
+- **Mount-and-read-prop tests in Svelte.** Rendering a component with `text="Alice"` and asserting "Alice" appears just tests Svelte's `{#if}`. Test derived values, branches, or interactions.
+
+What to keep: tests of computed values with edge cases (empty, zero, overflow, locale boundaries), tests of business rules combining multiple inputs, tests of invariants that aren't a single source line (e.g. "all sort_orders are unique"), and tests of error/edge paths (timeouts, 404s, malformed inputs).
