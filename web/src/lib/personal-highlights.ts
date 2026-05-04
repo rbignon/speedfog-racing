@@ -377,9 +377,8 @@ function ordinal(n: number): string {
 // Pathing Detectors
 // =============================================================================
 
-function detectLoneExplorer(
+function detectSoloExplorer(
   myId: string,
-  participants: WsParticipant[],
   allZoneTimes: Map<string, ZoneTime[]>,
   nodeInfo: Map<string, NodeInfo>,
 ): Highlight | null {
@@ -392,31 +391,53 @@ function detectLoneExplorer(
     for (const zt of zones) othersZoneIds.add(zt.nodeId);
   }
 
-  // Pick the solo zone with the highest tier (ties broken by first-visit order)
-  let bestTier = -1;
-  let bestZoneId: string | null = null;
+  // Collect all zones I visited that no one else did, sorted by tier desc.
+  const soloZones = myZones
+    .filter((zt) => !othersZoneIds.has(zt.nodeId))
+    .map((zt) => ({
+      nodeId: zt.nodeId,
+      tier: nodeInfo.get(zt.nodeId)?.tier ?? 1,
+    }))
+    .sort((a, b) => b.tier - a.tier);
 
-  for (const zt of myZones) {
-    if (othersZoneIds.has(zt.nodeId)) continue;
-    const tier = nodeInfo.get(zt.nodeId)?.tier ?? 1;
-    if (tier > bestTier) {
-      bestTier = tier;
-      bestZoneId = zt.nodeId;
-    }
+  if (soloZones.length === 0) return null;
+
+  const count = soloZones.length;
+  const maxTier = soloZones[0].tier;
+
+  let segments: DescriptionSegment[];
+  if (count === 1) {
+    segments = [
+      tSeg("You were the only racer to visit "),
+      zSeg(soloZones[0].nodeId, nodeInfo),
+    ];
+  } else if (count === 2) {
+    segments = [
+      tSeg("You were the only racer to visit "),
+      zSeg(soloZones[0].nodeId, nodeInfo),
+      tSeg(" and "),
+      zSeg(soloZones[1].nodeId, nodeInfo),
+    ];
+  } else if (count === 3) {
+    segments = [
+      tSeg("You were the only racer to visit "),
+      zSeg(soloZones[0].nodeId, nodeInfo),
+      tSeg(", "),
+      zSeg(soloZones[1].nodeId, nodeInfo),
+      tSeg(" and "),
+      zSeg(soloZones[2].nodeId, nodeInfo),
+    ];
+  } else {
+    segments = [tSeg(`You visited ${count} zones no one else discovered`)];
   }
 
-  if (!bestZoneId) return null;
-
   return {
-    type: "lone_explorer",
+    type: "solo_explorer",
     category: "pathing" as PersonalHighlightCategory,
-    title: "Lone Explorer",
-    segments: [
-      tSeg("You're the only one who visited "),
-      zSeg(bestZoneId, nodeInfo),
-    ],
+    title: "Solo Explorer",
+    segments,
     playerIds: [myId],
-    score: participants.length * 20,
+    score: count * 20 + maxTier * 5,
   };
 }
 
@@ -956,7 +977,7 @@ export function computePersonalHighlights(
   push(detectCleanStreak(myParticipantId, eligible, allZoneTimes, nodeInfo));
 
   // Pathing detectors
-  push(detectLoneExplorer(myParticipantId, eligible, allZoneTimes, nodeInfo));
+  push(detectSoloExplorer(myParticipantId, allZoneTimes, nodeInfo));
   push(detectAgainstTheFlow(myParticipantId, eligible, nodeInfo, graphJson));
   push(detectSmartBacktrack(myParticipantId, eligible, allZoneTimes, nodeInfo));
 

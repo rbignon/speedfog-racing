@@ -309,7 +309,7 @@ describe("combat detectors", () => {
 });
 
 describe("pathing detectors", () => {
-  it("detects lone_explorer when player visits a zone nobody else visited", () => {
+  it("detects solo_explorer with one zone nobody else visited", () => {
     const me = participant("me", {
       igt_ms: 300000,
       zone_history: [
@@ -333,19 +333,19 @@ describe("pathing detectors", () => {
       end: { layer: 2 },
     });
     const result = computePersonalHighlights("me", [me, other], graph);
-    const h = findHighlight(result, "lone_explorer");
+    const h = findHighlight(result, "solo_explorer");
     expect(h).toBeDefined();
     expect(h!.category).toBe("pathing");
-    expect(descriptionText(h!)).toContain("secret");
+    expect(descriptionText(h!)).toBe("You were the only racer to visit secret");
   });
 
-  it("lone_explorer picks highest-tier solo zone over first visited", () => {
+  it("solo_explorer joins two solo zones with 'and'", () => {
     const me = participant("me", {
       igt_ms: 400000,
       zone_history: [
         { node_id: "start", igt_ms: 0 },
-        { node_id: "low_tier_solo", igt_ms: 50000 },
-        { node_id: "high_tier_solo", igt_ms: 150000 },
+        { node_id: "solo_low", igt_ms: 50000 },
+        { node_id: "solo_high", igt_ms: 150000 },
         { node_id: "end", igt_ms: 300000 },
       ],
     });
@@ -359,20 +359,97 @@ describe("pathing detectors", () => {
     });
     const graph = graphJson({
       start: { layer: 0 },
-      low_tier_solo: { layer: 1, tier: 1, display_name: "Low Tier" },
-      high_tier_solo: { layer: 2, tier: 4, display_name: "High Tier Boss" },
+      solo_low: { layer: 1, tier: 1, display_name: "Low Tier" },
+      solo_high: { layer: 2, tier: 5, display_name: "High Tier" },
       shared: { layer: 1 },
       end: { layer: 3 },
     });
     const result = computePersonalHighlights("me", [me, other], graph);
-    const h = findHighlight(result, "lone_explorer");
+    const h = findHighlight(result, "solo_explorer");
     expect(h).toBeDefined();
-    expect(descriptionText(h!)).toContain("High Tier Boss");
-    expect(descriptionText(h!)).not.toContain("Low Tier");
+    expect(descriptionText(h!)).toBe(
+      "You were the only racer to visit High Tier and Low Tier",
+    );
+  });
+
+  it("solo_explorer lists multiple solo zones sorted by tier desc", () => {
+    // 3 solo zones: all named, highest tier first
+    const me = participant("me", {
+      igt_ms: 500000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "low_tier_solo", igt_ms: 50000 },
+        { node_id: "mid_tier_solo", igt_ms: 100000 },
+        { node_id: "high_tier_solo", igt_ms: 200000 },
+        { node_id: "end", igt_ms: 400000 },
+      ],
+    });
+    const other = participant("other", {
+      igt_ms: 400000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "shared", igt_ms: 50000 },
+        { node_id: "end", igt_ms: 300000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      low_tier_solo: { layer: 1, tier: 1, display_name: "Low Tier" },
+      mid_tier_solo: { layer: 2, tier: 3, display_name: "Mid Tier" },
+      high_tier_solo: { layer: 3, tier: 6, display_name: "High Tier Boss" },
+      shared: { layer: 1 },
+      end: { layer: 4 },
+    });
+    const result = computePersonalHighlights("me", [me, other], graph);
+    const h = findHighlight(result, "solo_explorer");
+    expect(h).toBeDefined();
+    const text = descriptionText(h!);
+    // High-tier zone appears before low-tier zone
+    expect(text.indexOf("High Tier Boss")).toBeLessThan(
+      text.indexOf("Mid Tier"),
+    );
+    expect(text.indexOf("Mid Tier")).toBeLessThan(text.indexOf("Low Tier"));
+  });
+
+  it("solo_explorer collapses to a count when 4+ solo zones", () => {
+    const me = participant("me", {
+      igt_ms: 600000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "solo_1", igt_ms: 50000 },
+        { node_id: "solo_2", igt_ms: 100000 },
+        { node_id: "solo_3", igt_ms: 150000 },
+        { node_id: "solo_4", igt_ms: 200000 },
+        { node_id: "end", igt_ms: 500000 },
+      ],
+    });
+    const other = participant("other", {
+      igt_ms: 400000,
+      zone_history: [
+        { node_id: "start", igt_ms: 0 },
+        { node_id: "shared", igt_ms: 50000 },
+        { node_id: "end", igt_ms: 300000 },
+      ],
+    });
+    const graph = graphJson({
+      start: { layer: 0 },
+      solo_1: { layer: 1 },
+      solo_2: { layer: 2 },
+      solo_3: { layer: 3 },
+      solo_4: { layer: 4 },
+      shared: { layer: 1 },
+      end: { layer: 5 },
+    });
+    const result = computePersonalHighlights("me", [me, other], graph);
+    const h = findHighlight(result, "solo_explorer");
+    expect(h).toBeDefined();
+    expect(descriptionText(h!)).toBe(
+      "You visited 4 zones no one else discovered",
+    );
   });
 
   it("detects against_the_flow at a fork where player took a unique branch", () => {
-    // p4 visits branch_b (not via fork) so it's not a lone_explorer zone,
+    // p4 visits branch_b (not via fork) so it's not a solo_explorer zone,
     // but at the fork only me takes branch_b while p2/p3 take branch_a.
     // Similar finish times avoid triggering competitive highlights.
     const me = participant("me", {

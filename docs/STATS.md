@@ -469,12 +469,15 @@ Player cleared multiple consecutive zones without dying while others struggled.
 
 ### Pathing
 
-#### Lone Explorer
+#### Solo Explorer
 
-Player visited a zone nobody else visited. Picks the highest-tier solo zone (ties broken by first-visit order).
+Player visited zones nobody else visited. Lists up to 3 zones by name (sorted by tier descending), or just the count for 4+.
 
-- **Score:** `num_participants * 20`
-- **Text:** "You're the only one who visited [Zone]"
+- **Score:** `count * 20 + max_tier * 5`
+- **Text (1 zone):** "You were the only racer to visit [Zone1]"
+- **Text (2 zones):** "You were the only racer to visit [Zone1] and [Zone2]"
+- **Text (3 zones):** "You were the only racer to visit [Zone1], [Zone2] and [Zone3]"
+- **Text (4+ zones):** "You visited [N] zones no one else discovered"
 
 #### Against the Flow
 
