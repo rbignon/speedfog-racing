@@ -65,5 +65,4 @@ def test_running_template_does_not_include_per_racer_times() -> None:
 def test_finished_template_renders_winner() -> None:
     winner = {"name": "crazydiamond", "avatar_b64": "data:image/png;base64,AA=="}
     svg = render_svg("finished", _ctx(status_label="Finished", winner=winner))
-    # Trophy SVG path snippet (first chars of the d= attribute)
-    assert "M12 2C9.24" in svg
+    assert "crazydiamond" in svg
