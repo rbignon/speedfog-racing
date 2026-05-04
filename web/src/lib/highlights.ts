@@ -654,41 +654,39 @@ function detectSameBrain(participants: WsParticipant[]): Highlight | null {
   return null;
 }
 
-function detectDetour(
+function detectMostBacktracked(
   participants: WsParticipant[],
-  graphJson: Record<string, unknown>,
 ): Highlight | null {
-  let maxNodes = 0;
+  let maxBacks = 0;
   let maxPlayer: WsParticipant | null = null;
-  let avgNodes = 0;
+  let totalBacks = 0;
 
   for (const p of participants) {
-    const count = p.zone_history ? uniqueNodePath(p.zone_history).length : 0;
-    avgNodes += count;
-    if (count > maxNodes) {
-      maxNodes = count;
+    const count = (p.zone_history ?? []).filter(
+      (e) => e.type === "backtrack",
+    ).length;
+    totalBacks += count;
+    if (count > maxBacks) {
+      maxBacks = count;
       maxPlayer = p;
     }
   }
 
-  avgNodes /= participants.length;
+  const avgBacks = totalBacks / participants.length;
 
-  if (!maxPlayer || maxNodes <= avgNodes * 1.3 || maxNodes < 4) return null;
-
-  const totalLayers = (graphJson.total_layers as number) ?? 0;
-  const layerSuffix =
-    totalLayers > 0 ? ` across ${totalLayers} depth levels` : "";
+  // Need at least 3 backtracks AND clearly above average to be worth a callout.
+  if (!maxPlayer || maxBacks < 3 || maxBacks < avgBacks * 1.5) return null;
 
   return {
-    type: "detour",
+    type: "most_backtracked",
     category: "path",
-    title: "Scenic Route",
+    title: "Most Backtracked",
     segments: [
       pSeg(maxPlayer),
-      tSeg(` explored ${maxNodes} zones${layerSuffix}, more than anyone else`),
+      tSeg(` backtracked ${maxBacks} times during the race`),
     ],
     playerIds: [maxPlayer.id],
-    score: (maxNodes / avgNodes) * 30,
+    score: maxBacks * 12,
   };
 }
 
@@ -926,7 +924,7 @@ export function computeHighlights(
   push(detectDeathless(eligible, allZoneTimes, nodeInfo));
   push(detectComebackKid(eligible));
   push(detectSameBrain(eligible));
-  push(detectDetour(eligible, graphJson));
+  push(detectMostBacktracked(eligible));
   push(detectPhotoFinish(eligible));
   push(detectLeadChanges(eligible, nodeInfo));
   push(detectDominant(eligible, nodeInfo));

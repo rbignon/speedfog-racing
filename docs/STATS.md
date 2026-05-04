@@ -367,13 +367,13 @@ Two players took the exact same path (first-visit order).
 - **Score:** `40 + path_length * 8`
 - **Text:** "[Player1] and [Player2] took the exact same path"
 
-#### Scenic Route
+#### Most Backtracked
 
-Player explored more zones than anyone else.
+Player who backtracked the most during the race (counts entries with `type: "backtrack"` in `zone_history`).
 
-- **Condition:** `max_unique_zones >= avg * 1.3` and `>= 4`
-- **Score:** `(max_nodes / avg_nodes) * 30`
-- **Text:** "[Player] explored [N] zones across [M] depth levels, more than anyone else"
+- **Condition:** `max_backs >= 3` and `max_backs >= avg_backs * 1.5`
+- **Score:** `max_backs * 12`
+- **Text:** "[Player] backtracked [N] times during the race"
 
 #### Hard Pass
 

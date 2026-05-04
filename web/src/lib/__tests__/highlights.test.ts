@@ -733,6 +733,104 @@ describe("path highlights", () => {
     expect(sameBrain!.playerIds).toContain("alice");
     expect(sameBrain!.playerIds).toContain("bob");
   });
+
+  it("Most Backtracked: fires for player clearly above average", () => {
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 },
+          { node_id: "start", igt_ms: 60000, type: "backtrack" },
+          { node_id: "zone_b", igt_ms: 70000 },
+          { node_id: "zone_a", igt_ms: 100000, type: "backtrack" },
+          { node_id: "zone_c", igt_ms: 150000 },
+          { node_id: "zone_b", igt_ms: 200000, type: "backtrack" },
+          { node_id: "final", igt_ms: 250000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 },
+          { node_id: "zone_c", igt_ms: 100000 },
+          { node_id: "final", igt_ms: 300000 },
+        ],
+      }),
+      participant("charlie", {
+        color_index: 2,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_b", igt_ms: 50000 },
+          { node_id: "zone_d", igt_ms: 100000 },
+          { node_id: "final", igt_ms: 300000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    const h = highlights.find((x) => x.type === "most_backtracked");
+    expect(h).toBeDefined();
+    expect(h!.playerIds).toEqual(["alice"]);
+    expect(descriptionText(h!)).toContain("backtracked 3 times");
+  });
+
+  it("Most Backtracked: does not fire when max is close to average", () => {
+    // All players have 3 backtracks → avg=3, max=3, max < avg*1.5 → no highlight
+    const mkBacks = (id: string) =>
+      participant(id, {
+        color_index: 0,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 },
+          { node_id: "start", igt_ms: 60000, type: "backtrack" },
+          { node_id: "zone_b", igt_ms: 70000 },
+          { node_id: "zone_a", igt_ms: 100000, type: "backtrack" },
+          { node_id: "zone_c", igt_ms: 150000 },
+          { node_id: "zone_b", igt_ms: 200000, type: "backtrack" },
+          { node_id: "final", igt_ms: 250000 },
+        ],
+      });
+    const players = [mkBacks("alice"), mkBacks("bob"), mkBacks("charlie")];
+    const highlights = computeHighlights(players, graph);
+    expect(
+      highlights.find((x) => x.type === "most_backtracked"),
+    ).toBeUndefined();
+  });
+
+  it("Most Backtracked: does not fire under min threshold of 3", () => {
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 },
+          { node_id: "start", igt_ms: 60000, type: "backtrack" },
+          { node_id: "zone_b", igt_ms: 70000 },
+          { node_id: "zone_a", igt_ms: 100000, type: "backtrack" },
+          { node_id: "final", igt_ms: 200000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 300000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 50000 },
+          { node_id: "final", igt_ms: 300000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    expect(
+      highlights.find((x) => x.type === "most_backtracked"),
+    ).toBeUndefined();
+  });
 });
 
 describe("outcome-based highlights", () => {
