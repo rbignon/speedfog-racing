@@ -149,7 +149,7 @@ async def test_cooldown_allows_after_expiry():
 
 @pytest.mark.asyncio
 async def test_embed_contains_pool_and_links():
-    """Should include pool name, stream URL, and spectator URL in embed."""
+    """Should include pool name in fields and stream URL in the embed url."""
     user = _make_user()
     mock_send = AsyncMock()
     with (
@@ -170,7 +170,7 @@ async def test_embed_contains_pool_and_links():
         embed = mock_send.call_args[0][0]
         fields = {f["name"]: f["value"] for f in embed["fields"]}
         assert "Standard" in fields["Mode"]
-        assert "twitch.tv/testplayer" in fields["Stream"]
+        assert "twitch.tv/testplayer" in embed["url"]
 
 
 @pytest.mark.asyncio
