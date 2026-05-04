@@ -330,6 +330,114 @@ async def test_backfill_veteran_idempotent(async_session_maker):
         assert len(grants) == 1
 
 
+async def test_backfill_grants_weathered_and_crimson_aura_to_veterans(async_session_maker):
+    """Veterans receive weathered template and crimson-aura skin alongside the badge."""
+    async with async_session_maker() as db:
+        veteran = User(twitch_id="t-vet-extra", twitch_username="vetextra")
+        rookie = User(twitch_id="t-rook-extra", twitch_username="rookextra")
+        db.add_all([veteran, rookie])
+        await db.commit()
+        await db.refresh(veteran)
+        await db.refresh(rookie)
+        veteran_id = veteran.id
+        rookie_id = rookie.id
+
+        for i in range(VETERAN_RACE_THRESHOLD):
+            race = Race(name=f"vx-{i}", status=RaceStatus.FINISHED, organizer_id=veteran_id)
+            db.add(race)
+            await db.flush()
+            db.add(
+                Participant(race_id=race.id, user_id=veteran_id, status=ParticipantStatus.FINISHED)
+            )
+
+        for i in range(VETERAN_RACE_THRESHOLD - 1):
+            race = Race(name=f"rx-{i}", status=RaceStatus.FINISHED, organizer_id=rookie_id)
+            db.add(race)
+            await db.flush()
+            db.add(
+                Participant(race_id=race.id, user_id=rookie_id, status=ParticipantStatus.FINISHED)
+            )
+        await db.commit()
+
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+
+    async with async_session_maker() as db:
+        template_unlocks = (
+            (
+                await db.execute(
+                    select(NameTemplateUnlock.user_id).where(
+                        NameTemplateUnlock.template_id == "weathered"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert set(template_unlocks) == {veteran_id}
+
+        skin_unlocks = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock.user_id).where(
+                        PhantomSkinUnlock.skin_id == "crimson-aura"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert set(skin_unlocks) == {veteran_id}
+
+
+async def test_backfill_veteran_extras_idempotent(async_session_maker):
+    """Re-running does not duplicate weathered or crimson-aura grants."""
+    async with async_session_maker() as db:
+        u = User(twitch_id="t-vet-rerun", twitch_username="vetrerun")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        user_id = u.id
+        for i in range(VETERAN_RACE_THRESHOLD):
+            race = Race(name=f"vr-{i}", status=RaceStatus.FINISHED, organizer_id=user_id)
+            db.add(race)
+            await db.flush()
+            db.add(Participant(race_id=race.id, user_id=user_id, status=ParticipantStatus.FINISHED))
+        await db.commit()
+
+    cutoff = date(2026, 4, 1)
+    await backfill_rewards(async_session_maker, cutoff=cutoff)
+    await backfill_rewards(async_session_maker, cutoff=cutoff)
+
+    async with async_session_maker() as db:
+        template_rows = (
+            (
+                await db.execute(
+                    select(NameTemplateUnlock).where(
+                        NameTemplateUnlock.user_id == user_id,
+                        NameTemplateUnlock.template_id == "weathered",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(template_rows) == 1
+
+        skin_rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == user_id,
+                        PhantomSkinUnlock.skin_id == "crimson-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(skin_rows) == 1
+
+
 async def test_backfill_grants_emerald_aura_to_early_adopters(async_session_maker):
     """Users created before cutoff get emerald-aura; newer ones don't."""
     async with async_session_maker() as db:

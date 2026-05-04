@@ -75,13 +75,14 @@ async def backfill_rewards(
         )
         veteran_users = list(eligible.all())
         for row in veteran_users:
-            await svc.grant_permanent_badge(
-                row.user_id,
-                "veteran",
-                reason=f"backfill: finished {row.finished} races",
-            )
+            reason = f"backfill: finished {row.finished} races"
+            await svc.grant_permanent_badge(row.user_id, "veteran", reason=reason)
+            await svc.grant_name_template(row.user_id, "weathered", reason=reason)
+            await svc.grant_phantom_skin(row.user_id, "crimson-aura", reason=reason)
         await db.commit()
-        logger.info("Granted veteran to %d account(s)", len(veteran_users))
+        logger.info(
+            "Granted veteran + weathered + crimson-aura to %d account(s)", len(veteran_users)
+        )
 
 
 def main() -> None:

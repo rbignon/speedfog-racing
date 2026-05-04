@@ -321,7 +321,7 @@ When the user has a phantom skin equipped (other than `none`), the profile avata
 1. Grant `early_adopter` badge, `pioneer` template, and `emerald-aura` phantom skin to every user with `created_at < 2026-04-01`.
 2. Grant `archon` template to every user with `role == admin`. Future admin promotions are not auto-granted: an operator manually issues the template via `POST /api/admin/users/{id}/templates`. This is intentional, the case is rare.
 3. Run `refresh_top1_elo_holders()` to grant the current top 1 ELO badge, the `elo_crown` template (top 1), and the `runebearer` template (top 5).
-4. Grant `veteran` to every user whose count of FINISHED participations is at least `VETERAN_RACE_THRESHOLD`.
+4. Grant `veteran` badge, `weathered` template, and `crimson-aura` phantom skin to every user whose count of FINISHED participations is at least `VETERAN_RACE_THRESHOLD`.
 5. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
 
 6. `cyan-aura` is **not** retroactively granted to past weekly Daily Champions; the next live `refresh_weekly_daily_champion` rollup grants it to the current week's champion(s).
