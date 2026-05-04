@@ -406,7 +406,7 @@
 			</div>
 		</header>
 
-		{#if dailyEnded && graphJson}
+		{#if raceStatus === 'finished' && graphJson}
 			<Podium participants={raceStore.leaderboard} />
 			<div class="dag-view-toggle">
 				<button
@@ -430,7 +430,7 @@
 						<span class="play-now-error">{joinError}</span>
 					{/if}
 				</button>
-			{:else if graphJson && dailyEnded}
+			{:else if graphJson && raceStatus === 'finished'}
 				{#if dagView === 'map'}
 					<MetroDagFull
 						{graphJson}
