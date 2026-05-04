@@ -109,6 +109,26 @@
 	let isParticipantPlaying = $derived(
 		!!myParticipant && raceStatus === 'running' && !myParticipantFinished
 	);
+
+	// When the viewer crosses the finish line (or abandons), the public chat
+	// becomes the relevant channel for the rest of the daily. Conversely, if a
+	// rerolled participant goes back into a playing state, snap them back to
+	// the spoiler-free participants tab. Mirrors the race page behavior.
+	let prevFinished = $state(false);
+	$effect(() => {
+		if (myParticipantFinished && !prevFinished) {
+			chatActiveTab = 'public';
+		}
+		prevFinished = myParticipantFinished;
+	});
+
+	let prevPlaying = $state(false);
+	$effect(() => {
+		if (isParticipantPlaying && !prevPlaying && chatActiveTab === 'public') {
+			chatActiveTab = 'participants';
+		}
+		prevPlaying = isParticipantPlaying;
+	});
 	let canShowFullDag = $derived(
 		dailyEnded || myParticipantStatus === 'finished' || myParticipantStatus === 'abandoned'
 	);
