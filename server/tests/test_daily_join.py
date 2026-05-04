@@ -4,10 +4,14 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
+    ChatChannel,
+    ChatMessage,
+    Participant,
     ParticipantStatus,
     Race,
     RaceStatus,
@@ -151,3 +155,93 @@ async def test_daily_join_rejected_when_open_registration_disabled(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_daily_join_uses_daily_seed_wording(dj_test_client, dj_async_session_maker) -> None:
+    """Joining a daily seed posts 'started the daily seed' (not 'joined the race')."""
+    race, token = await _seed_running_daily(dj_async_session_maker)
+    response = await dj_test_client.post(
+        f"/api/races/{race.id}/join",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+
+    async with dj_async_session_maker() as db:
+        result = await db.execute(
+            select(ChatMessage).where(
+                ChatMessage.race_id == race.id,
+                ChatMessage.channel == ChatChannel.PARTICIPANTS,
+            )
+        )
+        messages = [m.message for m in result.scalars().all()]
+        assert "Player started the daily seed" in messages
+        assert "Player has joined the race" not in messages
+
+
+@pytest.mark.asyncio
+async def test_daily_abandon_uses_daily_seed_wording(
+    dj_test_client, dj_async_session_maker
+) -> None:
+    """Abandoning a daily seed posts 'abandoned the daily seed.' (not the race wording)."""
+    race, token = await _seed_running_daily(dj_async_session_maker)
+    join_resp = await dj_test_client.post(
+        f"/api/races/{race.id}/join",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert join_resp.status_code == 200
+
+    abandon_resp = await dj_test_client.post(
+        f"/api/races/{race.id}/abandon",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert abandon_resp.status_code == 200, abandon_resp.text
+
+    async with dj_async_session_maker() as db:
+        result = await db.execute(
+            select(ChatMessage).where(
+                ChatMessage.race_id == race.id,
+                ChatMessage.channel == ChatChannel.PUBLIC,
+            )
+        )
+        messages = [m.message for m in result.scalars().all()]
+        assert "Player abandoned the daily seed." in messages
+        assert "Player has abandoned the race." not in messages
+
+
+@pytest.mark.asyncio
+async def test_daily_finalize_uses_daily_seed_wording(dj_async_session_maker) -> None:
+    """finalize_race posts 'The daily seed is over.' on a daily race."""
+    from speedfog_racing.services.race_lifecycle import finalize_race
+
+    race, _token = await _seed_running_daily(dj_async_session_maker)
+
+    async with dj_async_session_maker() as db:
+        from sqlalchemy.orm import selectinload
+
+        loaded = (
+            await db.execute(
+                select(Race)
+                .where(Race.id == race.id)
+                .options(
+                    selectinload(Race.participants).selectinload(Participant.user),
+                    selectinload(Race.casters),
+                    selectinload(Race.seed),
+                )
+            )
+        ).scalar_one()
+        loaded.status = RaceStatus.FINISHED
+        loaded.finished_at = datetime.now(UTC)
+        await db.commit()
+
+        await finalize_race(db, loaded, forced=True)
+
+        result = await db.execute(
+            select(ChatMessage).where(
+                ChatMessage.race_id == race.id,
+                ChatMessage.channel == ChatChannel.PUBLIC,
+            )
+        )
+        messages = [m.message for m in result.scalars().all()]
+        assert "The daily seed is over." in messages
+        assert "The race has finished." not in messages
