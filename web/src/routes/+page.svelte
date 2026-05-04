@@ -15,6 +15,7 @@
 	import RaceCard from '$lib/components/RaceCard.svelte';
 	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
 	import DailyWeekGrid from '$lib/components/DailyWeekGrid.svelte';
+	import RewardsBanner from '$lib/components/RewardsBanner.svelte';
 	import heroSeed from '$lib/data/hero-seed.json';
 
 	let races: Race[] = $state([]);
@@ -117,6 +118,7 @@
 </div>
 
 <main class="public-section">
+	<RewardsBanner />
 	{#if dailyWeek}
 		<DailyWeekGrid week={dailyWeek} userId={auth.user?.id ?? null} variant="home" />
 	{/if}
