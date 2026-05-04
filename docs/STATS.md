@@ -500,15 +500,6 @@ Player backed out of a zone and found a better alternative, saving time.
 - **Score:** `(time_saved_ms / 1000) * 2`
 - **Text:** "Good call turning back from [BackedZone]: going to [AltZone] instead saved you [Time] compared to those who stayed"
 
-#### Costly Detour
-
-Player took a branch that cost time compared to players who skipped it.
-
-- **Condition:** Contiguous zones not visited by faster finishers form a "branch"; picks the costliest branch by total time
-- **Score:** `(total_branch_time_ms / 1000) * 1.5`
-- **Text (single zone):** "Your detour through [Zone] cost you [Time] compared to those who skipped it"
-- **Text (multi-zone):** "Your path from [FirstZone] to [LastZone] cost you [Time] compared to those who took a different route"
-
 ### Competitive
 
 #### Faster Than All

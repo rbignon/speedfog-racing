@@ -603,129 +603,6 @@ function detectSmartBacktrack(
   return bestHighlight;
 }
 
-function detectCostlyDetour(
-  myId: string,
-  participants: WsParticipant[],
-  allZoneTimes: Map<string, ZoneTime[]>,
-  nodeInfo: Map<string, NodeInfo>,
-): Highlight | null {
-  const myZones = allZoneTimes.get(myId);
-  if (!myZones) return null;
-
-  const me = participants.find((p) => p.id === myId);
-  if (!me?.zone_history) return null;
-
-  const betterFinishers = participants.filter(
-    (p) =>
-      p.id !== myId &&
-      p.status === "finished" &&
-      p.igt_ms < (me.igt_ms || Infinity),
-  );
-  if (betterFinishers.length === 0) return null;
-
-  const betterZoneIds = new Set<string>();
-  for (const p of betterFinishers) {
-    const zones = allZoneTimes.get(p.id);
-    if (zones) {
-      for (const zt of zones) betterZoneIds.add(zt.nodeId);
-    }
-  }
-
-  // Build nodeId -> ZoneTime map for quick lookup
-  const myZoneMap = new Map<string, ZoneTime>();
-  for (const zt of myZones) {
-    myZoneMap.set(zt.nodeId, zt);
-  }
-
-  // Walk unique path, group contiguous zones not visited by better finishers
-  // into branches. A multi-zone branch means the player was committed to a
-  // path after a fork, so individual zones downstream weren't choices.
-  const path = uniqueNodePath(me.zone_history);
-
-  interface Branch {
-    zones: ZoneTime[];
-    totalTimeMs: number;
-    costliestZone: ZoneTime;
-  }
-
-  const branches: Branch[] = [];
-  let curZones: ZoneTime[] = [];
-  let curTime = 0;
-  let curCostliest: ZoneTime | null = null;
-
-  const flushBranch = () => {
-    if (curZones.length > 0 && curCostliest) {
-      branches.push({
-        zones: [...curZones],
-        totalTimeMs: curTime,
-        costliestZone: curCostliest,
-      });
-    }
-    curZones = [];
-    curTime = 0;
-    curCostliest = null;
-  };
-
-  for (const nodeId of path) {
-    if (betterZoneIds.has(nodeId)) {
-      flushBranch();
-    } else {
-      const zt = myZoneMap.get(nodeId);
-      if (zt && zt.timeMs > 0) {
-        curZones.push(zt);
-        curTime += zt.timeMs;
-        if (!curCostliest || zt.timeMs > curCostliest.timeMs) {
-          curCostliest = zt;
-        }
-      }
-    }
-  }
-  flushBranch();
-
-  if (branches.length === 0) return null;
-
-  // Pick costliest branch
-  branches.sort((a, b) => b.totalTimeMs - a.totalTimeMs);
-  const best = branches[0];
-
-  const score = (best.totalTimeMs / 1000) * 1.5;
-
-  if (best.zones.length === 1) {
-    return {
-      type: "costly_detour",
-      category: "pathing" as PersonalHighlightCategory,
-      title: "Costly Detour",
-      segments: [
-        tSeg("Your detour through "),
-        zSeg(best.costliestZone.nodeId, nodeInfo),
-        tSeg(
-          ` cost you ${formatTime(best.totalTimeMs)} compared to those who skipped it`,
-        ),
-      ],
-      playerIds: [myId],
-      score,
-    };
-  }
-
-  // Multi-zone branch: the individual zone wasn't a choice, the branch was
-  return {
-    type: "costly_detour",
-    category: "pathing" as PersonalHighlightCategory,
-    title: "Costly Detour",
-    segments: [
-      tSeg("Your path from "),
-      zSeg(best.zones[0].nodeId, nodeInfo),
-      tSeg(" to "),
-      zSeg(best.zones[best.zones.length - 1].nodeId, nodeInfo),
-      tSeg(
-        ` cost you ${formatTime(best.totalTimeMs)} compared to those who took a different route`,
-      ),
-    ],
-    playerIds: [myId],
-    score,
-  };
-}
-
 // =============================================================================
 // Competitive Detectors
 // =============================================================================
@@ -1082,7 +959,6 @@ export function computePersonalHighlights(
   push(detectLoneExplorer(myParticipantId, eligible, allZoneTimes, nodeInfo));
   push(detectAgainstTheFlow(myParticipantId, eligible, nodeInfo, graphJson));
   push(detectSmartBacktrack(myParticipantId, eligible, allZoneTimes, nodeInfo));
-  push(detectCostlyDetour(myParticipantId, eligible, allZoneTimes, nodeInfo));
 
   // Competitive detectors
   push(detectFasterThanAll(myParticipantId, allZoneTimes, nodeInfo));
