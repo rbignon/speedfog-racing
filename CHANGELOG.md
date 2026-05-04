@@ -2,6 +2,31 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.7.0] - 2026-05-02
+
+### Rewards
+
+- New rewards system: badges and name templates, equipped from /settings and shown in chat, leaderboard, profile, and the in-game overlay
+- Phantom skins: equip a cosmetic phantom aura that shows on your character in-game and on your avatar on the website
+
+### Daily Seed
+
+- New Daily Seed feature: a fresh seed every day, shared by everyone
+
+### Races
+
+- Late-join window: auto-finish is held off during the window, and the no-show cutoff is scoped per participant
+
+### Seeds
+
+- Add Haligtree Town as a legacy dungeon
+- Stormveil's barred gate is now open at startup
+- Boss arena fixes: Vaillant Gargoyles excluded from two-phase arenas
+- Tuned arena and boss sizes
+- Sprint pools now include only remembrance bosses as final ones
+- Migrated from ModEngine 2 to ME3
+- SpeedFog now ships with a Linux launcher alongside the Windows one
+
 ## [1.6.0] - 2026-04-22
 
 ### Races
