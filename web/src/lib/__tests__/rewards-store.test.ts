@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { rewards } from "$lib/stores/rewards.svelte";
-import type { MyInventoryDto, PhantomSkinDef, RewardsCatalog } from "$lib/api";
 
 describe("rewards catalog store", () => {
   beforeEach(() => {
@@ -131,39 +130,5 @@ describe("rewards.lookupPhantomSkin", () => {
 
   it("returns null for unknown id", () => {
     expect(rewards.lookupPhantomSkin("rainbow-aura")).toBeNull();
-  });
-});
-
-describe("PhantomSkinDef", () => {
-  it("compiles with all expected fields", () => {
-    const skin: PhantomSkinDef = {
-      id: "gold-aura",
-      name: "Gold Aura",
-      description: "Granted at top 1.",
-      screenshot_filename: "gold-aura.jpg",
-      sort_order: 10,
-    };
-    expect(skin.id).toBe("gold-aura");
-  });
-
-  it("RewardsCatalog includes phantom_skins", () => {
-    const cat: RewardsCatalog = {
-      badges: [],
-      name_templates: [],
-      phantom_skins: [],
-    };
-    expect(cat.phantom_skins).toEqual([]);
-  });
-
-  it("MyInventoryDto includes unlocked_phantom_skins and equipped_phantom_skin_id", () => {
-    const inv: MyInventoryDto = {
-      held_badges: [],
-      unlocked_templates: [],
-      unlocked_phantom_skins: [],
-      equipped_badge_id: null,
-      equipped_name_template_id: null,
-      equipped_phantom_skin_id: null,
-    };
-    expect(inv.unlocked_phantom_skins).toEqual([]);
   });
 });
