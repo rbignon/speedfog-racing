@@ -568,19 +568,13 @@ async def send_training_live_notification(
     display_name = _escape_discord_md(user.twitch_display_name or user.twitch_username)
     display_pool = format_pool_display_name(pool)
     stream_url = f"https://twitch.tv/{user.twitch_username}"
-    base_url = settings.base_url.rstrip("/")
 
     embed: dict[str, object] = {
-        "title": f"🎮 {display_name} started a solo SpeedFog run",
-        "url": f"{base_url}/training/{session_id}",
+        "title": f"🎮 {display_name} is streaming a solo SpeedFog run",
+        "url": f"[twitch.tv/{user.twitch_username}]({stream_url})",
         "color": 0x3B82F6,  # blue (training/solo)
         "fields": [
             {"name": "Mode", "value": display_pool, "inline": True},
-            {
-                "name": "Stream",
-                "value": f"[twitch.tv/{user.twitch_username}]({stream_url})",
-                "inline": True,
-            },
         ],
     }
     if user.twitch_avatar_url:

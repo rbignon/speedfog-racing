@@ -97,7 +97,6 @@ async def test_sends_notification_when_live():
         embed = mock_send.call_args[0][0]
         assert "testplayer" in embed["title"].lower() or "Testplayer" in embed["title"]
         assert embed["color"] == 0x3B82F6
-        assert "session-123" in embed["url"]
 
 
 @pytest.mark.asyncio
@@ -172,7 +171,6 @@ async def test_embed_contains_pool_and_links():
         fields = {f["name"]: f["value"] for f in embed["fields"]}
         assert "Standard" in fields["Mode"]
         assert "twitch.tv/testplayer" in fields["Stream"]
-        assert "session-456" in embed["url"]
 
 
 @pytest.mark.asyncio
