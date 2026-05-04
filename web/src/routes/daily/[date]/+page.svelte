@@ -165,6 +165,10 @@
 				myParticipantStatus === 'registered')
 	);
 	let graphJson = $derived(raceStore.seed?.graph_json ?? null);
+	let totalLayers = $derived(raceStore.seed?.total_layers ?? initialRace.seed_total_layers ?? 0);
+	let seedsReleased = $derived(
+		raceStore.race ? raceStore.race.seeds_released_at !== null : initialRace.seeds_released_at !== null
+	);
 	// Build node ID -> display name map so the leaderboard can show competitors'
 	// current zones once the viewer has finished or the daily has ended.
 	let zoneNames: Map<string, string> | null = $derived.by(() => {
@@ -238,6 +242,10 @@
 	});
 
 	$effect(() => {
+		// Stop ticking once the daily window is closed: the closes-in pill, the
+		// dailyEnded predicate, and the late-join guard all freeze at that
+		// point, so further ticks just churn $derived recomputes for nothing.
+		if (dailyEnded) return;
 		const timer = setInterval(() => (now = Date.now()), 1000);
 		return () => clearInterval(timer);
 	});
@@ -319,7 +327,7 @@
 		<div class="sidebar-section">
 			<Leaderboard
 				participants={raceStore.leaderboard}
-				totalLayers={initialRace.seed_total_layers ?? 0}
+				{totalLayers}
 				mode={dailyEnded ? 'finished' : 'running'}
 				zoneNames={leaderboardZoneNames}
 				selectedIds={selectedParticipantIds}
@@ -339,7 +347,7 @@
 			</div>
 		{/if}
 
-		{#if myParticipant}
+		{#if myParticipant && seedsReleased}
 			<button
 				class="sidebar-download-btn"
 				onclick={() => {
