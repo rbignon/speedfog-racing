@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { raceStore } from '$lib/stores/race.svelte';
+	import { joinableStore } from '$lib/stores/joinable.svelte';
+	import { getEffectiveLocale } from '$lib/stores/locale.svelte';
 	import { computePublicAccess, computePublicLockedReason } from '$lib/public-chat-access';
 	import {
 		abandonRace,
@@ -77,6 +79,7 @@
 		initialRace = data.race;
 	});
 
+	let wsError = $derived(raceStore.wsError);
 	let raceStatus = $derived(raceStore.race?.status ?? initialRace.status);
 	let kickerLabel = $derived(
 		`DAILY · ${new Date(`${initialRace.daily_date}T00:00:00Z`)
@@ -189,7 +192,8 @@
 
 	$effect(() => {
 		if (!auth.initialized) return;
-		raceStore.connect(initialRace.id);
+		const locale = untrack(() => getEffectiveLocale());
+		raceStore.connect(initialRace.id, locale);
 		return () => raceStore.disconnect();
 	});
 
@@ -209,6 +213,8 @@
 		try {
 			await joinRace(initialRace.id);
 			initialRace = await fetchDailyByDate(initialRace.daily_date!);
+			raceStore.reconnect();
+			joinableStore.invalidate();
 			showDownloadModal = true;
 		} catch (e) {
 			joinError = e instanceof Error ? e.message : 'Failed to join';
@@ -253,7 +259,22 @@
 	<title>{dailyTitle(initialRace.daily_date!)}</title>
 </svelte:head>
 
-<div class="daily-page">
+{#if wsError}
+	<div class="ws-error">
+		<h2>
+			{#if wsError.code === 4004}
+				Daily not found
+			{:else if wsError.code === 4003}
+				Authentication error
+			{:else}
+				Connection error
+			{/if}
+		</h2>
+		<p class="ws-error-detail">{wsError.reason}</p>
+		<a href="/daily" class="btn btn-primary">Back to dailies</a>
+	</div>
+{:else}
+	<div class="daily-page">
 	<aside class="sidebar">
 		<div class="sidebar-section">
 			<Leaderboard
@@ -441,8 +462,29 @@
 		onCancel={() => (showAbandonConfirm = false)}
 	/>
 {/if}
+{/if}
 
 <style>
+	.ws-error {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 40vh;
+		text-align: center;
+		gap: 0.5rem;
+	}
+
+	.ws-error h2 {
+		color: var(--color-text);
+		font-size: 1.5rem;
+	}
+
+	.ws-error-detail {
+		color: var(--color-text-secondary);
+		font-size: var(--font-size-sm);
+	}
+
 	.daily-page {
 		display: flex;
 		flex: 1;
