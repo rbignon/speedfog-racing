@@ -8,7 +8,16 @@ single values (uniqueness, derivation rules, structural constraints).
 
 import dataclasses
 
-from speedfog_racing.rewards.catalog import BADGES, PHANTOM_SKINS
+from speedfog_racing.rewards.catalog import BADGES, DEFAULT_PHANTOM_SKIN_ID, PHANTOM_SKINS
+
+
+def test_default_phantom_skin_id_points_to_a_real_skin():
+    """Invariant: the sentinel id is always present in the catalog.
+
+    Several call sites in services/rewards do `PHANTOM_SKINS[DEFAULT_PHANTOM_SKIN_ID]`
+    so a typo in the constant would only blow up at runtime on the first hit.
+    """
+    assert DEFAULT_PHANTOM_SKIN_ID in PHANTOM_SKINS
 
 
 def test_badge_dataclass_is_frozen():
