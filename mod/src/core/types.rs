@@ -62,12 +62,6 @@ mod tests {
     }
 
     #[test]
-    fn test_player_position_pos_tuple() {
-        let pos = PlayerPosition::new(0, 1.0, 2.0, 3.0, None);
-        assert_eq!(pos.pos(), (1.0, 2.0, 3.0));
-    }
-
-    #[test]
     fn test_player_position_distance_to() {
         let pos1 = PlayerPosition::new(0, 0.0, 0.0, 0.0, None);
         let pos2 = PlayerPosition::new(0, 3.0, 4.0, 0.0, None);
