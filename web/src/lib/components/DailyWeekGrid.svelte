@@ -122,15 +122,8 @@
 					<span class="countdown">Opens in {countdown(day.started_at)}</span>
 				{:else}
 					<span class="pool">{day.pool_display_name ?? 'TBD'}</span>
-					{@const winner = day.podium.find((e) => e.placement === 1) ?? null}
 					<div class="body">
-						{#if winner}
-							<div class="winner">
-								<span class="medal" aria-hidden="true">🥇</span>
-								<span class="name">{winner.twitch_display_name ?? winner.twitch_username}</span>
-								<span class="igt">{formatIgt(winner.igt_ms)}</span>
-							</div>
-						{:else if day.state === 'today'}
+						{#if day.state === 'today'}
 							{#if day.race_id === null}
 								<span class="muted">Daily seed incoming</span>
 							{:else if day.participants_count > 0}
@@ -140,7 +133,16 @@
 								</span>
 							{/if}
 						{:else}
-							<span class="muted">No finishers</span>
+							{@const winner = day.podium.find((e) => e.placement === 1) ?? null}
+							{#if winner}
+								<div class="winner">
+									<span class="medal" aria-hidden="true">🥇</span>
+									<span class="name">{winner.twitch_display_name ?? winner.twitch_username}</span>
+									<span class="igt">{formatIgt(winner.igt_ms)}</span>
+								</div>
+							{:else}
+								<span class="muted">No finishers</span>
+							{/if}
 						{/if}
 					</div>
 					{@const strip = cellStrip(day)}

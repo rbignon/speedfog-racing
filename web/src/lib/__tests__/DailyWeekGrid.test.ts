@@ -334,6 +334,35 @@ describe("DailyWeekGrid", () => {
     expect(strip?.textContent ?? "").not.toMatch(/\d+\/\d+/);
   });
 
+  it("does not render a winner on the today cell even when the podium has finishers", () => {
+    const week: DailyWeekResponse = {
+      ...mockWeek,
+      days: mockWeek.days.map((d) =>
+        d.state === "today"
+          ? {
+              ...d,
+              finishers_count: 1,
+              podium: [
+                {
+                  placement: 1,
+                  twitch_username: "alice",
+                  twitch_display_name: "Alice",
+                  twitch_avatar_url: null,
+                  igt_ms: 2_400_000,
+                },
+              ],
+            }
+          : d,
+      ),
+    };
+    const { container } = render(DailyWeekGrid, {
+      props: { week, userId: "me", variant: "home" },
+    });
+    const todayCell = container.querySelector('[data-cell-state="today"]');
+    expect(todayCell?.querySelector(".winner")).toBeNull();
+    expect(todayCell?.textContent ?? "").not.toContain("Alice");
+  });
+
   it("renders only the winner on past cells, not full top 3", () => {
     const week: DailyWeekResponse = {
       ...mockWeek,
