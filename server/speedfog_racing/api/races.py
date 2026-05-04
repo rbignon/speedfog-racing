@@ -1162,9 +1162,12 @@ async def join_race(
     )
     db.add(participant)
     display = user.twitch_display_name or user.twitch_username
-    sys_json = await persist_system_chat(
-        db, race_id, ChatChannel.PARTICIPANTS, f"{display} has joined the race"
+    join_msg = (
+        f"{display} started the daily seed"
+        if race.daily_date is not None
+        else f"{display} has joined the race"
     )
+    sys_json = await persist_system_chat(db, race_id, ChatChannel.PARTICIPANTS, join_msg)
     try:
         await db.commit()
     except IntegrityError:
@@ -1708,9 +1711,12 @@ async def abandon_race(
 
     participant.status = ParticipantStatus.ABANDONED
     display = user.twitch_display_name or user.twitch_username
-    sys_json = await persist_system_chat(
-        db, race_id, ChatChannel.PUBLIC, f"{display} has abandoned the race."
+    abandon_msg = (
+        f"{display} abandoned the daily seed."
+        if race.daily_date is not None
+        else f"{display} has abandoned the race."
     )
+    sys_json = await persist_system_chat(db, race_id, ChatChannel.PUBLIC, abandon_msg)
     await db.commit()
 
     # Re-query with eager-loaded relationships
@@ -1732,9 +1738,10 @@ async def abandon_race(
     # Check auto-finish
     race_transitioned = await check_race_auto_finish(db, race)
     if race_transitioned:
-        fin_public_json = await persist_system_chat(
-            db, race_id, ChatChannel.PUBLIC, "The race has finished."
+        finished_msg = (
+            "The daily seed is over." if race.daily_date is not None else "The race has finished."
         )
+        fin_public_json = await persist_system_chat(db, race_id, ChatChannel.PUBLIC, finished_msg)
         await db.commit()
         race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
         await broadcast_race_state_update(race_id, race)

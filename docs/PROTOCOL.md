@@ -803,6 +803,16 @@ The server broadcasts system notifications for the following events:
 | Player abandons             | public                | `"{display_name} has abandoned the race."`                   |
 | Player inactive (abandoned) | public                | `"{display_name} has abandoned the race due to inactivity."` |
 
+For daily seed races (`Race.daily_date` set), the wording is adjusted so the chat reads naturally for an asynchronous individual format. Events that cannot fire on a daily (start, leave, removed) keep no daily variant.
+
+| Event                       | Channels     | Message                                                        |
+| --------------------------- | ------------ | -------------------------------------------------------------- |
+| Daily finishes              | public       | `"The daily seed is over."`                                    |
+| Player joins                | participants | `"{display_name} started the daily seed"`                      |
+| Player finishes             | public       | `"{display_name} finished the daily seed!"`                    |
+| Player abandons             | public       | `"{display_name} abandoned the daily seed."`                   |
+| Player inactive (abandoned) | public       | `"{display_name} abandoned the daily seed due to inactivity."` |
+
 System messages use `role: "system"` with empty `username`, `null` `display_name` and `avatar_url`.
 
 The "Channels" column lists the channel a message is persisted to. Live delivery on `public` still goes through the per-connection access filter: viewers for whom the public channel is locked at broadcast time will only see the message after their access unlocks and they pull `chat_history`. This is why "Race starts" lands on `public` even though no public viewer is unlocked at that moment.

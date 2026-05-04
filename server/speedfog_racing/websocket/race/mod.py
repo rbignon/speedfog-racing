@@ -672,16 +672,23 @@ async def handle_finished(
         # Persist per-player finish first so its timestamp precedes the
         # race-finished message when the race auto-finishes on this event.
         display = participant.user.twitch_display_name or participant.user.twitch_username
+        is_daily = participant.race.daily_date is not None
+        finish_msg = (
+            f"{display} finished the daily seed!"
+            if is_daily
+            else f"{display} has finished the race!"
+        )
         participant_finished_public_json = await persist_system_chat(
-            db, participant.race_id, ChatChannel.PUBLIC, f"{display} has finished the race!"
+            db, participant.race_id, ChatChannel.PUBLIC, finish_msg
         )
 
         race_transitioned = await check_race_auto_finish(db, participant.race)
         race_finished_public_json: str | None = None
         if race_transitioned:
             logger.info("Race finished: %s", participant.race_id)
+            race_finished_msg = "The daily seed is over." if is_daily else "The race has finished."
             race_finished_public_json = await persist_system_chat(
-                db, participant.race_id, ChatChannel.PUBLIC, "The race has finished."
+                db, participant.race_id, ChatChannel.PUBLIC, race_finished_msg
             )
         await db.commit()
 

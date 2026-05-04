@@ -133,9 +133,10 @@ async def finalize_race(
         if p.status in non_terminal:
             p.status = ParticipantStatus.ABANDONED
 
-    finished_public_json = await persist_system_chat(
-        db, race.id, ChatChannel.PUBLIC, "The race has finished."
+    finished_msg = (
+        "The daily seed is over." if race.daily_date is not None else "The race has finished."
     )
+    finished_public_json = await persist_system_chat(db, race.id, ChatChannel.PUBLIC, finished_msg)
     await db.commit()
 
     room = manager.get_room(race.id)

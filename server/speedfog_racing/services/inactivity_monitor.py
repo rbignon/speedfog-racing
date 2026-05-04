@@ -137,18 +137,28 @@ async def inactivity_monitor_loop(
                         for p in race.participants:
                             if p.id in abandoned_ids:
                                 display = p.user.twitch_display_name or p.user.twitch_username
+                                abandon_msg = (
+                                    f"{display} abandoned the daily seed due to inactivity."
+                                    if race.daily_date is not None
+                                    else f"{display} has abandoned the race due to inactivity."
+                                )
                                 sys_json = await persist_system_chat(
                                     db,
                                     race_id,
                                     ChatChannel.PUBLIC,
-                                    f"{display} has abandoned the race due to inactivity.",
+                                    abandon_msg,
                                 )
                                 abandon_messages.append(sys_json)
 
                         finish_public_json: str | None = None
                         if race.status == RaceStatus.FINISHED:
+                            finished_msg = (
+                                "The daily seed is over."
+                                if race.daily_date is not None
+                                else "The race has finished."
+                            )
                             finish_public_json = await persist_system_chat(
-                                db, race_id, ChatChannel.PUBLIC, "The race has finished."
+                                db, race_id, ChatChannel.PUBLIC, finished_msg
                             )
                         await db.commit()
 
