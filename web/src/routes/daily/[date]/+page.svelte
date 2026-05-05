@@ -199,10 +199,13 @@
 	});
 	let countdownLabel = $derived.by(() => {
 		if (!raceEndsAt) return 'Closes today';
-		const remainingMs = Math.max(0, new Date(raceEndsAt).getTime() - now);
-		const hours = Math.floor(remainingMs / 3_600_000);
-		const minutes = Math.floor((remainingMs % 3_600_000) / 60_000);
-		return `Closes in ${hours}h ${minutes}m`;
+		const totalSeconds = Math.max(0, Math.floor((new Date(raceEndsAt).getTime() - now) / 1000));
+		const hours = Math.floor(totalSeconds / 3600);
+		const minutes = Math.floor((totalSeconds % 3600) / 60);
+		const seconds = totalSeconds % 60;
+		if (hours > 0) return `Closes in ${hours}h ${minutes}m`;
+		if (minutes > 0) return `Closes in ${minutes}m ${seconds}s`;
+		return `Closes in ${seconds}s`;
 	});
 	let publicAccessInputs = $derived({
 		raceStatus: raceStatus as ApiRaceStatus,
