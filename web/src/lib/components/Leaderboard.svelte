@@ -449,7 +449,7 @@
     height: 6px;
     border-radius: 50%;
     background: var(--color-text-disabled, #555);
-    margin-right: 0.25rem;
+    margin-right: 0.4rem;
     vertical-align: middle;
   }
 
