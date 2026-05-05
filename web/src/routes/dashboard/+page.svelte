@@ -4,13 +4,11 @@
   import {
     fetchUserProfile,
     fetchUserActivity,
-    fetchUserPoolStats,
     fetchMyRaces,
     fetchTrainingSessions,
     fetchJoinableRaces,
     fetchDailyWeek,
     type UserProfile,
-    type UserPoolStats,
     type ActivityItem,
     type ActivityTimeline,
     type Race,
@@ -23,12 +21,11 @@
   import { formatPoolName } from "$lib/utils/format";
   import { statusLabel } from "$lib/format";
   import LiveIndicator from "$lib/components/LiveIndicator.svelte";
-  import PoolStatsTable from "$lib/components/PoolStatsTable.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
+  import UserStatsCards from "$lib/components/UserStatsCards.svelte";
 
   let profile: UserProfile | null = $state(null);
-  let poolStats: UserPoolStats | null = $state(null);
   let activity = $state<ActivityTimeline | null>(null);
   let myRaces: Race[] = $state([]);
   let trainingSessions: TrainingSession[] = $state([]);
@@ -96,16 +93,14 @@
       fetchUserActivity(username, 0, 20),
       fetchMyRaces(),
       fetchTrainingSessions(),
-      fetchUserPoolStats(username),
       fetchJoinableRaces(),
       fetchDailyWeek().catch(() => null),
     ])
-      .then(([p, a, r, t, ps, jr, week]) => {
+      .then(([p, a, r, t, jr, week]) => {
         profile = p;
         activity = a;
         myRaces = r;
         trainingSessions = t;
-        poolStats = ps;
         joinableRaces = jr;
         dailyWeek = week;
       })
@@ -370,26 +365,7 @@
         </div>
       </section>
     {:else if profile}
-      <section class="stats-section">
-        <div class="stats-grid">
-          <div class="stat-card">
-            <span class="stat-value">{profile.stats.race_count}</span>
-            <span class="stat-label">Races</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-value">{profile.stats.daily_count}</span>
-            <span class="stat-label">Daily</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-value">{profile.stats.training_count}</span>
-            <span class="stat-label">Solo</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-value">{profile.stats.organized_count}</span>
-            <span class="stat-label">Organized</span>
-          </div>
-        </div>
-      </section>
+      <UserStatsCards {profile} />
     {/if}
 
     {#if dailyWeek}
@@ -560,14 +536,6 @@
         <div class="joinable-footer">
           <a href="/races" class="joinable-more">Browse all races</a>
         </div>
-      </section>
-    {/if}
-
-    <!-- Pool Stats Section -->
-    {#if poolStats && poolStats.pools.length > 0}
-      <section class="pool-stats-section">
-        <h2>Mode Stats</h2>
-        <PoolStatsTable pools={poolStats.pools} />
       </section>
     {/if}
 
@@ -870,42 +838,6 @@
 
   .discord-link:hover {
     color: #5865f2;
-  }
-
-  /* Stats */
-  .stats-section {
-    margin-bottom: 2rem;
-  }
-
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1rem;
-  }
-
-  .stat-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 1.25rem 1rem;
-    background: var(--color-surface);
-    border-radius: var(--radius-lg);
-  }
-
-  .stat-value {
-    font-size: var(--font-size-2xl);
-    font-weight: 700;
-    color: var(--color-gold);
-  }
-
-  .stat-label {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-  }
-
-  .pool-stats-section {
-    margin-bottom: 2rem;
   }
 
   /* Sections */
@@ -1266,10 +1198,6 @@
 
     .welcome-step-icon {
       flex-shrink: 0;
-    }
-
-    .stats-grid {
-      grid-template-columns: repeat(2, 1fr);
     }
 
     .active-cards {
