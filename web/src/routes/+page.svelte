@@ -179,7 +179,7 @@
 				{/each}
 			</div>
 			<div class="see-all">
-				<a href="/races" class="see-all-link">See all results &rarr;</a>
+				<a href="/races" class="see-all-link">See all results</a>
 			</div>
 		</section>
 	{/if}
