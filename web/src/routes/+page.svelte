@@ -306,6 +306,7 @@
 
   .public-races {
     margin-bottom: 2rem;
+    margin-top: 2rem;
   }
 
   h2 {

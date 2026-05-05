@@ -173,7 +173,8 @@
 
 <style>
   .grid-section {
-    margin-bottom: 1.5rem;
+    margin-top: 2rem;
+    margin-bottom: 2rem;
   }
 
   h2 {
