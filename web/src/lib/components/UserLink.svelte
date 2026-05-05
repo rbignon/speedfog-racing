@@ -21,7 +21,9 @@
     return rewards.lookupTemplate(id);
   });
 
-  let badge = $derived(showBadge ? rewards.lookupBadge(user.equipped_badge_id ?? null) : null);
+  let badge = $derived(
+    showBadge ? rewards.lookupBadge(user.equipped_badge_id ?? null) : null,
+  );
 
   let nameStyle = $derived.by(() => {
     const parts: string[] = [];
@@ -53,7 +55,8 @@
   {#if showAvatar && user.twitch_avatar_url}
     <img src={user.twitch_avatar_url} alt="" class="user-link-avatar" />
   {/if}
-  <span class="user-link-name" data-name-style={nameStyleKind} style={nameStyle}>{displayName}</span
+  <span class="user-link-name" data-name-style={nameStyleKind} style={nameStyle}
+    >{displayName}</span
   >
   {#if badge}
     <img

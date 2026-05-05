@@ -1,509 +1,535 @@
 <script lang="ts">
-	import '../app.css';
-	import { onMount } from 'svelte';
-	import { auth } from '$lib/stores/auth.svelte';
-	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
-	import { getTwitchLoginUrl, fetchJoinableRaces, fetchTodayDaily } from '$lib/api';
-	import { joinableStore } from '$lib/stores/joinable.svelte';
-	import { rewards } from '$lib/stores/rewards.svelte';
-	import NavUserSearch from '$lib/components/NavUserSearch.svelte';
-	import FeedbackModal from '$lib/components/FeedbackModal.svelte';
+  import "../app.css";
+  import { onMount } from "svelte";
+  import { auth } from "$lib/stores/auth.svelte";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/state";
+  import {
+    getTwitchLoginUrl,
+    fetchJoinableRaces,
+    fetchTodayDaily,
+  } from "$lib/api";
+  import { joinableStore } from "$lib/stores/joinable.svelte";
+  import { rewards } from "$lib/stores/rewards.svelte";
+  import NavUserSearch from "$lib/components/NavUserSearch.svelte";
+  import FeedbackModal from "$lib/components/FeedbackModal.svelte";
 
-	let { children } = $props();
+  let { children } = $props();
 
-	let showFeedback = $state(false);
+  let showFeedback = $state(false);
 
-	let isOverlay = $derived(page.url.pathname.startsWith('/overlay/'));
-	let isImmersivePage = $derived(
-		page.route.id === '/race/[id]' || page.route.id === '/daily/[date]'
-	);
+  let isOverlay = $derived(page.url.pathname.startsWith("/overlay/"));
+  let isImmersivePage = $derived(
+    page.route.id === "/race/[id]" || page.route.id === "/daily/[date]",
+  );
 
-	let joinableCount = $state(0);
-	let dailyUnplayed = $state(false);
+  let joinableCount = $state(0);
+  let dailyUnplayed = $state(false);
 
-	let userMenuOpen = $state(false);
-	let userMenuEl: HTMLDivElement | undefined = $state();
+  let userMenuOpen = $state(false);
+  let userMenuEl: HTMLDivElement | undefined = $state();
 
-	function toggleUserMenu() {
-		userMenuOpen = !userMenuOpen;
-	}
+  function toggleUserMenu() {
+    userMenuOpen = !userMenuOpen;
+  }
 
-	function closeUserMenu() {
-		userMenuOpen = false;
-	}
+  function closeUserMenu() {
+    userMenuOpen = false;
+  }
 
-	function handleWindowClick(e: MouseEvent) {
-		if (userMenuOpen && userMenuEl && !userMenuEl.contains(e.target as Node)) {
-			closeUserMenu();
-		}
-	}
+  function handleWindowClick(e: MouseEvent) {
+    if (userMenuOpen && userMenuEl && !userMenuEl.contains(e.target as Node)) {
+      closeUserMenu();
+    }
+  }
 
-	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape' && userMenuOpen) {
-			closeUserMenu();
-		}
-	}
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && userMenuOpen) {
+      closeUserMenu();
+    }
+  }
 
-	onMount(() => {
-		auth.init();
-		rewards.ensureLoaded().catch(() => {
-			// Silently ignore: rewards rendering falls back to inherit/default colors when the catalog is unavailable.
-		});
-	});
+  onMount(() => {
+    auth.init();
+    rewards.ensureLoaded().catch(() => {
+      // Silently ignore: rewards rendering falls back to inherit/default colors when the catalog is unavailable.
+    });
+  });
 
-	$effect(() => {
-		joinableStore.refreshKey;
-		if (auth.isLoggedIn) {
-			fetchJoinableRaces()
-				.then((races) => {
-					joinableCount = races.length;
-				})
-				.catch(() => {
-					joinableCount = 0;
-				});
-			fetchTodayDaily()
-				.then((daily) => {
-					dailyUnplayed = daily.my_role !== 'participating';
-				})
-				.catch(() => {
-					dailyUnplayed = false;
-				});
-		} else {
-			joinableCount = 0;
-			dailyUnplayed = false;
-		}
-	});
+  $effect(() => {
+    joinableStore.refreshKey;
+    if (auth.isLoggedIn) {
+      fetchJoinableRaces()
+        .then((races) => {
+          joinableCount = races.length;
+        })
+        .catch(() => {
+          joinableCount = 0;
+        });
+      fetchTodayDaily()
+        .then((daily) => {
+          dailyUnplayed = daily.my_role !== "participating";
+        })
+        .catch(() => {
+          dailyUnplayed = false;
+        });
+    } else {
+      joinableCount = 0;
+      dailyUnplayed = false;
+    }
+  });
 </script>
 
 <svelte:window onclick={handleWindowClick} onkeydown={handleKeydown} />
 
 {#if isOverlay}
-	{@render children()}
+  {@render children()}
 {:else}
-	<div class="app" class:app-fixed={isImmersivePage}>
-		<header>
-			<div class="header-content">
-				<a href={auth.isLoggedIn ? '/dashboard' : '/'} class="logo"
-					>SpeedFog Racing<span class="beta-badge">Beta</span></a
-				>
-				<nav>
-					<a
-						href="https://discord.gg/Qmw67J3mR9"
-						class="nav-icon discord-nav-icon"
-						aria-label="Discord"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"
-							><path
-								d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"
-							/></svg
-						>
-					</a>
-					<a href="/stats" class="nav-icon" aria-label="Stats" title="Community Stats">
-						<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-							<path d="M3 13h2v8H3zm6-4h2v12H9zm6-6h2v18h-2zm6 10h2v8h-2z" />
-						</svg>
-					</a>
-					<a href="/help" class="nav-icon" aria-label="Help">?</a>
-					{#if auth.isLoggedIn}
-						<NavUserSearch />
-						{#if auth.isAdmin}
-							<a href="/admin" class="btn btn-secondary">Admin</a>
-						{/if}
-						<a href="/training" class="btn btn-secondary">Solo</a>
-						<a href="/daily" class="btn btn-secondary btn-with-badge">
-							Daily
-							{#if dailyUnplayed}
-								<span class="nav-dot" aria-label="Daily seed not played"></span>
-							{/if}
-						</a>
-						<a href="/races" class="btn btn-secondary btn-with-badge">
-							Races
-							{#if joinableCount > 0}
-								<span class="nav-badge">{joinableCount}</span>
-							{/if}
-						</a>
-						{#if auth.canCreateRace}
-							<a href="/race/new" class="btn btn-primary">Create Race</a>
-						{/if}
-						<div class="user-menu" bind:this={userMenuEl}>
-							<button class="user-menu-trigger" onclick={toggleUserMenu}>
-								{#if auth.user?.twitch_avatar_url}
-									<img src={auth.user.twitch_avatar_url} alt="" class="avatar" />
-								{/if}
-								<span class="user-menu-name"
-									>{auth.user?.twitch_display_name || auth.user?.twitch_username}</span
-								>
-								<span class="chevron">&#9662;</span>
-							</button>
-							{#if userMenuOpen}
-								<div class="user-dropdown">
-									<a href="/dashboard" class="dropdown-item" onclick={closeUserMenu}>Dashboard</a>
-									<a
-										href="/user/{auth.user?.twitch_username}"
-										class="dropdown-item"
-										onclick={closeUserMenu}>Profile</a
-									>
-									<a href="/settings" class="dropdown-item" onclick={closeUserMenu}>Settings</a>
-									<button
-										class="dropdown-item"
-										onclick={() => {
-											closeUserMenu();
-											showFeedback = true;
-										}}>Give feedback</button
-									>
-									<hr class="dropdown-divider" />
-									<button
-										class="dropdown-item"
-										onclick={() => {
-											closeUserMenu();
-											auth.logout();
-											goto('/');
-										}}>Logout</button
-									>
-								</div>
-							{/if}
-						</div>
-					{:else}
-						<a href={getTwitchLoginUrl()} class="btn btn-twitch" data-sveltekit-reload
-							>Login with Twitch</a
-						>
-					{/if}
-				</nav>
-			</div>
-		</header>
+  <div class="app" class:app-fixed={isImmersivePage}>
+    <header>
+      <div class="header-content">
+        <a href={auth.isLoggedIn ? "/dashboard" : "/"} class="logo"
+          >SpeedFog Racing<span class="beta-badge">Beta</span></a
+        >
+        <nav>
+          <a
+            href="https://discord.gg/Qmw67J3mR9"
+            class="nav-icon discord-nav-icon"
+            aria-label="Discord"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"
+              ><path
+                d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"
+              /></svg
+            >
+          </a>
+          <a
+            href="/stats"
+            class="nav-icon"
+            aria-label="Stats"
+            title="Community Stats"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <path d="M3 13h2v8H3zm6-4h2v12H9zm6-6h2v18h-2zm6 10h2v8h-2z" />
+            </svg>
+          </a>
+          <a href="/help" class="nav-icon" aria-label="Help">?</a>
+          {#if auth.isLoggedIn}
+            <NavUserSearch />
+            {#if auth.isAdmin}
+              <a href="/admin" class="btn btn-secondary">Admin</a>
+            {/if}
+            <a href="/training" class="btn btn-secondary">Solo</a>
+            <a href="/daily" class="btn btn-secondary btn-with-badge">
+              Daily
+              {#if dailyUnplayed}
+                <span class="nav-dot" aria-label="Daily seed not played"></span>
+              {/if}
+            </a>
+            <a href="/races" class="btn btn-secondary btn-with-badge">
+              Races
+              {#if joinableCount > 0}
+                <span class="nav-badge">{joinableCount}</span>
+              {/if}
+            </a>
+            {#if auth.canCreateRace}
+              <a href="/race/new" class="btn btn-primary">Create Race</a>
+            {/if}
+            <div class="user-menu" bind:this={userMenuEl}>
+              <button class="user-menu-trigger" onclick={toggleUserMenu}>
+                {#if auth.user?.twitch_avatar_url}
+                  <img
+                    src={auth.user.twitch_avatar_url}
+                    alt=""
+                    class="avatar"
+                  />
+                {/if}
+                <span class="user-menu-name"
+                  >{auth.user?.twitch_display_name ||
+                    auth.user?.twitch_username}</span
+                >
+                <span class="chevron">&#9662;</span>
+              </button>
+              {#if userMenuOpen}
+                <div class="user-dropdown">
+                  <a
+                    href="/dashboard"
+                    class="dropdown-item"
+                    onclick={closeUserMenu}>Dashboard</a
+                  >
+                  <a
+                    href="/user/{auth.user?.twitch_username}"
+                    class="dropdown-item"
+                    onclick={closeUserMenu}>Profile</a
+                  >
+                  <a
+                    href="/settings"
+                    class="dropdown-item"
+                    onclick={closeUserMenu}>Settings</a
+                  >
+                  <button
+                    class="dropdown-item"
+                    onclick={() => {
+                      closeUserMenu();
+                      showFeedback = true;
+                    }}>Give feedback</button
+                  >
+                  <hr class="dropdown-divider" />
+                  <button
+                    class="dropdown-item"
+                    onclick={() => {
+                      closeUserMenu();
+                      auth.logout();
+                      goto("/");
+                    }}>Logout</button
+                  >
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <a
+              href={getTwitchLoginUrl()}
+              class="btn btn-twitch"
+              data-sveltekit-reload>Login with Twitch</a
+            >
+          {/if}
+        </nav>
+      </div>
+    </header>
 
-		<div class="content">
-			{@render children()}
-		</div>
+    <div class="content">
+      {@render children()}
+    </div>
 
-		{#if !isImmersivePage}
-			<footer>
-				<div class="footer-content">
-					<p class="footer-credit">
-						Based on the <a
-							href="https://www.nexusmods.com/eldenring/mods/3295"
-							target="_blank"
-							rel="noopener noreferrer">Fog Gate Randomizer</a
-						> by thefifthmatt
-					</p>
-					<nav class="footer-links" aria-label="Footer navigation">
-						<a href="/about">About</a>
-						<a href="/help">Help</a>
-						<a href="https://discord.gg/Qmw67J3mR9" target="_blank" rel="noopener noreferrer"
-							>Discord</a
-						>
-						<a href="/changelog">Changelog</a>
-					</nav>
-				</div>
-			</footer>
-		{/if}
-	</div>
+    {#if !isImmersivePage}
+      <footer>
+        <div class="footer-content">
+          <p class="footer-credit">
+            Based on the <a
+              href="https://www.nexusmods.com/eldenring/mods/3295"
+              target="_blank"
+              rel="noopener noreferrer">Fog Gate Randomizer</a
+            > by thefifthmatt
+          </p>
+          <nav class="footer-links" aria-label="Footer navigation">
+            <a href="/about">About</a>
+            <a href="/help">Help</a>
+            <a
+              href="https://discord.gg/Qmw67J3mR9"
+              target="_blank"
+              rel="noopener noreferrer">Discord</a
+            >
+            <a href="/changelog">Changelog</a>
+          </nav>
+        </div>
+      </footer>
+    {/if}
+  </div>
 {/if}
 
 {#if showFeedback}
-	<FeedbackModal source="user_menu" onClose={() => (showFeedback = false)} />
+  <FeedbackModal source="user_menu" onClose={() => (showFeedback = false)} />
 {/if}
 
 <style>
-	.app {
-		min-height: 100vh;
-		display: flex;
-		flex-direction: column;
-		overflow-x: hidden;
-	}
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
 
-	.app-fixed {
-		height: 100vh;
-		overflow: hidden;
-	}
+  .app-fixed {
+    height: 100vh;
+    overflow: hidden;
+  }
 
-	.app-fixed .content {
-		overflow-y: hidden;
-	}
+  .app-fixed .content {
+    overflow-y: hidden;
+  }
 
-	header {
-		background: var(--color-bg);
-		border-bottom: 1px solid var(--color-border);
-	}
+  header {
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+  }
 
-	.header-content {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 1rem 2rem 1rem 1.5rem;
-	}
+  .header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem 1rem 1.5rem;
+  }
 
-	.logo {
-		margin: 0;
-		font-size: var(--font-size-xl);
-		font-weight: 700;
-		color: var(--color-gold);
-		text-decoration: none;
-	}
+  .logo {
+    margin: 0;
+    font-size: var(--font-size-xl);
+    font-weight: 700;
+    color: var(--color-gold);
+    text-decoration: none;
+  }
 
-	.logo:hover {
-		color: var(--color-gold-hover);
-	}
+  .logo:hover {
+    color: var(--color-gold-hover);
+  }
 
-	.beta-badge {
-		font-size: 0.4em;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		background: var(--color-gold);
-		color: var(--color-bg);
-		padding: 0.1em 0.4em;
-		border-radius: 4px;
-		margin-left: 0.4em;
-		vertical-align: super;
-	}
+  .beta-badge {
+    font-size: 0.4em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--color-gold);
+    color: var(--color-bg);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    margin-left: 0.4em;
+    vertical-align: super;
+  }
 
-	nav {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
+  nav {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
 
-	.nav-icon {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		border: 1px solid var(--color-border);
-		color: var(--color-text-secondary);
-		text-decoration: none;
-		font-size: var(--font-size-sm);
-		font-weight: 600;
-		flex-shrink: 0;
-		transition: all var(--transition);
-	}
+  .nav-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    flex-shrink: 0;
+    transition: all var(--transition);
+  }
 
-	.nav-icon:hover {
-		border-color: var(--color-purple);
-		color: var(--color-purple);
-	}
+  .nav-icon:hover {
+    border-color: var(--color-purple);
+    color: var(--color-purple);
+  }
 
-	.discord-nav-icon:hover {
-		border-color: #5865f2;
-		color: #5865f2;
-	}
+  .discord-nav-icon:hover {
+    border-color: #5865f2;
+    color: #5865f2;
+  }
 
-	.btn-with-badge {
-		position: relative;
-	}
+  .btn-with-badge {
+    position: relative;
+  }
 
-	.nav-badge {
-		position: absolute;
-		top: -7px;
-		right: -7px;
-		background: var(--color-success);
-		color: var(--color-bg);
-		font-size: 0.6rem;
-		font-weight: 700;
-		min-width: 16px;
-		height: 16px;
-		border-radius: 8px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0 4px;
-		line-height: 1;
-	}
+  .nav-badge {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    background: var(--color-success);
+    color: var(--color-bg);
+    font-size: 0.6rem;
+    font-weight: 700;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    line-height: 1;
+  }
 
-	.nav-dot {
-		position: absolute;
-		top: -3px;
-		right: -3px;
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--color-success);
-	}
+  .nav-dot {
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-success);
+  }
 
-	.user-menu {
-		position: relative;
-	}
+  .user-menu {
+    position: relative;
+  }
 
-	.user-menu-trigger {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		background: none;
-		border: none;
-		color: inherit;
-		cursor: pointer;
-		padding: 0;
-		font-family: var(--font-family);
-		font-size: var(--font-size-base);
-	}
+  .user-menu-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    font-family: var(--font-family);
+    font-size: var(--font-size-base);
+  }
 
-	.user-menu-trigger:hover {
-		color: var(--color-purple);
-	}
+  .user-menu-trigger:hover {
+    color: var(--color-purple);
+  }
 
-	.chevron {
-		font-size: 0.7em;
-		color: var(--color-text-secondary);
-	}
+  .chevron {
+    font-size: 0.7em;
+    color: var(--color-text-secondary);
+  }
 
-	.avatar {
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		border: 2px solid var(--color-border);
-	}
+  .avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--color-border);
+  }
 
-	.user-dropdown {
-		position: absolute;
-		top: 100%;
-		right: 0;
-		margin-top: 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		min-width: 160px;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-		z-index: 100;
-	}
+  .user-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    min-width: 160px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+  }
 
-	.dropdown-item {
-		display: block;
-		width: 100%;
-		padding: 0.6rem 1rem;
-		background: none;
-		border: none;
-		color: var(--color-text);
-		text-decoration: none;
-		font-family: var(--font-family);
-		font-size: var(--font-size-sm);
-		text-align: left;
-		cursor: pointer;
-		transition: background var(--transition);
-	}
+  .dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 0.6rem 1rem;
+    background: none;
+    border: none;
+    color: var(--color-text);
+    text-decoration: none;
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition);
+  }
 
-	.dropdown-item:hover {
-		background: var(--color-bg);
-	}
+  .dropdown-item:hover {
+    background: var(--color-bg);
+  }
 
-	.dropdown-divider {
-		margin: 0;
-		border: none;
-		border-top: 1px solid var(--color-border);
-	}
+  .dropdown-divider {
+    margin: 0;
+    border: none;
+    border-top: 1px solid var(--color-border);
+  }
 
-	.content {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		min-height: 0;
-		min-width: 0;
-		overflow-y: auto;
-	}
+  .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    overflow-y: auto;
+  }
 
-	footer {
-		border-top: 1px solid var(--color-border);
-		padding: 1.5rem 2rem;
-		flex-shrink: 0;
-	}
+  footer {
+    border-top: 1px solid var(--color-border);
+    padding: 1.5rem 2rem;
+    flex-shrink: 0;
+  }
 
-	.footer-content {
-		max-width: 1200px;
-		margin: 0 auto;
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 1rem;
-	}
+  .footer-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
 
-	.footer-credit {
-		margin: 0;
-		color: var(--color-text-disabled);
-		font-size: var(--font-size-sm);
-	}
+  .footer-credit {
+    margin: 0;
+    color: var(--color-text-disabled);
+    font-size: var(--font-size-sm);
+  }
 
-	.footer-credit a {
-		color: var(--color-text-secondary);
-		text-decoration: none;
-	}
+  .footer-credit a {
+    color: var(--color-text-secondary);
+    text-decoration: none;
+  }
 
-	.footer-credit a:hover {
-		color: var(--color-purple);
-	}
+  .footer-credit a:hover {
+    color: var(--color-purple);
+  }
 
-	.footer-links {
-		display: flex;
-		gap: 1.5rem;
-	}
+  .footer-links {
+    display: flex;
+    gap: 1.5rem;
+  }
 
-	.footer-links a {
-		color: var(--color-text-disabled);
-		text-decoration: none;
-		font-size: var(--font-size-sm);
-		transition: color 0.2s ease;
-	}
+  .footer-links a {
+    color: var(--color-text-disabled);
+    text-decoration: none;
+    font-size: var(--font-size-sm);
+    transition: color 0.2s ease;
+  }
 
-	.footer-links a:hover {
-		color: var(--color-purple);
-	}
+  .footer-links a:hover {
+    color: var(--color-purple);
+  }
 
-	@media (max-width: 768px) {
-		.app-fixed {
-			height: auto;
-			overflow: visible;
-		}
+  @media (max-width: 768px) {
+    .app-fixed {
+      height: auto;
+      overflow: visible;
+    }
 
-		.app-fixed .content {
-			overflow-y: auto;
-		}
-	}
+    .app-fixed .content {
+      overflow-y: auto;
+    }
+  }
 
-	@media (max-width: 640px) {
-		.header-content {
-			padding: 0.75rem 1rem;
-			flex-wrap: wrap;
-			gap: 0.5rem;
-		}
+  @media (max-width: 640px) {
+    .header-content {
+      padding: 0.75rem 1rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
 
-		.logo {
-			font-size: var(--font-size-lg);
-			white-space: nowrap;
-		}
+    .logo {
+      font-size: var(--font-size-lg);
+      white-space: nowrap;
+    }
 
-		nav {
-			gap: 0.5rem;
-		}
+    nav {
+      gap: 0.5rem;
+    }
 
-		nav :global(.btn) {
-			font-size: var(--font-size-sm);
-			padding: 0.4rem 0.75rem;
-		}
+    nav :global(.btn) {
+      font-size: var(--font-size-sm);
+      padding: 0.4rem 0.75rem;
+    }
 
-		.user-menu-name {
-			display: none;
-		}
+    .user-menu-name {
+      display: none;
+    }
 
-		.chevron {
-			display: none;
-		}
+    .chevron {
+      display: none;
+    }
 
-		footer {
-			padding: 1.25rem 1rem;
-		}
+    footer {
+      padding: 1.25rem 1rem;
+    }
 
-		.footer-content {
-			flex-direction: column;
-			text-align: center;
-		}
+    .footer-content {
+      flex-direction: column;
+      text-align: center;
+    }
 
-		.footer-links {
-			gap: 1rem;
-			flex-wrap: wrap;
-			justify-content: center;
-		}
-	}
+    .footer-links {
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+  }
 </style>

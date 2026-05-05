@@ -36,14 +36,29 @@
     return parts.join(" ");
   }
 
-  const TRAIT_META: Record<string, { icon: string; color: string; label: string }> = {
+  const TRAIT_META: Record<
+    string,
+    { icon: string; color: string; label: string }
+  > = {
     rusher: { icon: "\u26A1", color: "#EF4444", label: "Rusher" },
-    cautious: { icon: "\uD83D\uDEE1\uFE0F", color: "#10B981", label: "Cautious" },
-    boss_slayer: { icon: "\u2694\uFE0F", color: "#FBBF24", label: "Boss Slayer" },
+    cautious: {
+      icon: "\uD83D\uDEE1\uFE0F",
+      color: "#10B981",
+      label: "Cautious",
+    },
+    boss_slayer: {
+      icon: "\u2694\uFE0F",
+      color: "#FBBF24",
+      label: "Boss Slayer",
+    },
     resilient: { icon: "\uD83D\uDCAA", color: "#C8A44E", label: "Resilient" },
     explorer: { icon: "\uD83C\uDF10", color: "#3B82F6", label: "Explorer" },
     pathfinder: { icon: "\uD83E\uDDED", color: "#A78BFA", label: "Pathfinder" },
-    rage_quitter: { icon: "\uD83D\uDCA5", color: "#DC2626", label: "Rage Quitter" },
+    rage_quitter: {
+      icon: "\uD83D\uDCA5",
+      color: "#DC2626",
+      label: "Rage Quitter",
+    },
   };
 
   let inputValue = $state("");
@@ -64,7 +79,10 @@
 
   function formatTime(timestamp: string): string {
     const d = new Date(timestamp);
-    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 
   function handleSubmit(e: SubmitEvent) {
@@ -112,7 +130,8 @@
                   target="_blank"
                   rel="noopener noreferrer"
                   class="display-name"
-                  style={nameStyleFor(msg)}>{msg.display_name ?? msg.username}</a
+                  style={nameStyleFor(msg)}
+                  >{msg.display_name ?? msg.username}</a
                 >
                 {#if badge}
                   <img
@@ -155,7 +174,9 @@
         bind:value={inputValue}
         onkeydown={handleKeydown}
       />
-      <button type="submit" class="send-btn" disabled={!inputValue.trim()}>Send</button>
+      <button type="submit" class="send-btn" disabled={!inputValue.trim()}
+        >Send</button
+      >
     </form>
   {/if}
 </div>

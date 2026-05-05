@@ -26,7 +26,9 @@
   }: Props = $props();
 
   let effectiveStatus = $derived(liveStatus ?? participant.status);
-  let equippedBadge = $derived(rewards.lookupBadge(participant.user.equipped_badge_id));
+  let equippedBadge = $derived(
+    rewards.lookupBadge(participant.user.equipped_badge_id),
+  );
 
   function templateFor() {
     const id = participant.user.equipped_name_template_id;
@@ -60,7 +62,11 @@
   }
 </script>
 
-<div class="participant-card" class:current-user={isCurrentUser} style={backgroundStyleFor()}>
+<div
+  class="participant-card"
+  class:current-user={isCurrentUser}
+  style={backgroundStyleFor()}
+>
   <span class="status-dot" class:ready={effectiveStatus === "ready"}></span>
   {#if participant.user.twitch_avatar_url}
     <img src={participant.user.twitch_avatar_url} alt="" class="avatar" />
@@ -74,7 +80,8 @@
         class="name-text name-link"
         style={nameStyleFor()}
       >
-        {participant.user.twitch_display_name || participant.user.twitch_username}
+        {participant.user.twitch_display_name ||
+          participant.user.twitch_username}
       </a>
       {#if equippedBadge}
         <img
@@ -89,7 +96,8 @@
   </div>
   {#if isLive}
     <LiveBadge
-      href={streamUrl ?? `https://twitch.tv/${participant.user.twitch_username}`}
+      href={streamUrl ??
+        `https://twitch.tv/${participant.user.twitch_username}`}
       onclick={(e) => e.stopPropagation()}
     />
   {/if}
@@ -97,7 +105,9 @@
     <span class="organizer-badge">Org</span>
   {/if}
   {#if canRemove}
-    <button class="remove-btn" onclick={onRemove} title="Remove participant">&times;</button>
+    <button class="remove-btn" onclick={onRemove} title="Remove participant"
+      >&times;</button
+    >
   {/if}
 </div>
 

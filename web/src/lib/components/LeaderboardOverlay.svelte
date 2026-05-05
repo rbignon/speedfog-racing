@@ -10,7 +10,12 @@
     lines?: number | null;
   }
 
-  let { participants, totalLayers = null, mode = "running", lines = null }: Props = $props();
+  let {
+    participants,
+    totalLayers = null,
+    mode = "running",
+    lines = null,
+  }: Props = $props();
 
   let visibleParticipants = $derived(
     lines != null && lines > 0 ? participants.slice(0, lines) : participants,
@@ -85,9 +90,10 @@
       <span class="stats">
         {#if participant.status === "playing"}
           <span class="layer"
-            >{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers
-              ? `/${totalLayers}`
-              : ""}</span
+            >{Math.min(
+              participant.current_layer + 1,
+              totalLayers || Infinity,
+            )}{totalLayers ? `/${totalLayers}` : ""}</span
           >
           {#if participant.death_count > 0}
             <span class="deaths">{participant.death_count}</span>

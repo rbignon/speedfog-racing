@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { fetchLeaderboard, type LeaderboardPlayer, type LeaderboardResponse } from "$lib/api";
+  import {
+    fetchLeaderboard,
+    type LeaderboardPlayer,
+    type LeaderboardResponse,
+  } from "$lib/api";
   import { rewards } from "$lib/stores/rewards.svelte";
 
   let data = $state<LeaderboardResponse | null>(null);
@@ -102,7 +106,11 @@
               </td>
               <td class="player-cell">
                 {#if player.twitch_avatar_url}
-                  <img src={player.twitch_avatar_url} alt="" class="player-avatar" />
+                  <img
+                    src={player.twitch_avatar_url}
+                    alt=""
+                    class="player-avatar"
+                  />
                 {:else}
                   <div class="player-avatar-placeholder"></div>
                 {/if}
@@ -125,7 +133,9 @@
               <td class="num elo-value">
                 <span class="elo-content">
                   {player.elo_rating}<span
-                    class="confidence-dot confidence-{confidenceLevel(player.elo_races)}"
+                    class="confidence-dot confidence-{confidenceLevel(
+                      player.elo_races,
+                    )}"
                     title={confidenceLabel(player.elo_races)}
                   ></span>
                 </span>
@@ -193,11 +203,13 @@
           </div>
         </dl>
         <p class="elo-explanation">
-          After each race, points are exchanged based on finish order and time gaps. Beating
-          higher-rated players earns more. Harder seeds give a small bonus to all participants.
+          After each race, points are exchanged based on finish order and time
+          gaps. Beating higher-rated players earns more. Harder seeds give a
+          small bonus to all participants.
         </p>
         <p class="elo-explanation">
-          Confidence dots indicate how settled a rating is based on the number of races played.
+          Confidence dots indicate how settled a rating is based on the number
+          of races played.
         </p>
         <div class="confidence-legend">
           <span class="legend-item">

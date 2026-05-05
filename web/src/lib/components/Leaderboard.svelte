@@ -71,7 +71,10 @@
     return rewards.lookupTemplate(id);
   }
 
-  function nameStyleFor(participant: WsParticipant, fallbackColor: string): string {
+  function nameStyleFor(
+    participant: WsParticipant,
+    fallbackColor: string,
+  ): string {
     const t = templateFor(participant);
     const parts: string[] = [];
     if (t?.gradient) {
@@ -125,17 +128,25 @@
         <li
           class="participant {getStatusClass(participant.status)}"
           class:selected={hasSelection && selectedIds!.has(participant.id)}
-          style="border-left: 3px solid {color}; {backgroundStyleFor(participant)}"
+          style="border-left: 3px solid {color}; {backgroundStyleFor(
+            participant,
+          )}"
           onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
           role={onToggle ? "button" : undefined}
           tabindex={onToggle ? 0 : undefined}
         >
-          <span class="rank" style="background: {color}; color: #1a1a2e;">{index + 1}</span>
+          <span class="rank" style="background: {color}; color: #1a1a2e;"
+            >{index + 1}</span
+          >
           <div class="info">
             {#if participant.status === "playing" || participant.status === "abandoned"}
               {@const zone =
-                participant.status === "playing" ? zoneName(participant.current_zone) : null}
-              {@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
+                participant.status === "playing"
+                  ? zoneName(participant.current_zone)
+                  : null}
+              {@const badge = rewards.lookupBadge(
+                participant.equipped_badge_id,
+              )}
               <div class="name-row">
                 <span class="name name-container">
                   <a
@@ -149,9 +160,14 @@
                       <span
                         class="conn-dot"
                         class:connected={participant.mod_connected}
-                        title={participant.mod_connected ? "Mod connected" : "Mod disconnected"}
+                        title={participant.mod_connected
+                          ? "Mod connected"
+                          : "Mod disconnected"}
                       ></span>
-                    {/if}<span>{participant.twitch_display_name || participant.twitch_username}</span>
+                    {/if}<span
+                      >{participant.twitch_display_name ||
+                        participant.twitch_username}</span
+                    >
                   </a>
                   {#if badge}
                     <img
@@ -163,15 +179,18 @@
                   {/if}
                 </span>
                 <span class="layer-fraction"
-                  >{Math.min(participant.current_layer + 1, totalLayers || Infinity)}{totalLayers
-                    ? `/${totalLayers}`
-                    : ""}</span
+                  >{Math.min(
+                    participant.current_layer + 1,
+                    totalLayers || Infinity,
+                  )}{totalLayers ? `/${totalLayers}` : ""}</span
                 >
               </div>
               {#if participant.status === "abandoned"}
                 <span class="zone abandoned-label">Abandoned</span>
               {:else if zone}
-                <span class="zone" title={zoneNames?.get(participant.current_zone ?? "") ?? ""}
+                <span
+                  class="zone"
+                  title={zoneNames?.get(participant.current_zone ?? "") ?? ""}
                   >{zone}</span
                 >
               {/if}
@@ -182,7 +201,9 @@
                 {/if}
               </span>
             {:else}
-              {@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
+              {@const badge = rewards.lookupBadge(
+                participant.equipped_badge_id,
+              )}
               <span class="name name-container">
                 <a
                   href="/user/{participant.twitch_username}"
@@ -195,9 +216,14 @@
                     <span
                       class="conn-dot"
                       class:connected={participant.mod_connected}
-                      title={participant.mod_connected ? "Mod connected" : "Mod disconnected"}
+                      title={participant.mod_connected
+                        ? "Mod connected"
+                        : "Mod disconnected"}
                     ></span>
-                  {/if}<span>{participant.twitch_display_name || participant.twitch_username}</span>
+                  {/if}<span
+                    >{participant.twitch_display_name ||
+                      participant.twitch_username}</span
+                  >
                 </a>
                 {#if badge}
                   <img
@@ -210,7 +236,9 @@
               </span>
               <span class="stats">
                 {#if participant.status === "finished"}
-                  <span class="finished-time">{formatIgt(participant.igt_ms)}</span>
+                  <span class="finished-time"
+                    >{formatIgt(participant.igt_ms)}</span
+                  >
                   {#if participant.death_count > 0}
                     <span class="death-count">{participant.death_count}</span>
                   {/if}
@@ -222,7 +250,8 @@
           </div>
           {#if participant.is_live}
             <LiveBadge
-              href={participant.stream_url ?? `https://twitch.tv/${participant.twitch_username}`}
+              href={participant.stream_url ??
+                `https://twitch.tv/${participant.twitch_username}`}
               small
               onclick={(e) => e.stopPropagation()}
             />

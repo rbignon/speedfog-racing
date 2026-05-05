@@ -1,242 +1,258 @@
 <script lang="ts">
-	import type { PoolConfig } from '$lib/api';
-	import { formatPoolName } from '$lib/utils/format';
+  import type { PoolConfig } from "$lib/api";
+  import { formatPoolName } from "$lib/utils/format";
 
-	let {
-		poolName,
-		poolConfig,
-		compact = false
-	}: {
-		poolName: string;
-		poolConfig: PoolConfig;
-		compact?: boolean;
-	} = $props();
+  let {
+    poolName,
+    poolConfig,
+    compact = false,
+  }: {
+    poolName: string;
+    poolConfig: PoolConfig;
+    compact?: boolean;
+  } = $props();
 
-	let title = $derived(poolConfig.name || formatPoolName(poolName));
+  let title = $derived(poolConfig.name || formatPoolName(poolName));
 
-	let miscNotes = $derived.by(() => {
-		const notes: string[] = [];
-		if (poolConfig.allcraft === true) {
-			notes.push('All crafting recipes unlocked');
-		}
-		if (poolConfig.nerf_gargoyles === true) {
-			notes.push('Gargoyle poison disabled');
-		}
-		if (poolConfig.nerf_malenia === true) {
-			notes.push('Malenia nerfed');
-		}
-		if (poolConfig.sentry_torch_shop === true) {
-			notes.push('Sentry Torch in shop');
-		}
-		return notes;
-	});
+  let miscNotes = $derived.by(() => {
+    const notes: string[] = [];
+    if (poolConfig.allcraft === true) {
+      notes.push("All crafting recipes unlocked");
+    }
+    if (poolConfig.nerf_gargoyles === true) {
+      notes.push("Gargoyle poison disabled");
+    }
+    if (poolConfig.nerf_malenia === true) {
+      notes.push("Malenia nerfed");
+    }
+    if (poolConfig.sentry_torch_shop === true) {
+      notes.push("Sentry Torch in shop");
+    }
+    return notes;
+  });
 </script>
 
 <div class="card" class:compact>
-	<h3 class="title">{title}</h3>
-	{#if poolConfig.description}
-		<p class="description">{poolConfig.description}</p>
-	{/if}
-	<div class="info-grid">
-		{#if poolConfig.min_layers != null && poolConfig.max_layers != null}
-			<div class="info-item">
-				<span class="label">Depth</span>
-				<span class="value">
-					{#if poolConfig.min_layers === poolConfig.max_layers}
-						{poolConfig.min_layers}
-					{:else}
-						{poolConfig.min_layers}–{poolConfig.max_layers}
-					{/if}
-				</span>
-			</div>
-		{/if}
-		{#if poolConfig.final_tier != null}
-			<div class="info-item">
-				<span class="label">Final Tier</span>
-				<span class="value">{poolConfig.final_tier}</span>
-			</div>
-		{/if}
-		{#if poolConfig.starting_runes != null}
-			<div class="info-item">
-				<span class="label">Starting Runes</span>
-				<span class="value">{poolConfig.starting_runes >= 1000 ? `${poolConfig.starting_runes / 1000}k` : poolConfig.starting_runes}</span>
-			</div>
-		{/if}
-		<div class="info-item">
-			<span class="label">Starting Weapons</span>
-			<span class="value">+{poolConfig.weapon_upgrade || 0}</span>
-		</div>
-		{#if poolConfig.items_randomized != null}
-			<div class="info-item">
-				<span class="label">Items Randomized</span>
-				<span class="value">{poolConfig.items_randomized ? 'Yes' : 'No'}</span>
-			</div>
-		{/if}
-		{#if poolConfig.auto_upgrade_weapons}
-			<div class="info-item">
-				<span class="label">Auto Upgrade</span>
-				<span class="value">Yes</span>
-			</div>
-		{/if}
-		{#if poolConfig.remove_requirements}
-			<div class="info-item">
-				<span class="label">No Stat Reqs</span>
-				<span class="value">Yes</span>
-			</div>
-		{/if}
-		{#if poolConfig.difficulty_curve}
-			<div class="info-item">
-				<span class="label">Difficulty Curve</span>
-				<span class="value">{poolConfig.difficulty_curve}</span>
-			</div>
-		{/if}
-		{#if poolConfig.randomize_bosses}
-			<div class="info-item">
-				<span class="label">Boss Shuffle</span>
-				<span class="value">{poolConfig.randomize_bosses === 'none' ? 'No' : poolConfig.randomize_bosses === 'minor' ? 'Minor only' : 'All'}</span>
-			</div>
-		{/if}
-	</div>
-	{#if poolConfig.starting_upgrades}
-		<div class="item-section">
-			<span class="label">Starting Upgrades</span>
-			{#if compact}
-				<span class="item-section-text">{poolConfig.starting_upgrades.join(', ')}</span>
-			{:else}
-				<ul class="item-section-list">
-					{#each poolConfig.starting_upgrades as item}
-						<li>{item}</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-	{/if}
-	{#if poolConfig.starting_items}
-		<div class="item-section">
-			<span class="label">Starting Items</span>
-			{#if compact}
-				<span class="item-section-text">{poolConfig.starting_items.join(', ')}</span>
-			{:else}
-				<ul class="item-section-list">
-					{#each poolConfig.starting_items as item}
-						<li>{item}</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-	{/if}
-	{#if poolConfig.care_package_items}
-		<div class="item-section">
-			<span class="label">Care Package Contents</span>
-			{#if compact}
-				<span class="item-section-text">{poolConfig.care_package_items.join(', ')}</span>
-			{:else}
-				<ul class="item-section-list">
-					{#each poolConfig.care_package_items as item}
-						<li>{item}</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-	{/if}
-	{#if miscNotes.length > 0}
-		<div class="item-section">
-			<span class="label">Misc</span>
-			{#if compact}
-				<span class="item-section-text">{miscNotes.join(', ')}</span>
-			{:else}
-				<ul class="item-section-list">
-					{#each miscNotes as note}
-						<li>{note}</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-	{/if}
+  <h3 class="title">{title}</h3>
+  {#if poolConfig.description}
+    <p class="description">{poolConfig.description}</p>
+  {/if}
+  <div class="info-grid">
+    {#if poolConfig.min_layers != null && poolConfig.max_layers != null}
+      <div class="info-item">
+        <span class="label">Depth</span>
+        <span class="value">
+          {#if poolConfig.min_layers === poolConfig.max_layers}
+            {poolConfig.min_layers}
+          {:else}
+            {poolConfig.min_layers}–{poolConfig.max_layers}
+          {/if}
+        </span>
+      </div>
+    {/if}
+    {#if poolConfig.final_tier != null}
+      <div class="info-item">
+        <span class="label">Final Tier</span>
+        <span class="value">{poolConfig.final_tier}</span>
+      </div>
+    {/if}
+    {#if poolConfig.starting_runes != null}
+      <div class="info-item">
+        <span class="label">Starting Runes</span>
+        <span class="value"
+          >{poolConfig.starting_runes >= 1000
+            ? `${poolConfig.starting_runes / 1000}k`
+            : poolConfig.starting_runes}</span
+        >
+      </div>
+    {/if}
+    <div class="info-item">
+      <span class="label">Starting Weapons</span>
+      <span class="value">+{poolConfig.weapon_upgrade || 0}</span>
+    </div>
+    {#if poolConfig.items_randomized != null}
+      <div class="info-item">
+        <span class="label">Items Randomized</span>
+        <span class="value">{poolConfig.items_randomized ? "Yes" : "No"}</span>
+      </div>
+    {/if}
+    {#if poolConfig.auto_upgrade_weapons}
+      <div class="info-item">
+        <span class="label">Auto Upgrade</span>
+        <span class="value">Yes</span>
+      </div>
+    {/if}
+    {#if poolConfig.remove_requirements}
+      <div class="info-item">
+        <span class="label">No Stat Reqs</span>
+        <span class="value">Yes</span>
+      </div>
+    {/if}
+    {#if poolConfig.difficulty_curve}
+      <div class="info-item">
+        <span class="label">Difficulty Curve</span>
+        <span class="value">{poolConfig.difficulty_curve}</span>
+      </div>
+    {/if}
+    {#if poolConfig.randomize_bosses}
+      <div class="info-item">
+        <span class="label">Boss Shuffle</span>
+        <span class="value"
+          >{poolConfig.randomize_bosses === "none"
+            ? "No"
+            : poolConfig.randomize_bosses === "minor"
+              ? "Minor only"
+              : "All"}</span
+        >
+      </div>
+    {/if}
+  </div>
+  {#if poolConfig.starting_upgrades}
+    <div class="item-section">
+      <span class="label">Starting Upgrades</span>
+      {#if compact}
+        <span class="item-section-text"
+          >{poolConfig.starting_upgrades.join(", ")}</span
+        >
+      {:else}
+        <ul class="item-section-list">
+          {#each poolConfig.starting_upgrades as item}
+            <li>{item}</li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  {/if}
+  {#if poolConfig.starting_items}
+    <div class="item-section">
+      <span class="label">Starting Items</span>
+      {#if compact}
+        <span class="item-section-text"
+          >{poolConfig.starting_items.join(", ")}</span
+        >
+      {:else}
+        <ul class="item-section-list">
+          {#each poolConfig.starting_items as item}
+            <li>{item}</li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  {/if}
+  {#if poolConfig.care_package_items}
+    <div class="item-section">
+      <span class="label">Care Package Contents</span>
+      {#if compact}
+        <span class="item-section-text"
+          >{poolConfig.care_package_items.join(", ")}</span
+        >
+      {:else}
+        <ul class="item-section-list">
+          {#each poolConfig.care_package_items as item}
+            <li>{item}</li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  {/if}
+  {#if miscNotes.length > 0}
+    <div class="item-section">
+      <span class="label">Misc</span>
+      {#if compact}
+        <span class="item-section-text">{miscNotes.join(", ")}</span>
+      {:else}
+        <ul class="item-section-list">
+          {#each miscNotes as note}
+            <li>{note}</li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
-	.card {
-		background: var(--color-surface);
-		border-radius: var(--radius-lg);
-		padding: 1.5rem;
-	}
+  .card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+  }
 
-	.card.compact {
-		padding: 1rem;
-	}
+  .card.compact {
+    padding: 1rem;
+  }
 
-	.title {
-		color: var(--color-gold);
-		font-size: var(--font-size-lg);
-		font-weight: 600;
-		margin: 0 0 0.25rem 0;
-	}
+  .title {
+    color: var(--color-gold);
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    margin: 0 0 0.25rem 0;
+  }
 
-	.card.compact .title {
-		font-size: var(--font-size-base);
-	}
+  .card.compact .title {
+    font-size: var(--font-size-base);
+  }
 
-	.description {
-		color: var(--color-text-secondary);
-		font-size: var(--font-size-sm);
-		margin: 0 0 1rem 0;
-	}
+  .description {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    margin: 0 0 1rem 0;
+  }
 
-	.info-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-		gap: 1rem;
-	}
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+  }
 
-	.card.compact .info-grid {
-		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-	}
+  .card.compact .info-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
 
-	.info-item {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
+  .info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
 
-	.label {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		font-weight: 500;
-	}
+  .label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
 
-	.value {
-		font-weight: 500;
-		font-variant-numeric: tabular-nums;
-	}
+  .value {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
 
-	.item-section {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		margin-top: 1rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--color-border);
-	}
+  .item-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+  }
 
-	.item-section-text {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
-	}
+  .item-section-text {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+  }
 
-	.item-section-list {
-		list-style: none;
-		margin: 0.25rem 0 0 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-	}
+  .item-section-list {
+    list-style: none;
+    margin: 0.25rem 0 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
 
-	.item-section-list li {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
-	}
+  .item-section-list li {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+  }
 </style>

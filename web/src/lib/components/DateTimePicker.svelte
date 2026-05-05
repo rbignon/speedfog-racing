@@ -1,727 +1,780 @@
 <script lang="ts">
-	interface Props {
-		value?: string;
-		onchange?: (iso: string) => void;
-		min?: Date;
-		disabled?: boolean;
-		placeholder?: string;
-	}
+  interface Props {
+    value?: string;
+    onchange?: (iso: string) => void;
+    min?: Date;
+    disabled?: boolean;
+    placeholder?: string;
+  }
 
-	let {
-		value = '',
-		onchange,
-		min,
-		disabled = false,
-		placeholder = 'Pick a date'
-	}: Props = $props();
+  let {
+    value = "",
+    onchange,
+    min,
+    disabled = false,
+    placeholder = "Pick a date",
+  }: Props = $props();
 
-	// Default time: next 30-minute slot after the current time (14:15 → 14:30, 14:30 → 15:00).
-	// Computed once at mount to keep the displayed time stable while the user sits on the page.
-	function computeDefaultTime(): string {
-		const now = new Date();
-		let hours = now.getHours();
-		let minutes = now.getMinutes();
-		if (minutes < 30) {
-			minutes = 30;
-		} else {
-			minutes = 0;
-			hours = (hours + 1) % 24;
-		}
-		return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-	}
+  // Default time: next 30-minute slot after the current time (14:15 → 14:30, 14:30 → 15:00).
+  // Computed once at mount to keep the displayed time stable while the user sits on the page.
+  function computeDefaultTime(): string {
+    const now = new Date();
+    let hours = now.getHours();
+    let minutes = now.getMinutes();
+    if (minutes < 30) {
+      minutes = 30;
+    } else {
+      minutes = 0;
+      hours = (hours + 1) % 24;
+    }
+    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+  }
 
-	const defaultTime = computeDefaultTime();
+  const defaultTime = computeDefaultTime();
 
-	let open = $state(false);
-	let containerEl: HTMLDivElement | undefined = $state();
+  let open = $state(false);
+  let containerEl: HTMLDivElement | undefined = $state();
 
-	// Parse value (UTC ISO) into local date parts
-	let selectedLocalDate: { year: number; month: number; day: number } | null = $derived.by(() => {
-		if (!value) return null;
-		const d = new Date(value);
-		return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
-	});
+  // Parse value (UTC ISO) into local date parts
+  let selectedLocalDate: { year: number; month: number; day: number } | null =
+    $derived.by(() => {
+      if (!value) return null;
+      const d = new Date(value);
+      return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
+    });
 
-	let selectedTime: string = $derived.by(() => {
-		if (!value) return defaultTime;
-		const d = new Date(value);
-		const h = d.getHours().toString().padStart(2, '0');
-		const m = d.getMinutes().toString().padStart(2, '0');
-		return `${h}:${m}`;
-	});
+  let selectedTime: string = $derived.by(() => {
+    if (!value) return defaultTime;
+    const d = new Date(value);
+    const h = d.getHours().toString().padStart(2, "0");
+    const m = d.getMinutes().toString().padStart(2, "0");
+    return `${h}:${m}`;
+  });
 
-	// Calendar view state: initialized to current month, kept in sync by effect below
-	let viewYear = $state(new Date().getFullYear());
-	let viewMonth = $state(new Date().getMonth());
+  // Calendar view state: initialized to current month, kept in sync by effect below
+  let viewYear = $state(new Date().getFullYear());
+  let viewMonth = $state(new Date().getMonth());
 
-	// Keep view in sync when value changes externally
-	$effect(() => {
-		if (selectedLocalDate) {
-			viewYear = selectedLocalDate.year;
-			viewMonth = selectedLocalDate.month;
-		}
-	});
+  // Keep view in sync when value changes externally
+  $effect(() => {
+    if (selectedLocalDate) {
+      viewYear = selectedLocalDate.year;
+      viewMonth = selectedLocalDate.month;
+    }
+  });
 
-	const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+  const DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
-	// Timezone label
-	const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // Timezone label
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-	// Format selected date for display
-	let displayDate = $derived.by(() => {
-		if (!selectedLocalDate) return '';
-		const d = new Date(selectedLocalDate.year, selectedLocalDate.month, selectedLocalDate.day);
-		return new Intl.DateTimeFormat('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric'
-		}).format(d);
-	});
+  // Format selected date for display
+  let displayDate = $derived.by(() => {
+    if (!selectedLocalDate) return "";
+    const d = new Date(
+      selectedLocalDate.year,
+      selectedLocalDate.month,
+      selectedLocalDate.day,
+    );
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(d);
+  });
 
-	// Calendar grid: array of weeks, each week is array of { day, inMonth, date }
-	let calendarWeeks = $derived.by(() => {
-		const firstDay = new Date(viewYear, viewMonth, 1);
-		const lastDay = new Date(viewYear, viewMonth + 1, 0);
-		// Monday = 0 ... Sunday = 6
-		let startDow = (firstDay.getDay() + 6) % 7;
-		const totalDays = lastDay.getDate();
+  // Calendar grid: array of weeks, each week is array of { day, inMonth, date }
+  let calendarWeeks = $derived.by(() => {
+    const firstDay = new Date(viewYear, viewMonth, 1);
+    const lastDay = new Date(viewYear, viewMonth + 1, 0);
+    // Monday = 0 ... Sunday = 6
+    let startDow = (firstDay.getDay() + 6) % 7;
+    const totalDays = lastDay.getDate();
 
-		const cells: { day: number; inMonth: boolean; year: number; month: number }[] = [];
-		// Fill leading days from previous month
-		const prevMonthLast = new Date(viewYear, viewMonth, 0).getDate();
-		for (let i = startDow - 1; i >= 0; i--) {
-			const pm = viewMonth === 0 ? 11 : viewMonth - 1;
-			const py = viewMonth === 0 ? viewYear - 1 : viewYear;
-			cells.push({ day: prevMonthLast - i, inMonth: false, year: py, month: pm });
-		}
-		// Current month days
-		for (let d = 1; d <= totalDays; d++) {
-			cells.push({ day: d, inMonth: true, year: viewYear, month: viewMonth });
-		}
-		// Fill trailing days
-		const remaining = 7 - (cells.length % 7);
-		if (remaining < 7) {
-			const nm = viewMonth === 11 ? 0 : viewMonth + 1;
-			const ny = viewMonth === 11 ? viewYear + 1 : viewYear;
-			for (let d = 1; d <= remaining; d++) {
-				cells.push({ day: d, inMonth: false, year: ny, month: nm });
-			}
-		}
+    const cells: {
+      day: number;
+      inMonth: boolean;
+      year: number;
+      month: number;
+    }[] = [];
+    // Fill leading days from previous month
+    const prevMonthLast = new Date(viewYear, viewMonth, 0).getDate();
+    for (let i = startDow - 1; i >= 0; i--) {
+      const pm = viewMonth === 0 ? 11 : viewMonth - 1;
+      const py = viewMonth === 0 ? viewYear - 1 : viewYear;
+      cells.push({
+        day: prevMonthLast - i,
+        inMonth: false,
+        year: py,
+        month: pm,
+      });
+    }
+    // Current month days
+    for (let d = 1; d <= totalDays; d++) {
+      cells.push({ day: d, inMonth: true, year: viewYear, month: viewMonth });
+    }
+    // Fill trailing days
+    const remaining = 7 - (cells.length % 7);
+    if (remaining < 7) {
+      const nm = viewMonth === 11 ? 0 : viewMonth + 1;
+      const ny = viewMonth === 11 ? viewYear + 1 : viewYear;
+      for (let d = 1; d <= remaining; d++) {
+        cells.push({ day: d, inMonth: false, year: ny, month: nm });
+      }
+    }
 
-		// Chunk into weeks
-		const weeks: (typeof cells)[] = [];
-		for (let i = 0; i < cells.length; i += 7) {
-			weeks.push(cells.slice(i, i + 7));
-		}
-		return weeks;
-	});
+    // Chunk into weeks
+    const weeks: (typeof cells)[] = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      weeks.push(cells.slice(i, i + 7));
+    }
+    return weeks;
+  });
 
-	// Min date parts (local) for comparison
-	let minLocal = $derived.by(() => {
-		if (!min) return null;
-		return {
-			year: min.getFullYear(),
-			month: min.getMonth(),
-			day: min.getDate(),
-			hours: min.getHours(),
-			minutes: min.getMinutes()
-		};
-	});
+  // Min date parts (local) for comparison
+  let minLocal = $derived.by(() => {
+    if (!min) return null;
+    return {
+      year: min.getFullYear(),
+      month: min.getMonth(),
+      day: min.getDate(),
+      hours: min.getHours(),
+      minutes: min.getMinutes(),
+    };
+  });
 
-	function isDayDisabled(year: number, month: number, day: number): boolean {
-		if (!minLocal) return false;
-		const cellDate = new Date(year, month, day);
-		const minDate = new Date(minLocal.year, minLocal.month, minLocal.day);
-		return cellDate < minDate;
-	}
+  function isDayDisabled(year: number, month: number, day: number): boolean {
+    if (!minLocal) return false;
+    const cellDate = new Date(year, month, day);
+    const minDate = new Date(minLocal.year, minLocal.month, minLocal.day);
+    return cellDate < minDate;
+  }
 
-	function isDaySelected(year: number, month: number, day: number): boolean {
-		if (!selectedLocalDate) return false;
-		return (
-			selectedLocalDate.year === year &&
-			selectedLocalDate.month === month &&
-			selectedLocalDate.day === day
-		);
-	}
+  function isDaySelected(year: number, month: number, day: number): boolean {
+    if (!selectedLocalDate) return false;
+    return (
+      selectedLocalDate.year === year &&
+      selectedLocalDate.month === month &&
+      selectedLocalDate.day === day
+    );
+  }
 
-	function isToday(year: number, month: number, day: number): boolean {
-		const now = new Date();
-		return now.getFullYear() === year && now.getMonth() === month && now.getDate() === day;
-	}
+  function isToday(year: number, month: number, day: number): boolean {
+    const now = new Date();
+    return (
+      now.getFullYear() === year &&
+      now.getMonth() === month &&
+      now.getDate() === day
+    );
+  }
 
-	function prevMonth() {
-		if (viewMonth === 0) {
-			viewYear--;
-			viewMonth = 11;
-		} else {
-			viewMonth--;
-		}
-	}
+  function prevMonth() {
+    if (viewMonth === 0) {
+      viewYear--;
+      viewMonth = 11;
+    } else {
+      viewMonth--;
+    }
+  }
 
-	function nextMonth() {
-		if (viewMonth === 11) {
-			viewYear++;
-			viewMonth = 0;
-		} else {
-			viewMonth++;
-		}
-	}
+  function nextMonth() {
+    if (viewMonth === 11) {
+      viewYear++;
+      viewMonth = 0;
+    } else {
+      viewMonth++;
+    }
+  }
 
-	let viewMonthLabel = $derived(
-		new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(
-			new Date(viewYear, viewMonth, 1)
-		)
-	);
+  let viewMonthLabel = $derived(
+    new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(
+      new Date(viewYear, viewMonth, 1),
+    ),
+  );
 
-	// Time slots
-	let timeSlots = $derived.by(() => {
-		const slots: string[] = [];
-		for (let h = 0; h < 24; h++) {
-			for (let m = 0; m < 60; m += 30) {
-				const slot = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-				// Filter past slots if selected date is the min date
-				if (
-					minLocal &&
-					selectedLocalDate &&
-					selectedLocalDate.year === minLocal.year &&
-					selectedLocalDate.month === minLocal.month &&
-					selectedLocalDate.day === minLocal.day
-				) {
-					const slotMinutes = h * 60 + m;
-					const minMinutes = minLocal.hours * 60 + minLocal.minutes;
-					if (slotMinutes < minMinutes) continue;
-				}
-				slots.push(slot);
-			}
-		}
-		return slots;
-	});
+  // Time slots
+  let timeSlots = $derived.by(() => {
+    const slots: string[] = [];
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        const slot = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+        // Filter past slots if selected date is the min date
+        if (
+          minLocal &&
+          selectedLocalDate &&
+          selectedLocalDate.year === minLocal.year &&
+          selectedLocalDate.month === minLocal.month &&
+          selectedLocalDate.day === minLocal.day
+        ) {
+          const slotMinutes = h * 60 + m;
+          const minMinutes = minLocal.hours * 60 + minLocal.minutes;
+          if (slotMinutes < minMinutes) continue;
+        }
+        slots.push(slot);
+      }
+    }
+    return slots;
+  });
 
-	function emitChange(year: number, month: number, day: number, time: string) {
-		const [hours, minutes] = time.split(':').map(Number);
-		const local = new Date(year, month, day, hours, minutes, 0, 0);
-		onchange?.(local.toISOString());
-	}
+  function emitChange(year: number, month: number, day: number, time: string) {
+    const [hours, minutes] = time.split(":").map(Number);
+    const local = new Date(year, month, day, hours, minutes, 0, 0);
+    onchange?.(local.toISOString());
+  }
 
-	function selectDay(year: number, month: number, day: number) {
-		// If current time is invalid for new date, snap to first valid slot
-		let time = selectedTime;
-		if (minLocal && year === minLocal.year && month === minLocal.month && day === minLocal.day) {
-			const [h, m] = time.split(':').map(Number);
-			const slotMin = h * 60 + m;
-			const minMin = minLocal.hours * 60 + minLocal.minutes;
-			if (slotMin < minMin) {
-				const sh = Math.floor(minMin / 60);
-				const sm = minMin % 60;
-				time = `${sh.toString().padStart(2, '0')}:${sm.toString().padStart(2, '0')}`;
-			}
-		}
-		emitChange(year, month, day, time);
-		open = false;
-	}
+  function selectDay(year: number, month: number, day: number) {
+    // If current time is invalid for new date, snap to first valid slot
+    let time = selectedTime;
+    if (
+      minLocal &&
+      year === minLocal.year &&
+      month === minLocal.month &&
+      day === minLocal.day
+    ) {
+      const [h, m] = time.split(":").map(Number);
+      const slotMin = h * 60 + m;
+      const minMin = minLocal.hours * 60 + minLocal.minutes;
+      if (slotMin < minMin) {
+        const sh = Math.floor(minMin / 60);
+        const sm = minMin % 60;
+        time = `${sh.toString().padStart(2, "0")}:${sm.toString().padStart(2, "0")}`;
+      }
+    }
+    emitChange(year, month, day, time);
+    open = false;
+  }
 
-	// Time combobox state
-	let timeInputValue = $state(defaultTime);
-	let timeDropdownOpen = $state(false);
-	let highlightedSlotIndex = $state(-1);
-	let timeInputEl: HTMLInputElement | undefined = $state();
-	let timeDropdownEl: HTMLDivElement | undefined = $state();
+  // Time combobox state
+  let timeInputValue = $state(defaultTime);
+  let timeDropdownOpen = $state(false);
+  let highlightedSlotIndex = $state(-1);
+  let timeInputEl: HTMLInputElement | undefined = $state();
+  let timeDropdownEl: HTMLDivElement | undefined = $state();
 
-	// Sync input value with selected time when not editing
-	$effect(() => {
-		const time = selectedTime;
-		if (!timeDropdownOpen) {
-			timeInputValue = time;
-		}
-	});
+  // Sync input value with selected time when not editing
+  $effect(() => {
+    const time = selectedTime;
+    if (!timeDropdownOpen) {
+      timeInputValue = time;
+    }
+  });
 
-	// Scroll to nearest slot when dropdown opens
-	$effect(() => {
-		if (timeDropdownOpen && timeDropdownEl) {
-			const idx = findClosestSlotIndex(selectedTime);
-			highlightedSlotIndex = idx;
-			const el = timeDropdownEl.children[idx] as HTMLElement;
-			if (el) el.scrollIntoView({ block: 'nearest' });
-		}
-	});
+  // Scroll to nearest slot when dropdown opens
+  $effect(() => {
+    if (timeDropdownOpen && timeDropdownEl) {
+      const idx = findClosestSlotIndex(selectedTime);
+      highlightedSlotIndex = idx;
+      const el = timeDropdownEl.children[idx] as HTMLElement;
+      if (el) el.scrollIntoView({ block: "nearest" });
+    }
+  });
 
-	function findClosestSlotIndex(time: string): number {
-		const [h, m] = time.split(':').map(Number);
-		if (isNaN(h) || isNaN(m)) return 0;
-		const minutes = h * 60 + m;
-		let closest = 0;
-		let closestDiff = Infinity;
-		for (let i = 0; i < timeSlots.length; i++) {
-			const [sh, sm] = timeSlots[i].split(':').map(Number);
-			const diff = Math.abs(sh * 60 + sm - minutes);
-			if (diff < closestDiff) {
-				closestDiff = diff;
-				closest = i;
-			}
-		}
-		return closest;
-	}
+  function findClosestSlotIndex(time: string): number {
+    const [h, m] = time.split(":").map(Number);
+    if (isNaN(h) || isNaN(m)) return 0;
+    const minutes = h * 60 + m;
+    let closest = 0;
+    let closestDiff = Infinity;
+    for (let i = 0; i < timeSlots.length; i++) {
+      const [sh, sm] = timeSlots[i].split(":").map(Number);
+      const diff = Math.abs(sh * 60 + sm - minutes);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        closest = i;
+      }
+    }
+    return closest;
+  }
 
-	function parseTimeInput(input: string): string | null {
-		const trimmed = input.trim();
+  function parseTimeInput(input: string): string | null {
+    const trimmed = input.trim();
 
-		// HH:MM (24h)
-		const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
-		if (match24) {
-			const h = parseInt(match24[1]);
-			const m = parseInt(match24[2]);
-			if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
-				return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-			}
-		}
+    // HH:MM (24h)
+    const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+    if (match24) {
+      const h = parseInt(match24[1]);
+      const m = parseInt(match24[2]);
+      if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+        return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+      }
+    }
 
-		// H:MM AM/PM
-		const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
-		if (match12) {
-			let h = parseInt(match12[1]);
-			const m = parseInt(match12[2]);
-			const period = match12[3].toLowerCase();
-			if (h >= 1 && h <= 12 && m >= 0 && m <= 59) {
-				if (period === 'pm' && h !== 12) h += 12;
-				if (period === 'am' && h === 12) h = 0;
-				return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-			}
-		}
+    // H:MM AM/PM
+    const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+    if (match12) {
+      let h = parseInt(match12[1]);
+      const m = parseInt(match12[2]);
+      const period = match12[3].toLowerCase();
+      if (h >= 1 && h <= 12 && m >= 0 && m <= 59) {
+        if (period === "pm" && h !== 12) h += 12;
+        if (period === "am" && h === 12) h = 0;
+        return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+      }
+    }
 
-		return null;
-	}
+    return null;
+  }
 
-	function commitTimeInput() {
-		const parsed = parseTimeInput(timeInputValue);
-		if (parsed && selectedLocalDate) {
-			let time = parsed;
-			if (
-				minLocal &&
-				selectedLocalDate.year === minLocal.year &&
-				selectedLocalDate.month === minLocal.month &&
-				selectedLocalDate.day === minLocal.day
-			) {
-				const [h, m] = time.split(':').map(Number);
-				const slotMin = h * 60 + m;
-				const minMin = minLocal.hours * 60 + minLocal.minutes;
-				if (slotMin < minMin) {
-					time = `${Math.floor(minMin / 60)
-						.toString()
-						.padStart(2, '0')}:${(minMin % 60).toString().padStart(2, '0')}`;
-				}
-			}
-			emitChange(selectedLocalDate.year, selectedLocalDate.month, selectedLocalDate.day, time);
-		}
-		timeInputValue = selectedTime;
-		timeDropdownOpen = false;
-		highlightedSlotIndex = -1;
-	}
+  function commitTimeInput() {
+    const parsed = parseTimeInput(timeInputValue);
+    if (parsed && selectedLocalDate) {
+      let time = parsed;
+      if (
+        minLocal &&
+        selectedLocalDate.year === minLocal.year &&
+        selectedLocalDate.month === minLocal.month &&
+        selectedLocalDate.day === minLocal.day
+      ) {
+        const [h, m] = time.split(":").map(Number);
+        const slotMin = h * 60 + m;
+        const minMin = minLocal.hours * 60 + minLocal.minutes;
+        if (slotMin < minMin) {
+          time = `${Math.floor(minMin / 60)
+            .toString()
+            .padStart(2, "0")}:${(minMin % 60).toString().padStart(2, "0")}`;
+        }
+      }
+      emitChange(
+        selectedLocalDate.year,
+        selectedLocalDate.month,
+        selectedLocalDate.day,
+        time,
+      );
+    }
+    timeInputValue = selectedTime;
+    timeDropdownOpen = false;
+    highlightedSlotIndex = -1;
+  }
 
-	function handleTimeInputFocus() {
-		open = false; // close calendar if open
-		timeDropdownOpen = true;
-		setTimeout(() => timeInputEl?.select(), 0);
-	}
+  function handleTimeInputFocus() {
+    open = false; // close calendar if open
+    timeDropdownOpen = true;
+    setTimeout(() => timeInputEl?.select(), 0);
+  }
 
-	function handleTimeInputBlur() {
-		commitTimeInput();
-	}
+  function handleTimeInputBlur() {
+    commitTimeInput();
+  }
 
-	function handleTimeInputKeydown(e: KeyboardEvent) {
-		if (e.key === 'ArrowDown') {
-			e.preventDefault();
-			if (!timeDropdownOpen) {
-				timeDropdownOpen = true;
-				highlightedSlotIndex = findClosestSlotIndex(timeInputValue);
-			} else {
-				highlightedSlotIndex = Math.min(highlightedSlotIndex + 1, timeSlots.length - 1);
-			}
-			scrollToHighlighted();
-		} else if (e.key === 'ArrowUp') {
-			e.preventDefault();
-			if (timeDropdownOpen) {
-				highlightedSlotIndex = Math.max(highlightedSlotIndex - 1, 0);
-				scrollToHighlighted();
-			}
-		} else if (e.key === 'Enter') {
-			e.preventDefault();
-			if (timeDropdownOpen && highlightedSlotIndex >= 0) {
-				selectTimeSlot(timeSlots[highlightedSlotIndex]);
-			} else {
-				commitTimeInput();
-			}
-		} else if (e.key === 'Escape') {
-			e.preventDefault();
-			timeInputValue = selectedTime;
-			timeDropdownOpen = false;
-			timeInputEl?.blur();
-		}
-	}
+  function handleTimeInputKeydown(e: KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!timeDropdownOpen) {
+        timeDropdownOpen = true;
+        highlightedSlotIndex = findClosestSlotIndex(timeInputValue);
+      } else {
+        highlightedSlotIndex = Math.min(
+          highlightedSlotIndex + 1,
+          timeSlots.length - 1,
+        );
+      }
+      scrollToHighlighted();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (timeDropdownOpen) {
+        highlightedSlotIndex = Math.max(highlightedSlotIndex - 1, 0);
+        scrollToHighlighted();
+      }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (timeDropdownOpen && highlightedSlotIndex >= 0) {
+        selectTimeSlot(timeSlots[highlightedSlotIndex]);
+      } else {
+        commitTimeInput();
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      timeInputValue = selectedTime;
+      timeDropdownOpen = false;
+      timeInputEl?.blur();
+    }
+  }
 
-	function scrollToHighlighted() {
-		if (timeDropdownEl && highlightedSlotIndex >= 0) {
-			const el = timeDropdownEl.children[highlightedSlotIndex] as HTMLElement;
-			if (el) el.scrollIntoView({ block: 'nearest' });
-		}
-	}
+  function scrollToHighlighted() {
+    if (timeDropdownEl && highlightedSlotIndex >= 0) {
+      const el = timeDropdownEl.children[highlightedSlotIndex] as HTMLElement;
+      if (el) el.scrollIntoView({ block: "nearest" });
+    }
+  }
 
-	function selectTimeSlot(slot: string) {
-		timeInputValue = slot;
-		timeDropdownOpen = false;
-		highlightedSlotIndex = -1;
-		if (selectedLocalDate) {
-			emitChange(selectedLocalDate.year, selectedLocalDate.month, selectedLocalDate.day, slot);
-		}
-	}
+  function selectTimeSlot(slot: string) {
+    timeInputValue = slot;
+    timeDropdownOpen = false;
+    highlightedSlotIndex = -1;
+    if (selectedLocalDate) {
+      emitChange(
+        selectedLocalDate.year,
+        selectedLocalDate.month,
+        selectedLocalDate.day,
+        slot,
+      );
+    }
+  }
 
-	function handleClickOutside(e: MouseEvent) {
-		if (containerEl && !containerEl.contains(e.target as Node)) {
-			open = false;
-			if (timeDropdownOpen) {
-				commitTimeInput();
-			}
-		}
-	}
+  function handleClickOutside(e: MouseEvent) {
+    if (containerEl && !containerEl.contains(e.target as Node)) {
+      open = false;
+      if (timeDropdownOpen) {
+        commitTimeInput();
+      }
+    }
+  }
 
-	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') open = false;
-	}
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") open = false;
+  }
 
-	$effect(() => {
-		if (open || timeDropdownOpen) {
-			document.addEventListener('mousedown', handleClickOutside);
-			document.addEventListener('keydown', handleKeydown);
-			return () => {
-				document.removeEventListener('mousedown', handleClickOutside);
-				document.removeEventListener('keydown', handleKeydown);
-			};
-		}
-	});
+  $effect(() => {
+    if (open || timeDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeydown);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+        document.removeEventListener("keydown", handleKeydown);
+      };
+    }
+  });
 </script>
 
 <div class="datetime-picker" bind:this={containerEl}>
-	<div class="datetime-inputs">
-		<button
-			type="button"
-			class="date-trigger"
-			class:has-value={!!selectedLocalDate}
-			onclick={() => {
-				if (!disabled) open = !open;
-			}}
-			{disabled}
-		>
-			<svg class="calendar-icon" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
-				<path
-					d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h1.25A1.75 1.75 0 0 1 18 5.75v10.5A1.75 1.75 0 0 1 16.25 18H3.75A1.75 1.75 0 0 1 2 16.25V5.75A1.75 1.75 0 0 1 3.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-2 5.5v8.75c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V7.5H3.75Z"
-				/>
-			</svg>
-			{#if displayDate}
-				{displayDate}
-			{:else}
-				<span class="placeholder">{placeholder}</span>
-			{/if}
-		</button>
+  <div class="datetime-inputs">
+    <button
+      type="button"
+      class="date-trigger"
+      class:has-value={!!selectedLocalDate}
+      onclick={() => {
+        if (!disabled) open = !open;
+      }}
+      {disabled}
+    >
+      <svg
+        class="calendar-icon"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+        width="16"
+        height="16"
+      >
+        <path
+          d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h1.25A1.75 1.75 0 0 1 18 5.75v10.5A1.75 1.75 0 0 1 16.25 18H3.75A1.75 1.75 0 0 1 2 16.25V5.75A1.75 1.75 0 0 1 3.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-2 5.5v8.75c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V7.5H3.75Z"
+        />
+      </svg>
+      {#if displayDate}
+        {displayDate}
+      {:else}
+        <span class="placeholder">{placeholder}</span>
+      {/if}
+    </button>
 
-		{#if selectedLocalDate}
-			<div class="time-combobox">
-				<input
-					bind:this={timeInputEl}
-					class="time-input"
-					type="text"
-					bind:value={timeInputValue}
-					onfocus={handleTimeInputFocus}
-					onblur={handleTimeInputBlur}
-					onkeydown={handleTimeInputKeydown}
-					role="combobox"
-					aria-label="Time"
-					aria-autocomplete="list"
-					aria-expanded={timeDropdownOpen}
-					aria-controls="time-listbox"
-					aria-activedescendant={highlightedSlotIndex >= 0
-						? `time-option-${highlightedSlotIndex}`
-						: undefined}
-					{disabled}
-				/>
-				{#if timeDropdownOpen}
-					<div class="time-dropdown" bind:this={timeDropdownEl} role="listbox" id="time-listbox">
-						{#each timeSlots as slot, i}
-							<button
-								type="button"
-								class="time-option"
-								class:highlighted={i === highlightedSlotIndex}
-								class:selected={slot === selectedTime}
-								role="option"
-								id="time-option-{i}"
-								aria-selected={slot === selectedTime}
-								onmousedown={(e) => {
-									e.preventDefault();
-									selectTimeSlot(slot);
-								}}
-							>
-								{slot}
-							</button>
-						{/each}
-					</div>
-				{/if}
-			</div>
-		{/if}
-		<span class="timezone-label">{timezone}</span>
-	</div>
+    {#if selectedLocalDate}
+      <div class="time-combobox">
+        <input
+          bind:this={timeInputEl}
+          class="time-input"
+          type="text"
+          bind:value={timeInputValue}
+          onfocus={handleTimeInputFocus}
+          onblur={handleTimeInputBlur}
+          onkeydown={handleTimeInputKeydown}
+          role="combobox"
+          aria-label="Time"
+          aria-autocomplete="list"
+          aria-expanded={timeDropdownOpen}
+          aria-controls="time-listbox"
+          aria-activedescendant={highlightedSlotIndex >= 0
+            ? `time-option-${highlightedSlotIndex}`
+            : undefined}
+          {disabled}
+        />
+        {#if timeDropdownOpen}
+          <div
+            class="time-dropdown"
+            bind:this={timeDropdownEl}
+            role="listbox"
+            id="time-listbox"
+          >
+            {#each timeSlots as slot, i}
+              <button
+                type="button"
+                class="time-option"
+                class:highlighted={i === highlightedSlotIndex}
+                class:selected={slot === selectedTime}
+                role="option"
+                id="time-option-{i}"
+                aria-selected={slot === selectedTime}
+                onmousedown={(e) => {
+                  e.preventDefault();
+                  selectTimeSlot(slot);
+                }}
+              >
+                {slot}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
+    <span class="timezone-label">{timezone}</span>
+  </div>
 
-	{#if open}
-		<div class="calendar-popup">
-			<div class="calendar-header">
-				<button type="button" class="nav-btn" onclick={prevMonth}>&lsaquo;</button>
-				<span class="month-label">{viewMonthLabel}</span>
-				<button type="button" class="nav-btn" onclick={nextMonth}>&rsaquo;</button>
-			</div>
-			<div class="calendar-grid">
-				{#each DAYS as dayName}
-					<span class="day-header">{dayName}</span>
-				{/each}
-				{#each calendarWeeks as week}
-					{#each week as cell}
-						{@const cellDisabled = !cell.inMonth || isDayDisabled(cell.year, cell.month, cell.day)}
-						<button
-							type="button"
-							class="day-cell"
-							class:other-month={!cell.inMonth}
-							class:selected={isDaySelected(cell.year, cell.month, cell.day)}
-							class:today={isToday(cell.year, cell.month, cell.day)}
-							class:disabled={cellDisabled}
-							onclick={() => {
-								if (!cellDisabled) selectDay(cell.year, cell.month, cell.day);
-							}}
-							disabled={cellDisabled}
-						>
-							{cell.day}
-						</button>
-					{/each}
-				{/each}
-			</div>
-		</div>
-	{/if}
+  {#if open}
+    <div class="calendar-popup">
+      <div class="calendar-header">
+        <button type="button" class="nav-btn" onclick={prevMonth}
+          >&lsaquo;</button
+        >
+        <span class="month-label">{viewMonthLabel}</span>
+        <button type="button" class="nav-btn" onclick={nextMonth}
+          >&rsaquo;</button
+        >
+      </div>
+      <div class="calendar-grid">
+        {#each DAYS as dayName}
+          <span class="day-header">{dayName}</span>
+        {/each}
+        {#each calendarWeeks as week}
+          {#each week as cell}
+            {@const cellDisabled =
+              !cell.inMonth || isDayDisabled(cell.year, cell.month, cell.day)}
+            <button
+              type="button"
+              class="day-cell"
+              class:other-month={!cell.inMonth}
+              class:selected={isDaySelected(cell.year, cell.month, cell.day)}
+              class:today={isToday(cell.year, cell.month, cell.day)}
+              class:disabled={cellDisabled}
+              onclick={() => {
+                if (!cellDisabled) selectDay(cell.year, cell.month, cell.day);
+              }}
+              disabled={cellDisabled}
+            >
+              {cell.day}
+            </button>
+          {/each}
+        {/each}
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
-	.datetime-picker {
-		position: relative;
-	}
+  .datetime-picker {
+    position: relative;
+  }
 
-	.datetime-inputs {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		align-items: center;
-	}
+  .datetime-inputs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
 
-	.date-trigger {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.75rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-family: var(--font-family);
-		font-size: 1rem;
-		cursor: pointer;
-		transition: border-color var(--transition);
-		min-width: 0;
-		text-align: left;
-	}
+  .date-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: var(--font-family);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: border-color var(--transition);
+    min-width: 0;
+    text-align: left;
+  }
 
-	.date-trigger:hover:not(:disabled) {
-		border-color: var(--color-purple);
-	}
+  .date-trigger:hover:not(:disabled) {
+    border-color: var(--color-purple);
+  }
 
-	.date-trigger:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
+  .date-trigger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 
-	.date-trigger .placeholder {
-		color: var(--color-text-disabled);
-	}
+  .date-trigger .placeholder {
+    color: var(--color-text-disabled);
+  }
 
-	.calendar-icon {
-		color: var(--color-text-secondary);
-		flex-shrink: 0;
-	}
+  .calendar-icon {
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+  }
 
-	.time-combobox {
-		position: relative;
-	}
+  .time-combobox {
+    position: relative;
+  }
 
-	.time-input {
-		padding: 0.75rem 0.5rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-family: var(--font-family);
-		font-size: 1rem;
-		width: 5.5rem;
-		transition: border-color var(--transition);
-	}
+  .time-input {
+    padding: 0.75rem 0.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: var(--font-family);
+    font-size: 1rem;
+    width: 5.5rem;
+    transition: border-color var(--transition);
+  }
 
-	.time-input:hover:not(:disabled) {
-		border-color: var(--color-purple);
-	}
+  .time-input:hover:not(:disabled) {
+    border-color: var(--color-purple);
+  }
 
-	.time-input:focus {
-		outline: none;
-		border-color: var(--color-purple);
-	}
+  .time-input:focus {
+    outline: none;
+    border-color: var(--color-purple);
+  }
 
-	.time-input:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
+  .time-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 
-	.time-dropdown {
-		position: absolute;
-		top: 100%;
-		left: 0;
-		z-index: 100;
-		background: var(--color-surface-elevated);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-		max-height: 200px;
-		overflow-y: auto;
-		width: 100%;
-		margin-top: 2px;
-	}
+  .time-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 100;
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    max-height: 200px;
+    overflow-y: auto;
+    width: 100%;
+    margin-top: 2px;
+  }
 
-	.time-option {
-		display: block;
-		width: 100%;
-		padding: 0.4rem 0.75rem;
-		border: none;
-		background: none;
-		color: var(--color-text);
-		font-family: var(--font-family);
-		font-size: var(--font-size-sm);
-		text-align: left;
-		cursor: pointer;
-	}
+  .time-option {
+    display: block;
+    width: 100%;
+    padding: 0.4rem 0.75rem;
+    border: none;
+    background: none;
+    color: var(--color-text);
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+  }
 
-	.time-option:hover,
-	.time-option.highlighted {
-		background: var(--color-surface);
-	}
+  .time-option:hover,
+  .time-option.highlighted {
+    background: var(--color-surface);
+  }
 
-	.time-option.selected {
-		color: var(--color-purple);
-		font-weight: 600;
-	}
+  .time-option.selected {
+    color: var(--color-purple);
+    font-weight: 600;
+  }
 
-	.calendar-popup {
-		position: absolute;
-		top: calc(100% - 1rem);
-		left: 0;
-		z-index: 100;
-		background: var(--color-surface-elevated);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-lg);
-		padding: 0.75rem;
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-		min-width: 280px;
-	}
+  .calendar-popup {
+    position: absolute;
+    top: calc(100% - 1rem);
+    left: 0;
+    z-index: 100;
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 0.75rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    min-width: 280px;
+  }
 
-	.calendar-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 0.5rem;
-	}
+  .calendar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
 
-	.nav-btn {
-		background: none;
-		border: none;
-		color: var(--color-text-secondary);
-		font-size: 1.25rem;
-		cursor: pointer;
-		padding: 0.25rem 0.5rem;
-		border-radius: var(--radius-sm);
-		line-height: 1;
-		transition:
-			color var(--transition),
-			background-color var(--transition);
-	}
+  .nav-btn {
+    background: none;
+    border: none;
+    color: var(--color-text-secondary);
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    line-height: 1;
+    transition:
+      color var(--transition),
+      background-color var(--transition);
+  }
 
-	.nav-btn:hover {
-		color: var(--color-text);
-		background: var(--color-surface);
-	}
+  .nav-btn:hover {
+    color: var(--color-text);
+    background: var(--color-surface);
+  }
 
-	.month-label {
-		font-weight: 600;
-		font-size: var(--font-size-base);
-		color: var(--color-text);
-	}
+  .month-label {
+    font-weight: 600;
+    font-size: var(--font-size-base);
+    color: var(--color-text);
+  }
 
-	.calendar-grid {
-		display: grid;
-		grid-template-columns: repeat(7, 1fr);
-		gap: 2px;
-		text-align: center;
-	}
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    text-align: center;
+  }
 
-	.day-header {
-		font-size: var(--font-size-xs);
-		font-weight: 500;
-		color: var(--color-text-disabled);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		padding: 0.25rem 0;
-	}
+  .day-header {
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    color: var(--color-text-disabled);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.25rem 0;
+  }
 
-	.day-cell {
-		background: none;
-		border: 1px solid transparent;
-		border-radius: var(--radius-sm);
-		color: var(--color-text);
-		font-family: var(--font-family);
-		font-size: var(--font-size-sm);
-		font-variant-numeric: tabular-nums;
-		padding: 0.35rem 0;
-		cursor: pointer;
-		transition:
-			background-color var(--transition),
-			border-color var(--transition);
-	}
+  .day-cell {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    padding: 0.35rem 0;
+    cursor: pointer;
+    transition:
+      background-color var(--transition),
+      border-color var(--transition);
+  }
 
-	.day-cell:hover:not(:disabled):not(.selected) {
-		background: var(--color-surface);
-	}
+  .day-cell:hover:not(:disabled):not(.selected) {
+    background: var(--color-surface);
+  }
 
-	.day-cell.other-month {
-		color: var(--color-text-disabled);
-		opacity: 0.4;
-	}
+  .day-cell.other-month {
+    color: var(--color-text-disabled);
+    opacity: 0.4;
+  }
 
-	.day-cell.today {
-		border-color: var(--color-border);
-	}
+  .day-cell.today {
+    border-color: var(--color-border);
+  }
 
-	.day-cell.selected {
-		background: var(--color-purple);
-		color: white;
-		font-weight: 600;
-	}
+  .day-cell.selected {
+    background: var(--color-purple);
+    color: white;
+    font-weight: 600;
+  }
 
-	.day-cell.disabled,
-	.day-cell:disabled {
-		color: var(--color-text-disabled);
-		opacity: 0.3;
-		cursor: not-allowed;
-	}
+  .day-cell.disabled,
+  .day-cell:disabled {
+    color: var(--color-text-disabled);
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
 
-	.timezone-label {
-		font-size: var(--font-size-xs);
-		color: var(--color-text-disabled);
-	}
+  .timezone-label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-disabled);
+  }
 </style>
