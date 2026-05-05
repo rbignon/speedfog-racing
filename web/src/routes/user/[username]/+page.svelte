@@ -257,10 +257,6 @@
         <span class="stat-number">{profile.stats.organized_count}</span>
         <span class="stat-label">Organized</span>
       </div>
-      <div class="stat-card">
-        <span class="stat-number">{profile.stats.casted_count}</span>
-        <span class="stat-label">Casted</span>
-      </div>
     </div>
 
     {#if traits}
@@ -594,7 +590,7 @@
 
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 0.75rem;
     margin-bottom: 2.5rem;
   }
