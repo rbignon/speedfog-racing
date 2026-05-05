@@ -42,6 +42,7 @@ from speedfog_racing.schemas import (
     ActivityTimelineResponse,
     AdminFeedbackItem,
     AdminFeedbackListResponse,
+    DailyParticipantActivity,
     RaceCasterActivity,
     RaceOrganizerActivity,
     RaceParticipantActivity,
@@ -511,17 +512,23 @@ async def get_global_activity(
     # TODO: optimize with SQL-level pagination when dataset grows
     items: list[ActivityItem] = []
 
-    # 1. Race participations (all users, no Race.participants loaded)
+    # 1. Race participations (all users, no Race.participants loaded). Eager-load
+    # Race.seed so the daily-vs-regular branch below can read pool info without
+    # triggering N+1 lazy loads (Seed.pool is lazy="joined" on the model).
     part_q = await db.execute(
         select(Participant).options(
             selectinload(Participant.user),
-            selectinload(Participant.race),
+            selectinload(Participant.race).selectinload(Race.seed),
         )
     )
     all_participants = part_q.scalars().all()
 
-    # 2. Organized races (all users)
-    org_q = await db.execute(select(Race).options(selectinload(Race.organizer)))
+    # 2. Organized races (all users). Daily races are excluded because they are
+    # system-organized; the per-participant DailyParticipantActivity entries
+    # already represent them on the timeline.
+    org_q = await db.execute(
+        select(Race).where(Race.daily_date.is_(None)).options(selectinload(Race.organizer))
+    )
     all_races = org_q.scalars().all()
 
     # Batch-compute counts and placements for all races
@@ -535,21 +542,41 @@ async def get_global_activity(
 
     for p in all_participants:
         race = p.race
-        items.append(
-            RaceParticipantActivity(
-                date=race_date(race),
-                user=user_response(p.user),
-                race_id=race.id,
-                race_name=race.name,
-                status=race.status.value,
-                placement=placements.get((race.id, p.id)),
-                total_participants=total_by_race.get(race.id, 0),
-                igt_ms=p.igt_ms,
-                death_count=p.death_count,
-                is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
-                is_organizer=p.user_id == race.organizer_id,
+        if race.daily_date is not None:
+            items.append(
+                DailyParticipantActivity(
+                    date=race_date(race),
+                    user=user_response(p.user),
+                    race_id=race.id,
+                    daily_date=race.daily_date,
+                    pool_name=race.seed.pool_name if race.seed else "",
+                    pool_display_name=(
+                        format_pool_display_name(race.seed.pool) if race.seed else None
+                    ),
+                    status=race.status.value,
+                    placement=placements.get((race.id, p.id)),
+                    total_participants=total_by_race.get(race.id, 0),
+                    igt_ms=p.igt_ms,
+                    death_count=p.death_count,
+                    is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
+                )
             )
-        )
+        else:
+            items.append(
+                RaceParticipantActivity(
+                    date=race_date(race),
+                    user=user_response(p.user),
+                    race_id=race.id,
+                    race_name=race.name,
+                    status=race.status.value,
+                    placement=placements.get((race.id, p.id)),
+                    total_participants=total_by_race.get(race.id, 0),
+                    igt_ms=p.igt_ms,
+                    death_count=p.death_count,
+                    is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
+                    is_organizer=p.user_id == race.organizer_id,
+                )
+            )
 
     for race in all_races:
         if (race.id, race.organizer_id) in participant_pairs:

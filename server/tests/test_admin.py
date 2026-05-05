@@ -3,7 +3,7 @@
 import json
 import tempfile
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -653,6 +653,66 @@ async def test_activity_merges_organizer_into_participant(
     # Race B: organizer and participant rows are both kept; participant is not the organizer.
     assert "race_organizer" in by_race[race_b_id]
     assert by_race[race_b_id]["race_participant"]["is_organizer"] is False
+
+
+@pytest.mark.asyncio
+async def test_activity_daily_race_emits_daily_participant(
+    test_client, admin_user, regular_user, async_session
+):
+    """A participant in a race with daily_date set must appear as daily_participant
+    (not race_participant); the race must NOT also produce a separate organizer
+    entry, since dailies are system-organized."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="daily_act_seed",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/daily/seed",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Daily Race",
+            organizer_id=admin_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            daily_date=date(2026, 5, 5),
+        )
+        db.add(race)
+        await db.flush()
+
+        db.add(
+            Participant(
+                race_id=race.id,
+                user_id=regular_user.id,
+                status=ParticipantStatus.FINISHED,
+                igt_ms=120000,
+                death_count=2,
+            )
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/activity",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    types = [i["type"] for i in data["items"]]
+    assert "daily_participant" in types
+    assert "race_participant" not in types
+    # Daily races must not yield a separate race_organizer entry
+    assert "race_organizer" not in types
+
+    daily_item = next(i for i in data["items"] if i["type"] == "daily_participant")
+    assert daily_item["daily_date"] == "2026-05-05"
+    assert daily_item["pool_name"] == "standard"
+    assert daily_item["igt_ms"] == 120000
+    assert daily_item["death_count"] == 2
 
 
 @pytest.mark.asyncio

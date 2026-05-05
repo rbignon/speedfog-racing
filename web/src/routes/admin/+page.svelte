@@ -1162,7 +1162,7 @@
 							<span class="activity-date">{formatFullDate(item.date)}</span>
 						</div>
 						<div class="col-what">
-							{#if (item.type === 'race_participant' || item.type === 'training') && item.is_mod_connected}
+							{#if (item.type === 'race_participant' || item.type === 'training' || item.type === 'daily_participant') && item.is_mod_connected}
 								<span
 									class="conn-dot connected"
 									role="img"
@@ -1174,6 +1174,10 @@
 								<a href="/race/{item.race_id}" class="activity-title">{item.race_name}</a>
 							{:else if item.type === 'training'}
 								<a href="/training/{item.session_id}" class="activity-title"
+									>{item.pool_display_name || formatPoolName(item.pool_name)}</a
+								>
+							{:else if item.type === 'daily_participant'}
+								<a href="/daily/{item.daily_date}" class="activity-title"
 									>{item.pool_display_name || formatPoolName(item.pool_name)}</a
 								>
 							{/if}
@@ -1191,6 +1195,11 @@
 									<span class="activity-badge caster">Casted</span>
 								{:else if item.type === 'training'}
 									<span class="activity-badge training">Solo</span>
+								{:else if item.type === 'daily_participant'}
+									<span class="activity-badge daily">Daily</span>
+									{#if item.status === 'running'}
+										<span class="activity-badge daily-active">Active</span>
+									{/if}
 								{/if}
 								<span class="badge badge-{item.status}">{statusLabel(item.status)}</span>
 								{#if item.type === 'training' && item.exclude_from_stats}
@@ -1209,6 +1218,16 @@
 								{:else if item.type === 'race_organizer'}
 									<span>{item.participant_count} players</span>
 								{:else if item.type === 'training'}
+									<span class="mono">{formatIgt(item.igt_ms)}</span>
+									<span>{item.death_count} deaths</span>
+								{:else if item.type === 'daily_participant'}
+									{#if item.placement}
+										<span class="placement {placementClass(item.placement)}">
+											{placementLabel(item.placement)} / {item.total_participants}
+										</span>
+									{:else if item.status === 'finished'}
+										<span class="placement-dnf">DNF / {item.total_participants}</span>
+									{/if}
 									<span class="mono">{formatIgt(item.igt_ms)}</span>
 									<span>{item.death_count} deaths</span>
 								{/if}
@@ -1705,6 +1724,16 @@
 	.activity-badge.training {
 		background: rgba(139, 92, 246, 0.15);
 		color: var(--color-purple);
+	}
+
+	.activity-badge.daily {
+		background: rgba(45, 212, 191, 0.15);
+		color: #2dd4bf;
+	}
+
+	.activity-badge.daily-active {
+		background: rgba(200, 164, 78, 0.15);
+		color: var(--color-gold);
 	}
 
 	.activity-details {
