@@ -162,6 +162,17 @@ class ParticipantPreview(UserResponse):
     igt_ms: int | None = None
 
 
+class UserStatsWeekly(BaseModel):
+    """Per-category weekly counts since the user joined (capped at 52w)."""
+
+    races: list[int]
+    daily: list[int]
+    solo: list[int]
+    organized: list[int]
+    weeks_count: int
+    capped: bool
+
+
 class UserStatsResponse(BaseModel):
     """Aggregated user statistics."""
 
