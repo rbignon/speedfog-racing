@@ -151,8 +151,7 @@
                         class:connected={participant.mod_connected}
                         title={participant.mod_connected ? "Mod connected" : "Mod disconnected"}
                       ></span>
-                    {/if}
-                    {participant.twitch_display_name || participant.twitch_username}
+                    {/if}<span>{participant.twitch_display_name || participant.twitch_username}</span>
                   </a>
                   {#if badge}
                     <img
@@ -198,8 +197,7 @@
                       class:connected={participant.mod_connected}
                       title={participant.mod_connected ? "Mod connected" : "Mod disconnected"}
                     ></span>
-                  {/if}
-                  {participant.twitch_display_name || participant.twitch_username}
+                  {/if}<span>{participant.twitch_display_name || participant.twitch_username}</span>
                 </a>
                 {#if badge}
                   <img
