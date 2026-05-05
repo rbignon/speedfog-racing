@@ -302,7 +302,7 @@ async def test_activity_participant_has_placement(test_client, user_with_activit
         participant_items = [i for i in data["items"] if i["type"] == "race_participant"]
         for item in participant_items:
             assert "placement" in item
-            assert "total_participants" in item
+            assert "total_starters" in item
             assert "igt_ms" in item
             assert "death_count" in item
             assert "race_name" in item
@@ -373,6 +373,79 @@ async def test_activity_merges_self_organized_race(test_client, async_session):
     assert "race_organizer" not in types
     participant_item = next(i for i in data["items"] if i["type"] == "race_participant")
     assert participant_item["is_organizer"] is True
+
+
+@pytest.mark.asyncio
+async def test_activity_total_starters_excludes_no_shows(test_client, async_session):
+    """Activity items report total_starters (igt_ms > 0), not the raw signup count.
+
+    A no-show participant must not bloat the denominator next to the player's
+    placement on their profile activity feed.
+    """
+    async with async_session() as db:
+        me = User(
+            twitch_id="starters_me",
+            twitch_username="starters_me",
+            api_token="starters_me_token",
+        )
+        starter = User(twitch_id="starters_run", twitch_username="starters_run")
+        no_show = User(twitch_id="starters_skip", twitch_username="starters_skip")
+        organizer = User(twitch_id="starters_org", twitch_username="starters_org")
+        db.add_all([me, starter, no_show, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="starters_seed",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/seed/path",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Starters Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        db.add(race)
+        await db.flush()
+
+        db.add_all(
+            [
+                Participant(
+                    race_id=race.id,
+                    user_id=me.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=120000,
+                ),
+                Participant(
+                    race_id=race.id,
+                    user_id=starter.id,
+                    status=ParticipantStatus.ABANDONED,
+                    igt_ms=60000,
+                ),
+                Participant(
+                    race_id=race.id,
+                    user_id=no_show.id,
+                    status=ParticipantStatus.ABANDONED,
+                    igt_ms=0,
+                ),
+            ]
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/users/starters_me/activity")
+        assert response.status_code == 200
+        data = response.json()
+
+    item = next(i for i in data["items"] if i["type"] == "race_participant")
+    assert item["placement"] == 1
+    assert item["total_starters"] == 2
 
 
 @pytest.mark.asyncio
@@ -538,7 +611,7 @@ async def test_activity_emits_daily_participant_for_daily_seeds(test_client, asy
     assert daily_item["pool_display_name"] == "Standard"
     assert daily_item["status"] == "finished"
     assert daily_item["placement"] == 1
-    assert daily_item["total_participants"] == 1
+    assert daily_item["total_starters"] == 1
     assert daily_item["igt_ms"] == 180000
     assert daily_item["death_count"] == 2
 

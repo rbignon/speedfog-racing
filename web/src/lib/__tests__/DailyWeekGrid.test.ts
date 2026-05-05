@@ -16,7 +16,7 @@ const mockWeek: DailyWeekResponse = {
       race_id: "race-1",
       started_at: "2026-04-27T08:00:00Z",
       ends_at: "2026-04-28T08:00:00Z",
-      finishers_count: 3,
+      starters_count: 3,
       participants_count: 5,
       podium: [
         {
@@ -30,7 +30,7 @@ const mockWeek: DailyWeekResponse = {
       my_result: {
         status: "finished",
         placement: 2,
-        total_finishers: 3,
+        total_starters: 3,
         igt_ms: 2_700_000,
         death_count: 1,
       },
@@ -44,7 +44,7 @@ const mockWeek: DailyWeekResponse = {
       race_id: null,
       started_at: null,
       ends_at: null,
-      finishers_count: 0,
+      starters_count: 0,
       participants_count: 0,
       podium: [],
       my_result: null,
@@ -58,7 +58,7 @@ const mockWeek: DailyWeekResponse = {
       race_id: "race-today",
       started_at: "2026-04-29T08:00:00Z",
       ends_at: "2026-04-30T08:00:00Z",
-      finishers_count: 0,
+      starters_count: 0,
       participants_count: 2,
       podium: [],
       my_result: null,
@@ -72,7 +72,7 @@ const mockWeek: DailyWeekResponse = {
       race_id: null,
       started_at: "2026-04-30T08:00:00Z",
       ends_at: "2026-05-01T08:00:00Z",
-      finishers_count: 0,
+      starters_count: 0,
       participants_count: 0,
       podium: [],
       my_result: null,
@@ -86,7 +86,7 @@ const mockWeek: DailyWeekResponse = {
       race_id: null,
       started_at: "2026-05-01T08:00:00Z",
       ends_at: "2026-05-02T08:00:00Z",
-      finishers_count: 0,
+      starters_count: 0,
       participants_count: 0,
       podium: [],
       my_result: null,
@@ -100,7 +100,7 @@ const mockWeek: DailyWeekResponse = {
       race_id: null,
       started_at: "2026-05-02T08:00:00Z",
       ends_at: "2026-05-03T08:00:00Z",
-      finishers_count: 0,
+      starters_count: 0,
       participants_count: 0,
       podium: [],
       my_result: null,
@@ -114,7 +114,7 @@ const mockWeek: DailyWeekResponse = {
       race_id: null,
       started_at: "2026-05-03T08:00:00Z",
       ends_at: "2026-05-04T08:00:00Z",
-      finishers_count: 0,
+      starters_count: 0,
       participants_count: 0,
       podium: [],
       my_result: null,
@@ -164,7 +164,7 @@ describe("DailyWeekGrid", () => {
               my_result: {
                 status: "abandoned",
                 placement: null,
-                total_finishers: 3,
+                total_starters: 3,
                 igt_ms: null,
                 death_count: 2,
               },
@@ -235,7 +235,7 @@ describe("DailyWeekGrid", () => {
               my_result: {
                 status: "registered",
                 placement: null,
-                total_finishers: 0,
+                total_starters: 0,
                 igt_ms: null,
                 death_count: 0,
               },
@@ -261,7 +261,7 @@ describe("DailyWeekGrid", () => {
               my_result: {
                 status: "finished",
                 placement: 4,
-                total_finishers: 17,
+                total_starters: 17,
                 igt_ms: 2_468_000,
                 death_count: 0,
               },
@@ -292,7 +292,7 @@ describe("DailyWeekGrid", () => {
               my_result: {
                 status: "abandoned",
                 placement: null,
-                total_finishers: 0,
+                total_starters: 0,
                 igt_ms: null,
                 death_count: 0,
               },
@@ -318,7 +318,7 @@ describe("DailyWeekGrid", () => {
               my_result: {
                 status: "registered",
                 placement: null,
-                total_finishers: 0,
+                total_starters: 0,
                 igt_ms: null,
                 death_count: 0,
               },
@@ -341,7 +341,7 @@ describe("DailyWeekGrid", () => {
         d.state === "today"
           ? {
               ...d,
-              finishers_count: 1,
+              starters_count: 1,
               podium: [
                 {
                   placement: 1,

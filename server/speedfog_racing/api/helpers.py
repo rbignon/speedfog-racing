@@ -198,23 +198,42 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
 
 async def compute_race_stats(
     db: AsyncSession, race_ids: Sequence[uuid.UUID]
-) -> tuple[dict[uuid.UUID, int], dict[tuple[uuid.UUID, uuid.UUID], int]]:
-    """Compute participant counts and placements for a batch of races.
+) -> tuple[
+    dict[uuid.UUID, int],
+    dict[uuid.UUID, int],
+    dict[tuple[uuid.UUID, uuid.UUID], int],
+]:
+    """Compute participant counts, starter counts and placements for a batch of races.
+
+    A "starter" is a participant who actually launched their run (igt_ms > 0).
+    No-shows (registered/ready but never started) are excluded from the starter
+    count so the denominator next to a placement reflects the real competitive
+    field. The total participant count (including no-shows) is also returned
+    for organizer-facing summaries.
 
     Returns:
-        total_by_race: {race_id: total_participant_count}
+        total_by_race: {race_id: participant_count}
+        starters_by_race: {race_id: starter_count}
         placements: {(race_id, participant_id): 1-based placement}
                     Only includes finished participants.
     """
     if not race_ids:
-        return {}, {}
+        return {}, {}, {}
 
     count_q = await db.execute(
-        select(Participant.race_id, func.count().label("total"))
+        select(
+            Participant.race_id,
+            func.count().label("total"),
+            func.count().filter(Participant.igt_ms > 0).label("starters"),
+        )
         .where(Participant.race_id.in_(race_ids))
         .group_by(Participant.race_id)
     )
-    total_by_race = {row.race_id: row.total for row in count_q}
+    total_by_race: dict[uuid.UUID, int] = {}
+    starters_by_race: dict[uuid.UUID, int] = {}
+    for count_row in count_q:
+        total_by_race[count_row.race_id] = count_row.total
+        starters_by_race[count_row.race_id] = count_row.starters
 
     finished_q = await db.execute(
         select(Participant.race_id, Participant.id)
@@ -234,4 +253,4 @@ async def compute_race_stats(
         rank += 1
         placements[(row.race_id, row.id)] = rank
 
-    return total_by_race, placements
+    return total_by_race, starters_by_race, placements

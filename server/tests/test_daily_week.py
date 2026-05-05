@@ -140,13 +140,13 @@ async def test_week_endpoint_returns_seven_days(dw_test_client, dw_async_session
     today_cell = data["days"][today.weekday()]
     assert today_cell["state"] == "today"
     assert today_cell["race_id"] is not None
-    assert today_cell["finishers_count"] == 0
+    assert today_cell["starters_count"] == 0
     assert today_cell["podium"] == []
 
     if past_index is not None:
         past_cell = data["days"][past_index]
         assert past_cell["state"] == "past"
-        assert past_cell["finishers_count"] == 1
+        assert past_cell["starters_count"] == 1
         assert past_cell["podium"][0]["placement"] == 1
         assert past_cell["podium"][0]["igt_ms"] == 2_520_000
 
@@ -225,7 +225,7 @@ async def test_week_endpoint_populates_my_result_for_authenticated_user(
     assert my is not None
     assert my["status"] == "finished"
     assert my["placement"] == 2
-    assert my["total_finishers"] == 2
+    assert my["total_starters"] == 2
     assert my["igt_ms"] == 2_700_000
     assert my["death_count"] == 2
 
@@ -235,13 +235,96 @@ async def test_week_endpoint_populates_my_result_for_authenticated_user(
 
 
 @pytest.mark.asyncio
+async def test_week_endpoint_starters_count_excludes_no_shows(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    """starters_count counts participants with igt_ms > 0, excluding no-shows.
+
+    A user who registered but never launched the game has igt_ms == 0 and
+    must not bloat the denominator next to a placement.
+    """
+    today = daily_date_for(datetime.now(UTC))
+    week_start = today - timedelta(days=today.weekday())
+    if today.weekday() == 0:
+        pytest.skip("Need at least one past weekday in the current week")
+    past_date = week_start
+
+    async with dw_async_session_maker() as db:
+        organizer = _user()
+        db.add(organizer)
+        await db.flush()
+
+        me = _user(api_token="my-token")
+        starter = _user()
+        no_show = _user()
+        for u in (me, starter, no_show):
+            db.add(u)
+        await db.flush()
+
+        race = _daily_race(organizer=organizer, the_date=past_date, status=RaceStatus.FINISHED)
+        db.add(race)
+        await db.flush()
+
+        # Me: finished.
+        db.add(
+            Participant(
+                id=uuid4(),
+                race_id=race.id,
+                user_id=me.id,
+                status=ParticipantStatus.FINISHED,
+                igt_ms=2_700_000,
+                current_layer=4,
+                death_count=0,
+                finished_at=race.started_at + timedelta(minutes=45),
+            )
+        )
+        # Real abandon: started running, quit mid-race.
+        db.add(
+            Participant(
+                id=uuid4(),
+                race_id=race.id,
+                user_id=starter.id,
+                status=ParticipantStatus.ABANDONED,
+                igt_ms=900_000,
+                current_layer=2,
+                death_count=3,
+            )
+        )
+        # No-show: registered but never launched.
+        db.add(
+            Participant(
+                id=uuid4(),
+                race_id=race.id,
+                user_id=no_show.id,
+                status=ParticipantStatus.ABANDONED,
+                igt_ms=0,
+                current_layer=0,
+                death_count=0,
+            )
+        )
+
+        await db.commit()
+
+    response = await dw_test_client.get(
+        "/api/daily/week", headers={"Authorization": "Bearer my-token"}
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+
+    past_cell = data["days"][past_date.weekday()]
+    assert past_cell["starters_count"] == 2
+    assert past_cell["participants_count"] == 3
+    assert past_cell["my_result"]["total_starters"] == 2
+
+
+@pytest.mark.asyncio
 async def test_week_endpoint_today_pending_when_loop_has_not_run(
     dw_test_client, dw_async_session_maker
 ) -> None:
     """When no Race row exists for today (loop has not fired yet).
 
     The cell must still render with state='today', race_id=None, empty podium,
-    and finishers_count=0. Pool information comes from the schedule row.
+    and starters_count=0. Pool information comes from the schedule row.
     """
     today = daily_date_for(datetime.now(UTC))
 
@@ -257,7 +340,7 @@ async def test_week_endpoint_today_pending_when_loop_has_not_run(
     assert today_cell["state"] == "today"
     assert today_cell["race_id"] is None
     assert today_cell["podium"] == []
-    assert today_cell["finishers_count"] == 0
+    assert today_cell["starters_count"] == 0
 
 
 @pytest.mark.asyncio

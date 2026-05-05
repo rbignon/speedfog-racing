@@ -306,7 +306,7 @@ async def get_user_activity(
 
     # Batch-compute counts and placements for all relevant races
     all_race_ids = list({p.race_id for p in participations} | {r.id for r in organized_races})
-    total_by_race, placements = await compute_race_stats(db, all_race_ids)
+    total_by_race, starters_by_race, placements = await compute_race_stats(db, all_race_ids)
 
     # Race ids the user also participated in: merge the organizer entry into
     # the participant entry instead of producing two cards.
@@ -326,7 +326,7 @@ async def get_user_activity(
                     ),
                     status=race.status.value,
                     placement=placements.get((race.id, p.id)),
-                    total_participants=total_by_race.get(race.id, 0),
+                    total_starters=starters_by_race.get(race.id, 0),
                     igt_ms=p.igt_ms,
                     death_count=p.death_count,
                 )
@@ -339,7 +339,7 @@ async def get_user_activity(
                     race_name=race.name,
                     status=race.status.value,
                     placement=placements.get((race.id, p.id)),
-                    total_participants=total_by_race.get(race.id, 0),
+                    total_starters=starters_by_race.get(race.id, 0),
                     igt_ms=p.igt_ms,
                     death_count=p.death_count,
                     is_organizer=race.organizer_id == user_id,

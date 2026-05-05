@@ -128,7 +128,7 @@ def _my_result(
     parts: list[Participant],
     ranked: list[Participant],
     user: User | None,
-    finishers_count: int,
+    starters_count: int,
 ) -> DailyMyResult | None:
     if user is None:
         return None
@@ -144,7 +144,7 @@ def _my_result(
     return DailyMyResult(
         status=me.status,
         placement=placement,
-        total_finishers=finishers_count,
+        total_starters=starters_count,
         igt_ms=me.igt_ms if me.status == ParticipantStatus.FINISHED else None,
         death_count=me.death_count,
     )
@@ -188,7 +188,7 @@ async def get_daily_week(
 
         if race is not None:
             ranked = _ranked_finishers(race.participants)
-            finishers_count = len(ranked)
+            starters_count = sum(1 for p in race.participants if p.igt_ms > 0)
             cell_pool_name: str | None
             cell_pool_display: str | None
             if race.seed is not None:
@@ -211,10 +211,10 @@ async def get_daily_week(
                     race_id=str(race.id),
                     started_at=race.started_at,
                     ends_at=race_ends_at,
-                    finishers_count=finishers_count,
+                    starters_count=starters_count,
                     participants_count=len(race.participants),
                     podium=_build_podium(ranked),
-                    my_result=_my_result(race.participants, ranked, user, finishers_count),
+                    my_result=_my_result(race.participants, ranked, user, starters_count),
                 )
             )
             continue
@@ -238,7 +238,7 @@ async def get_daily_week(
                 race_id=None,
                 started_at=started_at,
                 ends_at=ends_at,
-                finishers_count=0,
+                starters_count=0,
                 participants_count=0,
                 podium=[],
                 my_result=None,

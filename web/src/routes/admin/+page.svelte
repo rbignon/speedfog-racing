@@ -1347,7 +1347,7 @@
                 {#if item.type === "race_participant"}
                   {#if item.placement}
                     <span class="placement {placementClass(item.placement)}">
-                      {placementLabel(item.placement)} / {item.total_participants}
+                      {placementLabel(item.placement)} / {item.total_starters}
                     </span>
                   {/if}
                   <span class="mono">{formatIgt(item.igt_ms)}</span>
@@ -1360,11 +1360,11 @@
                 {:else if item.type === "daily_participant"}
                   {#if item.placement}
                     <span class="placement {placementClass(item.placement)}">
-                      {placementLabel(item.placement)} / {item.total_participants}
+                      {placementLabel(item.placement)} / {item.total_starters}
                     </span>
                   {:else if item.status === "finished"}
                     <span class="placement-dnf"
-                      >DNF / {item.total_participants}</span
+                      >DNF / {item.total_starters}</span
                     >
                   {/if}
                   <span class="mono">{formatIgt(item.igt_ms)}</span>

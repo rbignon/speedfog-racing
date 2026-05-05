@@ -47,7 +47,7 @@
   function finishedScore(day: DailyWeekDay): string {
     const r = day.my_result;
     if (r && r.status === "finished" && r.placement && r.igt_ms != null) {
-      return `${r.placement}/${r.total_finishers} · ${formatIgt(r.igt_ms)}`;
+      return `${r.placement}/${r.total_starters} · ${formatIgt(r.igt_ms)}`;
     }
     return "Done";
   }
@@ -113,8 +113,8 @@
           <span class="weekday">{WEEKDAY_LABELS[day.weekday]}</span>
           {#if day.state === "today"}
             <span class="badge today">Today</span>
-          {:else if day.state === "past" && day.finishers_count > 0}
-            <span class="meta">{day.finishers_count} finishers</span>
+          {:else if day.state === "past" && day.starters_count > 0}
+            <span class="meta">{day.starters_count} participants</span>
           {/if}
         </div>
 

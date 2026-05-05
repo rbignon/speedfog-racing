@@ -571,12 +571,12 @@
                 <span class="activity-details">
                   {#if item.type === "race_participant"}
                     {#if item.status === "finished" && item.placement}
-                      {placementMedal(item.placement)}/{item.total_participants}
+                      {placementMedal(item.placement)}/{item.total_starters}
                       &middot;
                     {:else if item.status === "finished"}
                       DNF &middot;
                     {:else if item.status !== "setup"}
-                      {item.total_participants} players &middot;
+                      {item.total_starters} players &middot;
                     {/if}
                     {#if item.igt_ms > 0}
                       {formatIgt(item.igt_ms)} &middot; {item.death_count} deaths
@@ -591,7 +591,7 @@
                     {/if}
                   {:else if item.type === "daily_participant"}
                     {#if item.status === "finished" && item.placement}
-                      {placementMedal(item.placement)}/{item.total_participants}
+                      {placementMedal(item.placement)}/{item.total_starters}
                       &middot;
                     {:else if item.status === "finished"}
                       DNF &middot;

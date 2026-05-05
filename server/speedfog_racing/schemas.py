@@ -246,7 +246,7 @@ class RaceParticipantActivity(ActivityItemBase):
     race_name: str
     status: str
     placement: int | None = None
-    total_participants: int
+    total_starters: int
     igt_ms: int
     death_count: int
     is_mod_connected: bool = False
@@ -261,7 +261,7 @@ class DailyParticipantActivity(ActivityItemBase):
     pool_display_name: str | None = None
     status: str
     placement: int | None = None
-    total_participants: int
+    total_starters: int
     igt_ms: int
     death_count: int
     is_mod_connected: bool = False
@@ -469,7 +469,7 @@ class DailyMyResult(BaseModel):
 
     status: ParticipantStatus
     placement: int | None  # only when status == FINISHED
-    total_finishers: int
+    total_starters: int
     igt_ms: int | None  # only when status == FINISHED
     death_count: int
 
@@ -485,8 +485,8 @@ class DailyWeekDay(BaseModel):
     race_id: str | None  # uuid; None for missing_past, future, today-pending
     started_at: datetime | None
     ends_at: datetime | None
-    finishers_count: int
-    participants_count: int
+    starters_count: int  # participants who launched their run (igt_ms > 0)
+    participants_count: int  # all sign-ups including no-shows; for "today" social proof
     podium: list[DailyPodiumEntry]
     my_result: DailyMyResult | None
 

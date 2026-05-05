@@ -546,7 +546,7 @@ async def get_global_activity(
 
     # Batch-compute counts and placements for all races
     all_race_ids = list({p.race_id for p in all_participants} | {r.id for r in all_races})
-    total_by_race, placements = await compute_race_stats(db, all_race_ids)
+    total_by_race, starters_by_race, placements = await compute_race_stats(db, all_race_ids)
 
     # Pairs of (race_id, user_id) where the user participated in the race. Used
     # to merge the organizer entry into the participant entry when they are the
@@ -568,7 +568,7 @@ async def get_global_activity(
                     ),
                     status=race.status.value,
                     placement=placements.get((race.id, p.id)),
-                    total_participants=total_by_race.get(race.id, 0),
+                    total_starters=starters_by_race.get(race.id, 0),
                     igt_ms=p.igt_ms,
                     death_count=p.death_count,
                     is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
@@ -583,7 +583,7 @@ async def get_global_activity(
                     race_name=race.name,
                     status=race.status.value,
                     placement=placements.get((race.id, p.id)),
-                    total_participants=total_by_race.get(race.id, 0),
+                    total_starters=starters_by_race.get(race.id, 0),
                     igt_ms=p.igt_ms,
                     death_count=p.death_count,
                     is_mod_connected=race_manager.is_mod_connected(race.id, p.id),

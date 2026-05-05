@@ -295,7 +295,7 @@ export interface DailyPodiumEntry {
 export interface DailyMyResult {
   status: ParticipantStatus;
   placement: number | null;
-  total_finishers: number;
+  total_starters: number;
   igt_ms: number | null;
   death_count: number;
 }
@@ -311,7 +311,7 @@ export interface DailyWeekDay {
   race_id: string | null;
   started_at: string | null;
   ends_at: string | null;
-  finishers_count: number;
+  starters_count: number;
   participants_count: number;
   podium: DailyPodiumEntry[];
   my_result: DailyMyResult | null;
@@ -1040,7 +1040,7 @@ export interface RaceParticipantActivity extends ActivityItemBase {
   race_name: string;
   status: string;
   placement: number | null;
-  total_participants: number;
+  total_starters: number;
   igt_ms: number;
   death_count: number;
   is_mod_connected: boolean;
@@ -1055,7 +1055,7 @@ export interface DailyParticipantActivity extends ActivityItemBase {
   pool_display_name: string | null;
   status: string;
   placement: number | null;
-  total_participants: number;
+  total_starters: number;
   igt_ms: number;
   death_count: number;
   is_mod_connected: boolean;
