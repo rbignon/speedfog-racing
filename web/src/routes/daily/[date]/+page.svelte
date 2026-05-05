@@ -167,7 +167,9 @@
 	let graphJson = $derived(raceStore.seed?.graph_json ?? null);
 	let totalLayers = $derived(raceStore.seed?.total_layers ?? initialRace.seed_total_layers ?? 0);
 	let seedsReleased = $derived(
-		raceStore.race ? raceStore.race.seeds_released_at !== null : initialRace.seeds_released_at !== null
+		raceStore.race
+			? raceStore.race.seeds_released_at !== null
+			: initialRace.seeds_released_at !== null
 	);
 	// Build node ID -> display name map so the leaderboard can show competitors'
 	// current zones once the viewer has finished or the daily has ended.
@@ -326,115 +328,131 @@
 	</div>
 {:else}
 	<div class="daily-page">
-	<aside class="sidebar">
-		<div class="sidebar-section">
-			<Leaderboard
-				participants={raceStore.leaderboard}
-				{totalLayers}
-				mode={dailyEnded ? 'finished' : 'running'}
-				zoneNames={leaderboardZoneNames}
-				selectedIds={selectedParticipantIds}
-				onToggle={handleLeaderboardToggle}
-				onClearSelection={clearSelection}
-			/>
-		</div>
-
-		{#if canAbandon}
-			<div class="abandon-section">
-				<button class="abandon-btn" onclick={() => (showAbandonConfirm = true)}>
-					Rage quit
-				</button>
-				{#if abandonError}
-					<p class="abandon-error">{abandonError}</p>
-				{/if}
+		<aside class="sidebar">
+			<div class="sidebar-section">
+				<Leaderboard
+					participants={raceStore.leaderboard}
+					{totalLayers}
+					mode={dailyEnded ? 'finished' : 'running'}
+					zoneNames={leaderboardZoneNames}
+					selectedIds={selectedParticipantIds}
+					onToggle={handleLeaderboardToggle}
+					onClearSelection={clearSelection}
+				/>
 			</div>
-		{/if}
 
-		{#if myParticipant && seedsReleased}
-			<button
-				class="sidebar-download-btn"
-				onclick={() => {
-					downloadError = null;
-					showDownloadModal = true;
-				}}
-				disabled={downloading}
-			>
-				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-					<path
-						d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						fill="none"
-					/>
-				</svg>
-				{downloading ? 'Preparing...' : 'Download Daily Seed Pack'}
-			</button>
-		{/if}
-
-		{#if data.recent.length > 0}
-			<section class="recent-dailies">
-				<h2>Recent Daily Seeds</h2>
-				<ul>
-					{#each data.recent as race (race.id)}
-						<li>
-							<a href={dailyPathForDate(race.daily_date!)}>
-								<span>{race.daily_date}</span>
-								<span class="theme">· {dailyTheme(race)}</span>
-							</a>
-						</li>
-					{/each}
-				</ul>
-			</section>
-		{/if}
-
-		<SpectatorCount count={raceStore.spectatorCount} />
-	</aside>
-
-	<main class="main-content">
-		<header class="daily-header">
-			<div class="daily-title">
-				<span class="kicker">{kickerLabel}</span>
-				<h1>{dailyTheme(initialRace)}</h1>
-			</div>
-			<div class="daily-meta-right">
-				<ShareButtons />
-				{#if initialRace.seed_number}
-					<span class="seed-badge">Seed {initialRace.seed_number}</span>
-				{/if}
-				<span class="daily-pill" class:ended={dailyEnded}>
-					{dailyEnded ? 'Ended' : countdownLabel}
-				</span>
-			</div>
-		</header>
-
-		{#if raceStatus === 'finished' && graphJson}
-			<Podium participants={raceStore.leaderboard} />
-			<div class="dag-view-toggle">
-				<button
-					class="toggle-btn"
-					class:active={dagView === 'map'}
-					onclick={() => (dagView = 'map')}>Map</button
-				>
-				<button
-					class="toggle-btn"
-					class:active={dagView === 'replay'}
-					onclick={() => (dagView = 'replay')}>Replay</button
-				>
-			</div>
-		{/if}
-
-		<div class="dag-wrapper">
-			{#if !myParticipant && !dailyEnded}
-				<button class="dag-placeholder play-now-cta" onclick={handlePlayNow} disabled={joining}>
-					<span class="play-now-label">{joining ? 'Joining...' : 'Play now'}</span>
-					{#if joinError}
-						<span class="play-now-error">{joinError}</span>
+			{#if canAbandon}
+				<div class="abandon-section">
+					<button class="abandon-btn" onclick={() => (showAbandonConfirm = true)}>
+						Rage quit
+					</button>
+					{#if abandonError}
+						<p class="abandon-error">{abandonError}</p>
 					{/if}
+				</div>
+			{/if}
+
+			{#if myParticipant && seedsReleased}
+				<button
+					class="sidebar-download-btn"
+					onclick={() => {
+						downloadError = null;
+						showDownloadModal = true;
+					}}
+					disabled={downloading}
+				>
+					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+						<path
+							d="M8 1v9m0 0L5 7m3 3 3-3M3 13h10"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							fill="none"
+						/>
+					</svg>
+					{downloading ? 'Preparing...' : 'Download Daily Seed Pack'}
 				</button>
-			{:else if graphJson && raceStatus === 'finished'}
-				{#if dagView === 'map'}
+			{/if}
+
+			{#if data.recent.length > 0}
+				<section class="recent-dailies">
+					<h2>Recent Daily Seeds</h2>
+					<ul>
+						{#each data.recent as race (race.id)}
+							<li>
+								<a href={dailyPathForDate(race.daily_date!)}>
+									<span>{race.daily_date}</span>
+									<span class="theme">· {dailyTheme(race)}</span>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+
+			<SpectatorCount count={raceStore.spectatorCount} />
+		</aside>
+
+		<main class="main-content">
+			<header class="daily-header">
+				<div class="daily-title">
+					<span class="kicker">{kickerLabel}</span>
+					<h1>{dailyTheme(initialRace)}</h1>
+				</div>
+				<div class="daily-meta-right">
+					<ShareButtons />
+					{#if initialRace.seed_number}
+						<span class="seed-badge">Seed {initialRace.seed_number}</span>
+					{/if}
+					<span class="daily-pill" class:ended={dailyEnded}>
+						{dailyEnded ? 'Ended' : countdownLabel}
+					</span>
+				</div>
+			</header>
+
+			{#if raceStatus === 'finished' && graphJson}
+				<Podium participants={raceStore.leaderboard} />
+				<div class="dag-view-toggle">
+					<button
+						class="toggle-btn"
+						class:active={dagView === 'map'}
+						onclick={() => (dagView = 'map')}>Map</button
+					>
+					<button
+						class="toggle-btn"
+						class:active={dagView === 'replay'}
+						onclick={() => (dagView = 'replay')}>Replay</button
+					>
+				</div>
+			{/if}
+
+			<div class="dag-wrapper">
+				{#if !myParticipant && !dailyEnded}
+					<button class="dag-placeholder play-now-cta" onclick={handlePlayNow} disabled={joining}>
+						<span class="play-now-label">{joining ? 'Joining...' : 'Play now'}</span>
+						{#if joinError}
+							<span class="play-now-error">{joinError}</span>
+						{/if}
+					</button>
+				{:else if graphJson && raceStatus === 'finished'}
+					{#if dagView === 'map'}
+						<MetroDagFull
+							{graphJson}
+							participants={raceStore.leaderboard}
+							{raceStatus}
+							highlightIds={selectedParticipantIds}
+							focusNodeId={highlightFocusNodeId}
+						/>
+					{:else}
+						<RaceReplay
+							{graphJson}
+							participants={raceStore.leaderboard}
+							focusNodeId={highlightFocusNodeId}
+							highlightIds={selectedParticipantIds}
+						/>
+					{/if}
+				{:else if graphJson && canShowFullDag}
 					<MetroDagFull
 						{graphJson}
 						participants={raceStore.leaderboard}
@@ -442,115 +460,96 @@
 						highlightIds={selectedParticipantIds}
 						focusNodeId={highlightFocusNodeId}
 					/>
-				{:else}
-					<RaceReplay
+				{:else if graphJson && canShowProgressiveDag}
+					<MetroDagProgressive
 						{graphJson}
+						participants={raceStore.participants}
+						myParticipantId={myWsParticipant?.id ?? ''}
+					/>
+				{:else}
+					<div class="dag-placeholder">
+						<p class="dag-note">Loading map...</p>
+					</div>
+				{/if}
+			</div>
+
+			{#if dailyEnded || myParticipantStatus === 'finished'}
+				<RaceStats participants={raceStore.leaderboard} />
+				{#if graphJson}
+					<RaceHighlights
 						participants={raceStore.leaderboard}
-						focusNodeId={highlightFocusNodeId}
-						highlightIds={selectedParticipantIds}
+						{graphJson}
+						myParticipantId={myWsParticipant?.id}
+						onzoneclick={handleHighlightZoneClick}
 					/>
 				{/if}
-			{:else if graphJson && canShowFullDag}
-				<MetroDagFull
-					{graphJson}
-					participants={raceStore.leaderboard}
+			{/if}
+
+			{#if auth.isAdmin}
+				<RaceControls
+					race={initialRace}
 					{raceStatus}
-					highlightIds={selectedParticipantIds}
-					focusNodeId={highlightFocusNodeId}
-				/>
-			{:else if graphJson && canShowProgressiveDag}
-				<MetroDagProgressive
-					{graphJson}
-					participants={raceStore.participants}
-					myParticipantId={myWsParticipant?.id ?? ''}
-				/>
-			{:else}
-				<div class="dag-placeholder">
-					<p class="dag-note">Loading map...</p>
-				</div>
-			{/if}
-		</div>
-
-		{#if dailyEnded || myParticipantStatus === 'finished'}
-			<RaceStats participants={raceStore.leaderboard} />
-			{#if graphJson}
-				<RaceHighlights
-					participants={raceStore.leaderboard}
-					{graphJson}
-					myParticipantId={myWsParticipant?.id}
-					onzoneclick={handleHighlightZoneClick}
+					onRaceUpdated={(race) => (initialRace = race)}
+					onDeleteRace={async () => {
+						await deleteRace(initialRace.id);
+						goto('/daily');
+					}}
 				/>
 			{/if}
-		{/if}
 
-		{#if auth.isAdmin}
-			<RaceControls
-				race={initialRace}
-				{raceStatus}
-				onRaceUpdated={(race) => (initialRace = race)}
-				onDeleteRace={async () => {
-					await deleteRace(initialRace.id);
-					goto('/daily');
-				}}
+			{#if initialRace.pool_name && initialRace.pool_config}
+				<PoolSettingsCard poolName={initialRace.pool_name} poolConfig={initialRace.pool_config} />
+			{/if}
+		</main>
+
+		{#if showChatSidebar}
+			<ChatSidebar
+				messagesParticipants={raceStore.chatMessagesParticipants}
+				messagesPublic={raceStore.chatMessagesPublic}
+				canSend={canSendChat}
+				collapsed={chatCollapsed}
+				participantsAccess={hasParticipantsAccess}
+				{publicAccess}
+				{publicLockedReason}
+				activeTab={effectiveActiveTab}
+				historyVersion={raceStore.chatHistoryVersion}
+				onSend={sendChatMessage}
+				onToggle={() => (chatCollapsed = !chatCollapsed)}
+				onTabChange={(tab) => (chatActiveTab = tab)}
 			/>
 		{/if}
+	</div>
 
-		{#if initialRace.pool_name && initialRace.pool_config}
-			<PoolSettingsCard
-				poolName={initialRace.pool_name}
-				poolConfig={initialRace.pool_config}
-			/>
-		{/if}
-	</main>
-
-	{#if showChatSidebar}
-		<ChatSidebar
-			messagesParticipants={raceStore.chatMessagesParticipants}
-			messagesPublic={raceStore.chatMessagesPublic}
-			canSend={canSendChat}
-			collapsed={chatCollapsed}
-			participantsAccess={hasParticipantsAccess}
-			{publicAccess}
-			{publicLockedReason}
-			activeTab={effectiveActiveTab}
-			historyVersion={raceStore.chatHistoryVersion}
-			onSend={sendChatMessage}
-			onToggle={() => (chatCollapsed = !chatCollapsed)}
-			onTabChange={(tab) => (chatActiveTab = tab)}
+	{#if showDownloadModal}
+		<DownloadModal
+			onClose={() => (showDownloadModal = false)}
+			onDownload={handleDownload}
+			{downloading}
+			error={downloadError}
+			actionLabel="Download Daily Seed Pack"
 		/>
 	{/if}
-</div>
 
-{#if showDownloadModal}
-	<DownloadModal
-		onClose={() => (showDownloadModal = false)}
-		onDownload={handleDownload}
-		{downloading}
-		error={downloadError}
-		actionLabel="Download Daily Seed Pack"
-	/>
-{/if}
+	{#if showAbandonConfirm}
+		<ConfirmModal
+			title="Rage Quit"
+			message="Are you sure? This is irreversible."
+			confirmLabel="Rage quit"
+			danger
+			loading={abandoning}
+			onConfirm={handleAbandon}
+			onCancel={() => (showAbandonConfirm = false)}
+		/>
+	{/if}
 
-{#if showAbandonConfirm}
-	<ConfirmModal
-		title="Rage Quit"
-		message="Are you sure? This is irreversible."
-		confirmLabel="Rage quit"
-		danger
-		loading={abandoning}
-		onConfirm={handleAbandon}
-		onCancel={() => (showAbandonConfirm = false)}
-	/>
-{/if}
-
-{#if showFeedback}
-	<FeedbackModal
-		source="post_first_race"
-		raceId={initialRace.id}
-		entityKind="daily"
-		onClose={() => (showFeedback = false)}
-	/>
-{/if}
+	{#if showFeedback}
+		<FeedbackModal
+			source="post_first_race"
+			raceId={initialRace.id}
+			entityKind="daily"
+			onClose={() => (showFeedback = false)}
+		/>
+	{/if}
 {/if}
 
 <style>
