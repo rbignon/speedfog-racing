@@ -963,6 +963,7 @@ export interface AdminUser {
   last_seen: string | null;
   training_count: number;
   race_count: number;
+  daily_count: number;
 }
 
 // User profile

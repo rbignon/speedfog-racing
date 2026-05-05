@@ -343,6 +343,87 @@ async def test_list_users_works_for_admin(test_client, admin_user, regular_user,
 
 
 @pytest.mark.asyncio
+async def test_list_users_separates_daily_and_regular_race_counts(
+    test_client, admin_user, regular_user, async_session
+):
+    """race_count excludes daily races; daily_count counts only daily races."""
+    async with async_session() as db:
+        seed_regular = Seed(
+            seed_number="user_regular_seed",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/regular/seed",
+            status=SeedStatus.CONSUMED,
+        )
+        seed_daily = Seed(
+            seed_number="user_daily_seed",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/daily/seed",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add_all([seed_regular, seed_daily])
+        await db.flush()
+
+        regular_race = Race(
+            name="Regular Race",
+            organizer_id=admin_user.id,
+            seed_id=seed_regular.id,
+            status=RaceStatus.FINISHED,
+        )
+        daily_race_a = Race(
+            name="Daily A",
+            organizer_id=admin_user.id,
+            seed_id=seed_daily.id,
+            status=RaceStatus.FINISHED,
+            daily_date=date(2026, 5, 4),
+        )
+        daily_race_b = Race(
+            name="Daily B",
+            organizer_id=admin_user.id,
+            seed_id=seed_daily.id,
+            status=RaceStatus.FINISHED,
+            daily_date=date(2026, 5, 5),
+        )
+        db.add_all([regular_race, daily_race_a, daily_race_b])
+        await db.flush()
+
+        db.add_all(
+            [
+                Participant(
+                    race_id=regular_race.id,
+                    user_id=regular_user.id,
+                    status=ParticipantStatus.FINISHED,
+                ),
+                Participant(
+                    race_id=daily_race_a.id,
+                    user_id=regular_user.id,
+                    status=ParticipantStatus.FINISHED,
+                ),
+                Participant(
+                    race_id=daily_race_b.id,
+                    user_id=regular_user.id,
+                    status=ParticipantStatus.FINISHED,
+                ),
+            ]
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/users",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        target = next(u for u in data if u["twitch_username"] == "regular_user")
+        assert target["race_count"] == 1
+        assert target["daily_count"] == 2
+
+
+@pytest.mark.asyncio
 async def test_update_user_role_to_organizer(test_client, admin_user, regular_user):
     """Admin can promote user to organizer."""
     async with test_client as client:

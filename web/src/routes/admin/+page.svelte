@@ -43,6 +43,7 @@
     | "username"
     | "training_count"
     | "race_count"
+    | "daily_count"
     | "last_seen"
     | "created_at";
   let userSortKey = $state<UserSortKey>("last_seen");
@@ -62,7 +63,8 @@
         cmp = nameA.localeCompare(nameB);
       } else if (
         userSortKey === "training_count" ||
-        userSortKey === "race_count"
+        userSortKey === "race_count" ||
+        userSortKey === "daily_count"
       ) {
         cmp = a[userSortKey] - b[userSortKey];
       } else {
@@ -748,6 +750,14 @@
                   Races{userSortIndicator("race_count")}
                 </button>
               </th>
+              <th class="num-col">
+                <button
+                  class="sort-btn"
+                  onclick={() => handleUserSort("daily_count")}
+                >
+                  Daily{userSortIndicator("daily_count")}
+                </button>
+              </th>
               <th>
                 <button
                   class="sort-btn"
@@ -792,6 +802,7 @@
                 </td>
                 <td class="num-cell">{user.training_count}</td>
                 <td class="num-cell">{user.race_count}</td>
+                <td class="num-cell">{user.daily_count}</td>
                 <td class="date-cell">{formatDate(user.last_seen)}</td>
                 <td class="date-cell">{formatDate(user.created_at)}</td>
               </tr>

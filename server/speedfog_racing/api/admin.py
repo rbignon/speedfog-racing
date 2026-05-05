@@ -376,6 +376,7 @@ class AdminUserResponse(BaseModel):
     last_seen: datetime | None
     training_count: int = 0
     race_count: int = 0
+    daily_count: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -397,7 +398,15 @@ _training_count_sq = (
 )
 _race_count_sq = (
     select(func.count(Participant.id))
-    .where(Participant.user_id == User.id)
+    .join(Race, Race.id == Participant.race_id)
+    .where(Participant.user_id == User.id, Race.daily_date.is_(None))
+    .correlate(User)
+    .scalar_subquery()
+)
+_daily_count_sq = (
+    select(func.count(Participant.id))
+    .join(Race, Race.id == Participant.race_id)
+    .where(Participant.user_id == User.id, Race.daily_date.is_not(None))
     .correlate(User)
     .scalar_subquery()
 )
@@ -417,6 +426,7 @@ async def list_users(
             User,
             _training_count_sq.label("training_count"),
             _race_count_sq.label("race_count"),
+            _daily_count_sq.label("daily_count"),
         ).order_by(
             User.last_seen.desc().nulls_last(),
             User.created_at.desc(),
@@ -431,6 +441,7 @@ async def list_users(
             },
             training_count=row.training_count,
             race_count=row.race_count,
+            daily_count=row.daily_count,
         )
         for row in result.all()
     ]
@@ -475,6 +486,7 @@ async def update_user_role(
         select(
             _training_count_sq.label("training_count"),
             _race_count_sq.label("race_count"),
+            _daily_count_sq.label("daily_count"),
         ).where(User.id == user_id)
     )
     row = counts.one()
@@ -486,6 +498,7 @@ async def update_user_role(
         },
         training_count=row.training_count,
         race_count=row.race_count,
+        daily_count=row.daily_count,
     )
 
 
