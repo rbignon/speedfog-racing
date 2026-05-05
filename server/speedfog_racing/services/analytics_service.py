@@ -79,12 +79,24 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
 
     # Daily races (daily_date IS NOT NULL) are excluded from admin analytics:
     # they are system-organized and would inflate counts and skew per-race
-    # averages relative to community-organized racing activity.
+    # averages relative to community-organized racing activity. The audience
+    # they reach is surfaced separately via ``total_daily_participants``,
+    # the cumulative participant count summed across all daily races.
     total_races_finished = (
         await db.execute(
             select(func.count(Race.id)).where(
                 Race.status == RaceStatus.FINISHED,
                 Race.daily_date.is_(None),
+            )
+        )
+    ).scalar_one()
+    total_daily_participants = (
+        await db.execute(
+            select(func.count(Participant.id))
+            .join(Race, Race.id == Participant.race_id)
+            .where(
+                Race.status == RaceStatus.FINISHED,
+                Race.daily_date.is_not(None),
             )
         )
     ).scalar_one()
@@ -179,6 +191,7 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
         "active_users_30d": active_users_30d,
         "active_users_pct": active_users_pct,
         "total_races_finished": total_races_finished,
+        "total_daily_participants": total_daily_participants,
         "avg_participants": avg_participants,
         "total_solo": total_solo,
         "solo_completion_pct": solo_completion_pct,

@@ -166,6 +166,7 @@ class UserStatsResponse(BaseModel):
     """Aggregated user statistics."""
 
     race_count: int
+    daily_count: int
     training_count: int
     organized_count: int
     casted_count: int

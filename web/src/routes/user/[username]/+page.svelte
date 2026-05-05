@@ -246,6 +246,10 @@
         <span class="stat-label">Races</span>
       </div>
       <div class="stat-card">
+        <span class="stat-number">{profile.stats.daily_count}</span>
+        <span class="stat-label">Daily</span>
+      </div>
+      <div class="stat-card">
         <span class="stat-number">{profile.stats.training_count}</span>
         <span class="stat-label">Solo</span>
       </div>
@@ -590,7 +594,7 @@
 
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 0.75rem;
     margin-bottom: 2.5rem;
   }

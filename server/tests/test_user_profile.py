@@ -91,6 +91,7 @@ async def test_get_profile_by_username(test_client, sample_user):
         # Check stats - all should be zero for a fresh user
         stats = data["stats"]
         assert stats["race_count"] == 0
+        assert stats["daily_count"] == 0
         assert stats["training_count"] == 0
         assert stats["organized_count"] == 0
         assert stats["casted_count"] == 0
@@ -384,9 +385,84 @@ async def test_profile_stats_counts(test_client, user_with_activity):
         stats = data["stats"]
 
         assert stats["race_count"] == 2  # participated in 2 races
+        assert stats["daily_count"] == 0  # no daily participations
         assert stats["training_count"] == 1  # 1 training session
         assert stats["organized_count"] == 1  # organized 1 race
         assert stats["casted_count"] == 1  # casted 1 race
+
+
+@pytest.mark.asyncio
+async def test_profile_stats_split_daily_and_regular_races(test_client, async_session):
+    """Daily Seed participations land in daily_count, not race_count."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="daily_split_uid",
+            twitch_username="daily_splitter",
+            twitch_display_name="DailySplitter",
+            api_token="daily_splitter_token",
+            role=UserRole.USER,
+        )
+        admin = User(
+            twitch_id="daily_split_admin",
+            twitch_username="daily_split_admin",
+            twitch_display_name="Admin",
+            api_token="daily_split_admin_token",
+            role=UserRole.ADMIN,
+        )
+        db.add_all([user, admin])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="profile_daily_seed",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/profile/daily",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        regular_race = Race(
+            name="Regular",
+            organizer_id=admin.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        daily_race = Race(
+            name="Daily",
+            organizer_id=admin.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            daily_date=date(2026, 5, 5),
+        )
+        db.add_all([regular_race, daily_race])
+        await db.flush()
+
+        db.add_all(
+            [
+                Participant(
+                    race_id=regular_race.id,
+                    user_id=user.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=120000,
+                ),
+                Participant(
+                    race_id=daily_race.id,
+                    user_id=user.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=130000,
+                ),
+            ]
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/users/daily_splitter")
+        assert response.status_code == 200
+        stats = response.json()["stats"]
+        assert stats["race_count"] == 1
+        assert stats["daily_count"] == 1
 
 
 @pytest.mark.asyncio

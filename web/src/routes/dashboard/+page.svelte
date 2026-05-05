@@ -44,11 +44,13 @@
     trainingSessions.filter((s) => s.status === "active"),
   );
 
-  // New user detection: no races and no training sessions ever
+  // New user detection: no races, dailies, or training sessions ever
   let isNewUser = $derived.by(() => {
     const p = profile;
     if (!p) return false;
-    return p.stats.race_count + p.stats.training_count === 0;
+    return (
+      p.stats.race_count + p.stats.daily_count + p.stats.training_count === 0
+    );
   });
 
   // Welcome card dismissal
@@ -373,6 +375,10 @@
           <div class="stat-card">
             <span class="stat-value">{profile.stats.race_count}</span>
             <span class="stat-label">Races</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">{profile.stats.daily_count}</span>
+            <span class="stat-label">Daily</span>
           </div>
           <div class="stat-card">
             <span class="stat-value">{profile.stats.training_count}</span>
@@ -877,7 +883,7 @@
 
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 1rem;
   }
 

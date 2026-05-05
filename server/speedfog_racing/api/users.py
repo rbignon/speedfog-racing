@@ -434,19 +434,36 @@ async def get_user_profile(
 
     user_id = user.id
 
-    # Race count: finished + abandoned with igt > 0 (actually played)
+    # Race / daily counts: finished + abandoned with igt > 0 (actually played).
+    # Daily Seed races (Race.daily_date IS NOT NULL) are split out so the
+    # "Races" count reflects organized racing activity only.
+    played_status_filter = or_(
+        Participant.status == ParticipantStatus.FINISHED,
+        (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+    )
     race_count_q = await db.execute(
         select(func.count())
         .select_from(Participant)
+        .join(Race, Race.id == Participant.race_id)
         .where(
             Participant.user_id == user_id,
-            or_(
-                Participant.status == ParticipantStatus.FINISHED,
-                (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
-            ),
+            played_status_filter,
+            Race.daily_date.is_(None),
         )
     )
     race_count = race_count_q.scalar_one()
+
+    daily_count_q = await db.execute(
+        select(func.count())
+        .select_from(Participant)
+        .join(Race, Race.id == Participant.race_id)
+        .where(
+            Participant.user_id == user_id,
+            played_status_filter,
+            Race.daily_date.is_not(None),
+        )
+    )
+    daily_count = daily_count_q.scalar_one()
 
     # Training count (exclude cancelled, player never started)
     training_count_q = await db.execute(
@@ -473,6 +490,7 @@ async def get_user_profile(
 
     stats = UserStatsResponse(
         race_count=race_count,
+        daily_count=daily_count,
         training_count=training_count,
         organized_count=organized_count,
         casted_count=casted_count,

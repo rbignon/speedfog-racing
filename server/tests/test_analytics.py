@@ -266,6 +266,7 @@ async def test_compute_analytics_kpis(analytics_data, async_session):
     assert kpis["active_users_30d"] == 2  # user1 & user2; user3 last_seen > 30d
     assert kpis["active_users_pct"] == round(2 / 3 * 100, 1)
     assert kpis["total_races_finished"] == 1
+    assert kpis["total_daily_participants"] == 0
     assert kpis["avg_participants"] == 2.0
     assert kpis["total_solo"] == 2
     assert kpis["solo_completion_pct"] == 50.0  # 1 finished / (1 finished + 1 abandoned)
@@ -757,7 +758,22 @@ async def test_compute_analytics_excludes_daily_races(async_session):
             finished_at=now - timedelta(hours=1),
             daily_date=date.today(),
         )
-        db.add_all([regular_race, daily_race])
+        # Second daily, yesterday, with two participants so the KPI must
+        # sum across all dailies (1 + 2 = 3).
+        daily_race_yesterday = Race(
+            name="daily-yesterday",
+            organizer_id=organizer.id,
+            seed_id=daily_seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=now - timedelta(days=1, hours=2),
+            finished_at=now - timedelta(days=1, hours=1),
+            daily_date=date.today() - timedelta(days=1),
+        )
+        other_player = User(
+            twitch_id="p_d2", twitch_username="playerd2", api_token=generate_token()
+        )
+        db.add(other_player)
+        db.add_all([regular_race, daily_race, daily_race_yesterday])
         await db.flush()
 
         db.add_all(
@@ -774,6 +790,18 @@ async def test_compute_analytics_excludes_daily_races(async_session):
                     mod_token=generate_token(),
                     status=ParticipantStatus.FINISHED,
                 ),
+                Participant(
+                    race_id=daily_race_yesterday.id,
+                    user_id=player.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.FINISHED,
+                ),
+                Participant(
+                    race_id=daily_race_yesterday.id,
+                    user_id=other_player.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.FINISHED,
+                ),
             ]
         )
         await db.commit()
@@ -781,8 +809,10 @@ async def test_compute_analytics_excludes_daily_races(async_session):
     async with async_session() as db:
         result = await compute_analytics(db)
 
-    # KPI counts only the regular race
+    # KPI counts only the regular race; daily participants are summed
+    # across both daily races (1 + 2 = 3).
     assert result["kpis"]["total_races_finished"] == 1
+    assert result["kpis"]["total_daily_participants"] == 3
     assert result["kpis"]["avg_participants"] == 1.0
 
     # Weekly: only regular race contributes to current week

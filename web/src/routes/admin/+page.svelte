@@ -1014,6 +1014,13 @@
           </div>
         </div>
         <div class="kpi-card">
+          <div class="kpi-label">Daily Participants</div>
+          <div class="kpi-value kpi-gold">
+            {analytics.kpis.total_daily_participants}
+          </div>
+          <div class="kpi-sub">summed across all dailies</div>
+        </div>
+        <div class="kpi-card">
           <div class="kpi-label">Solo Sessions</div>
           <div class="kpi-value kpi-purple">{analytics.kpis.total_solo}</div>
           <div class="kpi-sub">
@@ -2053,7 +2060,7 @@
 
   .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 0.75rem;
     margin-bottom: 1.5rem;
   }

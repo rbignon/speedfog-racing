@@ -969,6 +969,7 @@ export interface AdminUser {
 // User profile
 export interface UserStats {
   race_count: number;
+  daily_count: number;
   training_count: number;
   organized_count: number;
   casted_count: number;
@@ -1136,6 +1137,7 @@ export interface AnalyticsKpis {
   active_users_30d: number;
   active_users_pct: number;
   total_races_finished: number;
+  total_daily_participants: number;
   avg_participants: number;
   total_solo: number;
   solo_completion_pct: number;
