@@ -9,12 +9,10 @@
 	let {
 		race,
 		role,
-		hideOrganizer = false,
 		variant = 'default'
 	}: {
 		race: Race;
 		role?: string;
-		hideOrganizer?: boolean;
 		variant?: 'default' | 'compact';
 	} = $props();
 
@@ -42,20 +40,12 @@
 		}
 	}
 
-	function actionLabel(status: RaceStatus, userRole?: string): string | null {
-		if (status === 'running') return 'Watch →';
-		if (status === 'finished') return 'Results →';
-		if (userRole === 'Organizing' && status === 'setup') return 'Set up →';
-		return null;
-	}
-
 	const roleLabels: Record<string, string> = {
 		organizing: 'Organizing',
 		participating: 'Participating',
 		casting: 'Casting'
 	};
 	let effectiveRole = $derived(role ?? (race.my_role ? roleLabels[race.my_role] : undefined));
-	let action = $derived(actionLabel(race.status, effectiveRole));
 	let relativeTime = $derived(
 		race.started_at || (race.scheduled_at && race.status === 'setup')
 			? raceDisplayDate(race)
@@ -74,93 +64,99 @@
 	class:joinable={race.can_join}
 >
 	<div class="card-content">
-	<div class="race-header">
-		<div class="race-title">
-			{#if isRunning}
-				<LiveIndicator dotOnly />
-			{/if}
-			<span class="race-name">{race.name}</span>
-		</div>
-		<div class="race-badges">
-			{#if showOpenBadge}
-				<span class="badge badge-open">Open</span>
-			{/if}
-			{#if effectiveRole}
-				<span class="badge badge-role">{effectiveRole}</span>
-			{/if}
-			<span class="badge badge-{race.status}">{statusLabel(race.status)}</span>
-		</div>
-	</div>
-
-	{#if race.participant_previews.length > 0}
-		<div class="avatar-row" class:has-winner={winner}>
-			<div class="avatar-stack">
-				{#each race.participant_previews as user}
-					{#if user.twitch_avatar_url}
-						<img
-							src={user.twitch_avatar_url}
-							alt={user.twitch_display_name || user.twitch_username}
-							class="avatar"
-						/>
-					{:else}
-						<span class="avatar avatar-placeholder">
-							{(user.twitch_display_name || user.twitch_username).charAt(0).toUpperCase()}
-						</span>
-					{/if}
-				{/each}
-				{#if overflowCount > 0}
-					<span class="avatar avatar-overflow">+{overflowCount}</span>
+		<div class="race-header">
+			<div class="race-title">
+				{#if isRunning}
+					<LiveIndicator dotOnly />
 				{/if}
+				<span class="race-name">{race.name}</span>
 			</div>
-			{#if winner}
-				<div class="winner-info">
-					<svg class="trophy-icon" viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-						<path d="M12 2C9.24 2 7 4.24 7 7h-3c-1.1 0-2 .9-2 2v2c0 2.21 1.79 4 4 4h.68A7.01 7.01 0 0012 19.87V22H8v2h8v-2h-4v-2.13A7.01 7.01 0 0017.32 15H18c2.21 0 4-1.79 4-4V9c0-1.1-.9-2-2-2h-3c0-2.76-2.24-5-5-5zM4 11V9h3v4.83C5.17 13.1 4 11.65 4 11zm16 0c0 1.65-1.17 3.1-3 3.83V9h3v2z"/>
-					</svg>
-					{#if winner.twitch_avatar_url}
-						<img src={winner.twitch_avatar_url} alt="" class="winner-avatar" />
+			<div class="race-badges">
+				{#if showOpenBadge}
+					<span class="badge badge-open">Open</span>
+				{/if}
+				{#if effectiveRole}
+					<span class="badge badge-role">{effectiveRole}</span>
+				{/if}
+				<span class="badge badge-{race.status}">{statusLabel(race.status)}</span>
+			</div>
+		</div>
+
+		{#if race.participant_previews.length > 0}
+			<div class="avatar-row" class:has-winner={winner}>
+				<div class="avatar-stack">
+					{#each race.participant_previews as user}
+						{#if user.twitch_avatar_url}
+							<img
+								src={user.twitch_avatar_url}
+								alt={user.twitch_display_name || user.twitch_username}
+								class="avatar"
+							/>
+						{:else}
+							<span class="avatar avatar-placeholder">
+								{(user.twitch_display_name || user.twitch_username).charAt(0).toUpperCase()}
+							</span>
+						{/if}
+					{/each}
+					{#if overflowCount > 0}
+						<span class="avatar avatar-overflow">+{overflowCount}</span>
 					{/if}
-					<span class="winner-name">{winner.twitch_display_name || winner.twitch_username}</span>
 				</div>
-			{/if}
-			<span class="relative-time">{relativeTime}</span>
-		</div>
-	{:else}
-		<div class="avatar-row">
-			<span class="no-participants">No players yet</span>
-			<span class="relative-time">{relativeTime}</span>
-		</div>
-	{/if}
+				{#if winner}
+					<div class="winner-info">
+						<svg class="trophy-icon" viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+							<path
+								d="M12 2C9.24 2 7 4.24 7 7h-3c-1.1 0-2 .9-2 2v2c0 2.21 1.79 4 4 4h.68A7.01 7.01 0 0012 19.87V22H8v2h8v-2h-4v-2.13A7.01 7.01 0 0017.32 15H18c2.21 0 4-1.79 4-4V9c0-1.1-.9-2-2-2h-3c0-2.76-2.24-5-5-5zM4 11V9h3v4.83C5.17 13.1 4 11.65 4 11zm16 0c0 1.65-1.17 3.1-3 3.83V9h3v2z"
+							/>
+						</svg>
+						{#if winner.twitch_avatar_url}
+							<img src={winner.twitch_avatar_url} alt="" class="winner-avatar" />
+						{/if}
+						<span class="winner-name">{winner.twitch_display_name || winner.twitch_username}</span>
+					</div>
+				{/if}
+				<span class="relative-time">{relativeTime}</span>
+			</div>
+		{:else}
+			<div class="avatar-row">
+				<span class="no-participants">No players yet</span>
+				<span class="relative-time">{relativeTime}</span>
+			</div>
+		{/if}
 
-	{#if isRunning && race.casters.length > 0}
-		<div class="caster-row">
-			<svg class="twitch-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-				<path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/>
-			</svg>
-			{#each race.casters as caster, i}
-				{#if i > 0}<span class="caster-sep">&middot;</span>{/if}
-				<button
-					class="caster-name"
-					onclick={(e: MouseEvent) => {
-						e.preventDefault();
-						e.stopPropagation();
-						window.open(`https://twitch.tv/${caster.user.twitch_username}`, '_blank', 'noopener,noreferrer');
-					}}
-				>{caster.user.twitch_display_name || caster.user.twitch_username}</button>
-			{/each}
-		</div>
-	{/if}
+		{#if isRunning && race.casters.length > 0}
+			<div class="caster-row">
+				<svg class="twitch-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+					<path
+						d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"
+					/>
+				</svg>
+				{#each race.casters as caster, i}
+					{#if i > 0}<span class="caster-sep">&middot;</span>{/if}
+					<button
+						class="caster-name"
+						onclick={(e: MouseEvent) => {
+							e.preventDefault();
+							e.stopPropagation();
+							window.open(
+								`https://twitch.tv/${caster.user.twitch_username}`,
+								'_blank',
+								'noopener,noreferrer'
+							);
+						}}>{caster.user.twitch_display_name || caster.user.twitch_username}</button
+					>
+				{/each}
+			</div>
+		{/if}
 
-	<div class="race-meta">
-		<span>
-			{race.participant_count}{#if race.max_participants && race.status == 'setup'}/{race.max_participants}{/if} player{race.participant_count !== 1 ? 's' : ''}
-			{#if race.pool_name}
-				&middot; {formatPoolName(race.pool_name)}
-			{/if}
-		</span>
-		{#if action && hideOrganizer}
-			<span class="action-label">{action}</span>
-		{:else if !hideOrganizer}
+		<div class="race-meta">
+			<span>
+				{race.participant_count}{#if race.max_participants && race.status == 'setup'}/{race.max_participants}{/if}
+				player{race.participant_count !== 1 ? 's' : ''}
+				{#if race.pool_name}
+					&middot; {formatPoolName(race.pool_name)}
+				{/if}
+			</span>
 			<span class="race-organizer">
 				by
 				{#if race.organizer.twitch_avatar_url}
@@ -177,17 +173,16 @@
 					{displayName}
 				</button>
 			</span>
-		{/if}
-	</div>
-	{#if race.status === 'running' && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
-		<div class="late-join-note">
-			Joinable until {new Date(race.registration_closes_at).toLocaleTimeString([], {
-				hour: '2-digit',
-				minute: '2-digit',
-				hour12: false
-			})}
 		</div>
-	{/if}
+		{#if race.status === 'running' && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
+			<div class="late-join-note">
+				Joinable until {new Date(race.registration_closes_at).toLocaleTimeString([], {
+					hour: '2-digit',
+					minute: '2-digit',
+					hour12: false
+				})}
+			</div>
+		{/if}
 	</div>
 	{#if race.can_join}
 		<div class="join-strip">
@@ -438,12 +433,6 @@
 		align-items: center;
 		font-size: var(--font-size-sm);
 		color: var(--color-text-secondary);
-	}
-
-	.action-label {
-		font-size: var(--font-size-sm);
-		color: var(--color-purple);
-		font-weight: 500;
 	}
 
 	.late-join-note {
