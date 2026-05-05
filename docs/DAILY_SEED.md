@@ -193,8 +193,7 @@ Endpoints whose audience is "regular races" filter Daily Seeds out explicitly:
 
 - `GET /api/races` and the joinable subquery: `WHERE Race.daily_date IS NULL`.
 - `services/stats_service.py` ELO aggregates: `Race.exclude_from_elo.is_(False)` on every join.
-
-Surfaces that intentionally include Daily Seeds (e.g. admin analytics in `services/analytics_service.py`) keep an inline comment explaining why: "all racing activity, not only ELO-rated runs".
+- `services/analytics_service.py` admin dashboard: every race-side query filters with `Race.daily_date.is_(None)` so KPIs, weekly trends, heatmaps, pool usage and top organizers reflect community-organized racing only.
 
 The Daily nav indicator on the frontend uses `GET /api/daily/today` rather than `GET /api/races/joinable`, which assumes scheduled races and would not yield the right answer.
 
@@ -226,7 +225,7 @@ ELO-rated aggregations elsewhere in `stats_service` (leaderboards, user stats) j
 
 The flag is generic: any future race type that should not affect ELO can opt in by setting `exclude_from_elo = True` without further wiring.
 
-Admin analytics (`services/analytics_service.py`) deliberately ignores the flag. The dashboard counts Daily Seeds as racing activity to give operators a complete picture; the comment in the code documents that decision.
+Admin analytics (`services/analytics_service.py`) excludes Daily Seeds from race-side aggregates by filtering on `Race.daily_date.is_(None)` rather than using `exclude_from_elo`. The Stats tab measures community racing activity; system-organized dailies would inflate counts and skew per-race averages. Training-side aggregates are unaffected because training sessions have no daily concept.
 
 ---
 

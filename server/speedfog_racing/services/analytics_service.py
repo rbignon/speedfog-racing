@@ -77,11 +77,16 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
     ).scalar_one()
     active_users_pct = round(active_users_30d / total_users * 100, 1) if total_users > 0 else 0.0
 
-    # Daily Seeds (daily_date IS NOT NULL, exclude_from_elo=True) are kept
-    # in admin analytics on purpose: this surface measures all racing
-    # activity, not only ELO-rated runs.
+    # Daily races (daily_date IS NOT NULL) are excluded from admin analytics:
+    # they are system-organized and would inflate counts and skew per-race
+    # averages relative to community-organized racing activity.
     total_races_finished = (
-        await db.execute(select(func.count(Race.id)).where(Race.status == RaceStatus.FINISHED))
+        await db.execute(
+            select(func.count(Race.id)).where(
+                Race.status == RaceStatus.FINISHED,
+                Race.daily_date.is_(None),
+            )
+        )
     ).scalar_one()
 
     # Average participants across all finished races: GROUP BY in SQL,
@@ -91,7 +96,7 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
             await db.execute(
                 select(func.count(Participant.id))
                 .join(Race, Participant.race_id == Race.id)
-                .where(Race.status == RaceStatus.FINISHED)
+                .where(Race.status == RaceStatus.FINISHED, Race.daily_date.is_(None))
                 .group_by(Participant.race_id)
             )
         )
@@ -133,7 +138,16 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
         .all()
     )
     races: list[Race] = list(
-        (await db.execute(select(Race).where(Race.started_at >= window_cutoff))).scalars().all()
+        (
+            await db.execute(
+                select(Race).where(
+                    Race.started_at >= window_cutoff,
+                    Race.daily_date.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
     )
     training_sessions: list[TrainingSession] = list(
         (
@@ -298,6 +312,7 @@ async def _compute_pool_usage(db: AsyncSession) -> list[dict[str, Any]]:
         select(Seed.pool_name, func.count(Race.id))
         .select_from(Race)
         .join(Seed, Race.seed_id == Seed.id)
+        .where(Race.daily_date.is_(None))
         .group_by(Seed.pool_name)
     )
     race_counts: dict[str, int] = {row[0]: row[1] for row in race_counts_q.all()}
@@ -347,7 +362,7 @@ async def _compute_top_organizers(db: AsyncSession, limit: int = 10) -> list[dic
         select(Race.id, Race.organizer_id, func.count(Participant.id))
         .select_from(Race)
         .outerjoin(Participant, Participant.race_id == Race.id)
-        .where(Race.status == RaceStatus.FINISHED)
+        .where(Race.status == RaceStatus.FINISHED, Race.daily_date.is_(None))
         .group_by(Race.id, Race.organizer_id)
     )
     per_organizer_counts: dict[uuid.UUID, list[int]] = {}

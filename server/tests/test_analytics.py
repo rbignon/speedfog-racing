@@ -123,7 +123,7 @@ async def test_auth_me_without_timezone_leaves_null(test_client, regular_user, a
 # Analytics service tests
 # ---------------------------------------------------------------------------
 
-from datetime import UTC, datetime, timedelta  # noqa: E402
+from datetime import UTC, date, datetime, timedelta  # noqa: E402
 
 from speedfog_racing.models import (  # noqa: E402
     Participant,
@@ -708,3 +708,97 @@ async def test_compute_analytics_top_organizers_ranking(async_session):
     assert top[0]["avg_participants"] == 2.0
     assert top[1]["race_count"] == 2
     assert top[1]["avg_participants"] == 4.0
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_excludes_daily_races(async_session):
+    """Daily races (daily_date IS NOT NULL) must be excluded from KPIs, weekly,
+    heatmaps, pool_usage and top_organizers."""
+    now = datetime.now(tz=UTC)
+    async with async_session() as db:
+        organizer = User(twitch_id="o_d", twitch_username="orgd", api_token=generate_token())
+        player = User(twitch_id="p_d", twitch_username="playerd", api_token=generate_token())
+        db.add_all([organizer, player])
+        await db.flush()
+
+        regular_seed = Seed(
+            seed_number="700",
+            pool_name="standard",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/700",
+            status=SeedStatus.CONSUMED,
+        )
+        daily_seed = Seed(
+            seed_number="701",
+            pool_name="daily_pool",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/701",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add_all([regular_seed, daily_seed])
+        await db.flush()
+
+        regular_race = Race(
+            name="regular",
+            organizer_id=organizer.id,
+            seed_id=regular_seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=now - timedelta(hours=2),
+            finished_at=now - timedelta(hours=1),
+        )
+        daily_race = Race(
+            name="daily",
+            organizer_id=organizer.id,
+            seed_id=daily_seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=now - timedelta(hours=2),
+            finished_at=now - timedelta(hours=1),
+            daily_date=date.today(),
+        )
+        db.add_all([regular_race, daily_race])
+        await db.flush()
+
+        db.add_all(
+            [
+                Participant(
+                    race_id=regular_race.id,
+                    user_id=player.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.FINISHED,
+                ),
+                Participant(
+                    race_id=daily_race.id,
+                    user_id=player.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.FINISHED,
+                ),
+            ]
+        )
+        await db.commit()
+
+    async with async_session() as db:
+        result = await compute_analytics(db)
+
+    # KPI counts only the regular race
+    assert result["kpis"]["total_races_finished"] == 1
+    assert result["kpis"]["avg_participants"] == 1.0
+
+    # Weekly: only regular race contributes to current week
+    assert result["weekly"]["races"][-1] == 1
+
+    # Heatmap: only the regular race participant counts
+    total_race = sum(cell for row in result["heatmaps"]["race_players"] for cell in row)
+    assert total_race == 1
+
+    # pool_usage: daily_pool must not appear (no other activity in it)
+    pool_names = {p["pool_name"] for p in result["pool_usage"]}
+    assert "daily_pool" not in pool_names
+    assert "standard" in pool_names
+
+    # top_organizers: organizer's count is 1 (regular only)
+    top = result["top_organizers"]
+    assert len(top) == 1
+    assert top[0]["twitch_username"] == "orgd"
+    assert top[0]["race_count"] == 1
