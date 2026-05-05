@@ -31,7 +31,7 @@
 	import { Chart, registerables } from 'chart.js';
 	Chart.register(...registerables);
 
-	type Tab = 'users' | 'seeds' | 'stats' | 'activity' | 'feedback' | 'daily';
+	type Tab = 'stats' | 'activity' | 'users' | 'feedback' | 'seeds' | 'daily';
 	let activeTab: Tab = $state('stats');
 
 	let users: AdminUser[] = $state([]);
@@ -623,15 +623,6 @@
 		<button class="tab" class:active={activeTab === 'stats'} onclick={() => switchTab('stats')}>
 			Stats
 		</button>
-		<button class="tab" class:active={activeTab === 'users'} onclick={() => switchTab('users')}>
-			Users
-		</button>
-		<button class="tab" class:active={activeTab === 'seeds'} onclick={() => switchTab('seeds')}>
-			Seeds
-		</button>
-		<button class="tab" class:active={activeTab === 'daily'} onclick={() => switchTab('daily')}>
-			Daily
-		</button>
 		<button
 			class="tab"
 			class:active={activeTab === 'activity'}
@@ -639,12 +630,21 @@
 		>
 			Activity
 		</button>
+		<button class="tab" class:active={activeTab === 'users'} onclick={() => switchTab('users')}>
+			Users
+		</button>
 		<button
 			class="tab"
 			class:active={activeTab === 'feedback'}
 			onclick={() => switchTab('feedback')}
 		>
 			Feedback
+		</button>
+		<button class="tab" class:active={activeTab === 'seeds'} onclick={() => switchTab('seeds')}>
+			Seeds
+		</button>
+		<button class="tab" class:active={activeTab === 'daily'} onclick={() => switchTab('daily')}>
+			Daily
 		</button>
 	</div>
 
