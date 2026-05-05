@@ -3,13 +3,14 @@
   import { formatPoolName } from "$lib/utils/format";
   import { formatIgt } from "$lib/utils/training";
 
-  type PoolEntry = UserPoolStatsEntry & { pool_display_name?: string | null };
+  let { pools }: { pools: UserPoolStatsEntry[] } = $props();
 
-  let { pools }: { pools: PoolEntry[] } = $props();
+  type Sortable = UserPoolStatsEntry & {
+    _displayName: string;
+    _bestMs: number | null;
+  };
 
-  type Sortable = PoolEntry & { _displayName: string; _bestMs: number | null };
-
-  function bestTime(entry: PoolEntry): number | null {
+  function bestTime(entry: UserPoolStatsEntry): number | null {
     const r = entry.race?.best_time_ms ?? null;
     const t = entry.training?.best_time_ms ?? null;
     if (r === null) return t;
@@ -17,16 +18,12 @@
     return Math.min(r, t);
   }
 
-  function displayName(entry: PoolEntry): string {
-    return entry.pool_display_name || formatPoolName(entry.pool_name);
-  }
-
   const ranked = $derived<Sortable[]>(
     pools
       .filter((p) => p.total_runs > 0)
       .map((p) => ({
         ...p,
-        _displayName: displayName(p),
+        _displayName: formatPoolName(p.pool_name),
         _bestMs: bestTime(p),
       }))
       .sort((a, b) => {
