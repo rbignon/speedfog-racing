@@ -217,24 +217,25 @@ async def test_pool_stats_returns_aggregated_data(test_client, user_with_pool_da
         # Standard race stats
         std_race = pools[0]["race"]
         assert std_race["runs"] == 2
-        assert std_race["avg_time_ms"] == 150000  # (120000 + 180000) / 2
-        assert std_race["avg_deaths"] == pytest.approx(6.5)  # (5 + 8) / 2
         assert std_race["best_time_ms"] == 120000
+        assert "avg_time_ms" not in std_race
+        assert "avg_deaths" not in std_race
 
         # Standard training stats
         std_training = pools[0]["training"]
         assert std_training["runs"] == 1
-        assert std_training["avg_time_ms"] == 100000
-        assert std_training["avg_deaths"] == pytest.approx(3.0)
         assert std_training["best_time_ms"] == 100000
+        assert "avg_time_ms" not in std_training
+        assert "avg_deaths" not in std_training
 
         assert pools[0]["total_runs"] == 3
 
         # Sprint race stats
         spr_race = pools[1]["race"]
         assert spr_race["runs"] == 1
-        assert spr_race["avg_time_ms"] == 60000
         assert spr_race["best_time_ms"] == 60000
+        assert "avg_time_ms" not in spr_race
+        assert "avg_deaths" not in spr_race
 
         # Sprint has no training
         assert pools[1]["training"] is None
@@ -345,6 +346,6 @@ async def test_pool_stats_excludes_slow_runs(test_client, user_with_pool_data):
         std = next(p for p in pools if p["pool_name"] == "standard")
         # Only the non-slow training session counts (igt_ms=100000, deaths=3)
         assert std["training"]["runs"] == 1
-        assert std["training"]["avg_time_ms"] == 100000
         assert std["training"]["best_time_ms"] == 100000
-        assert std["training"]["avg_deaths"] == pytest.approx(3.0)
+        assert "avg_time_ms" not in std["training"]
+        assert "avg_deaths" not in std["training"]

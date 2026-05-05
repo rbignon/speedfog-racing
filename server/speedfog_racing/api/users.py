@@ -186,8 +186,6 @@ async def get_user_pool_stats(
         select(
             Seed.pool_name,
             func.count().label("runs"),
-            func.avg(finished_case).label("avg_time_ms"),
-            func.avg(Participant.death_count).label("avg_deaths"),
             func.min(finished_case).label("best_time_ms"),
         )
         .select_from(Participant)
@@ -209,8 +207,6 @@ async def get_user_pool_stats(
     race_stats = {
         row.pool_name: PoolTypeStatsResponse(
             runs=row.runs,
-            avg_time_ms=int(row.avg_time_ms) if row.avg_time_ms else None,
-            avg_deaths=round(float(row.avg_deaths), 1),
             best_time_ms=row.best_time_ms,
         )
         for row in race_stats_q.all()
@@ -225,8 +221,6 @@ async def get_user_pool_stats(
         select(
             Seed.pool_name,
             func.count().label("runs"),
-            func.avg(training_finished_case).label("avg_time_ms"),
-            func.avg(TrainingSession.death_count).label("avg_deaths"),
             func.min(training_finished_case).label("best_time_ms"),
         )
         .select_from(TrainingSession)
@@ -248,8 +242,6 @@ async def get_user_pool_stats(
         pool = row.pool_name.removeprefix("training_")
         training_stats[pool] = PoolTypeStatsResponse(
             runs=row.runs,
-            avg_time_ms=int(row.avg_time_ms) if row.avg_time_ms else None,
-            avg_deaths=round(float(row.avg_deaths), 1),
             best_time_ms=row.best_time_ms,
         )
 
