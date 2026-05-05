@@ -635,3 +635,25 @@ async def test_traits_returns_progress_when_insufficient_races(test_client, asyn
         # Progress fields present
         assert data["finished_races"] == 2
         assert data["races_required"] == 3
+
+
+async def test_user_profile_includes_weekly_block(test_client, sample_user):
+    async with test_client as client:
+        response = await client.get(f"/api/users/{sample_user.twitch_username}")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "weekly" in data["stats"]
+    weekly = data["stats"]["weekly"]
+    assert isinstance(weekly["races"], list)
+    assert isinstance(weekly["daily"], list)
+    assert isinstance(weekly["solo"], list)
+    assert isinstance(weekly["organized"], list)
+    assert (
+        len(weekly["races"])
+        == len(weekly["daily"])
+        == len(weekly["solo"])
+        == len(weekly["organized"])
+        == weekly["weeks_count"]
+    )
+    assert "capped" in weekly

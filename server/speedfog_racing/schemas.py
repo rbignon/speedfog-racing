@@ -181,6 +181,7 @@ class UserStatsResponse(BaseModel):
     training_count: int
     organized_count: int
     casted_count: int
+    weekly: UserStatsWeekly
 
 
 class PoolTypeStatsResponse(BaseModel):

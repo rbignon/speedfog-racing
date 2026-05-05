@@ -52,6 +52,7 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services.i18n import get_available_locales
 from speedfog_racing.services.stats_service import MIN_RACES_FOR_TRAITS
+from speedfog_racing.services.user_stats_service import compute_weekly_series
 
 router = APIRouter()
 
@@ -488,12 +489,14 @@ async def get_user_profile(
     )
     casted_count = casted_count_q.scalar_one()
 
+    weekly = await compute_weekly_series(db, user)
     stats = UserStatsResponse(
         race_count=race_count,
         daily_count=daily_count,
         training_count=training_count,
         organized_count=organized_count,
         casted_count=casted_count,
+        weekly=weekly,
     )
 
     # Held badges (active grants only).
