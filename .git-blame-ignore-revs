@@ -1,0 +1,6 @@
+# Bulk reformats to ignore in `git blame`. Use `git blame --ignore-revs-file
+# .git-blame-ignore-revs <file>` locally; GitHub and GitLab honor this file
+# automatically in their blame UIs.
+
+# chore(web): unify svelte indentation to 2-space + double-quote
+19fe13717fdd0cbd03d0caeceb12bf24afa3a38e
