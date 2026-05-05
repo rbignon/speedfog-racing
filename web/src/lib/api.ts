@@ -967,12 +967,22 @@ export interface AdminUser {
 }
 
 // User profile
+export interface UserStatsWeekly {
+  races: number[];
+  daily: number[];
+  solo: number[];
+  organized: number[];
+  weeks_count: number;
+  capped: boolean;
+}
+
 export interface UserStats {
   race_count: number;
   daily_count: number;
   training_count: number;
   organized_count: number;
   casted_count: number;
+  weekly: UserStatsWeekly;
 }
 
 export interface ProfileBadgeDto {
@@ -997,8 +1007,6 @@ export interface UserProfile {
 
 export interface PoolTypeStats {
   runs: number;
-  avg_time_ms: number | null;
-  avg_deaths: number;
   best_time_ms: number | null;
 }
 
