@@ -14,7 +14,8 @@
   import { formatPoolName } from "$lib/utils/format";
   import { formatIgt } from "$lib/utils/training";
   import { rewards } from "$lib/stores/rewards.svelte";
-  import PoolStatsTable from "$lib/components/PoolStatsTable.svelte";
+  import UserStatsCards from "$lib/components/UserStatsCards.svelte";
+  import ModeStats from "$lib/components/ModeStats.svelte";
   import PlayStyle from "$lib/components/PlayStyle.svelte";
 
   let username = $derived(page.params.username!);
@@ -240,24 +241,7 @@
       {/if}
     </div>
 
-    <div class="stats-grid">
-      <div class="stat-card">
-        <span class="stat-number">{profile.stats.race_count}</span>
-        <span class="stat-label">Races</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-number">{profile.stats.daily_count}</span>
-        <span class="stat-label">Daily</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-number">{profile.stats.training_count}</span>
-        <span class="stat-label">Solo</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-number">{profile.stats.organized_count}</span>
-        <span class="stat-label">Organized</span>
-      </div>
-    </div>
+    <UserStatsCards {profile} />
 
     {#if traits}
       <section class="play-style-section">
@@ -267,10 +251,7 @@
     {/if}
 
     {#if poolStats && poolStats.pools.length > 0}
-      <section class="pool-stats-section">
-        <h2>Mode Stats</h2>
-        <PoolStatsTable pools={poolStats.pools} />
-      </section>
+      <ModeStats pools={poolStats.pools} />
     {/if}
 
     {#if activity}
@@ -588,13 +569,6 @@
     color: var(--color-purple);
   }
 
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 0.75rem;
-    margin-bottom: 2.5rem;
-  }
-
   .play-style-section {
     margin-bottom: 2.5rem;
   }
@@ -604,42 +578,6 @@
     font-weight: 600;
     margin: 0 0 1rem 0;
     color: var(--color-gold);
-  }
-
-  .pool-stats-section {
-    margin-bottom: 2.5rem;
-  }
-
-  .pool-stats-section h2 {
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    margin: 0 0 1rem 0;
-    color: var(--color-gold);
-  }
-
-  .stat-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: 0.75rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.15rem;
-  }
-
-  .stat-number {
-    font-size: var(--font-size-xl);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    color: var(--color-gold);
-  }
-
-  .stat-label {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
   }
 
   .activity-section h2 {
@@ -782,10 +720,6 @@
   @media (max-width: 640px) {
     .profile-page {
       padding: 1rem;
-    }
-
-    .stats-grid {
-      grid-template-columns: repeat(2, 1fr);
     }
 
     .activity-card {
