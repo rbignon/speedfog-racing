@@ -251,7 +251,10 @@
     {/if}
 
     {#if poolStats && poolStats.pools.length > 0}
-      <ModeStats pools={poolStats.pools} />
+      <section class="mode-stats-section">
+        <h2>Mode Stats</h2>
+        <ModeStats pools={poolStats.pools} />
+      </section>
     {/if}
 
     {#if activity}
@@ -569,22 +572,18 @@
     color: var(--color-purple);
   }
 
-  .play-style-section {
+  .play-style-section,
+  .mode-stats-section {
     margin-bottom: 2.5rem;
   }
 
-  .play-style-section h2 {
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    margin: 0 0 1rem 0;
-    color: var(--color-gold);
-  }
-
+  .play-style-section h2,
+  .mode-stats-section h2,
   .activity-section h2 {
     font-size: var(--font-size-lg);
     font-weight: 600;
     margin: 0 0 1rem 0;
-    color: var(--color-text);
+    color: var(--color-gold);
   }
 
   .empty {

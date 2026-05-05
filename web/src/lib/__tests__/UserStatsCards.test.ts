@@ -62,4 +62,25 @@ describe("UserStatsCards", () => {
       expect(screen.queryByText(label)).not.toBeNull();
     }
   });
+
+  it("renders cards as links when a links mapping is provided", () => {
+    const { container } = render(UserStatsCards, {
+      profile: profileWith(),
+      links: {
+        races: "/races",
+        daily: "/daily",
+        solo: "/training",
+        organized: "/race/new",
+      },
+    });
+    const anchors = Array.from(container.querySelectorAll("a.card"));
+    const hrefs = anchors.map((a) => a.getAttribute("href")).sort();
+    expect(hrefs).toEqual(["/daily", "/race/new", "/races", "/training"]);
+  });
+
+  it("renders cards as plain articles when no links are provided", () => {
+    const { container } = render(UserStatsCards, { profile: profileWith() });
+    expect(container.querySelector("a.card")).toBeNull();
+    expect(container.querySelectorAll("article.card").length).toBe(4);
+  });
 });

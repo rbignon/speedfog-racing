@@ -106,21 +106,6 @@
     overflow: hidden;
   }
 
-  .hero::before {
-    content: "";
-    position: absolute;
-    top: -40%;
-    right: -20%;
-    width: 60%;
-    height: 110%;
-    background: radial-gradient(
-      circle,
-      rgba(200, 164, 78, 0.12),
-      transparent 65%
-    );
-    pointer-events: none;
-  }
-
   .tag {
     position: absolute;
     top: 1.1rem;
@@ -191,11 +176,6 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
-    transition: border-color 0.15s ease;
-  }
-
-  .pill:hover {
-    border-color: rgba(200, 164, 78, 0.35);
   }
 
   .pill-name {

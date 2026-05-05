@@ -1,16 +1,23 @@
 <script lang="ts">
   import type { UserProfile } from "$lib/api";
 
-  let { profile }: { profile: UserProfile } = $props();
+  type CategoryKey = "races" | "daily" | "solo" | "organized";
+
+  let {
+    profile,
+    links,
+  }: {
+    profile: UserProfile;
+    links?: Partial<Record<CategoryKey, string>>;
+  } = $props();
 
   type Category = {
-    key: "races" | "daily" | "solo" | "organized";
+    key: CategoryKey;
     label: string;
     value: number;
     series: number[];
     accent: string;
     accentSoft: string;
-    accentFaint: string;
     emptyCopy: string;
   };
 
@@ -22,7 +29,6 @@
       series: profile.stats.weekly.races,
       accent: "var(--color-gold)",
       accentSoft: "rgba(200, 164, 78, 0.32)",
-      accentFaint: "rgba(200, 164, 78, 0.12)",
       emptyCopy: "Never raced",
     },
     {
@@ -32,7 +38,6 @@
       series: profile.stats.weekly.daily,
       accent: "#2dd4bf",
       accentSoft: "rgba(45, 212, 191, 0.36)",
-      accentFaint: "rgba(45, 212, 191, 0.14)",
       emptyCopy: "Never daily",
     },
     {
@@ -42,7 +47,6 @@
       series: profile.stats.weekly.solo,
       accent: "var(--color-purple)",
       accentSoft: "rgba(139, 92, 246, 0.36)",
-      accentFaint: "rgba(139, 92, 246, 0.14)",
       emptyCopy: "Never solo",
     },
     {
@@ -52,7 +56,6 @@
       series: profile.stats.weekly.organized,
       accent: "#f59e0b",
       accentSoft: "rgba(245, 158, 11, 0.36)",
-      accentFaint: "rgba(245, 158, 11, 0.14)",
       emptyCopy: "Never organized",
     },
   ]);
@@ -67,24 +70,45 @@
   {#each categories as cat (cat.key)}
     {@const max = Math.max(1, ...cat.series)}
     {@const empty = cat.value === 0}
-    <article
-      class="card"
-      style:--accent={cat.accent}
-      style:--accent-soft={cat.accentSoft}
-      style:--accent-faint={cat.accentFaint}
-    >
-      <span class="value" class:muted={empty}>{cat.value}</span>
-      <span class="label">{cat.label}</span>
-      {#if empty}
-        <div class="empty">{cat.emptyCopy}</div>
-      {:else}
-        <div class="spark" aria-hidden="true">
-          {#each cat.series as v, i (i)}
-            <span class="bar" style:height={barHeight(v, max)}></span>
-          {/each}
-        </div>
-      {/if}
-    </article>
+    {@const href = links?.[cat.key]}
+    {#if href}
+      <a
+        class="card card-link"
+        {href}
+        style:--accent={cat.accent}
+        style:--accent-soft={cat.accentSoft}
+      >
+        <span class="value" class:muted={empty}>{cat.value}</span>
+        <span class="label">{cat.label}</span>
+        {#if empty}
+          <div class="empty">{cat.emptyCopy}</div>
+        {:else}
+          <div class="spark" aria-hidden="true">
+            {#each cat.series as v, i (i)}
+              <span class="bar" style:height={barHeight(v, max)}></span>
+            {/each}
+          </div>
+        {/if}
+      </a>
+    {:else}
+      <article
+        class="card"
+        style:--accent={cat.accent}
+        style:--accent-soft={cat.accentSoft}
+      >
+        <span class="value" class:muted={empty}>{cat.value}</span>
+        <span class="label">{cat.label}</span>
+        {#if empty}
+          <div class="empty">{cat.emptyCopy}</div>
+        {:else}
+          <div class="spark" aria-hidden="true">
+            {#each cat.series as v, i (i)}
+              <span class="bar" style:height={barHeight(v, max)}></span>
+            {/each}
+          </div>
+        {/if}
+      </article>
+    {/if}
   {/each}
 </div>
 
@@ -97,7 +121,6 @@
   }
 
   .card {
-    position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
@@ -106,23 +129,17 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     overflow: hidden;
+  }
+
+  .card-link {
+    text-decoration: none;
+    color: inherit;
     transition:
       border-color 0.18s ease,
       transform 0.18s ease;
   }
 
-  .card::before {
-    content: "";
-    position: absolute;
-    top: -30%;
-    right: -25%;
-    width: 60%;
-    height: 70%;
-    background: radial-gradient(circle, var(--accent-faint), transparent 70%);
-    pointer-events: none;
-  }
-
-  .card:hover {
+  .card-link:hover {
     border-color: var(--accent-soft);
     transform: translateY(-1px);
   }

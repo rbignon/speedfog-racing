@@ -365,7 +365,15 @@
         </div>
       </section>
     {:else if profile}
-      <UserStatsCards {profile} />
+      <UserStatsCards
+        {profile}
+        links={{
+          races: "/races",
+          daily: "/daily",
+          solo: "/training",
+          organized: "/race/new",
+        }}
+      />
     {/if}
 
     {#if dailyWeek}
