@@ -20,11 +20,7 @@
     type RaceDetail,
     type RaceStatus as ApiRaceStatus,
   } from "$lib/api";
-  import {
-    currentUserParticipant,
-    dailyTheme,
-    dailyTitle,
-  } from "$lib/daily";
+  import { currentUserParticipant, dailyTheme, dailyTitle } from "$lib/daily";
   import { MetroDagFull, MetroDagProgressive } from "$lib/dag";
   import { parseDagGraph } from "$lib/dag/types";
   import { RaceReplay } from "$lib/replay";

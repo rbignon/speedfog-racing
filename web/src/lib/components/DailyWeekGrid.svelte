@@ -11,12 +11,7 @@
     selectedDate?: string;
   }
 
-  let {
-    week,
-    userId,
-    variant = "home",
-    selectedDate,
-  }: Props = $props();
+  let { week, userId, variant = "home", selectedDate }: Props = $props();
 
   let displayedWeek = $state<DailyWeekResponse>(week);
   let navigating = $state(false);
@@ -43,8 +38,7 @@
   }
 
   let canGoNext = $derived(
-    displayedWeek.week_start <
-      currentWeekMondayFor(displayedWeek.today),
+    displayedWeek.week_start < currentWeekMondayFor(displayedWeek.today),
   );
 
   async function navigate(deltaWeeks: number) {
@@ -138,9 +132,7 @@
     if (!el) return;
     const target =
       (selectedDate
-        ? el.querySelector<HTMLElement>(
-            `[data-cell-date="${selectedDate}"]`,
-          )
+        ? el.querySelector<HTMLElement>(`[data-cell-date="${selectedDate}"]`)
         : null) ?? el.querySelector<HTMLElement>('[data-cell-state="today"]');
     if (!target) return;
     const offset =
@@ -149,7 +141,11 @@
   });
 </script>
 
-<section class="grid-section" class:variant-dashboard={variant === "dashboard"}>
+<section
+  class="grid-section"
+  class:variant-dashboard={variant === "dashboard"}
+  class:variant-daily-detail={variant === "daily-detail"}
+>
   <header class="grid-header">
     <h2>Daily Seed</h2>
     <div class="week-nav">
@@ -256,6 +252,11 @@
   .grid-section {
     margin-top: 2rem;
     margin-bottom: 2rem;
+  }
+
+  .grid-section.variant-daily-detail {
+    margin-top: 0;
+    margin-bottom: 0;
   }
 
   h2 {
