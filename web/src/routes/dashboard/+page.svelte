@@ -27,19 +27,16 @@
 
   let profile: UserProfile | null = $state(null);
   let activity = $state<ActivityTimeline | null>(null);
-  let myRaces: Race[] = $state([]);
-  let trainingSessions: TrainingSession[] = $state([]);
+  // ``activeRaces`` / ``activeTraining`` are pre-filtered server-side via the
+  // ``status`` query param; no further client-side filtering is needed.
+  let activeRaces: Race[] = $state([]);
+  let activeTraining: TrainingSession[] = $state([]);
   let joinableRaces: Race[] = $state([]);
   let dailyWeek: DailyWeekResponse | null = $state(null);
   let loading = $state(true);
   let loadingMore = $state(false);
   let error = $state<string | null>(null);
   let fetched = $state(false);
-
-  let activeRaces = $derived(myRaces.filter((r) => r.status !== "finished"));
-  let activeTraining = $derived(
-    trainingSessions.filter((s) => s.status === "active"),
-  );
 
   // New user detection: no races, dailies, or training sessions ever
   let isNewUser = $derived.by(() => {
@@ -91,16 +88,19 @@
     Promise.all([
       fetchUserProfile(username),
       fetchUserActivity(username, 0, 20),
-      fetchMyRaces(),
-      fetchTrainingSessions(),
+      // Active Now only needs unfinished races and active solo sessions; the
+      // server-side status filter avoids hauling the user's full history
+      // back just to drop it client-side.
+      fetchMyRaces("setup,running"),
+      fetchTrainingSessions("active"),
       fetchJoinableRaces(),
       fetchDailyWeek().catch(() => null),
     ])
       .then(([p, a, r, t, jr, week]) => {
         profile = p;
         activity = a;
-        myRaces = r;
-        trainingSessions = t;
+        activeRaces = r;
+        activeTraining = t;
         joinableRaces = jr;
         dailyWeek = week;
       })

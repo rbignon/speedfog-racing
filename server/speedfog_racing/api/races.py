@@ -17,6 +17,7 @@ from starlette.responses import StreamingResponse
 from speedfog_racing.api.helpers import (
     caster_response,
     late_join_window_open,
+    parse_enum_csv,
     participant_response,
     race_response,
     user_response,
@@ -440,6 +441,7 @@ async def list_races(
     _user: User | None = Depends(get_current_user_optional),
 ) -> RaceListResponse:
     """List races, optionally filtered by status with pagination."""
+    status_enums = parse_enum_csv(status_filter, RaceStatus)
     query = select(Race).options(
         selectinload(Race.organizer),
         selectinload(Race.seed),
@@ -465,19 +467,11 @@ async def list_races(
     else:
         query = query.where(Race.is_public.is_(True))
 
-    if status_filter:
-        statuses = [s.strip() for s in status_filter.split(",")]
-        try:
-            status_enums = [RaceStatus(s) for s in statuses]
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid status value: {e}",
-            ) from e
+    if status_enums:
         query = query.where(Race.status.in_(status_enums))
 
     # Sort depends on what statuses are requested
-    finished_only = status_filter and all(s.strip() == "finished" for s in status_filter.split(","))
+    finished_only = status_enums == [RaceStatus.FINISHED]
     if finished_only:
         # Recent results: most recent first
         query = query.order_by(

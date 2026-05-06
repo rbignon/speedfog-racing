@@ -835,9 +835,15 @@ export async function searchUsers(query: string): Promise<User[]> {
 
 /**
  * Fetch races where the current user is organizer or participant.
+ *
+ * ``status`` is an optional comma-separated list of ``RaceStatus`` values
+ * (e.g. ``"setup,running"``) handled server-side.
  */
-export async function fetchMyRaces(): Promise<Race[]> {
-  const response = await fetch(`${API_BASE}/users/me/races`, {
+export async function fetchMyRaces(status?: string): Promise<Race[]> {
+  const url = status
+    ? `${API_BASE}/users/me/races?status=${encodeURIComponent(status)}`
+    : `${API_BASE}/users/me/races`;
+  const response = await fetch(url, {
     headers: getAuthHeaders(),
   });
   const data = await handleResponse<RaceListResponse>(response);
@@ -1436,8 +1442,19 @@ export async function createTrainingSession(
   return handleResponse<TrainingSessionDetail>(response);
 }
 
-export async function fetchTrainingSessions(): Promise<TrainingSession[]> {
-  const response = await fetch(`${API_BASE}/training`, {
+/**
+ * Fetch the current user's training sessions.
+ *
+ * ``status`` is an optional comma-separated list of
+ * ``TrainingSessionStatus`` values (e.g. ``"active"``) handled server-side.
+ */
+export async function fetchTrainingSessions(
+  status?: string,
+): Promise<TrainingSession[]> {
+  const url = status
+    ? `${API_BASE}/training?status=${encodeURIComponent(status)}`
+    : `${API_BASE}/training`;
+  const response = await fetch(url, {
     headers: getAuthHeaders(),
   });
   return handleResponse<TrainingSession[]>(response);

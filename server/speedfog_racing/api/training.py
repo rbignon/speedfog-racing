@@ -6,13 +6,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.responses import StreamingResponse
 
-from speedfog_racing.api.helpers import format_pool_display_name, user_response
+from speedfog_racing.api.helpers import format_pool_display_name, parse_enum_csv, user_response
 from speedfog_racing.auth import get_current_user, get_current_user_optional
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
@@ -184,16 +184,28 @@ async def create_session(
 
 @router.get("", response_model=list[TrainingSessionResponse])
 async def list_sessions(
+    # ``status_filter`` keeps the function body free of the ``fastapi.status``
+    # shadow; the URL surface stays ``?status=`` via the alias.
+    status_filter: str | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[TrainingSessionResponse]:
-    """List current user's training sessions (most recent first)."""
-    result = await db.execute(
+    """List current user's training sessions (most recent first).
+
+    ``status`` is an optional comma-separated list of
+    ``TrainingSessionStatus`` values (e.g. ``active``) to restrict the
+    response.
+    """
+    status_enums = parse_enum_csv(status_filter, TrainingSessionStatus)
+    query = (
         select(TrainingSession)
         .options(*_session_load_options())
         .where(TrainingSession.user_id == user.id)
         .order_by(TrainingSession.created_at.desc())
     )
+    if status_enums:
+        query = query.where(TrainingSession.status.in_(status_enums))
+    result = await db.execute(query)
     sessions = list(result.scalars().all())
     return [_build_list_response(s) for s in sessions]
 

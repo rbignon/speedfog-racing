@@ -3,7 +3,10 @@
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from enum import Enum
+from typing import TypeVar
 
+from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +28,28 @@ from speedfog_racing.schemas import (
     UserResponse,
 )
 from speedfog_racing.services.twitch_live import twitch_live_service
+
+E = TypeVar("E", bound=Enum)
+
+
+def parse_enum_csv(
+    value: str | None, enum_cls: type[E], param_name: str = "status"
+) -> list[E] | None:
+    """Parse a comma-separated query string as a list of ``enum_cls`` values.
+
+    Returns ``None`` when the input is missing so callers can distinguish
+    "no filter" from "filter to []". Raises HTTP 400 with the offending
+    token on the first invalid entry.
+    """
+    if value is None or not value.strip():
+        return None
+    try:
+        return [enum_cls(token.strip()) for token in value.split(",") if token.strip()]
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {param_name} value: {exc}",
+        ) from exc
 
 
 def late_join_window_open(race: Race, now: datetime) -> bool:

@@ -249,3 +249,145 @@ async def test_my_races_excludes_daily_seeds(test_client, async_session):
         assert "Regular Race" in names
         assert "Daily 2026-04-29" not in names
         assert all(r.get("daily_date") is None for r in races)
+
+
+@pytest.mark.asyncio
+async def test_my_races_filter_by_status(test_client, async_session):
+    """``status=setup,running`` keeps only matching races and drops finished ones."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="my_filter_u",
+            twitch_username="my_filter",
+            twitch_display_name="MyFilter",
+            api_token="my_filter_token",
+            role=UserRole.ORGANIZER,
+        )
+        db.add(user)
+        await db.flush()
+
+        seed = Seed(
+            seed_number="my_filter_seed",
+            pool_name="standard",
+            graph_json=SAMPLE_GRAPH,
+            total_layers=3,
+            folder_path="/fake/seed/my_filter",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        db.add_all(
+            [
+                Race(
+                    name="Setup R",
+                    organizer_id=user.id,
+                    seed_id=seed.id,
+                    status=RaceStatus.SETUP,
+                ),
+                Race(
+                    name="Running R",
+                    organizer_id=user.id,
+                    seed_id=seed.id,
+                    status=RaceStatus.RUNNING,
+                ),
+                Race(
+                    name="Finished R",
+                    organizer_id=user.id,
+                    seed_id=seed.id,
+                    status=RaceStatus.FINISHED,
+                ),
+            ]
+        )
+        await db.commit()
+
+    async with test_client as client:
+        # Multi-value filter: keep setup + running, drop finished.
+        response = await client.get(
+            "/api/users/me/races?status=setup,running",
+            headers={"Authorization": f"Bearer {user.api_token}"},
+        )
+        assert response.status_code == 200
+        names = {r["name"] for r in response.json()["races"]}
+        assert names == {"Setup R", "Running R"}
+
+        # Single-value filter: only running.
+        response = await client.get(
+            "/api/users/me/races?status=running",
+            headers={"Authorization": f"Bearer {user.api_token}"},
+        )
+        assert response.status_code == 200
+        names = {r["name"] for r in response.json()["races"]}
+        assert names == {"Running R"}
+
+        # Invalid value: 400 with a helpful message.
+        response = await client.get(
+            "/api/users/me/races?status=bogus",
+            headers={"Authorization": f"Bearer {user.api_token}"},
+        )
+        assert response.status_code == 400
+        assert "status" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_training_filter_by_status(test_client, async_session):
+    """``status=active`` drops finished/cancelled training sessions."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="train_filter_u",
+            twitch_username="train_filter",
+            twitch_display_name="TrainFilter",
+            api_token="train_filter_token",
+            role=UserRole.ORGANIZER,
+        )
+        db.add(user)
+        await db.flush()
+
+        seed = Seed(
+            seed_number="train_filter_seed",
+            pool_name="standard",
+            graph_json=SAMPLE_GRAPH,
+            total_layers=3,
+            folder_path="/fake/seed/train_filter",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        db.add_all(
+            [
+                TrainingSession(
+                    user_id=user.id,
+                    seed_id=seed.id,
+                    status=TrainingSessionStatus.ACTIVE,
+                ),
+                TrainingSession(
+                    user_id=user.id,
+                    seed_id=seed.id,
+                    status=TrainingSessionStatus.FINISHED,
+                    igt_ms=120000,
+                ),
+                TrainingSession(
+                    user_id=user.id,
+                    seed_id=seed.id,
+                    status=TrainingSessionStatus.CANCELLED,
+                ),
+            ]
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get(
+            "/api/training?status=active",
+            headers={"Authorization": f"Bearer {user.api_token}"},
+        )
+        assert response.status_code == 200
+        sessions = response.json()
+        assert len(sessions) == 1
+        assert sessions[0]["status"] == "active"
+
+        # Invalid value: 400.
+        response = await client.get(
+            "/api/training?status=bogus",
+            headers={"Authorization": f"Bearer {user.api_token}"},
+        )
+        assert response.status_code == 400

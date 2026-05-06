@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.api.helpers import (
     compute_race_stats,
     format_pool_display_name,
+    parse_enum_csv,
     race_date,
     race_response,
     user_response,
@@ -25,6 +26,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     PlayerTraitScores,
     Race,
+    RaceStatus,
     Seed,
     TrainingSession,
     TrainingSessionStatus,
@@ -128,6 +130,9 @@ async def update_overlay_settings(
 @router.get("/me/races", response_model=RaceListResponse)
 async def get_my_races(
     user: Annotated[User, Depends(get_current_user)],
+    # ``status_filter`` keeps the function body free of the ``fastapi.status``
+    # shadow; the URL surface stays ``?status=`` via the alias.
+    status_filter: str | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
 ) -> RaceListResponse:
     """Get races where the user is organizer or participant.
@@ -135,7 +140,11 @@ async def get_my_races(
     Excludes Daily Seeds: those are surfaced by the dedicated weekly grid
     (``DailyWeekGrid``) on the home and dashboard, so showing them here
     would duplicate the today cell into the Active Now section.
+
+    ``status`` is an optional comma-separated list of ``RaceStatus`` values
+    (e.g. ``setup,running``) to restrict the response.
     """
+    status_enums = parse_enum_csv(status_filter, RaceStatus)
     participant_race_ids = select(Participant.race_id).where(Participant.user_id == user.id)
     query = (
         select(Race)
@@ -151,6 +160,8 @@ async def get_my_races(
         )
         .order_by(func.coalesce(Race.started_at, Race.scheduled_at, Race.created_at).desc())
     )
+    if status_enums:
+        query = query.where(Race.status.in_(status_enums))
     result = await db.execute(query)
     races = list(result.scalars().all())
 
