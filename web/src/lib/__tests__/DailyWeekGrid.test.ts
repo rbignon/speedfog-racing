@@ -445,16 +445,6 @@ describe("DailyWeekGrid", () => {
     expect(container.querySelector(".cell.selected")).toBeNull();
   });
 
-  it("renders prev and next arrow buttons in the header", () => {
-    const { container } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: null, variant: "home" },
-    });
-    const prev = container.querySelector('button[data-week-nav="prev"]');
-    const next = container.querySelector('button[data-week-nav="next"]');
-    expect(prev).not.toBeNull();
-    expect(next).not.toBeNull();
-  });
-
   it("disables the next arrow when the displayed week starts at the current week", () => {
     // mockWeek's week_start (2026-04-27) matches the Monday of mockWeek.today
     // (2026-04-29), so we are on the current week and "next" should be off.

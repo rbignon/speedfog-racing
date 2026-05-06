@@ -13,6 +13,7 @@
 
   let { week, userId, variant = "home", selectedDate }: Props = $props();
 
+  // svelte-ignore state_referenced_locally
   let displayedWeek = $state<DailyWeekResponse>(week);
   let navigating = $state(false);
 
@@ -23,12 +24,6 @@
   $effect(() => {
     displayedWeek = week;
   });
-
-  function shiftMonday(currentWeekStart: string, deltaDays: number): string {
-    const d = new Date(`${currentWeekStart}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + deltaDays);
-    return d.toISOString().slice(0, 10);
-  }
 
   function currentWeekMondayFor(todayIso: string): string {
     const d = new Date(`${todayIso}T00:00:00Z`);
@@ -44,7 +39,9 @@
   async function navigate(deltaWeeks: number) {
     if (navigating) return;
     if (deltaWeeks > 0 && !canGoNext) return;
-    const anchorDate = shiftMonday(displayedWeek.week_start, deltaWeeks * 7);
+    const d = new Date(`${displayedWeek.week_start}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + deltaWeeks * 7);
+    const anchorDate = d.toISOString().slice(0, 10);
     navigating = true;
     try {
       displayedWeek = await fetchDailyWeek(anchorDate);
@@ -132,7 +129,9 @@
     if (!el) return;
     const target =
       (selectedDate
-        ? el.querySelector<HTMLElement>(`[data-cell-date="${selectedDate}"]`)
+        ? el.querySelector<HTMLElement>(
+            `[data-cell-date="${CSS.escape(selectedDate)}"]`,
+          )
         : null) ?? el.querySelector<HTMLElement>('[data-cell-state="today"]');
     if (!target) return;
     const offset =
@@ -307,7 +306,6 @@
 
   .cell.selected {
     background: var(--color-surface-elevated);
-    border-color: var(--color-border);
     box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45);
   }
   .cell.today.selected {
