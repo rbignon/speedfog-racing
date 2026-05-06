@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { DailyWeekDay, DailyWeekResponse } from "$lib/api";
+  import { fetchDailyWeek } from "$lib/api";
   import { formatIgt } from "$lib/utils/training";
 
   interface Props {
@@ -16,6 +17,49 @@
     variant = "home",
     selectedDate,
   }: Props = $props();
+
+  let displayedWeek = $state<DailyWeekResponse>(week);
+  let navigating = $state(false);
+
+  // SvelteKit may reuse this component instance when the URL param changes
+  // (e.g. /daily/2026-04-01 -> /daily/2026-04-02) and just re-runs the load
+  // function. Reset local nav state when the parent prop's week changes so
+  // we follow the new daily's week instead of staying on the previous one.
+  $effect(() => {
+    displayedWeek = week;
+  });
+
+  function shiftMonday(currentWeekStart: string, deltaDays: number): string {
+    const d = new Date(`${currentWeekStart}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + deltaDays);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function currentWeekMondayFor(todayIso: string): string {
+    const d = new Date(`${todayIso}T00:00:00Z`);
+    const weekday = (d.getUTCDay() + 6) % 7; // 0 = Monday
+    d.setUTCDate(d.getUTCDate() - weekday);
+    return d.toISOString().slice(0, 10);
+  }
+
+  let canGoNext = $derived(
+    displayedWeek.week_start <
+      currentWeekMondayFor(displayedWeek.today),
+  );
+
+  async function navigate(deltaWeeks: number) {
+    if (navigating) return;
+    if (deltaWeeks > 0 && !canGoNext) return;
+    const anchorDate = shiftMonday(displayedWeek.week_start, deltaWeeks * 7);
+    navigating = true;
+    try {
+      displayedWeek = await fetchDailyWeek(anchorDate);
+    } catch {
+      // swallow: the displayed week stays put.
+    } finally {
+      navigating = false;
+    }
+  }
 
   let now = $state(Date.now());
   onMount(() => {
@@ -101,9 +145,33 @@
 </script>
 
 <section class="grid-section" class:variant-dashboard={variant === "dashboard"}>
-  <h2>Daily Seed</h2>
+  <header class="grid-header">
+    <h2>Daily Seed</h2>
+    <div class="week-nav">
+      <button
+        type="button"
+        class="nav-btn"
+        data-week-nav="prev"
+        aria-label="Previous week"
+        onclick={() => navigate(-1)}
+        disabled={navigating}
+      >
+        <span aria-hidden="true">&larr;</span>
+      </button>
+      <button
+        type="button"
+        class="nav-btn"
+        data-week-nav="next"
+        aria-label="Next week"
+        onclick={() => navigate(1)}
+        disabled={navigating || !canGoNext}
+      >
+        <span aria-hidden="true">&rarr;</span>
+      </button>
+    </div>
+  </header>
   <div class="grid" bind:this={scrollContainer}>
-    {#each week.days as day (day.date)}
+    {#each displayedWeek.days as day (day.date)}
       {@const href = hrefFor(day)}
       <svelte:element
         this={href ? "a" : "div"}
@@ -186,7 +254,6 @@
   }
 
   h2 {
-    margin: 0 0 0.75rem;
     color: var(--color-gold);
     font-size: var(--font-size-lg);
     font-weight: 600;
@@ -372,5 +439,47 @@
       min-width: 150px;
       scroll-snap-align: center;
     }
+  }
+
+  .grid-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin: 0 0 0.75rem;
+  }
+  .grid-header h2 {
+    margin: 0;
+  }
+  .week-nav {
+    display: flex;
+    gap: 0.25rem;
+  }
+  .nav-btn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    width: 1.75rem;
+    height: 1.75rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+    font-size: 0.95rem;
+    line-height: 1;
+    transition:
+      color var(--transition),
+      border-color var(--transition);
+  }
+  .nav-btn:hover:not(:disabled) {
+    color: var(--color-purple);
+    border-color: var(--color-purple);
+  }
+  .nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 </style>

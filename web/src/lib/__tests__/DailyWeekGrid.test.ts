@@ -444,4 +444,41 @@ describe("DailyWeekGrid", () => {
     });
     expect(container.querySelector(".cell.selected")).toBeNull();
   });
+
+  it("renders prev and next arrow buttons in the header", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: { week: mockWeek, userId: null, variant: "home" },
+    });
+    const prev = container.querySelector('button[data-week-nav="prev"]');
+    const next = container.querySelector('button[data-week-nav="next"]');
+    expect(prev).not.toBeNull();
+    expect(next).not.toBeNull();
+  });
+
+  it("disables the next arrow when the displayed week starts at the current week", () => {
+    // mockWeek's week_start (2026-04-27) matches the Monday of mockWeek.today
+    // (2026-04-29), so we are on the current week and "next" should be off.
+    const { container } = render(DailyWeekGrid, {
+      props: { week: mockWeek, userId: null, variant: "home" },
+    });
+    const next = container.querySelector(
+      'button[data-week-nav="next"]',
+    ) as HTMLButtonElement | null;
+    expect(next?.disabled).toBe(true);
+  });
+
+  it("enables the next arrow when the displayed week is in the past", () => {
+    const pastWeek: DailyWeekResponse = {
+      ...mockWeek,
+      week_start: "2026-04-20", // Monday of a past week
+      // today stays 2026-04-29 -> the displayed week is strictly before today's week
+    };
+    const { container } = render(DailyWeekGrid, {
+      props: { week: pastWeek, userId: null, variant: "daily-detail" },
+    });
+    const next = container.querySelector(
+      'button[data-week-nav="next"]',
+    ) as HTMLButtonElement | null;
+    expect(next?.disabled).toBe(false);
+  });
 });
