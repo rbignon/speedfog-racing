@@ -152,22 +152,13 @@ def _my_result(
 
 @router.get("/week", response_model=DailyWeekResponse)
 async def get_daily_week(
-    date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    anchor_date: date_type | None = Query(default=None, alias="date"),
     db: AsyncSession = Depends(get_db),
     user: User | None = Depends(get_current_user_optional),
 ) -> DailyWeekResponse:
-    """Return the seven-cell weekly grid for the home / dashboard / daily-detail surfaces."""
+    """Return the seven-cell weekly grid centered on ``date`` (defaults to today)."""
     today = daily_date_for(datetime.now(UTC))
-    if date is None:
-        anchor = today
-    else:
-        try:
-            anchor = datetime.strptime(date, "%Y-%m-%d").date()
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Invalid date format, expected YYYY-MM-DD.",
-            ) from exc
+    anchor = anchor_date if anchor_date is not None else today
     week_start = anchor - timedelta(days=anchor.weekday())
     week_dates = [week_start + timedelta(days=i) for i in range(7)]
 

@@ -424,11 +424,10 @@ async def test_week_endpoint_accepts_date_param_anchors_on_past_week(
 
 
 @pytest.mark.asyncio
-async def test_week_endpoint_date_param_for_current_rotation_returns_current_week(
+async def test_week_endpoint_date_param_for_current_rotation_matches_no_param(
     dw_test_client, dw_async_session_maker
 ) -> None:
     today = daily_date_for(datetime.now(UTC))
-    week_start = today - timedelta(days=today.weekday())
 
     async with dw_async_session_maker() as db:
         organizer = _user()
@@ -437,15 +436,15 @@ async def test_week_endpoint_date_param_for_current_rotation_returns_current_wee
         db.add(_daily_race(organizer=organizer, the_date=today))
         await db.commit()
 
-    response = await dw_test_client.get(f"/api/daily/week?date={today.isoformat()}")
-    assert response.status_code == 200, response.text
-    data = response.json()
-    assert data["week_start"] == week_start.isoformat()
-    assert data["today"] == today.isoformat()
-    assert data["days"][today.weekday()]["state"] == "today"
+    no_param = await dw_test_client.get("/api/daily/week")
+    with_param = await dw_test_client.get(f"/api/daily/week?date={today.isoformat()}")
+    assert no_param.status_code == 200, no_param.text
+    assert with_param.status_code == 200, with_param.text
+    assert no_param.json() == with_param.json()
 
 
 @pytest.mark.asyncio
-async def test_week_endpoint_rejects_malformed_date(dw_test_client) -> None:
-    response = await dw_test_client.get("/api/daily/week?date=not-a-date")
+@pytest.mark.parametrize("bad_date", ["not-a-date", "2026-02-30", "2026-13-01"])
+async def test_week_endpoint_rejects_malformed_date(dw_test_client, bad_date: str) -> None:
+    response = await dw_test_client.get(f"/api/daily/week?date={bad_date}")
     assert response.status_code == 422
