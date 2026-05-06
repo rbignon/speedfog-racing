@@ -12,7 +12,7 @@ from speedfog_racing.models import ChatMessage, Race, RaceStatus
 logger = logging.getLogger(__name__)
 
 CLEANUP_INTERVAL_SECONDS = 3600  # 1 hour
-RETENTION_HOURS = 24
+RETENTION_HOURS = 168
 
 
 async def cleanup_old_chat_messages(session_maker: async_sessionmaker[AsyncSession]) -> int:
