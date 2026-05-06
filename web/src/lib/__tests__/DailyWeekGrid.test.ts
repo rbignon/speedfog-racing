@@ -458,6 +458,41 @@ describe("DailyWeekGrid", () => {
     expect(next?.disabled).toBe(true);
   });
 
+  it("hides the play-now strip on the today cell when it is selected", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: {
+        week: mockWeek,
+        userId: "me",
+        variant: "daily-detail",
+        selectedDate: mockWeek.today,
+      },
+    });
+    const todayCell = container.querySelector('[data-cell-state="today"]');
+    const strip = todayCell?.querySelector(".strip");
+    expect(strip?.classList.contains("strip-play-now")).toBe(false);
+    expect(strip?.classList.contains("strip-placeholder")).toBe(true);
+  });
+
+  it("still shows the play-now strip on today when not selected", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: { week: mockWeek, userId: "me", variant: "home" },
+    });
+    const todayCell = container.querySelector('[data-cell-state="today"]');
+    const strip = todayCell?.querySelector(".strip");
+    expect(strip?.classList.contains("strip-play-now")).toBe(true);
+  });
+
+  it("disables the prev arrow when has_earlier is false", () => {
+    const noEarlier: DailyWeekResponse = { ...mockWeek, has_earlier: false };
+    const { container } = render(DailyWeekGrid, {
+      props: { week: noEarlier, userId: null, variant: "home" },
+    });
+    const prev = container.querySelector(
+      'button[data-week-nav="prev"]',
+    ) as HTMLButtonElement | null;
+    expect(prev?.disabled).toBe(true);
+  });
+
   it("enables the next arrow when the displayed week is in the past", () => {
     const pastWeek: DailyWeekResponse = {
       ...mockWeek,

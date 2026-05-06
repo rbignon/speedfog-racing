@@ -39,6 +39,7 @@
   async function navigate(deltaWeeks: number) {
     if (navigating) return;
     if (deltaWeeks > 0 && !canGoNext) return;
+    if (deltaWeeks < 0 && !displayedWeek.has_earlier) return;
     const d = new Date(`${displayedWeek.week_start}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + deltaWeeks * 7);
     const anchorDate = d.toISOString().slice(0, 10);
@@ -96,7 +97,13 @@
   function cellStrip(day: DailyWeekDay): CellStrip {
     if (day.state === "today") {
       const r = day.my_result;
-      if (!r) return { kind: "label", text: "Play now", variant: "play-now" };
+      if (!r) {
+        // The today cell can also be the selected cell when the viewer is
+        // on /daily/[today]. The "Play now" CTA is redundant in that case
+        // since clicking it would take them to the page they're already on.
+        if (day.date === selectedDate) return null;
+        return { kind: "label", text: "Play now", variant: "play-now" };
+      }
       if (r.status === "finished")
         return { kind: "finished", score: finishedScore(day) };
       if (r.status === "abandoned")
@@ -154,7 +161,7 @@
         data-week-nav="prev"
         aria-label="Previous week"
         onclick={() => navigate(-1)}
-        disabled={navigating}
+        disabled={navigating || !displayedWeek.has_earlier}
       >
         <span aria-hidden="true">&larr;</span>
       </button>
