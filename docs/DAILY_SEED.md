@@ -176,12 +176,12 @@ The pool must exist in `pools` and be `enabled = True`; otherwise the next 08:00
 
 Discovery surface for Daily Seeds. All three live under `/api/daily`.
 
-| Endpoint                        | Returns              | Description                                                                                                                   |
-| ------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/daily/today`          | `RaceResponse`       | The current rotation day's daily, or 404 if creation has not happened yet.                                                    |
-| `GET /api/daily/{yyyy-mm-dd}`   | `RaceDetailResponse` | Look up by rotation date. Used by `/daily/[date]`.                                                                            |
-| `GET /api/daily/recent?limit=N` | `RaceListResponse`   | Past dailies (`daily_date IS NOT NULL AND daily_date < today`) ordered by date desc. `limit` clamped to `[1, 30]`, default 7. |
-| `GET /api/daily/week`           | `DailyWeekResponse`  | The seven calendar-week cells (Mon..Sun ISO order) consumed by the home and dashboard grid.                                   |
+| Endpoint                        | Returns              | Description                                                                                                                                                                                                                  |
+| ------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/daily/today`          | `RaceResponse`       | The current rotation day's daily, or 404 if creation has not happened yet.                                                                                                                                                   |
+| `GET /api/daily/{yyyy-mm-dd}`   | `RaceDetailResponse` | Look up by rotation date. Used by `/daily/[date]`.                                                                                                                                                                           |
+| `GET /api/daily/recent?limit=N` | `RaceListResponse`   | Past dailies (`daily_date IS NOT NULL AND daily_date < today`) ordered by date desc. `limit` clamped to `[1, 30]`, default 7.                                                                                                |
+| `GET /api/daily/week`           | `DailyWeekResponse`  | The seven calendar-week cells (Mon..Sun ISO order) consumed by the home, dashboard, and daily-detail grid. Optional `?date=YYYY-MM-DD` query parameter anchors the returned week on the date's ISO week (defaults to today). |
 
 Route resolution is unambiguous: `today` and `recent` are literal segments, `{daily_date}` only matches strings parseable as `%Y-%m-%d` (otherwise 404). The "today" lookup uses `daily_date_for(now_utc)` so it switches over at exactly 08:00 UTC.
 
@@ -235,7 +235,7 @@ The frontend exposes a Daily Seed through three surfaces, all consuming `daily_d
 
 ### Routes
 
-- `/` and `/dashboard`: both surfaces now call `GET /api/daily/week` to populate the `DailyWeekGrid.svelte` component, which replaces the previous `DailyBanner` and `DailyDashboardSection` surfaces.
+- `/`, `/dashboard`, and `/daily/[date]`: all three surfaces call `GET /api/daily/week` to populate the `DailyWeekGrid.svelte` component. `/daily/[date]` passes the URL date as the `?date=` anchor so the grid lands on the week containing the viewed daily, with that cell highlighted ("you are here"). The grid renders prev/next arrows on every surface for inline week navigation.
 - `/daily` (`web/src/routes/daily/+page.ts`): server-side load that fetches `GET /api/daily/today`. If a daily exists, it issues a 307 to `/daily/{daily_date}`. If the request fails (404 or network), the route falls through to an empty-state component.
 - `/daily/[date]/+page.svelte`: the dedicated landing page for a given rotation date. The same component renders the live daily and any past daily; it branches on whether `now < race_ends_at`. Layout mirrors `/race/[id]` with daily-specific adaptations (single public chat tab, no `RaceStatus` badge, no participants list during setup, "Play now" CTA on the DAG area when the viewer is not yet a participant). The `DownloadModal` is reused with `actionLabel = "Download Seed Package"` so the same flow lands the per-participant zip.
 
