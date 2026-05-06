@@ -205,59 +205,59 @@ class TestValidation:
 
 
 class TestModConfig:
-    def test_add_dll_to_me3_config(self, tmp_path):
-        me3_dir = tmp_path / "me3"
-        me3_dir.mkdir()
-        config = me3_dir / "config_speedfog.me3"
+    def test_add_dll_appends_to_populated_list(self, tmp_path):
+        modengine_dir = tmp_path / "modengine2"
+        modengine_dir.mkdir()
+        config = modengine_dir / "config_speedfog.toml"
         config.write_text(
-            "# SpeedFog ME3 Profile\n"
-            'profileVersion = "v1"\n\n'
-            "[[supports]]\n"
-            'game = "eldenring"\n\n'
-            "[[natives]]\n"
-            'path = "lib/RandomizerCrashFix.dll"\n\n'
-            "[[packages]]\n"
-            'id = "fogmod"\n'
-            'path = "mods/fogmod"\n',
+            "[modengine]\n"
+            "debug = false\n"
+            "external_dlls = [\n"
+            '    "..\\\\lib\\\\RandomizerHelper.dll",\n'
+            "]\n",
             encoding="utf-8",
         )
 
         assert add_dll_to_config(tmp_path) is True
 
         content = config.read_text(encoding="utf-8")
-        assert 'path = "../lib/speedfog_racing.dll"' in content
-        assert content.index('path = "../lib/speedfog_racing.dll"') < content.index(
-            'path = "lib/RandomizerCrashFix.dll"'
+        assert '    "..\\\\lib\\\\speedfog_racing.dll",' in content
+        assert '    "..\\\\lib\\\\RandomizerHelper.dll",' in content
+
+    def test_add_dll_to_empty_list(self, tmp_path):
+        modengine_dir = tmp_path / "modengine2"
+        modengine_dir.mkdir()
+        config = modengine_dir / "config_speedfog.toml"
+        config.write_text(
+            "[modengine]\ndebug = false\nexternal_dlls = []\n",
+            encoding="utf-8",
         )
 
-    def test_add_dll_to_me3_config_is_idempotent(self, tmp_path):
-        me3_dir = tmp_path / "me3"
-        me3_dir.mkdir()
-        config = me3_dir / "config_speedfog.me3"
+        assert add_dll_to_config(tmp_path) is True
+
+        assert '    "..\\\\lib\\\\speedfog_racing.dll",' in config.read_text(
+            encoding="utf-8"
+        )
+
+    def test_add_dll_is_idempotent(self, tmp_path):
+        modengine_dir = tmp_path / "modengine2"
+        modengine_dir.mkdir()
+        config = modengine_dir / "config_speedfog.toml"
         config.write_text(
-            'profileVersion = "v1"\n\n'
-            "[[supports]]\n"
-            'game = "eldenring"\n\n'
-            "[[natives]]\n"
-            'path = "../lib/speedfog_racing.dll"\n',
+            "[modengine]\n"
+            "external_dlls = [\n"
+            '    "..\\\\lib\\\\speedfog_racing.dll",\n'
+            "]\n",
             encoding="utf-8",
         )
 
         assert add_dll_to_config(tmp_path) is True
         assert (
             config.read_text(encoding="utf-8").count(
-                'path = "../lib/speedfog_racing.dll"'
+                '"..\\\\lib\\\\speedfog_racing.dll"'
             )
             == 1
         )
 
-    def test_add_dll_to_legacy_config_fallback(self, tmp_path):
-        config = tmp_path / "config_speedfog.toml"
-        config.write_text(
-            '[modengine]\nexternal_dlls = [\n    "lib\\\\RandomizerHelper.dll",\n]\n',
-            encoding="utf-8",
-        )
-
-        assert add_dll_to_config(tmp_path) is True
-
-        assert '    "lib\\\\speedfog_racing.dll",' in config.read_text(encoding="utf-8")
+    def test_add_dll_missing_config_fails(self, tmp_path):
+        assert add_dll_to_config(tmp_path) is False

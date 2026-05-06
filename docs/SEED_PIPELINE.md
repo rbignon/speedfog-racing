@@ -42,7 +42,7 @@ python tools/generate_pool.py \
 
 3. **Post-process the seed directory**:
    - Copy `speedfog_racing.dll` from `tools/assets/` to `<seed_dir>/lib/`.
-   - Register the DLL in `me3/config_speedfog.me3` as a ME3 `[[natives]]` entry (`path = "../lib/speedfog_racing.dll"`). `generate_pool.py` still has a ModEngine 2 fallback for old artifacts kept for investigation.
+   - Append the DLL to `modengine2/config_speedfog.toml`'s `external_dlls` array (`"..\\lib\\speedfog_racing.dll"`). The path is resolved by ModEngine 2 against the config's directory, so the `..\` prefix walks back up to the seed root.
    - Ensure `RandomizerHelper_config.ini` exists in `lib/` with safe racing defaults (no auto-equip, auto-upgrade enabled). This covers the case where item randomizer was disabled, as the DLL is always present but may lack config.
 
 4. **Create zip**: all files under a top-level `speedfog_<slug>/` directory. Named `seed_<slug>.zip`.
@@ -269,9 +269,14 @@ seed_a1b2c3d4e5f6.zip
 └── speedfog_a1b2c3d4e5f6/
     ├── graph.json               # DAG definition (nodes, edges, event_map, ...)
     ├── regulation.bin           # Game data overrides
-    ├── me3/
-    │   ├── config_speedfog.me3    # ME3 profile (includes racing DLL as a native)
-    │   └── bin/                   # ME3 runtime
+    ├── modengine2/
+    │   ├── config_speedfog.toml   # ModEngine 2 config (includes racing DLL in external_dlls)
+    │   ├── modengine2_launcher.exe
+    │   └── modengine2/            # ModEngine 2 runtime (nested same-named dir, from upstream)
+    │       ├── bin/
+    │       ├── crashpad/
+    │       └── tools/
+    ├── launch_speedfog.bat        # Windows launcher
     ├── lib/
     │   ├── speedfog_racing.dll    # Racing overlay mod
     │   ├── RandomizerHelper.dll     # Item rando helper

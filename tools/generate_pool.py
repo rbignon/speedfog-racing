@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate seed pools for SpeedFog Racing.
 
-Calls the speedfog tool to generate seeds, then adds the racing mod DLL
-to each seed's ME3 profile. Supports generating multiple pools
+Calls the speedfog tool to generate seeds, then registers the racing mod
+DLL in each seed's ModEngine 2 config. Supports generating multiple pools
 in parallel via a shared thread pool.
 
 Usage:
@@ -353,62 +353,23 @@ def copy_mod_dll(seed_dir: Path, dll_source: Path) -> bool:
         return False
 
 
-def add_dll_to_me3_config(seed_dir: Path) -> bool:
-    """Add the racing mod DLL to config_speedfog.me3's natives.
+def add_dll_to_config(seed_dir: Path) -> bool:
+    """Add the racing mod DLL to modengine2/config_speedfog.toml's external_dlls.
 
-    ME3 loads native DLLs from ``[[natives]]`` entries. The base SpeedFog
-    package only knows about its own helper DLLs, so the racing overlay DLL
-    must be registered after it is copied to ``lib/``.
-    Returns True on success, False on failure.
+    The base SpeedFog package only registers its own helper DLLs, so the racing
+    overlay DLL must be appended after it is copied to ``lib/``. Paths are
+    resolved by ModEngine 2 against the config file's directory, so use the
+    ``..\\lib\\`` prefix to reach the seed root from ``modengine2/``.
     """
-    config_path = seed_dir / "me3" / "config_speedfog.me3"
-    dll_path = f"../lib/{DLL_NAME}"
+    config_path = seed_dir / "modengine2" / "config_speedfog.toml"
 
     if not config_path.exists():
-        print("  Error: me3/config_speedfog.me3 not found")
+        print("  Error: modengine2/config_speedfog.toml not found")
         return False
 
     try:
         content = config_path.read_text(encoding="utf-8")
-
-        if dll_path in content:
-            return True
-
-        native_entry = f'[[natives]]\npath = "{dll_path}"'
-        supports_match = re.search(
-            r'(\[\[supports\]\]\s*\ngame\s*=\s*"eldenring"\s*)',
-            content,
-        )
-
-        if supports_match:
-            insert_at = supports_match.end()
-            new_content = (
-                content[:insert_at]
-                + f"{native_entry}\n\n"
-                + content[insert_at:].lstrip("\n")
-            )
-        else:
-            new_content = content.rstrip() + f"\n{native_entry}\n"
-
-        config_path.write_text(new_content, encoding="utf-8")
-        return True
-
-    except OSError as e:
-        print(f"  Error modifying ME3 config: {e}")
-        return False
-
-
-def add_dll_to_legacy_config(seed_dir: Path) -> bool:
-    """Add the racing mod DLL to config_speedfog.toml's external_dlls."""
-    config_path = seed_dir / "config_speedfog.toml"
-
-    if not config_path.exists():
-        print("  Error: config_speedfog.toml not found")
-        return False
-
-    try:
-        content = config_path.read_text(encoding="utf-8")
-        dll_entry = f'    "lib\\\\{DLL_NAME}",'
+        dll_entry = f'    "..\\\\lib\\\\{DLL_NAME}",'
         pattern = r"(external_dlls\s*=\s*\[)([^\]]*?)(\])"
 
         def add_dll(match: re.Match[str]) -> str:
@@ -438,17 +399,6 @@ def add_dll_to_legacy_config(seed_dir: Path) -> bool:
     except OSError as e:
         print(f"  Error modifying config: {e}")
         return False
-
-
-def add_dll_to_config(seed_dir: Path) -> bool:
-    """Add the racing mod DLL to the generated launcher config.
-
-    Prefer the current ME3 profile, with a legacy ModEngine 2 fallback for
-    old generated seeds kept around for debugging or migration.
-    """
-    if (seed_dir / "me3" / "config_speedfog.me3").exists():
-        return add_dll_to_me3_config(seed_dir)
-    return add_dll_to_legacy_config(seed_dir)
 
 
 def zip_seed_dir(seed_dir: Path, output_zip: Path, top_dir: str) -> None:
@@ -511,7 +461,7 @@ def process_seed(
     if not copy_mod_dll(seed_dir, dll_source):
         return False
 
-    # Modify me3/config_speedfog.me3 (or legacy configs)
+    # Register the DLL in modengine2/config_speedfog.toml
     if not add_dll_to_config(seed_dir):
         return False
 
