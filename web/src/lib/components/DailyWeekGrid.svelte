@@ -233,8 +233,8 @@
   }
 
   .cell.selected {
-    background: var(--color-surface-elevated, #1a1a1a);
-    border-color: var(--color-border-strong, var(--color-border));
+    background: var(--color-surface-elevated);
+    border-color: var(--color-border);
     box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45);
   }
   .cell.today.selected {
