@@ -321,6 +321,7 @@ export interface DailyWeekResponse {
   week_start: string;
   today: string;
   days: DailyWeekDay[];
+  has_earlier: boolean;
 }
 
 /**

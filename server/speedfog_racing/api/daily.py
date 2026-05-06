@@ -246,7 +246,20 @@ async def get_daily_week(
             )
         )
 
-    return DailyWeekResponse(week_start=week_start, today=today, days=days)
+    earlier_exists = await db.execute(
+        select(Race.id)
+        .where(Race.daily_date.is_not(None))
+        .where(Race.daily_date < week_start)
+        .limit(1)
+    )
+    has_earlier = earlier_exists.scalar() is not None
+
+    return DailyWeekResponse(
+        week_start=week_start,
+        today=today,
+        days=days,
+        has_earlier=has_earlier,
+    )
 
 
 @router.get("/{daily_date}", response_model=RaceDetailResponse)

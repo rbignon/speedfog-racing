@@ -448,3 +448,42 @@ async def test_week_endpoint_date_param_for_current_rotation_matches_no_param(
 async def test_week_endpoint_rejects_malformed_date(dw_test_client, bad_date: str) -> None:
     response = await dw_test_client.get(f"/api/daily/week?date={bad_date}")
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_has_earlier_true_when_past_daily_exists(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    today = daily_date_for(datetime.now(UTC))
+    week_start = today - timedelta(days=today.weekday())
+    earlier = week_start - timedelta(days=14)  # two weeks before this Monday
+
+    async with dw_async_session_maker() as db:
+        organizer = _user()
+        db.add(organizer)
+        await db.flush()
+        db.add(_daily_race(organizer=organizer, the_date=earlier, status=RaceStatus.FINISHED))
+        await db.commit()
+
+    response = await dw_test_client.get("/api/daily/week")
+    assert response.status_code == 200, response.text
+    assert response.json()["has_earlier"] is True
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_has_earlier_false_when_no_earlier_daily(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    today = daily_date_for(datetime.now(UTC))
+
+    async with dw_async_session_maker() as db:
+        organizer = _user()
+        db.add(organizer)
+        await db.flush()
+        # Only a daily for today; nothing earlier.
+        db.add(_daily_race(organizer=organizer, the_date=today))
+        await db.commit()
+
+    response = await dw_test_client.get("/api/daily/week")
+    assert response.status_code == 200, response.text
+    assert response.json()["has_earlier"] is False

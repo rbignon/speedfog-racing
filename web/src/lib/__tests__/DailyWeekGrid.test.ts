@@ -120,6 +120,7 @@ const mockWeek: DailyWeekResponse = {
       my_result: null,
     },
   ],
+  has_earlier: true,
 };
 
 describe("DailyWeekGrid", () => {

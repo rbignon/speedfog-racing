@@ -497,6 +497,7 @@ class DailyWeekResponse(BaseModel):
     week_start: date
     today: date
     days: list[DailyWeekDay]
+    has_earlier: bool
 
 
 class InviteInfoResponse(BaseModel):
