@@ -134,6 +134,7 @@
 <main class="public-section">
   <RewardsBanner />
   {#if dailyWeek}
+    <h2 class="daily-seed-title">Daily Seed</h2>
     <DailyWeekGrid
       week={dailyWeek}
       userId={auth.user?.id ?? null}

@@ -152,31 +152,28 @@
   class:variant-dashboard={variant === "dashboard"}
   class:variant-daily-detail={variant === "daily-detail"}
 >
-  <header class="grid-header">
-    <h2>Daily Seed</h2>
-    <div class="week-nav">
-      <button
-        type="button"
-        class="nav-btn"
-        data-week-nav="prev"
-        aria-label="Previous week"
-        onclick={() => navigate(-1)}
-        disabled={navigating || !displayedWeek.has_earlier}
-      >
-        <span aria-hidden="true">&larr;</span>
-      </button>
-      <button
-        type="button"
-        class="nav-btn"
-        data-week-nav="next"
-        aria-label="Next week"
-        onclick={() => navigate(1)}
-        disabled={navigating || !canGoNext}
-      >
-        <span aria-hidden="true">&rarr;</span>
-      </button>
-    </div>
-  </header>
+  <div class="week-nav">
+    <button
+      type="button"
+      class="nav-btn"
+      data-week-nav="prev"
+      aria-label="Previous week"
+      onclick={() => navigate(-1)}
+      disabled={navigating || !displayedWeek.has_earlier}
+    >
+      <span aria-hidden="true">&larr;</span>
+    </button>
+    <button
+      type="button"
+      class="nav-btn"
+      data-week-nav="next"
+      aria-label="Next week"
+      onclick={() => navigate(1)}
+      disabled={navigating || !canGoNext}
+    >
+      <span aria-hidden="true">&rarr;</span>
+    </button>
+  </div>
   <div class="grid" bind:this={scrollContainer}>
     {#each displayedWeek.days as day (day.date)}
       {@const href = hrefFor(day)}
@@ -256,19 +253,12 @@
 
 <style>
   .grid-section {
-    margin-top: 2rem;
+    position: relative;
     margin-bottom: 2rem;
   }
 
   .grid-section.variant-daily-detail {
-    margin-top: 0;
     margin-bottom: 0;
-  }
-
-  h2 {
-    color: var(--color-gold);
-    font-size: var(--font-size-lg);
-    font-weight: 600;
   }
 
   .grid {
@@ -452,19 +442,13 @@
     }
   }
 
-  .grid-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin: 0 0 0.75rem;
-  }
-  .grid-header h2 {
-    margin: 0;
-  }
   .week-nav {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.25rem);
     display: flex;
     gap: 0.25rem;
+    z-index: 1;
   }
   .nav-btn {
     appearance: none;
