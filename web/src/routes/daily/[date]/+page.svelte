@@ -22,7 +22,6 @@
   } from "$lib/api";
   import {
     currentUserParticipant,
-    dailyPathForDate,
     dailyTheme,
     dailyTitle,
   } from "$lib/daily";
@@ -38,6 +37,7 @@
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import ShareButtons from "$lib/components/ShareButtons.svelte";
   import ChatSidebar from "$lib/components/ChatSidebar.svelte";
+  import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import DownloadModal from "$lib/components/DownloadModal.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
@@ -414,22 +414,6 @@
         </button>
       {/if}
 
-      {#if data.recent.length > 0}
-        <section class="recent-dailies">
-          <h2>Recent Daily Seeds</h2>
-          <ul>
-            {#each data.recent as race (race.id)}
-              <li>
-                <a href={dailyPathForDate(race.daily_date!)}>
-                  <span>{race.daily_date}</span>
-                  <span class="theme">· {dailyTheme(race)}</span>
-                </a>
-              </li>
-            {/each}
-          </ul>
-        </section>
-      {/if}
-
       <SpectatorCount count={raceStore.spectatorCount} />
     </aside>
 
@@ -449,6 +433,15 @@
           </span>
         </div>
       </header>
+
+      {#if data.week}
+        <DailyWeekGrid
+          week={data.week}
+          userId={auth.user?.id ?? null}
+          variant="daily-detail"
+          selectedDate={initialRace.daily_date ?? undefined}
+        />
+      {/if}
 
       {#if raceStatus === "finished" && graphJson}
         <Podium participants={raceStore.leaderboard} />
@@ -779,35 +772,6 @@
   .sidebar-download-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  .recent-dailies h2 {
-    margin: 0 0 0.5rem;
-    font-size: var(--font-size-base);
-  }
-
-  .recent-dailies ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .recent-dailies a {
-    color: var(--color-text-secondary);
-    text-decoration: none;
-    font-size: var(--font-size-sm);
-  }
-
-  .recent-dailies a:hover {
-    color: var(--color-purple);
-  }
-
-  .recent-dailies .theme {
-    color: var(--color-text-disabled);
-    margin-left: 0.25rem;
   }
 
   .main-content {

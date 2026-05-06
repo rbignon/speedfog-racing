@@ -1,4 +1,4 @@
-import { fetchDailyByDate, fetchRecentDailies } from "$lib/api";
+import { fetchDailyByDate, fetchDailyWeek } from "$lib/api";
 import { error } from "@sveltejs/kit";
 import type { PageLoad } from "./$types";
 
@@ -9,11 +9,11 @@ export const load: PageLoad = async ({ params, fetch }) => {
     throw error(404, "Daily seed not found");
   }
   try {
-    const [race, recent] = await Promise.all([
+    const [race, week] = await Promise.all([
       fetchDailyByDate(params.date, fetch),
-      fetchRecentDailies(7, fetch),
+      fetchDailyWeek(params.date, fetch).catch(() => null),
     ]);
-    return { race, recent };
+    return { race, week };
   } catch {
     throw error(404, "Daily seed not found");
   }
