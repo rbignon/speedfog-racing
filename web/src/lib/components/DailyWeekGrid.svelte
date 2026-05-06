@@ -194,7 +194,10 @@
           {#if day.state === "today"}
             <span class="badge today">Today</span>
           {:else if day.state === "past" && day.starters_count > 0}
-            <span class="meta">{day.starters_count} participants</span>
+            <span class="meta">
+                {day.starters_count}
+                {day.starters_count === 1 ? "player" : "players"}
+            </span>
           {/if}
         </div>
 
