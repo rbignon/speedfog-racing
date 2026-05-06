@@ -592,7 +592,7 @@ async def get_user_traits(
     scores_detail = None
     dominant_trait = None
     dominant_description = None
-    if scores and user.elo_races >= 3:
+    if scores and finished_races >= MIN_RACES_FOR_TRAITS:
         has_nonzero = any(
             [
                 scores.rusher,

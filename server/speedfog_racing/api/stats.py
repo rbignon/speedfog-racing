@@ -584,7 +584,7 @@ async def get_player_profiles(db: AsyncSession = Depends(get_db)) -> PlayerProfi
     rows_result = await db.execute(
         select(PlayerTraitScores, User)
         .join(User, PlayerTraitScores.user_id == User.id)
-        .where(PlayerTraitScores.dominant_trait.isnot(None), User.elo_races >= 3)
+        .where(PlayerTraitScores.dominant_trait.isnot(None))
     )
     rows = rows_result.all()
 

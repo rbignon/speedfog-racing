@@ -96,7 +96,7 @@ Available in the API as `avg_opponent_elo` on `LeaderboardPlayer`: the average `
 
 ## Behavioral Traits
 
-Seven traits scored 0-100 per player. Computed across all finished races, recomputed after each race finishes.
+Seven traits scored 0-100 per player. Computed across all finished races (public and private), recomputed after each race finishes. Unlike ELO, traits do not require races to be public: they describe how a player races relative to opponents, not their global rating.
 
 ### Requirements
 

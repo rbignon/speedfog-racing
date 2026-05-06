@@ -677,11 +677,41 @@ class TestUpdatePlayerTraits:
                     twitch_username=f"pct{i}",
                     api_token=f"pcttok{i}",
                     role=UserRole.USER,
-                    elo_races=3,
                 )
                 users.append(u)
             db.add_all(users)
             await db.flush()
+
+            seed = Seed(
+                seed_number="pct_seed",
+                pool_name="standard",
+                graph_json={"nodes": {}, "total_layers": 1},
+                total_layers=1,
+                folder_path="/t/pct",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+            for r in range(3):
+                race = Race(
+                    name=f"PCT R{r}",
+                    organizer_id=users[0].id,
+                    seed_id=seed.id,
+                    status=RaceStatus.FINISHED,
+                )
+                db.add(race)
+                await db.flush()
+                for j, u in enumerate(users):
+                    db.add(
+                        Participant(
+                            race_id=race.id,
+                            user_id=u.id,
+                            mod_token=f"pct_{r}_{j}",
+                            status=ParticipantStatus.FINISHED,
+                            igt_ms=1_000_000,
+                            death_count=0,
+                        )
+                    )
 
             scores_data = [
                 # (rusher, cautious, explorer, pathfinder, boss_slayer, resilient, rage_quitter)
@@ -735,6 +765,37 @@ class TestUpdatePlayerTraits:
             db.add_all(users)
             await db.flush()
 
+            seed = Seed(
+                seed_number="nod_seed",
+                pool_name="standard",
+                graph_json={"nodes": {}, "total_layers": 1},
+                total_layers=1,
+                folder_path="/t/nod",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+            for r in range(3):
+                race = Race(
+                    name=f"NOD R{r}",
+                    organizer_id=users[0].id,
+                    seed_id=seed.id,
+                    status=RaceStatus.FINISHED,
+                )
+                db.add(race)
+                await db.flush()
+                for j, u in enumerate(users):
+                    db.add(
+                        Participant(
+                            race_id=race.id,
+                            user_id=u.id,
+                            mod_token=f"nod_{r}_{j}",
+                            status=ParticipantStatus.FINISHED,
+                            igt_ms=1_000_000,
+                            death_count=0,
+                        )
+                    )
+
             # Player D is last or tied-last on every trait
             scores_data = [
                 (80, 80, 80, 80, 80, 80, 0),
@@ -777,11 +838,41 @@ class TestUpdatePlayerTraits:
                     twitch_username=f"tie{i}",
                     api_token=f"tietok{i}",
                     role=UserRole.USER,
-                    elo_races=3,
                 )
                 users.append(u)
             db.add_all(users)
             await db.flush()
+
+            seed = Seed(
+                seed_number="tie_seed",
+                pool_name="standard",
+                graph_json={"nodes": {}, "total_layers": 1},
+                total_layers=1,
+                folder_path="/t/tie",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+            for r in range(3):
+                race = Race(
+                    name=f"TIE R{r}",
+                    organizer_id=users[0].id,
+                    seed_id=seed.id,
+                    status=RaceStatus.FINISHED,
+                )
+                db.add(race)
+                await db.flush()
+                for j, u in enumerate(users):
+                    db.add(
+                        Participant(
+                            race_id=race.id,
+                            user_id=u.id,
+                            mod_token=f"tie_{r}_{j}",
+                            status=ParticipantStatus.FINISHED,
+                            igt_ms=1_000_000,
+                            death_count=0,
+                        )
+                    )
 
             # Player A is rank 1 on both rusher and explorer (same percentile),
             # but has higher raw rusher score
@@ -814,6 +905,134 @@ class TestUpdatePlayerTraits:
             scores_a = await db.get(PlayerTraitScores, uid_a)
             # Same percentile on rusher and explorer, but rusher=90 > explorer=80
             assert scores_a.dominant_trait == "rusher"
+
+    async def test_dominant_trait_cleared_when_below_threshold(self, async_session):
+        """A user previously holding a dominant trait loses it when they no longer
+        meet the finished-races threshold (e.g. data fix, race deletion)."""
+        async with async_session() as db:
+            user = User(
+                twitch_id="clr",
+                twitch_username="clr",
+                api_token="clrtok",
+                role=UserRole.USER,
+            )
+            db.add(user)
+            await db.flush()
+
+            seed = Seed(
+                seed_number="clr_seed",
+                pool_name="standard",
+                graph_json={"nodes": {}, "total_layers": 1},
+                total_layers=1,
+                folder_path="/t/clr",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+            # Only 2 finished participations: below MIN_RACES_FOR_TRAITS
+            for r in range(2):
+                race = Race(
+                    name=f"CLR R{r}",
+                    organizer_id=user.id,
+                    seed_id=seed.id,
+                    status=RaceStatus.FINISHED,
+                )
+                db.add(race)
+                await db.flush()
+                db.add(
+                    Participant(
+                        race_id=race.id,
+                        user_id=user.id,
+                        mod_token=f"clr_{r}",
+                        status=ParticipantStatus.FINISHED,
+                        igt_ms=1_000_000,
+                        death_count=0,
+                    )
+                )
+
+            db.add(
+                PlayerTraitScores(
+                    user_id=user.id,
+                    rusher=80,
+                    cautious=10,
+                    explorer=10,
+                    pathfinder=10,
+                    boss_slayer=10,
+                    resilient=10,
+                    rage_quitter=0,
+                    dominant_trait="rusher",
+                    dominant_description="Top 10% among 5 players",
+                )
+            )
+            await db.commit()
+            uid = user.id
+
+        async with async_session() as db:
+            await resolve_dominant_traits(db)
+
+        async with async_session() as db:
+            scores = await db.get(PlayerTraitScores, uid)
+            assert scores.dominant_trait is None
+
+    async def test_get_player_profiles_includes_private_only_finishers(self, async_session):
+        """get_player_profiles surfaces users whose finishes are all private
+        (elo_races=0). The endpoint gates on dominant_trait, not public-race count."""
+        from speedfog_racing.api.stats import get_player_profiles
+
+        async with async_session() as db:
+            private_user = User(
+                twitch_id="priv",
+                twitch_username="priv_player",
+                api_token="privtok",
+                role=UserRole.USER,
+                elo_races=0,
+            )
+            no_dominant = User(
+                twitch_id="nod",
+                twitch_username="no_dominant",
+                api_token="nodtok",
+                role=UserRole.USER,
+                elo_races=10,
+            )
+            db.add_all([private_user, no_dominant])
+            await db.flush()
+
+            db.add(
+                PlayerTraitScores(
+                    user_id=private_user.id,
+                    rusher=70,
+                    cautious=10,
+                    explorer=10,
+                    pathfinder=10,
+                    boss_slayer=10,
+                    resilient=10,
+                    rage_quitter=0,
+                    dominant_trait="rusher",
+                    dominant_description="Top 10% among 5 players",
+                )
+            )
+            db.add(
+                PlayerTraitScores(
+                    user_id=no_dominant.id,
+                    rusher=10,
+                    cautious=10,
+                    explorer=10,
+                    pathfinder=10,
+                    boss_slayer=10,
+                    resilient=10,
+                    rage_quitter=0,
+                    dominant_trait=None,
+                )
+            )
+            await db.commit()
+
+        async with async_session() as db:
+            response = await get_player_profiles(db)
+
+        rusher_usernames = [p.twitch_username for p in response.profiles.get("rusher", [])]
+        assert "priv_player" in rusher_usernames
+        for entries in response.profiles.values():
+            assert "no_dominant" not in [p.twitch_username for p in entries]
 
     async def test_upserts_on_recompute(self, async_session, three_races_with_zone_history):
         """Running update_player_traits again should update, not duplicate."""

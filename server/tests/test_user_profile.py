@@ -625,7 +625,6 @@ async def test_traits_returns_progress_when_insufficient_races(test_client, asyn
             twitch_username="few_finishes",
             api_token="few_finishes_token",
             role=UserRole.USER,
-            elo_races=4,
         )
         db.add(user)
         await db.flush()
@@ -708,6 +707,90 @@ async def test_traits_returns_progress_when_insufficient_races(test_client, asyn
         # Progress fields present
         assert data["finished_races"] == 2
         assert data["races_required"] == 3
+
+
+@pytest.mark.asyncio
+async def test_traits_unlocked_by_private_races(test_client, async_session):
+    """Traits unlock based on total finished races, including private ones (elo_races=0)."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="private_racer",
+            twitch_username="private_racer",
+            api_token="private_racer_token",
+            role=UserRole.USER,
+            elo_races=0,
+        )
+        db.add(user)
+        await db.flush()
+
+        org = User(
+            twitch_id="private_org",
+            twitch_username="private_org",
+            api_token="private_org_token",
+            role=UserRole.ORGANIZER,
+        )
+        db.add(org)
+        await db.flush()
+
+        seed = Seed(
+            seed_number="private_seed",
+            pool_name="standard",
+            graph_json={"nodes": {}, "total_layers": 1},
+            total_layers=1,
+            folder_path="/fake/private",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        for i in range(3):
+            race = Race(
+                name=f"Private Race {i}",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                is_public=False,
+            )
+            db.add(race)
+            await db.flush()
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    mod_token=f"private_mod_{i}",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=1_200_000 + i * 50_000,
+                    death_count=3 + i,
+                )
+            )
+
+        from speedfog_racing.models import PlayerTraitScores
+
+        db.add(
+            PlayerTraitScores(
+                user_id=user.id,
+                rusher=42,
+                cautious=10,
+                resilient=15,
+                rage_quitter=0,
+                explorer=20,
+                pathfinder=25,
+                boss_slayer=30,
+                dominant_trait="rusher",
+                dominant_description="Top 25% among 4 players",
+            )
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/users/private_racer/traits")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["finished_races"] == 3
+        assert data["scores"] is not None
+        assert data["scores"]["rusher"] == 42
+        assert data["dominant_trait"] == "rusher"
 
 
 async def test_user_profile_includes_weekly_block(test_client, sample_user):

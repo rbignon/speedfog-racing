@@ -623,7 +623,10 @@ async def resolve_dominant_traits(db: AsyncSession) -> None:
     # dominant trait (avoids inflating "among N players" with zeroes).
     qualified_user_ids: set[Any] = set()
     qualified_result = await db.execute(
-        select(User.id).where(User.elo_races >= MIN_RACES_FOR_TRAITS)
+        select(Participant.user_id)
+        .where(Participant.status == ParticipantStatus.FINISHED)
+        .group_by(Participant.user_id)
+        .having(func.count() >= MIN_RACES_FOR_TRAITS)
     )
     for (uid,) in qualified_result:
         qualified_user_ids.add(uid)
