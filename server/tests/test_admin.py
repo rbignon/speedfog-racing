@@ -819,6 +819,86 @@ async def test_activity_pagination(test_client, admin_user, activity_data):
         assert data2["has_more"] is False
 
 
+@pytest.mark.asyncio
+async def test_activity_orders_by_date_across_sources(
+    test_client, admin_user, regular_user, async_session
+):
+    """SQL-level pagination must order rows from every source by date desc.
+
+    Builds three rows whose sort dates straddle each other (training newest,
+    race participant in the middle, organizer-only race oldest) and checks
+    the timeline returns them in that order, not grouped by source.
+    """
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="ordering_seed_001",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/ordering/seed",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        old_race = Race(
+            name="Old Hosted",
+            organizer_id=admin_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        mid_race = Race(
+            name="Mid Race",
+            organizer_id=admin_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+        db.add_all([old_race, mid_race])
+        await db.flush()
+
+        # admin participates in mid_race so it produces a single merged
+        # race_participant card (no separate race_organizer entry); this keeps
+        # exactly one row per type in the response.
+        db.add(
+            Participant(
+                race_id=mid_race.id,
+                user_id=admin_user.id,
+                status=ParticipantStatus.FINISHED,
+                igt_ms=60000,
+            )
+        )
+        training = TrainingSession(
+            user_id=regular_user.id,
+            seed_id=seed.id,
+            status=TrainingSessionStatus.FINISHED,
+            igt_ms=30000,
+        )
+        db.add(training)
+        await db.commit()
+        # Force a deterministic created_at newer than mid_race.started_at.
+        training.created_at = datetime(2026, 5, 1, tzinfo=UTC)
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/activity",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    types = [item["type"] for item in data["items"]]
+    # Pin the row count so a future fixture leak surfaces as a count mismatch
+    # rather than a confusing ordering failure.
+    assert len(types) == 3
+    # training (May) > race_participant (March) > race_organizer (January)
+    training_idx = types.index("training")
+    participant_idx = types.index("race_participant")
+    organizer_idx = types.index("race_organizer")
+    assert training_idx < participant_idx < organizer_idx
+
+
 # =============================================================================
 # Reported Seed Management Tests
 # =============================================================================

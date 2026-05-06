@@ -6,7 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -522,138 +522,213 @@ async def get_global_activity(
 
     Requires admin role.
     """
-    # TODO: optimize with SQL-level pagination when dataset grows
+    # Pagination is performed at the SQL level via a UNION ALL of (date, kind,
+    # source_id) tuples, so only the page's rows are hydrated. The four sources
+    # are: participants, organizers (non-daily races whose organizer did not
+    # also participate), casters, and training sessions.
+    race_date_col = func.coalesce(Race.started_at, Race.scheduled_at, Race.created_at)
+
+    # Daily races are excluded from the organizer feed (they are system-
+    # organized). When the organizer also participated, the participant card is
+    # tagged ``is_organizer=True`` instead of duplicating the row.
+    organizer_is_participant = (
+        select(Participant.id)
+        .where(
+            Participant.race_id == Race.id,
+            Participant.user_id == Race.organizer_id,
+        )
+        .exists()
+    )
+
+    part_sub = select(
+        race_date_col.label("d"),
+        literal("participant").label("kind"),
+        Participant.id.label("source_id"),
+    ).join(Race, Race.id == Participant.race_id)
+
+    org_sub = select(
+        race_date_col.label("d"),
+        literal("organizer").label("kind"),
+        Race.id.label("source_id"),
+    ).where(Race.daily_date.is_(None), ~organizer_is_participant)
+
+    caster_sub = select(
+        race_date_col.label("d"),
+        literal("caster").label("kind"),
+        Caster.id.label("source_id"),
+    ).join(Race, Race.id == Caster.race_id)
+
+    training_sub = select(
+        TrainingSession.created_at.label("d"),
+        literal("training").label("kind"),
+        TrainingSession.id.label("source_id"),
+    )
+
+    feed = union_all(part_sub, org_sub, caster_sub, training_sub).subquery()
+
+    total = await db.scalar(select(func.count()).select_from(feed)) or 0
+
+    page_rows = (
+        await db.execute(
+            select(feed.c.d, feed.c.kind, feed.c.source_id)
+            # ``source_id`` ties the order across rows that share a date so
+            # adjacent pages don't shuffle items.
+            .order_by(feed.c.d.desc(), feed.c.source_id)
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+
+    ids_by_kind: dict[str, list[uuid.UUID]] = {
+        "participant": [],
+        "organizer": [],
+        "caster": [],
+        "training": [],
+    }
+    for row in page_rows:
+        ids_by_kind[row.kind].append(row.source_id)
+
+    participants_by_id: dict[uuid.UUID, Participant] = {}
+    if ids_by_kind["participant"]:
+        part_result = await db.execute(
+            select(Participant)
+            .where(Participant.id.in_(ids_by_kind["participant"]))
+            .options(
+                selectinload(Participant.user),
+                selectinload(Participant.race).selectinload(Race.seed),
+            )
+        )
+        participants_by_id = {p.id: p for p in part_result.scalars().all()}
+
+    org_races_by_id: dict[uuid.UUID, Race] = {}
+    if ids_by_kind["organizer"]:
+        org_result = await db.execute(
+            select(Race)
+            .where(Race.id.in_(ids_by_kind["organizer"]))
+            .options(selectinload(Race.organizer))
+        )
+        org_races_by_id = {r.id: r for r in org_result.scalars().all()}
+
+    casters_by_id: dict[uuid.UUID, Caster] = {}
+    if ids_by_kind["caster"]:
+        caster_result = await db.execute(
+            select(Caster)
+            .where(Caster.id.in_(ids_by_kind["caster"]))
+            .options(selectinload(Caster.user), selectinload(Caster.race))
+        )
+        casters_by_id = {c.id: c for c in caster_result.scalars().all()}
+
+    trainings_by_id: dict[uuid.UUID, TrainingSession] = {}
+    if ids_by_kind["training"]:
+        training_result = await db.execute(
+            select(TrainingSession)
+            .where(TrainingSession.id.in_(ids_by_kind["training"]))
+            .options(
+                selectinload(TrainingSession.user),
+                selectinload(TrainingSession.seed),
+            )
+        )
+        trainings_by_id = {t.id: t for t in training_result.scalars().all()}
+
+    page_race_ids: set[uuid.UUID] = set(org_races_by_id.keys())
+    for participant in participants_by_id.values():
+        page_race_ids.add(participant.race_id)
+    total_by_race, starters_by_race, placements = await compute_race_stats(db, list(page_race_ids))
+
     items: list[ActivityItem] = []
-
-    # 1. Race participations (all users, no Race.participants loaded). Eager-load
-    # Race.seed so the daily-vs-regular branch below can read pool info without
-    # triggering N+1 lazy loads (Seed.pool is lazy="joined" on the model).
-    part_q = await db.execute(
-        select(Participant).options(
-            selectinload(Participant.user),
-            selectinload(Participant.race).selectinload(Race.seed),
-        )
-    )
-    all_participants = part_q.scalars().all()
-
-    # 2. Organized races (all users). Daily races are excluded because they are
-    # system-organized; the per-participant DailyParticipantActivity entries
-    # already represent them on the timeline.
-    org_q = await db.execute(
-        select(Race).where(Race.daily_date.is_(None)).options(selectinload(Race.organizer))
-    )
-    all_races = org_q.scalars().all()
-
-    # Batch-compute counts and placements for all races
-    all_race_ids = list({p.race_id for p in all_participants} | {r.id for r in all_races})
-    total_by_race, starters_by_race, placements = await compute_race_stats(db, all_race_ids)
-
-    # Pairs of (race_id, user_id) where the user participated in the race. Used
-    # to merge the organizer entry into the participant entry when they are the
-    # same person, instead of producing two cards.
-    participant_pairs = {(p.race_id, p.user_id) for p in all_participants}
-
-    for p in all_participants:
-        race = p.race
-        if race.daily_date is not None:
+    for row in page_rows:
+        if row.kind == "participant":
+            p = participants_by_id.get(row.source_id)
+            if p is None:
+                continue
+            race = p.race
+            if race.daily_date is not None:
+                items.append(
+                    DailyParticipantActivity(
+                        date=race_date(race),
+                        user=user_response(p.user),
+                        race_id=race.id,
+                        daily_date=race.daily_date,
+                        pool_name=race.seed.pool_name if race.seed else "",
+                        pool_display_name=(
+                            format_pool_display_name(race.seed.pool) if race.seed else None
+                        ),
+                        status=race.status.value,
+                        placement=placements.get((race.id, p.id)),
+                        total_starters=starters_by_race.get(race.id, 0),
+                        igt_ms=p.igt_ms,
+                        death_count=p.death_count,
+                        is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
+                    )
+                )
+            else:
+                items.append(
+                    RaceParticipantActivity(
+                        date=race_date(race),
+                        user=user_response(p.user),
+                        race_id=race.id,
+                        race_name=race.name,
+                        status=race.status.value,
+                        placement=placements.get((race.id, p.id)),
+                        total_starters=starters_by_race.get(race.id, 0),
+                        igt_ms=p.igt_ms,
+                        death_count=p.death_count,
+                        is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
+                        is_organizer=p.user_id == race.organizer_id,
+                    )
+                )
+        elif row.kind == "organizer":
+            org_race = org_races_by_id.get(row.source_id)
+            if org_race is None:
+                continue
             items.append(
-                DailyParticipantActivity(
-                    date=race_date(race),
-                    user=user_response(p.user),
-                    race_id=race.id,
-                    daily_date=race.daily_date,
-                    pool_name=race.seed.pool_name if race.seed else "",
-                    pool_display_name=(
-                        format_pool_display_name(race.seed.pool) if race.seed else None
-                    ),
-                    status=race.status.value,
-                    placement=placements.get((race.id, p.id)),
-                    total_starters=starters_by_race.get(race.id, 0),
-                    igt_ms=p.igt_ms,
-                    death_count=p.death_count,
-                    is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
+                RaceOrganizerActivity(
+                    date=race_date(org_race),
+                    user=user_response(org_race.organizer),
+                    race_id=org_race.id,
+                    race_name=org_race.name,
+                    status=org_race.status.value,
+                    participant_count=total_by_race.get(org_race.id, 0),
                 )
             )
-        else:
+        elif row.kind == "caster":
+            c = casters_by_id.get(row.source_id)
+            if c is None:
+                continue
             items.append(
-                RaceParticipantActivity(
-                    date=race_date(race),
-                    user=user_response(p.user),
-                    race_id=race.id,
-                    race_name=race.name,
-                    status=race.status.value,
-                    placement=placements.get((race.id, p.id)),
-                    total_starters=starters_by_race.get(race.id, 0),
-                    igt_ms=p.igt_ms,
-                    death_count=p.death_count,
-                    is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
-                    is_organizer=p.user_id == race.organizer_id,
+                RaceCasterActivity(
+                    date=race_date(c.race),
+                    user=user_response(c.user),
+                    race_id=c.race.id,
+                    race_name=c.race.name,
+                    status=c.race.status.value,
+                )
+            )
+        elif row.kind == "training":
+            t = trainings_by_id.get(row.source_id)
+            if t is None:
+                continue
+            items.append(
+                TrainingActivity(
+                    date=t.created_at,
+                    user=user_response(t.user),
+                    session_id=t.id,
+                    pool_name=t.seed.pool_name,
+                    pool_display_name=format_pool_display_name(t.seed.pool),
+                    status=t.status.value,
+                    igt_ms=t.igt_ms,
+                    death_count=t.death_count,
+                    exclude_from_stats=t.exclude_from_stats,
+                    is_mod_connected=training_manager.is_mod_connected(t.id),
                 )
             )
 
-    for race in all_races:
-        if (race.id, race.organizer_id) in participant_pairs:
-            continue
-        items.append(
-            RaceOrganizerActivity(
-                date=race_date(race),
-                user=user_response(race.organizer),
-                race_id=race.id,
-                race_name=race.name,
-                status=race.status.value,
-                participant_count=total_by_race.get(race.id, 0),
-            )
-        )
-
-    # 3. Caster roles (all users)
-    caster_q = await db.execute(
-        select(Caster).options(
-            selectinload(Caster.user),
-            selectinload(Caster.race),
-        )
-    )
-    for c in caster_q.scalars().all():
-        items.append(
-            RaceCasterActivity(
-                date=race_date(c.race),
-                user=user_response(c.user),
-                race_id=c.race.id,
-                race_name=c.race.name,
-                status=c.race.status.value,
-            )
-        )
-
-    # 4. Training sessions (all users)
-    training_q = await db.execute(
-        select(TrainingSession).options(
-            selectinload(TrainingSession.user),
-            selectinload(TrainingSession.seed),
-        )
-    )
-    for t in training_q.scalars().all():
-        items.append(
-            TrainingActivity(
-                date=t.created_at,
-                user=user_response(t.user),
-                session_id=t.id,
-                pool_name=t.seed.pool_name,
-                pool_display_name=format_pool_display_name(t.seed.pool),
-                status=t.status.value,
-                igt_ms=t.igt_ms,
-                death_count=t.death_count,
-                exclude_from_stats=t.exclude_from_stats,
-                is_mod_connected=training_manager.is_mod_connected(t.id),
-            )
-        )
-
-    # Sort by date descending
-    items.sort(key=lambda item: item.date, reverse=True)
-
-    total = len(items)
-    paginated = items[offset : offset + limit]
-    has_more = (offset + limit) < total
-
-    return ActivityTimelineResponse(items=paginated, total=total, has_more=has_more)
+    # ``len(page_rows)`` (not ``len(items)``): if a source row was deleted
+    # between the union query and the hydration query, ``items`` may be shorter
+    # than ``page_rows``, but the page still consumed that many slots from
+    # ``total``.
+    has_more = (offset + len(page_rows)) < total
+    return ActivityTimelineResponse(items=items, total=total, has_more=has_more)
 
 
 # =============================================================================
