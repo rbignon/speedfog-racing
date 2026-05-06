@@ -6,10 +6,16 @@
   interface Props {
     week: DailyWeekResponse;
     userId: string | null;
-    variant?: "home" | "dashboard";
+    variant?: "home" | "dashboard" | "daily-detail";
+    selectedDate?: string;
   }
 
-  let { week, userId, variant = "home" }: Props = $props();
+  let {
+    week,
+    userId,
+    variant = "home",
+    selectedDate,
+  }: Props = $props();
 
   let now = $state(Date.now());
   onMount(() => {
@@ -107,7 +113,9 @@
         class:today={day.state === "today"}
         class:future={day.state === "future"}
         class:missing-past={day.state === "missing_past"}
+        class:selected={day.date === selectedDate}
         data-cell-state={day.state}
+        data-cell-date={day.date}
       >
         <div class="header">
           <span class="weekday">{WEEKDAY_LABELS[day.weekday]}</span>
@@ -222,6 +230,29 @@
     border-style: dashed;
     opacity: 0.55;
     cursor: not-allowed;
+  }
+
+  .cell.selected {
+    background: var(--color-surface-elevated, #1a1a1a);
+    border-color: var(--color-border-strong, var(--color-border));
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45);
+  }
+  .cell.today.selected {
+    box-shadow:
+      inset 0 2px 6px rgba(0, 0, 0, 0.45),
+      0 0 20px rgba(200, 164, 78, 0.18);
+  }
+  a.cell.selected:hover {
+    border-color: var(--color-purple);
+    box-shadow:
+      inset 0 2px 6px rgba(0, 0, 0, 0.45),
+      0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  a.cell.today.selected:hover {
+    box-shadow:
+      inset 0 2px 6px rgba(0, 0, 0, 0.45),
+      0 0 20px rgba(200, 164, 78, 0.18),
+      0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .header {

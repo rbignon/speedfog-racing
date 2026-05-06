@@ -406,4 +406,42 @@ describe("DailyWeekGrid", () => {
     expect(pastCell?.textContent ?? "").not.toContain("Bob");
     expect(pastCell?.textContent ?? "").not.toContain("Carol");
   });
+
+  it("applies the selected class to the cell whose date matches selectedDate", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: {
+        week: mockWeek,
+        userId: "me",
+        variant: "daily-detail",
+        selectedDate: "2026-04-27",
+      },
+    });
+    const selected = container.querySelector(".cell.selected");
+    expect(selected).not.toBeNull();
+    expect(selected?.getAttribute("data-cell-date")).toBe("2026-04-27");
+    expect(selected?.getAttribute("data-cell-state")).toBe("past");
+  });
+
+  it("stacks today and selected when selectedDate matches today", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: {
+        week: mockWeek,
+        userId: null,
+        variant: "daily-detail",
+        selectedDate: mockWeek.today,
+      },
+    });
+    const cell = container.querySelector(
+      `[data-cell-date="${mockWeek.today}"]`,
+    );
+    expect(cell?.classList.contains("today")).toBe(true);
+    expect(cell?.classList.contains("selected")).toBe(true);
+  });
+
+  it("renders no selected cell when selectedDate is omitted", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: { week: mockWeek, userId: null, variant: "home" },
+    });
+    expect(container.querySelector(".cell.selected")).toBeNull();
+  });
 });
