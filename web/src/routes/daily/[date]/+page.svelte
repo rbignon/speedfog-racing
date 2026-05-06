@@ -20,7 +20,12 @@
     type RaceDetail,
     type RaceStatus as ApiRaceStatus,
   } from "$lib/api";
-  import { currentUserParticipant, dailyTheme, dailyTitle } from "$lib/daily";
+  import {
+    applyLiveDailyDayUpdate,
+    currentUserParticipant,
+    dailyTheme,
+    dailyTitle,
+  } from "$lib/daily";
   import { MetroDagFull, MetroDagProgressive } from "$lib/dag";
   import { parseDagGraph } from "$lib/dag/types";
   import { RaceReplay } from "$lib/replay";
@@ -255,6 +260,22 @@
     auth.isLoggedIn || publicAccess === "readable",
   );
 
+  // Mirror this page's WebSocket state into the in-page DailyWeekGrid so the
+  // selected cell tracks live participant counts / the viewer's own status.
+  // Only the cell matching this race's date can be updated here (we have no
+  // WS subscription for the other days); the snapshot stays authoritative
+  // until raceStore has shipped its initial race_state.
+  let liveWeek = $derived.by(() => {
+    if (!data.week) return null;
+    if (!raceStore.race) return data.week;
+    if (!initialRace.daily_date) return data.week;
+    return applyLiveDailyDayUpdate(data.week, {
+      date: initialRace.daily_date,
+      participants: raceStore.participants,
+      myParticipantId: myParticipant?.id ?? null,
+    });
+  });
+
   // Pull public chat history when local access transitions from locked to
   // readable (e.g. the viewer's run just transitioned to FINISHED, or
   // registration window closed). The server already shipped history at
@@ -430,9 +451,9 @@
         </div>
       </header>
 
-      {#if data.week}
+      {#if liveWeek}
         <DailyWeekGrid
-          week={data.week}
+          week={liveWeek}
           userId={auth.user?.id ?? null}
           variant="daily-detail"
           selectedDate={initialRace.daily_date ?? undefined}
