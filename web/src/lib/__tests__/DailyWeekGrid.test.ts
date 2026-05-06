@@ -1,7 +1,12 @@
-import { render } from "@testing-library/svelte";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render } from "@testing-library/svelte";
+import { describe, expect, it, vi } from "vitest";
 import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
 import type { DailyWeekResponse } from "$lib/api";
+
+vi.mock("$lib/api", async () => {
+  const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
+  return { ...actual, fetchDailyWeek: vi.fn() };
+});
 
 const mockWeek: DailyWeekResponse = {
   week_start: "2026-04-27",
@@ -506,5 +511,116 @@ describe("DailyWeekGrid", () => {
       'button[data-week-nav="next"]',
     ) as HTMLButtonElement | null;
     expect(next?.disabled).toBe(false);
+  });
+
+  it("applies live-patched props on the same week (today_count updates in place)", async () => {
+    // /daily/[date] rebinds ``week`` on every WS event with a same-week_start
+    // patched reference. The grid must reflect the new participants_count.
+    const { container, rerender } = render(DailyWeekGrid, {
+      props: { week: mockWeek, userId: null, variant: "home" },
+    });
+    const todayCell = () =>
+      container.querySelector('[data-cell-state="today"]');
+    expect(todayCell()?.textContent ?? "").toMatch(/2\s+players/);
+
+    const patched: DailyWeekResponse = {
+      ...mockWeek,
+      days: mockWeek.days.map((d) =>
+        d.state === "today" ? { ...d, participants_count: 7 } : d,
+      ),
+    };
+    await rerender({ week: patched, userId: null, variant: "home" });
+    expect(todayCell()?.textContent ?? "").toMatch(/7\s+players/);
+  });
+
+  it("preserves local week navigation when the parent rebinds the same week_start", async () => {
+    // Regression guard: the previous unconditional ``displayedWeek = week``
+    // reset clobbered the user's prev/next navigation on every WS-driven
+    // rebind. Only a different parent ``week_start`` (URL change) should
+    // resync the displayed week.
+    const { fetchDailyWeek } = await import("$lib/api");
+    const earlierWeek: DailyWeekResponse = {
+      ...mockWeek,
+      week_start: "2026-04-20",
+      today: "2026-04-29",
+      days: mockWeek.days.map((d, i) => ({
+        ...d,
+        date: `2026-04-${String(20 + i).padStart(2, "0")}`,
+        state: "past",
+      })),
+      has_earlier: false,
+    };
+    vi.mocked(fetchDailyWeek).mockResolvedValueOnce(earlierWeek);
+
+    const { container, rerender } = render(DailyWeekGrid, {
+      props: { week: mockWeek, userId: null, variant: "home" },
+    });
+
+    const prev = container.querySelector(
+      'button[data-week-nav="prev"]',
+    ) as HTMLButtonElement;
+    await fireEvent.click(prev);
+    // After the local navigation, displayed week starts at 2026-04-20.
+    expect(
+      container.querySelector('[data-cell-date="2026-04-20"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-cell-date="2026-04-27"]')).toBeNull();
+
+    // Parent rebinds with a same-week_start (live patch on the original
+    // week): the user must remain on the earlier week they navigated to.
+    const livePatched: DailyWeekResponse = {
+      ...mockWeek,
+      days: mockWeek.days.map((d) =>
+        d.state === "today" ? { ...d, participants_count: 99 } : d,
+      ),
+    };
+    await rerender({ week: livePatched, userId: null, variant: "home" });
+    expect(
+      container.querySelector('[data-cell-date="2026-04-20"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-cell-date="2026-04-27"]')).toBeNull();
+  });
+
+  it("resyncs to the parent's week when ``week_start`` changes (URL nav)", async () => {
+    // SvelteKit may reuse this component instance when navigating between
+    // /daily/[date] URLs. A different parent week_start signals "anchor
+    // moved", and we must follow it even if the user had a local prev/next
+    // navigation in flight.
+    const { fetchDailyWeek } = await import("$lib/api");
+    const earlierWeek: DailyWeekResponse = {
+      ...mockWeek,
+      week_start: "2026-04-20",
+      days: mockWeek.days.map((d, i) => ({
+        ...d,
+        date: `2026-04-${String(20 + i).padStart(2, "0")}`,
+        state: "past",
+      })),
+    };
+    vi.mocked(fetchDailyWeek).mockResolvedValueOnce(earlierWeek);
+
+    const { container, rerender } = render(DailyWeekGrid, {
+      props: { week: mockWeek, userId: null, variant: "home" },
+    });
+    await fireEvent.click(
+      container.querySelector(
+        'button[data-week-nav="prev"]',
+      ) as HTMLButtonElement,
+    );
+
+    const newAnchorWeek: DailyWeekResponse = {
+      ...mockWeek,
+      week_start: "2026-05-04",
+      today: "2026-05-06",
+      days: mockWeek.days.map((d, i) => ({
+        ...d,
+        date: `2026-05-${String(4 + i).padStart(2, "0")}`,
+      })),
+    };
+    await rerender({ week: newAnchorWeek, userId: null, variant: "home" });
+
+    expect(
+      container.querySelector('[data-cell-date="2026-05-06"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-cell-date="2026-04-20"]')).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import type { DailyWeekDay, DailyWeekResponse } from "$lib/api";
   import { fetchDailyWeek } from "$lib/api";
   import { formatIgt } from "$lib/utils/training";
@@ -15,14 +15,32 @@
 
   // svelte-ignore state_referenced_locally
   let displayedWeek = $state<DailyWeekResponse>(week);
+  // svelte-ignore state_referenced_locally
+  let lastSeenParentWeekStart = $state<string>(week.week_start);
   let navigating = $state(false);
 
-  // SvelteKit may reuse this component instance when the URL param changes
-  // (e.g. /daily/2026-04-01 -> /daily/2026-04-02) and just re-runs the load
-  // function. Reset local nav state when the parent prop's week changes so
-  // we follow the new daily's week instead of staying on the previous one.
+  // The parent rebinds ``week`` in two distinct shapes that we must handle
+  // differently:
+  //   1. URL navigation between dailies (/daily/2026-04-01 -> 2026-04-02)
+  //      ships a different ``week_start`` and the grid must follow the new
+  //      anchor, throwing away any local prev/next navigation.
+  //   2. /daily/[date] also rebinds the prop on every WS event (a $derived
+  //      that patches the matching cell live). Same ``week_start``, new
+  //      reference. Previously the unconditional reset clobbered the user's
+  //      local navigation on every patch; now we only apply the new
+  //      reference if the user is still viewing the parent's week.
+  //      (If the user navigates locally back to the parent's anchor week,
+  //      the next live patch overwrites their locally-fetched snapshot with
+  //      the parent's live-patched version, which is what we want.)
   $effect(() => {
-    displayedWeek = week;
+    const incoming = week;
+    untrack(() => {
+      const parentMoved = incoming.week_start !== lastSeenParentWeekStart;
+      lastSeenParentWeekStart = incoming.week_start;
+      if (parentMoved || displayedWeek.week_start === incoming.week_start) {
+        displayedWeek = incoming;
+      }
+    });
   });
 
   function currentWeekMondayFor(todayIso: string): string {
@@ -195,8 +213,8 @@
             <span class="badge today">Today</span>
           {:else if day.state === "past" && day.starters_count > 0}
             <span class="meta">
-                {day.starters_count}
-                {day.starters_count === 1 ? "player" : "players"}
+              {day.starters_count}
+              {day.starters_count === 1 ? "player" : "players"}
             </span>
           {/if}
         </div>
