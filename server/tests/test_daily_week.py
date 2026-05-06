@@ -385,3 +385,67 @@ async def test_week_endpoint_handles_missing_schedule_row(
     assert missing_cell["state"] == "future"
     assert missing_cell["pool_name"] is None
     assert missing_cell["pool_display_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_accepts_date_param_anchors_on_past_week(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    today = daily_date_for(datetime.now(UTC))
+    # Anchor 10 days in the past so the resulting week_start is strictly
+    # before this week's Monday (the today cell stays the real current day).
+    anchor = today - timedelta(days=10)
+    expected_week_start = anchor - timedelta(days=anchor.weekday())
+
+    async with dw_async_session_maker() as db:
+        organizer = _user()
+        db.add(organizer)
+        await db.flush()
+
+        anchor_race = _daily_race(organizer=organizer, the_date=anchor, status=RaceStatus.FINISHED)
+        db.add(anchor_race)
+        await db.commit()
+
+    response = await dw_test_client.get(f"/api/daily/week?date={anchor.isoformat()}")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["week_start"] == expected_week_start.isoformat()
+    # `today` in the response always reflects the real current rotation date.
+    assert data["today"] == today.isoformat()
+    assert len(data["days"]) == 7
+    assert [d["weekday"] for d in data["days"]] == [0, 1, 2, 3, 4, 5, 6]
+
+    anchor_cell = data["days"][anchor.weekday()]
+    assert anchor_cell["date"] == anchor.isoformat()
+    assert anchor_cell["state"] == "past"
+    assert anchor_cell["race_id"] is not None
+    # No cell in this past week is "today" since today is in a later week.
+    assert all(d["state"] != "today" for d in data["days"])
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_date_param_for_current_rotation_returns_current_week(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    today = daily_date_for(datetime.now(UTC))
+    week_start = today - timedelta(days=today.weekday())
+
+    async with dw_async_session_maker() as db:
+        organizer = _user()
+        db.add(organizer)
+        await db.flush()
+        db.add(_daily_race(organizer=organizer, the_date=today))
+        await db.commit()
+
+    response = await dw_test_client.get(f"/api/daily/week?date={today.isoformat()}")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["week_start"] == week_start.isoformat()
+    assert data["today"] == today.isoformat()
+    assert data["days"][today.weekday()]["state"] == "today"
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_rejects_malformed_date(dw_test_client) -> None:
+    response = await dw_test_client.get("/api/daily/week?date=not-a-date")
+    assert response.status_code == 422
