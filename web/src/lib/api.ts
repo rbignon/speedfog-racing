@@ -328,9 +328,13 @@ export interface DailyWeekResponse {
  * for the home page and dashboard.
  */
 export async function fetchDailyWeek(
+  date?: string,
   customFetch: typeof fetch = fetch,
 ): Promise<DailyWeekResponse> {
-  const response = await customFetch(`${API_BASE}/daily/week`, {
+  const url = date
+    ? `${API_BASE}/daily/week?date=${encodeURIComponent(date)}`
+    : `${API_BASE}/daily/week`;
+  const response = await customFetch(url, {
     headers: getAuthHeaders(),
   });
   return handleResponse<DailyWeekResponse>(response);
