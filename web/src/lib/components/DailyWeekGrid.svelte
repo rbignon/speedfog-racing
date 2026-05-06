@@ -136,10 +136,15 @@
   onMount(() => {
     const el = scrollContainer;
     if (!el) return;
-    const todayEl = el.querySelector<HTMLElement>('[data-cell-state="today"]');
-    if (!todayEl) return;
+    const target =
+      (selectedDate
+        ? el.querySelector<HTMLElement>(
+            `[data-cell-date="${selectedDate}"]`,
+          )
+        : null) ?? el.querySelector<HTMLElement>('[data-cell-state="today"]');
+    if (!target) return;
     const offset =
-      todayEl.offsetLeft - el.clientWidth / 2 + todayEl.clientWidth / 2;
+      target.offsetLeft - el.clientWidth / 2 + target.clientWidth / 2;
     el.scrollLeft = Math.max(0, offset);
   });
 </script>
