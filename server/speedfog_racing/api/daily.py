@@ -164,7 +164,6 @@ async def get_daily_week(
         select(Race)
         .where(Race.daily_date.in_(week_dates))
         .options(
-            selectinload(Race.organizer),
             selectinload(Race.seed),
             selectinload(Race.participants).selectinload(Participant.user),
         )
