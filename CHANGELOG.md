@@ -2,6 +2,22 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.7.1] - 2026-05-07
+
+### Daily Seed
+
+- Week-grid navigation on the daily pages, with inline prev/next controls and bounded earlier nav
+- Disable inactivity monitor on daily seeds
+
+### Seeds
+
+- Removed the balcony above Godskin Duo
+- Reverted the loader from ME3 back to ModEngine 2, because of intermittent in-game stutters
+
+### Stats
+
+- New stats cards on /dashboard and /user/[username], with a weekly activity series
+
 ## [1.7.0] - 2026-05-02
 
 ### Rewards
