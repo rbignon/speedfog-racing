@@ -77,11 +77,7 @@ DAILY_ACCENT_COLOR = "#c8a44e"
 
 
 def _format_daily_date(d: dt.date) -> str:
-    """Format a daily date as 'Weekday D Month YYYY' (e.g. 'Monday 27 April 2026').
-
-    Avoids '%-d' (Linux-only) so the formatter is portable; the day part is
-    formatted explicitly without a zero pad.
-    """
+    """Format a daily date as 'Weekday D Month YYYY' (e.g. 'Monday 27 April 2026')."""
     return f"{d.strftime('%A')} {d.day} {d.strftime('%B %Y')}"
 
 

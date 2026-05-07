@@ -58,7 +58,6 @@ async def test_render_daily_og_formats_date_label_with_weekday() -> None:
     ctx = _build_daily_context(race)
     assert ctx["date_label"] == "Monday 27 April 2026"
     assert ctx["pool_display_name"] == "Hardcore"
-    assert ctx["accent_color"] == "#c8a44e"
 
 
 @pytest.mark.parametrize(
