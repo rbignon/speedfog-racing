@@ -76,7 +76,7 @@ def _truncate(text: str, limit: int) -> str:
 DAILY_ACCENT_COLOR = "#c8a44e"
 
 
-def _format_daily_date(d: dt.date) -> str:
+def format_daily_date(d: dt.date) -> str:
     """Format a daily date as 'Weekday D Month YYYY' (e.g. 'Monday 27 April 2026')."""
     return f"{d.strftime('%A')} {d.day} {d.strftime('%B %Y')}"
 
@@ -95,7 +95,7 @@ def _build_daily_context(race: Race) -> dict[str, Any]:
     assert race.daily_date is not None
     return {
         "accent_color": DAILY_ACCENT_COLOR,
-        "date_label": _format_daily_date(race.daily_date),
+        "date_label": format_daily_date(race.daily_date),
         "pool_display_name": format_pool(race),
     }
 

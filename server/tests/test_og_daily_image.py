@@ -69,6 +69,6 @@ async def test_render_daily_og_formats_date_label_with_weekday() -> None:
     ],
 )
 def test_daily_date_label_handles_various_dates(the_date: dt.date, expected: str) -> None:
-    from speedfog_racing.services.og_image import _format_daily_date
+    from speedfog_racing.services.og_image import format_daily_date
 
-    assert _format_daily_date(the_date) == expected
+    assert format_daily_date(the_date) == expected
