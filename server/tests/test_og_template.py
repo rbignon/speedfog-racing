@@ -43,6 +43,7 @@ def test_each_template_renders_valid_svg(status: str, label: str, accent: str) -
     assert label.upper() in svg
     assert "Linear Route" in svg
     assert "crazydiamond" in svg
+    assert accent in svg
 
 
 def test_setup_with_no_participants_renders_no_players_yet() -> None:

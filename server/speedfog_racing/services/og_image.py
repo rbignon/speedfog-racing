@@ -61,6 +61,10 @@ ACCENT_COLOR = {
     RaceStatus.FINISHED: "#10b981",
 }
 
+assert ACCENT_COLOR.keys() == STATUS_LABEL.keys(), (
+    "ACCENT_COLOR and STATUS_LABEL must cover the same RaceStatus values"
+)
+
 
 def _truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
