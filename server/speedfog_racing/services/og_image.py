@@ -96,8 +96,7 @@ def format_pool(race: Race) -> str:
 
 
 def _build_daily_context(race: Race) -> dict[str, Any]:
-    if race.daily_date is None:
-        raise ValueError("daily_date must be set on a daily race")
+    assert race.daily_date is not None
     return {
         "accent_color": DAILY_ACCENT_COLOR,
         "date_label": _format_daily_date(race.daily_date),
