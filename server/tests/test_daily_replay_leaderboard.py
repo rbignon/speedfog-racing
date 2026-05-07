@@ -20,7 +20,8 @@ import asyncio
 import os
 import tempfile
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -250,30 +251,18 @@ def _receive_with_timeout(ws: Any, *, timeout: float = 2.0) -> dict[str, Any]:
 
 
 def _latest_leaderboard_within(
-    mod: ModTestClient, *, max_messages: int = 20
+    receive: Callable[[], dict[str, Any]], *, max_messages: int = 20
 ) -> dict[str, Any] | None:
     """Drain up to ``max_messages`` messages, returning the last leaderboard_update.
 
-    Returns None if no leaderboard_update arrived. Each ``receive`` call has
-    its own timeout so a quiet socket cannot stall the test.
+    ``receive`` is a zero-arg callable that returns the next message and raises
+    ``TimeoutError`` if the socket is quiet, so a stuck socket cannot stall
+    the test. Returns None if no leaderboard_update arrived.
     """
     last: dict[str, Any] | None = None
     for _ in range(max_messages):
         try:
-            msg = mod.receive(timeout=2)
-        except TimeoutError:
-            break
-        if msg.get("type") == "leaderboard_update":
-            last = msg
-    return last
-
-
-def _latest_spectator_leaderboard(ws: Any, *, max_messages: int = 20) -> dict[str, Any] | None:
-    """Drain spectator websocket, returning the last leaderboard_update seen."""
-    last: dict[str, Any] | None = None
-    for _ in range(max_messages):
-        try:
-            msg = _receive_with_timeout(ws, timeout=2)
+            msg = receive()
         except TimeoutError:
             break
         if msg.get("type") == "leaderboard_update":
@@ -312,7 +301,7 @@ def test_daily_mod_sees_projected_ghost_spectator_sees_real_finish(
             # Heartbeat at IGT 60s. Triggers _maybe_unicast_daily_projection.
             mod.send_status_update(igt_ms=60_000, death_count=0)
 
-            mod_lb = _latest_leaderboard_within(mod)
+            mod_lb = _latest_leaderboard_within(lambda: mod.receive(timeout=2))
             assert mod_lb is not None, "mod did not receive a projected leaderboard_update"
 
             mod_alpha = _participant_by_username(mod_lb, "alpha")
@@ -322,10 +311,9 @@ def test_daily_mod_sees_projected_ghost_spectator_sees_real_finish(
             assert mod_alpha["current_zone"] == "start"
             assert mod_alpha["current_layer"] == 0
             assert mod_alpha["igt_ms"] <= 60_000
-            assert mod_alpha["status"] != "finished"
 
         # Spectator should see A as truly finished at its real IGT.
-        spec_lb = _latest_spectator_leaderboard(spec_ws)
+        spec_lb = _latest_leaderboard_within(lambda: _receive_with_timeout(spec_ws, timeout=2))
         assert spec_lb is not None, "spectator received no leaderboard_update"
         spec_alpha = _participant_by_username(spec_lb, "alpha")
         assert spec_alpha["status"] == "finished"
@@ -360,7 +348,7 @@ def test_daily_heartbeat_unicasts_fresh_projection_to_mod(
         # leaderboard_update, and only to this mod.
         mod.send_status_update(igt_ms=60_000, death_count=0)
 
-        heartbeat_lb = _latest_leaderboard_within(mod)
+        heartbeat_lb = _latest_leaderboard_within(lambda: mod.receive(timeout=2))
         assert heartbeat_lb is not None, (
             "heartbeat did not unicast a leaderboard_update to the playing daily mod"
         )
@@ -372,7 +360,6 @@ def test_daily_heartbeat_unicasts_fresh_projection_to_mod(
         assert bravo["status"] == "playing"
         alpha = _participant_by_username(heartbeat_lb, "alpha")
         assert alpha["status"] == "playing"
-        assert alpha["status"] != "finished"
 
 
 # ---------------------------------------------------------------------------
@@ -423,8 +410,3 @@ def test_non_daily_heartbeat_does_not_unicast_leaderboard(
         # The heartbeat path must still broadcast a player_update; if not,
         # this test is asserting nothing useful about the heartbeat.
         assert saw_player_update, "expected at least one player_update from the heartbeat"
-
-
-# Marker so date import is not flagged unused if we ever stop using ``today``
-# directly. The seeded race uses ``datetime.now(UTC).date()`` indirectly.
-_ = date
