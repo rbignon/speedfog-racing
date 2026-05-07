@@ -73,6 +73,18 @@ def _truncate(text: str, limit: int) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
+DAILY_ACCENT_COLOR = "#c8a44e"
+
+
+def _format_daily_date(d: dt.date) -> str:
+    """Format a daily date as 'Weekday D Month YYYY' (e.g. 'Monday 27 April 2026').
+
+    Avoids '%-d' (Linux-only) so the formatter is portable; the day part is
+    formatted explicitly without a zero pad.
+    """
+    return f"{d.strftime('%A')} {d.day} {d.strftime('%B %Y')}"
+
+
 def format_pool(race: Race) -> str:
     if race.seed is None:
         return "Unknown pool"
@@ -81,6 +93,16 @@ def format_pool(race: Race) -> str:
     if name:
         return str(name)
     return pool.name.replace("_", " ").title()
+
+
+def _build_daily_context(race: Race) -> dict[str, Any]:
+    if race.daily_date is None:
+        raise ValueError("daily_date must be set on a daily race")
+    return {
+        "accent_color": DAILY_ACCENT_COLOR,
+        "date_label": _format_daily_date(race.daily_date),
+        "pool_display_name": format_pool(race),
+    }
 
 
 def _format_scheduled(scheduled_at: Any, tz_name: str | None) -> str | None:
@@ -230,3 +252,21 @@ async def render_race_og(
     png = await asyncio.to_thread(rasterize_svg, svg)
     cached.write_bytes(png)
     return png, key
+
+
+async def render_daily_og(race: Race, *, cache_dir: Path) -> bytes:
+    """Render the OG image for a Daily Seed.
+
+    The cache key is just the daily date: the rendered output is fully
+    determined by ``race.daily_date`` and the pool's display name (immutable
+    after creation), so there is no need for a hashed key.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cached = cache_dir / f"daily-{race.daily_date}.png"
+    if cached.exists():
+        return cached.read_bytes()
+    ctx = _build_daily_context(race)
+    svg = render_svg("daily", ctx)
+    png = await asyncio.to_thread(rasterize_svg, svg)
+    cached.write_bytes(png)
+    return png
