@@ -30,6 +30,7 @@ _TEMPLATE_BY_STATUS = {
     "setup": "og/setup.svg.j2",
     "running": "og/running.svg.j2",
     "finished": "og/finished.svg.j2",
+    "daily": "og/daily.svg.j2",
 }
 
 
