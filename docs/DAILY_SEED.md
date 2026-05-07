@@ -282,6 +282,25 @@ The notification is best-effort: any HTTP error is logged but does not fail the 
 
 ---
 
+## In-mod replay leaderboard
+
+Daily Seeds are async: a player joining at hour 18 of the 24h window would
+otherwise see a leaderboard already populated with finishers, killing the
+sense of competition. To preserve immersion in the in-game overlay, the
+server projects the mod's `leaderboard_update` to the viewer's current IGT:
+finishers and concurrent runners appear at the position they had when their
+own IGT matched the viewer's. See
+[`docs/specs/2026-05-06-daily-replay-leaderboard-design.md`](specs/2026-05-06-daily-replay-leaderboard-design.md)
+for the exact projection rules.
+
+Scope is mod-only: web spectators (`/daily/[date]`, OBS overlays) keep
+seeing the real state, since the daily is already explicitly spoilers-OK on
+the web side. The protocol shape is unchanged; see
+[PROTOCOL.md](PROTOCOL.md#leaderboard_update) for the per-mod projection
+note.
+
+---
+
 ## See also
 
 - [RACE_LIFECYCLE.md](RACE_LIFECYCLE.md) for the underlying race / participant state machines (Daily Seeds reuse them as-is).
