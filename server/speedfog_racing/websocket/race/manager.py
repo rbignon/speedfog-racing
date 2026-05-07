@@ -413,6 +413,38 @@ class ConnectionManager:
             )
             await room.send_to_mod(participant_id, projected_payload)
 
+    async def send_projected_to_mod(
+        self,
+        *,
+        race_id: uuid.UUID,
+        participant_id: uuid.UUID,
+        participants: list[Participant],
+        graph_json: dict[str, Any] | None,
+    ) -> None:
+        """Unicast a projected leaderboard to a single mod (daily races).
+
+        Used on the 1Hz status_update heartbeat path: the viewer's IGT
+        advanced but no other state changed, so we recompute their
+        personal ghost projection without disturbing the rest of the
+        room. No-op when the viewer is not currently playing (their
+        view is already the real state, which the periodic real
+        broadcast already covered).
+        """
+        room = self.get_room(race_id)
+        if not room:
+            return
+        viewer = next((p for p in participants if p.id == participant_id), None)
+        if viewer is None or viewer.status != ParticipantStatus.PLAYING:
+            return
+        connected_ids = set(room.mods.keys())
+        payload = _build_projected_payload_for_viewer(
+            viewer=viewer,
+            participants=participants,
+            connected_ids=connected_ids,
+            graph_json=graph_json,
+        )
+        await room.send_to_mod(participant_id, payload)
+
     async def broadcast_player_update(
         self,
         race_id: uuid.UUID,

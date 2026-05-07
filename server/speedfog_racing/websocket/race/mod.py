@@ -513,6 +513,8 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             await manager.broadcast_player_update(
                 entity.race_id, entity, graph_json=self._cached_graph_json
             )
+            await self._maybe_unicast_daily_projection(entity)
+            return
         else:
             # Uncommon path: reload with full relationships for leaderboard/death broadcasts
             async with self.session_maker() as db:
@@ -548,6 +550,30 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             room = manager.get_room(entity.race_id)
             if room:
                 await room.broadcast_to_mods(DeathCountsMessage(counts=counts).model_dump_json())
+
+    async def _maybe_unicast_daily_projection(self, entity: Participant) -> None:
+        """For daily races, unicast a fresh projected leaderboard to this mod.
+
+        Only runs on the non-active status_update path: the viewer's IGT
+        advanced but no other state changed, so we recompute their
+        personal projection without disturbing the rest of the room.
+        """
+        assert self._participant_id is not None
+        if entity.status != ParticipantStatus.PLAYING:
+            return
+
+        async with self.session_maker() as db:
+            race = await _load_race_with_participants(db, entity.race_id)
+            if race is None or race.daily_date is None:
+                return
+            participants = list(race.participants)
+
+        await manager.send_projected_to_mod(
+            race_id=entity.race_id,
+            participant_id=self._participant_id,
+            participants=participants,
+            graph_json=self._cached_graph_json,
+        )
 
     async def _broadcast_after_event_flag(
         self,
