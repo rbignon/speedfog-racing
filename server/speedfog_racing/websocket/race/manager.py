@@ -95,6 +95,28 @@ class RaceRoom:
             if pid is not None:
                 self.mods.pop(pid, None)
 
+    async def send_to_mod(self, participant_id: uuid.UUID, message: str) -> bool:
+        """Unicast a message to a single mod connection.
+
+        Returns True if the message was sent; False if the mod was not
+        connected or the send failed (in which case the connection is
+        evicted from the room).
+        """
+        conn = self.mods.get(participant_id)
+        if conn is None:
+            return False
+        try:
+            await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
+            return True
+        except Exception:
+            logger.debug(
+                "Mod unicast failed, removing: race=%s, participant=%s",
+                self.race_id,
+                participant_id,
+            )
+            self.mods.pop(participant_id, None)
+            return False
+
     async def broadcast_to_spectators(self, message: str) -> None:
         """Send message to all connected spectators concurrently with timeout."""
         if not self.spectators:
