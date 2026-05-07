@@ -1,7 +1,7 @@
 """Tests for inactivity monitor."""
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -523,6 +523,67 @@ async def test_skips_noshow_when_race_duration_set(async_session):
     async with async_session() as db:
         p = await db.get(Participant, p_id)
         assert p.status == ParticipantStatus.REGISTERED
+
+
+@pytest.mark.asyncio
+async def test_does_not_abandon_in_daily_race(async_session):
+    """Daily-seed races are skipped: their multi-hour async window makes
+    inactivity-based abandonment misleading."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="daily1",
+            twitch_username="daily_player",
+            api_token="daily_tok",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="org_daily",
+            twitch_username="org_daily",
+            api_token="org_daily_tok",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="s_daily",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/daily",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Daily Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC) - timedelta(minutes=45),
+            daily_date=date(2026, 5, 7),
+        )
+        db.add(race)
+        await db.flush()
+
+        p = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.PLAYING,
+            igt_ms=100000,
+            last_igt_change_at=datetime.now(UTC) - timedelta(minutes=36),
+        )
+        db.add(p)
+        await db.commit()
+        p_id = p.id
+
+    abandoned_race_ids, _ = await abandon_inactive_participants(async_session)
+    assert len(abandoned_race_ids) == 0
+
+    async with async_session() as db:
+        p = await db.get(Participant, p_id)
+        assert p.status == ParticipantStatus.PLAYING
 
 
 @pytest.mark.asyncio

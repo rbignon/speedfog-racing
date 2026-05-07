@@ -25,6 +25,9 @@ async def abandon_inactive_participants(
 ) -> tuple[list[uuid.UUID], set[uuid.UUID]]:
     """Find and abandon inactive participants in running races.
 
+    Daily-seed races are skipped entirely: their async multi-hour window
+    makes inactivity-based abandonment misleading.
+
     Two branches:
     - PLAYING with stale IGT (older than INACTIVITY_TIMEOUT).
     - No-show REGISTERED/READY: gated on race_duration_minutes IS NULL
@@ -47,6 +50,7 @@ async def abandon_inactive_participants(
             .join(Race)
             .where(
                 Race.status == RaceStatus.RUNNING,
+                Race.daily_date.is_(None),
                 or_(
                     # PLAYING with stale IGT
                     (Participant.status == ParticipantStatus.PLAYING)
@@ -137,11 +141,7 @@ async def inactivity_monitor_loop(
                         for p in race.participants:
                             if p.id in abandoned_ids:
                                 display = p.user.twitch_display_name or p.user.twitch_username
-                                abandon_msg = (
-                                    f"{display} abandoned the daily seed due to inactivity."
-                                    if race.daily_date is not None
-                                    else f"{display} has abandoned the race due to inactivity."
-                                )
+                                abandon_msg = f"{display} has abandoned the race due to inactivity."
                                 sys_json = await persist_system_chat(
                                     db,
                                     race_id,
@@ -152,13 +152,8 @@ async def inactivity_monitor_loop(
 
                         finish_public_json: str | None = None
                         if race.status == RaceStatus.FINISHED:
-                            finished_msg = (
-                                "The daily seed is over."
-                                if race.daily_date is not None
-                                else "The race has finished."
-                            )
                             finish_public_json = await persist_system_chat(
-                                db, race_id, ChatChannel.PUBLIC, finished_msg
+                                db, race_id, ChatChannel.PUBLIC, "The race has finished."
                             )
                         await db.commit()
 

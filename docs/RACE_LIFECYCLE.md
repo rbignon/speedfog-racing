@@ -28,7 +28,7 @@ SETUP ──→ RUNNING ──→ FINISHED
 
 1. **Auto-finish**: when all participants reach `FINISHED` or `ABANDONED`, `check_race_auto_finish()` transitions the race. Uses optimistic locking (see below). When `late_join_window_minutes` is set and the window is still open, the transition is deferred so a late-joiner can still register even if the currently-registered field has all finished; the hard-close loop performs the deferred close once the window has elapsed (see [Late-join Window & Race Duration](#late-join-window--race-duration)).
 2. **Force-finish**: `POST /races/{id}/finish` (organizer). Same optimistic lock mechanism.
-3. **Inactivity monitor**: when the last active participant is auto-abandoned (30 min stale IGT, or 30 min no-show on races without `race_duration_minutes`), the monitor calls `check_race_auto_finish()`.
+3. **Inactivity monitor**: when the last active participant is auto-abandoned (30 min stale IGT, or 30 min no-show on races without `race_duration_minutes`), the monitor calls `check_race_auto_finish()`. Daily-seed races (`Race.daily_date IS NOT NULL`) are skipped: the asynchronous 24h window makes inactivity-based abandonment misleading.
 4. **Hard-close loop** (`hard_close_loop`, polls every 10s):
    - For races with `race_duration_minutes` set, force-finishes any race past `started_at + race_duration_minutes` (`close_expired_races`); non-terminal participants are swept to `ABANDONED` via `finalize_race`.
    - For races with `late_join_window_minutes` set, finalizes races whose late-join window has elapsed and whose participants are all already terminal (`close_late_join_done_races`), closing the gap left by the auto-finish guard above.
@@ -109,7 +109,7 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 
 **REGISTERED / READY / PLAYING → ABANDONED**: four paths:
 
-1. **Inactivity monitor** (PLAYING): background loop checks every 60s for participants with `last_igt_change_at < now - 30min`. Marks them `ABANDONED` and triggers auto-finish check.
+1. **Inactivity monitor** (PLAYING): background loop checks every 60s for participants with `last_igt_change_at < now - 30min`. Marks them `ABANDONED` and triggers auto-finish check. Daily-seed races are skipped entirely (`Race.daily_date IS NOT NULL`) because their async 24h window makes inactivity meaningless.
 2. **No-show monitor** (REGISTERED/READY): same loop also catches participants who never started playing. The cutoff is per-participant: both `Race.started_at < now - 30min` AND `Participant.created_at < now - 30min` must hold (equivalent to `max(started_at, created_at) < now - 30min`). This ensures a late-joiner is not abandoned the moment they register, and an early registrant is not abandoned the moment the race starts. Skipped entirely when `race_duration_minutes` is set: the hard-close loop sweeps non-terminal participants at the deadline via `finalize_race`.
 3. **Hard-close loop** (REGISTERED/READY/PLAYING): when `close_expired_races` or `close_late_join_done_races` finalizes a race, `finalize_race` moves any remaining non-terminal participant to `ABANDONED`.
 4. **Voluntary abandon**: `POST /races/{id}/abandon` (participant). Accepts REGISTERED, READY, or PLAYING status. Triggers auto-finish check.
