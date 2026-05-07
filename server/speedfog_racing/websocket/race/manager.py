@@ -397,14 +397,13 @@ class ConnectionManager:
             return
 
         # Daily race: spectators see real state; each mod gets its own view.
-        await room.broadcast_to_spectators(real_payload)
+        by_id = {p.id: p for p in participants}
 
-        for participant_id in list(room.mods.keys()):
-            viewer = next((p for p in participants if p.id == participant_id), None)
+        async def _send_to_mod(participant_id: uuid.UUID) -> None:
+            viewer = by_id.get(participant_id)
             if viewer is None or viewer.status != ParticipantStatus.PLAYING:
                 await room.send_to_mod(participant_id, real_payload)
-                continue
-
+                return
             projected_payload = _build_projected_payload_for_viewer(
                 viewer=viewer,
                 participants=participants,
@@ -412,6 +411,11 @@ class ConnectionManager:
                 graph_json=graph_json,
             )
             await room.send_to_mod(participant_id, projected_payload)
+
+        await asyncio.gather(
+            room.broadcast_to_spectators(real_payload),
+            *(_send_to_mod(pid) for pid in list(room.mods.keys())),
+        )
 
     async def send_projected_to_mod(
         self,
@@ -423,12 +427,7 @@ class ConnectionManager:
     ) -> None:
         """Unicast a projected leaderboard to a single mod (daily races).
 
-        Used on the 1Hz status_update heartbeat path: the viewer's IGT
-        advanced but no other state changed, so we recompute their
-        personal ghost projection without disturbing the rest of the
-        room. No-op when the viewer is not currently playing (their
-        view is already the real state, which the periodic real
-        broadcast already covered).
+        No-op when the viewer is not connected or not currently playing.
         """
         room = self.get_room(race_id)
         if not room:
@@ -676,7 +675,7 @@ def participant_to_info(
 
 
 def sort_leaderboard(
-    participants: list[Participant] | list[Participant | ProjectedParticipant],
+    participants: Sequence[Participant | ProjectedParticipant],
     *,
     graph_json: dict[str, Any] | None = None,
 ) -> tuple[list[Participant | ProjectedParticipant], dict[uuid.UUID, int | None]]:
@@ -747,7 +746,7 @@ def _build_leader_context(
     has_leader = False
     if graph_json and sorted_participants:
         leader = sorted_participants[0]
-        if leader.status.value in ("playing", "finished"):
+        if leader.status in (ParticipantStatus.PLAYING, ParticipantStatus.FINISHED):
             has_leader = True
             leader_igt_ms = leader.igt_ms
             leader_splits = build_leader_splits(leader.zone_history, graph_json)
@@ -778,7 +777,9 @@ def _build_leaderboard_payload(
                 leader_splits=leader_splits,
                 leader_igt_ms=leader_igt_ms,
                 is_leader=(has_leader and i == 0),
-                leader_finished=(has_leader and sorted_participants[0].status.value == "finished"),
+                leader_finished=(
+                    has_leader and sorted_participants[0].status == ParticipantStatus.FINISHED
+                ),
             )
             if has_leader and graph_json
             else None,

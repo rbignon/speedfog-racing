@@ -15,38 +15,36 @@ from speedfog_racing.models import Participant, ParticipantStatus, User
 from speedfog_racing.services.layer_service import get_layer_for_node
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProjectedParticipant:
-    """Read-only Participant-shaped wrapper used by sort/serialization layers.
+    """Participant-shaped wrapper exposing projected dynamic fields.
 
-    Mirrors the attributes read by ``sort_leaderboard`` and
-    ``participant_to_info``. Static fields (``id``, ``user``,
-    ``color_index``) passthrough to the real ``Participant``; dynamic
-    fields (``status``, ``current_zone``, ``current_layer``, ``igt_ms``,
-    ``death_count``, ``zone_history``, ``layer_entry_igts``) hold the
-    projected values.
+    Static fields (``id``, ``user``, ``color_index``) passthrough to the
+    real ``Participant``; dynamic fields hold the projected values.
     """
 
-    _real: Participant
+    real: Participant
     status: ParticipantStatus
     current_zone: str | None
     current_layer: int
     igt_ms: int
     death_count: int
     zone_history: list[dict[str, Any]] | None
+    # Always empty: sort_leaderboard falls back to scanning the projected
+    # zone_history slice, which is the right behaviour for ghosts.
     layer_entry_igts: dict[str, int]
 
     @property
     def id(self) -> uuid.UUID:
-        return self._real.id
+        return self.real.id
 
     @property
     def user(self) -> User:
-        return self._real.user
+        return self.real.user
 
     @property
     def color_index(self) -> int:
-        return self._real.color_index
+        return self.real.color_index
 
 
 def project_participant_at(
@@ -64,17 +62,30 @@ def project_participant_at(
     if not history:
         return None
 
-    past = [e for e in history if int(e.get("igt_ms", 0)) <= viewer_igt_ms]
+    # zone_history is append-ordered by igt_ms; last entry has the max.
+    full_last_igt = int(history[-1].get("igt_ms", 0))
+
+    past: list[dict[str, Any]] = []
+    proj_layer = 0
+    proj_deaths = 0
+    for e in history:
+        igt = int(e.get("igt_ms", 0))
+        if igt > viewer_igt_ms:
+            break
+        past.append(e)
+        proj_deaths += int(e.get("deaths", 0))
+        if graph_json:
+            node_id = e.get("node_id")
+            if isinstance(node_id, str):
+                layer = get_layer_for_node(node_id, graph_json)
+                if layer > proj_layer:
+                    proj_layer = layer
+
     if not past:
         return None
 
     last_event = past[-1]
-
-    # L_full is the last igt available for the ghost over the FULL history,
-    # NOT the past-filtered slice. Used to decide whether the ghost has data
-    # extending past the viewer's IGT (still "playing" from viewer's POV) or
-    # has truly run out of history (abandoned by viewer's IGT).
-    full_last_igt = max(int(e.get("igt_ms", 0)) for e in history)
+    proj_zone = last_event.get("node_id") if isinstance(last_event.get("node_id"), str) else None
 
     real_status = participant.status
     real_final_igt = int(participant.igt_ms or 0)
@@ -89,21 +100,8 @@ def project_participant_at(
         proj_status = ParticipantStatus.PLAYING
         proj_igt = min(viewer_igt_ms, full_last_igt)
 
-    proj_zone = last_event.get("node_id") if isinstance(last_event.get("node_id"), str) else None
-
-    proj_layer = 0
-    if graph_json:
-        for e in past:
-            node_id = e.get("node_id")
-            if isinstance(node_id, str):
-                layer = get_layer_for_node(node_id, graph_json)
-                if layer > proj_layer:
-                    proj_layer = layer
-
-    proj_deaths = sum(int(e.get("deaths", 0)) for e in past)
-
     return ProjectedParticipant(
-        _real=participant,
+        real=participant,
         status=proj_status,
         current_zone=proj_zone,
         current_layer=proj_layer,
