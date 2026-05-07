@@ -7,8 +7,7 @@
     </clipPath>
   </defs>
   <rect width="1200" height="630" fill="#0f1923"/>
-  {# Status accent: 12px left border. Caller-supplied so non-status pages
-     (e.g. daily) can pick their own identity color. #}
+  {# Caller-supplied accent color for the 12px left border. #}
   <rect x="0" y="0" width="12" height="630" fill="{{ accent_color }}"/>
 
   {# Header: brand mark + wordmark left, badge right (overridable). #}
@@ -34,9 +33,8 @@
     <text x="68" y="39" font-family="Inter, sans-serif" font-size="38" font-weight="600" fill="#e8e6e1">SpeedFog Racing</text>
   </g>
 
-  {# Status badge (top right). Default rendering uses status_label and
-     accent_color. Templates that have no status (e.g. daily) override
-     this block to empty. #}
+  {# Default badge uses status_label and accent_color. Override the block
+     to suppress it on templates with no status concept. #}
   {% block badge %}
     {% set badge_bg = {"Upcoming": "#1d3050", "Live": "#3a1818", "Finished": "#0f3c2c"}[status_label] %}
     <g transform="translate(1140, 56)">
@@ -48,8 +46,7 @@
 
   {% block body %}{% endblock %}
 
-  {# Meta row (bottom). Default = "{participant_count} · {pool_name}".
-     Templates that need a different layout (e.g. daily) override this. #}
+  {# Meta row (bottom). Default = "{participant_count} · {pool_name}". #}
   {% block meta_left %}
     <text x="60" y="572" font-family="Inter, sans-serif" font-size="33" fill="#9ca3af">{{ participant_count_label }} · <tspan fill="#e8e6e1">{{ pool_name }}</tspan></text>
   {% endblock %}

@@ -98,7 +98,7 @@ def _daily_meta_html(race: Race | None, *, share_url: str, image_url: str) -> st
         return _render_html(
             title=_DEFAULT_TITLE,
             description=_DEFAULT_DESCRIPTION,
-            og_url=base + "/",
+            og_url=share_url,
             og_image=base + "/og-image.png",
         )
     assert race.daily_date is not None
