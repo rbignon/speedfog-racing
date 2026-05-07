@@ -48,17 +48,9 @@ export function currentUserParticipant(
 }
 
 /**
- * Patch the day cell whose ``date`` matches ``opts.date`` with values derived
- * from the live WebSocket participant list, leaving every other cell
- * untouched. Used by ``/daily/[date]`` so the in-page DailyWeekGrid mirrors
- * the live race that page is already subscribed to (participants joining,
- * the viewer's own status, the live placement once they finish). Surfaces
- * without a WebSocket subscription (``/``, ``/dashboard``) keep using the
- * server snapshot directly.
- *
- * Pure: returns a new object only when the matched day's projected fields
- * actually differ, otherwise the original ``week`` reference is returned so
- * downstream ``$effect`` / memoization can short-circuit.
+ * Returns the original ``week`` reference when the matched day's projected
+ * fields are unchanged, so downstream $derived consumers can short-circuit
+ * on identity instead of re-rendering on every WS frame.
  */
 export function applyLiveDailyDayUpdate(
   week: DailyWeekResponse,
@@ -71,8 +63,6 @@ export function applyLiveDailyDayUpdate(
   const idx = week.days.findIndex((d) => d.date === opts.date);
   if (idx === -1) return week;
   const day = week.days[idx];
-  // Only race-backed cells carry counts / podium / my_result; "future" and
-  // "missing_past" cells have no race to mirror.
   if (day.state !== "today" && day.state !== "past") return week;
 
   const patched = patchDayFromLive(
@@ -102,10 +92,21 @@ function patchDayFromLive(
     startersCount,
   );
 
+  const prev = day.my_result;
+  const myResultUnchanged =
+    prev === myResult ||
+    (prev !== null &&
+      myResult !== null &&
+      prev.status === myResult.status &&
+      prev.placement === myResult.placement &&
+      prev.total_starters === myResult.total_starters &&
+      prev.igt_ms === myResult.igt_ms &&
+      prev.death_count === myResult.death_count);
+
   if (
     day.participants_count === participantsCount &&
     day.starters_count === startersCount &&
-    myResultEquals(day.my_result, myResult)
+    myResultUnchanged
   ) {
     return day;
   }
@@ -129,9 +130,9 @@ function buildLiveMyResult(
   const status = me.status as ParticipantStatus;
   let placement: number | null = null;
   if (status === "finished") {
-    // The server tiebreaks finishers by (igt_ms, finished_at); WsParticipant
-    // does not carry finished_at, so on a millisecond IGT tie the live
-    // placement may flicker until the next /daily/week snapshot lands.
+    // Server tiebreaks finishers by (igt_ms, finished_at); WsParticipant has
+    // no finished_at, so on a millisecond IGT tie the live placement may
+    // flicker until the next /daily/week snapshot lands.
     const finishers = participants
       .filter((p) => p.status === "finished")
       .sort((a, b) => a.igt_ms - b.igt_ms);
@@ -145,19 +146,4 @@ function buildLiveMyResult(
     igt_ms: status === "finished" ? me.igt_ms : null,
     death_count: me.death_count,
   };
-}
-
-function myResultEquals(
-  a: DailyWeekDay["my_result"],
-  b: DailyWeekDay["my_result"],
-): boolean {
-  if (a === b) return true;
-  if (a === null || b === null) return false;
-  return (
-    a.status === b.status &&
-    a.placement === b.placement &&
-    a.total_starters === b.total_starters &&
-    a.igt_ms === b.igt_ms &&
-    a.death_count === b.death_count
-  );
 }

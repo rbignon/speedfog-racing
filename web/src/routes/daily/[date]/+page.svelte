@@ -47,9 +47,8 @@
 
   let { data } = $props();
   let initialRace: RaceDetail = $state(untrack(() => data.race));
-  let weekData: DailyWeekResponse | null = $state(
-    untrack(() => data.week ?? null),
-  );
+  // Set by the daily-boundary refetch; otherwise we read ``data.week``.
+  let weekOverride = $state<DailyWeekResponse | null>(null);
   let now = $state(Date.now());
   let showDownloadModal = $state(false);
   let downloading = $state(false);
@@ -96,10 +95,8 @@
 
   $effect(() => {
     initialRace = data.race;
-  });
-
-  $effect(() => {
-    weekData = data.week ?? null;
+    // Drop the previous daily's refetched override on URL nav.
+    weekOverride = null;
   });
 
   let wsError = $derived(raceStore.wsError);
@@ -269,42 +266,33 @@
     auth.isLoggedIn || publicAccess === "readable",
   );
 
-  // Mirror this page's WebSocket state into the in-page DailyWeekGrid so the
-  // selected cell tracks live participant counts / the viewer's own status.
-  // Only the cell matching this race's date can be updated here (we have no
-  // WS subscription for the other days); the snapshot stays authoritative
-  // until raceStore has shipped its initial race_state.
+  // Only the cell matching this page's race can be live-patched (we have
+  // no WS subscription for the other days). ``/`` and ``/dashboard`` skip
+  // this step entirely and render ``data.week`` directly.
+  let weekSource = $derived(weekOverride ?? data.week ?? null);
   let liveWeek = $derived.by(() => {
-    if (!weekData) return null;
-    if (!raceStore.race) return weekData;
-    if (!initialRace.daily_date) return weekData;
-    return applyLiveDailyDayUpdate(weekData, {
+    if (!weekSource) return null;
+    if (!raceStore.race) return weekSource;
+    if (!initialRace.daily_date) return weekSource;
+    return applyLiveDailyDayUpdate(weekSource, {
       date: initialRace.daily_date,
       participants: raceStore.participants,
       myParticipantId: myParticipant?.id ?? null,
     });
   });
 
-  // The week snapshot is fetched once at page load. When the daily window
-  // crosses its end (08:00 UTC of the next day) while the page is open, the
-  // cell we are viewing should flip from "today" to "past" and the new day
-  // should pick up the "today" badge, possibly with a fresh race_id if the
-  // cron has already generated the next daily. Refetch the week once on
-  // that boundary; the server recomputes ``today`` from real time and
-  // returns the canonical state for both cells in one response. Seeding
-  // ``prevDailyEnded`` from the current value via untrack avoids a wasted
-  // refetch when the page opens on a daily that ended hours ago: the
-  // snapshot from +page.ts is already canonical in that case.
+  // Refetch once when the daily window closes while the page is open so
+  // the grid's "today" badge moves to the new active day. Seeding
+  // ``prevDailyEnded`` from the current value via untrack skips a wasted
+  // refetch when the page opens on an already-ended daily.
   let prevDailyEnded = $state(untrack(() => dailyEnded));
   $effect(() => {
     if (dailyEnded && !prevDailyEnded) {
       fetchDailyWeek(initialRace.daily_date ?? undefined)
         .then((w) => {
-          weekData = w;
+          weekOverride = w;
         })
-        .catch(() => {
-          // swallow: the snapshot stays put, user can refresh manually.
-        });
+        .catch(() => {});
     }
     prevDailyEnded = dailyEnded;
   });

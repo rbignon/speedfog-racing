@@ -19,19 +19,9 @@
   let lastSeenParentWeekStart = $state<string>(week.week_start);
   let navigating = $state(false);
 
-  // The parent rebinds ``week`` in two distinct shapes that we must handle
-  // differently:
-  //   1. URL navigation between dailies (/daily/2026-04-01 -> 2026-04-02)
-  //      ships a different ``week_start`` and the grid must follow the new
-  //      anchor, throwing away any local prev/next navigation.
-  //   2. /daily/[date] also rebinds the prop on every WS event (a $derived
-  //      that patches the matching cell live). Same ``week_start``, new
-  //      reference. Previously the unconditional reset clobbered the user's
-  //      local navigation on every patch; now we only apply the new
-  //      reference if the user is still viewing the parent's week.
-  //      (If the user navigates locally back to the parent's anchor week,
-  //      the next live patch overwrites their locally-fetched snapshot with
-  //      the parent's live-patched version, which is what we want.)
+  // ``week`` rebinds happen for both URL nav (different ``week_start``,
+  // must follow) and live WS patches (same ``week_start``, only follow
+  // while the user hasn't navigated locally to a different week).
   $effect(() => {
     const incoming = week;
     untrack(() => {
