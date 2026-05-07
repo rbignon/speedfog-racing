@@ -13,6 +13,7 @@ def _ctx(**overrides: object) -> dict:
     base = {
         "race_name": "Friday Night Fog #42",
         "status_label": "Upcoming",
+        "accent_color": "#3b82f6",
         "pool_name": "Linear Route",
         "participant_count_label": "0/20 players",
         "organizer_name": "crazydiamond",
@@ -27,11 +28,15 @@ def _ctx(**overrides: object) -> dict:
 
 
 @pytest.mark.parametrize(
-    "status,label",
-    [("setup", "Upcoming"), ("running", "Live"), ("finished", "Finished")],
+    "status,label,accent",
+    [
+        ("setup", "Upcoming", "#3b82f6"),
+        ("running", "Live", "#ef4444"),
+        ("finished", "Finished", "#10b981"),
+    ],
 )
-def test_each_template_renders_valid_svg(status: str, label: str) -> None:
-    svg = render_svg(status, _ctx(status_label=label))
+def test_each_template_renders_valid_svg(status: str, label: str, accent: str) -> None:
+    svg = render_svg(status, _ctx(status_label=label, accent_color=accent))
     root = ET.fromstring(svg)
     assert root.tag.endswith("svg")
     assert "Friday Night Fog #42" in svg

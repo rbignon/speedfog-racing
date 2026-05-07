@@ -7,11 +7,11 @@
     </clipPath>
   </defs>
   <rect width="1200" height="630" fill="#0f1923"/>
-  {# Status accent: 12px left border (scaled-up version of the card 5px border) #}
-  {% set accent = {"Upcoming": "#3b82f6", "Live": "#ef4444", "Finished": "#10b981"}[status_label] %}
-  <rect x="0" y="0" width="12" height="630" fill="{{ accent }}"/>
+  {# Status accent: 12px left border. Caller-supplied so non-status pages
+     (e.g. daily) can pick their own identity color. #}
+  <rect x="0" y="0" width="12" height="630" fill="{{ accent_color }}"/>
 
-  {# Header: brand mark + wordmark left, status badge right #}
+  {# Header: brand mark + wordmark left, badge right (overridable). #}
   <g transform="translate(60, 60)">
     <g transform="scale(0.094)">
       {# Inline favicon (checkered flag dissolving into fog) #}
@@ -34,17 +34,24 @@
     <text x="68" y="39" font-family="Inter, sans-serif" font-size="38" font-weight="600" fill="#e8e6e1">SpeedFog Racing</text>
   </g>
 
-  {# Status badge (top right). Site convention: small radius, tinted bg, uppercase. #}
-  {% set badge_bg = {"Upcoming": "#1d3050", "Live": "#3a1818", "Finished": "#0f3c2c"}[status_label] %}
-  <g transform="translate(1140, 56)">
-    {% set badge_w = (status_label|length * 16) + 44 %}
-    <rect x="-{{ badge_w }}" y="0" width="{{ badge_w }}" height="52" rx="6" fill="{{ badge_bg }}"/>
-    <text x="-{{ badge_w / 2 }}" y="35" text-anchor="middle" font-family="Inter, sans-serif" font-size="24" font-weight="600" letter-spacing="1.2" fill="{{ accent }}">{{ status_label.upper() }}</text>
-  </g>
+  {# Status badge (top right). Default rendering uses status_label and
+     accent_color. Templates that have no status (e.g. daily) override
+     this block to empty. #}
+  {% block badge %}
+    {% set badge_bg = {"Upcoming": "#1d3050", "Live": "#3a1818", "Finished": "#0f3c2c"}[status_label] %}
+    <g transform="translate(1140, 56)">
+      {% set badge_w = (status_label|length * 16) + 44 %}
+      <rect x="-{{ badge_w }}" y="0" width="{{ badge_w }}" height="52" rx="6" fill="{{ badge_bg }}"/>
+      <text x="-{{ badge_w / 2 }}" y="35" text-anchor="middle" font-family="Inter, sans-serif" font-size="24" font-weight="600" letter-spacing="1.2" fill="{{ accent_color }}">{{ status_label.upper() }}</text>
+    </g>
+  {% endblock %}
 
   {% block body %}{% endblock %}
 
-  {# Meta row (bottom) #}
-  <text x="60" y="572" font-family="Inter, sans-serif" font-size="33" fill="#9ca3af">{{ participant_count_label }} · <tspan fill="#e8e6e1">{{ pool_name }}</tspan></text>
+  {# Meta row (bottom). Default = "{participant_count} · {pool_name}".
+     Templates that need a different layout (e.g. daily) override this. #}
+  {% block meta_left %}
+    <text x="60" y="572" font-family="Inter, sans-serif" font-size="33" fill="#9ca3af">{{ participant_count_label }} · <tspan fill="#e8e6e1">{{ pool_name }}</tspan></text>
+  {% endblock %}
   {% block meta_right %}{% endblock %}
 </svg>

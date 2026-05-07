@@ -55,6 +55,12 @@ STATUS_LABEL = {
     RaceStatus.FINISHED: "Finished",
 }
 
+ACCENT_COLOR = {
+    RaceStatus.SETUP: "#3b82f6",
+    RaceStatus.RUNNING: "#ef4444",
+    RaceStatus.FINISHED: "#10b981",
+}
+
 
 def _truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
@@ -161,6 +167,7 @@ async def build_context(race: Race, *, avatar_lookup: AvatarLookup) -> dict[str,
     return {
         "race_name": _truncate(race.name, _MAX_RACE_NAME),
         "status_label": STATUS_LABEL[race.status],
+        "accent_color": ACCENT_COLOR[race.status],
         "pool_name": format_pool(race),
         "participant_count_label": _participant_count_label(race),
         "organizer_name": race.organizer.twitch_display_name or race.organizer.twitch_username,
