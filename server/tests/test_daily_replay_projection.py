@@ -58,3 +58,22 @@ def test_finished_at_t_before_final_appears_as_playing_at_projected_zone() -> No
     assert projected.current_layer == 1
     assert projected.igt_ms == 200_000
     assert projected.death_count == 0
+
+
+def test_playing_with_t_past_history_clamps_to_last_event_igt() -> None:
+    graph = _graph({"start": 0, "fog_a": 1})
+    p = _participant(
+        status=ParticipantStatus.PLAYING,
+        igt_ms=120_000,
+        zone_history=[
+            {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "fog_a", "igt_ms": 120_000},
+        ],
+    )
+
+    projected = project_participant_at(p, viewer_igt_ms=999_000, graph_json=graph)
+
+    assert projected is not None
+    assert projected.status == ParticipantStatus.PLAYING
+    assert projected.igt_ms == 120_000  # clamps to L_full, not viewer_igt_ms
+    assert projected.current_zone == "fog_a"

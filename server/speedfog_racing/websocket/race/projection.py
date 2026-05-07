@@ -69,7 +69,12 @@ def project_participant_at(
         return None
 
     last_event = past[-1]
-    last_event_igt = int(last_event.get("igt_ms", 0))
+
+    # L_full is the last igt available for the ghost over the FULL history,
+    # NOT the past-filtered slice. Used to decide whether the ghost has data
+    # extending past the viewer's IGT (still "playing" from viewer's POV) or
+    # has truly run out of history (abandoned by viewer's IGT).
+    full_last_igt = max(int(e.get("igt_ms", 0)) for e in history)
 
     real_status = participant.status
     real_final_igt = int(participant.igt_ms or 0)
@@ -77,12 +82,12 @@ def project_participant_at(
     if real_status == ParticipantStatus.FINISHED and real_final_igt <= viewer_igt_ms:
         proj_status = ParticipantStatus.FINISHED
         proj_igt = real_final_igt
-    elif real_status == ParticipantStatus.ABANDONED and last_event_igt <= viewer_igt_ms:
+    elif real_status == ParticipantStatus.ABANDONED and full_last_igt <= viewer_igt_ms:
         proj_status = ParticipantStatus.ABANDONED
-        proj_igt = last_event_igt
+        proj_igt = full_last_igt
     else:
         proj_status = ParticipantStatus.PLAYING
-        proj_igt = viewer_igt_ms
+        proj_igt = min(viewer_igt_ms, full_last_igt)
 
     proj_zone = last_event.get("node_id") if isinstance(last_event.get("node_id"), str) else None
 
