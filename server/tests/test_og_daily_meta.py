@@ -173,3 +173,21 @@ async def test_daily_image_today_resolves_current_daily(
     r = await og_test_client.get("/api/og/daily/today.png")
     assert r.status_code == 200
     assert r.content.startswith(_PNG_MAGIC)
+
+
+@pytest.mark.asyncio
+async def test_daily_image_redirects_when_render_fails(
+    og_test_client, og_async_session_maker, monkeypatch
+) -> None:
+    target = dt.date(2026, 4, 27)
+    await _make_daily_db(og_async_session_maker, day=target)
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("resvg crashed")
+
+    monkeypatch.setattr("speedfog_racing.api.og.render_daily_og", _boom)
+    response = await og_test_client.get(
+        f"/api/og/daily/{target.isoformat()}.png", follow_redirects=False
+    )
+    assert response.status_code == 302
+    assert response.headers["location"].endswith("/og-image.png")
