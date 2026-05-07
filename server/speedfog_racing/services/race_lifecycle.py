@@ -160,7 +160,9 @@ async def finalize_race(
     # keep stale "playing" status for participants the hard-close just bumped
     # to ABANDONED, so the in-game overlay can't react to its own auto-abandon.
     graph_json = race.seed.graph_json if race.seed else None
-    await manager.broadcast_leaderboard(race.id, race.participants, graph_json=graph_json)
+    await manager.broadcast_leaderboard(
+        race.id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+    )
 
     await broadcast_race_state_update(race.id, race)
     await manager.broadcast_race_status(race.id, "finished")

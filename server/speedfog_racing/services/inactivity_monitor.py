@@ -163,7 +163,10 @@ async def inactivity_monitor_loop(
 
                         graph_json = race.seed.graph_json if race.seed else None
                         await manager.broadcast_leaderboard(
-                            race_id, race.participants, graph_json=graph_json
+                            race_id,
+                            race.participants,
+                            graph_json=graph_json,
+                            daily_date=race.daily_date,
                         )
                         await broadcast_race_state_update(race_id, race)
                         if race.status == RaceStatus.FINISHED:

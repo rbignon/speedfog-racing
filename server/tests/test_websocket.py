@@ -618,6 +618,166 @@ class TestConnectionManager:
         # Mods do not consume zone_history, so they should not receive this.
         mod_ws.send_text.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_broadcast_leaderboard_non_daily_uses_single_payload(self):
+        """Non-daily races: every connection (mods + spectators) receives the same payload."""
+        from speedfog_racing.websocket.race.manager import ModConnection
+
+        mgr = ConnectionManager()
+        race_id = uuid.uuid4()
+        room = mgr.get_or_create_room(race_id)
+
+        playing_user = MockUser(twitch_username="alpha")
+        playing = MockParticipant(
+            user=playing_user,
+            status=ParticipantStatus.PLAYING,
+            current_layer=2,
+            igt_ms=12000,
+        )
+        finished_user = MockUser(twitch_username="omega")
+        finished = MockParticipant(
+            user=finished_user, status=ParticipantStatus.FINISHED, igt_ms=8000
+        )
+
+        mod_ws = AsyncMock()
+        spec_ws = AsyncMock()
+        room.mods[playing.id] = ModConnection(
+            websocket=mod_ws, participant_id=playing.id, user_id=playing.user.id
+        )
+        spec = SpectatorConnection(websocket=spec_ws)
+        room.spectators[spec.connection_id] = spec
+
+        await mgr.broadcast_leaderboard(race_id, [playing, finished])
+
+        # Both got the same payload, exactly once.
+        mod_ws.send_text.assert_called_once()
+        spec_ws.send_text.assert_called_once()
+        assert mod_ws.send_text.call_args[0][0] == spec_ws.send_text.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_broadcast_leaderboard_daily_projects_for_playing_mod(self):
+        """Daily race: a playing mod sees a projected payload, spectator sees real state."""
+        from datetime import date as _date
+
+        from speedfog_racing.websocket.race.manager import ModConnection
+
+        mgr = ConnectionManager()
+        race_id = uuid.uuid4()
+        room = mgr.get_or_create_room(race_id)
+
+        graph = {
+            "nodes": {
+                "n0": {"layer": 0},
+                "n1": {"layer": 1},
+                "n2": {"layer": 2},
+            }
+        }
+
+        viewer = MockParticipant(
+            user=MockUser(twitch_username="viewer"),
+            status=ParticipantStatus.PLAYING,
+            current_zone="n1",
+            current_layer=1,
+            igt_ms=5000,
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 5000},
+            ],
+        )
+        # Ghost finished at IGT 12000; from viewer's POV (5000) it should be projected
+        # at layer 1 (just past n1).
+        ghost = MockParticipant(
+            user=MockUser(twitch_username="ghost"),
+            status=ParticipantStatus.FINISHED,
+            current_zone="n2",
+            current_layer=2,
+            igt_ms=12000,
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 4000},
+                {"node_id": "n2", "igt_ms": 12000},
+            ],
+        )
+
+        mod_ws = AsyncMock()
+        spec_ws = AsyncMock()
+        room.mods[viewer.id] = ModConnection(
+            websocket=mod_ws, participant_id=viewer.id, user_id=viewer.user.id
+        )
+        spec = SpectatorConnection(websocket=spec_ws)
+        room.spectators[spec.connection_id] = spec
+
+        await mgr.broadcast_leaderboard(
+            race_id,
+            [viewer, ghost],
+            graph_json=graph,
+            daily_date=_date(2026, 5, 6),
+        )
+
+        spec_payload = json.loads(spec_ws.send_text.call_args[0][0])
+        mod_payload = json.loads(mod_ws.send_text.call_args[0][0])
+        assert spec_payload != mod_payload
+
+        # Spectator sees the ghost as truly finished at its real IGT.
+        spec_ghost = next(p for p in spec_payload["participants"] if p["id"] == str(ghost.id))
+        assert spec_ghost["status"] == "finished"
+        assert spec_ghost["igt_ms"] == 12000
+
+        # Mod (a playing viewer) sees the ghost projected at viewer's IGT,
+        # so it appears as still playing on layer 1, not finished.
+        mod_ghost = next(p for p in mod_payload["participants"] if p["id"] == str(ghost.id))
+        assert mod_ghost["status"] == "playing"
+        assert mod_ghost["current_layer"] == 1
+
+    @pytest.mark.asyncio
+    async def test_broadcast_leaderboard_daily_non_playing_mod_gets_real_payload(self):
+        """Daily race: a non-playing mod (e.g. registered) receives the real payload."""
+        from datetime import date as _date
+
+        from speedfog_racing.websocket.race.manager import ModConnection
+
+        mgr = ConnectionManager()
+        race_id = uuid.uuid4()
+        room = mgr.get_or_create_room(race_id)
+
+        graph = {"nodes": {"n0": {"layer": 0}, "n1": {"layer": 1}}}
+
+        watcher = MockParticipant(
+            user=MockUser(twitch_username="watcher"),
+            status=ParticipantStatus.REGISTERED,
+        )
+        ghost = MockParticipant(
+            user=MockUser(twitch_username="ghost"),
+            status=ParticipantStatus.FINISHED,
+            current_zone="n1",
+            current_layer=1,
+            igt_ms=9000,
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 9000},
+            ],
+        )
+
+        mod_ws = AsyncMock()
+        spec_ws = AsyncMock()
+        room.mods[watcher.id] = ModConnection(
+            websocket=mod_ws, participant_id=watcher.id, user_id=watcher.user.id
+        )
+        spec = SpectatorConnection(websocket=spec_ws)
+        room.spectators[spec.connection_id] = spec
+
+        await mgr.broadcast_leaderboard(
+            race_id,
+            [watcher, ghost],
+            graph_json=graph,
+            daily_date=_date(2026, 5, 6),
+        )
+
+        mod_payload = mod_ws.send_text.call_args[0][0]
+        spec_payload = spec_ws.send_text.call_args[0][0]
+        # Non-playing viewer mirrors spectators: real state on both sides.
+        assert mod_payload == spec_payload
+
 
 # --- Leaderboard Tests ---
 

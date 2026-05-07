@@ -131,20 +131,21 @@ async def _load_participant(db: AsyncSession, participant_id: uuid.UUID) -> Part
     return result.scalar_one_or_none()
 
 
-async def _load_race_participants(db: AsyncSession, race_id: uuid.UUID) -> list[Participant]:
-    """Load a race's participants (with users) for leaderboard broadcast.
+async def _load_race_with_participants(db: AsyncSession, race_id: uuid.UUID) -> Race | None:
+    """Load a race + its participants (with users) for leaderboard broadcast.
 
     Cheaper than _load_participant: skips the disconnecting participant's
     own eager tree, the seed, and the casters. The caller must supply
     graph_json from an earlier load (it does not change during a race).
+    The race row is returned so callers can read ``daily_date`` to drive
+    per-mod projected payloads.
     """
     result = await db.execute(
         select(Race)
         .where(Race.id == race_id)
         .options(selectinload(Race.participants).selectinload(Participant.user))
     )
-    race = result.scalar_one_or_none()
-    return list(race.participants) if race else []
+    return result.scalar_one_or_none()
 
 
 async def _load_participant_light(
@@ -349,6 +350,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     self._race_id,
                     participant.race.participants,
                     graph_json=self._cached_graph_json,
+                    daily_date=participant.race.daily_date,
                 )
         except Exception:
             logger.warning("Failed to broadcast connect: race=%s", self._race_id)
@@ -358,10 +360,13 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         await manager.disconnect_mod(self._race_id, self._participant_id, self.websocket)
         try:
             async with self.session_maker() as db:
-                participants = await _load_race_participants(db, self._race_id)
-                if participants:
+                race = await _load_race_with_participants(db, self._race_id)
+                if race and race.participants:
                     await manager.broadcast_leaderboard(
-                        self._race_id, participants, graph_json=self._cached_graph_json
+                        self._race_id,
+                        list(race.participants),
+                        graph_json=self._cached_graph_json,
+                        daily_date=race.daily_date,
                     )
         except Exception:
             logger.warning("Failed to broadcast disconnect: race=%s", self._race_id)
@@ -521,6 +526,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     entity.race_id,
                     entity.race.participants,
                     graph_json=_get_graph_json(entity),
+                    daily_date=entity.race.daily_date,
                 )
             else:
                 await manager.broadcast_player_update(
@@ -556,6 +562,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 entity.race_id,
                 entity.race.participants,
                 graph_json=seed_graph,
+                daily_date=entity.race.daily_date,
             )
         else:
             await manager.broadcast_player_update(entity.race_id, entity, graph_json=seed_graph)
@@ -574,6 +581,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 entity.race_id,
                 entity.race.participants,
                 graph_json=_get_graph_json(entity),
+                daily_date=entity.race.daily_date,
             )
         else:
             await manager.broadcast_player_update(
@@ -607,6 +615,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             participant.race_id,
             participant.race.participants,
             graph_json=_get_graph_json(participant),
+            daily_date=participant.race.daily_date,
         )
 
     async def _handle_finished_message(self, msg: dict[str, Any]) -> None:
@@ -705,6 +714,7 @@ async def handle_finished(
         participant.race_id,
         participant.race.participants,
         graph_json=_get_graph_json(participant),
+        daily_date=participant.race.daily_date,
     )
 
     # Unlock the PUBLIC channel for the finished participant before

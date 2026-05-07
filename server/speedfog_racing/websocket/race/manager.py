@@ -3,8 +3,9 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi import WebSocket
@@ -17,6 +18,10 @@ from speedfog_racing.services.chat_access import (
 )
 from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
 from speedfog_racing.services.twitch_live import twitch_live_service
+from speedfog_racing.websocket.race.projection import (
+    ProjectedParticipant,
+    project_participant_at,
+)
 from speedfog_racing.websocket.schemas import (
     LeaderboardUpdateMessage,
     NameTemplatePayload,
@@ -354,8 +359,18 @@ class ConnectionManager:
         participants: list[Participant],
         *,
         graph_json: dict[str, Any] | None = None,
+        daily_date: date | None = None,
     ) -> None:
-        """Broadcast leaderboard update to all connections in a room."""
+        """Broadcast leaderboard update to all connections in a room.
+
+        For non-daily races (``daily_date is None``) every connection
+        receives the same real-state payload. For daily races, web
+        spectators still receive the real payload, but each connected
+        mod receives a payload tailored to its viewer state: the real
+        payload when the viewer is not currently playing, otherwise a
+        projected payload built from each ghost's state at the viewer's
+        IGT (see ``projection.project_participant_at``).
+        """
         room = self.get_room(race_id)
         if not room:
             return
@@ -363,46 +378,40 @@ class ConnectionManager:
         sorted_participants, entry_igts = sort_leaderboard(participants, graph_json=graph_json)
         connected_ids = set(room.mods.keys())
 
-        # Compute leader splits for gap timing
-        leader_splits: dict[int, int] = {}
-        leader_igt_ms = 0
-        has_leader = False
-        if graph_json and sorted_participants:
-            leader = sorted_participants[0]
-            if leader.status.value in ("playing", "finished"):
-                has_leader = True
-                leader_igt_ms = leader.igt_ms
-                leader_splits = build_leader_splits(leader.zone_history, graph_json)
+        leader_splits, leader_igt_ms, has_leader = _build_leader_context(
+            sorted_participants, graph_json
+        )
 
-        participant_infos = [
-            participant_to_info(
-                p,
+        real_payload = _build_leaderboard_payload(
+            sorted_participants,
+            entry_igts,
+            connected_ids=connected_ids,
+            graph_json=graph_json,
+            leader_splits=leader_splits,
+            leader_igt_ms=leader_igt_ms,
+            has_leader=has_leader,
+        )
+
+        if daily_date is None:
+            await room.broadcast_to_all(real_payload)
+            return
+
+        # Daily race: spectators see real state; each mod gets its own view.
+        await room.broadcast_to_spectators(real_payload)
+
+        for participant_id in list(room.mods.keys()):
+            viewer = next((p for p in participants if p.id == participant_id), None)
+            if viewer is None or viewer.status != ParticipantStatus.PLAYING:
+                await room.send_to_mod(participant_id, real_payload)
+                continue
+
+            projected_payload = _build_projected_payload_for_viewer(
+                viewer=viewer,
+                participants=participants,
                 connected_ids=connected_ids,
                 graph_json=graph_json,
-                gap_ms=compute_gap_ms(
-                    p.status.value,
-                    igt_ms=p.igt_ms,
-                    current_layer=p.current_layer,
-                    player_layer_entry_igt=entry_igts.get(p.id),
-                    leader_splits=leader_splits,
-                    leader_igt_ms=leader_igt_ms,
-                    is_leader=(has_leader and i == 0),
-                    leader_finished=(
-                        has_leader and sorted_participants[0].status.value == "finished"
-                    ),
-                )
-                if has_leader and graph_json
-                else None,
-                layer_entry_igt=entry_igts.get(p.id) if graph_json else None,
             )
-            for i, p in enumerate(sorted_participants)
-        ]
-
-        message = LeaderboardUpdateMessage(
-            participants=participant_infos,
-            leader_splits=leader_splits if leader_splits else None,
-        )
-        await room.broadcast_to_all(message.model_dump_json())
+            await room.send_to_mod(participant_id, projected_payload)
 
     async def broadcast_player_update(
         self,
@@ -576,7 +585,7 @@ def compute_gap_ms(
 
 
 def participant_to_info(
-    participant: Participant,
+    participant: Participant | ProjectedParticipant,
     *,
     connected_ids: set[uuid.UUID] | None = None,
     graph_json: dict[str, Any] | None = None,
@@ -635,10 +644,10 @@ def participant_to_info(
 
 
 def sort_leaderboard(
-    participants: list[Participant],
+    participants: list[Participant] | list[Participant | ProjectedParticipant],
     *,
     graph_json: dict[str, Any] | None = None,
-) -> tuple[list[Participant], dict[uuid.UUID, int | None]]:
+) -> tuple[list[Participant | ProjectedParticipant], dict[uuid.UUID, int | None]]:
     """Sort participants for leaderboard display.
 
     Returns (sorted_participants, entry_igts) where entry_igts maps each
@@ -674,7 +683,7 @@ def sort_leaderboard(
             else:
                 entry_igts[p.id] = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
 
-    def sort_key(p: Participant) -> tuple[int, int, int]:
+    def sort_key(p: Participant | ProjectedParticipant) -> tuple[int, int, int]:
         status = p.status.value
         priority = status_priority.get(status, 99)
 
@@ -690,6 +699,101 @@ def sort_leaderboard(
             return (priority, 0, 0)
 
     return sorted(participants, key=sort_key), entry_igts
+
+
+def _build_leader_context(
+    sorted_participants: Sequence[Participant | ProjectedParticipant],
+    graph_json: dict[str, Any] | None,
+) -> tuple[dict[int, int], int, bool]:
+    """Compute leader splits + leader IGT for gap timing.
+
+    Shared by the real-state and projected payload builders so both
+    branches surface gap_ms relative to the same leader semantics.
+    """
+    leader_splits: dict[int, int] = {}
+    leader_igt_ms = 0
+    has_leader = False
+    if graph_json and sorted_participants:
+        leader = sorted_participants[0]
+        if leader.status.value in ("playing", "finished"):
+            has_leader = True
+            leader_igt_ms = leader.igt_ms
+            leader_splits = build_leader_splits(leader.zone_history, graph_json)
+    return leader_splits, leader_igt_ms, has_leader
+
+
+def _build_leaderboard_payload(
+    sorted_participants: Sequence[Participant | ProjectedParticipant],
+    entry_igts: dict[uuid.UUID, int | None],
+    *,
+    connected_ids: set[uuid.UUID],
+    graph_json: dict[str, Any] | None,
+    leader_splits: dict[int, int],
+    leader_igt_ms: int,
+    has_leader: bool,
+) -> str:
+    """Serialize a LeaderboardUpdateMessage from already-sorted participants."""
+    participant_infos = [
+        participant_to_info(
+            p,
+            connected_ids=connected_ids,
+            graph_json=graph_json,
+            gap_ms=compute_gap_ms(
+                p.status.value,
+                igt_ms=p.igt_ms,
+                current_layer=p.current_layer,
+                player_layer_entry_igt=entry_igts.get(p.id),
+                leader_splits=leader_splits,
+                leader_igt_ms=leader_igt_ms,
+                is_leader=(has_leader and i == 0),
+                leader_finished=(has_leader and sorted_participants[0].status.value == "finished"),
+            )
+            if has_leader and graph_json
+            else None,
+            layer_entry_igt=entry_igts.get(p.id) if graph_json else None,
+        )
+        for i, p in enumerate(sorted_participants)
+    ]
+    message = LeaderboardUpdateMessage(
+        participants=participant_infos,
+        leader_splits=leader_splits if leader_splits else None,
+    )
+    return message.model_dump_json()
+
+
+def _build_projected_payload_for_viewer(
+    *,
+    viewer: Participant,
+    participants: list[Participant],
+    connected_ids: set[uuid.UUID],
+    graph_json: dict[str, Any] | None,
+) -> str:
+    """Build the payload a single playing daily-mod should receive.
+
+    The viewer keeps its real state (already PLAYING by caller contract);
+    every other participant is projected to the viewer's IGT so finished
+    and concurrent ghosts appear as if running in parallel.
+    """
+    viewer_igt = viewer.igt_ms or 0
+    projected_others: list[Participant | ProjectedParticipant] = []
+    for p in participants:
+        if p.id == viewer.id:
+            continue
+        proj = project_participant_at(p, viewer_igt, graph_json)
+        if proj is not None:
+            projected_others.append(proj)
+
+    sorted_proj, entry_igts = sort_leaderboard([viewer, *projected_others], graph_json=graph_json)
+    leader_splits, leader_igt_ms, has_leader = _build_leader_context(sorted_proj, graph_json)
+    return _build_leaderboard_payload(
+        sorted_proj,
+        entry_igts,
+        connected_ids=connected_ids,
+        graph_json=graph_json,
+        leader_splits=leader_splits,
+        leader_igt_ms=leader_igt_ms,
+        has_leader=has_leader,
+    )
 
 
 # Global connection manager instance

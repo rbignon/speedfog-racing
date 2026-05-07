@@ -814,7 +814,9 @@ async def add_participant(
         # Broadcast updated state to spectators and mods
         race = await _get_race_or_404(db, race_id, load_participants=True)
         graph_json = race.seed.graph_json if race.seed else None
-        await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
+        await manager.broadcast_leaderboard(
+            race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+        )
         await broadcast_race_state_update(race_id, race)
 
         return AddParticipantResponse(participant=participant_response(participant))
@@ -913,7 +915,9 @@ async def remove_participant(
     # Broadcast updated state to spectators and mods
     race = await _get_race_or_404(db, race_id, load_participants=True)
     graph_json = race.seed.graph_json if race.seed else None
-    await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
+    await manager.broadcast_leaderboard(
+        race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+    )
     await broadcast_race_state_update(race_id, race)
 
 
@@ -1179,7 +1183,9 @@ async def join_race(
     # Broadcast updated state to spectators and mods
     race = await _get_race_or_404(db, race_id, load_participants=True)
     graph_json = race.seed.graph_json if race.seed else None
-    await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
+    await manager.broadcast_leaderboard(
+        race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+    )
     await broadcast_race_state_update(race_id, race)
 
     return participant_response(participant)
@@ -1237,7 +1243,9 @@ async def leave_race(
     # Broadcast updated state to spectators and mods
     race = await _get_race_or_404(db, race_id, load_participants=True)
     graph_json = race.seed.graph_json if race.seed else None
-    await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
+    await manager.broadcast_leaderboard(
+        race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+    )
     await broadcast_race_state_update(race_id, race)
 
 
@@ -1534,7 +1542,9 @@ async def reroll_seed(
     )
     if is_daily:
         graph_json = race.seed.graph_json if race.seed else None
-        await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
+        await manager.broadcast_leaderboard(
+            race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+        )
     await broadcast_race_state_update(race_id, race)
 
     return _race_detail_response(race, user=user)
@@ -1726,7 +1736,9 @@ async def abandon_race(
 
     # Broadcast updates
     graph_json = race.seed.graph_json if race.seed else None
-    await manager.broadcast_leaderboard(race_id, race.participants, graph_json=graph_json)
+    await manager.broadcast_leaderboard(
+        race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+    )
     await broadcast_race_state_update(race_id, race)
 
     # Check auto-finish

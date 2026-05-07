@@ -180,7 +180,10 @@ class TwitchLiveService:
             graph = race.seed.graph_json if race.seed else None
             try:
                 await ws_manager.broadcast_leaderboard(
-                    race.id, list(race.participants), graph_json=graph
+                    race.id,
+                    list(race.participants),
+                    graph_json=graph,
+                    daily_date=race.daily_date,
                 )
             except Exception:
                 logger.exception("Failed to broadcast live change for race %s", race.id)
