@@ -448,7 +448,7 @@
               fill="none"
             />
           </svg>
-          {downloading ? "Preparing..." : "Download Daily Seed Pack"}
+          {downloading ? "Preparing..." : "Download Daily Seed Pack"}
         </button>
       {/if}
 
