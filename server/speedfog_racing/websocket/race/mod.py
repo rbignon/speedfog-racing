@@ -561,10 +561,12 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         assert self._participant_id is not None
         if entity.status != ParticipantStatus.PLAYING:
             return
+        if entity.race.daily_date is None:
+            return
 
         async with self.session_maker() as db:
             race = await _load_race_with_participants(db, entity.race_id)
-            if race is None or race.daily_date is None:
+            if race is None:
                 return
             participants = list(race.participants)
 
