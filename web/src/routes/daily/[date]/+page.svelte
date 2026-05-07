@@ -14,8 +14,10 @@
     deleteRace,
     downloadMySeedPack,
     fetchDailyByDate,
+    fetchDailyWeek,
     getTwitchLoginUrl,
     joinRace,
+    type DailyWeekResponse,
     type ParticipantStatus as ApiParticipantStatus,
     type RaceDetail,
     type RaceStatus as ApiRaceStatus,
@@ -45,6 +47,9 @@
 
   let { data } = $props();
   let initialRace: RaceDetail = $state(untrack(() => data.race));
+  let weekData: DailyWeekResponse | null = $state(
+    untrack(() => data.week ?? null),
+  );
   let now = $state(Date.now());
   let showDownloadModal = $state(false);
   let downloading = $state(false);
@@ -91,6 +96,10 @@
 
   $effect(() => {
     initialRace = data.race;
+  });
+
+  $effect(() => {
+    weekData = data.week ?? null;
   });
 
   let wsError = $derived(raceStore.wsError);
@@ -266,14 +275,38 @@
   // WS subscription for the other days); the snapshot stays authoritative
   // until raceStore has shipped its initial race_state.
   let liveWeek = $derived.by(() => {
-    if (!data.week) return null;
-    if (!raceStore.race) return data.week;
-    if (!initialRace.daily_date) return data.week;
-    return applyLiveDailyDayUpdate(data.week, {
+    if (!weekData) return null;
+    if (!raceStore.race) return weekData;
+    if (!initialRace.daily_date) return weekData;
+    return applyLiveDailyDayUpdate(weekData, {
       date: initialRace.daily_date,
       participants: raceStore.participants,
       myParticipantId: myParticipant?.id ?? null,
     });
+  });
+
+  // The week snapshot is fetched once at page load. When the daily window
+  // crosses its end (08:00 UTC of the next day) while the page is open, the
+  // cell we are viewing should flip from "today" to "past" and the new day
+  // should pick up the "today" badge, possibly with a fresh race_id if the
+  // cron has already generated the next daily. Refetch the week once on
+  // that boundary; the server recomputes ``today`` from real time and
+  // returns the canonical state for both cells in one response. Seeding
+  // ``prevDailyEnded`` from the current value via untrack avoids a wasted
+  // refetch when the page opens on a daily that ended hours ago: the
+  // snapshot from +page.ts is already canonical in that case.
+  let prevDailyEnded = $state(untrack(() => dailyEnded));
+  $effect(() => {
+    if (dailyEnded && !prevDailyEnded) {
+      fetchDailyWeek(initialRace.daily_date ?? undefined)
+        .then((w) => {
+          weekData = w;
+        })
+        .catch(() => {
+          // swallow: the snapshot stays put, user can refresh manually.
+        });
+    }
+    prevDailyEnded = dailyEnded;
   });
 
   // Pull public chat history when local access transitions from locked to
