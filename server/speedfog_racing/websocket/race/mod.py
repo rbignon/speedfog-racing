@@ -510,13 +510,15 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         assert self._participant_id is not None
 
         if not became_active and death_delta <= 0:
-            await manager.broadcast_player_update(
-                entity.race_id,
-                entity,
-                graph_json=self._cached_graph_json,
-                daily_date=entity.race.daily_date,
+            await asyncio.gather(
+                manager.broadcast_player_update(
+                    entity.race_id,
+                    entity,
+                    graph_json=self._cached_graph_json,
+                    daily_date=entity.race.daily_date,
+                ),
+                self._maybe_unicast_daily_projection(entity),
             )
-            await self._maybe_unicast_daily_projection(entity)
             return
         else:
             # Uncommon path: reload with full relationships for leaderboard/death broadcasts

@@ -458,14 +458,13 @@ class ConnectionManager:
         sorted participants list (for leader context). Clients receive gap data
         via leaderboard_update messages instead; mods recompute gaps client-side.
 
-        On daily races (``daily_date is not None``), the message is routed to
-        spectators only. Mods on daily races receive their per-viewer projected
-        leaderboard via ``broadcast_leaderboard`` and ``send_projected_to_mod``;
-        forwarding the real ``player_update`` to them would overwrite the
-        projected row in the mod's local state until the next leaderboard tick.
+        On daily races, routed to spectators only: mods overwrite the matching
+        row from any player_update, which would desync the projected leaderboard.
         """
         room = self.get_room(race_id)
         if not room:
+            return
+        if daily_date is not None and not room.spectators:
             return
 
         connected_ids = set(room.mods.keys())

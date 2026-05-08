@@ -412,9 +412,6 @@ def test_non_daily_heartbeat_does_not_unicast_leaderboard(
         assert saw_player_update, "expected at least one player_update from the heartbeat"
 
 
-# ---------------------------------------------------------------------------
-# Test D: daily heartbeat does NOT send player_update to mods (spectators only)
-# ---------------------------------------------------------------------------
 def test_daily_heartbeat_routes_player_update_to_spectators_only(
     daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -434,15 +431,13 @@ def test_daily_heartbeat_routes_player_update_to_spectators_only(
         with daily_client.websocket_connect(f"/ws/mod/{race_id}") as mod_ws:
             mod = ModTestClient(mod_ws, b_token)
             assert mod.auth(drain=False)["type"] == "auth_ok"
-            mod.receive_until_type("leaderboard_update")  # connect bootstrap
+            mod.receive_until_type("leaderboard_update")
 
-            # First status_update: REGISTERED -> PLAYING (became_active path,
-            # which goes through broadcast_leaderboard, not player_update).
+            # Transition viewer to PLAYING so the next status_update goes
+            # through the non-active heartbeat path under test.
             mod.send_status_update(igt_ms=0, death_count=0)
             mod.receive_until_type("leaderboard_update")
 
-            # Pure heartbeat. The non-active path runs broadcast_player_update;
-            # on daily races it must skip mods.
             mod.send_status_update(igt_ms=60_000, death_count=0)
 
             for _ in range(10):
@@ -454,7 +449,6 @@ def test_daily_heartbeat_routes_player_update_to_spectators_only(
                     f"daily heartbeat leaked player_update to mod: {msg}"
                 )
 
-        # Spectator must still receive the real player_update for B's heartbeat.
         bravo_update: dict[str, Any] | None = None
         for _ in range(20):
             try:
