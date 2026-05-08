@@ -83,4 +83,29 @@ describe("UserStatsCards", () => {
     expect(container.querySelector("a.card")).toBeNull();
     expect(container.querySelectorAll("article.card").length).toBe(4);
   });
+
+  it("pads sparkline series shorter than 4 weeks with leading zeros", () => {
+    const profile = profileWith({
+      weekly: {
+        races: [3],
+        daily: [0],
+        solo: [0],
+        organized: [0],
+        weeks_count: 1,
+        capped: false,
+      },
+    });
+    const { container } = render(UserStatsCards, { profile });
+    const racesCard = Array.from(
+      container.querySelectorAll("article.card"),
+    ).find((c) => c.querySelector(".label")?.textContent === "Races");
+    expect(racesCard).toBeDefined();
+    const bars = racesCard!.querySelectorAll<HTMLElement>(".bar");
+    expect(bars.length).toBe(4);
+    // Padding must go on the leading edge so the most recent week stays
+    // rightmost: the only non-zero entry (value 3) must be the last bar.
+    const heights = Array.from(bars).map((b) => b.style.height);
+    expect(heights.slice(0, 3)).toEqual(["2%", "2%", "2%"]);
+    expect(heights[3]).toBe("100%");
+  });
 });

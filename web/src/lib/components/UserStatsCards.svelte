@@ -21,12 +21,19 @@
     emptyCopy: string;
   };
 
+  const MIN_BARS = 4;
+
+  function padSeries(series: number[]): number[] {
+    if (series.length >= MIN_BARS) return series;
+    return [...Array(MIN_BARS - series.length).fill(0), ...series];
+  }
+
   const categories = $derived<Category[]>([
     {
       key: "races",
       label: "Races",
       value: profile.stats.race_count,
-      series: profile.stats.weekly.races,
+      series: padSeries(profile.stats.weekly.races),
       accent: "var(--color-gold)",
       accentSoft: "rgba(200, 164, 78, 0.32)",
       emptyCopy: "Never raced",
@@ -35,7 +42,7 @@
       key: "daily",
       label: "Daily",
       value: profile.stats.daily_count,
-      series: profile.stats.weekly.daily,
+      series: padSeries(profile.stats.weekly.daily),
       accent: "#2dd4bf",
       accentSoft: "rgba(45, 212, 191, 0.36)",
       emptyCopy: "Never daily",
@@ -44,7 +51,7 @@
       key: "solo",
       label: "Solo",
       value: profile.stats.training_count,
-      series: profile.stats.weekly.solo,
+      series: padSeries(profile.stats.weekly.solo),
       accent: "var(--color-purple)",
       accentSoft: "rgba(139, 92, 246, 0.36)",
       emptyCopy: "Never solo",
@@ -53,7 +60,7 @@
       key: "organized",
       label: "Organized",
       value: profile.stats.organized_count,
-      series: profile.stats.weekly.organized,
+      series: padSeries(profile.stats.weekly.organized),
       accent: "#f59e0b",
       accentSoft: "rgba(245, 158, 11, 0.36)",
       emptyCopy: "Never organized",
