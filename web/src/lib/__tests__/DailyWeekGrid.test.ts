@@ -221,6 +221,73 @@ describe("DailyWeekGrid", () => {
     expect(cell?.textContent ?? "").toMatch(/Opens in/);
   });
 
+  it("formats the countdown as Xm Ys when under 1h", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-04-30T07:15:23Z"));
+      const week: DailyWeekResponse = {
+        ...mockWeek,
+        days: mockWeek.days.map((d) =>
+          d.state === "future" && d.date === "2026-04-30"
+            ? { ...d, started_at: "2026-04-30T08:00:00Z" }
+            : d,
+        ),
+      };
+      const { container } = render(DailyWeekGrid, {
+        props: { week, userId: null, variant: "home" },
+      });
+      const cell = container.querySelector('[data-cell-state="future"]');
+      expect(cell?.textContent ?? "").toMatch(/Opens in 44m 37s/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("formats the countdown as just seconds in the final minute", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-04-30T07:59:18Z"));
+      const week: DailyWeekResponse = {
+        ...mockWeek,
+        days: mockWeek.days.map((d) =>
+          d.state === "future" && d.date === "2026-04-30"
+            ? { ...d, started_at: "2026-04-30T08:00:00Z" }
+            : d,
+        ),
+      };
+      const { container } = render(DailyWeekGrid, {
+        props: { week, userId: null, variant: "home" },
+      });
+      const cell = container.querySelector('[data-cell-state="future"]');
+      expect(cell?.textContent ?? "").toMatch(/Opens in 42s/);
+      expect(cell?.textContent ?? "").not.toMatch(/0m/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the Xh Ym format at exactly 1h remaining", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-04-30T07:00:00Z"));
+      const week: DailyWeekResponse = {
+        ...mockWeek,
+        days: mockWeek.days.map((d) =>
+          d.state === "future" && d.date === "2026-04-30"
+            ? { ...d, started_at: "2026-04-30T08:00:00Z" }
+            : d,
+        ),
+      };
+      const { container } = render(DailyWeekGrid, {
+        props: { week, userId: null, variant: "home" },
+      });
+      const cell = container.querySelector('[data-cell-state="future"]');
+      expect(cell?.textContent ?? "").toMatch(/Opens in 1h 00m/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renders the play-now strip on today when the viewer has no result", () => {
     const { container } = render(DailyWeekGrid, {
       props: { week: mockWeek, userId: "me", variant: "home" },

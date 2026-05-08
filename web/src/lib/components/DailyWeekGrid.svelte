@@ -62,9 +62,38 @@
   }
 
   let now = $state(Date.now());
-  onMount(() => {
-    const timer = setInterval(() => (now = Date.now()), 60_000);
-    return () => clearInterval(timer);
+  // Earliest "future" started_at on the displayed week. Used to switch the
+  // tick from 60s to 1s only when the next opening is within an hour, so
+  // the grid does not re-render every second on the home and dashboard
+  // pages where users may sit indefinitely.
+  let nextOpensMs = $derived.by(() => {
+    let min = Infinity;
+    for (const day of displayedWeek.days) {
+      if (day.state === "future" && day.started_at) {
+        const t = new Date(day.started_at).getTime();
+        if (t < min) min = t;
+      }
+    }
+    return min;
+  });
+  $effect(() => {
+    const target = nextOpensMs;
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const remaining = target - Date.now();
+      const period = remaining < 3_600_000 ? 1_000 : 60_000;
+      timeoutId = setTimeout(() => {
+        if (cancelled) return;
+        now = Date.now();
+        schedule();
+      }, period);
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   });
 
   const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -79,7 +108,14 @@
       return `${days}d ${hours}h`;
     }
     const minutes = Math.floor((remainingMs % 3_600_000) / 60_000);
-    return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+    if (hours >= 1) {
+      return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+    }
+    const seconds = Math.floor((remainingMs % 60_000) / 1_000);
+    if (minutes >= 1) {
+      return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+    }
+    return `${seconds}s`;
   }
 
   type CellStrip =
