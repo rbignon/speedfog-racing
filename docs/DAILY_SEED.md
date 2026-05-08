@@ -284,20 +284,51 @@ The notification is best-effort: any HTTP error is logged but does not fail the 
 
 ## In-mod replay leaderboard
 
-Daily Seeds are async: a player joining at hour 18 of the 24h window would
-otherwise see a leaderboard already populated with finishers, killing the
-sense of competition. To preserve immersion in the in-game overlay, the
-server projects the mod's `leaderboard_update` to the viewer's current IGT:
-finishers and concurrent runners appear at the position they had when their
-own IGT matched the viewer's. See
-[`docs/specs/2026-05-06-daily-replay-leaderboard-design.md`](specs/2026-05-06-daily-replay-leaderboard-design.md)
-for the exact projection rules.
+Daily Seeds are async: a player joining at hour 18 of the 24h window would otherwise see a leaderboard already populated with finishers, killing the sense of competition. To preserve immersion in the in-game overlay, the server projects each mod's `leaderboard_update` to its viewer's current IGT, so finishers and concurrent runners appear at the position they had when their own IGT matched the viewer's.
 
-Scope is mod-only: web spectators (`/daily/[date]`, OBS overlays) keep
-seeing the real state, since the daily is already explicitly spoilers-OK on
-the web side. The protocol shape is unchanged; see
-[PROTOCOL.md](PROTOCOL.md#leaderboard_update) for the per-mod projection
-note.
+Scope is **mod-only**: web spectators (`/daily/[date]`, OBS overlays) keep seeing the real state, since the daily is already explicitly spoilers-OK on the web side. The wire format is unchanged; see [PROTOCOL.md](PROTOCOL.md#leaderboard_update).
+
+### Projection rules
+
+For each viewer at IGT `T`, the server walks every other participant's `zone_history` and produces a projected snapshot. Let `L_full` be the participant's last `igt_ms` over their full history.
+
+| Real status | Condition        | Projected status | Projected `igt_ms` |
+| ----------- | ---------------- | ---------------- | ------------------ |
+| `finished`  | `final_igt <= T` | `finished`       | `final_igt`        |
+| `finished`  | `final_igt > T`  | `playing`        | `min(T, L_full)`   |
+| `playing`   | (any T)          | `playing`        | `min(T, L_full)`   |
+| `abandoned` | `L_full <= T`    | `abandoned`      | `L_full`           |
+| `abandoned` | `L_full > T`     | `playing`        | `min(T, L_full)`   |
+
+Other projected fields (computed from the slice of `zone_history` with `igt_ms <= T`):
+
+- `current_zone`: node_id of the last entry in the slice.
+- `current_layer`: max layer visited in the slice (monotonic, mirroring the real-race `current_layer` invariant).
+- `death_count`: sum of `entry.deaths` over the slice.
+- `zone_history`: the slice itself, used to derive `leader_splits` for the projected leader.
+
+Participants with empty `zone_history` (registered or ready but never started) are **excluded** from the projected payload, so the viewer only sees ghosts of players who actually played.
+
+The viewer's own row is **never projected**: it carries the real participant data (real IGT, real zone, real status), so the player's own splits and gap timing remain truthful.
+
+### When the projection is live
+
+The projection only kicks in once the viewer transitions to `playing`. Before that (setup / ready / already-finished / abandoned), the mod receives the same real-state payload the spectators get, so a player browsing the leaderboard before pressing Play sees the real turnout. The "leaderboard rearranges when the run starts" transition doubles as an implicit cue that the replay has begun.
+
+### Trigger model
+
+The projected payload is recomputed and unicast on:
+
+1. Any real progression of any participant (event_flag, finish, abandon, ready, register). The standard `broadcast_leaderboard` path runs, sending the real payload to web spectators and the per-viewer projected payload to each connected mod.
+2. The viewer's own 1Hz `status_update` heartbeat. The viewer's IGT just advanced, so its projection of the rest of the field has shifted; the server unicasts a fresh projected payload back to that single mod, without disturbing the others.
+
+There is no periodic server-side tick beyond what the mods themselves drive at 1Hz.
+
+### Edge cases
+
+- **Daily ends at T+24h.** The race transitions to `finished` and any remaining mods are evicted by the lifecycle. No special teardown for the projection.
+- **Reroll during a running daily.** The reroll path resets every participant's `zone_history`, so the projected ghost set becomes empty until participants restart, exactly mirroring the real-race semantics.
+- **Concurrent live runners.** A ghost still racing in real time has a partial `zone_history`; the projection clamps to its last available state until it advances further. Their progression naturally propagates via the trigger above.
 
 ---
 
