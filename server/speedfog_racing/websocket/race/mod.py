@@ -511,7 +511,10 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
 
         if not became_active and death_delta <= 0:
             await manager.broadcast_player_update(
-                entity.race_id, entity, graph_json=self._cached_graph_json
+                entity.race_id,
+                entity,
+                graph_json=self._cached_graph_json,
+                daily_date=entity.race.daily_date,
             )
             await self._maybe_unicast_daily_projection(entity)
             return
@@ -532,7 +535,10 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 )
             else:
                 await manager.broadcast_player_update(
-                    entity.race_id, entity, graph_json=_get_graph_json(entity)
+                    entity.race_id,
+                    entity,
+                    graph_json=_get_graph_json(entity),
+                    daily_date=entity.race.daily_date,
                 )
 
         if history_changed:
@@ -593,7 +599,12 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 daily_date=entity.race.daily_date,
             )
         else:
-            await manager.broadcast_player_update(entity.race_id, entity, graph_json=seed_graph)
+            await manager.broadcast_player_update(
+                entity.race_id,
+                entity,
+                graph_json=seed_graph,
+                daily_date=entity.race.daily_date,
+            )
 
         await manager.broadcast_zone_history(entity.race_id, entity.id, entity.zone_history or [])
 
@@ -613,7 +624,10 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             )
         else:
             await manager.broadcast_player_update(
-                entity.race_id, entity, graph_json=_get_graph_json(entity)
+                entity.race_id,
+                entity,
+                graph_json=_get_graph_json(entity),
+                daily_date=entity.race.daily_date,
             )
 
         if history_changed:

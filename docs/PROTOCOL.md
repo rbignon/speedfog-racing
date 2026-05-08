@@ -479,6 +479,8 @@ The mod uses these counts with `death_flags` from `SeedInfo` to set EMEVD event 
 
 Single player update, broadcast to all connections (mods + spectators). See also the [Spectator Connection](#websocket-spectator-connection) section.
 
+**Daily races (mods skipped).** On daily races (`daily_date != null`), `player_update` is routed to spectators only. Mods consume `player_update` by overwriting the matching row in their local participant list, which would desync that single row from the projected leaderboard until the next `leaderboard_update` tick (~1s). Mods receive their per-viewer projection through `leaderboard_update` instead.
+
 #### `ping`
 
 Heartbeat ping. Sent by the server every 30 seconds. The mod must respond with `pong`.

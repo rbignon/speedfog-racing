@@ -410,3 +410,63 @@ def test_non_daily_heartbeat_does_not_unicast_leaderboard(
         # The heartbeat path must still broadcast a player_update; if not,
         # this test is asserting nothing useful about the heartbeat.
         assert saw_player_update, "expected at least one player_update from the heartbeat"
+
+
+# ---------------------------------------------------------------------------
+# Test D: daily heartbeat does NOT send player_update to mods (spectators only)
+# ---------------------------------------------------------------------------
+def test_daily_heartbeat_routes_player_update_to_spectators_only(
+    daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession]
+) -> None:
+    """Daily races must not echo real player_update to mods.
+
+    Mods consume player_update by overwriting the matching participant row in
+    their local state (see mod/src/dll/tracker.rs). On a daily race the mod
+    holds a projected leaderboard; receiving the real player_update would
+    desync that single row until the next leaderboard tick. Spectators must
+    still get the real payload (web UI is spoilers-OK).
+    """
+    race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, daily=True))
+
+    with daily_client.websocket_connect(f"/ws/race/{race_id}") as spec_ws:
+        spec_ws.send_json({"type": "no_auth"})
+
+        with daily_client.websocket_connect(f"/ws/mod/{race_id}") as mod_ws:
+            mod = ModTestClient(mod_ws, b_token)
+            assert mod.auth(drain=False)["type"] == "auth_ok"
+            mod.receive_until_type("leaderboard_update")  # connect bootstrap
+
+            # First status_update: REGISTERED -> PLAYING (became_active path,
+            # which goes through broadcast_leaderboard, not player_update).
+            mod.send_status_update(igt_ms=0, death_count=0)
+            mod.receive_until_type("leaderboard_update")
+
+            # Pure heartbeat. The non-active path runs broadcast_player_update;
+            # on daily races it must skip mods.
+            mod.send_status_update(igt_ms=60_000, death_count=0)
+
+            for _ in range(10):
+                try:
+                    msg = mod.receive(timeout=2)
+                except TimeoutError:
+                    break
+                assert msg.get("type") != "player_update", (
+                    f"daily heartbeat leaked player_update to mod: {msg}"
+                )
+
+        # Spectator must still receive the real player_update for B's heartbeat.
+        bravo_update: dict[str, Any] | None = None
+        for _ in range(20):
+            try:
+                msg = _receive_with_timeout(spec_ws, timeout=2)
+            except TimeoutError:
+                break
+            if msg.get("type") != "player_update":
+                continue
+            if msg["player"]["twitch_username"] == "bravo":
+                bravo_update = msg
+                break
+        assert bravo_update is not None, (
+            "spectator did not receive real player_update for the heartbeating viewer"
+        )
+        assert bravo_update["player"]["igt_ms"] == 60_000

@@ -450,12 +450,19 @@ class ConnectionManager:
         participant: Participant,
         *,
         graph_json: dict[str, Any] | None = None,
+        daily_date: date | None = None,
     ) -> None:
-        """Broadcast a single player update to all connections (mods + spectators).
+        """Broadcast a single player update.
 
         Note: gap_ms is not included here because computing it requires the full
         sorted participants list (for leader context). Clients receive gap data
         via leaderboard_update messages instead; mods recompute gaps client-side.
+
+        On daily races (``daily_date is not None``), the message is routed to
+        spectators only. Mods on daily races receive their per-viewer projected
+        leaderboard via ``broadcast_leaderboard`` and ``send_projected_to_mod``;
+        forwarding the real ``player_update`` to them would overwrite the
+        projected row in the mod's local state until the next leaderboard tick.
         """
         room = self.get_room(race_id)
         if not room:
@@ -474,7 +481,11 @@ class ConnectionManager:
                 else None,
             )
         )
-        await room.broadcast_to_all(message.model_dump_json())
+        payload = message.model_dump_json()
+        if daily_date is not None:
+            await room.broadcast_to_spectators(payload)
+        else:
+            await room.broadcast_to_all(payload)
 
     async def _broadcast_spectator_count(self, room: RaceRoom) -> None:
         """Broadcast spectator count to all spectators in a room."""

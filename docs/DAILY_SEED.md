@@ -288,6 +288,8 @@ Daily Seeds are async: a player joining at hour 18 of the 24h window would other
 
 Scope is **mod-only**: web spectators (`/daily/[date]`, OBS overlays) keep seeing the real state, since the daily is already explicitly spoilers-OK on the web side. The wire format is unchanged; see [PROTOCOL.md](PROTOCOL.md#leaderboard_update).
 
+`player_update` is routed to spectators only on daily races: the mod overwrites the matching participant row from any `player_update`, which would desync that single row from the rest of the projection until the next leaderboard tick. Updates that need to reach mods (a ghost progressing in real time) are picked up from the next projected `leaderboard_update`.
+
 ### Projection rules
 
 For each viewer at IGT `T`, the server walks every other participant's `zone_history` and produces a projected snapshot. Let `L_full` be the participant's last `igt_ms` over their full history.
