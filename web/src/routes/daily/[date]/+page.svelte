@@ -475,7 +475,6 @@
       {#if liveWeek}
         <DailyWeekGrid
           week={liveWeek}
-          userId={auth.user?.id ?? null}
           variant="daily-detail"
           selectedDate={initialRace.daily_date ?? undefined}
         />

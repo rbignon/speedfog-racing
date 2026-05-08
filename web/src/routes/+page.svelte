@@ -135,11 +135,7 @@
   <RewardsBanner />
   {#if dailyWeek}
     <h2 class="daily-seed-title">Daily Seed</h2>
-    <DailyWeekGrid
-      week={dailyWeek}
-      userId={auth.user?.id ?? null}
-      variant="home"
-    />
+    <DailyWeekGrid week={dailyWeek} variant="home" />
   {/if}
   {#if !loadingRaces}
     {#if liveRaces.length > 0}

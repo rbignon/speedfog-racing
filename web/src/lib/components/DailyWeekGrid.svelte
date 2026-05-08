@@ -6,12 +6,11 @@
 
   interface Props {
     week: DailyWeekResponse;
-    userId: string | null;
     variant?: "home" | "dashboard" | "daily-detail";
     selectedDate?: string;
   }
 
-  let { week, userId, variant = "home", selectedDate }: Props = $props();
+  let { week, variant = "home", selectedDate }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let displayedWeek = $state<DailyWeekResponse>(week);
@@ -36,8 +35,9 @@
   function currentWeekMondayFor(todayIso: string): string {
     const d = new Date(`${todayIso}T00:00:00Z`);
     const weekday = (d.getUTCDay() + 6) % 7; // 0 = Monday
-    d.setUTCDate(d.getUTCDate() - weekday);
-    return d.toISOString().slice(0, 10);
+    return new Date(d.getTime() - weekday * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
   }
 
   let canGoNext = $derived(
@@ -48,9 +48,10 @@
     if (navigating) return;
     if (deltaWeeks > 0 && !canGoNext) return;
     if (deltaWeeks < 0 && !displayedWeek.has_earlier) return;
-    const d = new Date(`${displayedWeek.week_start}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + deltaWeeks * 7);
-    const anchorDate = d.toISOString().slice(0, 10);
+    const startMs = new Date(`${displayedWeek.week_start}T00:00:00Z`).getTime();
+    const anchorDate = new Date(startMs + deltaWeeks * 7 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
     navigating = true;
     try {
       displayedWeek = await fetchDailyWeek(anchorDate);

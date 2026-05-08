@@ -378,11 +378,7 @@
 
     {#if dailyWeek}
       <h2 class="daily-seed-title">Daily Seed</h2>
-      <DailyWeekGrid
-        week={dailyWeek}
-        userId={auth.user?.id ?? null}
-        variant="dashboard"
-      />
+      <DailyWeekGrid week={dailyWeek} variant="dashboard" />
     {/if}
 
     <!-- Active Now Section (hidden when empty) -->

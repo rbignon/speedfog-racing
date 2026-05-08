@@ -131,7 +131,7 @@ const mockWeek: DailyWeekResponse = {
 describe("DailyWeekGrid", () => {
   it("renders 7 cells in Mon..Sun order", () => {
     const { container } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: "me", variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     const cells = container.querySelectorAll("[data-cell-state]");
     expect(cells).toHaveLength(7);
@@ -139,7 +139,7 @@ describe("DailyWeekGrid", () => {
 
   it("marks the today cell with the today state attribute", () => {
     const { container } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: null, variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     const todayCell = container.querySelector('[data-cell-state="today"]');
     expect(todayCell).not.toBeNull();
@@ -147,7 +147,7 @@ describe("DailyWeekGrid", () => {
 
   it("renders the finished strip on a past cell split into icon + score", () => {
     const { container } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: "me", variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     const pastCell = container.querySelector('[data-cell-state="past"]');
     const strip = pastCell?.querySelector(".strip");
@@ -179,7 +179,7 @@ describe("DailyWeekGrid", () => {
       ),
     };
     const { container } = render(DailyWeekGrid, {
-      props: { week, userId: "me", variant: "home" },
+      props: { week, variant: "home" },
     });
     const pastCell = container.querySelector('[data-cell-state="past"]');
     const strip = pastCell?.querySelector(".strip");
@@ -195,7 +195,7 @@ describe("DailyWeekGrid", () => {
       ),
     };
     const { container } = render(DailyWeekGrid, {
-      props: { week, userId: "me", variant: "home" },
+      props: { week, variant: "home" },
     });
     const pastCell = container.querySelector('[data-cell-state="past"]');
     const strip = pastCell?.querySelector(".strip");
@@ -207,7 +207,7 @@ describe("DailyWeekGrid", () => {
 
   it("renders missing_past placeholder without a link", () => {
     const { container } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: null, variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     const cell = container.querySelector('[data-cell-state="missing_past"]');
     expect(cell?.tagName).not.toBe("A");
@@ -215,7 +215,7 @@ describe("DailyWeekGrid", () => {
 
   it("renders future cell with a countdown text", () => {
     const { container } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: null, variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     const cell = container.querySelector('[data-cell-state="future"]');
     expect(cell?.textContent ?? "").toMatch(/Opens in/);
@@ -234,7 +234,7 @@ describe("DailyWeekGrid", () => {
         ),
       };
       const { container } = render(DailyWeekGrid, {
-        props: { week, userId: null, variant: "home" },
+        props: { week, variant: "home" },
       });
       const cell = container.querySelector('[data-cell-state="future"]');
       expect(cell?.textContent ?? "").toMatch(/Opens in 44m 37s/);
@@ -256,7 +256,7 @@ describe("DailyWeekGrid", () => {
         ),
       };
       const { container } = render(DailyWeekGrid, {
-        props: { week, userId: null, variant: "home" },
+        props: { week, variant: "home" },
       });
       const cell = container.querySelector('[data-cell-state="future"]');
       expect(cell?.textContent ?? "").toMatch(/Opens in 42s/);
@@ -279,7 +279,7 @@ describe("DailyWeekGrid", () => {
         ),
       };
       const { container } = render(DailyWeekGrid, {
-        props: { week, userId: null, variant: "home" },
+        props: { week, variant: "home" },
       });
       const cell = container.querySelector('[data-cell-state="future"]');
       expect(cell?.textContent ?? "").toMatch(/Opens in 1h 00m/);
@@ -290,7 +290,7 @@ describe("DailyWeekGrid", () => {
 
   it("renders the play-now strip on today when the viewer has no result", () => {
     const { container } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: "me", variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     const todayCell = container.querySelector('[data-cell-state="today"]');
     const strip = todayCell?.querySelector(".strip");
@@ -317,7 +317,7 @@ describe("DailyWeekGrid", () => {
       ),
     };
     const { container } = render(DailyWeekGrid, {
-      props: { week, userId: "me", variant: "home" },
+      props: { week, variant: "home" },
     });
     const strip = container.querySelector('[data-cell-state="today"] .strip');
     expect(strip?.classList.contains("strip-in-progress")).toBe(true);
@@ -343,7 +343,7 @@ describe("DailyWeekGrid", () => {
       ),
     };
     const { container } = render(DailyWeekGrid, {
-      props: { week, userId: "me", variant: "home" },
+      props: { week, variant: "home" },
     });
     const todayCell = container.querySelector('[data-cell-state="today"]');
     const strip = todayCell?.querySelector(".strip");
@@ -374,7 +374,7 @@ describe("DailyWeekGrid", () => {
       ),
     };
     const { container } = render(DailyWeekGrid, {
-      props: { week, userId: "me", variant: "home" },
+      props: { week, variant: "home" },
     });
     const strip = container.querySelector('[data-cell-state="today"] .strip');
     expect(strip?.classList.contains("strip-abandoned")).toBe(true);
@@ -400,7 +400,7 @@ describe("DailyWeekGrid", () => {
       ),
     };
     const { container } = render(DailyWeekGrid, {
-      props: { week, userId: "me", variant: "home" },
+      props: { week, variant: "home" },
     });
     const strip = container.querySelector('[data-cell-state="today"] .strip');
     expect(strip?.textContent ?? "").not.toContain("✓");
@@ -429,7 +429,7 @@ describe("DailyWeekGrid", () => {
       ),
     };
     const { container } = render(DailyWeekGrid, {
-      props: { week, userId: "me", variant: "home" },
+      props: { week, variant: "home" },
     });
     const todayCell = container.querySelector('[data-cell-state="today"]');
     expect(todayCell?.querySelector(".winner")).toBeNull();
@@ -471,7 +471,7 @@ describe("DailyWeekGrid", () => {
       ),
     };
     const { container } = render(DailyWeekGrid, {
-      props: { week, userId: "me", variant: "home" },
+      props: { week, variant: "home" },
     });
     const pastCell = container.querySelector('[data-cell-state="past"]');
     const winner = pastCell?.querySelector(".winner");
@@ -484,7 +484,6 @@ describe("DailyWeekGrid", () => {
     const { container } = render(DailyWeekGrid, {
       props: {
         week: mockWeek,
-        userId: "me",
         variant: "daily-detail",
         selectedDate: "2026-04-27",
       },
@@ -499,7 +498,6 @@ describe("DailyWeekGrid", () => {
     const { container } = render(DailyWeekGrid, {
       props: {
         week: mockWeek,
-        userId: null,
         variant: "daily-detail",
         selectedDate: mockWeek.today,
       },
@@ -513,7 +511,7 @@ describe("DailyWeekGrid", () => {
 
   it("renders no selected cell when selectedDate is omitted", () => {
     const { container } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: null, variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     expect(container.querySelector(".cell.selected")).toBeNull();
   });
@@ -522,7 +520,7 @@ describe("DailyWeekGrid", () => {
     // mockWeek's week_start (2026-04-27) matches the Monday of mockWeek.today
     // (2026-04-29), so we are on the current week and "next" should be off.
     const { container } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: null, variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     const next = container.querySelector(
       'button[data-week-nav="next"]',
@@ -534,7 +532,6 @@ describe("DailyWeekGrid", () => {
     const { container } = render(DailyWeekGrid, {
       props: {
         week: mockWeek,
-        userId: "me",
         variant: "daily-detail",
         selectedDate: mockWeek.today,
       },
@@ -547,7 +544,7 @@ describe("DailyWeekGrid", () => {
 
   it("still shows the play-now strip on today when not selected", () => {
     const { container } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: "me", variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     const todayCell = container.querySelector('[data-cell-state="today"]');
     const strip = todayCell?.querySelector(".strip");
@@ -557,7 +554,7 @@ describe("DailyWeekGrid", () => {
   it("disables the prev arrow when has_earlier is false", () => {
     const noEarlier: DailyWeekResponse = { ...mockWeek, has_earlier: false };
     const { container } = render(DailyWeekGrid, {
-      props: { week: noEarlier, userId: null, variant: "home" },
+      props: { week: noEarlier, variant: "home" },
     });
     const prev = container.querySelector(
       'button[data-week-nav="prev"]',
@@ -572,7 +569,7 @@ describe("DailyWeekGrid", () => {
       // today stays 2026-04-29 -> the displayed week is strictly before today's week
     };
     const { container } = render(DailyWeekGrid, {
-      props: { week: pastWeek, userId: null, variant: "daily-detail" },
+      props: { week: pastWeek, variant: "daily-detail" },
     });
     const next = container.querySelector(
       'button[data-week-nav="next"]',
@@ -584,7 +581,7 @@ describe("DailyWeekGrid", () => {
     // /daily/[date] rebinds ``week`` on every WS event with a same-week_start
     // patched reference. The grid must reflect the new participants_count.
     const { container, rerender } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: null, variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     const todayCell = () =>
       container.querySelector('[data-cell-state="today"]');
@@ -596,7 +593,7 @@ describe("DailyWeekGrid", () => {
         d.state === "today" ? { ...d, participants_count: 7 } : d,
       ),
     };
-    await rerender({ week: patched, userId: null, variant: "home" });
+    await rerender({ week: patched, variant: "home" });
     expect(todayCell()?.textContent ?? "").toMatch(/7\s+players/);
   });
 
@@ -620,7 +617,7 @@ describe("DailyWeekGrid", () => {
     vi.mocked(fetchDailyWeek).mockResolvedValueOnce(earlierWeek);
 
     const { container, rerender } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: null, variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
 
     const prev = container.querySelector(
@@ -641,7 +638,7 @@ describe("DailyWeekGrid", () => {
         d.state === "today" ? { ...d, participants_count: 99 } : d,
       ),
     };
-    await rerender({ week: livePatched, userId: null, variant: "home" });
+    await rerender({ week: livePatched, variant: "home" });
     expect(
       container.querySelector('[data-cell-date="2026-04-20"]'),
     ).not.toBeNull();
@@ -666,7 +663,7 @@ describe("DailyWeekGrid", () => {
     vi.mocked(fetchDailyWeek).mockResolvedValueOnce(earlierWeek);
 
     const { container, rerender } = render(DailyWeekGrid, {
-      props: { week: mockWeek, userId: null, variant: "home" },
+      props: { week: mockWeek, variant: "home" },
     });
     await fireEvent.click(
       container.querySelector(
@@ -683,7 +680,7 @@ describe("DailyWeekGrid", () => {
         date: `2026-05-${String(4 + i).padStart(2, "0")}`,
       })),
     };
-    await rerender({ week: newAnchorWeek, userId: null, variant: "home" });
+    await rerender({ week: newAnchorWeek, variant: "home" });
 
     expect(
       container.querySelector('[data-cell-date="2026-05-06"]'),
