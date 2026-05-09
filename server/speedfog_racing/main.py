@@ -20,7 +20,7 @@ from starlette.responses import Response
 from speedfog_racing import __version__
 from speedfog_racing.api import api_router
 from speedfog_racing.config import settings
-from speedfog_racing.database import async_session_maker, init_db
+from speedfog_racing.database import async_session_maker
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.services.chat_cleanup import chat_cleanup_loop
 from speedfog_racing.services.daily_seed_loop import daily_seed_loop
@@ -58,11 +58,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: startup and shutdown."""
     # Startup
     logger.info("Starting SpeedFog Racing server...")
-    try:
-        await init_db()
-        logger.info("Database initialized")
-    except Exception as e:
-        logger.warning(f"Database initialization skipped: {e}")
 
     # Load i18n translations
     try:

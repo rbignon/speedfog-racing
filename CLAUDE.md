@@ -68,7 +68,7 @@ Two connection types: **mod connections** (`/ws/mod/{race_id}`) for the in-game 
 
 ### Race lifecycle
 
-`RaceStatus`: setup -> running -> finished. `ParticipantStatus`: registered -> ready -> playing -> finished/abandoned. The organizer controls transitions. ELO is computed on finish using OpenSkill (see `docs/STATS.md`).
+`RaceStatus`: setup -> running -> finished. `ParticipantStatus`: registered -> ready -> playing -> finished/abandoned. The organizer controls transitions. ELO is computed on finish via a hand-rolled pairwise rating with margin-of-victory, field-strength weighting, and difficulty injection (see `docs/STATS.md`).
 
 ### Dual chat
 

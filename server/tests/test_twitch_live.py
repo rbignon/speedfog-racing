@@ -27,7 +27,7 @@ async def test_get_app_access_token(monkeypatch):
     monkeypatch.setattr("speedfog_racing.auth.httpx.AsyncClient.post", mock_post)
 
     # Clear cache
-    get_app_access_token._cache = None
+    invalidate_app_access_token()
 
     token = await get_app_access_token()
     assert token == "test_token_123"
@@ -56,7 +56,7 @@ async def test_app_access_token_cached(monkeypatch):
     monkeypatch.setattr("speedfog_racing.auth.httpx.AsyncClient.post", mock_post)
 
     # Clear cache
-    get_app_access_token._cache = None
+    invalidate_app_access_token()
 
     token1 = await get_app_access_token()
     token2 = await get_app_access_token()
@@ -224,7 +224,7 @@ async def test_invalidate_app_access_token(monkeypatch):
 
     monkeypatch.setattr("speedfog_racing.auth.httpx.AsyncClient.post", mock_post)
 
-    get_app_access_token._cache = None
+    invalidate_app_access_token()
 
     token1 = await get_app_access_token()
     assert token1 == "token_1"

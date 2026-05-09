@@ -253,7 +253,7 @@ RaceRoom:
 
 ## Scaling
 
-The `ConnectionManager` (`websocket/manager.py`) is a **single-process, in-memory singleton**. `manager.rooms: dict[uuid.UUID, RaceRoom]` holds every active connection for the entire server.
+The `ConnectionManager` (`websocket/race/manager.py`, plus the parallel `websocket/training/manager.py` for training sessions) is a **single-process, in-memory singleton**. `manager.rooms: dict[uuid.UUID, RaceRoom]` holds every active connection for the entire server.
 
 **Implications:**
 
@@ -273,14 +273,14 @@ Not worth doing before the platform actually needs it: single-worker uvicorn can
 
 ## Constants Summary
 
-| Constant             | Value | Location                  | Purpose                                     |
-| -------------------- | ----- | ------------------------- | ------------------------------------------- |
-| `MOD_AUTH_TIMEOUT`   | 5.0s  | `common.py`               | Max wait for mod auth message               |
-| `AUTH_GRACE_PERIOD`  | 2.0s  | `spectator.py`            | Max wait for spectator optional auth        |
-| `HEARTBEAT_INTERVAL` | 30.0s | `common.py`               | Server ping frequency                       |
-| `SEND_TIMEOUT`       | 5.0s  | `common.py`, `manager.py` | Max time for a single send before failure   |
-| Ping timeout (mod)   | 60s   | `websocket.rs`            | Client-side ping timeout before reconnect   |
-| Reconnect min delay  | 1s    | `websocket.rs`            | Initial reconnect backoff                   |
-| Reconnect max delay  | 30s   | `websocket.rs`            | Maximum reconnect backoff cap               |
-| Channel capacity     | 128   | `websocket.rs`            | Crossbeam channel buffer for each direction |
-| Message loop sleep   | 10ms  | `websocket.rs`            | Polling interval in non-blocking loop       |
+| Constant             | Value | Location                                               | Purpose                                     |
+| -------------------- | ----- | ------------------------------------------------------ | ------------------------------------------- |
+| `MOD_AUTH_TIMEOUT`   | 5.0s  | `handler.py`                                           | Max wait for mod auth message               |
+| `AUTH_GRACE_PERIOD`  | 2.0s  | `race/spectator.py`                                    | Max wait for spectator optional auth        |
+| `HEARTBEAT_INTERVAL` | 30.0s | `handler.py`                                           | Server ping frequency                       |
+| `SEND_TIMEOUT`       | 5.0s  | `handler.py`, `race/manager.py`, `training/manager.py` | Max time for a single send before failure   |
+| Ping timeout (mod)   | 60s   | `websocket.rs`                                         | Client-side ping timeout before reconnect   |
+| Reconnect min delay  | 1s    | `websocket.rs`                                         | Initial reconnect backoff                   |
+| Reconnect max delay  | 30s   | `websocket.rs`                                         | Maximum reconnect backoff cap               |
+| Channel capacity     | 128   | `websocket.rs`                                         | Crossbeam channel buffer for each direction |
+| Message loop sleep   | 10ms  | `websocket.rs`                                         | Polling interval in non-blocking loop       |

@@ -145,14 +145,17 @@ class AppAccessToken:
     expires_at: float  # time.monotonic() timestamp
 
 
+_app_token_cache: AppAccessToken | None = None
+
+
 async def get_app_access_token() -> str:
     """Get a Twitch app access token (client credentials flow).
 
     Cached in memory; refreshes 60s before expiry.
     """
-    cache: AppAccessToken | None = getattr(get_app_access_token, "_cache", None)
-    if cache and time.monotonic() < cache.expires_at - 60:
-        return cache.token
+    global _app_token_cache
+    if _app_token_cache and time.monotonic() < _app_token_cache.expires_at - 60:
+        return _app_token_cache.token
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -168,7 +171,7 @@ async def get_app_access_token() -> str:
         token: str = data["access_token"]
         expires_in: int = data.get("expires_in", 3600)
 
-        get_app_access_token._cache = AppAccessToken(  # type: ignore[attr-defined]
+        _app_token_cache = AppAccessToken(
             token=token,
             expires_at=time.monotonic() + expires_in,
         )
@@ -181,7 +184,8 @@ def invalidate_app_access_token() -> None:
     Call this when the Twitch API returns 401 so the next call to
     get_app_access_token() fetches a fresh token.
     """
-    get_app_access_token._cache = None  # type: ignore[attr-defined]
+    global _app_token_cache
+    _app_token_cache = None
 
 
 # =============================================================================
