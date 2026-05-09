@@ -69,7 +69,9 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         name="ELO Crown",
         description="Granted permanently the first time you reach top 1 ELO.",
         gradient=("#FFE9A8", "#C8A44E"),
-        name_css="font-style: italic; text-shadow: 0 0 4px rgba(168, 139, 92, 0.28);",
+        name_css=(
+            "font-style: italic; font-weight: 600; text-shadow: 0 0 4px rgba(168, 139, 92, 0.28);"
+        ),
         background_css=(
             "radial-gradient(ellipse 60% 100% at 25% 50%,"
             " rgba(200, 164, 78, 0.18), transparent 70%)"
@@ -81,7 +83,9 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         name="Runebearer",
         description="Granted permanently the first time you enter the top 5 ELO.",
         gradient=("#B8C5D6", "#6F87A6"),
-        name_css="font-style: italic; text-shadow: 0 0 5px rgba(184, 197, 214, 0.28);",
+        name_css=(
+            "font-style: italic; font-weight: 600; text-shadow: 0 0 5px rgba(184, 197, 214, 0.28);"
+        ),
         background_css=(
             "radial-gradient(ellipse 60% 100% at 25% 50%,"
             " rgba(184, 197, 214, 0.14), transparent 70%)"
@@ -95,6 +99,7 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         name_css=(
             'font-family: Georgia, "Times New Roman", Times, serif;'
             " font-style: italic;"
+            " font-weight: 600;"
             " letter-spacing: 0.02em;"
             " text-shadow: 0 0 6px rgba(200, 164, 78, 0.35);"
         ),
@@ -108,15 +113,15 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         id="weathered",
         name="Weathered",
         description="Granted to veteran racers as a souvenir of their tenure.",
-        gradient=("#D6DCE0", "#7A8590"),
+        gradient=("#D4A574", "#A06A35"),
         name_css=(
-            "font-weight: 600;"
+            "font-weight: 500;"
             " letter-spacing: 0.02em;"
-            " text-shadow: 0 0 4px rgba(122, 133, 144, 0.28);"
+            " text-shadow: 0 0 4px rgba(160, 106, 53, 0.28);"
         ),
         background_css=(
             "radial-gradient(ellipse 60% 100% at 25% 50%,"
-            " rgba(122, 133, 144, 0.14), transparent 70%)"
+            " rgba(160, 106, 53, 0.14), transparent 70%)"
         ),
         sort_order=35,
     ),
