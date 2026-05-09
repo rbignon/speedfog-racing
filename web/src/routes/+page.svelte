@@ -58,6 +58,22 @@
       .catch(() => (dailyWeek = null));
   });
 
+  // When the active "today" cell's window closes, refetch so the grid
+  // advances to the new daily without requiring a page reload.
+  $effect(() => {
+    if (!dailyWeek) return;
+    const todayCell = dailyWeek.days.find((d) => d.state === "today");
+    if (!todayCell?.ends_at) return;
+    const delay = new Date(todayCell.ends_at).getTime() - Date.now();
+    if (delay <= 0) return;
+    const timer = setTimeout(() => {
+      fetchDailyWeek()
+        .then((week) => (dailyWeek = week))
+        .catch(() => {});
+    }, delay);
+    return () => clearTimeout(timer);
+  });
+
   function getErrorMessage(error: string): string {
     switch (error) {
       case "auth_failed":
