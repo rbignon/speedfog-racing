@@ -61,22 +61,31 @@
       : messagesPublic,
   );
 
+  // System messages (joins, starts, finishes, etc.) should not raise the
+  // unread badge: they are ambient context, not chat the user must read.
+  let participantsNotifyCount = $derived(
+    messagesParticipants.reduce((n, m) => (m.role === "system" ? n : n + 1), 0),
+  );
+  let publicNotifyCount = $derived(
+    messagesPublic.reduce((n, m) => (m.role === "system" ? n : n + 1), 0),
+  );
+
   // When chat history is loaded (initial connect, reconnect, or pull
   // after access unlock), treat all messages as seen so the badge does
   // not jump.
   let lastHistoryVersion = $state(0);
   $effect(() => {
     if (historyVersion !== lastHistoryVersion) {
-      lastSeenParticipants = messagesParticipants.length;
-      lastSeenPublic = messagesPublic.length;
-      lastSeenCount = messagesParticipants.length + messagesPublic.length;
+      lastSeenParticipants = participantsNotifyCount;
+      lastSeenPublic = publicNotifyCount;
+      lastSeenCount = participantsNotifyCount + publicNotifyCount;
       lastHistoryVersion = historyVersion;
     }
   });
 
   // Track unread for collapsed state
   $effect(() => {
-    const total = messagesParticipants.length + messagesPublic.length;
+    const total = participantsNotifyCount + publicNotifyCount;
     if (!collapsed) {
       lastSeenCount = total;
       unreadCount = 0;
@@ -89,10 +98,10 @@
   // Track per-tab unread
   $effect(() => {
     if (layout.effectiveTab === "participants" && !collapsed) {
-      lastSeenParticipants = messagesParticipants.length;
+      lastSeenParticipants = participantsNotifyCount;
       unreadParticipants = 0;
     } else {
-      const diff = messagesParticipants.length - lastSeenParticipants;
+      const diff = participantsNotifyCount - lastSeenParticipants;
       unreadParticipants = diff > 0 ? diff : 0;
     }
   });
@@ -103,10 +112,10 @@
       !collapsed &&
       !layout.showLockedPane
     ) {
-      lastSeenPublic = messagesPublic.length;
+      lastSeenPublic = publicNotifyCount;
       unreadPublic = 0;
     } else {
-      const diff = messagesPublic.length - lastSeenPublic;
+      const diff = publicNotifyCount - lastSeenPublic;
       unreadPublic = diff > 0 ? diff : 0;
     }
   });
