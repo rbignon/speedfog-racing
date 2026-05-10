@@ -311,8 +311,13 @@
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(7, minmax(150px, 1fr));
     gap: 0.5rem;
+    overflow-x: auto;
+    /* overflow-x: auto computes overflow-y to auto too, which would
+       clip the today cell's outer gold glow at the top/bottom edges.
+       Pad so the glow has breathing room before clipping. */
+    padding: 0.75rem 0.5rem;
   }
 
   .cell {
@@ -478,14 +483,9 @@
 
   @media (max-width: 640px) {
     .grid {
-      display: flex;
-      grid-template-columns: none;
-      overflow-x: auto;
       scroll-snap-type: x mandatory;
     }
     .cell {
-      flex: 0 0 auto;
-      min-width: 150px;
       scroll-snap-align: center;
     }
   }
