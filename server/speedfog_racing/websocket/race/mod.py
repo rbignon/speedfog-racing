@@ -265,7 +265,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             # Send zone_update on reconnect (race already running)
             seed = participant.race.seed
             if participant.race.status == RaceStatus.RUNNING and seed and seed.graph_json:
-                zone = participant.current_zone or get_start_node(seed.graph_json)
+                zone = participant.current_zone
                 if zone:
                     await self._send_zone_update(
                         zone,
