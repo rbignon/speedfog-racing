@@ -2084,14 +2084,11 @@ def test_zone_update_content(integration_client, race_with_participants):
 
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth(drain=False)["type"] == "auth_ok"
+        assert mod0.auth()["type"] == "auth_ok"
 
-        # Reconnect to running race sends zone_update for start node, consume it
-        zu_start = mod0.receive_until_type("zone_update")
-        assert zu_start["node_id"] == "start_node"
-        assert zu_start["display_name"] == "Chapel of Anticipation"
-
-        # Transition READY->PLAYING (consumes the connect broadcast + PLAYING broadcast)
+        # Transition READY->PLAYING (server broadcasts a leaderboard_update;
+        # no zone_update is sent at this point: the start node is implicit and
+        # the participant only receives one once they trigger an event_flag).
         mod0.send_status_update(igt_ms=1000, death_count=0)
         mod0.receive_until_type("leaderboard_update")  # READY->PLAYING
 
