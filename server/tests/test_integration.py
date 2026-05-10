@@ -931,11 +931,11 @@ def test_stale_save_rejected_on_status_update(
     )
     assert response.status_code == 200
 
-    # Send status_update with stale IGT (60 seconds)
+    # Send status_update with stale IGT (2 minutes, above MAX_FRESH_IGT_MS)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
-        mod0.send_status_update(igt_ms=60_000, death_count=0)
+        mod0.send_status_update(igt_ms=120_000, death_count=0)
         resp = mod0.receive()
         assert resp["type"] == "error"
         assert "New Game" in resp["message"]
@@ -985,7 +985,7 @@ def test_stale_save_self_heals_on_new_game(
         assert mod0.auth()["type"] == "auth_ok"
 
         # First: stale save rejected
-        mod0.send_status_update(igt_ms=60_000, death_count=0)
+        mod0.send_status_update(igt_ms=120_000, death_count=0)
         resp = mod0.receive()
         assert resp["type"] == "error"
 
@@ -1008,6 +1008,64 @@ def test_stale_save_self_heals_on_new_game(
 
     status = asyncio.run(check_db())
     assert status == ParticipantStatus.PLAYING
+
+
+def test_status_update_out_of_range_igt_silently_dropped(
+    integration_client, race_with_participants, integration_db
+):
+    """A status_update with igt_ms above MAX_IGT_MS must be silently dropped.
+
+    Regression: a player loaded a stale save with absurd IGT. ``clamp_igt`` returned
+    None for the out-of-range value, bypassing the fresh-save gate (which only
+    fired when the value was a valid int). zone_history then got initialized and
+    the participant transitioned to PLAYING; a finish event_flag already set in
+    the loaded save was accepted, granting an unintended finish. The defence is
+    now that ``_handle_status_update`` returns early on ``clamp_igt`` failure, so
+    out-of-range / malformed igt cannot reach the init path.
+    """
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # IGT above MAX_IGT_MS (int4 max ~24.85 days): clamp_igt returns None
+        # and the handler must return silently without initializing zone_history.
+        mod0.send_status_update(igt_ms=3_000_000_000, death_count=0)
+        with pytest.raises(TimeoutError):
+            mod0.receive(timeout=1)
+
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.status, p.zone_history, p.igt_ms
+
+    status, history, igt_ms = asyncio.run(check_db())
+    assert status == ParticipantStatus.READY
+    assert history is None or len(history) == 0
+    assert igt_ms == 0
 
 
 def test_event_flag_ignored_when_participant_not_playing(

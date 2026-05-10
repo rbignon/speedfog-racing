@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL = 30.0  # seconds between pings
 SEND_TIMEOUT = 5.0  # seconds before a send is considered failed
 MOD_AUTH_TIMEOUT = 5.0  # seconds to wait for auth message
-MAX_FRESH_IGT_MS = 15_000  # 15s: fresh save reaches first load screen at ~3-5s
-MAX_IGT_MS = 86_400_000  # 24 hours
+MAX_FRESH_IGT_MS = 60_000  # 60s: fresh save reaches first load screen at ~3-5s, with margin
+MAX_IGT_MS = 2_147_483_647  # PostgreSQL int4 column max (~24.85 days)
 MAX_DEATH_COUNT = 10_000
 MAX_ZONE_HISTORY = 1000  # 1000 event flags allocated per seed
 MSG_RATE_WINDOW = 10.0  # sliding window in seconds
@@ -504,6 +504,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if message_id is not None:
                 msg["message_id"] = message_id
             msg = translate_zone_update(msg, self.locale)
+            logging.info("zone_update sent: %s", msg)
             try:
                 await asyncio.wait_for(
                     self.websocket.send_text(json.dumps(msg)), timeout=SEND_TIMEOUT
@@ -537,9 +538,13 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if not await self._validate_for_status_update(entity):
                 return
 
-            # Gate: reject stale saves on first initialization
             igt_ms_val = clamp_igt(msg.get("igt_ms"))
-            if igt_ms_val is not None and not entity.zone_history and igt_ms_val > MAX_FRESH_IGT_MS:
+
+            if igt_ms_val is None:
+                return
+
+            # Gate: reject stale saves on first initialization
+            if not entity.zone_history and igt_ms_val > MAX_FRESH_IGT_MS:
                 logger.warning(
                     "Rejected stale save: %s igt_ms=%d",
                     self.entity_id,
@@ -548,8 +553,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 await self._send_error("Please start a New Game")
                 return
 
-            if igt_ms_val is not None:
-                self._on_igt_change(entity, igt_ms_val)
+            self._on_igt_change(entity, igt_ms_val)
 
             # Record start node on first status_update.
             # Must happen BEFORE death attribution so current_zone/zone_history exist.
@@ -640,6 +644,14 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
             # Check finish event first
             if flag_id == finish_event:
+                logger.info(
+                    "event_flag: flag_id=%d node_id=%s finished=true igt_ms=%d entity=%s",
+                    flag_id,
+                    node_id,
+                    igt,
+                    self.entity_id,
+                )
+
                 self._on_igt_change(entity, igt)
                 await db.commit()
                 if message_id is not None:

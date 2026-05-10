@@ -76,7 +76,7 @@ After the player is loaded (`MapItemMan != null`), the spawner reads `pointers.i
 
 In that case the spawner **does not return**. It loops back: it waits for `MapItemMan` to become null again (player quit to title) and retries on the next game load. This handles the case where the player loads an old save first, gets bounced, then starts a fresh New Game without the WS connection ever dropping (which would otherwise never re-trigger spawning via `auth_ok`).
 
-`MAX_FRESH_IGT_MS = 15_000` matches the server-side constant in `speedfog_racing/websocket/handler.py`. A fresh New Game reaches the first load screen at roughly 3-5 s IGT, so 15 s leaves a comfortable margin.
+`MAX_FRESH_IGT_MS = 15_000` is the spawner's local threshold. The server-side constant in `speedfog_racing/websocket/handler.py` is `60_000` (60 s): the server gate must tolerate a transient network loss between the player starting a New Game and the first `status_update` reaching the backend, so it allows up to a minute of IGT drift. The mod check fires at game-load time and does not depend on the network, so it stays conservative. A fresh New Game reaches the first load screen at roughly 3-5 s IGT, well under both thresholds.
 
 Covers: player picks the wrong save slot or loads a previous run.
 

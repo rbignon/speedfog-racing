@@ -1613,8 +1613,8 @@ def test_training_stale_save_rejected(training_ws_client, training_session_data)
         ws.receive_json()  # auth_ok
         ws.receive_json()  # race_start
 
-        # Send status_update with stale IGT (60 seconds)
-        ws.send_json({"type": "status_update", "igt_ms": 60_000, "death_count": 0})
+        # Send status_update with stale IGT (2 minutes, above MAX_FRESH_IGT_MS)
+        ws.send_json({"type": "status_update", "igt_ms": 120_000, "death_count": 0})
         resp = ws.receive_json()
         assert resp["type"] == "error"
         assert "New Game" in resp["message"]
@@ -1631,7 +1631,7 @@ def test_training_stale_save_self_heals(training_ws_client, training_session_dat
         ws.receive_json()  # race_start
 
         # Stale save rejected
-        ws.send_json({"type": "status_update", "igt_ms": 60_000, "death_count": 0})
+        ws.send_json({"type": "status_update", "igt_ms": 120_000, "death_count": 0})
         resp = ws.receive_json()
         assert resp["type"] == "error"
 
