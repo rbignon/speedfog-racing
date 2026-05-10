@@ -56,7 +56,7 @@ async def test_cleanup_deletes_old_messages(async_session):
             name="Cleanup Test Race",
             organizer_id=organizer.id,
             status=RaceStatus.FINISHED,
-            finished_at=datetime.now(UTC) - timedelta(hours=25),
+            finished_at=datetime.now(UTC) - timedelta(hours=169),
         )
         db.add(race)
         await db.flush()
