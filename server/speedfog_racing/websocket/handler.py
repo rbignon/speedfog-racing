@@ -504,7 +504,6 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if message_id is not None:
                 msg["message_id"] = message_id
             msg = translate_zone_update(msg, self.locale)
-            logging.info("zone_update sent: %s", msg)
             try:
                 await asyncio.wait_for(
                     self.websocket.send_text(json.dumps(msg)), timeout=SEND_TIMEOUT
@@ -645,9 +644,8 @@ class BaseModHandler(BaseHandler, Generic[T]):
             # Check finish event first
             if flag_id == finish_event:
                 logger.info(
-                    "event_flag: flag_id=%d node_id=%s finished=true igt_ms=%d entity=%s",
+                    "event_flag: flag_id=%d finished=true igt_ms=%d entity=%s",
                     flag_id,
-                    node_id,
                     igt,
                     self.entity_id,
                 )
