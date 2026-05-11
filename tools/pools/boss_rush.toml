@@ -18,6 +18,4 @@ major_bosses = 15
 first_layer_type = ""
 max_parallel_paths = 3
 layers_count = 35
-min_layers = 30
-max_layers = 35
 final_tier = 23

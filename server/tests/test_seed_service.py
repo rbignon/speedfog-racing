@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from speedfog_racing.database import Base
 from speedfog_racing.models import Pool, Race, Seed, SeedStatus, User, UserRole
 from speedfog_racing.services.seed_service import (
+    _normalize_pool_config,
     assign_seed_to_race,
     discard_pool,
     get_available_seed,
@@ -594,3 +595,71 @@ async def test_get_pool_config_reads_from_db(async_db):
 
     missing = await get_pool_config(async_db, "ghost")
     assert missing is None
+
+
+# =============================================================================
+# Normalize Tests (layers_count + legacy min/max_layers compat)
+# =============================================================================
+
+
+def test_normalize_pool_config_uses_layers_count():
+    """New-style configs expose layers_count and drop the legacy range."""
+    out = _normalize_pool_config(
+        {
+            "structure": {"layers_count": 30},
+            "requirements": {"major_bosses": 10},
+        }
+    )
+    assert out["layers_count"] == 30
+    assert "min_layers" not in out
+    assert "max_layers" not in out
+
+
+def test_normalize_pool_config_falls_back_to_max_layers():
+    """Legacy configs without layers_count derive it from max_layers."""
+    out = _normalize_pool_config(
+        {
+            "structure": {"min_layers": 25, "max_layers": 30},
+            "requirements": {"major_bosses": 10},
+        }
+    )
+    assert out["layers_count"] == 30
+
+
+def test_normalize_pool_config_layers_count_overrides_legacy():
+    """When both are present, layers_count wins (legacy is ignored)."""
+    out = _normalize_pool_config(
+        {
+            "structure": {"layers_count": 35, "min_layers": 25, "max_layers": 30},
+            "requirements": {"major_bosses": 10},
+        }
+    )
+    assert out["layers_count"] == 35
+
+
+def test_normalize_pool_config_major_boss_ratio_uses_layers_count():
+    """major_boss_ratio bucket is computed from major_bosses / layers_count."""
+    high = _normalize_pool_config(
+        {"structure": {"layers_count": 20}, "requirements": {"major_bosses": 8}}
+    )
+    medium = _normalize_pool_config(
+        {"structure": {"layers_count": 30}, "requirements": {"major_bosses": 8}}
+    )
+    low = _normalize_pool_config(
+        {"structure": {"layers_count": 100}, "requirements": {"major_bosses": 10}}
+    )
+    assert high["major_boss_ratio"] == "High"  # 0.40
+    assert medium["major_boss_ratio"] == "Medium"  # 0.27
+    assert low["major_boss_ratio"] == "Low"  # 0.10
+
+
+def test_pool_config_schema_derives_layers_count_from_legacy_json():
+    """Stored Pool.config rows from before the refactor still populate layers_count."""
+    from speedfog_racing.schemas import PoolConfig
+
+    cfg = PoolConfig.model_validate({"min_layers": 25, "max_layers": 30})
+    assert cfg.layers_count == 30
+
+    # New-style rows pass through unchanged.
+    cfg2 = PoolConfig.model_validate({"layers_count": 35})
+    assert cfg2.layers_count == 35

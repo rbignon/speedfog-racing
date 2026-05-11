@@ -15,8 +15,7 @@ mini_dungeons = 5
 major_bosses = 10
 
 [structure]
-min_layers = 25
-max_layers = 30
+layers_count = 30
 final_tier = 18
 first_layer_type = "legacy_dungeon"
 

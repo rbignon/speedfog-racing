@@ -38,16 +38,10 @@
     <p class="description">{poolConfig.description}</p>
   {/if}
   <div class="info-grid">
-    {#if poolConfig.min_layers != null && poolConfig.max_layers != null}
+    {#if poolConfig.layers_count != null}
       <div class="info-item">
         <span class="label">Depth</span>
-        <span class="value">
-          {#if poolConfig.min_layers === poolConfig.max_layers}
-            {poolConfig.min_layers}
-          {:else}
-            {poolConfig.min_layers}–{poolConfig.max_layers}
-          {/if}
-        </span>
+        <span class="value">{poolConfig.layers_count}</span>
       </div>
     {/if}
     {#if poolConfig.final_tier != null}

@@ -18,8 +18,7 @@ mini_dungeons = 2
 major_bosses = 4
 
 [structure]
-min_layers = 10
-max_layers = 15
+layers_count = 15
 final_tier = 13
 
 [structure.final_boss_candidates]

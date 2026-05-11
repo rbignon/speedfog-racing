@@ -18,8 +18,7 @@ mini_dungeons = 3
 major_bosses = 12
 
 [structure]
-min_layers = 25
-max_layers = 30
+layers_count = 30
 max_parallel_paths = 3
 final_tier = 28
 tier_curve = "power"

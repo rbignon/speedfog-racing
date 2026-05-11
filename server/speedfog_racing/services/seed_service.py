@@ -126,12 +126,15 @@ def _normalize_pool_config(data: dict[str, Any]) -> dict[str, Any]:
         if armor_count:
             care_package_items.append(f"{armor_count} Armor pieces")
 
-    # Compute major boss density from fixed count + layer range
+    # Compute major boss density from fixed count + layer count.
+    # Accept legacy min_layers/max_layers (pre-speedfog refactor) as a fallback,
+    # using the upper bound to match the original "target depth" semantic.
     major_bosses = requirements.get("major_bosses")
-    min_layers = structure.get("min_layers")
-    max_layers = structure.get("max_layers")
-    if major_bosses and min_layers and max_layers:
-        mbr = major_bosses / ((min_layers + max_layers) / 2)
+    layers_count = structure.get("layers_count")
+    if layers_count is None:
+        layers_count = structure.get("max_layers")
+    if major_bosses and layers_count:
+        mbr = major_bosses / layers_count
         major_boss_label = "High" if mbr >= 0.35 else ("Medium" if mbr >= 0.20 else "Low")
     else:
         major_boss_label = None
@@ -156,8 +159,7 @@ def _normalize_pool_config(data: dict[str, Any]) -> dict[str, Any]:
         "estimated_duration": display.get("estimated_duration"),
         "description": display.get("description") or None,
         "final_tier": structure.get("final_tier"),
-        "min_layers": structure.get("min_layers"),
-        "max_layers": structure.get("max_layers"),
+        "layers_count": layers_count,
         "starting_runes": starting_runes,
         "starting_upgrades": starting_upgrades or None,
         "starting_items": starting_items or None,

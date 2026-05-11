@@ -376,8 +376,7 @@ class PoolConfig(BaseModel):
     sort_order: int = 99
     estimated_duration: str | None = None
     description: str | None = None
-    min_layers: int | None = None
-    max_layers: int | None = None
+    layers_count: int | None = None
     final_tier: int | None = None
     starting_runes: int | None = None
     starting_upgrades: list[str] | None = None
@@ -395,6 +394,19 @@ class PoolConfig(BaseModel):
     nerf_malenia: bool | None = None
     allcraft: bool | None = None
     sentry_torch_shop: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_layers_count_from_legacy(cls, data: Any) -> Any:
+        # Pool.config rows persisted before the speedfog layers_count refactor
+        # carry min_layers/max_layers instead. Derive layers_count from the
+        # upper bound so the field is populated until the next pool scan
+        # rewrites the JSON in-place.
+        if isinstance(data, dict) and data.get("layers_count") is None:
+            legacy_max = data.get("max_layers")
+            if legacy_max is not None:
+                data = {**data, "layers_count": legacy_max}
+        return data
 
 
 class PendingInviteResponse(BaseModel):

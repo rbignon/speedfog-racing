@@ -101,8 +101,7 @@ export interface PoolConfig {
   sort_order: number;
   estimated_duration: string | null;
   description: string | null;
-  min_layers: number | null;
-  max_layers: number | null;
+  layers_count: number | null;
   final_tier: number | null;
   starting_runes: number | null;
   starting_upgrades: string[] | null;

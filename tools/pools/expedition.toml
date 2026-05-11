@@ -15,8 +15,7 @@ mini_dungeons = 15
 major_bosses = 15
 
 [structure]
-min_layers = 90
-max_layers = 100
+layers_count = 100
 max_parallel_paths = 2
 max_exits = 2
 max_entrances = 2
