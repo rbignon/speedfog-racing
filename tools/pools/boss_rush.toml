@@ -10,13 +10,14 @@ description = "Nothing but bosses the whole run"
 [requirements]
 allowed_types = ["boss_arena", "major_boss"]
 legacy_dungeons = 0
-bosses = 5
+bosses = 10
 mini_dungeons = 0
-major_bosses = 10
-
+major_bosses = 15
 
 [structure]
 first_layer_type = ""
+max_parallel_paths = 3
+layers_count = 35
 min_layers = 30
 max_layers = 35
 final_tier = 23
