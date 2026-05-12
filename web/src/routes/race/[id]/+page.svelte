@@ -1103,7 +1103,7 @@
           <div class="info-item">
             <span class="label">Participants</span>
             <span class="value"
-              >{mergedParticipants.length}{#if liveOpenRegistration && liveMaxParticipants}
+              >{mergedParticipants.length}{#if liveOpenRegistration && liveMaxParticipants && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow))}
                 /{liveMaxParticipants}{/if}</span
             >
           </div>
