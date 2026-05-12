@@ -1,7 +1,8 @@
 import { fireEvent, render } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
-import type { DailyWeekResponse } from "$lib/api";
+import type { DailyWeekDay, DailyWeekResponse } from "$lib/api";
+import { cellStrip } from "$lib/daily";
 
 vi.mock("$lib/api", async () => {
   const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
@@ -38,7 +39,9 @@ const mockWeek: DailyWeekResponse = {
         total_starters: 3,
         igt_ms: 2_700_000,
         death_count: 1,
+        qualifies: true,
       },
+      freeze_protected: false,
     },
     {
       weekday: 1,
@@ -53,6 +56,7 @@ const mockWeek: DailyWeekResponse = {
       participants_count: 0,
       podium: [],
       my_result: null,
+      freeze_protected: false,
     },
     {
       weekday: 2,
@@ -67,6 +71,7 @@ const mockWeek: DailyWeekResponse = {
       participants_count: 2,
       podium: [],
       my_result: null,
+      freeze_protected: false,
     },
     {
       weekday: 3,
@@ -81,6 +86,7 @@ const mockWeek: DailyWeekResponse = {
       participants_count: 0,
       podium: [],
       my_result: null,
+      freeze_protected: false,
     },
     {
       weekday: 4,
@@ -95,6 +101,7 @@ const mockWeek: DailyWeekResponse = {
       participants_count: 0,
       podium: [],
       my_result: null,
+      freeze_protected: false,
     },
     {
       weekday: 5,
@@ -109,6 +116,7 @@ const mockWeek: DailyWeekResponse = {
       participants_count: 0,
       podium: [],
       my_result: null,
+      freeze_protected: false,
     },
     {
       weekday: 6,
@@ -123,9 +131,11 @@ const mockWeek: DailyWeekResponse = {
       participants_count: 0,
       podium: [],
       my_result: null,
+      freeze_protected: false,
     },
   ],
   has_earlier: true,
+  my_streak: null,
 };
 
 describe("DailyWeekGrid", () => {
@@ -173,6 +183,7 @@ describe("DailyWeekGrid", () => {
                 total_starters: 3,
                 igt_ms: null,
                 death_count: 2,
+                qualifies: false,
               },
             }
           : d,
@@ -311,6 +322,7 @@ describe("DailyWeekGrid", () => {
                 total_starters: 0,
                 igt_ms: null,
                 death_count: 0,
+                qualifies: false,
               },
             }
           : d,
@@ -337,6 +349,7 @@ describe("DailyWeekGrid", () => {
                 total_starters: 17,
                 igt_ms: 2_468_000,
                 death_count: 0,
+                qualifies: true,
               },
             }
           : d,
@@ -368,6 +381,7 @@ describe("DailyWeekGrid", () => {
                 total_starters: 0,
                 igt_ms: null,
                 death_count: 0,
+                qualifies: false,
               },
             }
           : d,
@@ -394,6 +408,7 @@ describe("DailyWeekGrid", () => {
                 total_starters: 0,
                 igt_ms: null,
                 death_count: 0,
+                qualifies: false,
               },
             }
           : d,
@@ -686,5 +701,78 @@ describe("DailyWeekGrid", () => {
       container.querySelector('[data-cell-date="2026-05-06"]'),
     ).not.toBeNull();
     expect(container.querySelector('[data-cell-date="2026-04-20"]')).toBeNull();
+  });
+});
+
+describe("cellStrip", () => {
+  function makeDay(overrides: Partial<DailyWeekDay>): DailyWeekDay {
+    return {
+      weekday: 4,
+      date: "2026-05-09",
+      state: "past",
+      pool_name: "standard",
+      pool_display_name: "Standard",
+      race_id: "11111111-1111-1111-1111-111111111111",
+      started_at: "2026-05-09T08:00:00Z",
+      ends_at: "2026-05-10T08:00:00Z",
+      starters_count: 3,
+      participants_count: 5,
+      podium: [],
+      my_result: null,
+      freeze_protected: false,
+      ...overrides,
+    };
+  }
+
+  it("returns freeze label on a past day flagged freeze_protected", () => {
+    const day = makeDay({ freeze_protected: true });
+    expect(cellStrip(day, null)).toEqual({
+      kind: "label",
+      text: "❄️ Freeze",
+      variant: "freeze",
+    });
+  });
+
+  it("returns dnf strip on past day where viewer abandoned with qualifies", () => {
+    const day = makeDay({
+      state: "past",
+      my_result: {
+        status: "abandoned",
+        placement: null,
+        total_starters: 4,
+        igt_ms: null,
+        death_count: 2,
+        qualifies: true,
+      },
+    });
+    expect(cellStrip(day, null)).toEqual({ kind: "dnf", igt: null });
+  });
+
+  it("returns Abandoned label on past day where viewer abandoned without qualifying", () => {
+    const day = makeDay({
+      state: "past",
+      my_result: {
+        status: "abandoned",
+        placement: null,
+        total_starters: 4,
+        igt_ms: null,
+        death_count: 0,
+        qualifies: false,
+      },
+    });
+    expect(cellStrip(day, null)).toEqual({
+      kind: "label",
+      text: "Abandoned",
+      variant: "abandoned",
+    });
+  });
+
+  it("returns PLAY NOW on today for an anonymous viewer", () => {
+    const day = makeDay({ state: "today", my_result: null });
+    expect(cellStrip(day, null)).toEqual({
+      kind: "label",
+      text: "PLAY NOW",
+      variant: "play-now",
+    });
   });
 });

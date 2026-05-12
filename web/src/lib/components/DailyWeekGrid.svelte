@@ -2,6 +2,7 @@
   import { onMount, untrack } from "svelte";
   import type { DailyWeekDay, DailyWeekResponse } from "$lib/api";
   import { fetchDailyWeek } from "$lib/api";
+  import { cellStrip } from "$lib/daily";
   import { formatIgt } from "$lib/utils/training";
 
   interface Props {
@@ -119,56 +120,6 @@
     return `${seconds}s`;
   }
 
-  type CellStrip =
-    | {
-        kind: "label";
-        text: string;
-        variant: "play-now" | "in-progress" | "abandoned";
-      }
-    | {
-        kind: "finished";
-        score: string;
-      }
-    | null;
-
-  function finishedScore(day: DailyWeekDay): string {
-    const r = day.my_result;
-    if (r && r.status === "finished" && r.placement && r.igt_ms != null) {
-      return `${r.placement}/${r.total_starters} · ${formatIgt(r.igt_ms)}`;
-    }
-    return "Done";
-  }
-
-  function cellStrip(day: DailyWeekDay): CellStrip {
-    if (day.state === "today") {
-      const r = day.my_result;
-      if (!r) {
-        // The today cell can also be the selected cell when the viewer is
-        // on /daily/[today]. The "Play now" CTA is redundant in that case
-        // since clicking it would take them to the page they're already on.
-        if (day.date === selectedDate) return null;
-        return { kind: "label", text: "Play now", variant: "play-now" };
-      }
-      if (r.status === "finished")
-        return { kind: "finished", score: finishedScore(day) };
-      if (r.status === "abandoned")
-        return { kind: "label", text: "Abandoned", variant: "abandoned" };
-      // registered, ready, playing
-      return { kind: "label", text: "In progress", variant: "in-progress" };
-    }
-    if (day.state === "past") {
-      const r = day.my_result;
-      if (!r) return null;
-      if (r.status === "finished")
-        return { kind: "finished", score: finishedScore(day) };
-      if (r.status === "playing")
-        return { kind: "label", text: "In progress", variant: "in-progress" };
-      // abandoned, registered, ready (signed up but never played)
-      return { kind: "label", text: "Abandoned", variant: "abandoned" };
-    }
-    return null;
-  }
-
   function hrefFor(day: DailyWeekDay): string | null {
     if (day.state === "today") return "/daily";
     if (day.state === "past") return `/daily/${day.date}`;
@@ -280,13 +231,20 @@
               {/if}
             {/if}
           </div>
-          {@const strip = cellStrip(day)}
+          {@const strip = cellStrip(day, selectedDate)}
           {#if strip?.kind === "label"}
             <span class="strip strip-{strip.variant}">{strip.text}</span>
           {:else if strip?.kind === "finished"}
             <span class="strip strip-finished">
               <span class="strip-icon" aria-hidden="true">✓</span>
               <span class="strip-score">{strip.score}</span>
+            </span>
+          {:else if strip?.kind === "dnf"}
+            <span class="strip strip-finished">
+              <span class="strip-icon" aria-hidden="true">✓</span>
+              <span class="strip-score"
+                >{strip.igt ? `DNF · ${strip.igt}` : "DNF"}</span
+              >
             </span>
           {:else}
             <span class="strip strip-placeholder" aria-hidden="true"
@@ -464,6 +422,10 @@
   .strip-abandoned {
     background: rgba(107, 114, 128, 0.18);
     color: var(--color-text-disabled);
+  }
+  .strip-freeze {
+    background: rgba(59, 130, 246, 0.18);
+    color: #3b82f6;
   }
   .strip-placeholder {
     visibility: hidden;

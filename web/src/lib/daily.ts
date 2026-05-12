@@ -14,6 +14,7 @@ import type {
   RaceDetail,
 } from "$lib/api";
 import { formatPoolName } from "$lib/utils/format";
+import { formatIgt } from "$lib/utils/training";
 import type { WsParticipant } from "$lib/websocket";
 
 /** Build the archive route for a given rotation date (YYYY-MM-DD). */
@@ -152,4 +153,75 @@ function buildLiveMyResult(
     death_count: me.death_count,
     qualifies,
   };
+}
+
+/**
+ * Bottom-of-cell strip descriptor for ``DailyWeekGrid``. Kept as a pure
+ * helper so it can be tested without mounting the component.
+ *
+ * ``selectedDate`` suppresses the redundant "Play now" CTA when the today
+ * cell is also the currently-selected one (the viewer is already on
+ * ``/daily/[today]``).
+ */
+export type CellStrip =
+  | {
+      kind: "label";
+      text: string;
+      variant: "play-now" | "in-progress" | "abandoned" | "freeze";
+    }
+  | { kind: "finished"; score: string }
+  | { kind: "dnf"; igt: string | null }
+  | null;
+
+export function cellStrip(
+  day: DailyWeekDay,
+  selectedDate: string | null | undefined,
+): CellStrip {
+  if (day.freeze_protected) {
+    return { kind: "label", text: "❄️ Freeze", variant: "freeze" };
+  }
+  if (day.state === "today") {
+    const r = day.my_result;
+    if (!r) {
+      if (day.date === selectedDate) return null;
+      return { kind: "label", text: "PLAY NOW", variant: "play-now" };
+    }
+    if (r.status === "finished")
+      return { kind: "finished", score: finishedScore(day) };
+    if (r.status === "abandoned" && r.qualifies) {
+      return {
+        kind: "dnf",
+        igt: r.igt_ms != null ? formatIgt(r.igt_ms) : null,
+      };
+    }
+    if (r.status === "abandoned")
+      return { kind: "label", text: "Abandoned", variant: "abandoned" };
+    // registered, ready, playing
+    return { kind: "label", text: "In progress", variant: "in-progress" };
+  }
+  if (day.state === "past") {
+    const r = day.my_result;
+    if (!r) return null;
+    if (r.status === "finished")
+      return { kind: "finished", score: finishedScore(day) };
+    if (r.status === "abandoned" && r.qualifies) {
+      return {
+        kind: "dnf",
+        igt: r.igt_ms != null ? formatIgt(r.igt_ms) : null,
+      };
+    }
+    if (r.status === "playing")
+      return { kind: "label", text: "In progress", variant: "in-progress" };
+    // abandoned (without qualifying), registered, ready
+    return { kind: "label", text: "Abandoned", variant: "abandoned" };
+  }
+  return null;
+}
+
+function finishedScore(day: DailyWeekDay): string {
+  const r = day.my_result;
+  if (r && r.status === "finished" && r.placement && r.igt_ms != null) {
+    return `${r.placement}/${r.total_starters} · ${formatIgt(r.igt_ms)}`;
+  }
+  return "Done";
 }
