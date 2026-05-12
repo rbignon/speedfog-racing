@@ -173,6 +173,14 @@ class UserStatsWeekly(BaseModel):
     capped: bool
 
 
+class UserDailyStreakStats(BaseModel):
+    """Public-facing snapshot of a user's daily-seed streak state."""
+
+    current: int
+    best: int
+    freeze_count: int
+
+
 class UserStatsResponse(BaseModel):
     """Aggregated user statistics."""
 
@@ -182,6 +190,7 @@ class UserStatsResponse(BaseModel):
     organized_count: int
     casted_count: int
     weekly: UserStatsWeekly
+    daily_streak: UserDailyStreakStats
 
 
 class PoolTypeStatsResponse(BaseModel):
@@ -484,6 +493,7 @@ class DailyMyResult(BaseModel):
     total_starters: int
     igt_ms: int | None  # only when status == FINISHED
     death_count: int
+    qualifies: bool  # True iff len(zone_history) >= 2 on the participant row
 
 
 class DailyWeekDay(BaseModel):
@@ -501,6 +511,7 @@ class DailyWeekDay(BaseModel):
     participants_count: int  # all sign-ups including no-shows; for "today" social proof
     podium: list[DailyPodiumEntry]
     my_result: DailyMyResult | None
+    freeze_protected: bool = False
 
 
 class DailyWeekResponse(BaseModel):
@@ -510,6 +521,7 @@ class DailyWeekResponse(BaseModel):
     today: date
     days: list[DailyWeekDay]
     has_earlier: bool
+    my_streak: UserDailyStreakStats | None = None
 
 
 class InviteInfoResponse(BaseModel):
