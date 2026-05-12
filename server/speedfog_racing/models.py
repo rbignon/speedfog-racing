@@ -111,6 +111,16 @@ class User(Base):
     equipped_badge_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     equipped_name_template_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     equipped_phantom_skin_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    daily_current_streak: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    daily_best_streak: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    daily_freeze_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    daily_last_qualifying_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # Relationships
     organized_races: Mapped[list["Race"]] = relationship(back_populates="organizer")
@@ -322,6 +332,29 @@ class Participant(Base):
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="participants")
     user: Mapped["User"] = relationship(back_populates="participations")
+
+
+class DailyStreakFreeze(Base):
+    """One row per freeze-protected daily date for a user.
+
+    Written by the daily-close evaluator and by the backfill when a freeze
+    is consumed to skip a missed day. Read by ``/api/daily/week`` to
+    decorate cells with the ``freeze`` strip variant.
+    """
+
+    __tablename__ = "daily_streak_freezes"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    daily_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    consumed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship()
 
 
 class FeedbackSource(enum.Enum):
