@@ -88,6 +88,20 @@ class User(Base):
     """User account linked to Twitch."""
 
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint(
+            "daily_freeze_count >= 0 AND daily_freeze_count <= 2",
+            name="ck_users_daily_freeze_count_range",
+        ),
+        CheckConstraint(
+            "daily_current_streak >= 0",
+            name="ck_users_daily_current_streak_nonneg",
+        ),
+        CheckConstraint(
+            "daily_best_streak >= daily_current_streak",
+            name="ck_users_daily_best_ge_current",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     twitch_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)

@@ -81,17 +81,14 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("user_id", "daily_date"),
     )
-    op.create_index(
-        "ix_daily_streak_freezes_user_id",
-        "daily_streak_freezes",
-        ["user_id"],
-    )
 
-    # Backfill streak state from historical participations (added in Task 3).
+    # Backfill of historical streak state happens in a follow-up data
+    # migration that runs the synchronous walk over participations.
+    # Kept separate from the schema migration so this revision applies
+    # cleanly even before the streak service module exists.
 
 
 def downgrade() -> None:
-    op.drop_index("ix_daily_streak_freezes_user_id", table_name="daily_streak_freezes")
     op.drop_table("daily_streak_freezes")
 
     op.drop_constraint("ck_users_daily_best_ge_current", "users", type_="check")
