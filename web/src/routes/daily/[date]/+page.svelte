@@ -41,6 +41,7 @@
   import ShareButtons from "$lib/components/ShareButtons.svelte";
   import ChatSidebar from "$lib/components/ChatSidebar.svelte";
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
+  import StreakIndicator from "$lib/components/StreakIndicator.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import DownloadModal from "$lib/components/DownloadModal.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
@@ -473,6 +474,10 @@
       </header>
 
       {#if liveWeek}
+        <div class="daily-seed-header">
+          <h2 class="daily-seed-title">Daily Seed</h2>
+          <StreakIndicator myStreak={liveWeek.my_streak} />
+        </div>
         <DailyWeekGrid
           week={liveWeek}
           variant="daily-detail"
@@ -631,6 +636,13 @@
 {/if}
 
 <style>
+  .daily-seed-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
   .dag-view-toggle {
     display: flex;
     gap: 0.25rem;

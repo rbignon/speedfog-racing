@@ -231,7 +231,11 @@
               {/if}
             {/if}
           </div>
-          {@const strip = cellStrip(day, selectedDate)}
+          {@const strip = cellStrip(
+            day,
+            selectedDate,
+            displayedWeek.my_streak?.current ?? 0,
+          )}
           {#if strip?.kind === "label"}
             <span class="strip strip-{strip.variant}">{strip.text}</span>
           {:else if strip?.kind === "finished"}

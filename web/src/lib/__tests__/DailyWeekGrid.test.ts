@@ -775,4 +775,22 @@ describe("cellStrip", () => {
       variant: "play-now",
     });
   });
+
+  it("today cell shows KEEP STREAK when viewer has an active streak", () => {
+    const day = makeDay({ state: "today", my_result: null });
+    expect(cellStrip(day, null, 7)).toEqual({
+      kind: "label",
+      text: "KEEP STREAK",
+      variant: "play-now",
+    });
+  });
+
+  it("today cell stays PLAY NOW when viewer has no streak", () => {
+    const day = makeDay({ state: "today", my_result: null });
+    expect(cellStrip(day, null, 0)).toEqual({
+      kind: "label",
+      text: "PLAY NOW",
+      variant: "play-now",
+    });
+  });
 });

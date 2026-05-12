@@ -176,6 +176,7 @@ export type CellStrip =
 export function cellStrip(
   day: DailyWeekDay,
   selectedDate: string | null | undefined,
+  currentStreak: number = 0,
 ): CellStrip {
   if (day.freeze_protected) {
     return { kind: "label", text: "❄️ Freeze", variant: "freeze" };
@@ -184,7 +185,8 @@ export function cellStrip(
     const r = day.my_result;
     if (!r) {
       if (day.date === selectedDate) return null;
-      return { kind: "label", text: "PLAY NOW", variant: "play-now" };
+      const text = currentStreak > 0 ? "KEEP STREAK" : "PLAY NOW";
+      return { kind: "label", text, variant: "play-now" };
     }
     if (r.status === "finished")
       return { kind: "finished", score: finishedScore(day) };
