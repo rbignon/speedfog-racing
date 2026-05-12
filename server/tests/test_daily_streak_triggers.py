@@ -347,3 +347,130 @@ async def test_update_b_idempotent_on_rerun(streak_async_session) -> None:
             .all()
         )
         assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_reroll_rolls_back_streak_for_today_qualifiers(streak_async_session) -> None:
+    """After a reroll wipes zone_history for the current daily, the
+    streak service re-derives state from scratch. A user whose only
+    qualifying participation was today's wiped daily ends with
+    current_streak = 0 but best_streak preserved.
+    """
+    from datetime import date
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+    from speedfog_racing.services.daily_streak_service import (
+        rollback_streak_for_reroll,
+    )
+
+    today = date(2026, 5, 12)
+    async with streak_async_session() as db:
+        user = User(
+            twitch_id="rr1",
+            twitch_username="rr1",
+            daily_current_streak=1,
+            daily_best_streak=1,
+            daily_freeze_count=0,
+            daily_last_qualifying_date=today,
+        )
+        db.add(user)
+        await db.flush()
+        race = Race(
+            name="Daily Seed - 2026-05-12",
+            organizer_id=user.id,
+            daily_date=today,
+            exclude_from_elo=True,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.flush()
+        # Simulating post-reroll: the participant row is back to REGISTERED
+        # with zone_history wiped.
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.REGISTERED,
+            zone_history=None,
+        )
+        db.add(participant)
+        await db.commit()
+
+        # Mirror production: race is loaded with participants + user eager.
+        race = (
+            await db.execute(
+                select(Race)
+                .where(Race.id == race.id)
+                .options(selectinload(Race.participants).selectinload(Participant.user))
+            )
+        ).scalar_one()
+
+        await rollback_streak_for_reroll(db, race, today=today)
+        await db.commit()
+
+        await db.refresh(user)
+        assert user.daily_current_streak == 0
+        assert user.daily_best_streak == 1  # high water mark preserved
+        assert user.daily_last_qualifying_date is None
+
+
+@pytest.mark.asyncio
+async def test_reroll_rollback_is_noop_for_non_daily_race(streak_async_session) -> None:
+    """A reroll on a non-daily race must not touch streak state."""
+    from datetime import date
+
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+    from speedfog_racing.services.daily_streak_service import (
+        rollback_streak_for_reroll,
+    )
+
+    async with streak_async_session() as db:
+        user = User(
+            twitch_id="rr2",
+            twitch_username="rr2",
+            daily_current_streak=5,
+            daily_best_streak=5,
+            daily_freeze_count=1,
+            daily_last_qualifying_date=date(2026, 5, 11),
+        )
+        db.add(user)
+        await db.flush()
+        race = Race(
+            name="Some race",
+            organizer_id=user.id,
+            daily_date=None,
+            exclude_from_elo=False,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.REGISTERED,
+            zone_history=None,
+        )
+        db.add(participant)
+        await db.commit()
+
+        await rollback_streak_for_reroll(db, race, today=date(2026, 5, 12))
+        await db.commit()
+        await db.refresh(user)
+        assert user.daily_current_streak == 5
+        assert user.daily_best_streak == 5
+        assert user.daily_freeze_count == 1
+        assert user.daily_last_qualifying_date == date(2026, 5, 11)

@@ -1521,6 +1521,15 @@ async def reroll_seed(
             # ``{}`` server_default; sort_leaderboard reads it for gap math.
             p.layer_entry_igts = {}
 
+        # Re-derive streak state for any user who had qualified for this
+        # daily before the reroll: their qualifying zone_history has just
+        # been wiped above, so the streak service must roll back to match.
+        from speedfog_racing.services.daily_streak_service import (
+            rollback_streak_for_reroll,
+        )
+
+        await rollback_streak_for_reroll(db, race)
+
     # Reroll always announces in the participants chat. The daily page
     # surfaces that channel to anyone with a participant row, so affected
     # players see the message even though spectators never read it.

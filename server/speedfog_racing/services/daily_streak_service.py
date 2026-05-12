@@ -22,7 +22,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
-    from speedfog_racing.models import Participant
+    from speedfog_racing.models import Participant, Race
 
 FREEZE_CAP = 2
 FREEZE_GRANT_PERIOD = 7
@@ -283,3 +283,41 @@ async def apply_close_day_for_all_users(db: AsyncSession, *, missed: date) -> in
         changed += 1
     await db.flush()
     return changed
+
+
+async def rollback_streak_for_reroll(
+    db: AsyncSession, race: Race, *, today: date | None = None
+) -> None:
+    """After a daily reroll wipes participants' zone_history, re-derive
+    the streak state of any user who had qualified for ``race.daily_date``
+    before the reroll. Uses ``backfill_user`` for the recomputation so we
+    do not maintain a separate inverse path.
+
+    ``best_streak`` is treated as a high water mark and preserved across
+    the rollback: a reroll undoes today's progress but never erases a
+    user's all-time best.
+
+    No-op for non-daily races. Caller is responsible for committing.
+
+    ``today`` is forwarded to ``backfill_user`` for deterministic test
+    behavior; production callers pass ``None`` so the helper uses the
+    real rotation date.
+    """
+    from speedfog_racing.models import User
+
+    if race.daily_date is None:
+        return
+
+    affected = [
+        (p.user_id, p.user.daily_best_streak)
+        for p in race.participants
+        if p.user is not None and p.user.daily_last_qualifying_date == race.daily_date
+    ]
+    for user_id, prior_best in affected:
+        await backfill_user(db, user_id, today=today)
+        # Re-derivation starts from zero, which would discard the user's
+        # all-time best. Restore it as a high water mark.
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one()
+        if user.daily_best_streak < prior_best:
+            user.daily_best_streak = prior_best
+    await db.flush()
