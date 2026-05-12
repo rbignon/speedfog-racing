@@ -107,13 +107,10 @@ async def test_daily_streak_freeze_duplicate_pk_rejected(streak_async_session) -
 
 
 @pytest.mark.asyncio
-async def test_backfill_computes_streak_from_participations(
-    streak_async_session,
-) -> None:
-    """One user qualifies on day 1..7 (freeze granted), misses day 8
-    (freeze absorbed), qualifies day 9. Expected final state:
-    current=8, best=8, freezes=0, last_qualifying=day9, one freeze row
-    for day 8.
+async def test_backfill_computes_streak_from_participations(streak_async_session) -> None:
+    """Walk a 9-day window with one freeze-absorbed miss, ending the day
+    before ``today``. Pinning ``today`` keeps the walk to a 9-day span
+    instead of dragging the cursor to the real wall clock.
     """
     from speedfog_racing.models import (
         DailyStreakFreeze,
@@ -129,11 +126,10 @@ async def test_backfill_computes_streak_from_participations(
         user = User(twitch_id="bf1", twitch_username="bf1")
         db.add(user)
         await db.flush()
-        # Construct 9 daily races; user qualifies on 1..7 and 9, misses 8.
         for i in range(1, 10):
             d = date(2026, 1, i)
             race = Race(
-                name=f"Daily Seed - 2026-01-{i:02d}",
+                name=f"Daily Seed - {d.isoformat()}",
                 organizer_id=user.id,
                 daily_date=d,
                 exclude_from_elo=True,
@@ -154,7 +150,8 @@ async def test_backfill_computes_streak_from_participations(
                 db.add(participant)
         await db.commit()
 
-        await backfill_user(db, user.id)
+        # Pin today to 2026-01-10 so the walk covers exactly days 1..9.
+        await backfill_user(db, user.id, today=date(2026, 1, 10))
         await db.commit()
         await db.refresh(user)
 
@@ -173,3 +170,73 @@ async def test_backfill_computes_streak_from_participations(
             .all()
         )
         assert [r.daily_date for r in rows] == [date(2026, 1, 8)]
+
+
+@pytest.mark.asyncio
+async def test_backfill_long_gap_after_history_breaks_streak(
+    streak_async_session,
+) -> None:
+    """A user who qualified for days 1..3 and never came back has streak 0
+    after walking forward to a much later ``today``: their 2-freeze buffer
+    is exhausted within days 4-5, then no freezes left and all subsequent
+    misses cap the streak at 0. ``best_streak`` retains the high water
+    mark of 3.
+    """
+    from speedfog_racing.models import (
+        DailyStreakFreeze,
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+    from speedfog_racing.services.daily_streak_service import backfill_user
+
+    async with streak_async_session() as db:
+        user = User(twitch_id="bf2", twitch_username="bf2")
+        db.add(user)
+        await db.flush()
+        for i in range(1, 4):
+            d = date(2026, 1, i)
+            race = Race(
+                name=f"Daily Seed - {d.isoformat()}",
+                organizer_id=user.id,
+                daily_date=d,
+                exclude_from_elo=True,
+                status=RaceStatus.FINISHED,
+            )
+            db.add(race)
+            await db.flush()
+            participant = Participant(
+                race_id=race.id,
+                user_id=user.id,
+                status=ParticipantStatus.FINISHED,
+                zone_history=[
+                    {"node_id": "start", "igt_ms": 0, "type": "fog"},
+                    {"node_id": "n2", "igt_ms": 1000, "type": "fog"},
+                ],
+            )
+            db.add(participant)
+        await db.commit()
+
+        await backfill_user(db, user.id, today=date(2026, 5, 12))
+        await db.commit()
+        await db.refresh(user)
+
+        # Never reached day 7, so no freezes were granted in the first place.
+        assert user.daily_freeze_count == 0
+        # First miss (day 4) breaks the streak immediately (0 freezes available).
+        assert user.daily_current_streak == 0
+        assert user.daily_best_streak == 3
+        assert user.daily_last_qualifying_date == date(2026, 1, 3)
+
+        rows = (
+            (
+                await db.execute(
+                    select(DailyStreakFreeze).where(DailyStreakFreeze.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == []

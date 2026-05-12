@@ -105,18 +105,20 @@ def walk_history(
     return state, frozen_dates
 
 
-async def backfill_user(db: AsyncSession, user_id: UUID) -> None:
+async def backfill_user(db: AsyncSession, user_id: UUID, *, today: date | None = None) -> None:
     """Recompute the user's streak state from participation history.
 
-    Walks chronologically over every calendar day from the earliest daily
-    the user touched to the latest daily the user touched (or today if the
-    user has already qualified for it), deriving qualification from
-    ``len(participant.zone_history) >= 2``. Days inside that window with
-    no participation are treated as misses. The live close-day trigger
-    handles rolling state forward past the last touched date; the backfill
-    only reconstructs from the historical record. Idempotent: existing
-    ``daily_streak_freezes`` rows for this user are dropped before being
-    re-emitted, and the four user columns are overwritten.
+    Walks chronologically from the user's earliest daily participation up
+    to ``today - 1``, deriving qualification from ``len(zone_history) >= 2``
+    per day. Today itself counts only if the user already qualified for it
+    (mirrors the live trigger). Untouched days inside the window are
+    misses, evaluated by ``apply_close_day``.
+
+    ``today`` defaults to ``daily_date_for(datetime.now(UTC))``; pass an
+    explicit value in tests to pin wall-clock semantics.
+
+    Idempotent: prior ``daily_streak_freezes`` rows for the user are wiped
+    before re-emission, and the four user columns are overwritten.
     """
     from speedfog_racing.models import Participant, Race
     from speedfog_racing.services.daily_seed_loop import daily_date_for
@@ -142,16 +144,16 @@ async def backfill_user(db: AsyncSession, user_id: UUID) -> None:
         await _persist_state(db, user_id, StreakState(0, 0, 0, None), [])
         return
 
-    earliest = min(qualified_by_date)
-    latest_touched = max(qualified_by_date)
-    today = daily_date_for(datetime.now(UTC))
-    end = max(latest_touched, today) if qualified_by_date.get(today, False) else latest_touched
+    today_value = today if today is not None else daily_date_for(datetime.now(UTC))
 
+    earliest = min(qualified_by_date)
     walk: list[tuple[date, bool]] = []
     cursor = earliest
-    while cursor <= end:
+    while cursor < today_value:
         walk.append((cursor, qualified_by_date.get(cursor, False)))
         cursor = date.fromordinal(cursor.toordinal() + 1)
+    if qualified_by_date.get(today_value, False):
+        walk.append((today_value, True))
 
     state, frozen = walk_history(walk)
     await _persist_state(db, user_id, state, frozen)

@@ -166,8 +166,6 @@ def _backfill_streaks(connection) -> None:
             continue
 
         earliest = min(qualified)
-        latest_touched = max(qualified)
-        end = max(latest_touched, today) if qualified.get(today, False) else latest_touched
         cursor = earliest
         current_streak = 0
         best_streak = 0
@@ -175,7 +173,7 @@ def _backfill_streaks(connection) -> None:
         last_qualifying: _date | None = None
         freeze_rows: list[_date] = []
 
-        while cursor <= end:
+        while cursor < today:
             if qualified.get(cursor, False):
                 current_streak += 1
                 if current_streak > best_streak:
@@ -190,6 +188,14 @@ def _backfill_streaks(connection) -> None:
                 else:
                     current_streak = 0
             cursor = _date.fromordinal(cursor.toordinal() + 1)
+
+        if qualified.get(today, False):
+            current_streak += 1
+            if current_streak > best_streak:
+                best_streak = current_streak
+            if current_streak % FREEZE_PERIOD == 0 and freeze_count < FREEZE_CAP:
+                freeze_count += 1
+            last_qualifying = today
 
         connection.execute(
             text(
