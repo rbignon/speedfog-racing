@@ -698,6 +698,27 @@ Full `zone_history` snapshot for a single participant. Broadcast to spectators o
 
 Clients replace their local `zone_history[participant_id]` with the payload. Sending the full list is self-healing: a client that missed an earlier message still ends up with the correct state on the next emission (no per-entry upsert or sequence tracking needed).
 
+#### `daily_streak_update`
+
+Unicast to a single user on a daily race when their daily streak state changes (currently emitted on the qualification crossing, i.e. when a participant's `zone_history` length first reaches 2). Routed to **every** connection of `user_id` on the race room: their mod connection plus all open spectator tabs. Never broadcast to other spectators; never sent on non-daily races.
+
+```json
+{
+  "type": "daily_streak_update",
+  "current": 7,
+  "best": 42,
+  "freeze_count": 1
+}
+```
+
+| Field          | Type  | Description                                                      |
+| -------------- | ----- | ---------------------------------------------------------------- |
+| `current`      | `int` | Current consecutive-daily streak length after the update         |
+| `best`         | `int` | Best streak length ever achieved by this user                    |
+| `freeze_count` | `int` | Number of freeze tokens available to protect a future missed day |
+
+The message is fire-and-forget: it is not retried, and the canonical state is always re-fetched from REST on the next page load. The mod ignores it (streak state is web-only); the field appears in the catalog because the dispatcher writes to every connection of the user, including the mod.
+
 #### `chat_message`
 
 A chat message broadcast to the connections that have read access to the channel (see [Chat System](#chat-system)). Sent when a user posts in a channel, or when the server generates a system notification (e.g., player finished or abandoned).

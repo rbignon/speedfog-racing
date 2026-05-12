@@ -23,6 +23,7 @@ from speedfog_racing.websocket.race.projection import (
     project_participant_at,
 )
 from speedfog_racing.websocket.schemas import (
+    DailyStreakUpdateMessage,
     LeaderboardUpdateMessage,
     NameTemplatePayload,
     ParticipantInfo,
@@ -443,6 +444,63 @@ class ConnectionManager:
             graph_json=graph_json,
         )
         await room.send_to_mod(participant_id, payload)
+
+    async def send_daily_streak_update_to_user(
+        self,
+        race_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        current: int,
+        best: int,
+        freeze_count: int,
+    ) -> None:
+        """Unicast ``daily_streak_update`` to every connection of ``user_id`` on
+        this race room (mod + all spectator connections matching the user).
+
+        No-op when the user has no open connections.
+        """
+        room = self.get_room(race_id)
+        if room is None:
+            return
+        payload = DailyStreakUpdateMessage(
+            current=current, best=best, freeze_count=freeze_count
+        ).model_dump_json()
+
+        mod_conn = next(
+            (conn for conn in room.mods.values() if conn.user_id == user_id),
+            None,
+        )
+        spectator_conns = [conn for conn in room.spectators.values() if conn.user_id == user_id]
+        if mod_conn is None and not spectator_conns:
+            return
+
+        failed_mod: uuid.UUID | None = None
+        failed_spectators: list[SpectatorConnection] = []
+
+        async def _send_mod() -> None:
+            nonlocal failed_mod
+            if mod_conn is None:
+                return
+            try:
+                await asyncio.wait_for(mod_conn.websocket.send_text(payload), timeout=SEND_TIMEOUT)
+            except Exception:
+                failed_mod = mod_conn.participant_id
+
+        async def _send_spectator(conn: SpectatorConnection) -> None:
+            try:
+                await asyncio.wait_for(conn.websocket.send_text(payload), timeout=SEND_TIMEOUT)
+            except Exception:
+                failed_spectators.append(conn)
+
+        await asyncio.gather(
+            _send_mod(),
+            *(_send_spectator(c) for c in spectator_conns),
+        )
+
+        if failed_mod is not None:
+            room.mods.pop(failed_mod, None)
+        for conn in failed_spectators:
+            room.spectators.pop(conn.connection_id, None)
 
     async def broadcast_player_update(
         self,

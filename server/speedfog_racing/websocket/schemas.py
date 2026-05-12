@@ -263,6 +263,19 @@ class LeaderboardUpdateMessage(BaseModel):
     leader_splits: dict[int, int] | None = None
 
 
+class DailyStreakUpdateMessage(BaseModel):
+    """Unicast to a user when their daily streak state changes.
+
+    Sent on Update A (the user just crossed ``len(zone_history) >= 2`` on a
+    daily race). Not broadcast to spectators; not sent for non-daily races.
+    """
+
+    type: Literal["daily_streak_update"] = "daily_streak_update"
+    current: int
+    best: int
+    freeze_count: int
+
+
 class PendingInviteInfo(BaseModel):
     """Public projection of a pending invite shipped over WebSocket.
 
