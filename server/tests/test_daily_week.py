@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
     DailySeedSchedule,
+    DailyStreakFreeze,
     Participant,
     ParticipantStatus,
     Race,
@@ -468,6 +469,68 @@ async def test_week_endpoint_has_earlier_true_when_past_daily_exists(
     response = await dw_test_client.get("/api/daily/week")
     assert response.status_code == 200, response.text
     assert response.json()["has_earlier"] is True
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_marks_freeze_protected_past_day_for_viewer(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    """A past day with a daily_streak_freezes row for the viewer renders
+    with ``freeze_protected = true`` on the corresponding cell."""
+    today = daily_date_for(datetime.now(UTC))
+    week_start = today - timedelta(days=today.weekday())
+    if today.weekday() == 0:
+        pytest.skip("Need at least one past weekday in the current week")
+    # Pick a past day still inside the current week (Monday of this week works).
+    freeze_date = week_start
+
+    async with dw_async_session_maker() as db:
+        viewer = _user(api_token="my-token")
+        db.add(viewer)
+        await db.flush()
+        db.add(DailyStreakFreeze(user_id=viewer.id, daily_date=freeze_date))
+        await db.commit()
+
+    response = await dw_test_client.get(
+        "/api/daily/week", headers={"Authorization": "Bearer my-token"}
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    target_idx = (freeze_date - week_start).days
+    assert data["days"][target_idx]["freeze_protected"] is True
+    other_idx = (target_idx + 1) % 7
+    assert data["days"][other_idx]["freeze_protected"] is False
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_returns_my_streak_for_authed_user(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    async with dw_async_session_maker() as db:
+        viewer = _user(
+            api_token="my-token",
+            daily_current_streak=3,
+            daily_best_streak=5,
+            daily_freeze_count=1,
+        )
+        db.add(viewer)
+        await db.commit()
+
+    response = await dw_test_client.get(
+        "/api/daily/week", headers={"Authorization": "Bearer my-token"}
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["my_streak"] == {"current": 3, "best": 5, "freeze_count": 1}
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_my_streak_is_null_for_anonymous(dw_test_client) -> None:
+    response = await dw_test_client.get("/api/daily/week")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["my_streak"] is None
+    assert all(day["freeze_protected"] is False for day in data["days"])
 
 
 @pytest.mark.asyncio

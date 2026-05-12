@@ -24,6 +24,7 @@ from speedfog_racing.database import get_db
 from speedfog_racing.models import (
     Caster,
     DailySeedSchedule,
+    DailyStreakFreeze,
     Participant,
     ParticipantStatus,
     Race,
@@ -38,6 +39,7 @@ from speedfog_racing.schemas import (
     RaceDetailResponse,
     RaceListResponse,
     RaceResponse,
+    UserDailyStreakStats,
 )
 from speedfog_racing.services.daily_seed_loop import daily_date_for
 
@@ -147,6 +149,7 @@ def _my_result(
         total_starters=starters_count,
         igt_ms=me.igt_ms if me.status == ParticipantStatus.FINISHED else None,
         death_count=me.death_count,
+        qualifies=me.zone_history is not None and len(me.zone_history) >= 2,
     )
 
 
@@ -178,6 +181,15 @@ async def get_daily_week(
     schedule_by_weekday: dict[int, DailySeedSchedule] = {
         row.weekday: row for row in schedule_result.scalars().all()
     }
+
+    freeze_dates: set[date_type] = set()
+    if user is not None:
+        freeze_rows = await db.execute(
+            select(DailyStreakFreeze.daily_date)
+            .where(DailyStreakFreeze.user_id == user.id)
+            .where(DailyStreakFreeze.daily_date.in_(week_dates))
+        )
+        freeze_dates = {d for (d,) in freeze_rows.all()}
 
     days: list[DailyWeekDay] = []
     for d in week_dates:
@@ -216,6 +228,7 @@ async def get_daily_week(
                     participants_count=len(race.participants),
                     podium=_build_podium(ranked),
                     my_result=_my_result(race.participants, ranked, user, starters_count),
+                    freeze_protected=d in freeze_dates,
                 )
             )
             continue
@@ -243,6 +256,7 @@ async def get_daily_week(
                 participants_count=0,
                 podium=[],
                 my_result=None,
+                freeze_protected=d in freeze_dates,
             )
         )
 
@@ -254,11 +268,20 @@ async def get_daily_week(
     )
     has_earlier = earlier_exists.scalar() is not None
 
+    my_streak: UserDailyStreakStats | None = None
+    if user is not None:
+        my_streak = UserDailyStreakStats(
+            current=user.daily_current_streak,
+            best=user.daily_best_streak,
+            freeze_count=user.daily_freeze_count,
+        )
+
     return DailyWeekResponse(
         week_start=week_start,
         today=today,
         days=days,
         has_earlier=has_earlier,
+        my_streak=my_streak,
     )
 
 
