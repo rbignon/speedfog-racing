@@ -263,13 +263,15 @@ BOSS_NODE_TYPES = {"major_boss", "final_boss"}
 
 ### Per-Participant Processing
 
-For each participant, all visits to boss nodes are collected per node_id:
+For each participant, all visits to boss nodes are collected per node_id. Deaths are summed across that participant's fight visits before being merged across players, so a player who fights a boss in two attempts (e.g. 50 deaths, then backs out and returns to die 40 more times) counts as one encounter with 90 deaths.
 
-- **avg_deaths:** Average deaths across all visits, excluding 0-death backtracks (visits where the player passed through without fighting, detected when deaths = 0 and the next zone was already visited).
-- **max_deaths:** Maximum deaths across all fight visits.
+Visits where the player passed through without fighting (deaths = 0 and the next zone was already visited) are excluded as 0-death backtracks. A participant whose only visits to a boss are pure backtracks is not counted as an encounter at all.
+
+- **avg_deaths:** Mean of per-participant death totals across all fight visits.
+- **max_deaths:** Maximum per-participant death total across all fight visits.
 - **avg_time:** Time on the last visit only (last visit IGT to next entry IGT, or participant.igt_ms if last in history).
 - **back_ratio:** Fraction of participants who, on their last visit to this boss, moved to a previously-visited zone afterward.
-- **encounters:** Number of unique participants who visited this boss.
+- **encounters:** Number of unique participants who fought this boss.
 
 ### Sorting
 

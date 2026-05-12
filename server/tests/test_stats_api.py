@@ -1535,3 +1535,60 @@ class TestAbandonCountsAsBack:
         assert godrick is not None
         # raya_i9j0 was NOT visited before godrick, so no backtrack
         assert godrick.back_ratio == 0.0
+
+    async def test_boss_multi_visit_sums_deaths_per_player(self, async_session):
+        """A player who fights a boss across multiple visits should be counted once,
+        with deaths summed (not treated as separate encounters per visit)."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                status=ParticipantStatus.FINISHED,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "godrick_m1n2", "igt_ms": 300_000, "deaths": 50},
+                    # Backs out to a previously-visited zone, then returns to fight again
+                    {"node_id": "start_a1b2", "igt_ms": 500_000, "deaths": 0},
+                    {"node_id": "godrick_m1n2", "igt_ms": 700_000, "deaths": 40},
+                    {"node_id": "raya_i9j0", "igt_ms": 900_000, "deaths": 1},
+                ],
+                suffix="mv1",
+            )
+
+        from speedfog_racing.api.stats import get_boss_stats
+
+        async with async_session() as db:
+            result = await get_boss_stats(pool=None, db=db)
+
+        godrick = next((b for b in result.bosses if b.display_name == "Godrick"), None)
+        assert godrick is not None
+        # One player encountered the boss once, even across multiple visits
+        assert godrick.encounters == 1
+        # Deaths sum across fight visits: 50 + 40 = 90
+        assert godrick.max_deaths == 90
+        assert godrick.avg_deaths == 90.0
+
+    async def test_boss_pure_backtrack_visitor_not_counted(self, async_session):
+        """A player who only passes through a boss arena (0-death backtrack) should
+        not count as an encounter."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                status=ParticipantStatus.FINISHED,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 300_000, "deaths": 2},
+                    # Walks into godrick (0 deaths) then immediately backs to stormveil
+                    {"node_id": "godrick_m1n2", "igt_ms": 500_000, "deaths": 0},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 550_000, "deaths": 0},
+                ],
+                suffix="pb1",
+            )
+
+        from speedfog_racing.api.stats import get_boss_stats
+
+        async with async_session() as db:
+            result = await get_boss_stats(pool=None, db=db)
+
+        godrick = next((b for b in result.bosses if b.display_name == "Godrick"), None)
+        # Pure-backtrack visitor: boss should not appear in stats at all
+        assert godrick is None

@@ -473,8 +473,12 @@ async def get_boss_stats(
     # Per participant, collect boss encounter data.
     # Resolve display name per-seed (boss_name > randomized_boss > display_name).
     # back_ratio: on a player's LAST visit to a boss, did they backtrack?
-    # avg_deaths: exclude 0-death backtracks (player never fought).
-    merged_deaths: dict[str, list[int]] = {}
+    # avg_deaths / max_deaths: deaths are summed per participant across fight visits,
+    # so a player who fights a boss in 50+40 deaths over two visits is counted once
+    # with 90 deaths, not as two encounters of 50 and 40.
+    # Participants whose only visits are 0-death backtracks (pure transit) are not
+    # counted as encounters at all.
+    player_deaths: dict[str, list[int]] = {}
     merged_backed: dict[str, list[bool]] = {}
     merged_times: dict[str, list[int]] = {}
     merged_type: dict[str, str] = {}
@@ -497,24 +501,6 @@ async def get_boss_stats(
             visits_by_nid.setdefault(nid, []).append((idx, entry))
 
         for nid, visits in visits_by_nid.items():
-            last_idx, last_entry = visits[-1]
-
-            # back_ratio: did the player backtrack on their last visit?
-            # Check if the node after the last visit was already visited.
-            # An abandon at the boss also counts as a back.
-            backed_last_visit = False
-            if last_idx + 1 < len(history):
-                next_nid = history[last_idx + 1].get("node_id", "")
-                # Build set of nodes visited before this last visit
-                visited_before: set[str] = set()
-                for prev_entry in history[:last_idx]:
-                    prev_nid = prev_entry.get("node_id", "")
-                    if prev_nid:
-                        visited_before.add(prev_nid)
-                backed_last_visit = next_nid in visited_before
-            elif participant.status == ParticipantStatus.ABANDONED:
-                backed_last_visit = True
-
             # Collect deaths from all visits, excluding 0-death backtracks
             # (those don't represent actual combat)
             fight_deaths: list[int] = []
@@ -531,6 +517,28 @@ async def get_boss_stats(
                         continue  # 0-death backtrack, skip
                 fight_deaths.append(deaths)
 
+            # Player only passed through the boss arena without fighting: skip
+            # entirely so encounters / back_ratio / time aren't inflated.
+            if not fight_deaths:
+                continue
+
+            last_idx, last_entry = visits[-1]
+
+            # back_ratio: did the player backtrack on their last visit?
+            # Check if the node after the last visit was already visited.
+            # An abandon at the boss also counts as a back.
+            backed_last_visit = False
+            if last_idx + 1 < len(history):
+                next_nid = history[last_idx + 1].get("node_id", "")
+                visited_before: set[str] = set()
+                for prev_entry in history[:last_idx]:
+                    prev_nid = prev_entry.get("node_id", "")
+                    if prev_nid:
+                        visited_before.add(prev_nid)
+                backed_last_visit = next_nid in visited_before
+            elif participant.status == ParticipantStatus.ABANDONED:
+                backed_last_visit = True
+
             # Time: use last visit for time calculation
             current_igt = last_entry.get("igt_ms", 0) or 0
             if last_idx + 1 < len(history):
@@ -546,7 +554,7 @@ async def get_boss_stats(
             )[-1]
             node_type = node_meta.get("type", "major_boss")
 
-            merged_deaths.setdefault(boss_name, []).extend(fight_deaths)
+            player_deaths.setdefault(boss_name, []).append(sum(fight_deaths))
             merged_backed.setdefault(boss_name, []).append(backed_last_visit)
             if time_ms is not None:
                 merged_times.setdefault(boss_name, []).append(time_ms)
@@ -554,7 +562,7 @@ async def get_boss_stats(
 
     boss_entries = []
     for display_name, backed_list in merged_backed.items():
-        fight_deaths = merged_deaths.get(display_name, [])
+        deaths_per_player = player_deaths.get(display_name, [])
         times = merged_times.get(display_name, [])
         total_encounters = len(backed_list)
         backed_count = sum(backed_list)
@@ -565,9 +573,11 @@ async def get_boss_stats(
                 type=merged_type[display_name],
                 encounters=total_encounters,
                 avg_deaths=(
-                    round(sum(fight_deaths) / len(fight_deaths), 2) if fight_deaths else 0.0
+                    round(sum(deaths_per_player) / len(deaths_per_player), 2)
+                    if deaths_per_player
+                    else 0.0
                 ),
-                max_deaths=max(fight_deaths) if fight_deaths else 0,
+                max_deaths=max(deaths_per_player) if deaths_per_player else 0,
                 avg_time_ms=round(sum(times) / len(times)) if times else 0,
                 back_ratio=round(backed_count / total_encounters, 2) if total_encounters else 0.0,
             )
