@@ -241,7 +241,7 @@
       {/if}
     </div>
 
-    <UserStatsCards {profile} />
+    <UserStatsCards {profile} streakDisplay="best" />
 
     {#if traits}
       <section class="play-style-section">
