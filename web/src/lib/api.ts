@@ -297,6 +297,7 @@ export interface DailyMyResult {
   total_starters: number;
   igt_ms: number | null;
   death_count: number;
+  qualifies: boolean;
 }
 
 export type DailyWeekDayState = "missing_past" | "past" | "today" | "future";
@@ -314,6 +315,7 @@ export interface DailyWeekDay {
   participants_count: number;
   podium: DailyPodiumEntry[];
   my_result: DailyMyResult | null;
+  freeze_protected: boolean;
 }
 
 export interface DailyWeekResponse {
@@ -321,6 +323,7 @@ export interface DailyWeekResponse {
   today: string;
   days: DailyWeekDay[];
   has_earlier: boolean;
+  my_streak: UserDailyStreakStats | null;
 }
 
 /**
@@ -986,6 +989,12 @@ export interface UserStatsWeekly {
   capped: boolean;
 }
 
+export interface UserDailyStreakStats {
+  current: number;
+  best: number;
+  freeze_count: number;
+}
+
 export interface UserStats {
   race_count: number;
   daily_count: number;
@@ -993,6 +1002,7 @@ export interface UserStats {
   organized_count: number;
   casted_count: number;
   weekly: UserStatsWeekly;
+  daily_streak: UserDailyStreakStats;
 }
 
 export interface ProfileBadgeDto {
