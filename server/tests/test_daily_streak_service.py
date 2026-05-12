@@ -4,12 +4,32 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from speedfog_racing.database import Base
 from speedfog_racing.services.daily_streak_service import (
     StreakState,
     apply_close_day,
     apply_qualification,
+    evaluate_qualification_for_participant,
     walk_history,
 )
+
+
+@pytest.fixture
+async def streak_async_engine():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+async def streak_async_session(streak_async_engine):
+    return async_sessionmaker(streak_async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 def s(current: int = 0, best: int = 0, freezes: int = 0, last: date | None = None) -> StreakState:
@@ -136,3 +156,175 @@ def test_walk_history_only_qualifications_does_not_emit_freezes() -> None:
     assert state.current_streak == 7
     assert state.freeze_count == 1
     assert frozen == []
+
+
+# Live participant evaluator -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_evaluate_qualification_triggers_on_crossing_two(streak_async_session) -> None:
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+
+    async with streak_async_session() as db:
+        user = User(twitch_id="qt1", twitch_username="qt1")
+        db.add(user)
+        await db.flush()
+        race = Race(
+            name="Daily Seed - 2026-05-12",
+            organizer_id=user.id,
+            daily_date=date(2026, 5, 12),
+            exclude_from_elo=True,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.PLAYING,
+            zone_history=[
+                {"node_id": "start", "igt_ms": 0, "type": "fog"},
+                {"node_id": "n2", "igt_ms": 1000, "type": "fog"},
+            ],
+        )
+        db.add(participant)
+        await db.commit()
+
+        new_state = await evaluate_qualification_for_participant(db, participant)
+        assert new_state is not None
+        assert new_state.current_streak == 1
+        await db.refresh(user)
+        assert user.daily_current_streak == 1
+        assert user.daily_last_qualifying_date == date(2026, 5, 12)
+
+
+@pytest.mark.asyncio
+async def test_evaluate_qualification_is_noop_when_under_two(streak_async_session) -> None:
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+
+    async with streak_async_session() as db:
+        user = User(twitch_id="qt2", twitch_username="qt2")
+        db.add(user)
+        await db.flush()
+        race = Race(
+            name="Daily Seed - 2026-05-12",
+            organizer_id=user.id,
+            daily_date=date(2026, 5, 12),
+            exclude_from_elo=True,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.PLAYING,
+            zone_history=[{"node_id": "start", "igt_ms": 0, "type": "fog"}],
+        )
+        db.add(participant)
+        await db.commit()
+
+        result = await evaluate_qualification_for_participant(db, participant)
+        assert result is None
+        await db.refresh(user)
+        assert user.daily_current_streak == 0
+
+
+@pytest.mark.asyncio
+async def test_evaluate_qualification_idempotent_for_same_day(streak_async_session) -> None:
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+
+    async with streak_async_session() as db:
+        user = User(
+            twitch_id="qt3",
+            twitch_username="qt3",
+            daily_current_streak=1,
+            daily_best_streak=1,
+            daily_last_qualifying_date=date(2026, 5, 12),
+        )
+        db.add(user)
+        await db.flush()
+        race = Race(
+            name="Daily Seed - 2026-05-12",
+            organizer_id=user.id,
+            daily_date=date(2026, 5, 12),
+            exclude_from_elo=True,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.PLAYING,
+            zone_history=[
+                {"node_id": "start", "igt_ms": 0, "type": "fog"},
+                {"node_id": "n2", "igt_ms": 1000, "type": "fog"},
+                {"node_id": "n3", "igt_ms": 2000, "type": "fog"},
+            ],
+        )
+        db.add(participant)
+        await db.commit()
+
+        result = await evaluate_qualification_for_participant(db, participant)
+        assert result is None  # already qualified for this date
+
+
+@pytest.mark.asyncio
+async def test_evaluate_qualification_noop_for_non_daily_race(streak_async_session) -> None:
+    """Non-daily races (daily_date is None) never feed the streak."""
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+
+    async with streak_async_session() as db:
+        user = User(twitch_id="qt4", twitch_username="qt4")
+        db.add(user)
+        await db.flush()
+        race = Race(
+            name="Regular race",
+            organizer_id=user.id,
+            daily_date=None,
+            exclude_from_elo=False,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.PLAYING,
+            zone_history=[
+                {"node_id": "start", "igt_ms": 0, "type": "fog"},
+                {"node_id": "n2", "igt_ms": 1000, "type": "fog"},
+            ],
+        )
+        db.add(participant)
+        await db.commit()
+
+        result = await evaluate_qualification_for_participant(db, participant)
+        assert result is None
+        await db.refresh(user)
+        assert user.daily_current_streak == 0

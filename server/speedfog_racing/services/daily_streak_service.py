@@ -15,10 +15,14 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from speedfog_racing.models import Participant
 
 FREEZE_CAP = 2
 FREEZE_GRANT_PERIOD = 7
@@ -178,3 +182,45 @@ async def _persist_state(
     for d in frozen_dates:
         db.add(DailyStreakFreeze(user_id=user_id, daily_date=d))
     await db.flush()
+
+
+async def evaluate_qualification_for_participant(
+    db: AsyncSession, participant: Participant
+) -> StreakState | None:
+    """Apply Update A for ``participant`` if a streak transition is due.
+
+    Returns the new ``StreakState`` when persisted (so the caller can push
+    it over WS), or ``None`` when nothing was changed (participant does
+    not qualify yet, race is not a daily, or user already qualified for
+    this date).
+
+    Caller must already have ``participant.race`` and ``participant.user``
+    loaded (typical for the event_flag handler which reads them).
+    """
+    race = participant.race
+    if race.daily_date is None:
+        return None
+    zone_history = participant.zone_history or []
+    if len(zone_history) < 2:
+        return None
+
+    user = participant.user
+    state = StreakState(
+        current_streak=user.daily_current_streak,
+        best_streak=user.daily_best_streak,
+        freeze_count=user.daily_freeze_count,
+        last_qualifying_date=user.daily_last_qualifying_date,
+    )
+    if state.last_qualifying_date is not None and state.last_qualifying_date >= race.daily_date:
+        return None
+
+    new_state = apply_qualification(state, qualified_for=race.daily_date)
+    if new_state == state:
+        return None
+
+    user.daily_current_streak = new_state.current_streak
+    user.daily_best_streak = new_state.best_streak
+    user.daily_freeze_count = new_state.freeze_count
+    user.daily_last_qualifying_date = new_state.last_qualifying_date
+    await db.flush()
+    return new_state
