@@ -23,6 +23,9 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
 )
+from speedfog_racing.services.daily_streak_service import (
+    evaluate_qualification_for_participant,
+)
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
@@ -609,6 +612,45 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             )
 
         await manager.broadcast_zone_history(entity.race_id, entity.id, entity.zone_history or [])
+
+        await self._maybe_apply_daily_streak(entity)
+
+    async def _maybe_apply_daily_streak(self, entity: Participant) -> None:
+        """Evaluate Update A for this participant if the race is a daily and
+        they just crossed ``len(zone_history) >= 2``. Pushes
+        ``daily_streak_update`` to the user on success.
+
+        Idempotent: the underlying evaluator is a no-op when the user is
+        already qualified for the date, so repeated event_flag broadcasts
+        cost a single SELECT and no UPDATE on the steady state.
+        """
+        if entity.race.daily_date is None:
+            return
+        if len(entity.zone_history or []) < 2:
+            return
+
+        async with self.session_maker() as db:
+            fresh = (
+                await db.execute(
+                    select(Participant)
+                    .where(Participant.id == entity.id)
+                    .options(selectinload(Participant.user), selectinload(Participant.race))
+                )
+            ).scalar_one_or_none()
+            if fresh is None:
+                return
+            new_state = await evaluate_qualification_for_participant(db, fresh)
+            if new_state is None:
+                return
+            await db.commit()
+
+        await manager.send_daily_streak_update_to_user(
+            entity.race_id,
+            entity.user_id,
+            current=new_state.current_streak,
+            best=new_state.best_streak,
+            freeze_count=new_state.freeze_count,
+        )
 
     async def _broadcast_after_zone_query(
         self,

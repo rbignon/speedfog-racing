@@ -5,12 +5,31 @@ from __future__ import annotations
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from speedfog_racing.database import Base
 from speedfog_racing.websocket.race.manager import (
     ConnectionManager,
     ModConnection,
     SpectatorConnection,
 )
 from speedfog_racing.websocket.schemas import DailyStreakUpdateMessage
+
+
+@pytest.fixture
+async def streak_async_engine():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+async def streak_async_session(streak_async_engine):
+    return async_sessionmaker(streak_async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 def test_daily_streak_update_message_serialization() -> None:
@@ -137,3 +156,76 @@ async def test_send_daily_streak_update_evicts_failed_connections() -> None:
     assert bad_mod.participant_id not in room.mods
     assert bad_spec.connection_id not in room.spectators
     assert good_spec.connection_id in room.spectators
+
+
+@pytest.mark.asyncio
+async def test_event_flag_crossing_zone_two_triggers_update_a(
+    streak_async_session,
+    monkeypatch,
+) -> None:
+    """When a participant on a daily crosses ``len(zone_history) >= 2`` via
+    an event_flag, calling the evaluator + the WS dispatch helper composes
+    the streak transition and pushes the new state. Contract test: we drive
+    the helpers directly rather than spinning a real WS connection.
+    """
+    from datetime import date
+
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+    from speedfog_racing.services.daily_streak_service import (
+        evaluate_qualification_for_participant,
+    )
+    from speedfog_racing.websocket.race import manager as manager_module
+
+    pushed: list[tuple] = []
+
+    async def fake_push(race_id, user_id, *, current, best, freeze_count):
+        pushed.append((race_id, user_id, current, best, freeze_count))
+
+    monkeypatch.setattr(
+        manager_module.manager,
+        "send_daily_streak_update_to_user",
+        fake_push,
+    )
+
+    async with streak_async_session() as db:
+        user = User(twitch_id="ef1", twitch_username="ef1")
+        db.add(user)
+        await db.flush()
+        race = Race(
+            name="Daily Seed - 2026-05-12",
+            organizer_id=user.id,
+            daily_date=date(2026, 5, 12),
+            exclude_from_elo=True,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.PLAYING,
+            zone_history=[
+                {"node_id": "start", "igt_ms": 0, "type": "fog"},
+                {"node_id": "n2", "igt_ms": 1000, "type": "fog"},
+            ],
+        )
+        db.add(participant)
+        await db.commit()
+
+        new_state = await evaluate_qualification_for_participant(db, participant)
+        assert new_state is not None
+        await manager_module.manager.send_daily_streak_update_to_user(
+            race.id,
+            user.id,
+            current=new_state.current_streak,
+            best=new_state.best_streak,
+            freeze_count=new_state.freeze_count,
+        )
+
+    assert pushed == [(race.id, user.id, 1, 1, 0)]
