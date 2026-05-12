@@ -301,6 +301,28 @@
     prevDailyEnded = dailyEnded;
   });
 
+  // Patch ``my_streak`` in place when the server unicasts a
+  // ``daily_streak_update`` (viewer just crossed qualification on this
+  // daily). ``weekOverride`` is the writable mirror of ``data.week``, so
+  // updating it propagates through ``weekSource`` -> ``liveWeek`` and
+  // refreshes both the ``StreakIndicator`` next to the title and the
+  // ``streak-panel`` block. Reads the current source via untrack so this
+  // effect only re-runs when a new update arrives.
+  $effect(() => {
+    const update = raceStore.dailyStreakUpdate;
+    if (!update) return;
+    const base = untrack(() => weekOverride ?? data.week ?? null);
+    if (!base) return;
+    weekOverride = {
+      ...base,
+      my_streak: {
+        current: update.current,
+        best: update.best,
+        freeze_count: update.freeze_count,
+      },
+    };
+  });
+
   // Pull public chat history when local access transitions from locked to
   // readable (e.g. the viewer's run just transitioned to FINISHED, or
   // registration window closed). The server already shipped history at

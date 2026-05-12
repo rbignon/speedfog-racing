@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   RaceWebSocket,
+  type DailyStreakUpdateMessage,
   type RaceInfoUpdateMessage,
   type ServerMessage,
 } from "$lib/websocket";
@@ -42,6 +43,25 @@ describe("RaceWebSocket message dispatch", () => {
     expect(received[0].race.race_ends_at).toBe("2026-04-21T15:00:00+00:00");
     expect(received[0].race.race_duration_minutes).toBe(240);
     expect(received[0].race.private_dag).toBe(true);
+  });
+
+  it("routes daily_streak_update to onDailyStreakUpdate", () => {
+    const received: DailyStreakUpdateMessage[] = [];
+    const ws = new RaceWebSocket("test-race-id", {
+      onDailyStreakUpdate: (msg) => received.push(msg),
+    });
+
+    const payload: DailyStreakUpdateMessage = {
+      type: "daily_streak_update",
+      current: 5,
+      best: 12,
+      freeze_count: 1,
+    };
+
+    (ws as unknown as InternalRaceWebSocket).handleMessage(payload);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toEqual(payload);
   });
 
   it("drops unknown message types instead of dispatching them", () => {

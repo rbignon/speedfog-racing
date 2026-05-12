@@ -6,6 +6,7 @@ import {
   createRaceWebSocket,
   type RaceWebSocket,
   type ChatMessage,
+  type DailyStreakUpdateMessage,
   type WsParticipant,
   type WsPendingInvite,
   type WsRaceInfo,
@@ -23,6 +24,11 @@ class RaceStore {
   chatMessagesParticipants = $state<ChatMessage[]>([]);
   chatMessagesPublic = $state<ChatMessage[]>([]);
   chatHistoryVersion = $state(0);
+  // Latest unicast ``daily_streak_update`` payload, or null while none has
+  // arrived yet. ``/daily/[date]`` reads this via $effect to patch its
+  // ``my_streak`` slice when the viewer crosses the qualification on the
+  // current daily; other surfaces ignore it.
+  dailyStreakUpdate = $state<DailyStreakUpdateMessage | null>(null);
   spectatorCount = $state(0);
   connected = $state(false);
   loading = $state(true);
@@ -91,6 +97,7 @@ class RaceStore {
     this.pendingInvites = null;
     this.chatMessagesParticipants = [];
     this.chatMessagesPublic = [];
+    this.dailyStreakUpdate = null;
     this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;
@@ -211,6 +218,10 @@ class RaceStore {
           }
           this.chatHistoryVersion++;
         },
+
+        onDailyStreakUpdate: (msg) => {
+          this.dailyStreakUpdate = msg;
+        },
       },
       locale,
     );
@@ -239,6 +250,7 @@ class RaceStore {
     this.chatMessagesParticipants = [];
     this.chatMessagesPublic = [];
     this.chatHistoryVersion = 0;
+    this.dailyStreakUpdate = null;
     this.spectatorCount = 0;
     this.connected = false;
     this.loading = true;

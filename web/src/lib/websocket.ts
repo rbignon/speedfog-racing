@@ -120,6 +120,13 @@ export interface ChatHistoryMessage {
   messages: ChatMessage[];
 }
 
+export interface DailyStreakUpdateMessage {
+  type: "daily_streak_update";
+  current: number;
+  best: number;
+  freeze_count: number;
+}
+
 export type ServerMessage =
   | RaceStateMessage
   | LeaderboardUpdateMessage
@@ -129,7 +136,8 @@ export type ServerMessage =
   | SpectatorCountMessage
   | ZoneHistoryMessage
   | ChatMessage
-  | ChatHistoryMessage;
+  | ChatHistoryMessage
+  | DailyStreakUpdateMessage;
 
 const VALID_SERVER_MESSAGE_TYPES = new Set([
   "race_state",
@@ -141,6 +149,7 @@ const VALID_SERVER_MESSAGE_TYPES = new Set([
   "zone_history",
   "chat_message",
   "chat_history",
+  "daily_streak_update",
 ]);
 
 function isServerMessage(data: unknown): data is ServerMessage {
@@ -167,6 +176,7 @@ export interface RaceWebSocketOptions {
   onZoneHistory?: (msg: ZoneHistoryMessage) => void;
   onChatMessage?: (msg: ChatMessage) => void;
   onChatHistory?: (msg: ChatHistoryMessage) => void;
+  onDailyStreakUpdate?: (msg: DailyStreakUpdateMessage) => void;
   onConnect?: () => void;
   onDisconnect?: (code?: number, reason?: string) => void;
   onError?: (error: Event) => void;
@@ -343,6 +353,9 @@ export class RaceWebSocket {
         break;
       case "chat_history":
         this.options.onChatHistory?.(msg);
+        break;
+      case "daily_streak_update":
+        this.options.onDailyStreakUpdate?.(msg);
         break;
       default:
         if (import.meta.env.DEV)
