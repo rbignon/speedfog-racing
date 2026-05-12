@@ -98,6 +98,30 @@ async def test_get_profile_by_username(test_client, sample_user):
 
 
 @pytest.mark.asyncio
+async def test_user_profile_includes_daily_streak_stats(test_client, async_session, sample_user):
+    """GET /api/users/{username} surfaces the user's daily-seed streak snapshot."""
+    from sqlalchemy import update
+
+    async with async_session() as db:
+        await db.execute(
+            update(User)
+            .where(User.id == sample_user.id)
+            .values(
+                daily_current_streak=5,
+                daily_best_streak=12,
+                daily_freeze_count=1,
+            )
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get(f"/api/users/{sample_user.twitch_username}")
+        assert response.status_code == 200
+        stats = response.json()["stats"]
+        assert stats["daily_streak"] == {"current": 5, "best": 12, "freeze_count": 1}
+
+
+@pytest.mark.asyncio
 async def test_get_profile_nonexistent_user(test_client):
     """GET /api/users/{username} returns 404 for nonexistent user."""
     async with test_client as client:
