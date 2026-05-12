@@ -105,6 +105,7 @@ function dayCell(overrides: Partial<DailyWeekDay>): DailyWeekDay {
     participants_count: 0,
     podium: [],
     my_result: null,
+    freeze_protected: false,
     ...overrides,
   };
 }
@@ -115,6 +116,7 @@ function week(days: DailyWeekDay[]): DailyWeekResponse {
     today: "2026-04-27",
     days,
     has_earlier: false,
+    my_streak: null,
   };
 }
 
@@ -155,6 +157,7 @@ describe("applyLiveDailyDayUpdate", () => {
       total_starters: 4,
       igt_ms: 3000,
       death_count: 0,
+      qualifies: false,
     });
   });
 
@@ -184,6 +187,7 @@ describe("applyLiveDailyDayUpdate", () => {
           total_starters: 1,
           igt_ms: 1000,
           death_count: 0,
+          qualifies: true,
         },
       }),
     ]);
@@ -222,6 +226,7 @@ describe("applyLiveDailyDayUpdate", () => {
           total_starters: 1,
           igt_ms: null,
           death_count: 0,
+          qualifies: false,
         },
       }),
     ]);
@@ -246,5 +251,33 @@ describe("applyLiveDailyDayUpdate", () => {
       myParticipantId: null,
     });
     expect(result).toBe(w);
+  });
+
+  it("preserves freeze_protected and my_streak when patching from live participants", () => {
+    // The live patcher only recomputes counts and my_result; freeze styling
+    // and the user's running streak are owned by /api/daily/week and must
+    // survive a WS-driven cell rebuild untouched.
+    const w: DailyWeekResponse = {
+      ...week([
+        dayCell({
+          date: "2026-04-27",
+          state: "past",
+          freeze_protected: true,
+        }),
+      ]),
+      my_streak: {
+        current: 3,
+        best: 5,
+        freeze_count: 1,
+      },
+    };
+    const result = applyLiveDailyDayUpdate(w, {
+      date: "2026-04-27",
+      participants: [wsParticipant({ id: "a", igt_ms: 1000 })],
+      myParticipantId: null,
+    });
+    const cell = result.days.find((d) => d.date === "2026-04-27");
+    expect(cell?.freeze_protected).toBe(true);
+    expect(result.my_streak).toEqual(w.my_streak);
   });
 });

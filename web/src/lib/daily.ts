@@ -101,7 +101,8 @@ function patchDayFromLive(
       prev.placement === myResult.placement &&
       prev.total_starters === myResult.total_starters &&
       prev.igt_ms === myResult.igt_ms &&
-      prev.death_count === myResult.death_count);
+      prev.death_count === myResult.death_count &&
+      prev.qualifies === myResult.qualifies);
 
   if (
     day.participants_count === participantsCount &&
@@ -139,11 +140,16 @@ function buildLiveMyResult(
     const pos = finishers.findIndex((p) => p.id === me.id);
     placement = pos >= 0 ? pos + 1 : null;
   }
+  // Mirror the server rule: qualifies iff the participant has visited at
+  // least two zones. zone_history may be null on the WS payload when the
+  // mod has not pushed it yet, which is treated as not-yet-qualifying.
+  const qualifies = (me.zone_history?.length ?? 0) >= 2;
   return {
     status,
     placement,
     total_starters: startersCount,
     igt_ms: status === "finished" ? me.igt_ms : null,
     death_count: me.death_count,
+    qualifies,
   };
 }
