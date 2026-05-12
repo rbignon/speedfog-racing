@@ -2,6 +2,29 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.8.0] - 2026-05-12
+
+### Daily Seed
+
+- Live projected leaderboard in the in-game overlay during daily races: replays from earlier runners are projected against your current IGT and pushed once per second, so you always see where you stand
+
+### Seeds
+
+- New exit-driven seed generator: every fog gate of a given zone is routed to a zone of the next depth, up to the number of zones available at that depth, yielding more varied connections
+- Improved weight balancing between zones at the same depth, so parallel paths have closer durations
+- Boss Rush mode: more major bosses and up to 3 parallel paths per depth
+- Removed Colossal Fingercreeper from the boss pool
+- Removed Farum Azula Temple as a possible legacy dungeon
+- Item Randomizer: boss scale and phase HP options are now set explicitly
+
+### Races
+
+- Fixed a stale-save bypass that could grant an unintended finish when reloading a save with a finish flag already set
+
+### Rewards
+
+- Weathered name template recolored to a warm bronze
+
 ## [1.7.1] - 2026-05-07
 
 ### Daily Seed
