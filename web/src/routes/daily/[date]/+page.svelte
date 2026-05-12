@@ -281,6 +281,9 @@
       myParticipantId: myParticipant?.id ?? null,
     });
   });
+  let isToday = $derived(
+    liveWeek !== null && initialRace.daily_date === liveWeek.today,
+  );
 
   // Refetch once when the daily window closes while the page is open so
   // the grid's "today" badge moves to the new active day. Seeding
@@ -483,6 +486,24 @@
           variant="daily-detail"
           selectedDate={initialRace.daily_date ?? undefined}
         />
+        {#if isToday && liveWeek.my_streak && (liveWeek.my_streak.current > 0 || liveWeek.my_streak.best > 0)}
+          <section class="streak-panel">
+            {#if liveWeek.my_streak.current > 0}
+              <span class="streak-cell"
+                >🔥 <strong>{liveWeek.my_streak.current}</strong>-day streak</span
+              >
+            {/if}
+            {#if liveWeek.my_streak.best > 0}
+              <span class="streak-cell"
+                >🏆 Best: <strong>{liveWeek.my_streak.best}</strong></span
+              >
+            {/if}
+            <span class="streak-cell"
+              >❄️ Freezes: <strong>{liveWeek.my_streak.freeze_count}</strong
+              >/2</span
+            >
+          </section>
+        {/if}
       {/if}
 
       {#if raceStatus === "finished" && graphJson}
@@ -641,6 +662,30 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 1rem;
+  }
+
+  .streak-panel {
+    display: flex;
+    gap: 2rem;
+    padding: 0.75rem 1rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    margin: 1rem 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .streak-panel strong {
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 640px) {
+    .streak-panel {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
   }
 
   .dag-view-toggle {
