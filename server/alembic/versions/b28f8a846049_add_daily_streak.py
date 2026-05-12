@@ -82,10 +82,8 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("user_id", "daily_date"),
     )
 
-    # Backfill of historical streak state happens in a follow-up data
-    # migration that runs the synchronous walk over participations.
-    # Kept separate from the schema migration so this revision applies
-    # cleanly even before the streak service module exists.
+    connection = op.get_bind()
+    _backfill_streaks(connection)
 
 
 def downgrade() -> None:
@@ -99,3 +97,119 @@ def downgrade() -> None:
     op.drop_column("users", "daily_freeze_count")
     op.drop_column("users", "daily_best_streak")
     op.drop_column("users", "daily_current_streak")
+
+
+def _backfill_streaks(connection) -> None:
+    """Synchronous backfill mirroring services.daily_streak_service.backfill_user.
+
+    Duplicated rather than imported because Alembic migrations must remain
+    pinned to the schema at this revision; the live service is allowed to
+    evolve.
+    """
+    import json as _json
+    from datetime import UTC as _UTC
+    from datetime import date as _date
+    from datetime import datetime as _datetime
+    from datetime import timedelta as _timedelta
+
+    from sqlalchemy import text
+
+    FREEZE_CAP = 2
+    FREEZE_PERIOD = 7
+    DAILY_ROTATION_HOUR = 8
+
+    def _today_rotation() -> _date:
+        now = _datetime.now(_UTC)
+        return (now - _timedelta(hours=DAILY_ROTATION_HOUR)).date()
+
+    today = _today_rotation()
+
+    user_ids = [
+        row[0]
+        for row in connection.execute(
+            text(
+                "SELECT DISTINCT p.user_id "
+                "FROM participants p "
+                "JOIN races r ON r.id = p.race_id "
+                "WHERE r.daily_date IS NOT NULL"
+            )
+        )
+    ]
+
+    for user_id in user_ids:
+        rows = list(
+            connection.execute(
+                text(
+                    "SELECT r.daily_date, p.zone_history "
+                    "FROM participants p "
+                    "JOIN races r ON r.id = p.race_id "
+                    "WHERE p.user_id = :uid AND r.daily_date IS NOT NULL "
+                    "ORDER BY r.daily_date"
+                ),
+                {"uid": user_id},
+            )
+        )
+
+        qualified: dict[_date, bool] = {}
+        for daily_date_value, zone_history in rows:
+            # SQLite returns JSON columns as strings; Postgres returns
+            # the deserialized list. Normalize both shapes.
+            if isinstance(zone_history, str):
+                try:
+                    zone_history = _json.loads(zone_history)
+                except (ValueError, TypeError):
+                    zone_history = None
+            is_q = bool(zone_history) and len(zone_history) >= 2
+            qualified[daily_date_value] = qualified.get(daily_date_value, False) or is_q
+
+        if not qualified:
+            continue
+
+        earliest = min(qualified)
+        latest_touched = max(qualified)
+        end = max(latest_touched, today) if qualified.get(today, False) else latest_touched
+        cursor = earliest
+        current_streak = 0
+        best_streak = 0
+        freeze_count = 0
+        last_qualifying: _date | None = None
+        freeze_rows: list[_date] = []
+
+        while cursor <= end:
+            if qualified.get(cursor, False):
+                current_streak += 1
+                if current_streak > best_streak:
+                    best_streak = current_streak
+                if current_streak % FREEZE_PERIOD == 0 and freeze_count < FREEZE_CAP:
+                    freeze_count += 1
+                last_qualifying = cursor
+            elif current_streak > 0:
+                if freeze_count > 0:
+                    freeze_count -= 1
+                    freeze_rows.append(cursor)
+                else:
+                    current_streak = 0
+            cursor = _date.fromordinal(cursor.toordinal() + 1)
+
+        connection.execute(
+            text(
+                "UPDATE users SET "
+                "daily_current_streak = :cs, "
+                "daily_best_streak = :bs, "
+                "daily_freeze_count = :fc, "
+                "daily_last_qualifying_date = :ld "
+                "WHERE id = :uid"
+            ),
+            {
+                "cs": current_streak,
+                "bs": best_streak,
+                "fc": freeze_count,
+                "ld": last_qualifying,
+                "uid": user_id,
+            },
+        )
+        for d in freeze_rows:
+            connection.execute(
+                text("INSERT INTO daily_streak_freezes (user_id, daily_date) VALUES (:uid, :d)"),
+                {"uid": user_id, "d": d},
+            )

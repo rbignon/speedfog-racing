@@ -8,6 +8,7 @@ from speedfog_racing.services.daily_streak_service import (
     StreakState,
     apply_close_day,
     apply_qualification,
+    walk_history,
 )
 
 
@@ -103,3 +104,35 @@ def test_walk_two_freezes_absorb_two_misses_third_breaks() -> None:
 
     state, used = apply_close_day(state, missed=date(2026, 1, 17))
     assert used is False and state.current_streak == 0 and state.best_streak == 14
+
+
+# Forward-walk helper --------------------------------------------------------
+
+
+def test_walk_history_empty_returns_zero_state() -> None:
+    state, frozen = walk_history([])
+    assert state == StreakState(0, 0, 0, None)
+    assert frozen == []
+
+
+def test_walk_history_mixed_pattern_matches_step_by_step_simulation() -> None:
+    # Seven qualifications -> day 7 grants a freeze.
+    # Two misses -> freeze absorbs one, second one breaks.
+    history = [(date(2026, 1, i), True) for i in range(1, 8)]
+    history += [(date(2026, 1, 8), False), (date(2026, 1, 9), False)]
+    history.append((date(2026, 1, 10), True))
+
+    state, frozen = walk_history(history)
+    # After break on day 9 the streak goes 7 -> ... -> 0 -> 1 on day 10.
+    assert state.current_streak == 1
+    assert state.best_streak == 7
+    assert state.freeze_count == 0
+    assert state.last_qualifying_date == date(2026, 1, 10)
+    assert frozen == [date(2026, 1, 8)]  # only the freeze-absorbed miss
+
+
+def test_walk_history_only_qualifications_does_not_emit_freezes() -> None:
+    state, frozen = walk_history([(date(2026, 1, i), True) for i in range(1, 8)])
+    assert state.current_streak == 7
+    assert state.freeze_count == 1
+    assert frozen == []
