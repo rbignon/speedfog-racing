@@ -68,6 +68,18 @@ async def create_daily_seed_if_needed(
     # Give hard-close a chance to roll yesterday's daily before we look at it.
     await close_expired_races(session_maker)
 
+    # Streak Update B: consume freezes / break streaks for users who did
+    # not qualify on yesterday's daily. Idempotent within the rotation day
+    # (the helper skips users with an existing freeze row for ``missed``).
+    yesterday = today - timedelta(days=1)
+    async with session_maker() as db:
+        from speedfog_racing.services.daily_streak_service import (
+            apply_close_day_for_all_users,
+        )
+
+        await apply_close_day_for_all_users(db, missed=yesterday)
+        await db.commit()
+
     async with session_maker() as db:
         existing = (
             await db.execute(select(Race).where(Race.daily_date == today))

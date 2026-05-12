@@ -229,3 +229,121 @@ async def test_event_flag_crossing_zone_two_triggers_update_a(
         )
 
     assert pushed == [(race.id, user.id, 1, 1, 0)]
+
+
+@pytest.mark.asyncio
+async def test_update_b_consumes_freeze_for_missed_day(streak_async_session) -> None:
+    """Update B applies the close-day branch for each user with an active
+    streak who did not qualify yesterday.
+
+    Three users:
+    - u_freeze: 5-day streak, 1 freeze. Misses yesterday. Should keep
+      streak=5, freeze=0, and gain a daily_streak_freezes row.
+    - u_break: 3-day streak, 0 freezes. Misses yesterday. Should break to
+      streak=0, best stays 10.
+    - u_safe: 7-day streak, 1 freeze, qualified yesterday. Untouched.
+    """
+    from datetime import date
+
+    from sqlalchemy import select
+
+    from speedfog_racing.models import DailyStreakFreeze, User
+    from speedfog_racing.services.daily_streak_service import (
+        apply_close_day_for_all_users,
+    )
+
+    missed = date(2026, 5, 11)
+    async with streak_async_session() as db:
+        u_freeze = User(
+            twitch_id="b1",
+            twitch_username="b1",
+            daily_current_streak=5,
+            daily_best_streak=5,
+            daily_freeze_count=1,
+            daily_last_qualifying_date=date(2026, 5, 10),
+        )
+        u_break = User(
+            twitch_id="b2",
+            twitch_username="b2",
+            daily_current_streak=3,
+            daily_best_streak=10,
+            daily_freeze_count=0,
+            daily_last_qualifying_date=date(2026, 5, 10),
+        )
+        u_safe = User(
+            twitch_id="b3",
+            twitch_username="b3",
+            daily_current_streak=7,
+            daily_best_streak=7,
+            daily_freeze_count=1,
+            daily_last_qualifying_date=missed,
+        )
+        db.add_all([u_freeze, u_break, u_safe])
+        await db.commit()
+
+        changed = await apply_close_day_for_all_users(db, missed=missed)
+        await db.commit()
+        assert changed == 2  # u_freeze and u_break
+
+        await db.refresh(u_freeze)
+        assert u_freeze.daily_current_streak == 5
+        assert u_freeze.daily_freeze_count == 0
+        await db.refresh(u_break)
+        assert u_break.daily_current_streak == 0
+        assert u_break.daily_best_streak == 10
+        await db.refresh(u_safe)
+        assert u_safe.daily_current_streak == 7
+        assert u_safe.daily_freeze_count == 1
+
+        freezes = (
+            await db.execute(select(DailyStreakFreeze.user_id, DailyStreakFreeze.daily_date))
+        ).all()
+        assert (u_freeze.id, missed) in freezes
+        assert all(uid != u_break.id for uid, _ in freezes)
+        assert all(uid != u_safe.id for uid, _ in freezes)
+
+
+@pytest.mark.asyncio
+async def test_update_b_idempotent_on_rerun(streak_async_session) -> None:
+    """Calling apply_close_day_for_all_users twice with the same missed
+    date does not double-consume a freeze, because the second pass finds
+    the freeze row already present and skips the user."""
+    from datetime import date
+
+    from sqlalchemy import select
+
+    from speedfog_racing.models import DailyStreakFreeze, User
+    from speedfog_racing.services.daily_streak_service import (
+        apply_close_day_for_all_users,
+    )
+
+    missed = date(2026, 5, 11)
+    async with streak_async_session() as db:
+        u = User(
+            twitch_id="idem1",
+            twitch_username="idem1",
+            daily_current_streak=5,
+            daily_best_streak=5,
+            daily_freeze_count=1,
+            daily_last_qualifying_date=date(2026, 5, 10),
+        )
+        db.add(u)
+        await db.commit()
+
+        await apply_close_day_for_all_users(db, missed=missed)
+        await db.commit()
+        await db.refresh(u)
+        first_freezes = u.daily_freeze_count
+
+        # Second call: no further change.
+        await apply_close_day_for_all_users(db, missed=missed)
+        await db.commit()
+        await db.refresh(u)
+        assert u.daily_freeze_count == first_freezes  # still 0
+
+        rows = (
+            (await db.execute(select(DailyStreakFreeze).where(DailyStreakFreeze.user_id == u.id)))
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
