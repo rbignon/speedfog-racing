@@ -1,3 +1,16 @@
+<script module lang="ts">
+  import type { UserDailyStreakStats } from "$lib/api";
+
+  export function streakBadgeText(
+    streak: UserDailyStreakStats,
+    mode: "current" | "best" | null,
+  ): string | null {
+    if (mode === "current" && streak.current > 0) return `🔥 ${streak.current}`;
+    if (mode === "best" && streak.best > 0) return `🏆 ${streak.best}`;
+    return null;
+  }
+</script>
+
 <script lang="ts">
   import type { UserProfile } from "$lib/api";
 
@@ -6,9 +19,11 @@
   let {
     profile,
     links,
+    streakDisplay = null,
   }: {
     profile: UserProfile;
     links?: Partial<Record<CategoryKey, string>>;
+    streakDisplay?: "current" | "best" | null;
   } = $props();
 
   type Category = {
@@ -78,6 +93,10 @@
     {@const max = Math.max(1, ...cat.series)}
     {@const empty = cat.value === 0}
     {@const href = links?.[cat.key]}
+    {@const badge =
+      cat.key === "daily"
+        ? streakBadgeText(profile.stats.daily_streak, streakDisplay)
+        : null}
     {#if href}
       <a
         class="card card-link"
@@ -85,6 +104,9 @@
         style:--accent={cat.accent}
         style:--accent-soft={cat.accentSoft}
       >
+        {#if badge}
+          <span class="streak-badge">{badge}</span>
+        {/if}
         <span class="value" class:muted={empty}>{cat.value}</span>
         <span class="label">{cat.label}</span>
         {#if empty}
@@ -103,6 +125,9 @@
         style:--accent={cat.accent}
         style:--accent-soft={cat.accentSoft}
       >
+        {#if badge}
+          <span class="streak-badge">{badge}</span>
+        {/if}
         <span class="value" class:muted={empty}>{cat.value}</span>
         <span class="label">{cat.label}</span>
         {#if empty}
@@ -128,6 +153,7 @@
   }
 
   .card {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
@@ -136,6 +162,16 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     overflow: hidden;
+  }
+
+  .streak-badge {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.7rem;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
   }
 
   .card-link {

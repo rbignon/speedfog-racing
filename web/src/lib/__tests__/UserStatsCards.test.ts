@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/svelte";
 import { describe, expect, it } from "vitest";
-import UserStatsCards from "$lib/components/UserStatsCards.svelte";
+import UserStatsCards, {
+  streakBadgeText,
+} from "$lib/components/UserStatsCards.svelte";
 import type { UserProfile } from "$lib/api";
 
 function profileWith(
@@ -27,6 +29,7 @@ function profileWith(
         weeks_count: 5,
         capped: false,
       },
+      daily_streak: { current: 0, best: 0, freeze_count: 0 },
       ...overrides,
     },
   };
@@ -84,6 +87,36 @@ describe("UserStatsCards", () => {
     expect(container.querySelectorAll("article.card").length).toBe(4);
   });
 
+  it("renders a fire badge on the Daily card under current streakDisplay", () => {
+    const profile = profileWith({
+      daily_streak: { current: 7, best: 42, freeze_count: 1 },
+    });
+    const { container } = render(UserStatsCards, {
+      profile,
+      streakDisplay: "current",
+    });
+    expect(container.querySelector(".streak-badge")?.textContent).toBe("🔥 7");
+  });
+
+  it("renders a trophy badge on the Daily card under best streakDisplay", () => {
+    const profile = profileWith({
+      daily_streak: { current: 0, best: 42, freeze_count: 0 },
+    });
+    const { container } = render(UserStatsCards, {
+      profile,
+      streakDisplay: "best",
+    });
+    expect(container.querySelector(".streak-badge")?.textContent).toBe("🏆 42");
+  });
+
+  it("renders no badge when streakDisplay is omitted", () => {
+    const profile = profileWith({
+      daily_streak: { current: 7, best: 42, freeze_count: 1 },
+    });
+    const { container } = render(UserStatsCards, { profile });
+    expect(container.querySelector(".streak-badge")).toBeNull();
+  });
+
   it("pads sparkline series shorter than 4 weeks with leading zeros", () => {
     const profile = profileWith({
       weekly: {
@@ -107,5 +140,37 @@ describe("UserStatsCards", () => {
     const heights = Array.from(bars).map((b) => b.style.height);
     expect(heights.slice(0, 3)).toEqual(["2%", "2%", "2%"]);
     expect(heights[3]).toBe("100%");
+  });
+});
+
+describe("streakBadgeText", () => {
+  it("returns fire badge for current display mode with positive streak", () => {
+    expect(
+      streakBadgeText({ current: 7, best: 42, freeze_count: 1 }, "current"),
+    ).toBe("🔥 7");
+  });
+
+  it("returns trophy badge for best display mode with positive best", () => {
+    expect(
+      streakBadgeText({ current: 0, best: 42, freeze_count: 0 }, "best"),
+    ).toBe("🏆 42");
+  });
+
+  it("returns null for zero current under current mode", () => {
+    expect(
+      streakBadgeText({ current: 0, best: 42, freeze_count: 0 }, "current"),
+    ).toBeNull();
+  });
+
+  it("returns null for zero best under best mode", () => {
+    expect(
+      streakBadgeText({ current: 7, best: 0, freeze_count: 0 }, "best"),
+    ).toBeNull();
+  });
+
+  it("returns null when mode is null", () => {
+    expect(
+      streakBadgeText({ current: 7, best: 42, freeze_count: 1 }, null),
+    ).toBeNull();
   });
 });
