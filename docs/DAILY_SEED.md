@@ -339,7 +339,7 @@ There is no periodic server-side tick beyond what the mods themselves drive at 1
 
 ## Daily Streak
 
-A streak system layered on top of the Daily Seed rewards consistent play. Each day a participant crosses `len(zone_history) >= 2` on the daily, their streak grows by one; missing a day breaks it, with up to two automatic "freezes" absorbing isolated misses. State is persisted on `users` (four columns: `daily_current_streak`, `daily_best_streak`, `daily_freeze_count`, `daily_last_qualifying_date`) plus a `daily_streak_freezes` row per freeze-protected day. Updates fire in three places:
+A streak system layered on top of the Daily Seed rewards consistent play. Each day a participant crosses `len(zone_history) >= 2` on the daily, their streak grows by one; missing a day breaks it, with up to two automatic "freezes" absorbing isolated misses. Updates fire in three places:
 
 - **Real time** when a participant first crosses `len(zone_history) >= 2` on a daily race, unicasting `daily_streak_update` over WS (see [PROTOCOL.md](PROTOCOL.md#daily_streak_update)).
 - **At the 08:00 UTC daily-creation tick**, `apply_close_day_for_all_users` walks every user with an active streak who did not qualify yesterday and either consumes a freeze (writes a `daily_streak_freezes` row) or breaks the streak.
@@ -347,12 +347,55 @@ A streak system layered on top of the Daily Seed rewards consistent play. Each d
 
 A migration-time backfill (`_backfill_streaks` inside the Alembic migration) replays each historical user's participation chronologically through the same algorithm so the rollout doesn't reset existing players' streak state.
 
+### Data model
+
+Four columns on `users`, added by Alembic revision `b28f8a846049`:
+
+| Column                       | Type               | Notes                                                                                                    |
+| ---------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------- |
+| `daily_current_streak`       | `int`, default `0` | Current consecutive qualifying days. Reset to 0 on a missed day with no freeze available.                |
+| `daily_best_streak`          | `int`, default `0` | High water mark; never decreases.                                                                        |
+| `daily_freeze_count`         | `int`, default `0` | Available freezes, in `[0, 2]`.                                                                          |
+| `daily_last_qualifying_date` | `date`, nullable   | Most recent `daily_date` the user qualified for. Drives the idempotency guard and the close-tick filter. |
+
+Check constraints (mirrored on the ORM):
+
+- `ck_users_daily_freeze_count_range`: `daily_freeze_count BETWEEN 0 AND 2`.
+- `ck_users_daily_current_streak_nonneg`: `daily_current_streak >= 0`.
+- `ck_users_daily_best_ge_current`: `daily_best_streak >= daily_current_streak`.
+
+Freeze ledger:
+
+```sql
+CREATE TABLE daily_streak_freezes (
+    user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    daily_date  date NOT NULL,
+    consumed_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, daily_date)
+);
+```
+
+One row per freeze-protected day. Written by the close-day evaluator and by the backfill. Read by `/api/daily/week` to mark `freeze_protected` cells.
+
 ### Streak rules
 
 - Qualification is derived (never persisted as a flag): `len(zone_history) >= 2` on the participant row.
-- A qualifying day increments `current_streak`. Crossing a multiple of 7 grants one freeze, capped at 2.
-- A missed day either consumes one freeze (streak preserved, `daily_streak_freezes` row written) or breaks the streak to 0. `best_streak` is a high water mark and never decreases.
-- Re-applying qualification for the same daily date is a no-op (the evaluator short-circuits via `daily_last_qualifying_date`).
+- A qualifying day increments `current_streak`. The freeze-grant check fires on every multiple of 7 independently: if `freeze_count < 2`, one freeze is granted; otherwise nothing happens that day, but a later multiple after a freeze is consumed can grant one. There is no deferred-grant bookkeeping.
+- A missed day either consumes one freeze (streak preserved, `daily_streak_freezes` row written) or, when `freeze_count == 0`, breaks the streak to 0. `daily_last_qualifying_date` is left untouched on a break so the field always reflects the user's last qualifying participation, never a break event.
+- `best_streak` is rewritten to `max(best_streak, current_streak)` on each qualification, and never decreases otherwise (including on rollback after a reroll, where the prior value is restored as a high water mark).
+- Re-applying qualification for the same daily date is a no-op: the evaluator short-circuits when `daily_last_qualifying_date >= D`.
+- First-ever qualification: `current_streak` goes `0 -> 1`, `best_streak` goes `0 -> 1`, no freeze granted (`1 % 7 != 0`).
+
+### API surface
+
+Daily-streak state surfaces through existing responses; no new endpoints are added.
+
+| Response            | Added field        | Type                           | Notes                                                                                           |
+| ------------------- | ------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `UserStatsResponse` | `daily_streak`     | `UserDailyStreakStats`         | `{ current, best, freeze_count }`. Nested under `stats` in `/api/users/{username}`.             |
+| `DailyWeekResponse` | `my_streak`        | `UserDailyStreakStats \| null` | Same shape as above. `null` for anonymous viewers. Returned by `/api/daily/week`.               |
+| `DailyWeekDay`      | `freeze_protected` | `bool`                         | `true` iff a `daily_streak_freezes` row exists for the viewer on this day.                      |
+| `DailyMyResult`     | `qualifies`        | `bool`                         | Mirrors the qualification predicate (`len(zone_history) >= 2`) on the viewer's participant row. |
 
 ### Frontend surfaces
 
