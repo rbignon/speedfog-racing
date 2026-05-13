@@ -337,6 +337,18 @@ There is no periodic server-side tick beyond what the mods themselves drive at 1
 
 ---
 
+## Daily Streak
+
+A streak system layered on top of the Daily Seed rewards consistent play. Each day a participant crosses `len(zone_history) >= 2` on the daily, their streak grows by one; missing a day breaks it, with up to two automatic "freezes" absorbing isolated misses. State is persisted on `users` (four columns: `daily_current_streak`, `daily_best_streak`, `daily_freeze_count`, `daily_last_qualifying_date`) plus a `daily_streak_freezes` row per freeze-protected day. Updates fire in three places:
+
+- **Real time** when a participant first crosses `len(zone_history) >= 2` on a daily race, unicasting `daily_streak_update` over WS (see [PROTOCOL.md](PROTOCOL.md#daily_streak_update)).
+- **At the 08:00 UTC daily-creation tick**, `apply_close_day_for_all_users` walks every user with an active streak who did not qualify yesterday and either consumes a freeze (writes a `daily_streak_freezes` row) or breaks the streak.
+- **On reroll**, every user who had qualified for the rerolled `daily_date` has their streak state re-derived via `rollback_streak_for_reroll`. `best_streak` is preserved as a high water mark.
+
+A migration-time backfill (`_backfill_streaks` inside the Alembic migration) replays each historical user's participation chronologically through the same algorithm so the rollout doesn't reset existing players' streak state.
+
+See [docs/specs/2026-05-12-daily-streak-design.md](specs/2026-05-12-daily-streak-design.md) for the full design, including the strip variants on `DailyWeekGrid`, the `StreakIndicator` placement, the `/daily/[today]` panel, and the `streakDisplay` prop on `UserStatsCards`.
+
 ## See also
 
 - [RACE_LIFECYCLE.md](RACE_LIFECYCLE.md) for the underlying race / participant state machines (Daily Seeds reuse them as-is).
