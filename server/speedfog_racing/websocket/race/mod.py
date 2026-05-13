@@ -595,6 +595,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         seed_graph: dict[str, Any] | None,
         *,
         is_first_visit: bool,
+        daily_qualification_crossed: bool,
     ) -> None:
         if is_first_visit:
             await manager.broadcast_leaderboard(
@@ -613,20 +614,19 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
 
         await manager.broadcast_zone_history(entity.race_id, entity.id, entity.zone_history or [])
 
-        await self._maybe_apply_daily_streak(entity)
+        if daily_qualification_crossed:
+            await self._apply_daily_streak(entity)
 
-    async def _maybe_apply_daily_streak(self, entity: Participant) -> None:
-        """Evaluate Update A for this participant if the race is a daily and
-        they just crossed ``len(zone_history) >= 2``. Pushes
-        ``daily_streak_update`` to the user on success.
+    async def _apply_daily_streak(self, entity: Participant) -> None:
+        """Evaluate Update A for this participant on the qualification crossing.
 
-        Idempotent: the underlying evaluator is a no-op when the user is
-        already qualified for the date, so repeated event_flag broadcasts
-        cost a single SELECT and no UPDATE on the steady state.
+        Caller fires this only when ``len(zone_history)`` just crossed two on
+        an event_flag append (see ``daily_qualification_crossed`` in
+        ``_broadcast_after_event_flag``). Returns early on non-daily races;
+        the service-side ``last_qualifying_date < race.daily_date`` guard
+        still defends against stale replays on the same daily.
         """
         if entity.race.daily_date is None:
-            return
-        if len(entity.zone_history or []) < 2:
             return
 
         async with self.session_maker() as db:
@@ -658,6 +658,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         *,
         is_first_visit: bool,
         history_changed: bool,
+        daily_qualification_crossed: bool,
     ) -> None:
         if is_first_visit:
             await manager.broadcast_leaderboard(
@@ -678,6 +679,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             await manager.broadcast_zone_history(
                 entity.race_id, entity.id, entity.zone_history or []
             )
+
+        if daily_qualification_crossed:
+            await self._apply_daily_streak(entity)
 
     # ------------------------------------------------------------------
     # Race-specific message handlers

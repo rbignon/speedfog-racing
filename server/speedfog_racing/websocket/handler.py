@@ -614,6 +614,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         node_id: str | None = None
         seed_graph: dict[str, Any] | None = None
         is_first_visit = False
+        daily_qualification_crossed = False
         entity: T | None = None
 
         async with self.session_maker() as db:
@@ -710,6 +711,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     )
 
                 is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
+                # ``prev_len < 2 <= new_len`` collapses to ``prev_len == 1`` here
+                # because the append below grows zone_history by exactly one
+                # entry. Subclasses use it to act on the transition into the
+                # qualified state at most once per run.
+                daily_qualification_crossed = len(old_history) == 1
 
                 self._on_igt_change(entity, igt)
                 entity.current_zone = node_id
@@ -740,7 +746,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
             return
 
         await self._broadcast_after_event_flag(
-            entity, node_id, seed_graph, is_first_visit=is_first_visit
+            entity,
+            node_id,
+            seed_graph,
+            is_first_visit=is_first_visit,
+            daily_qualification_crossed=daily_qualification_crossed,
         )
 
         if node_id and seed_graph:
@@ -761,6 +771,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         message_id = zq.message_id
         is_first_visit = False
         history_changed = False
+        daily_qualification_crossed = False
         node_id: str | None = None
         graph_json: dict[str, Any] | None = None
 
@@ -858,6 +869,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     is_first_visit = not any(
                         entry.get("node_id") == node_id for entry in old_history
                     )
+                    # Same crossing guard as the event_flag path: a backtrack
+                    # append landing on top of the spawn entry is also a
+                    # ``prev_len < 2 <= new_len`` transition (rare: a death or
+                    # quit-out before crossing the first fog).
+                    daily_qualification_crossed = len(old_history) == 1
                     self._on_igt_change(entity, igt)
                     new_entry: dict[str, Any] = {
                         "node_id": node_id,
@@ -888,7 +904,10 @@ class BaseModHandler(BaseHandler, Generic[T]):
             )
 
         await self._broadcast_after_zone_query(
-            entity, is_first_visit=is_first_visit, history_changed=history_changed
+            entity,
+            is_first_visit=is_first_visit,
+            history_changed=history_changed,
+            daily_qualification_crossed=daily_qualification_crossed,
         )
 
     # ------------------------------------------------------------------
@@ -947,6 +966,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         seed_graph: dict[str, Any] | None,
         *,
         is_first_visit: bool,
+        daily_qualification_crossed: bool,
     ) -> None: ...
 
     @abstractmethod
@@ -956,6 +976,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         *,
         is_first_visit: bool,
         history_changed: bool,
+        daily_qualification_crossed: bool,
     ) -> None: ...
 
     # ------------------------------------------------------------------

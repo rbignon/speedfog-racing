@@ -474,3 +474,148 @@ async def test_reroll_rollback_is_noop_for_non_daily_race(streak_async_session) 
         assert user.daily_best_streak == 5
         assert user.daily_freeze_count == 1
         assert user.daily_last_qualifying_date == date(2026, 5, 11)
+
+
+@pytest.mark.asyncio
+async def test_broadcast_event_flag_only_runs_streak_on_qualification_crossing(
+    streak_async_session,
+) -> None:
+    """The handler-side ``daily_qualification_crossed`` guard must gate the
+    streak service so a participant who keeps appending zones after passing
+    zone 2 does not re-trigger ``_apply_daily_streak`` on every event_flag.
+
+    Spec: "at most once per user per daily" (see Update A in the daily-streak
+    design). Removing the guard would re-open a session and SELECT the
+    participant for every post-qualification event_flag.
+    """
+    from datetime import date
+
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+    from speedfog_racing.websocket.race.mod import RaceModHandler
+
+    async with streak_async_session() as db:
+        user = User(twitch_id="bc1", twitch_username="bc1")
+        db.add(user)
+        await db.flush()
+        race = Race(
+            name="Daily Seed - 2026-05-12",
+            organizer_id=user.id,
+            daily_date=date(2026, 5, 12),
+            exclude_from_elo=True,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.PLAYING,
+            zone_history=[{"node_id": "start", "igt_ms": 0, "type": "spawn"}],
+        )
+        db.add(participant)
+        await db.commit()
+        # Eager-load .race so _broadcast_after_event_flag can read daily_date
+        # without re-issuing queries.
+        await db.refresh(participant, attribute_names=["race"])
+
+    handler = RaceModHandler(MagicMock(), race.id, streak_async_session)
+    handler._apply_daily_streak = AsyncMock()  # type: ignore[method-assign]
+
+    await handler._broadcast_after_event_flag(
+        participant,
+        "n2",
+        None,
+        is_first_visit=False,
+        daily_qualification_crossed=False,
+    )
+    handler._apply_daily_streak.assert_not_awaited()
+
+    await handler._broadcast_after_event_flag(
+        participant,
+        "n3",
+        None,
+        is_first_visit=False,
+        daily_qualification_crossed=True,
+    )
+    handler._apply_daily_streak.assert_awaited_once_with(participant)
+
+
+@pytest.mark.asyncio
+async def test_broadcast_zone_query_runs_streak_on_qualification_crossing(
+    streak_async_session,
+) -> None:
+    """A backtrack written via zone_query can also be the spawn -> 2 crossing
+    (rare: a death or quit-out before crossing the first fog). The race
+    subclass must fire the streak service in that case too, mirroring the
+    event_flag dispatch path."""
+    from datetime import date
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+    from speedfog_racing.websocket.race.mod import RaceModHandler
+
+    async with streak_async_session() as db:
+        user = User(twitch_id="zq1", twitch_username="zq1")
+        db.add(user)
+        await db.flush()
+        race = Race(
+            name="Daily Seed - 2026-05-12",
+            organizer_id=user.id,
+            daily_date=date(2026, 5, 12),
+            exclude_from_elo=True,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.flush()
+        new_participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.PLAYING,
+            zone_history=[{"node_id": "start", "igt_ms": 0, "type": "spawn"}],
+        )
+        db.add(new_participant)
+        await db.commit()
+        participant = (
+            await db.execute(
+                select(Participant)
+                .where(Participant.id == new_participant.id)
+                .options(
+                    selectinload(Participant.race).selectinload(Race.seed),
+                    selectinload(Participant.race).selectinload(Race.participants),
+                )
+            )
+        ).scalar_one()
+        race_id = race.id
+
+    handler = RaceModHandler(MagicMock(), race_id, streak_async_session)
+    handler._apply_daily_streak = AsyncMock()  # type: ignore[method-assign]
+
+    await handler._broadcast_after_zone_query(
+        participant,
+        is_first_visit=False,
+        history_changed=True,
+        daily_qualification_crossed=False,
+    )
+    handler._apply_daily_streak.assert_not_awaited()
+
+    await handler._broadcast_after_zone_query(
+        participant,
+        is_first_visit=False,
+        history_changed=True,
+        daily_qualification_crossed=True,
+    )
+    handler._apply_daily_streak.assert_awaited_once_with(participant)
