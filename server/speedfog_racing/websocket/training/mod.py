@@ -345,7 +345,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         seed_graph: dict[str, Any] | None,
         *,
         is_first_visit: bool,
-        daily_qualification_crossed: bool,
+        prev_zone_history_len: int | None,
     ) -> None:
         await _broadcast_participant_update(entity)
         await _broadcast_zone_history(self._session_id, entity.zone_history or [])
@@ -355,12 +355,11 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         entity: TrainingSession,
         *,
         is_first_visit: bool,
-        history_changed: bool,
-        daily_qualification_crossed: bool,
+        prev_zone_history_len: int | None,
     ) -> None:
         await _broadcast_participant_update(entity, spectator_only=True)
 
-        if history_changed:
+        if prev_zone_history_len is not None:
             await _broadcast_zone_history(self._session_id, entity.zone_history or [])
 
 

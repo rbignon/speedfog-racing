@@ -595,7 +595,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         seed_graph: dict[str, Any] | None,
         *,
         is_first_visit: bool,
-        daily_qualification_crossed: bool,
+        prev_zone_history_len: int | None,
     ) -> None:
         if is_first_visit:
             await manager.broadcast_leaderboard(
@@ -614,17 +614,17 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
 
         await manager.broadcast_zone_history(entity.race_id, entity.id, entity.zone_history or [])
 
-        if daily_qualification_crossed:
+        if prev_zone_history_len == 1:
             await self._apply_daily_streak(entity)
 
     async def _apply_daily_streak(self, entity: Participant) -> None:
         """Evaluate Update A for this participant on the qualification crossing.
 
         Caller fires this only when ``len(zone_history)`` just crossed two on
-        an event_flag append (see ``daily_qualification_crossed`` in
-        ``_broadcast_after_event_flag``). Returns early on non-daily races;
-        the service-side ``last_qualifying_date < race.daily_date`` guard
-        still defends against stale replays on the same daily.
+        an event_flag append (i.e. ``prev_zone_history_len == 1``). Returns
+        early on non-daily races; the service-side
+        ``last_qualifying_date < race.daily_date`` guard still defends
+        against stale replays on the same daily.
         """
         if entity.race.daily_date is None:
             return
@@ -657,8 +657,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         entity: Participant,
         *,
         is_first_visit: bool,
-        history_changed: bool,
-        daily_qualification_crossed: bool,
+        prev_zone_history_len: int | None,
     ) -> None:
         if is_first_visit:
             await manager.broadcast_leaderboard(
@@ -675,12 +674,12 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 daily_date=entity.race.daily_date,
             )
 
-        if history_changed:
+        if prev_zone_history_len is not None:
             await manager.broadcast_zone_history(
                 entity.race_id, entity.id, entity.zone_history or []
             )
 
-        if daily_qualification_crossed:
+        if prev_zone_history_len == 1:
             await self._apply_daily_streak(entity)
 
     # ------------------------------------------------------------------

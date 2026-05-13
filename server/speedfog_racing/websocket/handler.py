@@ -614,7 +614,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         node_id: str | None = None
         seed_graph: dict[str, Any] | None = None
         is_first_visit = False
-        daily_qualification_crossed = False
+        prev_zone_history_len: int | None = None
         entity: T | None = None
 
         async with self.session_maker() as db:
@@ -711,11 +711,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     )
 
                 is_first_visit = not any(entry.get("node_id") == node_id for entry in old_history)
-                # ``prev_len < 2 <= new_len`` collapses to ``prev_len == 1`` here
-                # because the append below grows zone_history by exactly one
-                # entry. Subclasses use it to act on the transition into the
-                # qualified state at most once per run.
-                daily_qualification_crossed = len(old_history) == 1
+                # Captured before the append below so subclasses can detect
+                # any threshold crossing (e.g. ``prev == 1`` for the daily
+                # streak's qualification rule). None means no append happened
+                # this frame.
+                prev_zone_history_len = len(old_history)
 
                 self._on_igt_change(entity, igt)
                 entity.current_zone = node_id
@@ -750,7 +750,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             node_id,
             seed_graph,
             is_first_visit=is_first_visit,
-            daily_qualification_crossed=daily_qualification_crossed,
+            prev_zone_history_len=prev_zone_history_len,
         )
 
         if node_id and seed_graph:
@@ -770,8 +770,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
         message_id = zq.message_id
         is_first_visit = False
-        history_changed = False
-        daily_qualification_crossed = False
+        prev_zone_history_len: int | None = None
         node_id: str | None = None
         graph_json: dict[str, Any] | None = None
 
@@ -869,11 +868,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     is_first_visit = not any(
                         entry.get("node_id") == node_id for entry in old_history
                     )
-                    # Same crossing guard as the event_flag path: a backtrack
-                    # append landing on top of the spawn entry is also a
-                    # ``prev_len < 2 <= new_len`` transition (rare: a death or
-                    # quit-out before crossing the first fog).
-                    daily_qualification_crossed = len(old_history) == 1
+                    # Captured before the append below, same shape as the
+                    # event_flag path. The rare case ``prev == 1`` (a death
+                    # or quit-out before crossing the first fog) is the
+                    # transition into the daily streak's qualified state.
+                    prev_zone_history_len = len(old_history)
                     self._on_igt_change(entity, igt)
                     new_entry: dict[str, Any] = {
                         "node_id": node_id,
@@ -886,7 +885,6 @@ class BaseModHandler(BaseHandler, Generic[T]):
                         *old_history,
                         new_entry,
                     ]
-                    history_changed = True
 
                 self._on_zone_entered(entity, node_id, graph_json, igt)
 
@@ -906,8 +904,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         await self._broadcast_after_zone_query(
             entity,
             is_first_visit=is_first_visit,
-            history_changed=history_changed,
-            daily_qualification_crossed=daily_qualification_crossed,
+            prev_zone_history_len=prev_zone_history_len,
         )
 
     # ------------------------------------------------------------------
@@ -966,7 +963,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         seed_graph: dict[str, Any] | None,
         *,
         is_first_visit: bool,
-        daily_qualification_crossed: bool,
+        prev_zone_history_len: int | None,
     ) -> None: ...
 
     @abstractmethod
@@ -975,8 +972,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         entity: T,
         *,
         is_first_visit: bool,
-        history_changed: bool,
-        daily_qualification_crossed: bool,
+        prev_zone_history_len: int | None,
     ) -> None: ...
 
     # ------------------------------------------------------------------

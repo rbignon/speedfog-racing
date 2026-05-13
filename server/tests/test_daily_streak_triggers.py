@@ -480,9 +480,9 @@ async def test_reroll_rollback_is_noop_for_non_daily_race(streak_async_session) 
 async def test_broadcast_event_flag_only_runs_streak_on_qualification_crossing(
     streak_async_session,
 ) -> None:
-    """The handler-side ``daily_qualification_crossed`` guard must gate the
-    streak service so a participant who keeps appending zones after passing
-    zone 2 does not re-trigger ``_apply_daily_streak`` on every event_flag.
+    """The handler-side ``prev_zone_history_len`` guard must gate the streak
+    service so a participant who keeps appending zones after passing zone 2
+    does not re-trigger ``_apply_daily_streak`` on every event_flag.
 
     Spec: "at most once per user per daily" (see Update A in the daily-streak
     design). Removing the guard would re-open a session and SELECT the
@@ -532,7 +532,7 @@ async def test_broadcast_event_flag_only_runs_streak_on_qualification_crossing(
         "n2",
         None,
         is_first_visit=False,
-        daily_qualification_crossed=False,
+        prev_zone_history_len=2,
     )
     handler._apply_daily_streak.assert_not_awaited()
 
@@ -541,7 +541,7 @@ async def test_broadcast_event_flag_only_runs_streak_on_qualification_crossing(
         "n3",
         None,
         is_first_visit=False,
-        daily_qualification_crossed=True,
+        prev_zone_history_len=1,
     )
     handler._apply_daily_streak.assert_awaited_once_with(participant)
 
@@ -607,15 +607,13 @@ async def test_broadcast_zone_query_runs_streak_on_qualification_crossing(
     await handler._broadcast_after_zone_query(
         participant,
         is_first_visit=False,
-        history_changed=True,
-        daily_qualification_crossed=False,
+        prev_zone_history_len=2,
     )
     handler._apply_daily_streak.assert_not_awaited()
 
     await handler._broadcast_after_zone_query(
         participant,
         is_first_visit=False,
-        history_changed=True,
-        daily_qualification_crossed=True,
+        prev_zone_history_len=1,
     )
     handler._apply_daily_streak.assert_awaited_once_with(participant)
