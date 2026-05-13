@@ -148,27 +148,43 @@
   class:variant-dashboard={variant === "dashboard"}
   class:variant-daily-detail={variant === "daily-detail"}
 >
-  <div class="week-nav">
-    <button
-      type="button"
-      class="nav-btn"
-      data-week-nav="prev"
-      aria-label="Previous week"
-      onclick={() => navigate(-1)}
-      disabled={navigating || !displayedWeek.has_earlier}
-    >
-      <span aria-hidden="true">&larr;</span>
-    </button>
-    <button
-      type="button"
-      class="nav-btn"
-      data-week-nav="next"
-      aria-label="Next week"
-      onclick={() => navigate(1)}
-      disabled={navigating || !canGoNext}
-    >
-      <span aria-hidden="true">&rarr;</span>
-    </button>
+  <div class="grid-toolbar">
+    <span class="streak-info">
+      {#if displayedWeek.my_streak && displayedWeek.my_streak.current > 0}
+        <span aria-hidden="true">🔥</span>
+        <span>{displayedWeek.my_streak.current}-day streak</span>
+        {#if displayedWeek.my_streak.freeze_count > 0}
+          <span class="sep" aria-hidden="true">·</span>
+          <span aria-hidden="true">❄️</span>
+          <span>
+            {displayedWeek.my_streak.freeze_count}
+            freeze{displayedWeek.my_streak.freeze_count > 1 ? "s" : ""}
+          </span>
+        {/if}
+      {/if}
+    </span>
+    <div class="week-nav">
+      <button
+        type="button"
+        class="nav-btn"
+        data-week-nav="prev"
+        aria-label="Previous week"
+        onclick={() => navigate(-1)}
+        disabled={navigating || !displayedWeek.has_earlier}
+      >
+        <span aria-hidden="true">&larr;</span>
+      </button>
+      <button
+        type="button"
+        class="nav-btn"
+        data-week-nav="next"
+        aria-label="Next week"
+        onclick={() => navigate(1)}
+        disabled={navigating || !canGoNext}
+      >
+        <span aria-hidden="true">&rarr;</span>
+      </button>
+    </div>
   </div>
   <div class="grid" bind:this={scrollContainer}>
     {#each displayedWeek.days as day (day.date)}
@@ -263,7 +279,6 @@
 
 <style>
   .grid-section {
-    position: relative;
     margin-bottom: 2rem;
   }
 
@@ -456,13 +471,28 @@
     }
   }
 
+  .grid-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.25rem;
+  }
+  .streak-info {
+    display: inline-flex;
+    gap: 0.25rem;
+    align-items: baseline;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  .streak-info .sep {
+    margin: 0 0.25rem;
+    color: var(--color-text-disabled);
+  }
   .week-nav {
-    position: absolute;
-    right: 0;
-    bottom: calc(100% + 0.25rem);
     display: flex;
     gap: 0.25rem;
-    z-index: 1;
   }
   .nav-btn {
     appearance: none;

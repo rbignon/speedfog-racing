@@ -16,7 +16,6 @@
     type DailyWeekResponse,
   } from "$lib/api";
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
-  import StreakIndicator from "$lib/components/StreakIndicator.svelte";
   import { timeAgo, raceDisplayDate } from "$lib/utils/time";
   import { formatIgt } from "$lib/utils/training";
   import { formatPoolName } from "$lib/utils/format";
@@ -395,10 +394,7 @@
     {/if}
 
     {#if dailyWeek}
-      <div class="daily-seed-header">
-        <h2 class="daily-seed-title">Daily Seed</h2>
-        <StreakIndicator myStreak={dailyWeek.my_streak} />
-      </div>
+      <h2 class="daily-seed-title">Daily Seed</h2>
       <DailyWeekGrid week={dailyWeek} variant="dashboard" />
     {/if}
 
@@ -645,13 +641,6 @@
     margin: 0 auto;
     padding: 2rem;
     box-sizing: border-box;
-  }
-
-  .daily-seed-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
   }
 
   /* Loading / Error */

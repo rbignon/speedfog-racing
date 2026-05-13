@@ -15,7 +15,6 @@
   import RaceCard from "$lib/components/RaceCard.svelte";
   import LiveIndicator from "$lib/components/LiveIndicator.svelte";
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
-  import StreakIndicator from "$lib/components/StreakIndicator.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
 
@@ -151,10 +150,7 @@
 <main class="public-section">
   <RewardsBanner />
   {#if dailyWeek}
-    <div class="daily-seed-header">
-      <h2 class="daily-seed-title">Daily Seed</h2>
-      <StreakIndicator myStreak={dailyWeek.my_streak} />
-    </div>
+    <h2 class="daily-seed-title">Daily Seed</h2>
     <DailyWeekGrid week={dailyWeek} variant="home" />
   {/if}
   {#if !loadingRaces}
@@ -215,13 +211,6 @@
 </main>
 
 <style>
-  .daily-seed-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
   /* Error banner */
   .error-banner {
     background: var(--color-danger-dark);

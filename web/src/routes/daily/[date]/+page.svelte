@@ -41,7 +41,6 @@
   import ShareButtons from "$lib/components/ShareButtons.svelte";
   import ChatSidebar from "$lib/components/ChatSidebar.svelte";
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
-  import StreakIndicator from "$lib/components/StreakIndicator.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import DownloadModal from "$lib/components/DownloadModal.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
@@ -281,10 +280,6 @@
       myParticipantId: myParticipant?.id ?? null,
     });
   });
-  let isToday = $derived(
-    liveWeek !== null && initialRace.daily_date === liveWeek.today,
-  );
-
   // Refetch once when the daily window closes while the page is open so
   // the grid's "today" badge moves to the new active day. Seeding
   // ``prevDailyEnded`` from the current value via untrack skips a wasted
@@ -305,9 +300,9 @@
   // ``daily_streak_update`` (viewer just crossed qualification on this
   // daily). ``weekOverride`` is the writable mirror of ``data.week``, so
   // updating it propagates through ``weekSource`` -> ``liveWeek`` and
-  // refreshes both the ``StreakIndicator`` next to the title and the
-  // ``streak-panel`` block. Reads the current source via untrack so this
-  // effect only re-runs when a new update arrives.
+  // refreshes the streak info rendered inside the ``DailyWeekGrid``
+  // toolbar. Reads the current source via untrack so this effect only
+  // re-runs when a new update arrives.
   $effect(() => {
     const update = raceStore.dailyStreakUpdate;
     if (!update) return;
@@ -499,33 +494,11 @@
       </header>
 
       {#if liveWeek}
-        <div class="daily-seed-header">
-          <h2 class="daily-seed-title">Daily Seed</h2>
-          <StreakIndicator myStreak={liveWeek.my_streak} />
-        </div>
         <DailyWeekGrid
           week={liveWeek}
           variant="daily-detail"
           selectedDate={initialRace.daily_date ?? undefined}
         />
-        {#if isToday && liveWeek.my_streak && (liveWeek.my_streak.current > 0 || liveWeek.my_streak.best > 0)}
-          <section class="streak-panel">
-            {#if liveWeek.my_streak.current > 0}
-              <span class="streak-cell"
-                >🔥 <strong>{liveWeek.my_streak.current}</strong>-day streak</span
-              >
-            {/if}
-            {#if liveWeek.my_streak.best > 0}
-              <span class="streak-cell"
-                >🏆 Best: <strong>{liveWeek.my_streak.best}</strong></span
-              >
-            {/if}
-            <span class="streak-cell"
-              >❄️ Freezes: <strong>{liveWeek.my_streak.freeze_count}</strong
-              >/2</span
-            >
-          </section>
-        {/if}
       {/if}
 
       {#if raceStatus === "finished" && graphJson}
@@ -679,37 +652,6 @@
 {/if}
 
 <style>
-  .daily-seed-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .streak-panel {
-    display: flex;
-    gap: 2rem;
-    padding: 0.75rem 1rem;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    margin: 1rem 0;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-  }
-
-  .streak-panel strong {
-    color: var(--color-text);
-    font-variant-numeric: tabular-nums;
-  }
-
-  @media (max-width: 640px) {
-    .streak-panel {
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-  }
-
   .dag-view-toggle {
     display: flex;
     gap: 0.25rem;
