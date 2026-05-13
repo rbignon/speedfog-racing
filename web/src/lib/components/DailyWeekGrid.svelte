@@ -294,7 +294,7 @@
     /* overflow-x: auto computes overflow-y to auto too, which would
        clip the today cell's outer gold glow at the top/bottom edges.
        Pad so the glow has breathing room before clipping. */
-    padding: 0.75rem 0.5rem;
+    padding: 0.25rem 0;
   }
 
   .cell {
