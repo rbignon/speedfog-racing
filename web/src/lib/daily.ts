@@ -212,9 +212,9 @@ export function cellStrip(
         igt: r.igt_ms != null ? formatIgt(r.igt_ms) : null,
       };
     }
-    if (r.status === "playing")
-      return { kind: "label", text: "In progress", variant: "in-progress" };
-    // abandoned (without qualifying), registered, ready
+    // playing is structurally impossible on a past daily (close_expired_races
+    // promotes everyone to finished/abandoned at race close); registered and
+    // ready collapse into "never played".
     return { kind: "label", text: "Abandoned", variant: "abandoned" };
   }
   return null;

@@ -4,28 +4,39 @@ Two surfaces:
 
 - A *pure* algorithm (``apply_qualification``, ``apply_close_day``) over the
   immutable ``StreakState`` dataclass. Easy to unit-test, no DB dependency.
-- Persistence helpers (added in later tasks) that read the live ``User``
-  and ``Participant`` rows, apply the algorithm, write back. Triggered by
-  event_flag (Update A), the daily-creation tick (Update B), reroll, and
-  the backfill in the Alembic migration.
+- Persistence helpers that read the live ``User`` and ``Participant`` rows,
+  apply the algorithm, write back. Triggered by event_flag (Update A), the
+  daily-creation tick (Update B), reroll, and the backfill in the Alembic
+  migration.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
-    from speedfog_racing.models import Participant, Race
+    from speedfog_racing.models import Participant, Race, User
 
 FREEZE_CAP = 2
 FREEZE_GRANT_PERIOD = 7
+
+
+def qualifies_for_streak(zone_history: Sequence[Any] | None) -> bool:
+    """Single source of truth for the qualification predicate.
+
+    A participant qualifies for their daily's streak credit once their
+    ``zone_history`` has at least two entries (spawn plus first fog).
+    Mirrored by ``buildLiveMyResult`` on the frontend and by the
+    revision-pinned predicate in the Alembic migration's backfill.
+    """
+    return zone_history is not None and len(zone_history) >= 2
 
 
 @dataclass(frozen=True)
@@ -36,6 +47,37 @@ class StreakState:
     best_streak: int
     freeze_count: int
     last_qualifying_date: date | None
+
+    @classmethod
+    def from_user(cls, user: User) -> StreakState:
+        return cls(
+            current_streak=user.daily_current_streak,
+            best_streak=user.daily_best_streak,
+            freeze_count=user.daily_freeze_count,
+            last_qualifying_date=user.daily_last_qualifying_date,
+        )
+
+    def write_to(self, user: User) -> None:
+        """Write the four streak fields back onto ``user``.
+
+        Use ``write_close_day_to`` instead on the close-day branch, which
+        intentionally leaves ``best_streak`` and ``last_qualifying_date``
+        alone.
+        """
+        user.daily_current_streak = self.current_streak
+        user.daily_best_streak = self.best_streak
+        user.daily_freeze_count = self.freeze_count
+        user.daily_last_qualifying_date = self.last_qualifying_date
+
+    def write_close_day_to(self, user: User) -> None:
+        """Write only the fields that change on a close-day transition.
+
+        ``best_streak`` is a high water mark (never decreases) and
+        ``last_qualifying_date`` is kept as the most recent qualifying
+        date for debug and Update-B idempotency.
+        """
+        user.daily_current_streak = self.current_streak
+        user.daily_freeze_count = self.freeze_count
 
 
 def apply_qualification(state: StreakState, *, qualified_for: date) -> StreakState:
@@ -113,7 +155,7 @@ async def backfill_user(db: AsyncSession, user_id: UUID, *, today: date | None =
     """Recompute the user's streak state from participation history.
 
     Walks chronologically from the user's earliest daily participation up
-    to ``today - 1``, deriving qualification from ``len(zone_history) >= 2``
+    to ``today - 1``, deriving qualification from ``qualifies_for_streak``
     per day. Today itself counts only if the user already qualified for it
     (mirrors the live trigger). Untouched days inside the window are
     misses, evaluated by ``apply_close_day``.
@@ -139,7 +181,7 @@ async def backfill_user(db: AsyncSession, user_id: UUID, *, today: date | None =
 
     qualified_by_date: dict[date, bool] = {}
     for daily_date_value, zone_history in rows:
-        is_qualified = bool(zone_history) and len(zone_history) >= 2
+        is_qualified = qualifies_for_streak(zone_history)
         qualified_by_date[daily_date_value] = (
             qualified_by_date.get(daily_date_value, False) or is_qualified
         )
@@ -173,15 +215,41 @@ async def _persist_state(
     from speedfog_racing.models import DailyStreakFreeze, User
 
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one()
-    user.daily_current_streak = state.current_streak
-    user.daily_best_streak = state.best_streak
-    user.daily_freeze_count = state.freeze_count
-    user.daily_last_qualifying_date = state.last_qualifying_date
+    state.write_to(user)
 
     await db.execute(delete(DailyStreakFreeze).where(DailyStreakFreeze.user_id == user_id))
     for d in frozen_dates:
         db.add(DailyStreakFreeze(user_id=user_id, daily_date=d))
     await db.flush()
+
+
+async def apply_qualification_to_user(
+    db: AsyncSession, *, user_id: UUID, daily_date: date
+) -> StreakState | None:
+    """Apply Update A for ``user_id`` on ``daily_date``.
+
+    Returns the new ``StreakState`` when written, ``None`` if the user is
+    already qualified for the date or does not exist. Caller is expected
+    to have already verified the participant qualifies (e.g. via
+    ``qualifies_for_streak`` on the live participant row).
+    """
+    from speedfog_racing.models import User
+
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        return None
+
+    state = StreakState.from_user(user)
+    if state.last_qualifying_date is not None and state.last_qualifying_date >= daily_date:
+        return None
+
+    new_state = apply_qualification(state, qualified_for=daily_date)
+    if new_state == state:
+        return None
+
+    new_state.write_to(user)
+    await db.flush()
+    return new_state
 
 
 async def evaluate_qualification_for_participant(
@@ -194,36 +262,16 @@ async def evaluate_qualification_for_participant(
     not qualify yet, race is not a daily, or user already qualified for
     this date).
 
-    Caller must already have ``participant.race`` and ``participant.user``
-    loaded (typical for the event_flag handler which reads them).
+    Caller must already have ``participant.race`` loaded.
     """
     race = participant.race
     if race.daily_date is None:
         return None
-    zone_history = participant.zone_history or []
-    if len(zone_history) < 2:
+    if not qualifies_for_streak(participant.zone_history):
         return None
-
-    user = participant.user
-    state = StreakState(
-        current_streak=user.daily_current_streak,
-        best_streak=user.daily_best_streak,
-        freeze_count=user.daily_freeze_count,
-        last_qualifying_date=user.daily_last_qualifying_date,
+    return await apply_qualification_to_user(
+        db, user_id=participant.user_id, daily_date=race.daily_date
     )
-    if state.last_qualifying_date is not None and state.last_qualifying_date >= race.daily_date:
-        return None
-
-    new_state = apply_qualification(state, qualified_for=race.daily_date)
-    if new_state == state:
-        return None
-
-    user.daily_current_streak = new_state.current_streak
-    user.daily_best_streak = new_state.best_streak
-    user.daily_freeze_count = new_state.freeze_count
-    user.daily_last_qualifying_date = new_state.last_qualifying_date
-    await db.flush()
-    return new_state
 
 
 async def apply_close_day_for_all_users(db: AsyncSession, *, missed: date) -> int:
@@ -231,22 +279,24 @@ async def apply_close_day_for_all_users(db: AsyncSession, *, missed: date) -> in
     ``missed``, apply the close-day branch (freeze or break).
 
     Returns the number of users whose state changed. Idempotent on
-    ``missed``: users already protected for this date (i.e. with an
-    existing ``daily_streak_freezes`` row for ``(user, missed)``) are
-    skipped on subsequent calls, so a re-tick within the same rotation
-    day never double-consumes a freeze.
+    ``missed``: users already protected for this date are filtered out at
+    the SQL level via ``NOT EXISTS`` on ``daily_streak_freezes``, so a
+    re-tick within the same rotation day never double-consumes a freeze.
     """
     from speedfog_racing.models import DailyStreakFreeze, User
 
+    already_protected = (
+        select(DailyStreakFreeze.user_id)
+        .where(DailyStreakFreeze.user_id == User.id)
+        .where(DailyStreakFreeze.daily_date == missed)
+    )
     candidates = (
         (
             await db.execute(
                 select(User)
                 .where(User.daily_current_streak > 0)
-                .where(
-                    (User.daily_last_qualifying_date.is_(None))
-                    | (User.daily_last_qualifying_date < missed)
-                )
+                .where(User.daily_last_qualifying_date < missed)
+                .where(~already_protected.exists())
             )
         )
         .scalars()
@@ -255,29 +305,11 @@ async def apply_close_day_for_all_users(db: AsyncSession, *, missed: date) -> in
 
     changed = 0
     for user in candidates:
-        # Re-entry safety: never consume a freeze twice for the same date.
-        already = (
-            await db.execute(
-                select(DailyStreakFreeze)
-                .where(DailyStreakFreeze.user_id == user.id)
-                .where(DailyStreakFreeze.daily_date == missed)
-            )
-        ).scalar_one_or_none()
-        if already is not None:
-            continue
-
-        state = StreakState(
-            current_streak=user.daily_current_streak,
-            best_streak=user.daily_best_streak,
-            freeze_count=user.daily_freeze_count,
-            last_qualifying_date=user.daily_last_qualifying_date,
-        )
+        state = StreakState.from_user(user)
         new_state, used = apply_close_day(state, missed=missed)
         if new_state == state:
             continue
-        user.daily_current_streak = new_state.current_streak
-        user.daily_freeze_count = new_state.freeze_count
-        # best_streak and last_qualifying_date are unchanged on close-day.
+        new_state.write_close_day_to(user)
         if used:
             db.add(DailyStreakFreeze(user_id=user.id, daily_date=missed))
         changed += 1

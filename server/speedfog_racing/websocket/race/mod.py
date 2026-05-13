@@ -23,9 +23,7 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
 )
-from speedfog_racing.services.daily_streak_service import (
-    evaluate_qualification_for_participant,
-)
+from speedfog_racing.services.daily_streak_service import apply_qualification_to_user
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
@@ -630,16 +628,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             return
 
         async with self.session_maker() as db:
-            fresh = (
-                await db.execute(
-                    select(Participant)
-                    .where(Participant.id == entity.id)
-                    .options(selectinload(Participant.user), selectinload(Participant.race))
-                )
-            ).scalar_one_or_none()
-            if fresh is None:
-                return
-            new_state = await evaluate_qualification_for_participant(db, fresh)
+            new_state = await apply_qualification_to_user(
+                db, user_id=entity.user_id, daily_date=entity.race.daily_date
+            )
             if new_state is None:
                 return
             await db.commit()

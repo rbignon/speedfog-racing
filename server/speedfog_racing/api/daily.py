@@ -42,6 +42,7 @@ from speedfog_racing.schemas import (
     UserDailyStreakStats,
 )
 from speedfog_racing.services.daily_seed_loop import daily_date_for
+from speedfog_racing.services.daily_streak_service import qualifies_for_streak
 
 router = APIRouter()
 
@@ -149,7 +150,7 @@ def _my_result(
         total_starters=starters_count,
         igt_ms=me.igt_ms if me.status == ParticipantStatus.FINISHED else None,
         death_count=me.death_count,
-        qualifies=me.zone_history is not None and len(me.zone_history) >= 2,
+        qualifies=qualifies_for_streak(me.zone_history),
     )
 
 
@@ -268,13 +269,7 @@ async def get_daily_week(
     )
     has_earlier = earlier_exists.scalar() is not None
 
-    my_streak: UserDailyStreakStats | None = None
-    if user is not None:
-        my_streak = UserDailyStreakStats(
-            current=user.daily_current_streak,
-            best=user.daily_best_streak,
-            freeze_count=user.daily_freeze_count,
-        )
+    my_streak = UserDailyStreakStats.from_user(user) if user is not None else None
 
     return DailyWeekResponse(
         week_start=week_start,

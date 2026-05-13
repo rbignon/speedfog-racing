@@ -114,6 +114,10 @@ def _backfill_streaks(connection) -> None:
 
     from sqlalchemy import text
 
+    # Pinned to this revision: the live ``daily_date_for`` / streak service
+    # may evolve these values, but a re-run of this migration must replay
+    # with the same rotation hour and freeze rules that were in force when
+    # the rows it backfills were produced.
     FREEZE_CAP = 2
     FREEZE_PERIOD = 7
     DAILY_ROTATION_HOUR = 8

@@ -158,7 +158,7 @@
           <span aria-hidden="true">❄️</span>
           <span>
             {displayedWeek.my_streak.freeze_count}
-            freeze{displayedWeek.my_streak.freeze_count > 1 ? "s" : ""}
+            freeze{displayedWeek.my_streak.freeze_count !== 1 ? "s" : ""}
           </span>
         {/if}
       {/if}

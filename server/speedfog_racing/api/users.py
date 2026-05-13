@@ -501,11 +501,7 @@ async def get_user_profile(
         organized_count=organized_count,
         casted_count=casted_count,
         weekly=weekly,
-        daily_streak=UserDailyStreakStats(
-            current=user.daily_current_streak,
-            best=user.daily_best_streak,
-            freeze_count=user.daily_freeze_count,
-        ),
+        daily_streak=UserDailyStreakStats.from_user(user),
     )
 
     # Held badges (active grants only).

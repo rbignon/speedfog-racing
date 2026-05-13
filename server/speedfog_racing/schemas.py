@@ -180,6 +180,14 @@ class UserDailyStreakStats(BaseModel):
     best: int
     freeze_count: int
 
+    @classmethod
+    def from_user(cls, user: Any) -> "UserDailyStreakStats":
+        return cls(
+            current=user.daily_current_streak,
+            best=user.daily_best_streak,
+            freeze_count=user.daily_freeze_count,
+        )
+
 
 class UserStatsResponse(BaseModel):
     """Aggregated user statistics."""
