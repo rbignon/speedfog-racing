@@ -330,7 +330,14 @@ class Participant(Base):
         Enum(ParticipantStatus), default=ParticipantStatus.REGISTERED
     )
     color_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    zone_history: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # ``none_as_null=True``: Python ``None`` maps to SQL NULL on write,
+    # not JSON ``null``. Without this, any assignment that resets the
+    # history (e.g. daily reroll) would leave the column holding the JSON
+    # value ``null`` and crash predicates like ``json_array_length`` on
+    # PostgreSQL.
+    zone_history: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
     # IGT at first entry into each layer, keyed by layer number (string).
     # Maintained at runtime as current_layer advances; read by
     # sort_leaderboard for gap computation.
@@ -470,7 +477,14 @@ class TrainingSession(Base):
     )
     igt_ms: Mapped[int] = mapped_column(Integer, default=0)
     death_count: Mapped[int] = mapped_column(Integer, default=0)
-    zone_history: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # ``none_as_null=True``: Python ``None`` maps to SQL NULL on write,
+    # not JSON ``null``. Without this, any assignment that resets the
+    # history (e.g. daily reroll) would leave the column holding the JSON
+    # value ``null`` and crash predicates like ``json_array_length`` on
+    # PostgreSQL.
+    zone_history: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
     current_zone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -7,6 +7,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 
 import pytest
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base, get_db
@@ -674,6 +675,32 @@ async def test_profile_daily_count_uses_streak_qualification(test_client, async_
                     zone_history=[{"node_id": "start", "igt_ms": 0, "type": "fog"}],
                 ),
             ]
+        )
+        # 5) Legacy / stray JSON scalar in ``zone_history`` (object instead
+        # of list). The Mapped[list[...] | None] annotation is for static
+        # checking; runtime can hit non-array values from old data or
+        # manual edits. The predicate's CASE-on-cast-text guard must skip
+        # it instead of letting PostgreSQL error on json_array_length.
+        race5 = Race(
+            name="Daily 5",
+            organizer_id=admin.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            daily_date=date(2026, 5, 5),
+        )
+        db.add(race5)
+        await db.flush()
+        p5 = Participant(
+            race_id=race5.id,
+            user_id=user.id,
+            status=ParticipantStatus.ABANDONED,
+            igt_ms=0,
+        )
+        db.add(p5)
+        await db.flush()
+        # Bypass the typed setter to plant a non-array JSON shape.
+        await db.execute(
+            sa_update(Participant).where(Participant.id == p5.id).values(zone_history={})
         )
         await db.commit()
 
