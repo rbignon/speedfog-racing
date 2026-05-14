@@ -1,7 +1,7 @@
 """WebSocket message schemas."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
@@ -267,13 +267,23 @@ class DailyStreakUpdateMessage(BaseModel):
     """Unicast to a user when their daily streak state changes.
 
     Sent on Update A (the user just crossed ``len(zone_history) >= 2`` on a
-    daily race). Not broadcast to spectators; not sent for non-daily races.
+    daily race) and on the explicit-abandon trigger (close-day branch
+    applied immediately). Not broadcast to spectators; not sent for
+    non-daily races.
+
+    ``freeze_consumed_for`` is set to the ``daily_date`` of the affected
+    daily when this message reports a freeze consumption (currently the
+    abandon trigger). The frontend uses it to patch
+    ``DailyWeekDay.freeze_protected`` for the matching cell so the strip
+    flips to "❄️ Freeze" without waiting for a page reload. ``None`` on
+    every other case (qualification crossing, future triggers).
     """
 
     type: Literal["daily_streak_update"] = "daily_streak_update"
     current: int
     best: int
     freeze_count: int
+    freeze_consumed_for: date | None = None
 
 
 class PendingInviteInfo(BaseModel):

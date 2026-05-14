@@ -56,12 +56,35 @@ describe("RaceWebSocket message dispatch", () => {
       current: 5,
       best: 12,
       freeze_count: 1,
+      freeze_consumed_for: null,
     };
 
     (ws as unknown as InternalRaceWebSocket).handleMessage(payload);
 
     expect(received).toHaveLength(1);
     expect(received[0]).toEqual(payload);
+  });
+
+  it("routes daily_streak_update with freeze_consumed_for", () => {
+    // The abandon trigger carries the affected daily_date so the page on
+    // /daily/[date] can patch the matching DailyWeekDay.freeze_protected.
+    const received: DailyStreakUpdateMessage[] = [];
+    const ws = new RaceWebSocket("test-race-id", {
+      onDailyStreakUpdate: (msg) => received.push(msg),
+    });
+
+    const payload: DailyStreakUpdateMessage = {
+      type: "daily_streak_update",
+      current: 5,
+      best: 12,
+      freeze_count: 0,
+      freeze_consumed_for: "2026-05-12",
+    };
+
+    (ws as unknown as InternalRaceWebSocket).handleMessage(payload);
+
+    expect(received).toHaveLength(1);
+    expect(received[0].freeze_consumed_for).toBe("2026-05-12");
   });
 
   it("drops unknown message types instead of dispatching them", () => {

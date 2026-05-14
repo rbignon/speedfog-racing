@@ -125,6 +125,12 @@ export interface DailyStreakUpdateMessage {
   current: number;
   best: number;
   freeze_count: number;
+  // Set to the ``daily_date`` (YYYY-MM-DD) whose ``freeze_protected``
+  // flag just flipped to true (currently the abandon trigger). ``null``
+  // on qualification crossings. The page on ``/daily/[date]`` reads
+  // this to patch the matching ``DailyWeekDay`` so the cell strip
+  // shows "❄️ Freeze" without a reload.
+  freeze_consumed_for: string | null;
 }
 
 export type ServerMessage =

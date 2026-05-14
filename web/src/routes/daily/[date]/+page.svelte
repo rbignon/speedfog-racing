@@ -298,18 +298,34 @@
 
   // Patch ``my_streak`` in place when the server unicasts a
   // ``daily_streak_update`` (viewer just crossed qualification on this
-  // daily). ``weekOverride`` is the writable mirror of ``data.week``, so
-  // updating it propagates through ``weekSource`` -> ``liveWeek`` and
-  // refreshes the streak info rendered inside the ``DailyWeekGrid``
-  // toolbar. Reads the current source via untrack so this effect only
-  // re-runs when a new update arrives.
+  // daily, or abandoned and consumed a freeze). ``weekOverride`` is the
+  // writable mirror of ``data.week``, so updating it propagates through
+  // ``weekSource`` -> ``liveWeek`` and refreshes the streak info rendered
+  // inside the ``DailyWeekGrid`` toolbar.
+  //
+  // When ``freeze_consumed_for`` is set, also flip the matching day's
+  // ``freeze_protected`` so the cell strip switches to "❄️ Freeze"
+  // immediately. Without this the strip would stay "Abandoned" until the
+  // next page load even though the toolbar correctly shows the
+  // decremented freeze count.
+  //
+  // Reads the current source via untrack so this effect only re-runs
+  // when a new update arrives.
   $effect(() => {
     const update = raceStore.dailyStreakUpdate;
     if (!update) return;
     const base = untrack(() => weekOverride ?? data.week ?? null);
     if (!base) return;
+    const days = update.freeze_consumed_for
+      ? base.days.map((d) =>
+          d.date === update.freeze_consumed_for
+            ? { ...d, freeze_protected: true }
+            : d,
+        )
+      : base.days;
     weekOverride = {
       ...base,
+      days,
       my_streak: {
         current: update.current,
         best: update.best,

@@ -319,7 +319,7 @@ async def apply_close_day_for_all_users(db: AsyncSession, *, missed: date) -> in
 
 async def apply_close_day_to_user(
     db: AsyncSession, *, user_id: UUID, daily_date: date
-) -> StreakState | None:
+) -> tuple[StreakState, bool] | None:
     """Per-user variant of ``apply_close_day_for_all_users``.
 
     Used by the abandon handler to consume a freeze (or break the streak)
@@ -327,8 +327,9 @@ async def apply_close_day_to_user(
     instead of waiting for the next 08:00 rotation tick. The 08:00 tick's
     ``NOT EXISTS`` guard naturally skips users already settled here.
 
-    Returns the new ``StreakState`` when state changed (so the caller can
-    push it over WS), ``None`` when nothing happened: the user has no
+    Returns ``(new_state, freeze_used)`` when state changed (so the caller
+    can push it over WS and tell the frontend which date became
+    freeze-protected), ``None`` when nothing happened: the user has no
     active streak, already qualified for this date, already has a
     ``daily_streak_freezes`` row for it, or does not exist.
     """
@@ -362,7 +363,7 @@ async def apply_close_day_to_user(
     if used:
         db.add(DailyStreakFreeze(user_id=user.id, daily_date=daily_date))
     await db.flush()
-    return new_state
+    return new_state, used
 
 
 async def rollback_streak_for_reroll(

@@ -700,22 +700,24 @@ Clients replace their local `zone_history[participant_id]` with the payload. Sen
 
 #### `daily_streak_update`
 
-Unicast to a single user on a daily race when their daily streak state changes (currently emitted on the qualification crossing, i.e. when a participant's `zone_history` length first reaches 2). Routed to **every** connection of `user_id` on the race room: their mod connection plus all open spectator tabs. Never broadcast to other spectators; never sent on non-daily races.
+Unicast to a single user on a daily race when their daily streak state changes. Emitted on the qualification crossing (the participant's `zone_history` length just reached 2) and on the explicit-abandon trigger (the player gave up on the current daily without having qualified, so the close-day branch fired immediately). Routed to **every** connection of `user_id` on the race room: their mod connection plus all open spectator tabs. Never broadcast to other spectators; never sent on non-daily races.
 
 ```json
 {
   "type": "daily_streak_update",
   "current": 7,
   "best": 42,
-  "freeze_count": 1
+  "freeze_count": 1,
+  "freeze_consumed_for": null
 }
 ```
 
-| Field          | Type  | Description                                                      |
-| -------------- | ----- | ---------------------------------------------------------------- |
-| `current`      | `int` | Current consecutive-daily streak length after the update         |
-| `best`         | `int` | Best streak length ever achieved by this user                    |
-| `freeze_count` | `int` | Number of freeze tokens available to protect a future missed day |
+| Field                 | Type           | Description                                                                                                                                                          |
+| --------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `current`             | `int`          | Current consecutive-daily streak length after the update                                                                                                             |
+| `best`                | `int`          | Best streak length ever achieved by this user                                                                                                                        |
+| `freeze_count`        | `int`          | Number of freeze tokens available to protect a future missed day                                                                                                     |
+| `freeze_consumed_for` | `date \| null` | The `daily_date` (YYYY-MM-DD) whose `freeze_protected` flag just flipped to true, when this message reports a freeze consumption. `null` on qualification crossings. |
 
 The message is fire-and-forget: it is not retried, and the canonical state is always re-fetched from REST on the next page load. The mod ignores it (streak state is web-only); the field appears in the catalog because the dispatcher writes to every connection of the user, including the mod.
 

@@ -1735,9 +1735,9 @@ async def abandon_race(
         qualifies_for_streak,
     )
 
-    streak_state = None
+    streak_result = None
     if race.daily_date is not None and not qualifies_for_streak(participant.zone_history):
-        streak_state = await apply_close_day_to_user(
+        streak_result = await apply_close_day_to_user(
             db, user_id=user.id, daily_date=race.daily_date
         )
 
@@ -1768,13 +1768,15 @@ async def abandon_race(
     )
     await broadcast_race_state_update(race_id, race)
 
-    if streak_state is not None:
+    if streak_result is not None:
+        streak_state, freeze_used = streak_result
         await manager.send_daily_streak_update_to_user(
             race_id,
             user.id,
             current=streak_state.current_streak,
             best=streak_state.best_streak,
             freeze_count=streak_state.freeze_count,
+            freeze_consumed_for=race.daily_date if freeze_used else None,
         )
 
     # Check auto-finish

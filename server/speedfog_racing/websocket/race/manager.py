@@ -453,9 +453,13 @@ class ConnectionManager:
         current: int,
         best: int,
         freeze_count: int,
+        freeze_consumed_for: date | None = None,
     ) -> None:
         """Unicast ``daily_streak_update`` to every connection of ``user_id`` on
         this race room (mod + all spectator connections matching the user).
+
+        ``freeze_consumed_for`` is forwarded as-is; see
+        ``DailyStreakUpdateMessage`` for the contract.
 
         No-op when the user has no open connections.
         """
@@ -463,7 +467,10 @@ class ConnectionManager:
         if room is None:
             return
         payload = DailyStreakUpdateMessage(
-            current=current, best=best, freeze_count=freeze_count
+            current=current,
+            best=best,
+            freeze_count=freeze_count,
+            freeze_consumed_for=freeze_consumed_for,
         ).model_dump_json()
 
         mod_conn = next(

@@ -40,13 +40,36 @@ def test_daily_streak_update_message_serialization() -> None:
         "current": 7,
         "best": 42,
         "freeze_count": 1,
+        "freeze_consumed_for": None,
     }
+
+
+def test_daily_streak_update_message_carries_freeze_consumed_for() -> None:
+    """When the abandon trigger consumes a freeze, the date is round-tripped
+    so the frontend can patch the matching ``DailyWeekDay.freeze_protected``
+    cell."""
+    from datetime import date
+
+    msg = DailyStreakUpdateMessage(
+        current=5,
+        best=5,
+        freeze_count=0,
+        freeze_consumed_for=date(2026, 5, 12),
+    )
+    payload = msg.model_dump(mode="json")
+    assert payload["freeze_consumed_for"] == "2026-05-12"
 
 
 def test_daily_streak_update_message_omits_extra_fields() -> None:
     """The schema accepts only the documented fields."""
     msg = DailyStreakUpdateMessage(current=0, best=0, freeze_count=0)
-    assert msg.model_dump().keys() == {"type", "current", "best", "freeze_count"}
+    assert msg.model_dump().keys() == {
+        "type",
+        "current",
+        "best",
+        "freeze_count",
+        "freeze_consumed_for",
+    }
 
 
 async def test_send_daily_streak_update_routes_to_all_user_connections() -> None:
@@ -379,12 +402,16 @@ async def test_abandon_consumes_freeze_immediately(streak_async_session) -> None
         db.add(user)
         await db.commit()
 
-        new_state = await apply_close_day_to_user(db, user_id=user.id, daily_date=today)
+        result = await apply_close_day_to_user(db, user_id=user.id, daily_date=today)
         await db.commit()
 
-        assert new_state is not None
+        assert result is not None
+        new_state, freeze_used = result
         assert new_state.current_streak == 5
         assert new_state.freeze_count == 0
+        # Freeze branch: the caller needs ``freeze_used`` to attach
+        # ``freeze_consumed_for`` to the WS push.
+        assert freeze_used is True
 
         await db.refresh(user)
         assert user.daily_current_streak == 5
@@ -438,12 +465,15 @@ async def test_abandon_breaks_streak_when_no_freeze(streak_async_session) -> Non
         db.add(user)
         await db.commit()
 
-        new_state = await apply_close_day_to_user(db, user_id=user.id, daily_date=today)
+        result = await apply_close_day_to_user(db, user_id=user.id, daily_date=today)
         await db.commit()
 
-        assert new_state is not None
+        assert result is not None
+        new_state, freeze_used = result
         assert new_state.current_streak == 0
         assert new_state.best_streak == 10
+        # Break branch: caller must NOT advertise freeze_consumed_for.
+        assert freeze_used is False
 
         await db.refresh(user)
         assert user.daily_current_streak == 0

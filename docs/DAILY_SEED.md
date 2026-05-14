@@ -402,7 +402,7 @@ Daily-streak state surfaces through existing responses; no new endpoints are add
 
 - `DailyWeekGrid` adds a new `freeze_protected` boolean per day. Cells with `freeze_protected = true` show a blue `❄️ Freeze` strip. Cells where the viewer abandoned with `qualifies = true` show a green `✓ DNF · {igt}` strip (the new `dnf` variant, same green styling as `finished`).
 - The today cell's strip swaps from `PLAY NOW` to `KEEP STREAK` when the viewer has an active streak (`my_streak.current > 0`) and has not yet qualified for today.
-- The grid renders a toolbar row above the seven cells: streak info on the left (`🔥 {N}-day streak · ❄️ {F} freeze[s]`, hidden when `current_streak == 0`), prev/next-week arrows on the right. The streak info reads from `displayedWeek.my_streak` and updates live via the `daily_streak_update` WS message.
+- The grid renders a toolbar row above the seven cells: streak info on the left (`🔥 {N}-day streak · ❄️ {F} freeze[s]`, hidden when `current_streak == 0`), prev/next-week arrows on the right. The streak info reads from `displayedWeek.my_streak` and updates live via the `daily_streak_update` WS message. When that message carries `freeze_consumed_for`, the page also patches the matching day's `freeze_protected` so the cell strip flips to "❄️ Freeze" in the same frame as the toolbar (without it, the cell would stay "Abandoned" until the next reload).
 - `UserStatsCards` takes a `streakDisplay?: "current" | "best" | null` prop. `/dashboard` passes `current` (`🔥 N` corner badge on the Daily cell when `current > 0`); `/user/[username]` passes `best` (`🏆 N` when `best > 0`). The badge is hidden when the relevant value is 0.
 
 ## See also
