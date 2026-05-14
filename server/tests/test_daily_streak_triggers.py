@@ -350,6 +350,257 @@ async def test_update_b_idempotent_on_rerun(streak_async_session) -> None:
 
 
 @pytest.mark.asyncio
+async def test_abandon_consumes_freeze_immediately(streak_async_session) -> None:
+    """Explicit abandon path: a player with an active streak and a freeze
+    in stock who abandons a daily without qualifying consumes the freeze
+    right away. The 08:00 close-day tick sees the freeze row and skips
+    them, so no double-application happens at rotation.
+    """
+    from datetime import date
+
+    from sqlalchemy import select
+
+    from speedfog_racing.models import DailyStreakFreeze, User
+    from speedfog_racing.services.daily_streak_service import (
+        apply_close_day_for_all_users,
+        apply_close_day_to_user,
+    )
+
+    today = date(2026, 5, 12)
+    async with streak_async_session() as db:
+        user = User(
+            twitch_id="ab1",
+            twitch_username="ab1",
+            daily_current_streak=5,
+            daily_best_streak=5,
+            daily_freeze_count=1,
+            daily_last_qualifying_date=date(2026, 5, 11),
+        )
+        db.add(user)
+        await db.commit()
+
+        new_state = await apply_close_day_to_user(db, user_id=user.id, daily_date=today)
+        await db.commit()
+
+        assert new_state is not None
+        assert new_state.current_streak == 5
+        assert new_state.freeze_count == 0
+
+        await db.refresh(user)
+        assert user.daily_current_streak == 5
+        assert user.daily_freeze_count == 0
+        # last_qualifying_date is left untouched on the close-day branch.
+        assert user.daily_last_qualifying_date == date(2026, 5, 11)
+
+        rows = (
+            (
+                await db.execute(
+                    select(DailyStreakFreeze).where(DailyStreakFreeze.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [(r.user_id, r.daily_date) for r in rows] == [(user.id, today)]
+
+        # The 08:00 tick for the same date is a no-op for this user: the
+        # NOT EXISTS guard skips them.
+        changed = await apply_close_day_for_all_users(db, missed=today)
+        await db.commit()
+        assert changed == 0
+        await db.refresh(user)
+        assert user.daily_freeze_count == 0
+
+
+@pytest.mark.asyncio
+async def test_abandon_breaks_streak_when_no_freeze(streak_async_session) -> None:
+    """Explicit abandon with ``freeze_count == 0``: the streak breaks
+    to 0 immediately. ``best_streak`` is preserved as a high water mark,
+    and no freeze row is written.
+    """
+    from datetime import date
+
+    from sqlalchemy import select
+
+    from speedfog_racing.models import DailyStreakFreeze, User
+    from speedfog_racing.services.daily_streak_service import apply_close_day_to_user
+
+    today = date(2026, 5, 12)
+    async with streak_async_session() as db:
+        user = User(
+            twitch_id="ab2",
+            twitch_username="ab2",
+            daily_current_streak=3,
+            daily_best_streak=10,
+            daily_freeze_count=0,
+            daily_last_qualifying_date=date(2026, 5, 11),
+        )
+        db.add(user)
+        await db.commit()
+
+        new_state = await apply_close_day_to_user(db, user_id=user.id, daily_date=today)
+        await db.commit()
+
+        assert new_state is not None
+        assert new_state.current_streak == 0
+        assert new_state.best_streak == 10
+
+        await db.refresh(user)
+        assert user.daily_current_streak == 0
+        assert user.daily_best_streak == 10
+        assert (
+            await db.execute(select(DailyStreakFreeze).where(DailyStreakFreeze.user_id == user.id))
+        ).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_abandon_after_qualification_is_noop(streak_async_session) -> None:
+    """Calling the helper for a user who already qualified for the date
+    (Update A ran earlier in the run) returns None and doesn't touch the
+    user state. Defends against a late ABANDONED transition after a run
+    that qualified but didn't finish.
+    """
+    from datetime import date
+
+    from speedfog_racing.models import User
+    from speedfog_racing.services.daily_streak_service import apply_close_day_to_user
+
+    today = date(2026, 5, 12)
+    async with streak_async_session() as db:
+        user = User(
+            twitch_id="ab3",
+            twitch_username="ab3",
+            daily_current_streak=6,
+            daily_best_streak=6,
+            daily_freeze_count=0,
+            daily_last_qualifying_date=today,
+        )
+        db.add(user)
+        await db.commit()
+
+        result = await apply_close_day_to_user(db, user_id=user.id, daily_date=today)
+        assert result is None
+        await db.refresh(user)
+        assert user.daily_current_streak == 6
+        assert user.daily_freeze_count == 0
+
+
+@pytest.mark.asyncio
+async def test_abandon_with_no_active_streak_is_noop(streak_async_session) -> None:
+    """A user with ``current_streak == 0`` (cold start or already broken)
+    is left alone: there's no streak to protect or break."""
+    from datetime import date
+
+    from speedfog_racing.models import User
+    from speedfog_racing.services.daily_streak_service import apply_close_day_to_user
+
+    today = date(2026, 5, 12)
+    async with streak_async_session() as db:
+        user = User(
+            twitch_id="ab4",
+            twitch_username="ab4",
+            daily_current_streak=0,
+            daily_best_streak=4,
+            daily_freeze_count=0,
+            daily_last_qualifying_date=None,
+        )
+        db.add(user)
+        await db.commit()
+
+        assert await apply_close_day_to_user(db, user_id=user.id, daily_date=today) is None
+
+
+@pytest.mark.asyncio
+async def test_reroll_after_abandon_refunds_freeze(streak_async_session) -> None:
+    """A user who abandoned the daily and consumed a freeze via the
+    abandon trigger before an admin rerolled the seed must be included
+    in the rollback's affected set. Otherwise the freeze row would stay
+    spent against a missed day that, post-reroll, never happened.
+
+    The test pins the inclusion contract by asserting the stale
+    ``daily_streak_freezes`` row is wiped after rollback (``backfill_user``
+    deletes all the user's freeze rows up front, then re-emits only those
+    its walk produces).
+    """
+    from datetime import date
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from speedfog_racing.models import (
+        DailyStreakFreeze,
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+    from speedfog_racing.services.daily_streak_service import rollback_streak_for_reroll
+
+    today = date(2026, 5, 12)
+    async with streak_async_session() as db:
+        user = User(
+            twitch_id="rab1",
+            twitch_username="rab1",
+            daily_current_streak=5,
+            daily_best_streak=5,
+            daily_freeze_count=0,
+            daily_last_qualifying_date=date(2026, 5, 11),
+        )
+        db.add(user)
+        await db.flush()
+
+        race = Race(
+            name="Daily Seed",
+            organizer_id=user.id,
+            daily_date=today,
+            exclude_from_elo=True,
+            status=RaceStatus.RUNNING,
+        )
+        db.add(race)
+        await db.flush()
+        # Post-reroll participant shape: status reset to REGISTERED, history wiped.
+        db.add(
+            Participant(
+                race_id=race.id,
+                user_id=user.id,
+                status=ParticipantStatus.REGISTERED,
+                zone_history=None,
+            )
+        )
+        # The freeze row written by ``apply_close_day_to_user`` at abandon time.
+        db.add(DailyStreakFreeze(user_id=user.id, daily_date=today))
+        await db.commit()
+
+        race = (
+            await db.execute(
+                select(Race)
+                .where(Race.id == race.id)
+                .options(selectinload(Race.participants).selectinload(Participant.user))
+            )
+        ).scalar_one()
+
+        await rollback_streak_for_reroll(db, race, today=today)
+        await db.commit()
+
+        # The stale freeze row is gone: the user was included in the
+        # affected set even though ``last_qualifying_date != race.daily_date``.
+        remaining = (
+            (
+                await db.execute(
+                    select(DailyStreakFreeze).where(DailyStreakFreeze.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert remaining == []
+        await db.refresh(user)
+        # best_streak preserved as high water mark.
+        assert user.daily_best_streak == 5
+
+
+@pytest.mark.asyncio
 async def test_reroll_rolls_back_streak_for_today_qualifiers(streak_async_session) -> None:
     """After a reroll wipes zone_history for the current daily, the
     streak service re-derives state from scratch. A user whose only

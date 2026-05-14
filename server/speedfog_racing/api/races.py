@@ -1723,6 +1723,24 @@ async def abandon_race(
         )
 
     participant.status = ParticipantStatus.ABANDONED
+
+    # Daily streak: a player abandoning a daily without having qualified
+    # commits to a missed day, so apply the close-day branch immediately
+    # rather than waiting for the next 08:00 rotation tick. The unique
+    # (race_id, user_id) constraint forbids re-joining, so there's no
+    # recovery window to protect. The 08:00 tick still picks up silent
+    # no-shows; its NOT EXISTS guard skips users settled here.
+    from speedfog_racing.services.daily_streak_service import (
+        apply_close_day_to_user,
+        qualifies_for_streak,
+    )
+
+    streak_state = None
+    if race.daily_date is not None and not qualifies_for_streak(participant.zone_history):
+        streak_state = await apply_close_day_to_user(
+            db, user_id=user.id, daily_date=race.daily_date
+        )
+
     display = user.twitch_display_name or user.twitch_username
     abandon_msg = (
         f"{display} abandoned the daily seed."
@@ -1749,6 +1767,15 @@ async def abandon_race(
         race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
     )
     await broadcast_race_state_update(race_id, race)
+
+    if streak_state is not None:
+        await manager.send_daily_streak_update_to_user(
+            race_id,
+            user.id,
+            current=streak_state.current_streak,
+            best=streak_state.best_streak,
+            freeze_count=streak_state.freeze_count,
+        )
 
     # Check auto-finish
     race_transitioned = await check_race_auto_finish(db, race)

@@ -205,14 +205,14 @@ The existing endpoint `POST /api/races/{race_id}/reroll-seed` is the recovery to
 
 Branching inside the handler:
 
-| Aspect              | Regular race                              | Daily Seed                                                                                                                                                                                      |
-| ------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Allowed status      | `SETUP`                                   | `RUNNING`                                                                                                                                                                                       |
-| Permission          | `_require_organizer` (organizer or admin) | Same. Organizer is the system user, so in practice only admins.                                                                                                                                 |
-| Participant reset   | n/a (no participants yet)                 | All participants reset to `REGISTERED` (`current_zone`, `current_layer`, `igt_ms`, `death_count`, `finished_at`, `zone_history`, `last_igt_change_at` cleared; `layer_entry_igts` set to `{}`). |
-| `seeds_released_at` | unchanged (gated until release)           | Set to `now()` so participants can re-download immediately.                                                                                                                                     |
-| Public chat message | "Seed has been rerolled"                  | "Seed has been rerolled. All previous runs are invalidated."                                                                                                                                    |
-| Streak rollback     | n/a                                       | Every user who had qualified for this `daily_date` has their streak state re-derived from scratch via `rollback_streak_for_reroll`. `best_streak` is preserved as a high water mark.            |
+| Aspect              | Regular race                              | Daily Seed                                                                                                                                                                                                                  |
+| ------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Allowed status      | `SETUP`                                   | `RUNNING`                                                                                                                                                                                                                   |
+| Permission          | `_require_organizer` (organizer or admin) | Same. Organizer is the system user, so in practice only admins.                                                                                                                                                             |
+| Participant reset   | n/a (no participants yet)                 | All participants reset to `REGISTERED` (`current_zone`, `current_layer`, `igt_ms`, `death_count`, `finished_at`, `zone_history`, `last_igt_change_at` cleared; `layer_entry_igts` set to `{}`).                             |
+| `seeds_released_at` | unchanged (gated until release)           | Set to `now()` so participants can re-download immediately.                                                                                                                                                                 |
+| Public chat message | "Seed has been rerolled"                  | "Seed has been rerolled. All previous runs are invalidated."                                                                                                                                                                |
+| Streak rollback     | n/a                                       | Every user whose streak state references this `daily_date` (qualifiers and abandon-trigger freeze-consumers) has their streak re-derived via `rollback_streak_for_reroll`. `best_streak` is preserved as a high water mark. |
 
 Race version bumps via the existing optimistic-lock UPDATE; `reroll_seed_for_race` releases the previous seed back to AVAILABLE (unless DISCARDED) and assigns a fresh one from the same pool. The frontend detects the participant reset via the standard `race_state` push and shows a toast.
 
@@ -339,11 +339,12 @@ There is no periodic server-side tick beyond what the mods themselves drive at 1
 
 ## Daily Streak
 
-A streak system layered on top of the Daily Seed rewards consistent play. Each day a participant crosses `len(zone_history) >= 2` on the daily, their streak grows by one; missing a day breaks it, with up to two automatic "freezes" absorbing isolated misses. Updates fire in three places:
+A streak system layered on top of the Daily Seed rewards consistent play. Each day a participant crosses `len(zone_history) >= 2` on the daily, their streak grows by one; missing a day breaks it, with up to two automatic "freezes" absorbing isolated misses. Updates fire in four places:
 
 - **Real time** when a participant first crosses `len(zone_history) >= 2` on a daily race, unicasting `daily_streak_update` over WS (see [PROTOCOL.md](PROTOCOL.md#daily_streak_update)).
-- **At the 08:00 UTC daily-creation tick**, `apply_close_day_for_all_users` walks every user with an active streak who did not qualify yesterday and either consumes a freeze (writes a `daily_streak_freezes` row) or breaks the streak.
-- **On reroll**, every user who had qualified for the rerolled `daily_date` has their streak state re-derived via `rollback_streak_for_reroll`. `best_streak` is preserved as a high water mark.
+- **On explicit abandon** of a daily race without having qualified, `apply_close_day_to_user` runs inside the abandon handler and applies the same close-day branch (freeze or break) immediately, so the UI reflects the outcome without waiting for the rotation. The unique `(race_id, user_id)` constraint forbids re-joining, so there's no recovery window to protect.
+- **At the 08:00 UTC daily-creation tick**, `apply_close_day_for_all_users` walks every user with an active streak who did not qualify yesterday and either consumes a freeze (writes a `daily_streak_freezes` row) or breaks the streak. The `NOT EXISTS` guard on `daily_streak_freezes` naturally skips users already settled by the abandon path.
+- **On reroll**, every user whose streak state references the rerolled `daily_date` has their streak re-derived via `rollback_streak_for_reroll`. Two categories are picked up: participants who had qualified (`daily_last_qualifying_date == race.daily_date`) and participants who had consumed a freeze for this date via the abandon trigger. `best_streak` is preserved as a high water mark.
 
 A migration-time backfill (`_backfill_streaks` inside the Alembic migration) replays each historical user's participation chronologically through the same algorithm so the rollout doesn't reset existing players' streak state.
 

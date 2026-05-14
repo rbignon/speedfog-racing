@@ -317,6 +317,54 @@ async def apply_close_day_for_all_users(db: AsyncSession, *, missed: date) -> in
     return changed
 
 
+async def apply_close_day_to_user(
+    db: AsyncSession, *, user_id: UUID, daily_date: date
+) -> StreakState | None:
+    """Per-user variant of ``apply_close_day_for_all_users``.
+
+    Used by the abandon handler to consume a freeze (or break the streak)
+    at the moment the player explicitly gives up on the current daily,
+    instead of waiting for the next 08:00 rotation tick. The 08:00 tick's
+    ``NOT EXISTS`` guard naturally skips users already settled here.
+
+    Returns the new ``StreakState`` when state changed (so the caller can
+    push it over WS), ``None`` when nothing happened: the user has no
+    active streak, already qualified for this date, already has a
+    ``daily_streak_freezes`` row for it, or does not exist.
+    """
+    from speedfog_racing.models import DailyStreakFreeze, User
+
+    existing_freeze = await db.execute(
+        select(DailyStreakFreeze.user_id)
+        .where(DailyStreakFreeze.user_id == user_id)
+        .where(DailyStreakFreeze.daily_date == daily_date)
+    )
+    if existing_freeze.scalar_one_or_none() is not None:
+        return None
+
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        return None
+    if (
+        user.daily_last_qualifying_date is not None
+        and user.daily_last_qualifying_date >= daily_date
+    ):
+        return None
+
+    state = StreakState.from_user(user)
+    new_state, used = apply_close_day(state, missed=daily_date)
+    # ``apply_close_day`` returns the same state when ``current_streak == 0``,
+    # so the no-active-streak case folds into the equality short-circuit
+    # without a separate guard.
+    if new_state == state:
+        return None
+    new_state.write_close_day_to(user)
+    if used:
+        db.add(DailyStreakFreeze(user_id=user.id, daily_date=daily_date))
+    await db.flush()
+    return new_state
+
+
 async def rollback_streak_for_reroll(
     db: AsyncSession, race: Race, *, today: date | None = None
 ) -> None:
@@ -335,16 +383,35 @@ async def rollback_streak_for_reroll(
     behavior; production callers pass ``None`` so the helper uses the
     real rotation date.
     """
-    from speedfog_racing.models import User
+    from speedfog_racing.models import DailyStreakFreeze, User
 
     if race.daily_date is None:
         return
 
-    affected = [
-        (p.user_id, p.user.daily_best_streak)
-        for p in race.participants
-        if p.user is not None and p.user.daily_last_qualifying_date == race.daily_date
-    ]
+    # Two categories need re-derivation:
+    # - participants who had qualified for this daily before the reroll
+    #   (``daily_last_qualifying_date == race.daily_date``);
+    # - participants who consumed a freeze for ``race.daily_date`` via the
+    #   abandon trigger, since the reroll invalidates the missed-day that
+    #   freeze was protecting against. Without this, the freeze stays
+    #   spent and the user is silently penalized.
+    frozen_user_ids = {
+        uid
+        for (uid,) in (
+            await db.execute(
+                select(DailyStreakFreeze.user_id).where(
+                    DailyStreakFreeze.daily_date == race.daily_date
+                )
+            )
+        ).all()
+    }
+    affected: list[tuple[UUID, int]] = []
+    for p in race.participants:
+        if p.user is None:
+            continue
+        if p.user.daily_last_qualifying_date == race.daily_date or p.user_id in frozen_user_ids:
+            affected.append((p.user_id, p.user.daily_best_streak))
+
     for user_id, prior_best in affected:
         await backfill_user(db, user_id, today=today)
         # Re-derivation starts from zero, which would discard the user's
