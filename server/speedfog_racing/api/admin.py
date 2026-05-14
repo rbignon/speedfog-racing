@@ -403,6 +403,10 @@ _race_count_sq = (
     .correlate(User)
     .scalar_subquery()
 )
+# Intentionally diverges from ``UserStatsResponse.daily_count`` on the
+# public profile: this admin tally is registration-driven ("how many
+# dailies this user touched"), not played-driven ("how many contributed
+# to a streak"). Same shape as ``_race_count_sq`` above.
 _daily_count_sq = (
     select(func.count(Participant.id))
     .join(Race, Race.id == Participant.race_id)

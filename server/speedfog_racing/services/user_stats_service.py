@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
@@ -64,9 +64,20 @@ async def compute_weekly_series(
             return None
         return (wf - start_week).days // 7
 
-    played_status_filter = or_(
+    # Same predicates as ``api/users.py``: regular races count terminal-played
+    # participations; dailies count qualifying ones (``len(zone_history) >= 2``,
+    # mirroring ``qualifies_for_streak``). Without this split, the daily
+    # sparkline rendered next to the headline ``daily_count`` in
+    # ``UserStatsCards`` could disagree with the ``best_streak`` shown in
+    # the same card.
+    race_played_filter = or_(
         Participant.status == ParticipantStatus.FINISHED,
         (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+    )
+    daily_qualified_filter = func.json_array_length(Participant.zone_history) >= 2
+    counted_filter = or_(
+        and_(Race.daily_date.is_(None), race_played_filter),
+        and_(Race.daily_date.is_not(None), daily_qualified_filter),
     )
 
     race_rows = (
@@ -80,7 +91,7 @@ async def compute_weekly_series(
             .join(Participant, Participant.race_id == Race.id)
             .where(
                 Participant.user_id == user.id,
-                played_status_filter,
+                counted_filter,
             )
         )
     ).all()

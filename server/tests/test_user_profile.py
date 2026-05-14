@@ -549,6 +549,13 @@ async def test_profile_stats_split_daily_and_regular_races(test_client, async_se
                     user_id=user.id,
                     status=ParticipantStatus.FINISHED,
                     igt_ms=130000,
+                    # daily_count uses ``len(zone_history) >= 2`` (the streak
+                    # qualification predicate); a finished daily naturally
+                    # crosses many zones, so the fixture mirrors that.
+                    zone_history=[
+                        {"node_id": "start", "igt_ms": 0, "type": "fog"},
+                        {"node_id": "n2", "igt_ms": 1000, "type": "fog"},
+                    ],
                 ),
             ]
         )
@@ -560,6 +567,126 @@ async def test_profile_stats_split_daily_and_regular_races(test_client, async_se
         stats = response.json()["stats"]
         assert stats["race_count"] == 1
         assert stats["daily_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_profile_daily_count_uses_streak_qualification(test_client, async_session):
+    """``daily_count`` mirrors ``qualifies_for_streak`` (``len(zone_history)
+    >= 2``), aligned with the streak system: a daily is counted iff the
+    user contributed to their streak on it.
+
+    Without alignment a profile could display ``best_streak`` greater
+    than ``daily_count`` (streak increments at the qualification crossing
+    while the legacy filter waited for a terminal status), which reads
+    as broken.
+    """
+    qualifying_history = [
+        {"node_id": "start", "igt_ms": 0, "type": "fog"},
+        {"node_id": "n2", "igt_ms": 1000, "type": "fog"},
+    ]
+
+    async with async_session() as db:
+        user = User(
+            twitch_id="dq_uid",
+            twitch_username="dq_user",
+            twitch_display_name="DQ User",
+            api_token="dq_token",
+            role=UserRole.USER,
+        )
+        admin = User(
+            twitch_id="dq_admin",
+            twitch_username="dq_admin",
+            twitch_display_name="DQ Admin",
+            api_token="dq_admin_token",
+            role=UserRole.ADMIN,
+        )
+        db.add_all([user, admin])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="dq_seed",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/dq",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        races = []
+        for i, (status, daily_date_value) in enumerate(
+            [
+                (RaceStatus.FINISHED, date(2026, 5, 1)),  # finished, counts
+                (RaceStatus.RUNNING, date(2026, 5, 2)),  # playing-qualifying, counts
+                (RaceStatus.FINISHED, date(2026, 5, 3)),  # abandoned no-zone, skipped
+                (RaceStatus.FINISHED, date(2026, 5, 4)),  # abandoned with igt but no qualif
+            ]
+        ):
+            r = Race(
+                name=f"Daily {i}",
+                organizer_id=admin.id,
+                seed_id=seed.id,
+                status=status,
+                daily_date=daily_date_value,
+            )
+            db.add(r)
+            races.append(r)
+        await db.flush()
+
+        db.add_all(
+            [
+                # 1) Finished + qualifying history.
+                Participant(
+                    race_id=races[0].id,
+                    user_id=user.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=180000,
+                    zone_history=qualifying_history,
+                ),
+                # 2) Still PLAYING but already past the first fog.
+                # Counted now (streak credited via Update A), whereas the
+                # legacy terminal-status filter would have skipped it.
+                Participant(
+                    race_id=races[1].id,
+                    user_id=user.id,
+                    status=ParticipantStatus.PLAYING,
+                    igt_ms=4200,
+                    zone_history=qualifying_history,
+                ),
+                # 3) Abandoned without ever moving: never counted under
+                # either predicate.
+                Participant(
+                    race_id=races[2].id,
+                    user_id=user.id,
+                    status=ParticipantStatus.ABANDONED,
+                    igt_ms=0,
+                    zone_history=None,
+                ),
+                # 4) Abandoned with non-zero IGT but never reached zone 2.
+                # Legacy filter counted this; the streak does not, so the
+                # new predicate skips it. Intentional alignment.
+                Participant(
+                    race_id=races[3].id,
+                    user_id=user.id,
+                    status=ParticipantStatus.ABANDONED,
+                    igt_ms=15000,
+                    zone_history=[{"node_id": "start", "igt_ms": 0, "type": "fog"}],
+                ),
+            ]
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/users/dq_user")
+        assert response.status_code == 200
+        stats = response.json()["stats"]
+        # Two qualifying participations (finished + playing-qualifying).
+        assert stats["daily_count"] == 2
+        # ``weekly.daily`` is the sparkline rendered alongside this count
+        # in UserStatsCards. It must use the same predicate, else a user
+        # would see the headline say 2 and the sparkline sum to 1.
+        assert sum(stats["weekly"]["daily"]) == 2
 
 
 @pytest.mark.asyncio

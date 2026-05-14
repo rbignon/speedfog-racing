@@ -439,10 +439,11 @@ async def get_user_profile(
 
     user_id = user.id
 
-    # Race / daily counts: finished + abandoned with igt > 0 (actually played).
-    # Daily Seed races (Race.daily_date IS NOT NULL) are split out so the
-    # "Races" count reflects organized racing activity only.
-    played_status_filter = or_(
+    # Race count: terminal participations on regular races where the user
+    # actually played (FINISHED or ABANDONED with igt > 0). Daily Seed
+    # races (Race.daily_date IS NOT NULL) are split out so the "Races"
+    # count reflects organized racing activity only.
+    race_played_filter = or_(
         Participant.status == ParticipantStatus.FINISHED,
         (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
     )
@@ -452,19 +453,27 @@ async def get_user_profile(
         .join(Race, Race.id == Participant.race_id)
         .where(
             Participant.user_id == user_id,
-            played_status_filter,
+            race_played_filter,
             Race.daily_date.is_(None),
         )
     )
     race_count = race_count_q.scalar_one()
 
+    # Daily count mirrors the streak's qualification predicate
+    # (``qualifies_for_streak``: ``len(zone_history) >= 2``) so the profile
+    # can never display ``best_streak`` greater than ``daily_count``. A
+    # daily counts iff the user contributed to their streak on it:
+    # a non-qualifying attempt is no more "played" than a no-show.
+    # ``json_array_length`` returns NULL on NULL inputs, which compares
+    # falsy in the WHERE so a null ``zone_history`` is filtered out
+    # without an explicit IS NOT NULL guard.
     daily_count_q = await db.execute(
         select(func.count())
         .select_from(Participant)
         .join(Race, Race.id == Participant.race_id)
         .where(
             Participant.user_id == user_id,
-            played_status_filter,
+            func.json_array_length(Participant.zone_history) >= 2,
             Race.daily_date.is_not(None),
         )
     )
