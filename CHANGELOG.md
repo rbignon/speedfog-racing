@@ -2,6 +2,14 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.9.0] - 2026-05-14
+
+### Daily Seed
+
+- New daily streak system: a counter of consecutive qualifying days on the daily, displayed alongside the daily week grid and on your profile next to a best-streak high score
+- Eligibility: a daily counts toward your streak as soon as you make it past the first fog gate. You don't have to finish, abandoning after reaching the second zone still credits the day; registering without playing or skipping the daily entirely does not
+- Freezes catch missed days automatically before the streak breaks. You earn one every 7 consecutive qualifying days, capped at 2 in stock; each missed day consumes one. With both saved you can miss up to two days in a row before the streak resets
+
 ## [1.8.0] - 2026-05-12
 
 ### Daily Seed
