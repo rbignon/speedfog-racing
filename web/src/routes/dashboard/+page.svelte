@@ -23,6 +23,7 @@
   import LiveIndicator from "$lib/components/LiveIndicator.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
+  import SurveyBanner from "$lib/components/SurveyBanner.svelte";
   import UserStatsCards from "$lib/components/UserStatsCards.svelte";
 
   let profile: UserProfile | null = $state(null);
@@ -217,6 +218,9 @@
     </div>
   {:else}
     <RewardsBanner />
+    {#if auth.user?.feedback_prompted_at}
+      <SurveyBanner />
+    {/if}
 
     <!-- Settings banner (one-time) -->
     {#if !bannerDismissed}

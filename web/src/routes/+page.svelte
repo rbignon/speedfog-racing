@@ -16,6 +16,7 @@
   import LiveIndicator from "$lib/components/LiveIndicator.svelte";
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
+  import SurveyBanner from "$lib/components/SurveyBanner.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
 
   let races: Race[] = $state([]);
@@ -149,6 +150,9 @@
 
 <main class="public-section">
   <RewardsBanner />
+  {#if auth.isLoggedIn && auth.user?.feedback_prompted_at}
+    <SurveyBanner />
+  {/if}
   {#if dailyWeek}
     <h2 class="daily-seed-title">Daily Seed</h2>
     <DailyWeekGrid week={dailyWeek} variant="home" />
