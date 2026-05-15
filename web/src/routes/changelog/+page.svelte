@@ -87,7 +87,20 @@
 <main class="changelog">
   <header class="changelog-hero">
     <h1>Changelog</h1>
-    <p>What's new in SpeedFog Racing.</p>
+    <p class="source-links">
+      Sources:
+      <a
+        href="https://github.com/rbignon/speedfog"
+        target="_blank"
+        rel="noopener noreferrer">speedfog</a
+      >
+      ·
+      <a
+        href="https://github.com/rbignon/speedfog-racing"
+        target="_blank"
+        rel="noopener noreferrer">speedfog-racing</a
+      >
+    </p>
   </header>
 
   {#each entries as entry, i}
@@ -148,6 +161,21 @@
     color: var(--color-text-secondary);
     font-size: clamp(0.9rem, 2vw, 1.1rem);
     margin: 0;
+  }
+
+  .changelog-hero .source-links {
+    margin-top: 0.5rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-disabled);
+  }
+
+  .changelog-hero .source-links a {
+    color: var(--color-purple);
+    text-decoration: none;
+  }
+
+  .changelog-hero .source-links a:hover {
+    text-decoration: underline;
   }
 
   .version {
