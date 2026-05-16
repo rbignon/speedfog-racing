@@ -55,7 +55,7 @@ pool_name  text  not null      -- FK pools.name
 
 The Alembic migration seeds the seven rows with `pool_name = 'standard'`. Admins rotate themes from the `Daily` tab in `/admin` (see "Pool Rotation Schedule" below). The pool name capitalized is the theme label rendered in UI and Discord.
 
-A weekday-based pattern (Monday = X, Tuesday = Y, ...) is intentional: it gives the community a recognizable rhythm. Per-date overrides are out of scope.
+A weekday-based pattern (Monday = X, Tuesday = Y, ...) gives the community a recognizable rhythm. Per-date overrides are out of scope.
 
 ### System user
 
@@ -69,7 +69,7 @@ role                 UserRole.SYSTEM
 api_token            null
 ```
 
-The `system:` prefix on `twitch_id` keeps the namespace disjoint from real Twitch IDs. `UserRole.SYSTEM` is a dedicated role with no login path: this user never receives an OAuth flow and never makes API calls, so `api_token` is null.
+The `system:` prefix on `twitch_id` keeps the namespace disjoint from real Twitch IDs. `UserRole.SYSTEM` is a dedicated role with no login path, so `api_token` is null.
 
 The user only exists to satisfy the non-nullable `Race.organizer_id` foreign key on Daily Seeds. Because `users.api_token` was non-nullable before this feature, the same migration relaxes the column to `NULL`.
 
@@ -82,7 +82,7 @@ The user only exists to satisfy the non-nullable `Race.organizer_id` foreign key
 | `status` | `ParticipantStatus` | Always populated.                                                    |
 | `igt_ms` | `int \| None`       | Final IGT when `status == FINISHED`; treat as in-progress otherwise. |
 
-The `DailyBanner` and dashboard summary use these fields to render finishers count and fastest IGT without paying for the full `ParticipantResponse` payload.
+The dashboard summary and `RaceCard` use these fields to render finishers count and fastest IGT without paying for the full `ParticipantResponse` payload.
 
 ### Migration
 
@@ -174,7 +174,7 @@ The pool must exist in `pools` and be `enabled = True`; otherwise the next 08:00
 
 ## API Endpoints
 
-Discovery surface for Daily Seeds. All three live under `/api/daily`.
+Discovery surface for Daily Seeds. All four live under `/api/daily`.
 
 | Endpoint                        | Returns              | Description                                                                                                                                                                                                                  |
 | ------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -242,13 +242,36 @@ The frontend exposes a Daily Seed through three surfaces, all consuming `daily_d
 
 ### Components
 
-- `DailyWeekGrid.svelte`: rendered on `/` (variant `home`, replaces the previous banner) and on `/dashboard` (variant `dashboard`, replaces the previous "Today + recent dailies" section). Shows seven cells for the current calendar week (Monday through Sunday in ISO order) with one of four states per cell: `missing_past` (no race row for that past day), `past` (clickable, single winner row + participants count + viewer's status strip if logged in), `today` (uses the standard neutral border with a soft gold outer glow, a small gold "TODAY" header badge, plus a state-driven bottom strip), `future` (greyed out, pool from `daily_seed_schedule` + an "Opens in" countdown that adapts to the remaining time (`Xd Yh` -> `Xh YYm` -> `Xm YYs` -> `Xs`)). On past cells the body shows only the placement-1 finisher (medal + name + IGT) on a single line; the rest of the API-supplied podium is unused here so the cell stays one row tall regardless of finisher count. The today cell never renders a winner row even after the first finisher comes in, to avoid spoiling the in-progress race; it stays on the "Daily seed incoming" / "X players" placeholder until the day rolls over to `past`. Both `today` and any played `past` cell carry a full-width bottom strip whose label and color depend on the viewer's participant status: "PLAY NOW" (green) when anonymous or `my_result == null` on today and the viewer has no active streak, "KEEP STREAK" (same green play-now style) when the viewer has `my_streak.current > 0` and has not yet qualified today, "IN PROGRESS" (orange) for `registered`/`ready`/`playing`, a split `✓` (left) + `placement/total · IGT` (right) layout (green text on muted grey) when finished, "ABANDONED" (muted grey) when abandoned or signed up but never played. The finished strip's split (rather than a single inline string) keeps the check mark as a state badge and the score as data, with breathing room between them; the green color carries the "finished" semantics so the word "DONE" is not rendered.
+#### `DailyWeekGrid.svelte`
 
-The grid hosts a toolbar above the seven cells with two slots: the streak info on the left (`🔥 {N}-day streak`, plus `· ❄️ {F} freeze[s]` when `freeze_count > 0`), the prev/next-week arrows on the right. The streak info is rendered only when `my_streak.current > 0`, but the toolbar row itself is always present so the arrows stay right-aligned regardless. The streak info reads from `displayedWeek.my_streak`, so it updates live on `/daily/[date]` when a `daily_streak_update` WS message patches `weekOverride.my_streak`.
+Rendered on `/` (variant `home`, replaces the previous banner) and `/dashboard` (variant `dashboard`, replaces the previous "Today + recent dailies" section). Shows seven cells for the current calendar week (Monday through Sunday in ISO order), each in one of four states:
 
-The cell body (winner row or "No finishers" / "Daily seed incoming" / "X players" placeholder) is wrapped in a flex-grow container that vertically centers the body between the pool name (top) and the bottom strip, so the row of seven cells lines up regardless of which placeholder a cell shows. Past cells the viewer did not participate in render an invisible placeholder strip (`visibility: hidden`) so the body's vertical centering matches sibling cells that do carry a real strip; without the placeholder, the body would expand into the strip's slot and the winner row would drift downward versus its neighbors. The grid is `overflow-x: auto` with `repeat(7, minmax(150px, 1fr))` columns, so each cell stays at least 150px wide and the strip scrolls horizontally whenever the container can't fit all seven side by side. The today cell (or the `selectedDate` cell on `/daily/[date]`) is auto-centered on mount, so the scroll lands on the user's anchor point. Mobile (under 640px) additionally enables `scroll-snap-type: x mandatory` so touch-flicking lands cleanly on a cell.
+| State          | Body                                                                                                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `missing_past` | Empty (no race row for that past day).                                                                                                                                |
+| `past`         | Placement-1 finisher only (medal + name + IGT, single line) and the participants count. The rest of the API-supplied podium is unused so the cell stays one row tall. |
+| `today`        | "Daily seed incoming" or "X players" placeholder. Never renders a winner row even after the first finisher comes in, to avoid spoiling the in-progress race.          |
+| `future`       | Greyed out, pool from `daily_seed_schedule`, "Opens in" countdown that adapts to the remaining time (`Xd Yh` -> `Xh YYm` -> `Xm YYs` -> `Xs`).                        |
 
-- `RaceControls.svelte`: detects `race.daily_date !== null` (`isDaily`) and adapts the reroll confirmation copy to "Rerolling will discard all current and finished runs for this Daily Seed". The button is admin-only because the system organizer cannot log in.
+The `today` cell uses the standard neutral border with a soft gold outer glow and a small gold "TODAY" header badge. Both `today` and any played `past` cell carry a full-width bottom strip whose label and color depend on the viewer's participant status:
+
+| Strip                         | Color                    | Condition                                                                    |
+| ----------------------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `PLAY NOW`                    | green                    | Anonymous, or `my_result == null` on today with no active streak.            |
+| `KEEP STREAK`                 | green (play-now style)   | `my_streak.current > 0` and viewer has not yet qualified today.              |
+| `IN PROGRESS`                 | orange                   | `registered` / `ready` / `playing`.                                          |
+| `✓` + `placement/total · IGT` | green text on muted grey | `finished`. Split layout: check-mark badge on the left, score on the right.  |
+| `ABANDONED`                   | muted grey               | Abandoned, or signed up but never played.                                    |
+| `❄️ Freeze`                   | blue                     | Past day with `freeze_protected = true` (see [Daily Streak](#daily-streak)). |
+| `✓ DNF · {igt}`               | green (`dnf` variant)    | Past day where viewer abandoned with `qualifies = true`.                     |
+
+Cell bodies are vertically centered between the pool name and the bottom strip so the row lines up regardless of which placeholder a cell shows; past cells the viewer did not participate in render an invisible placeholder strip to keep the same vertical alignment as sibling cells. The grid is horizontally scrollable when seven cells (min 150px each) don't fit; the today cell (or `selectedDate` on `/daily/[date]`) is auto-centered on mount, and mobile adds horizontal scroll-snap so touch-flicking lands cleanly on a cell.
+
+A toolbar above the cells carries streak info on the left and prev/next-week arrows on the right; see [Daily Streak > Frontend surfaces](#frontend-surfaces-1) for the streak content and live-update wiring.
+
+#### `RaceControls.svelte`
+
+Detects `race.daily_date !== null` (`isDaily`) and adapts the reroll confirmation copy to "Rerolling will discard all current and finished runs for this Daily Seed". The button is admin-only because the system organizer cannot log in.
 
 ### Top-bar nav indicator
 
@@ -265,7 +288,7 @@ DAG rendering on `/daily/[date]` follows the standard race rules with `late_join
 | Participant `PLAYING`                | `MetroDagProgressive` (own path)      | `MetroDagFull` |
 | Participant `FINISHED` / `ABANDONED` | `MetroDagFull` (with other finishers) | `MetroDagFull` |
 
-Hiding the DAG from non-participants while the daily is running is intentional: every spectator is a potential player, and exposing the path graph would spoil approach choices that the player should make blind. After T+24h the DAG becomes public for everyone.
+The DAG is hidden from non-participants while the daily is running because every spectator is a potential player, and exposing the path graph would spoil approach choices that the player should make blind. After T+24h the DAG becomes public for everyone.
 
 The leaderboard, by contrast, is always visible to everyone, even on a running daily, even to non-participants. That visibility is the social pressure that makes the format work. The current-zone label next to a still-playing competitor follows the same rule as `/race/[id]`: hidden while the late-join window is open (so a potential late joiner cannot harvest positional intel by spectating) or while the viewer is still racing themselves; revealed to participants who have finished or abandoned, and to everyone once the daily ends. Selecting a leaderboard row highlights that runner's path on `MetroDagFull`, mirroring the race page (Ctrl/Cmd-click extends the selection, Escape clears it).
 
@@ -404,9 +427,8 @@ Daily-streak state surfaces through existing responses; no new endpoints are add
 
 ### Frontend surfaces
 
-- `DailyWeekGrid` adds a new `freeze_protected` boolean per day. Cells with `freeze_protected = true` show a blue `❄️ Freeze` strip. Cells where the viewer abandoned with `qualifies = true` show a green `✓ DNF · {igt}` strip (the new `dnf` variant, same green styling as `finished`).
-- The today cell's strip swaps from `PLAY NOW` to `KEEP STREAK` when the viewer has an active streak (`my_streak.current > 0`) and has not yet qualified for today.
-- The grid renders a toolbar row above the seven cells: streak info on the left (`🔥 {N}-day streak · ❄️ {F} freeze[s]`, hidden when `current_streak == 0`), prev/next-week arrows on the right. The streak info reads from `displayedWeek.my_streak` and updates live via the `daily_streak_update` WS message. When that message carries `freeze_consumed_for`, the page also patches the matching day's `freeze_protected` so the cell strip flips to "❄️ Freeze" in the same frame as the toolbar (without it, the cell would stay "Abandoned" until the next reload).
+- `DailyWeekGrid` consumes `freeze_protected` and the streak-driven strip variants (`KEEP STREAK`, `❄️ Freeze`, `✓ DNF`); see the strip table in [Components > DailyWeekGrid.svelte](#dailyweekgridsvelte) for the conditions.
+- The grid's toolbar carries streak info on the left (`🔥 {N}-day streak · ❄️ {F} freeze[s]`, hidden when `current_streak == 0`, with `· ❄️ {F} freeze[s]` rendered only when `freeze_count > 0`) and prev/next-week arrows on the right. The toolbar row itself is always present so the arrows stay right-aligned regardless. The streak info reads from `displayedWeek.my_streak` and updates live via the `daily_streak_update` WS message; when that message carries `freeze_consumed_for`, the page also patches the matching day's `freeze_protected` so the cell strip flips to "❄️ Freeze" in the same frame as the toolbar (without it, the cell would stay "Abandoned" until the next reload).
 - `UserStatsCards` takes a `streakDisplay?: "current" | "best" | null` prop. `/dashboard` passes `current` (`🔥 N` corner badge on the Daily cell when `current > 0`); `/user/[username]` passes `best` (`🏆 N` when `best > 0`). The badge is hidden when the relevant value is 0.
 
 ## See also
