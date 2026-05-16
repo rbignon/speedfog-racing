@@ -49,15 +49,16 @@ Name templates are **always permanent**. Once unlocked, they remain unlocked eve
 
 #### Phantom skins
 
-| id             | name         | unlock                                                                         | obtainable                        |
-| -------------- | ------------ | ------------------------------------------------------------------------------ | --------------------------------- |
-| `none`         | None         | Always unlocked, never revocable.                                              | yes                               |
-| `gold-aura`    | Gold Aura    | Granted permanently the first time a player reaches top 1 ELO.                 | yes                               |
-| `silver-aura`  | Silver Aura  | Granted permanently the first time a player enters the top 5 ELO.              | yes                               |
-| `cyan-aura`    | Cyan Aura    | Granted permanently the first time a player finishes a week as Daily Champion. | yes                               |
-| `emerald-aura` | Emerald Aura | Granted to accounts created before the rewards system launched.                | **no** (cutoff `2026-04-01` past) |
-| `crimson-aura` | Crimson Aura | Granted alongside the `veteran` badge, same threshold.                         | yes                               |
-| `violet-aura`  | Violet Aura  | Admin grant only (special events, organized tournaments).                      | yes                               |
+| id             | name         | unlock                                                                                                                         | obtainable                        |
+| -------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| `none`         | None         | Always unlocked, never revocable.                                                                                              | yes                               |
+| `gold-aura`    | Gold Aura    | Granted permanently the first time a player reaches top 1 ELO.                                                                 | yes                               |
+| `silver-aura`  | Silver Aura  | Granted permanently the first time a player enters the top 5 ELO.                                                              | yes                               |
+| `cyan-aura`    | Cyan Aura    | Granted permanently the first time a player finishes a week as Daily Champion.                                                 | yes                               |
+| `molten-aura`  | Molten Aura  | Granted permanently the first time a player's best daily streak reaches `DAILY_STREAK_REWARD_THRESHOLD` (currently `14`) days. | yes                               |
+| `emerald-aura` | Emerald Aura | Granted to accounts created before the rewards system launched.                                                                | **no** (cutoff `2026-04-01` past) |
+| `crimson-aura` | Crimson Aura | Granted alongside the `veteran` badge, same threshold.                                                                         | yes                               |
+| `violet-aura`  | Violet Aura  | Admin grant only (special events, organized tournaments).                                                                      | yes                               |
 
 The `obtainable` column drives the picker UI: locked skins flagged `obtainable: false` are hidden from users who don't own them (the unlock condition has lapsed for good and surfacing it would just frustrate). Already-unlocked skins stay visible regardless of the flag.
 
@@ -170,6 +171,7 @@ server/speedfog_racing/
 - `check_veteran_eligibility(user_id)`: counts the user's `Participant` rows with `status=FINISHED` and grants both `veteran` (badge) and `weathered` (name template) idempotently when the count is at least `VETERAN_RACE_THRESHOLD` (defined in `rewards/catalog.py`).
 - `set_equipped_badge(user_id, badge_id: str | None)`: validates ownership, updates `users.equipped_badge_id`. Raises `NotOwnedError` if the user does not currently hold the badge.
 - `set_equipped_name_template(user_id, template_id: str | None)`: validates ownership (`default` is always allowed), updates `users.equipped_name_template_id`.
+- `check_daily_streak_eligibility(user_id)`: reads `users.daily_best_streak` and grants the permanent `molten-aura` phantom skin once it is at least `DAILY_STREAK_REWARD_THRESHOLD` (defined in `rewards/catalog.py`). Idempotent.
 - `grant_phantom_skin(user_id, skin_id, granted_by=None, reason=None)`: idempotent. `none` is silently skipped (always unlocked). Emits `phantom_skin_unlocked` only on actual creation.
 - `set_equipped_phantom_skin(user_id, skin_id: str | None)`: validates ownership (`none` and `None` both clear the column to NULL).
 - `revoke_phantom_skin(user_id, skin_id)`: admin escape hatch. Auto-clears matching equip slot. Does not emit notifications.
@@ -183,6 +185,7 @@ server/speedfog_racing/
 - **Veteran** (`services/race_lifecycle.py`): in the same hook (after `refresh_top1_elo_holders`), iterate every participant who just transitioned to FINISHED and call `check_veteran_eligibility(user_id)`. The service counts `Participant` rows with `status=FINISHED` for that user across all races; once the count reaches `VETERAN_RACE_THRESHOLD` the badge is granted (idempotent, so calling on every race finish is safe). The matching `weathered` name template is granted in the same call.
 - **Weekly daily champion** (`services/daily_seed_loop.py`): when generating a daily seed for a Monday, call `refresh_weekly_daily_champion(week_starting=monday-7d)`. Past weeks before the rollout are not backfilled.
 - **Phantom skins**: extend the existing detectors in place. `refresh_top1_elo_holders` grants `gold-aura` (top 1) and `silver-aura` (top 5) idempotently alongside `elo_crown` and `runebearer`. `refresh_weekly_daily_champion` grants the **permanent** `cyan-aura` souvenir to current champion(s) (the underlying transient badge stays as-is). `check_veteran_eligibility` grants `crimson-aura` alongside the `weathered` template. `emerald-aura` is backfill-only (no live detector). `violet-aura` has no automatic detector and is granted exclusively via the admin endpoint.
+- **Daily streak souvenir** (`websocket/race/mod.py`): inside `_apply_daily_streak`, after `apply_qualification_to_user` persists a streak increment, call `RewardsService.check_daily_streak_eligibility(user_id)`. The service reads `users.daily_best_streak` (so the same predicate covers live grants and backfill) and grants `molten-aura` once it reaches `DAILY_STREAK_REWARD_THRESHOLD`.
 - **Account deletion**: any `delete_user` flow must call `refresh_top1_elo_holders()` and `refresh_weekly_daily_champion(current_week_start)` after the deletion to reseat the holder sets.
 
 #### Top 5 ELO unlock
@@ -322,9 +325,10 @@ When the user has a phantom skin equipped (other than `none`), the profile avata
 2. Grant `archon` template to every user with `role == admin`. Future admin promotions are not auto-granted: an operator manually issues the template via `POST /api/admin/users/{id}/templates`. This is intentional, the case is rare.
 3. Run `refresh_top1_elo_holders()` to grant the current top 1 ELO badge, the `elo_crown` template (top 1), and the `runebearer` template (top 5).
 4. Grant `veteran` badge, `weathered` template, and `crimson-aura` phantom skin to every user whose count of FINISHED participations is at least `VETERAN_RACE_THRESHOLD`.
-5. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
+5. Grant `molten-aura` phantom skin to every user whose `daily_best_streak` is at least `DAILY_STREAK_REWARD_THRESHOLD`.
+6. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
 
-6. `cyan-aura` is **not** retroactively granted to past weekly Daily Champions; the next live `refresh_weekly_daily_champion` rollup grants it to the current week's champion(s).
+7. `cyan-aura` is **not** retroactively granted to past weekly Daily Champions; the next live `refresh_weekly_daily_champion` rollup grants it to the current week's champion(s).
 
 Each grant emits a `RewardNotification`, so each affected user sees their consolidated banner on their next visit.
 

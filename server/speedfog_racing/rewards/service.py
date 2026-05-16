@@ -21,6 +21,7 @@ from speedfog_racing.models import (
 )
 from speedfog_racing.rewards.catalog import (
     BADGES,
+    DAILY_STREAK_REWARD_THRESHOLD,
     DEFAULT_PHANTOM_SKIN_ID,
     DEFAULT_TEMPLATE_ID,
     NAME_TEMPLATES,
@@ -495,6 +496,26 @@ class RewardsService:
             await self.grant_permanent_badge(user_id, "veteran", reason=reason)
             await self.grant_name_template(user_id, "weathered", reason=reason)
             await self.grant_phantom_skin(user_id, "crimson-aura", reason=reason)
+
+    async def check_daily_streak_eligibility(self, user_id: uuid.UUID) -> None:
+        """Grant molten-aura when the user's best daily streak reaches the threshold.
+
+        Reads ``users.daily_best_streak`` (the all-time high water mark) and grants
+        the permanent ``molten-aura`` phantom skin once it is at least
+        ``DAILY_STREAK_REWARD_THRESHOLD``. Using the best-streak field (rather than
+        the current streak) means the unlock survives a later streak break and lets
+        the backfill use the same predicate without a separate code path.
+
+        Idempotent: ``grant_phantom_skin`` no-ops on re-grant, so callers can fire
+        this on every qualification.
+        """
+        best = await self.session.scalar(select(User.daily_best_streak).where(User.id == user_id))
+        if (best or 0) >= DAILY_STREAK_REWARD_THRESHOLD:
+            await self.grant_phantom_skin(
+                user_id,
+                "molten-aura",
+                reason=f"reached {best}-day daily streak",
+            )
 
     async def revoke_badge(self, user_id: uuid.UUID, badge_id: str) -> None:
         if badge_id not in BADGES:

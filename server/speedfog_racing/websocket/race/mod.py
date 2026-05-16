@@ -23,6 +23,7 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
 )
+from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services.daily_streak_service import apply_qualification_to_user
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
@@ -633,6 +634,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             )
             if new_state is None:
                 return
+            await RewardsService(db).check_daily_streak_eligibility(entity.user_id)
             await db.commit()
 
         await manager.send_daily_streak_update_to_user(

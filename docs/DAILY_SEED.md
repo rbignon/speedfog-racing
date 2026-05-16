@@ -387,6 +387,10 @@ One row per freeze-protected day. Written by the close-day evaluator and by the 
 - Re-applying qualification for the same daily date is a no-op: the evaluator short-circuits when `daily_last_qualifying_date >= D`.
 - First-ever qualification: `current_streak` goes `0 -> 1`, `best_streak` goes `0 -> 1`, no freeze granted (`1 % 7 != 0`).
 
+### Rewards hook
+
+After each successful qualification (inside `_apply_daily_streak`, before the WS unicast), `RewardsService.check_daily_streak_eligibility(user_id)` is called. It reads `daily_best_streak` and idempotently grants the permanent `molten-aura` phantom skin once the value reaches `DAILY_STREAK_REWARD_THRESHOLD` (currently `14`, defined in `rewards/catalog.py`). Reading the best-streak field (rather than the current one) means the unlock survives a later streak break and lets the rewards backfill use the same predicate. See [REWARDS.md](REWARDS.md#phantom-skins) for the catalog entry.
+
 ### API surface
 
 Daily-streak state surfaces through existing responses; no new endpoints are added.

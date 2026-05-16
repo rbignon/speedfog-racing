@@ -1139,3 +1139,119 @@ async def test_check_veteran_below_threshold_skips_crimson_aura(async_session):
             .all()
         )
         assert rows == []
+
+
+async def _make_user_with_best_streak(async_session, name: str, best: int) -> User:
+    async with async_session() as db:
+        u = User(twitch_id=f"tid-{name}", twitch_username=name, daily_best_streak=best)
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        return u
+
+
+async def test_check_daily_streak_below_threshold_skips_molten_aura(async_session):
+    from speedfog_racing.rewards.catalog import DAILY_STREAK_REWARD_THRESHOLD
+
+    user = await _make_user_with_best_streak(
+        async_session, "streak_below", DAILY_STREAK_REWARD_THRESHOLD - 1
+    )
+    async with async_session() as db:
+        await RewardsService(db).check_daily_streak_eligibility(user.id)
+        await db.commit()
+
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == user.id,
+                        PhantomSkinUnlock.skin_id == "molten-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == []
+
+
+async def test_check_daily_streak_at_threshold_grants_molten_aura(async_session):
+    from speedfog_racing.rewards.catalog import DAILY_STREAK_REWARD_THRESHOLD
+
+    user = await _make_user_with_best_streak(
+        async_session, "streak_at", DAILY_STREAK_REWARD_THRESHOLD
+    )
+    async with async_session() as db:
+        await RewardsService(db).check_daily_streak_eligibility(user.id)
+        await db.commit()
+
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == user.id,
+                        PhantomSkinUnlock.skin_id == "molten-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        notifications = (
+            (
+                await db.execute(
+                    select(RewardNotification).where(
+                        RewardNotification.user_id == user.id,
+                        RewardNotification.reward_id == "molten-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(notifications) == 1
+
+
+async def test_check_daily_streak_idempotent(async_session):
+    from speedfog_racing.rewards.catalog import DAILY_STREAK_REWARD_THRESHOLD
+
+    user = await _make_user_with_best_streak(
+        async_session, "streak_idem", DAILY_STREAK_REWARD_THRESHOLD + 5
+    )
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.check_daily_streak_eligibility(user.id)
+        await svc.check_daily_streak_eligibility(user.id)
+        await svc.check_daily_streak_eligibility(user.id)
+        await db.commit()
+
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == user.id,
+                        PhantomSkinUnlock.skin_id == "molten-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        notifications = (
+            (
+                await db.execute(
+                    select(RewardNotification).where(
+                        RewardNotification.user_id == user.id,
+                        RewardNotification.reward_id == "molten-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(notifications) == 1

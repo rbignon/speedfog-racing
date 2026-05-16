@@ -9,6 +9,7 @@ from typing import Final
 from speedfog_racing.rewards.models_data import Badge, NameTemplate, PhantomSkin
 
 VETERAN_RACE_THRESHOLD: Final = 25
+DAILY_STREAK_REWARD_THRESHOLD: Final = 14
 
 BADGES: dict[str, Badge] = {
     "early_adopter": Badge(
@@ -172,6 +173,15 @@ PHANTOM_SKINS: dict[str, PhantomSkin] = {
         description="Granted the first time you finish the week as Daily Champion.",
         screenshot_filename="cyan-aura.jpg",
         sort_order=30,
+    ),
+    "molten-aura": PhantomSkin(
+        id="molten-aura",
+        name="Molten Aura",
+        description=(
+            f"Granted the first time you reach a {DAILY_STREAK_REWARD_THRESHOLD}-day daily streak."
+        ),
+        screenshot_filename="molten-aura.jpg",
+        sort_order=35,
     ),
     "emerald-aura": PhantomSkin(
         id="emerald-aura",

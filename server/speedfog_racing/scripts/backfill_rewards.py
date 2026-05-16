@@ -12,7 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from speedfog_racing.database import async_session_maker as default_session_maker
 from speedfog_racing.models import Participant, ParticipantStatus, User, UserRole
-from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
+from speedfog_racing.rewards.catalog import (
+    DAILY_STREAK_REWARD_THRESHOLD,
+    VETERAN_RACE_THRESHOLD,
+)
 from speedfog_racing.rewards.service import RewardsService
 
 logger = logging.getLogger(__name__)
@@ -83,6 +86,23 @@ async def backfill_rewards(
         logger.info(
             "Granted veteran + weathered + crimson-aura to %d account(s)", len(veteran_users)
         )
+
+    async with session_maker() as db:
+        svc = RewardsService(db)
+        streakers = await db.execute(
+            select(User.id, User.daily_best_streak).where(
+                User.daily_best_streak >= DAILY_STREAK_REWARD_THRESHOLD
+            )
+        )
+        streaker_rows = list(streakers.all())
+        for row in streaker_rows:
+            await svc.grant_phantom_skin(
+                row.id,
+                "molten-aura",
+                reason=f"backfill: reached {row.daily_best_streak}-day daily streak",
+            )
+        await db.commit()
+        logger.info("Granted molten-aura to %d account(s)", len(streaker_rows))
 
 
 def main() -> None:

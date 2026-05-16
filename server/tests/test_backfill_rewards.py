@@ -18,7 +18,10 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
-from speedfog_racing.rewards.catalog import VETERAN_RACE_THRESHOLD
+from speedfog_racing.rewards.catalog import (
+    DAILY_STREAK_REWARD_THRESHOLD,
+    VETERAN_RACE_THRESHOLD,
+)
 from speedfog_racing.scripts.backfill_rewards import backfill_rewards
 from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
 
@@ -506,6 +509,78 @@ async def test_backfill_emerald_aura_idempotent(async_session_maker):
                     select(PhantomSkinUnlock).where(
                         PhantomSkinUnlock.user_id == user_id,
                         PhantomSkinUnlock.skin_id == "emerald-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+
+
+async def test_backfill_grants_molten_aura_to_long_streakers(async_session_maker):
+    """Users whose best daily streak meets the threshold receive molten-aura."""
+    async with async_session_maker() as db:
+        long_streaker = User(
+            twitch_id="t-streak-long",
+            twitch_username="longstreak",
+            daily_best_streak=DAILY_STREAK_REWARD_THRESHOLD,
+        )
+        short_streaker = User(
+            twitch_id="t-streak-short",
+            twitch_username="shortstreak",
+            daily_best_streak=DAILY_STREAK_REWARD_THRESHOLD - 1,
+        )
+        db.add_all([long_streaker, short_streaker])
+        await db.commit()
+        await db.refresh(long_streaker)
+        await db.refresh(short_streaker)
+        long_id = long_streaker.id
+        short_id = short_streaker.id
+
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+
+    async with async_session_maker() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock.user_id).where(
+                        PhantomSkinUnlock.skin_id == "molten-aura"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        unlocked = set(rows)
+        assert long_id in unlocked
+        assert short_id not in unlocked
+
+
+async def test_backfill_molten_aura_idempotent(async_session_maker):
+    """Re-running the backfill does not duplicate molten-aura unlocks."""
+    async with async_session_maker() as db:
+        u = User(
+            twitch_id="t-streak-rerun",
+            twitch_username="streakrerun",
+            daily_best_streak=DAILY_STREAK_REWARD_THRESHOLD + 3,
+        )
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        user_id = u.id
+
+    cutoff = date(2026, 4, 1)
+    await backfill_rewards(async_session_maker, cutoff=cutoff)
+    await backfill_rewards(async_session_maker, cutoff=cutoff)
+
+    async with async_session_maker() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock).where(
+                        PhantomSkinUnlock.user_id == user_id,
+                        PhantomSkinUnlock.skin_id == "molten-aura",
                     )
                 )
             )
