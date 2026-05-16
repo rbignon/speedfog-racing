@@ -178,6 +178,7 @@
       ? `Solo - ${session.pool_config?.name || formatPoolName(session.pool_name)}`
       : "Solo"} - SpeedFog Racing
   </title>
+  <meta name="robots" content="noindex" />
 </svelte:head>
 
 <main class="training-detail">

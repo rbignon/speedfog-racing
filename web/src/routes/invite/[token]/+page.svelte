@@ -35,6 +35,7 @@
 
 <svelte:head>
   <title>Invite to {invite.race_name} - SpeedFog Racing</title>
+  <meta name="robots" content="noindex" />
 </svelte:head>
 
 <main>

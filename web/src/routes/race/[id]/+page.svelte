@@ -757,6 +757,7 @@
 
 <svelte:head>
   <title>{raceName} - SpeedFog Racing</title>
+  <meta name="robots" content="noindex" />
 </svelte:head>
 
 {#if wsError}
