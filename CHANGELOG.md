@@ -2,6 +2,41 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.10.0] - 2026-05-17
+
+### Seeds
+
+- New zones added:
+  - Nokron
+  - Pre-Nokron
+  - Ainsel River start
+  - Main Ainsel River
+  - Deeproot Depths
+  - Stone Coffin Fissure
+  - Ancient Ruins of Rauh
+- Haligtree and Elphael downgraded to mini dungeons
+- Minor elite ennemies removed:
+  - Lobster
+  - Large Bigmouth Imp
+  - Golden Leonine Misbegotten
+  - Omen
+  - One of the Fire Knights
+  - One of the Smith Golems
+- Boss Rush: major-boss pool size per generation reduced from 15 to 12 so the pool is no longer exhausted near the end of the graph and silently replaced by minor bosses, yielding a more balanced run
+- Multi-phase bosses are no longer swapped between them
+- When several paths converge on the same node, the merge now reuses a single canonical entry fog gate, preserving that node's exit capacity
+- Fix: two outgoing fog gates from a single node can no longer share a proximity group, so parallel branches actually spread across the area instead of clustering on adjacent gates
+- Fix: many previously inert candidates (Rugalea, Death Rite Bird Charos, and ~70 others) now appear as minor bosses
+
+### Item Randomizer
+
+- Sacred Flask Upgrades (Golden Seeds, Sacred Tears) now spawn on major bosses, DLC revered spirit locations and DLC forges rewards
+- Removed drop of useless key items: Rusty Key, Academy Glintstone Key, both Dectus medallion halves, both Haligtree Secret medallion halves, and the Hole-Laden Necklace
+
+### Daily Seed
+
+- Reaching a 14-day daily streak now permanently grants a new Molten Aura phantom skin
+
 ## [1.9.0] - 2026-05-14
 
 ### Daily Seed
