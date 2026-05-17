@@ -12,7 +12,7 @@ allowed_types = ["boss_arena", "major_boss"]
 legacy_dungeons = 0
 bosses = 10
 mini_dungeons = 0
-major_bosses = 15
+major_bosses = 12
 
 [structure]
 first_layer_type = ""
