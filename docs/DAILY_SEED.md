@@ -228,6 +228,8 @@ The flag is generic: any future race type that should not affect ELO can opt in 
 
 Admin analytics (`services/analytics_service.py`) excludes Daily Seeds from race-side aggregates by filtering on `Race.daily_date.is_(None)` rather than using `exclude_from_elo`. The Stats tab measures community racing activity; system-organized dailies would inflate counts and skew per-race averages. Training-side aggregates are unaffected because training sessions have no daily concept.
 
+Daily participation is surfaced on the same dashboard through two dedicated surfaces: the `Daily Participants` KPI (cumulative all-time) and a `daily` series in the "Races, Dailies & Solos per Week" chart. Both count qualified participations only (`len(zone_history) >= 2`, the same predicate as `qualifies_for_streak`), across all daily races regardless of `Race.status` or `Participant.status`. A still-running daily contributes its already-qualified runners immediately; participants who joined but never crossed the qualification threshold are not counted.
+
 ---
 
 ## Frontend Surfaces
