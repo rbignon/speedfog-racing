@@ -837,7 +837,7 @@ async def test_compute_analytics_daily_qualified_participants(async_session):
     # current weekday is Monday, otherwise the same week as today).
     weeks = result["weekly"]["weeks"]
     assert len(weeks) == 12
-    today_iso = (now).isocalendar()
+    today_iso = now.isocalendar()
     yesterday_iso = (now - timedelta(days=1)).isocalendar()
     today_idx = next(i for i, w in enumerate(weeks) if w == f"W{today_iso.week}")
     yesterday_idx = next(i for i, w in enumerate(weeks) if w == f"W{yesterday_iso.week}")
@@ -857,3 +857,9 @@ async def test_compute_analytics_daily_qualified_participants(async_session):
     pool_names = {p["pool_name"] for p in result["pool_usage"]}
     assert "daily_pool" not in pool_names
     assert "standard" in pool_names
+
+    # top_organizers: organizer's count is 1 (regular race only; dailies excluded)
+    top = result["top_organizers"]
+    assert len(top) == 1
+    assert top[0]["twitch_username"] == "orgd"
+    assert top[0]["race_count"] == 1
