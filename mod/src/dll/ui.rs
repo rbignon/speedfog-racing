@@ -197,10 +197,11 @@ impl RaceTracker {
     }
 
     /// 3-line player status:
-    /// Line 1: `● RaceName               HH:MM:SS` (name dimmed, right side in blue)
-    ///         Right side shows: WAITING (setup), countdown/GO! (start), IGT (running)
-    /// Line 2: `  ZoneName                    X/Y` (X yellow→green on finish, /Y white)
-    /// Line 3: `  tier X, normally Y   [☠]N`          (tier yellow, deaths white)
+    /// Line 1: `● RaceName               HH:MM:SS` (name dimmed, right side highlighted)
+    ///         Right side shows: WAITING (setup, gold), countdown/GO! (start, gold/emerald),
+    ///         IGT (running, purple), or finished IGT (emerald/danger-dark on abandon).
+    /// Line 2: `  ZoneName                    X/Y` (X gold while playing, emerald on finish; /Y default)
+    /// Line 3: `  tier X, normally Y   [☠]N`     (tier gold; deaths white)
     fn render_player_status(
         &self,
         ui: &hudhook::imgui::Ui,
