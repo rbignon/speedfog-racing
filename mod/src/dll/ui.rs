@@ -475,6 +475,28 @@ impl RaceTracker {
             base_color
         };
 
+        // Local player gets the charter purple highlight: 10% purple fill across
+        // the row + 2px purple-600 bar on the left. Drawn before the text so
+        // the subsequent ui.text_colored calls render on top.
+        if is_self && p.status != "abandoned" {
+            let dl = ui.get_window_draw_list();
+            let [sx, sy] = ui.cursor_screen_pos();
+            let row_h = ui.text_line_height_with_spacing();
+            // The window has ~4px content padding to the left of `sx`; extend
+            // the fill by that amount so the highlight hugs the window edge.
+            const PAD: f32 = 4.0;
+            dl.add_rect([sx - PAD, sy], [sx + max_width, sy + row_h], c.purple_bg)
+                .filled(true)
+                .build();
+            dl.add_rect(
+                [sx - PAD, sy],
+                [sx - PAD + 2.0, sy + row_h],
+                c.purple_border,
+            )
+            .filled(true)
+            .build();
+        }
+
         // Layout: [name]  [gap right-aligned in gap_col]  [right right-aligned]
         let right_x = max_width - right_col_width;
         let gap_x = if gap_col_width > 0.0 {
@@ -825,16 +847,6 @@ impl RaceTracker {
         ui.same_line();
         ui.text(debug.last_received.as_deref().unwrap_or("\u{2013}"));
     }
-}
-
-/// Brighten a color by mixing it toward white.
-fn brighten(color: [f32; 4], factor: f32) -> [f32; 4] {
-    [
-        color[0] + (1.0 - color[0]) * factor,
-        color[1] + (1.0 - color[1]) * factor,
-        color[2] + (1.0 - color[2]) * factor,
-        color[3],
-    ]
 }
 
 /// Write a time value (unsigned ms) as HH:MM:SS into a buffer.
