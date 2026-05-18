@@ -99,19 +99,19 @@ fn default_font_size() -> f32 {
     18.0
 }
 fn default_background_color() -> String {
-    "#141414".to_string()
+    "#0F1923".to_string()
 }
 fn default_background_opacity() -> f32 {
-    0.3
+    0.55
 }
 fn default_text_color() -> String {
-    "#FFFFFF".to_string()
+    "#E8E6E1".to_string()
 }
 fn default_text_disabled_color() -> String {
-    "#808080".to_string()
+    "#9CA3AF".to_string()
 }
 fn default_border_color() -> String {
-    "#404040".to_string()
+    "#253550".to_string()
 }
 fn default_position_offset_x() -> f32 {
     20.0
