@@ -200,7 +200,7 @@ impl RaceTracker {
     /// Line 1: `● RaceName               HH:MM:SS` (name dimmed, right side highlighted)
     ///         Right side shows: WAITING (setup, gold), countdown/GO! (start, gold/emerald),
     ///         IGT (running, purple), or finished IGT (emerald/danger-dark on abandon).
-    /// Line 2: `  ZoneName                    X/Y` (X gold while playing, emerald on finish; /Y default)
+    /// Line 2: `  ZoneName                    X/Y` (X/Y gold while playing, emerald on finish)
     /// Line 3: `  tier X, normally Y   [☠]N`     (tier gold; deaths white)
     fn render_player_status(
         &self,
