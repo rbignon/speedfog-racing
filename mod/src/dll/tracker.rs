@@ -183,13 +183,12 @@ pub(crate) struct CachedColors {
     pub text_disabled: [f32; 4],
     pub border: [f32; 4],
     // Charter tokens
-    pub gold: [f32; 4],          // #C8A44E
-    pub success: [f32; 4],       // #10B981
-    pub danger: [f32; 4],        // #EF4444
-    pub danger_dark: [f32; 4],   // #DC2626
-    pub purple: [f32; 4],        // #A78BFA - local player accent
-    pub purple_bg: [f32; 4],     // rgba(139,92,246,0.10) - leaderboard row bg
-    pub purple_border: [f32; 4], // #8B5CF6 - leaderboard row left bar
+    pub gold: [f32; 4],        // #C8A44E
+    pub success: [f32; 4],     // #10B981
+    pub danger: [f32; 4],      // #EF4444
+    pub danger_dark: [f32; 4], // #DC2626
+    pub purple: [f32; 4],      // #A78BFA - local player accent
+    pub purple_bg: [f32; 4],   // rgba(139,92,246,0.10) - leaderboard row bg
 }
 
 // =============================================================================
@@ -380,7 +379,6 @@ impl RaceTracker {
             danger_dark: parse_hex_color("#DC2626", 1.0),
             purple: parse_hex_color("#A78BFA", 1.0),
             purple_bg: parse_hex_color("#8B5CF6", 0.10),
-            purple_border: parse_hex_color("#8B5CF6", 1.0),
         };
 
         // Create WebSocket client

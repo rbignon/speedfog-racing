@@ -475,26 +475,18 @@ impl RaceTracker {
             base_color
         };
 
-        // Local player gets the charter purple highlight: 10% purple fill across
-        // the row + 2px purple-600 bar on the left. Drawn before the text so
-        // the subsequent ui.text_colored calls render on top.
+        // Local player gets a translucent purple fill across the row. Drawn
+        // before the text so subsequent ui.text_colored calls render on top.
         if is_self && p.status != "abandoned" {
             let dl = ui.get_window_draw_list();
             let [sx, sy] = ui.cursor_screen_pos();
             let row_h = ui.text_line_height_with_spacing();
-            // The window has ~4px content padding to the left of `sx`; extend
-            // the fill by that amount so the highlight hugs the window edge.
+            // Extend the fill 4px to the left so it hugs the window's content
+            // padding instead of starting flush with the rank number.
             const PAD: f32 = 4.0;
             dl.add_rect([sx - PAD, sy], [sx + max_width, sy + row_h], c.purple_bg)
                 .filled(true)
                 .build();
-            dl.add_rect(
-                [sx - PAD, sy],
-                [sx - PAD + 2.0, sy + row_h],
-                c.purple_border,
-            )
-            .filled(true)
-            .build();
         }
 
         // Layout: [name]  [gap right-aligned in gap_col]  [right right-aligned]

@@ -57,7 +57,7 @@ mod tests {
             ("#EF4444", "danger"),
             ("#DC2626", "danger_dark"),
             ("#A78BFA", "purple"),
-            ("#8B5CF6", "purple_border"),
+            ("#8B5CF6", "purple_bg"),
             ("#0F1923", "background"),
             ("#E8E6E1", "text"),
             ("#9CA3AF", "text_disabled"),
