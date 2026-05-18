@@ -529,6 +529,13 @@
               borderWidth: 1,
             },
             {
+              label: "Daily",
+              data: data.weekly.daily,
+              backgroundColor: "rgba(56,189,248,0.6)",
+              borderColor: "#38bdf8",
+              borderWidth: 1,
+            },
+            {
               label: "Solo",
               data: data.weekly.solo,
               backgroundColor: "rgba(139,92,246,0.6)",
@@ -1018,7 +1025,7 @@
           <div class="kpi-value kpi-gold">
             {analytics.kpis.total_daily_participants}
           </div>
-          <div class="kpi-sub">summed across all dailies</div>
+          <div class="kpi-sub">qualified runs across all dailies</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Solo Sessions</div>
@@ -1035,7 +1042,7 @@
           <canvas bind:this={newUsersCanvas}></canvas>
         </div>
         <div class="chart-box">
-          <div class="chart-title">Races & Solo per Week</div>
+          <div class="chart-title">Races, Dailies & Solos per Week</div>
           <canvas bind:this={raceSoloCanvas}></canvas>
         </div>
         <div class="chart-box">

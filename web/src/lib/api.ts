@@ -1178,6 +1178,7 @@ export interface AnalyticsWeekly {
   solo: number[];
   solo_finished: number[];
   solo_abandoned: number[];
+  daily: number[];
   avg_participants: number[];
 }
 
