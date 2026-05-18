@@ -1042,7 +1042,7 @@
           <canvas bind:this={newUsersCanvas}></canvas>
         </div>
         <div class="chart-box">
-          <div class="chart-title">Races, Dailies & Solos per Week</div>
+          <div class="chart-title">Races, Daily & Solo per Week</div>
           <canvas bind:this={raceSoloCanvas}></canvas>
         </div>
         <div class="chart-box">
