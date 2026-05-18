@@ -1444,38 +1444,44 @@ impl RaceTracker {
 // FONT LOADING
 // =============================================================================
 
-/// Load font data from file, following the same resolution strategy as er-fog-vizu:
-///   - Empty path → system default (Segoe UI from C:\Windows\Fonts\)
-///   - Filename only → try C:\Windows\Fonts\, then DLL directory
-///   - Relative path with separators → relative to DLL directory
-///   - Absolute path → use directly
+/// Embedded Inter Regular (SIL OFL 1.1). Default overlay font; no filesystem
+/// dependency unless the user sets `overlay.font_path`.
+const EMBEDDED_INTER: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
+
+/// Resolve the overlay TTF bytes.
+///
+///   - Empty `font_path` → embedded Inter (default, no disk access).
+///   - Filename only → try `C:\Windows\Fonts\` then DLL directory.
+///   - Relative path with separators → relative to DLL directory.
+///   - Absolute path → use directly.
+///
+/// Falls back to `None` only when an explicit `font_path` was set but no
+/// candidate exists; ImGui then uses its built-in font.
 fn load_font_data(dll_dir: &Path, font_path: &str) -> Option<Vec<u8>> {
     const WINDOWS_FONTS_DIR: &str = r"C:\Windows\Fonts";
-    const DEFAULT_SYSTEM_FONT: &str = "segoeui.ttf";
 
-    let paths_to_try: Vec<PathBuf> = if font_path.is_empty() {
-        vec![Path::new(WINDOWS_FONTS_DIR).join(DEFAULT_SYSTEM_FONT)]
+    if font_path.is_empty() {
+        info!(size = EMBEDDED_INTER.len(), "Using embedded Inter font");
+        return Some(EMBEDDED_INTER.to_vec());
+    }
+
+    let path = Path::new(font_path);
+    let paths_to_try: Vec<PathBuf> = if path.is_absolute() {
+        vec![path.to_path_buf()]
+    } else if !font_path.contains('/') && !font_path.contains('\\') {
+        vec![
+            Path::new(WINDOWS_FONTS_DIR).join(font_path),
+            dll_dir.join(font_path),
+        ]
     } else {
-        let path = Path::new(font_path);
-        if path.is_absolute() {
-            vec![path.to_path_buf()]
-        } else if !font_path.contains('/') && !font_path.contains('\\') {
-            // Filename only: try Windows Fonts first, then DLL dir
-            vec![
-                Path::new(WINDOWS_FONTS_DIR).join(font_path),
-                dll_dir.join(font_path),
-            ]
-        } else {
-            // Relative path with separators: DLL dir only
-            vec![dll_dir.join(font_path)]
-        }
+        vec![dll_dir.join(font_path)]
     };
 
     for full_path in &paths_to_try {
         if full_path.exists() {
             match fs::read(full_path) {
                 Ok(data) => {
-                    info!(path = %full_path.display(), size = data.len(), "Loaded font");
+                    info!(path = %full_path.display(), size = data.len(), "Loaded font override");
                     return Some(data);
                 }
                 Err(e) => {
@@ -1490,6 +1496,26 @@ fn load_font_data(dll_dir: &Path, font_path: &str) -> Option<Vec<u8>> {
         .map(|p| p.display().to_string())
         .collect::<Vec<_>>()
         .join(", ");
-    warn!(tried_paths = %tried, "Font not found, using imgui default");
+    warn!(tried_paths = %tried, "Configured font not found, using imgui default");
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_font_data_empty_path_returns_embedded() {
+        // Empty font_path uses the bundled Inter, no filesystem access.
+        let dummy = Path::new("/this/path/does/not/exist");
+        let data = load_font_data(dummy, "").expect("embedded font should always load");
+        assert!(data.len() > 100_000, "Inter TTF should be substantial");
+        // TTF magic: 0x00010000 (TrueType) or "OTTO" (CFF/OpenType)
+        let magic = &data[0..4];
+        assert!(
+            magic == [0x00, 0x01, 0x00, 0x00] || magic == b"OTTO" || magic == b"true",
+            "expected TTF/OTF magic, got {:?}",
+            magic
+        );
+    }
 }
