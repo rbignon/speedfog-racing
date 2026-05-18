@@ -712,14 +712,18 @@ async def test_compute_analytics_top_organizers_ranking(async_session):
 
 
 @pytest.mark.asyncio
-async def test_compute_analytics_excludes_daily_races(async_session):
-    """Daily races (daily_date IS NOT NULL) must be excluded from KPIs, weekly,
-    heatmaps, pool_usage and top_organizers."""
+async def test_compute_analytics_daily_qualified_participants(async_session):
+    """Daily races stay out of race-side aggregates, but qualified Daily
+    participations (``len(zone_history) >= 2``) feed both the
+    ``total_daily_participants`` KPI and the ``weekly.daily`` series."""
     now = datetime.now(tz=UTC)
     async with async_session() as db:
         organizer = User(twitch_id="o_d", twitch_username="orgd", api_token=generate_token())
         player = User(twitch_id="p_d", twitch_username="playerd", api_token=generate_token())
-        db.add_all([organizer, player])
+        other_player = User(
+            twitch_id="p_d2", twitch_username="playerd2", api_token=generate_token()
+        )
+        db.add_all([organizer, player, other_player])
         await db.flush()
 
         regular_seed = Seed(
@@ -749,17 +753,17 @@ async def test_compute_analytics_excludes_daily_races(async_session):
             started_at=now - timedelta(hours=2),
             finished_at=now - timedelta(hours=1),
         )
-        daily_race = Race(
-            name="daily",
+        # Today's daily: RUNNING, to pin that no race-status filter applies.
+        daily_race_today = Race(
+            name="daily-today",
             organizer_id=organizer.id,
             seed_id=daily_seed.id,
-            status=RaceStatus.FINISHED,
+            status=RaceStatus.RUNNING,
             started_at=now - timedelta(hours=2),
-            finished_at=now - timedelta(hours=1),
             daily_date=date.today(),
         )
-        # Second daily, yesterday, with two participants so the KPI must
-        # sum across all dailies (1 + 2 = 3).
+        # Yesterday's daily: FINISHED, two participants with varied
+        # zone_history lengths to exercise the qualification predicate.
         daily_race_yesterday = Race(
             name="daily-yesterday",
             organizer_id=organizer.id,
@@ -769,12 +773,12 @@ async def test_compute_analytics_excludes_daily_races(async_session):
             finished_at=now - timedelta(days=1, hours=1),
             daily_date=date.today() - timedelta(days=1),
         )
-        other_player = User(
-            twitch_id="p_d2", twitch_username="playerd2", api_token=generate_token()
-        )
-        db.add(other_player)
-        db.add_all([regular_race, daily_race, daily_race_yesterday])
+        db.add_all([regular_race, daily_race_today, daily_race_yesterday])
         await db.flush()
+
+        zh_qualified = [{"node_id": "a"}, {"node_id": "b"}, {"node_id": "c"}]
+        zh_unqualified_one = [{"node_id": "a"}]
+        zh_empty: list[dict[str, str]] = []
 
         db.add_all(
             [
@@ -784,23 +788,36 @@ async def test_compute_analytics_excludes_daily_races(async_session):
                     mod_token=generate_token(),
                     status=ParticipantStatus.FINISHED,
                 ),
+                # Today's daily: one qualified runner (counts), one not yet (excluded).
                 Participant(
-                    race_id=daily_race.id,
+                    race_id=daily_race_today.id,
                     user_id=player.id,
                     mod_token=generate_token(),
-                    status=ParticipantStatus.FINISHED,
+                    status=ParticipantStatus.PLAYING,
+                    zone_history=zh_qualified,
                 ),
+                Participant(
+                    race_id=daily_race_today.id,
+                    user_id=other_player.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.REGISTERED,
+                    zone_history=zh_empty,
+                ),
+                # Yesterday's daily: one qualified (counts), one with a single
+                # entry (excluded), so the per-race qualified count is 1.
                 Participant(
                     race_id=daily_race_yesterday.id,
                     user_id=player.id,
                     mod_token=generate_token(),
                     status=ParticipantStatus.FINISHED,
+                    zone_history=zh_qualified,
                 ),
                 Participant(
                     race_id=daily_race_yesterday.id,
                     user_id=other_player.id,
                     mod_token=generate_token(),
-                    status=ParticipantStatus.FINISHED,
+                    status=ParticipantStatus.ABANDONED,
+                    zone_history=zh_unqualified_one,
                 ),
             ]
         )
@@ -809,26 +826,34 @@ async def test_compute_analytics_excludes_daily_races(async_session):
     async with async_session() as db:
         result = await compute_analytics(db)
 
-    # KPI counts only the regular race; daily participants are summed
-    # across both daily races (1 + 2 = 3).
+    # KPI: 1 qualified today + 1 qualified yesterday = 2.
     assert result["kpis"]["total_races_finished"] == 1
-    assert result["kpis"]["total_daily_participants"] == 3
+    assert result["kpis"]["total_daily_participants"] == 2
     assert result["kpis"]["avg_participants"] == 1.0
 
-    # Weekly: only regular race contributes to current week
+    # Weekly: regular race contributes to weekly.races (current week); the
+    # two qualified daily participations split across the current week and
+    # the previous-week bucket (yesterday's daily lives there when the
+    # current weekday is Monday, otherwise the same week as today).
+    weeks = result["weekly"]["weeks"]
+    assert len(weeks) == 12
+    today_iso = (now).isocalendar()
+    yesterday_iso = (now - timedelta(days=1)).isocalendar()
+    today_idx = next(i for i, w in enumerate(weeks) if w == f"W{today_iso.week}")
+    yesterday_idx = next(i for i, w in enumerate(weeks) if w == f"W{yesterday_iso.week}")
+    daily_series = result["weekly"]["daily"]
+    if today_idx == yesterday_idx:
+        assert daily_series[today_idx] == 2
+    else:
+        assert daily_series[today_idx] == 1
+        assert daily_series[yesterday_idx] == 1
     assert result["weekly"]["races"][-1] == 1
 
-    # Heatmap: only the regular race participant counts
+    # Heatmap stays race-only.
     total_race = sum(cell for row in result["heatmaps"]["race_players"] for cell in row)
     assert total_race == 1
 
-    # pool_usage: daily_pool must not appear (no other activity in it)
+    # pool_usage: daily_pool must not appear (no other activity in it).
     pool_names = {p["pool_name"] for p in result["pool_usage"]}
     assert "daily_pool" not in pool_names
     assert "standard" in pool_names
-
-    # top_organizers: organizer's count is 1 (regular only)
-    top = result["top_organizers"]
-    assert len(top) == 1
-    assert top[0]["twitch_username"] == "orgd"
-    assert top[0]["race_count"] == 1

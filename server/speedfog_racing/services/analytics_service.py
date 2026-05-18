@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import String, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
@@ -90,13 +90,30 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
             )
         )
     ).scalar_one()
+    # Qualified participations only (``len(zone_history) >= 2``), mirroring
+    # ``qualifies_for_streak`` in ``services/daily_streak_service.py``. The
+    # CASE on the cast-text prefix is the cross-dialect guard against legacy
+    # non-array JSON scalars in ``zone_history``: PostgreSQL's
+    # ``json_array_length`` errors on those, SQLite returns 0. Race status is
+    # not filtered: a still-running daily contributes its already-qualified
+    # runners immediately.
+    daily_qualified_filter = (
+        case(
+            (
+                cast(Participant.zone_history, String).like("[%"),
+                func.json_array_length(Participant.zone_history),
+            ),
+            else_=0,
+        )
+        >= 2
+    )
     total_daily_participants = (
         await db.execute(
             select(func.count(Participant.id))
             .join(Race, Race.id == Participant.race_id)
             .where(
-                Race.status == RaceStatus.FINISHED,
                 Race.daily_date.is_not(None),
+                daily_qualified_filter,
             )
         )
     ).scalar_one()
@@ -171,6 +188,23 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
         .all()
     )
 
+    # Per-daily-race qualified participant counts, restricted to the 13-week
+    # window so the weekly bucketing has the rows it needs. Kept separate
+    # from the ``races`` load above because that load filters out dailies
+    # for the heatmap / ``avg_participants`` / pool_usage paths.
+    daily_qualified_rows = (
+        await db.execute(
+            select(Race.started_at, func.count(Participant.id))
+            .join(Participant, Participant.race_id == Race.id)
+            .where(
+                Race.daily_date.is_not(None),
+                Race.started_at >= window_cutoff,
+                daily_qualified_filter,
+            )
+            .group_by(Race.id, Race.started_at)
+        )
+    ).all()
+
     # Participant counts for the windowed races only
     race_ids_window = [r.id for r in races]
     race_participant_counts: dict[str, int] = {}
@@ -211,6 +245,7 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
     week_solo: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
     week_solo_finished: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
     week_solo_abandoned: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
+    week_daily: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
 
     for u in users:
         if u.created_at is not None:
@@ -236,6 +271,13 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
                 elif ts.status == TrainingSessionStatus.ABANDONED:
                     week_solo_abandoned[wk] += 1
 
+    for started_at, qualified_count in daily_qualified_rows:
+        if started_at is None:
+            continue
+        wk = _iso_week_key(_ensure_utc(started_at))
+        if wk in week_set:
+            week_daily[wk] += qualified_count
+
     weekly = {
         "weeks": [f"W{wk[1]}" for wk in week_keys],
         "new_users": [week_new_users[wk] for wk in week_keys],
@@ -243,6 +285,7 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
         "solo": [week_solo[wk] for wk in week_keys],
         "solo_finished": [week_solo_finished[wk] for wk in week_keys],
         "solo_abandoned": [week_solo_abandoned[wk] for wk in week_keys],
+        "daily": [week_daily[wk] for wk in week_keys],
         "avg_participants": [
             round(week_race_participant_sum[wk] / week_race_count[wk], 1)
             if week_race_count[wk] > 0
