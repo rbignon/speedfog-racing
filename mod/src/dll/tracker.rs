@@ -1463,13 +1463,16 @@ impl RaceTracker {
 // FONT LOADING
 // =============================================================================
 
-/// Embedded Inter Regular (SIL OFL 1.1). Default overlay font; no filesystem
-/// dependency unless the user sets `overlay.font_path`.
-const EMBEDDED_INTER: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
+/// Embedded Source Sans 3 Regular (SIL OFL 1.1). Default overlay font; no
+/// filesystem dependency unless the user sets `overlay.font_path`. Chosen
+/// over Inter because its digits are tabular by default, which ImGui needs
+/// for column-aligned chrono and gap values (it does not apply OpenType
+/// `tnum` features).
+const EMBEDDED_FONT: &[u8] = include_bytes!("../../assets/fonts/SourceSans3-Regular.ttf");
 
 /// Resolve the overlay TTF bytes.
 ///
-///   - Empty `font_path` → embedded Inter (default, no disk access).
+///   - Empty `font_path` → embedded Source Sans 3 (default, no disk access).
 ///   - Filename only → try `C:\Windows\Fonts\` then DLL directory.
 ///   - Relative path with separators → relative to DLL directory.
 ///   - Absolute path → use directly.
@@ -1480,8 +1483,8 @@ fn load_font_data(dll_dir: &Path, font_path: &str) -> Option<Vec<u8>> {
     const WINDOWS_FONTS_DIR: &str = r"C:\Windows\Fonts";
 
     if font_path.is_empty() {
-        info!(size = EMBEDDED_INTER.len(), "Using embedded Inter font");
-        return Some(EMBEDDED_INTER.to_vec());
+        info!(size = EMBEDDED_FONT.len(), "Using embedded font");
+        return Some(EMBEDDED_FONT.to_vec());
     }
 
     let path = Path::new(font_path);
@@ -1525,10 +1528,10 @@ mod tests {
 
     #[test]
     fn load_font_data_empty_path_returns_embedded() {
-        // Empty font_path uses the bundled Inter, no filesystem access.
+        // Empty font_path uses the bundled font, no filesystem access.
         let dummy = Path::new("/this/path/does/not/exist");
         let data = load_font_data(dummy, "").expect("embedded font should always load");
-        assert!(data.len() > 100_000, "Inter TTF should be substantial");
+        assert!(data.len() > 100_000, "embedded TTF should be substantial");
         // TTF magic: 0x00010000 (TrueType) or "OTTO" (CFF/OpenType)
         let magic = &data[0..4];
         assert!(

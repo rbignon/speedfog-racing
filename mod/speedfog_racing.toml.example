@@ -14,7 +14,7 @@ race_id = "YOUR_RACE_ID_HERE"
 enabled = true
 # Font size in pixels
 font_size = 16
-# Font path. Leave empty to use the bundled Inter font.
+# Font path. Leave empty to use the bundled Source Sans 3 font.
 # Set to a TTF path (absolute, relative to the DLL, or just a filename to
 # search in C:\Windows\Fonts) to override.
 # font_path = ""

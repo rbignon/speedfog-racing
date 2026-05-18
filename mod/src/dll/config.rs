@@ -48,7 +48,7 @@ pub struct OverlaySettings {
     pub enabled: bool,
 
     /// Path to TTF font file.
-    ///   - Empty "" (default): uses the embedded Inter font shipped with the mod.
+    ///   - Empty "" (default): uses the embedded Source Sans 3 font shipped with the mod.
     ///   - Filename only "arial.ttf": looks in C:\Windows\Fonts\ then DLL directory.
     ///   - Relative path "fonts/custom.ttf": relative to DLL directory.
     ///   - Absolute path "C:\Fonts\MyFont.ttf": uses the specified file.
