@@ -44,4 +44,29 @@ mod tests {
         assert_eq!(parse_hex_color("#FFF", 1.0), [1.0, 1.0, 1.0, 1.0]);
         assert_eq!(parse_hex_color("", 1.0), [1.0, 1.0, 1.0, 1.0]);
     }
+
+    #[test]
+    fn charter_hex_values_all_parse() {
+        // Sentinel: every hex token cited in docs/GRAPHIC_CHARTER.md must
+        // parse successfully (i.e. not hit the white fallback). This catches
+        // typos in the CachedColors constructor; the markdown charter remains
+        // the source of truth.
+        let tokens = [
+            ("#C8A44E", "gold"),
+            ("#10B981", "success"),
+            ("#EF4444", "danger"),
+            ("#DC2626", "danger_dark"),
+            ("#A78BFA", "purple"),
+            ("#8B5CF6", "purple_border"),
+            ("#0F1923", "background"),
+            ("#E8E6E1", "text"),
+            ("#9CA3AF", "text_disabled"),
+            ("#253550", "border"),
+        ];
+        let white_fallback = [1.0, 1.0, 1.0, 1.0];
+        for (hex, name) in tokens {
+            let rgba = parse_hex_color(hex, 1.0);
+            assert_ne!(rgba, white_fallback, "{name} ({hex}) hit white fallback");
+        }
+    }
 }
