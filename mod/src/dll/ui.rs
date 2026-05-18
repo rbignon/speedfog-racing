@@ -162,8 +162,8 @@ impl RaceTracker {
         }
     }
 
-    /// Red warning when the config's seed_id doesn't match the server's seed_id.
-    /// This means the player has an outdated seed pack after a re-roll.
+    /// Danger banner shown when the config's seed_id doesn't match the server's
+    /// seed_id. This means the player has an outdated seed pack after a re-roll.
     fn render_seed_mismatch_warning(&self, ui: &hudhook::imgui::Ui) {
         if self.seed_mismatch {
             let danger = self.cached_colors.danger;
@@ -218,7 +218,7 @@ impl RaceTracker {
         let gold = c.gold;
         let success = c.success;
 
-        // --- Line 1: connection dot + race name (left), local IGT in blue (right) ---
+        // --- Line 1: connection dot + race name (left), local IGT highlighted (right) ---
         let dot_color = if self.permanent_error.is_some() {
             c.danger
         } else {
@@ -299,7 +299,7 @@ impl RaceTracker {
         ui.same_line_with_pos(max_width - igt_width);
         ui.text_colored(right_color, &buf_right);
 
-        // --- Line 2: zone name (left, white), progress X/Y (right, X=yellow/green Y=white) ---
+        // --- Line 2: zone name (left), progress X/Y (right; X status-colored, /Y default) ---
         buf_right.clear();
         buf_left.clear();
 
@@ -344,7 +344,7 @@ impl RaceTracker {
         ui.same_line_with_pos(max_width - right_width);
         ui.text_colored(right_color, &buf_right);
 
-        // --- Line 3: tier info (left, yellow), death icon + count (right, white) ---
+        // --- Line 3: tier info (left), death icon + count (right) ---
         buf_right.clear();
         buf_left.clear();
 
@@ -401,10 +401,10 @@ impl RaceTracker {
 
     /// Render exit list from zone_update:
     /// ```text
-    /// → Ruin-Strewn Precipice          (green, discovered)
-    ///   Stranded Graveyard first door   (gray, word-wrapped)
-    /// → ???                             (white, undiscovered)
-    ///   Soldier of Godrick front        (gray, word-wrapped)
+    /// → Ruin-Strewn Precipice          (discovered, highlighted)
+    ///   Stranded Graveyard first door   (description, dimmed)
+    /// → ???                             (undiscovered)
+    ///   Soldier of Godrick front        (description, dimmed)
     /// ```
     fn render_exits(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
         let zone = match self.current_zone_info() {
@@ -418,7 +418,7 @@ impl RaceTracker {
         let indent = "  ";
 
         for exit in &zone.exits {
-            // Line 1: destination (green if discovered, white "???" if not)
+            // Line 1: destination (highlighted if discovered, "???" placeholder if not)
             if exit.discovered {
                 let dest = format!("\u{2192} {}", exit.to_name);
                 let truncated = truncate_to_width(ui, &dest, max_width);
@@ -743,7 +743,8 @@ impl RaceTracker {
         cache.spacing = spacing;
     }
 
-    /// Status message: persistent red for permanent errors, temporary yellow otherwise.
+    /// Status message: persistent danger banner for permanent errors,
+    /// temporary gold banner otherwise.
     fn render_status_message(&self, ui: &hudhook::imgui::Ui) {
         let c = &self.cached_colors;
         // Permanent errors are always visible
