@@ -166,9 +166,9 @@ impl RaceTracker {
     /// This means the player has an outdated seed pack after a re-roll.
     fn render_seed_mismatch_warning(&self, ui: &hudhook::imgui::Ui) {
         if self.seed_mismatch {
-            let red = [1.0, 0.2, 0.2, 1.0];
-            ui.text_colored(red, "SEED OUTDATED");
-            ui.text_colored(red, "Re-download your seed pack");
+            let danger = self.cached_colors.danger;
+            ui.text_colored(danger, "SEED OUTDATED");
+            ui.text_colored(danger, "Re-download your seed pack");
         }
     }
 
@@ -189,7 +189,7 @@ impl RaceTracker {
                         let text_width = ui.calc_text_size(&text)[0];
                         let y = ui.cursor_pos()[1];
                         ui.set_cursor_pos([max_width - text_width, y]);
-                        ui.text_colored([1.0, 0.7, 0.2, 1.0], text);
+                        ui.text_colored(self.cached_colors.gold, text);
                     }
                 }
             }
@@ -212,26 +212,23 @@ impl RaceTracker {
         buf_right.clear();
         buf_left.clear();
 
-        let blue = [0.4, 0.6, 1.0, 1.0];
-        let yellow = [1.0, 1.0, 0.0, 1.0];
-        let green = [0.0, 1.0, 0.0, 1.0];
+        let c = &self.cached_colors;
+        let purple = c.purple;
+        let gold = c.gold;
+        let success = c.success;
 
         // --- Line 1: connection dot + race name (left), local IGT in blue (right) ---
         let dot_color = if self.permanent_error.is_some() {
-            [1.0, 0.0, 0.0, 1.0] // red
+            c.danger
         } else {
             match self.ws_status() {
-                ConnectionStatus::Connected => green,
-                ConnectionStatus::Connecting | ConnectionStatus::Reconnecting => {
-                    [1.0, 0.65, 0.0, 1.0]
-                }
-                _ => [1.0, 0.0, 0.0, 1.0],
+                ConnectionStatus::Connected => success,
+                ConnectionStatus::Connecting | ConnectionStatus::Reconnecting => gold,
+                _ => c.danger,
             }
         };
 
         // Right side of line 1: state banner during setup/countdown/go, IGT otherwise.
-        let orange = [1.0, 0.75, 0.0, 1.0];
-        let red = [1.0, 0.3, 0.3, 1.0];
         let status_str = self.race_info().map(|r| r.status.as_str()).unwrap_or("");
         let i_abandoned = self
             .my_participant()
@@ -240,17 +237,16 @@ impl RaceTracker {
         let right_color = match status_str {
             "setup" => {
                 buf_right.push_str("WAITING");
-                orange
+                gold
             }
             "running" => {
-                // Countdown: "3", "2", "1" in yellow; then "GO!" in green for 3s
                 let countdown_secs = self.race_state.countdown_end.and_then(|end| {
                     end.checked_duration_since(std::time::Instant::now())
                         .map(|remaining| remaining.as_secs() + 1)
                 });
                 if let Some(secs) = countdown_secs {
                     write!(buf_right, "{}", secs).ok();
-                    yellow
+                    gold
                 } else if let Some(go_start) = self
                     .race_state
                     .countdown_end
@@ -258,28 +254,27 @@ impl RaceTracker {
                 {
                     if go_start.elapsed() < Duration::from_secs(3) {
                         buf_right.push_str("GO!");
-                        green
+                        success
                     } else {
                         self.write_igt(buf_right);
-                        blue
+                        purple
                     }
                 } else {
-                    // Reconnect: no race_start received, skip GO! phase
                     self.write_igt(buf_right);
-                    blue
+                    purple
                 }
             }
             "finished" => {
                 self.write_igt(buf_right);
                 if i_abandoned {
-                    red
+                    c.danger_dark
                 } else {
-                    green
+                    success
                 }
             }
             _ => {
                 self.write_igt(buf_right);
-                blue
+                purple
             }
         };
         let igt_width = ui.calc_text_size(&buf_right)[0];
@@ -316,7 +311,6 @@ impl RaceTracker {
         // show the participant status so pre-launch states (registered/ready)
         // stay visible once the race leaves setup.
         let my_status = me.map(|p| p.status.as_str()).unwrap_or("registered");
-        let orange = [1.0, 0.65, 0.0, 1.0];
 
         let right_color = if my_status == "playing" || my_status == "finished" {
             let layer = frozen_layer
@@ -325,16 +319,16 @@ impl RaceTracker {
             let display_layer = (layer + 1).min(total_layers);
             write!(buf_right, "{}/{}", display_layer, total_layers).ok();
             if my_status == "finished" {
-                green
+                success
             } else {
-                yellow
+                gold
             }
         } else {
             buf_right.push_str(my_status);
             if my_status == "ready" {
-                orange
+                gold
             } else {
-                self.cached_colors.text_disabled
+                c.text_disabled
             }
         };
         let right_width = ui.calc_text_size(&buf_right)[0];
@@ -390,11 +384,7 @@ impl RaceTracker {
         }
         let has_tier = zone.is_some_and(|z| z.tier.is_some())
             || me.is_some_and(|p| p.current_layer_tier.is_some());
-        let tier_color = if has_tier {
-            yellow
-        } else {
-            self.cached_colors.text
-        };
+        let tier_color = if has_tier { gold } else { c.text };
 
         let tier_max = max_width - right_total - gap;
         let tier_truncated = truncate_to_width(ui, &buf_left, tier_max);
@@ -421,8 +411,9 @@ impl RaceTracker {
             _ => return,
         };
 
-        let green = [0.0, 1.0, 0.0, 1.0];
-        let white = self.cached_colors.text;
+        let c = &self.cached_colors;
+        let success = c.success;
+        let white = c.text;
         let indent = "  ";
 
         for exit in &zone.exits {
@@ -430,7 +421,7 @@ impl RaceTracker {
             if exit.discovered {
                 let dest = format!("\u{2192} {}", exit.to_name);
                 let truncated = truncate_to_width(ui, &dest, max_width);
-                ui.text_colored(green, &truncated);
+                ui.text_colored(success, &truncated);
             } else {
                 ui.text_colored(white, "\u{2192} ???");
             }
@@ -468,17 +459,17 @@ impl RaceTracker {
             .as_deref()
             .unwrap_or(&p.twitch_username);
 
+        let c = &self.cached_colors;
         let base_color = match p.status.as_str() {
-            "finished" => [0.0, 1.0, 0.0, 1.0],
-            "playing" => self.cached_colors.text,
-            "ready" => [1.0, 0.65, 0.0, 1.0],
-            _ => self.cached_colors.text_disabled,
+            "finished" => c.success,
+            "playing" => c.text,
+            "ready" => c.gold,
+            _ => c.text_disabled,
         };
-        // Abandoned rows stay greyed even for the local player: the usual
-        // is_self brighten would make the local row pop visually, which we
-        // don't want once the player has abandoned.
+        // Local player keeps the charter purple unless abandoned; abandoned
+        // stays greyed so the row reads as inactive even when it's mine.
         let color = if is_self && p.status != "abandoned" {
-            brighten(base_color, 0.35)
+            c.purple
         } else {
             base_color
         };
@@ -547,8 +538,8 @@ impl RaceTracker {
         // Gap (right-aligned within gap column, color-coded)
         if let Some(gt) = gap_text {
             let gap_color = match computed_gap_ms {
-                Some(ms) if ms < 0 => [0.3, 0.9, 0.3, 1.0], // green: ahead of pace
-                Some(ms) if ms > 0 => [0.9, 0.35, 0.35, 1.0], // soft red: behind
+                Some(ms) if ms < 0 => c.success,
+                Some(ms) if ms > 0 => c.danger,
                 _ => color,
             };
             let gt_width = ui.calc_text_size(gt)[0];
@@ -753,21 +744,23 @@ impl RaceTracker {
 
     /// Status message: persistent red for permanent errors, temporary yellow otherwise.
     fn render_status_message(&self, ui: &hudhook::imgui::Ui) {
-        // Permanent errors are always visible (red)
+        let c = &self.cached_colors;
+        // Permanent errors are always visible
         if let Some(ref err) = self.permanent_error {
             ui.separator();
-            ui.text_colored([1.0, 0.3, 0.3, 1.0], err);
+            ui.text_colored(c.danger, err);
             return;
         }
-        // Temporary status messages (yellow, auto-dismiss)
+        // Temporary status messages (auto-dismiss)
         if let Some(status) = self.get_status() {
             ui.separator();
-            ui.text_colored([1.0, 1.0, 0.0, 1.0], status);
+            ui.text_colored(c.gold, status);
         }
     }
 
     fn render_debug(&self, ui: &hudhook::imgui::Ui) {
-        ui.text_colored([1.0, 0.85, 0.3, 1.0], "Debug");
+        let c = &self.cached_colors;
+        ui.text_colored(c.gold, "Debug");
 
         let debug = self.debug_info();
 
@@ -791,17 +784,17 @@ impl RaceTracker {
         ui.text_disabled("Flag reader:");
         ui.same_line();
         let status_color = if debug.flag_reader_ok {
-            [0.0, 1.0, 0.0, 1.0] // green
+            c.success
         } else {
-            [1.0, 0.3, 0.3, 1.0] // red
+            c.danger
         };
         ui.text_colored(status_color, &debug.flag_reader_status);
 
         // Vanilla flag sanity check (category 0 should always exist)
         let (sanity_color, sanity_label) = match &debug.vanilla_sanity {
-            FlagReadResult::Set => ([0.0, 1.0, 0.0, 1.0], "true"),
-            FlagReadResult::NotSet => (self.cached_colors.text, "false"),
-            FlagReadResult::Unreadable => ([1.0, 0.3, 0.3, 1.0], "None"),
+            FlagReadResult::Set => (c.success, "true"),
+            FlagReadResult::NotSet => (c.text, "false"),
+            FlagReadResult::Unreadable => (c.danger, "None"),
         };
         ui.text("  vanilla 6:");
         ui.same_line();
@@ -810,9 +803,9 @@ impl RaceTracker {
         if !debug.sample_reads.is_empty() {
             for (flag_id, result) in &debug.sample_reads {
                 let (color, label) = match result {
-                    FlagReadResult::Set => ([0.0, 1.0, 0.0, 1.0], "true"),
-                    FlagReadResult::NotSet => (self.cached_colors.text, "false"),
-                    FlagReadResult::Unreadable => ([1.0, 0.3, 0.3, 1.0], "None"),
+                    FlagReadResult::Set => (c.success, "true"),
+                    FlagReadResult::NotSet => (c.text, "false"),
+                    FlagReadResult::Unreadable => (c.danger, "None"),
                 };
                 ui.text(format!("  {}:", flag_id));
                 ui.same_line();
