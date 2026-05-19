@@ -393,7 +393,7 @@
           solo: "/training",
           organized: "/race/new",
         }}
-        streakDisplay="current"
+        streakDisplay="best"
       />
     {/if}
 
