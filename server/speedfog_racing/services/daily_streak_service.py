@@ -18,8 +18,9 @@ from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import String, case, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 if TYPE_CHECKING:
     from speedfog_racing.models import Participant, Race, User
@@ -37,6 +38,29 @@ def qualifies_for_streak(zone_history: Sequence[Any] | None) -> bool:
     revision-pinned predicate in the Alembic migration's backfill.
     """
     return zone_history is not None and len(zone_history) >= 2
+
+
+def qualifies_for_streak_sql() -> ColumnElement[bool]:
+    """SQL counterpart of ``qualifies_for_streak``.
+
+    Returns a SQLAlchemy boolean expression usable in a ``where()`` clause
+    against the ``Participant`` table. The CASE on the cast-text prefix is
+    the cross-dialect guard against legacy non-array JSON scalars in
+    ``zone_history``: PostgreSQL's ``json_array_length`` errors on those,
+    SQLite returns 0. The CASE short-circuits the length call on both.
+    """
+    from speedfog_racing.models import Participant
+
+    return (
+        case(
+            (
+                cast(Participant.zone_history, String).like("[%"),
+                func.json_array_length(Participant.zone_history),
+            ),
+            else_=0,
+        )
+        >= 2
+    )
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import String, case, cast, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
@@ -20,6 +20,7 @@ from speedfog_racing.models import (
     TrainingSessionStatus,
     User,
 )
+from speedfog_racing.services.daily_streak_service import qualifies_for_streak_sql
 
 logger = logging.getLogger(__name__)
 
@@ -90,23 +91,10 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
             )
         )
     ).scalar_one()
-    # Qualified participations only (``len(zone_history) >= 2``), mirroring
-    # ``qualifies_for_streak`` in ``services/daily_streak_service.py``. The
-    # CASE on the cast-text prefix is the cross-dialect guard against legacy
-    # non-array JSON scalars in ``zone_history``: PostgreSQL's
-    # ``json_array_length`` errors on those, SQLite returns 0. Race status is
-    # not filtered: a still-running daily contributes its already-qualified
-    # runners immediately.
-    daily_qualified_filter = (
-        case(
-            (
-                cast(Participant.zone_history, String).like("[%"),
-                func.json_array_length(Participant.zone_history),
-            ),
-            else_=0,
-        )
-        >= 2
-    )
+    # SQL counterpart of qualifies_for_streak (see daily_streak_service).
+    # Race status is not filtered: a still-running daily contributes its
+    # already-qualified runners immediately.
+    daily_qualified_filter = qualifies_for_streak_sql()
     total_daily_participants = (
         await db.execute(
             select(func.count(Participant.id))

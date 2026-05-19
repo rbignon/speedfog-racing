@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import String, and_, case, cast, func, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
@@ -16,6 +16,7 @@ from speedfog_racing.models import (
     User,
 )
 from speedfog_racing.schemas import UserStatsWeekly
+from speedfog_racing.services.daily_streak_service import qualifies_for_streak_sql
 
 MAX_WEEKS = 52
 
@@ -70,25 +71,12 @@ async def compute_weekly_series(
     # sparkline rendered next to the headline ``daily_count`` in
     # ``UserStatsCards`` could disagree with the ``best_streak`` shown in
     # the same card.
-    #
-    # The CASE on the cast-text prefix is the cross-dialect guard against
-    # legacy non-array JSON scalars in ``zone_history``: PostgreSQL's
-    # ``json_array_length`` errors on those, SQLite returns 0. The CASE
-    # short-circuits the length call on both.
     race_played_filter = or_(
         Participant.status == ParticipantStatus.FINISHED,
         (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
     )
-    daily_qualified_filter = (
-        case(
-            (
-                cast(Participant.zone_history, String).like("[%"),
-                func.json_array_length(Participant.zone_history),
-            ),
-            else_=0,
-        )
-        >= 2
-    )
+    # SQL counterpart of qualifies_for_streak (see daily_streak_service).
+    daily_qualified_filter = qualifies_for_streak_sql()
     counted_filter = or_(
         and_(Race.daily_date.is_(None), race_played_filter),
         and_(Race.daily_date.is_not(None), daily_qualified_filter),
