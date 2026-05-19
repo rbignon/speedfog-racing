@@ -711,8 +711,9 @@ impl RaceTracker {
                 self.last_flag_reader_ok = Some(current_ok);
             }
 
-            let igt_ms = self.game_state.read_igt().unwrap_or(0);
-            self.frame_snapshot.igt_ms = Some(igt_ms);
+            // Snapshot already populated at the top of update() because
+            // event_ids is non-empty (see need_igt).
+            let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
             // Resolve category page once for all event_ids (same category)
             let poll_ids: Vec<u32> = self.event_ids.clone();
             let page = self.event_flag_reader.resolve_category(poll_ids[0]);
