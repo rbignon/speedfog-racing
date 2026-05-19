@@ -13,7 +13,7 @@ use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::color::parse_hex_color;
-use crate::core::flag_buffer::FlagBuffer;
+use crate::core::flag_buffer::{detect_save_reload, FlagBuffer};
 use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::traits::GameStateReader;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
@@ -307,6 +307,9 @@ pub struct RaceTracker {
     // leaderboard_update on events), so we freeze the live game IGT instead.
     pub(crate) frozen_igt_ms: Option<u32>,
 
+    // Last observed IGT, used to detect save reloads. See EVENT_FLAG_TRACKING.md.
+    last_observed_igt: Option<u32>,
+
     // Cached reads for the current frame.
     pub(crate) frame_snapshot: FrameSnapshot,
 
@@ -432,6 +435,7 @@ impl RaceTracker {
             last_auth_error: None,
             permanent_error: None,
             frozen_igt_ms: None,
+            last_observed_igt: None,
             frame_snapshot: FrameSnapshot::default(),
             debug_info: DebugInfo::default(),
             last_debug_refresh: None,
@@ -507,12 +511,13 @@ impl RaceTracker {
         }
 
         let need_live_snapshot = self.show_ui || self.ws_client.is_connected();
+        // IGT also needed when a race is set up so save-reload detection and
+        // event-flag polling stay correct even with UI hidden and WS dropped.
+        let need_igt = need_live_snapshot || !self.event_ids.is_empty();
         self.frame_snapshot = {
             profile_span!("frame_snapshot");
             FrameSnapshot {
-                igt_ms: need_live_snapshot
-                    .then(|| self.game_state.read_igt())
-                    .flatten(),
+                igt_ms: need_igt.then(|| self.game_state.read_igt()).flatten(),
                 death_count: need_live_snapshot
                     .then(|| self.game_state.read_deaths())
                     .flatten(),
@@ -524,6 +529,24 @@ impl RaceTracker {
                 },
             }
         };
+
+        // Save reload detection: an IGT regression means the player loaded a
+        // different save. Reset per-save event-flag state so a pre-set
+        // finish_event from a stale save doesn't block the fresh save's real
+        // finish (see EVENT_FLAG_TRACKING.md).
+        if let Some(current_igt) = self.frame_snapshot.igt_ms {
+            if detect_save_reload(self.last_observed_igt, current_igt) {
+                info!(
+                    prev_igt_ms = self.last_observed_igt,
+                    new_igt_ms = current_igt,
+                    "[RACE] Save reload detected, clearing per-save event-flag state"
+                );
+                self.triggered_flags.clear();
+                self.flag_buffer.clear_deferred();
+                self.flag_buffer.clear_pending();
+            }
+            self.last_observed_igt = Some(current_igt);
+        }
 
         // Check position readability once per frame for loading screen detection.
         // Uses is_position_readable() to avoid allocating a map_id String.

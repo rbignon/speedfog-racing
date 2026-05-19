@@ -7,6 +7,26 @@
 //! Normal flow: poll detects flag -> deferred -> loading exit -> send to server
 //! Disconnected flow: poll detects flag -> deferred -> loading exit -> park to pending
 //!                    -> reconnect -> drain pending -> send to server
+//!
+//! Also exposes `detect_save_reload`, used by the tracker to flush per-save
+//! event-flag state (the buffers above plus `triggered_flags`) when the player
+//! loads a different save mid-session.
+
+/// Minimum IGT regression (ms) treated as a save reload. Elden Ring's IGT is
+/// monotonic within a save, so any meaningful decrease means the player loaded
+/// a different save. The margin absorbs read jitter without missing the
+/// stale-save -> fresh-save transition (which goes from minutes to ~0).
+pub const SAVE_RELOAD_IGT_DROP_MS: u32 = 1_000;
+
+/// Returns true when `current` is a meaningful regression from `prev`,
+/// indicating the player loaded a different save since the last observation.
+/// `None` for `prev` means no prior reading (first observation in session).
+pub fn detect_save_reload(prev: Option<u32>, current: u32) -> bool {
+    match prev {
+        Some(p) => current + SAVE_RELOAD_IGT_DROP_MS <= p,
+        None => false,
+    }
+}
 
 /// Manages event flag buffering across loading screens and disconnections.
 #[derive(Debug, Default)]
@@ -56,11 +76,44 @@ impl FlagBuffer {
     pub fn drain_pending(&mut self) -> std::vec::Drain<'_, (u32, u32)> {
         self.pending.drain(..)
     }
+
+    pub fn clear_pending(&mut self) {
+        self.pending.clear();
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::FlagBuffer;
+    use super::{detect_save_reload, FlagBuffer};
+
+    #[test]
+    fn detect_save_reload_returns_false_without_prior_reading() {
+        assert!(!detect_save_reload(None, 0));
+        assert!(!detect_save_reload(None, 10_000_000));
+    }
+
+    #[test]
+    fn detect_save_reload_returns_false_for_monotonic_igt() {
+        assert!(!detect_save_reload(Some(0), 0));
+        assert!(!detect_save_reload(Some(1000), 1100));
+        assert!(!detect_save_reload(Some(1_000_000), 2_000_000));
+    }
+
+    #[test]
+    fn detect_save_reload_ignores_jitter_below_threshold() {
+        // A reading slightly lower than the previous (jitter, not a real reload).
+        assert!(!detect_save_reload(Some(5_000), 4_500));
+        assert!(!detect_save_reload(Some(5_000), 4_001));
+    }
+
+    #[test]
+    fn detect_save_reload_fires_on_stale_to_fresh_transition() {
+        // Player loads a stale save (IGT ~141 min) then starts a fresh game (IGT 0).
+        assert!(detect_save_reload(Some(8_491_593), 0));
+        assert!(detect_save_reload(Some(60_000), 0));
+        // Boundary: drop of exactly SAVE_RELOAD_IGT_DROP_MS counts as a reload.
+        assert!(detect_save_reload(Some(5_000), 4_000));
+    }
 
     #[test]
     fn park_deferred_moves_to_pending() {
@@ -135,6 +188,19 @@ mod tests {
         let sent: Vec<_> = buf.drain_deferred().collect();
         assert_eq!(sent, vec![(100, 1000), (101, 1100)]);
         assert!(!buf.has_deferred());
+    }
+
+    #[test]
+    fn clear_pending_discards_without_affecting_deferred() {
+        let mut buf = FlagBuffer::default();
+        buf.defer(100, 1000);
+        buf.add_pending(200, 5000);
+
+        buf.clear_pending();
+
+        assert!(buf.drain_pending().next().is_none());
+        let deferred: Vec<_> = buf.drain_deferred().collect();
+        assert_eq!(deferred, vec![(100, 1000)]);
     }
 
     #[test]

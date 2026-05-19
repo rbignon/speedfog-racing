@@ -60,7 +60,7 @@ for each flag_id in event_ids:
             → push to deferred_event_flags
 ```
 
-**`finish_event` is one-shot**: Uses `triggered_flags` (HashSet), so the player can only finish once. Never cleared, even on reconnect.
+**`finish_event` is one-shot**: Uses `triggered_flags` (HashSet), so the player can only finish once. Preserved across reconnects (so a finish that was sent before disconnect doesn't fire again on reconnect rescan). Cleared on a detected **save reload** so a stale save's pre-set finish_event doesn't block the fresh save's real finish: each frame, if the live IGT regresses by more than `SAVE_RELOAD_IGT_DROP_MS` from the previous reading, the mod assumes the player loaded a different save and flushes `triggered_flags`, `deferred_event_flags`, and `pending_event_flags`. Elden Ring's IGT is monotonic within a save, so a meaningful regression is unambiguous.
 
 **Regular fog gate flags are repeatable**: After capture, the flag is cleared in game memory (`set_flag(false)`) so the EMEVD script can re-set it on the next fog gate traversal. This enables backtrack detection: re-traversing an already-visited fog gate produces a new `event_flag` message.
 
