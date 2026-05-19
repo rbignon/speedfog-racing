@@ -461,6 +461,14 @@ impl RaceTracker {
             .unwrap_or(false)
     }
 
+    pub fn is_race_setup(&self) -> bool {
+        self.race_state
+            .race
+            .as_ref()
+            .map(|r| r.status == "setup")
+            .unwrap_or(false)
+    }
+
     /// Check if the local player has finished the race.
     /// Once finished, the mod should stop sending status_update and event_flag
     /// to preserve the frozen IGT at finish time.
@@ -687,6 +695,12 @@ impl RaceTracker {
                 if grace_id > 0 {
                     crate::eldenring::warp_hook::clear_captured_grace_entity_id();
                 }
+            }
+
+            // Remind the player when they load a save (or start a new game)
+            // before the race has begun. Auto-dismisses after 3s.
+            if self.is_race_setup() {
+                self.set_status("Race hasn't started yet".to_string());
             }
         }
         self.was_position_readable = position_readable;
