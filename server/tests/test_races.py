@@ -4,7 +4,7 @@ import json
 import tempfile
 import uuid
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -253,10 +253,11 @@ async def test_list_races_empty(test_client):
 async def test_list_races_with_races(test_client, organizer, seed):
     """Listing races returns created races."""
     async with test_client as client:
-        # Create a race first
+        # Create a public race so it is visible to anonymous listing.
+        scheduled = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
         await client.post(
             "/api/races",
-            json={"name": "Test Race"},
+            json={"name": "Test Race", "is_public": True, "scheduled_at": scheduled},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
 
@@ -1660,12 +1661,39 @@ async def test_create_private_race(test_client, organizer, seed):
 
 
 @pytest.mark.asyncio
-async def test_create_race_default_public(test_client, organizer, seed):
-    """Races are public by default."""
+async def test_create_race_default_private(test_client, organizer, seed):
+    """Races are private by default (public requires an explicit scheduled_at)."""
     async with test_client as client:
         response = await client.post(
             "/api/races",
-            json={"name": "Public Race"},
+            json={"name": "Default Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["is_public"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_race_public_requires_scheduled_at(test_client, organizer, seed):
+    """Public races must have a scheduled_at so the announcement carries useful info."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Public Race", "is_public": True},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 422
+        assert "scheduled_at" in response.text
+
+
+@pytest.mark.asyncio
+async def test_create_race_public_with_scheduled_at(test_client, organizer, seed):
+    """Public + scheduled_at is the happy path."""
+    scheduled = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Public Race", "is_public": True, "scheduled_at": scheduled},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         assert response.status_code == 201
@@ -1812,9 +1840,10 @@ async def test_update_race_toggle_visibility(test_client, organizer, seed):
     """Organizer can toggle is_public via PATCH."""
     async with test_client as client:
         # Create a public race
+        scheduled = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
         create_resp = await client.post(
             "/api/races",
-            json={"name": "Toggle Race"},
+            json={"name": "Toggle Race", "is_public": True, "scheduled_at": scheduled},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         assert create_resp.status_code == 201
@@ -2406,9 +2435,10 @@ async def admin(async_session):
 async def test_admin_can_update_race(test_client, organizer, admin, seed):
     """Admin can update a race they did not create."""
     async with test_client as client:
+        scheduled = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
         create_resp = await client.post(
             "/api/races",
-            json={"name": "Organizer Race"},
+            json={"name": "Organizer Race", "is_public": True, "scheduled_at": scheduled},
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         race_id = create_resp.json()["id"]

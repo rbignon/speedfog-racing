@@ -83,6 +83,10 @@
       error = "Please enter a race name.";
       return;
     }
+    if (isPublic && !scheduledAt) {
+      error = "Public races must have a scheduled time.";
+      return;
+    }
 
     creating = true;
     error = null;
@@ -138,22 +142,6 @@
       </div>
 
       <div class="form-group">
-        <label for="scheduled"
-          >Scheduled Time <span class="optional">(optional)</span></label
-        >
-        <DateTimePicker
-          value={scheduledAt}
-          onchange={(iso) => (scheduledAt = iso)}
-          min={new Date()}
-          disabled={creating}
-          placeholder="Pick a date"
-        />
-        <p class="hint">
-          Indicative only. The organizer starts the race manually at any time.
-        </p>
-      </div>
-
-      <div class="form-group">
         <span>Game Mode</span>
         {#if sortedPools.length === 0}
           <p class="empty-pools">
@@ -190,6 +178,27 @@
             </p>
           {/if}
         {/if}
+      </div>
+
+      <div class="form-group">
+        <label for="scheduled">
+          Scheduled Time
+          {#if isPublic}
+            <span class="required">(required)</span>
+          {:else}
+            <span class="optional">(optional)</span>
+          {/if}
+        </label>
+        <DateTimePicker
+          value={scheduledAt}
+          onchange={(iso) => (scheduledAt = iso)}
+          min={new Date()}
+          disabled={creating}
+          placeholder="Pick a date"
+        />
+        <p class="hint">
+          Indicative only. The organizer starts the race manually at any time.
+        </p>
       </div>
 
       <div class="form-group role-visibility-grid">
@@ -474,6 +483,13 @@
     text-transform: none;
     letter-spacing: normal;
     color: var(--color-text-disabled);
+  }
+
+  .required {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--color-purple);
   }
 
   .pool-container {

@@ -313,12 +313,13 @@ async def test_patch_running_race_rejected(test_client, organizer, player, seed)
 async def test_list_scheduled_races_sorted(test_client, organizer, seed, seed2):
     """Open races with scheduled_at come sorted by scheduled_at ASC."""
     async with test_client as client:
-        # Create race with later schedule
+        # Create race with later schedule (public so it shows on the anonymous list)
         resp1 = await client.post(
             "/api/races",
             json={
                 "name": "Later Race",
                 "pool_name": "standard",
+                "is_public": True,
                 "scheduled_at": _future(48),
             },
             headers={"Authorization": f"Bearer {organizer.api_token}"},
@@ -331,6 +332,7 @@ async def test_list_scheduled_races_sorted(test_client, organizer, seed, seed2):
             json={
                 "name": "Sooner Race",
                 "pool_name": "standard",
+                "is_public": True,
                 "scheduled_at": _future(2),
             },
             headers={"Authorization": f"Bearer {organizer.api_token}"},

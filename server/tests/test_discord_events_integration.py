@@ -121,27 +121,6 @@ async def test_create_race_creates_discord_event(test_client, organizer, seed, a
 
 
 @pytest.mark.asyncio
-async def test_create_race_no_event_without_scheduled_at(test_client, organizer, seed):
-    """Creating a public race without scheduled_at should not create a Discord event."""
-    with patch(
-        "speedfog_racing.api.races.create_scheduled_event", new_callable=AsyncMock
-    ) as mock_create:
-        async with test_client as client:
-            resp = await client.post(
-                "/api/races",
-                json={
-                    "name": "No Schedule Test",
-                    "pool_name": "standard",
-                    "is_public": True,
-                },
-                headers={"Authorization": f"Bearer {organizer.api_token}"},
-            )
-            assert resp.status_code == 201
-            await asyncio.sleep(0.1)
-            mock_create.assert_not_called()
-
-
-@pytest.mark.asyncio
 async def test_create_race_no_event_when_private(test_client, organizer, seed):
     """Creating a private race should not create a Discord event."""
     scheduled = (datetime.now(UTC) + timedelta(hours=2)).isoformat()

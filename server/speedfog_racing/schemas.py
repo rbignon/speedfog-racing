@@ -70,7 +70,7 @@ class CreateRaceRequest(BaseModel):
     config: dict[str, Any] = {}
     organizer_participates: bool = False
     scheduled_at: datetime | None = None
-    is_public: bool = True
+    is_public: bool = False
     open_registration: bool = False
     max_participants: int | None = None
     late_join_window_minutes: int | None = None
@@ -84,6 +84,14 @@ class CreateRaceRequest(BaseModel):
                 raise ValueError("max_participants must be >= 2 when open_registration is enabled")
         if self.max_participants is not None and self.max_participants > 100:
             raise ValueError("max_participants cannot exceed 100")
+        return self
+
+    @model_validator(mode="after")
+    def validate_public_requires_schedule(self) -> "CreateRaceRequest":
+        # Public races are announced on Discord and listed on the homepage,
+        # so an announcement without a scheduled time gives no useful info.
+        if self.is_public and self.scheduled_at is None:
+            raise ValueError("scheduled_at is required when is_public is true")
         return self
 
     @model_validator(mode="after")

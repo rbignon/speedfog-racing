@@ -492,7 +492,11 @@ async def test_race_list_includes_open_registration(test_client, organizer, seed
     async with test_client as client:
         await _create_open_race(client, organizer.api_token)
 
-        response = await client.get("/api/races")
+        # Authenticate so the (default-private) open race is visible in the listing.
+        response = await client.get(
+            "/api/races",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
         assert response.status_code == 200
         races = response.json()["races"]
         assert len(races) > 0

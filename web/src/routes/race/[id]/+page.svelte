@@ -877,7 +877,7 @@
         {/if}
       {/if}
 
-      {#if liveRegistrationClosesAt && (raceStatus === "setup" ? liveOpenRegistration : raceStatus === "running" && registrationOpenWindow)}
+      {#if liveRegistrationClosesAt && liveOpenRegistration && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow))}
         <p class="login-hint">
           Joinable until {formatLocalTime(liveRegistrationClosesAt)}
         </p>

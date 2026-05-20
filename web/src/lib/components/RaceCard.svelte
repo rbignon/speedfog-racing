@@ -205,7 +205,7 @@
         </button>
       </span>
     </div>
-    {#if race.status === "running" && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
+    {#if race.status === "running" && race.open_registration && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
       <div class="late-join-note">
         Joinable until {new Date(
           race.registration_closes_at,
