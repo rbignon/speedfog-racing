@@ -304,7 +304,7 @@ A single message per rotation day, sent right after a successful daily creation,
 
 - Title: `🌅 Daily Seed - {Month Day}` using the UTC rotation date so every viewer reads the same day label.
 - Body: pool display name (capitalized), closes-at line as `<t:UNIX:R>` (so each viewer sees their own local time), `[Play now](/daily)` link.
-- Yesterday's podium block: top three finishers with medals and IGT, plus the total finisher count, computed from `previous_race.participants` filtered to `FINISHED`. Omitted if `previous_race` is `None` (first ever, or yesterday was skipped) or had no finishers.
+- Yesterday's podium block: top three finishers with medals and IGT, plus the total count of qualified players (participants whose `zone_history` has at least two entries, matching the streak qualification predicate). Computed from `previous_race.participants`. Omitted if `previous_race` is `None` (first ever, or yesterday was skipped) or had no finishers.
 
 The notification is best-effort: any HTTP error is logged but does not fail the loop tick. To avoid double-posting, `fire_race_finished_notifications` suppresses the regular finished-race embed for races where `daily_date is not None`: the daily already announced itself at creation with the prior podium.
 

@@ -410,6 +410,7 @@ async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> N
     race route, so the message ages gracefully once the day rolls over.
     """
     from speedfog_racing.models import ParticipantStatus  # avoid circular import at module load
+    from speedfog_racing.services.daily_streak_service import qualifies_for_streak
 
     pool = race.seed.pool if race.seed else None
     pool_display = format_pool_display_name(pool)
@@ -442,10 +443,13 @@ async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> N
                     p.user.twitch_display_name or p.user.twitch_username
                 )
                 podium_lines.append(f"{medal} **{safe_player}** - {_format_igt(p.igt_ms)}")
+            qualified_count = sum(
+                1 for p in previous_race.participants if qualifies_for_streak(p.zone_history)
+            )
             description_lines.append("")
             description_lines.append("**Yesterday's podium**")
             description_lines.extend(podium_lines)
-            description_lines.append(f"_{len(finishers)} finishers total._")
+            description_lines.append(f"_{qualified_count} players._")
 
     embed: dict[str, object] = {
         "title": title,
