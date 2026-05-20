@@ -394,7 +394,7 @@ async def _compute_pool_usage(db: AsyncSession) -> list[dict[str, Any]]:
     return entries
 
 
-async def _compute_top_organizers(db: AsyncSession, limit: int = 10) -> list[dict[str, Any]]:
+async def _compute_top_organizers(db: AsyncSession, limit: int = 20) -> list[dict[str, Any]]:
     """Top organizers by count of finished races, with average participants.
 
     Participant count per race is computed in SQL, then averaged in Python to
