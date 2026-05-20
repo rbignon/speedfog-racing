@@ -125,10 +125,6 @@
     <p class="loading">Loading...</p>
   {:else}
     <form onsubmit={handleSubmit}>
-      {#if error}
-        <div class="error">{error}</div>
-      {/if}
-
       <div class="form-group">
         <label for="name">Race Name</label>
         <input
@@ -402,6 +398,10 @@
           </div>
         {/if}
       </div>
+
+      {#if error}
+        <div class="error" role="alert">{error}</div>
+      {/if}
 
       <div class="actions">
         <button
@@ -682,10 +682,12 @@
   }
 
   .error {
-    background: var(--color-danger-dark);
-    color: white;
-    padding: 0.75rem;
+    background: rgba(220, 38, 38, 0.15);
+    border: 1px solid var(--color-danger-dark);
+    color: var(--color-danger);
+    padding: 0.75rem 1rem;
     border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
   }
 
   .loading {
