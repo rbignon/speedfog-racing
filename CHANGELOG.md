@@ -2,6 +2,19 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.10.1] - 2026-05-20
+
+### Seeds
+
+- Volcano Hallway: exit fog gates restricted
+- Crucible Knight Duo removed from the boss pool
+- Dragon bosses can no longer spawn in arenas that are too small for them
+
+### Mod Overlay
+
+- Visual refresh: overlay now follows the SpeedFog graphic charter
+- Fix: reloading a stale save mid-session could leave a finish flag set in game memory, preventing a fresh run from ever firing its finish. The mod now detects save reloads and flushes per-save flag state
+
 ## [1.10.0] - 2026-05-17
 
 ### Seeds
