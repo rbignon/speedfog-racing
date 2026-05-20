@@ -424,7 +424,7 @@ async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> N
     closes_text = f"<t:{int(closes_at.timestamp())}:R>" if closes_at else "in 24 hours"
 
     description_lines = [
-        f"Today's pool: **{_escape_discord_md(pool_display)}**",
+        f"Today's mode: **{_escape_discord_md(pool_display)}**",
         f"Closes {closes_text}.",
         f"[Play now]({daily_url})",
     ]
