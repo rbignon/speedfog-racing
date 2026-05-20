@@ -371,7 +371,6 @@ async def _compute_pool_usage(db: AsyncSession) -> list[dict[str, Any]]:
                 (TrainingSession.status == TrainingSessionStatus.ABANDONED)
                 & (TrainingSession.igt_ms > 0),
             ),
-            TrainingSession.exclude_from_stats == False,  # noqa: E712
         )
         .group_by(Seed.pool_name)
     )

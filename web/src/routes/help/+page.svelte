@@ -228,8 +228,7 @@
     <p class="path-note">
       Solo is the best way to discover SpeedFog. No invite needed, no waiting,
       just pick a mode and go. Your times, deaths, and route maps are saved so
-      you can track your progress. You can mark a session as a <em>slow run</em> to
-      exclude it from your stats.
+      you can track your progress.
     </p>
   </section>
 

@@ -93,8 +93,6 @@ async def create_training_session(
     db: AsyncSession,
     user_id: uuid.UUID,
     pool_name: str,
-    *,
-    exclude_from_stats: bool = False,
 ) -> TrainingSession:
     """Create a new training session with a random seed.
 
@@ -108,7 +106,6 @@ async def create_training_session(
     session = TrainingSession(
         user_id=user_id,
         seed_id=seed.id,
-        exclude_from_stats=exclude_from_stats,
     )
     db.add(session)
     await db.flush()

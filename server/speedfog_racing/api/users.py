@@ -244,7 +244,6 @@ async def get_user_pool_stats(
                 (TrainingSession.status == TrainingSessionStatus.ABANDONED)
                 & (TrainingSession.igt_ms > 0),
             ),
-            TrainingSession.exclude_from_stats == False,  # noqa: E712
         )
         .group_by(Seed.pool_name)
     )
@@ -263,8 +262,6 @@ async def get_user_pool_stats(
     for pool_name in all_pools:
         race = race_stats.get(pool_name)
         training = training_stats.get(pool_name)
-        # Note: training.runs excludes slow runs (exclude_from_stats=True),
-        # so total_runs reflects "counted runs", not all sessions.
         total_runs = (race.runs if race else 0) + (training.runs if training else 0)
         entries.append(
             UserPoolStatsEntry(
@@ -411,7 +408,6 @@ async def get_user_activity(
                 status=t.status.value,
                 igt_ms=t.igt_ms,
                 death_count=t.death_count,
-                exclude_from_stats=t.exclude_from_stats,
             )
         )
 

@@ -491,43 +491,6 @@ async def test_compute_analytics_pool_usage_merges_training_prefix(async_session
 
 
 @pytest.mark.asyncio
-async def test_compute_analytics_pool_usage_excludes_training_flag(async_session):
-    """Training sessions flagged exclude_from_stats must not count in pool_usage."""
-    now = datetime.now(tz=UTC)
-    async with async_session() as db:
-        user = User(twitch_id="x_u", twitch_username="xuser", api_token=generate_token())
-        db.add(user)
-        await db.flush()
-        seed = Seed(
-            seed_number="200",
-            pool_name="excluded_pool",
-            graph_json={},
-            total_layers=1,
-            folder_path="/seeds/200",
-            status=SeedStatus.CONSUMED,
-        )
-        db.add(seed)
-        await db.flush()
-        db.add(
-            TrainingSession(
-                user_id=user.id,
-                seed_id=seed.id,
-                mod_token=generate_token(),
-                status=TrainingSessionStatus.FINISHED,
-                igt_ms=1000,
-                exclude_from_stats=True,
-                created_at=now,
-            )
-        )
-        await db.commit()
-
-    async with async_session() as db:
-        result = await compute_analytics(db)
-
-    assert all(p["pool_name"] != "excluded_pool" for p in result["pool_usage"])
-
-
-@pytest.mark.asyncio
 async def test_compute_analytics_top_organizers_from_fixture(analytics_data, async_session):
     """Top organizers should list user1 (1 finished race, avg 2.0 participants)."""
     async with async_session() as db:

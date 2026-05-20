@@ -24,7 +24,6 @@
   let startingPool = $state<string | null>(null);
   let error = $state<string | null>(null);
   let authChecked = $state(false);
-  let slowRun = $state(false);
 
   let sortedPools = $derived(
     Object.entries(pools)
@@ -94,7 +93,7 @@
     error = null;
 
     try {
-      const session = await createTrainingSession(poolName, slowRun);
+      const session = await createTrainingSession(poolName);
       goto(`/training/${session.id}`);
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to start solo session.";
@@ -181,13 +180,6 @@
                 {/if}
               </p>
               <div class="pool-content-footer">
-                <label class="slow-run-toggle">
-                  <input type="checkbox" bind:checked={slowRun} />
-                  <span class="slow-run-label">Slow run</span>
-                  <span class="slow-run-desc"
-                    >This session won't count in your performance stats</span
-                  >
-                </label>
                 <button
                   class="btn btn-primary"
                   disabled={(selectedInfo?.available ?? 0) === 0 ||
@@ -241,9 +233,6 @@
                   <span class="badge badge-{session.status}"
                     >{session.status}</span
                   >
-                  {#if session.exclude_from_stats}
-                    <span class="badge badge-slow">Slow</span>
-                  {/if}
                 </td>
                 <td class="mono"
                   >{Math.min(
@@ -335,30 +324,6 @@
     color: var(--color-gold);
   }
 
-  /* Slow run toggle */
-  .slow-run-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-    cursor: pointer;
-  }
-
-  .slow-run-toggle input[type="checkbox"] {
-    accent-color: var(--color-gold);
-  }
-
-  .slow-run-label {
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    color: var(--color-text);
-  }
-
-  .slow-run-desc {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-disabled);
-  }
-
   /* Pool container (tabs + content as one unit) */
   .pool-container {
     border: 1px solid var(--color-border);
@@ -378,7 +343,7 @@
 
   .pool-content-footer {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
     gap: 1rem;
   }
