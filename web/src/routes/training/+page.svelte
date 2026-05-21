@@ -11,6 +11,7 @@
   } from "$lib/api";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import PoolTabs from "$lib/components/PoolTabs.svelte";
+  import SurveyBanner from "$lib/components/SurveyBanner.svelte";
   import TrainingSessionCard from "$lib/components/TrainingSessionCard.svelte";
   import { timeAgo } from "$lib/utils/time";
   import { formatPoolName } from "$lib/utils/format";
@@ -117,6 +118,10 @@
   <p class="subtitle">
     Run fresh seeds at your own pace. No race, no pressure.
   </p>
+
+  {#if auth.user?.feedback_prompted_at}
+    <SurveyBanner />
+  {/if}
 
   {#if error}
     <div class="error-banner">

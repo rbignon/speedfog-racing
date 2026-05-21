@@ -18,6 +18,7 @@
   import RaceStats from "$lib/components/RaceStats.svelte";
   import RaceHighlights from "$lib/components/RaceHighlights.svelte";
   import ShareButtons from "$lib/components/ShareButtons.svelte";
+  import SurveyBanner from "$lib/components/SurveyBanner.svelte";
   import AddToCalendar from "$lib/components/AddToCalendar.svelte";
   import ChatSidebar from "$lib/components/ChatSidebar.svelte";
   import type {
@@ -971,6 +972,9 @@
     </aside>
 
     <main class="main-content">
+      {#if auth.user?.feedback_prompted_at}
+        <SurveyBanner />
+      {/if}
       <header class="race-header">
         <div>
           <h1>{raceName}</h1>

@@ -39,6 +39,7 @@
   import Podium from "$lib/components/Podium.svelte";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import ShareButtons from "$lib/components/ShareButtons.svelte";
+  import SurveyBanner from "$lib/components/SurveyBanner.svelte";
   import ChatSidebar from "$lib/components/ChatSidebar.svelte";
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
@@ -493,6 +494,9 @@
     </aside>
 
     <main class="main-content">
+      {#if auth.user?.feedback_prompted_at}
+        <SurveyBanner />
+      {/if}
       <header class="daily-header">
         <div class="daily-title">
           <span class="kicker">{kickerLabel}</span>
