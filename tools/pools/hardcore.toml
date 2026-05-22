@@ -54,14 +54,14 @@ enirilim_radahn = 6        # dead-end
 [starting_items]
 whetblades = false
 spirit_calling_bell = false
-gaolupperlevelkey = false
-gaollowerlevelkey = false
+gaolupperlevelkey = true
+gaollowerlevelkey = true
 talisman_pouches = 2
 golden_seeds = 3
 sacred_tears = 2
 starting_runes = 50000
 larval_tears = 2
-stonesword_keys = 3
+stonesword_keys = 6
 
 [care_package]
 enabled = false
