@@ -2,6 +2,24 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.10.2] - 2026-05-22
+
+### Seeds
+
+- Lightning Divine Warrior is now a regular boss instead of a major boss
+- Dragon bosses disallowed in additional arenas
+- Darklight and Scorpion catacombs: only main entrances are used as spawn points
+- Zone weights rebalanced so parallel paths at the same depth have closer durations
+- Aging Untouchables can now be damaged without parrying them
+
+### Races
+
+- Public races now require a scheduled start time
+
+### Training
+
+- Removed the "Slow run" option
+
 ## [1.10.1] - 2026-05-20
 
 ### Seeds
