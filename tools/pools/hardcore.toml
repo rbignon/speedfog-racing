@@ -68,7 +68,7 @@ enabled = false
 
 [item_randomizer]
 difficulty = 75
-nerf_gargoyles = false
+nerf_gargoyles = true
 allcraft = false
 
 [enemy]
