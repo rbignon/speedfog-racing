@@ -318,8 +318,7 @@
         <ul>
           <li><strong>Glitchless</strong>: no glitch exploits allowed</li>
           <li>
-            <strong>No quit-outs</strong>: don't close the game to manipulate
-            state
+            <strong>Quit-outs allowed</strong>
           </li>
           <li>
             <strong>No LiveSplit</strong>: IGT is tracked automatically by the
