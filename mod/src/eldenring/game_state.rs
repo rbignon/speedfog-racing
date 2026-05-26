@@ -9,8 +9,7 @@ use libeldenring::memedit::PointerChain;
 use libeldenring::pointers::Pointers;
 
 use crate::core::constants::{
-    ARM_STYLE_EMPTY, ARM_STYLE_TWO_HANDED_LEFT, ARM_STYLE_TWO_HANDED_RIGHT,
-    CHRASM_ARM_STYLE_OFFSET, CHRASM_PRIMARY_LEFT_WEP_OFFSET, CHRASM_PRIMARY_RIGHT_WEP_OFFSET,
+    CHRASM_PRIMARY_LEFT_WEP_OFFSET, CHRASM_PRIMARY_RIGHT_WEP_OFFSET,
     CHRASM_SECONDARY_LEFT_WEP_OFFSET, CHRASM_SECONDARY_RIGHT_WEP_OFFSET,
     CHRASM_TERTIARY_LEFT_WEP_OFFSET, CHRASM_TERTIARY_RIGHT_WEP_OFFSET, CHRASM_WEP_SLOT_LEFT_OFFSET,
     CHRASM_WEP_SLOT_RIGHT_OFFSET, FIELD_AREA_PLAY_REGION_ID_OFFSET, GAMEDATAMAN_DEATH_COUNT_OFFSET,
@@ -32,7 +31,6 @@ pub struct GameState {
     loading_screen_ptr: PointerChain<u8>,
     /// ChrAsm: equipped-weapon resolution. All chains live under
     /// `GameDataMan -> +0x8 (PlayerGameData) -> +<field offset>`.
-    arm_style_ptr: PointerChain<u8>,
     wep_slot_left_ptr: PointerChain<i32>,
     wep_slot_right_ptr: PointerChain<i32>,
     weapon_slot_ptrs: [[PointerChain<i32>; 3]; 2],
@@ -67,15 +65,10 @@ impl GameState {
         let chrasm_chain = |offset: usize| -> PointerChain<i32> {
             PointerChain::<i32>::new(&[game_data_man, GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET, offset])
         };
-        let arm_style_ptr = PointerChain::<u8>::new(&[
-            game_data_man,
-            GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET,
-            CHRASM_ARM_STYLE_OFFSET,
-        ]);
         let wep_slot_left_ptr = chrasm_chain(CHRASM_WEP_SLOT_LEFT_OFFSET);
         let wep_slot_right_ptr = chrasm_chain(CHRASM_WEP_SLOT_RIGHT_OFFSET);
-        // Indexed [hand][slot_offset]: hand 0 = left, hand 1 = right;
-        // slot_offset 0 = Primary, 1 = Secondary, 2 = Tertiary.
+        // Indexed [hand][slot]: hand 0 = game left, hand 1 = game right;
+        // slot 0 = Primary, 1 = Secondary, 2 = Tertiary.
         let weapon_slot_ptrs = [
             [
                 chrasm_chain(CHRASM_PRIMARY_LEFT_WEP_OFFSET),
@@ -94,7 +87,6 @@ impl GameState {
             play_region_id_ptr,
             death_count_ptr,
             loading_screen_ptr,
-            arm_style_ptr,
             wep_slot_left_ptr,
             wep_slot_right_ptr,
             weapon_slot_ptrs,
@@ -135,22 +127,18 @@ impl GameState {
     /// Read the currently-equipped weapon IDs for the left and right hands.
     ///
     /// Returns `[left, right]`. Each slot is `None` when:
-    /// - The pointer chain is unreadable (game not initialized).
-    /// - The hand is empty per `ArmStyle == 0`, or masked by two-handing.
-    /// - The slot holds the Unarmed sentinel (110000) or a non-positive sentinel.
+    /// - The slot-offset pointer chain is unreadable.
+    /// - The active slot index is out of `[0..3)`.
+    /// - The slot holds the Unarmed sentinel (110000) or a non-positive value.
     ///
-    /// Filtering by weapon type happens server-side, against `weapons.csv`.
+    /// The active slot per hand is the one the player cycles via the d-pad
+    /// during gameplay; reading it from memory (rather than always reading
+    /// Primary) is what lets us follow mid-race loadout switches. Two-handing
+    /// is not detected: the inactive hand is over-reported, but the server's
+    /// `wep_type` filter strips the shield/staff/seal that an off-hand
+    /// typically holds in that case, neutralizing the effect.
     pub fn read_equipped_weapons(&self) -> [Option<i32>; 2] {
         profile_span!("read_equipped_weapons");
-        let arm_style = match self.arm_style_ptr.read() {
-            Some(v) => v,
-            None => return [None, None],
-        };
-        if arm_style == ARM_STYLE_EMPTY {
-            return [None, None];
-        }
-        let slot_left = self.wep_slot_left_ptr.read();
-        let slot_right = self.wep_slot_right_ptr.read();
         let read_hand = |hand_idx: usize, slot: Option<i32>| -> Option<i32> {
             let slot_offset = slot? as usize;
             let chain = self.weapon_slot_ptrs[hand_idx].get(slot_offset)?;
@@ -161,15 +149,8 @@ impl GameState {
                 Some(raw)
             }
         };
-        let mut left = read_hand(0, slot_left);
-        let mut right = read_hand(1, slot_right);
-        // Mask the inactive hand under two-handing: per the spec, we only report
-        // the weapon actually in use.
-        if arm_style == ARM_STYLE_TWO_HANDED_LEFT {
-            right = None;
-        } else if arm_style == ARM_STYLE_TWO_HANDED_RIGHT {
-            left = None;
-        }
+        let left = read_hand(0, self.wep_slot_left_ptr.read());
+        let right = read_hand(1, self.wep_slot_right_ptr.read());
         [left, right]
     }
 
