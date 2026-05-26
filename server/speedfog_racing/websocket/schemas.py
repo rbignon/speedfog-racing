@@ -35,6 +35,10 @@ class StatusUpdateMessage(BaseModel):
     type: Literal["status_update"] = "status_update"
     igt_ms: int
     death_count: int
+    # [left_hand, right_hand] raw runtime weapon IDs (EquipParamWeapon row + upgrade).
+    # None per slot means empty hand, two-handed mask on the inactive side, or loading
+    # screen. Field-level None means an older mod build that doesn't report weapons.
+    weapons: tuple[int | None, int | None] | None = None
 
 
 class EventFlagMessage(BaseModel):

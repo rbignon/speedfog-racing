@@ -905,7 +905,14 @@ impl RaceTracker {
             && !self.am_i_finished()
             && !self.is_countdown_active()
         {
-            self.ws_client.send_status_update(igt_ms, deaths);
+            // Skip the weapon read during loading screens: ChrAsm may hold stale
+            // or in-flight values while the player struct is being repopulated.
+            let weapons = if self.game_state.is_in_loading_screen() == Some(true) {
+                [None, None]
+            } else {
+                self.game_state.read_equipped_weapons()
+            };
+            self.ws_client.send_status_update(igt_ms, deaths, weapons);
             self.last_status_update = Instant::now();
         }
     }

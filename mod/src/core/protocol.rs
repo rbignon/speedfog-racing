@@ -19,8 +19,16 @@ pub enum ClientMessage {
     Auth { mod_token: String },
     /// Player is ready to race
     Ready,
-    /// Periodic status update
-    StatusUpdate { igt_ms: u32, death_count: u32 },
+    /// Periodic status update.
+    ///
+    /// `weapons` is `[left_hand, right_hand]` raw EquipParamWeapon runtime IDs
+    /// (row + upgrade level). Per slot, `None` means empty hand, two-handed mask,
+    /// loading screen, or unreadable memory.
+    StatusUpdate {
+        igt_ms: u32,
+        death_count: u32,
+        weapons: [Option<i32>; 2],
+    },
     /// EMEVD event flag triggered (fog gate traversal or boss kill)
     EventFlag {
         flag_id: u32,
@@ -292,11 +300,13 @@ mod tests {
         let msg = ClientMessage::StatusUpdate {
             igt_ms: 123456,
             death_count: 5,
+            weapons: [Some(2000025), None],
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"status_update""#));
         assert!(json.contains(r#""igt_ms":123456"#));
         assert!(json.contains(r#""death_count":5"#));
+        assert!(json.contains(r#""weapons":[2000025,null]"#));
         // Should NOT contain current_zone or current_layer
         assert!(!json.contains("current_zone"));
         assert!(!json.contains("current_layer"));

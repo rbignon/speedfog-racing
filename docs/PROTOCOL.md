@@ -150,9 +150,12 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 {
   "type": "status_update",
   "igt_ms": 123456,
-  "death_count": 5
+  "death_count": 5,
+  "weapons": [null, 2000025]
 }
 ```
+
+`weapons` is `[left_hand, right_hand]` raw runtime `EquipParamWeapon` IDs (param row + upgrade level, e.g. `2000025` = Longsword +25). Each slot is `null` when the hand is empty, masked under two-handing, unreadable, or filled with the Unarmed sentinel (`110000`). The field is omitted by older mod builds. The server discards weapons whose `wep_type` is in the excluded set (staves, seals, shields, torches) and writes the surviving raw IDs onto the current `zone_history` entry as `weapons`.
 
 #### `event_flag`
 
@@ -932,7 +935,7 @@ Shared schema across all WebSocket messages:
 | `equipped_name_template_id` | `string?` | Logical id of the active name template (web resolves `background_css` via the catalog). `null` or `"default"` means no override; render with the default style.                   |
 | `name_template`             | `object?` | Pre-resolved render payload for the mod overlay: `{ color?: "#RRGGBB", gradient?: ["#RRGGBB","#RRGGBB"] }`. `null` for default users; backgrounds are not transmitted (web-only). |
 
-`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack", "message_id"?: 17 }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). `message_id` is optional and only present on newer `"fog"` entries; it is used server-side to make replayed `event_flag` messages idempotent after reconnect. Entries without `type` are treated as `"fog"` for backward compatibility.
+`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack", "message_id"?: 17, "weapons"?: [int|null, int|null] }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). `message_id` is optional and only present on newer `"fog"` entries; it is used server-side to make replayed `event_flag` messages idempotent after reconnect. `weapons` is `[left_hand, right_hand]` runtime weapon IDs (last-write-wins per zone via `status_update`), filtered to the tracked melee/ranged set; absent on entries pre-dating the feature or when the mod didn't report a value. Entries without `type` are treated as `"fog"` for backward compatibility.
 
 `name_template` example:
 

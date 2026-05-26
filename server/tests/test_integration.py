@@ -64,15 +64,21 @@ class ModTestClient:
         """Send ready signal."""
         self.ws.send_json({"type": "ready"})
 
-    def send_status_update(self, igt_ms: int, death_count: int) -> None:
+    def send_status_update(
+        self,
+        igt_ms: int,
+        death_count: int,
+        weapons: list[int | None] | None = None,
+    ) -> None:
         """Send periodic status update."""
-        self.ws.send_json(
-            {
-                "type": "status_update",
-                "igt_ms": igt_ms,
-                "death_count": death_count,
-            }
-        )
+        payload: dict[str, Any] = {
+            "type": "status_update",
+            "igt_ms": igt_ms,
+            "death_count": death_count,
+        }
+        if weapons is not None:
+            payload["weapons"] = weapons
+        self.ws.send_json(payload)
 
     def send_event_flag(self, flag_id: int, igt_ms: int, *, message_id: int | None = None) -> None:
         """Send event flag trigger."""
@@ -900,6 +906,54 @@ def test_status_update_transitions_to_playing_with_start_zone(
     assert len(history) == 1
     assert history[0]["node_id"] == "start_node"
     assert history[0]["igt_ms"] == 0
+
+
+def test_status_update_weapons_filtered_into_zone_history(
+    integration_client, race_with_participants, integration_db
+):
+    """status_update.weapons populates zone_history[-1].weapons with the filter
+    applied: keeps a known weapon ID, drops an excluded category, and keeps the
+    upgrade level on the returned raw ID."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        # 2000025 = Longsword +25 (kept, upgrade preserved)
+        # 33200000 = Academy Glintstone Staff (excluded wep_type=57)
+        mod0.send_status_update(igt_ms=1000, death_count=0, weapons=[33200000, 2000025])
+        time.sleep(0.5)
+
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history
+
+    history = asyncio.run(check_db())
+    assert history is not None and len(history) >= 1
+    assert history[-1]["weapons"] == [None, 2000025]
 
 
 # =============================================================================

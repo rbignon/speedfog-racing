@@ -40,6 +40,7 @@ pub enum OutgoingMessage {
     StatusUpdate {
         igt_ms: u32,
         death_count: u32,
+        weapons: [Option<i32>; 2],
     },
     EventFlag {
         flag_id: u32,
@@ -215,11 +216,12 @@ impl RaceWebSocketClient {
         }
     }
 
-    pub fn send_status_update(&self, igt_ms: u32, death_count: u32) {
+    pub fn send_status_update(&self, igt_ms: u32, death_count: u32, weapons: [Option<i32>; 2]) {
         if let Some(tx) = &self.tx {
             if let Err(e) = tx.try_send(OutgoingMessage::StatusUpdate {
                 igt_ms,
                 death_count,
+                weapons,
             }) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
@@ -566,10 +568,12 @@ fn message_loop(
             Ok(OutgoingMessage::StatusUpdate {
                 igt_ms,
                 death_count,
+                weapons,
             }) => {
                 let msg = ClientMessage::StatusUpdate {
                     igt_ms,
                     death_count,
+                    weapons,
                 };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
