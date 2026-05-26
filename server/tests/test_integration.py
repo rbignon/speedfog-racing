@@ -956,6 +956,54 @@ def test_status_update_weapons_filtered_into_zone_history(
     assert history[-1]["weapons"] == [None, 2000025]
 
 
+def test_status_update_weapons_no_overwrite_when_all_filtered(
+    integration_client, race_with_participants, integration_db
+):
+    """A subsequent status_update with weapons=[null, null] (loading screen or
+    all-filtered) must NOT overwrite the previously-recorded weapons on the
+    current zone_history entry."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        # First tick: record a tracked weapon.
+        mod0.send_status_update(igt_ms=1000, death_count=0, weapons=[None, 2000000])
+        time.sleep(0.3)
+        # Second tick: loading screen / all-filtered. Must not erase.
+        mod0.send_status_update(igt_ms=2000, death_count=0, weapons=[None, None])
+        time.sleep(0.3)
+
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            return result.scalar_one().zone_history
+
+    history = asyncio.run(check_db())
+    assert history is not None and history[-1]["weapons"] == [None, 2000000]
+
+
 # =============================================================================
 # Scenario 3c: Stale Save Rejected on Status Update
 # =============================================================================

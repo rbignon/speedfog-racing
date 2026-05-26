@@ -595,10 +595,15 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if isinstance(raw_weapons, list) and len(raw_weapons) == 2 and entity.zone_history:
                 left = filter_equipped(raw_weapons[0] if isinstance(raw_weapons[0], int) else None)
                 right = filter_equipped(raw_weapons[1] if isinstance(raw_weapons[1], int) else None)
-                new_history = [dict(e) for e in entity.zone_history]
-                new_history[-1]["weapons"] = [left, right]
-                entity.zone_history = new_history
-                history_changed = True
+                # Skip overwriting when the tick carries no tracked weapon: loading
+                # screens (mod-injected [None, None]), unreadable memory, empty
+                # hands, or two-handing a filtered weapon (staff/seal/shield). We
+                # keep the last meaningful weapons we saw in this zone.
+                if left is not None or right is not None:
+                    new_history = [dict(e) for e in entity.zone_history]
+                    new_history[-1]["weapons"] = [left, right]
+                    entity.zone_history = new_history
+                    history_changed = True
 
             await db.commit()
 

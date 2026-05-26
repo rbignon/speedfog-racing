@@ -155,7 +155,7 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 }
 ```
 
-`weapons` is `[left_hand, right_hand]` raw runtime `EquipParamWeapon` IDs (param row + upgrade level, e.g. `2000025` = Longsword +25). Each slot is `null` when the hand is empty, masked under two-handing, unreadable, or filled with the Unarmed sentinel (`110000`). The field is omitted by older mod builds. The server discards weapons whose `wep_type` is in the excluded set (staves, seals, shields, torches) and writes the surviving raw IDs onto the current `zone_history` entry as `weapons`.
+`weapons` is `[left_hand, right_hand]` raw runtime `EquipParamWeapon` IDs (param row + upgrade level, e.g. `2000025` = Longsword +25). Each slot is `null` when the hand is empty, masked under two-handing, unreadable, or filled with the Unarmed sentinel (`110000`). The field is omitted by older mod builds. The server discards weapons whose `wep_type` is in the excluded set (staves, seals, shields, torches) and writes the surviving raw IDs onto the current `zone_history` entry as `weapons`. A tick that resolves to `[null, null]` after filtering (loading screen, unreadable memory, empty hands, or all-filtered types) is skipped: the last meaningful weapons captured for the current zone are preserved.
 
 #### `event_flag`
 
