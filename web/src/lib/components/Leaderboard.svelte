@@ -128,6 +128,16 @@
     <ol class="list">
       {#each participants as participant, index (participant.id)}
         {@const color = playerColor(participant)}
+        {@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
+        {@const isPlaying = participant.status === "playing"}
+        {@const isAbandoned = participant.status === "abandoned"}
+        {@const isFinished = participant.status === "finished"}
+        {@const isPreRace =
+          participant.status === "ready" || participant.status === "registered"}
+        {@const zone = isPlaying ? zoneName(participant.current_zone) : null}
+        {@const showConnDot = mode === "running" && (isPlaying || isPreRace)}
+        {@const showLayerFraction = isPlaying || isAbandoned}
+        {@const showStats = isPlaying || isAbandoned || isFinished}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <li
           class="participant {getStatusClass(participant.status)}"
@@ -143,86 +153,7 @@
             >{index + 1}</span
           >
           <div class="info">
-            {#if participant.status === "playing" || participant.status === "abandoned"}
-              {@const zone =
-                participant.status === "playing"
-                  ? zoneName(participant.current_zone)
-                  : null}
-              {@const badge = rewards.lookupBadge(
-                participant.equipped_badge_id,
-              )}
-              <div class="name-row">
-                <span class="name name-container">
-                  <a
-                    href="/user/{participant.twitch_username}"
-                    target="_blank"
-                    class="name-link"
-                    style={nameStyleFor(participant, color)}
-                    onclick={(e) => e.stopPropagation()}
-                  >
-                    {#if mode === "running" && participant.status === "playing"}
-                      <span
-                        class="conn-dot"
-                        class:connected={participant.mod_connected}
-                        title={participant.mod_connected
-                          ? "Mod connected"
-                          : "Mod disconnected"}
-                      ></span>
-                    {/if}<span
-                      >{participant.twitch_display_name ||
-                        participant.twitch_username}</span
-                    >
-                  </a>
-                  {#if badge}
-                    <img
-                      src="/badges/{badge.icon_filename}"
-                      alt={badge.name}
-                      title={badge.name}
-                      class="participant-badge"
-                    />
-                  {/if}
-                </span>
-                <span class="layer-fraction"
-                  >{Math.min(
-                    participant.current_layer + 1,
-                    totalLayers || Infinity,
-                  )}{totalLayers ? `/${totalLayers}` : ""}</span
-                >
-              </div>
-              {#if participant.status === "abandoned"}
-                <span class="zone abandoned-label">Abandoned</span>
-              {:else if zone}
-                <span
-                  class="zone"
-                  title={zoneNames?.get(participant.current_zone ?? "") ?? ""}
-                  >{zone}</span
-                >
-              {/if}
-              <span class="stats">
-                <span>{formatIgt(participant.igt_ms)}</span>
-                <span class="stats-right">
-                  {#if participant.death_count > 0}
-                    <span class="death-count">{participant.death_count}</span>
-                  {/if}
-                  {#if weaponsVisible && participant.zone_history}
-                    {@const combos = aggregateAllCombos(
-                      participant.zone_history,
-                    )}
-                    {#if combos.length > 0}
-                      <WeaponsPopover
-                        {combos}
-                        minPercent={1}
-                        title="{participant.twitch_display_name ??
-                          participant.twitch_username}'s loadout"
-                      />
-                    {/if}
-                  {/if}
-                </span>
-              </span>
-            {:else}
-              {@const badge = rewards.lookupBadge(
-                participant.equipped_badge_id,
-              )}
+            <div class="name-row">
               <span class="name name-container">
                 <a
                   href="/user/{participant.twitch_username}"
@@ -231,7 +162,7 @@
                   style={nameStyleFor(participant, color)}
                   onclick={(e) => e.stopPropagation()}
                 >
-                  {#if mode === "running" && (participant.status === "ready" || participant.status === "registered")}
+                  {#if showConnDot}
                     <span
                       class="conn-dot"
                       class:connected={participant.mod_connected}
@@ -253,46 +184,62 @@
                   />
                 {/if}
               </span>
-              <span class="stats">
-                {#if participant.status === "finished"}
-                  <span class="finished-time"
-                    >{formatIgt(participant.igt_ms)}</span
-                  >
-                  <span class="stats-right">
-                    {#if participant.death_count > 0}
-                      <span class="death-count">{participant.death_count}</span>
-                    {/if}
-                    {#if weaponsVisible && participant.zone_history}
-                      {@const combos = aggregateAllCombos(
-                        participant.zone_history,
-                      )}
-                      {#if combos.length > 0}
-                        <WeaponsPopover
-                          {combos}
-                          minPercent={1}
-                          title="{participant.twitch_display_name ??
-                            participant.twitch_username}'s loadout"
-                        />
-                      {/if}
-                    {/if}
-                  </span>
-                {:else}
-                  <span class="status-text">{participant.status}</span>
-                {/if}
-              </span>
+              {#if participant.is_live}
+                <LiveBadge
+                  href={participant.stream_url ??
+                    `https://twitch.tv/${participant.twitch_username}`}
+                  small
+                  onclick={(e) => e.stopPropagation()}
+                />
+              {/if}
+              {#if showLayerFraction}
+                <span class="layer-fraction"
+                  >{Math.min(
+                    participant.current_layer + 1,
+                    totalLayers || Infinity,
+                  )}{totalLayers ? `/${totalLayers}` : ""}</span
+                >
+              {:else if isFinished && mode === "running"}
+                <span class="finish-icon">✓</span>
+              {/if}
+            </div>
+            {#if isAbandoned}
+              <span class="zone abandoned-label">Abandoned</span>
+            {:else if zone}
+              <span
+                class="zone"
+                title={zoneNames?.get(participant.current_zone ?? "") ?? ""}
+                >{zone}</span
+              >
             {/if}
+            <span class="stats">
+              {#if showStats}
+                <span class:finished-time={isFinished}
+                  >{formatIgt(participant.igt_ms)}</span
+                >
+                <span class="stats-right">
+                  {#if participant.death_count > 0}
+                    <span class="death-count">{participant.death_count}</span>
+                  {/if}
+                  {#if weaponsVisible && participant.zone_history}
+                    {@const combos = aggregateAllCombos(
+                      participant.zone_history,
+                    )}
+                    {#if combos.length > 0}
+                      <WeaponsPopover
+                        {combos}
+                        minPercent={1}
+                        title="{participant.twitch_display_name ??
+                          participant.twitch_username}'s loadout"
+                      />
+                    {/if}
+                  {/if}
+                </span>
+              {:else}
+                <span class="status-text">{participant.status}</span>
+              {/if}
+            </span>
           </div>
-          {#if participant.is_live}
-            <LiveBadge
-              href={participant.stream_url ??
-                `https://twitch.tv/${participant.twitch_username}`}
-              small
-              onclick={(e) => e.stopPropagation()}
-            />
-          {/if}
-          {#if mode === "running" && participant.status === "finished"}
-            <span class="finish-icon">✓</span>
-          {/if}
         </li>
       {/each}
     </ol>
@@ -436,6 +383,8 @@
   .finish-icon {
     color: var(--color-success);
     font-size: 1.2rem;
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   .death-count {
@@ -464,7 +413,7 @@
   }
 
   .name-row .name {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
   }
 
@@ -474,6 +423,7 @@
     font-variant-numeric: tabular-nums;
     color: var(--color-text-secondary);
     flex-shrink: 0;
+    margin-left: auto;
   }
 
   .zone {
