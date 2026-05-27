@@ -6,6 +6,8 @@ import type { DagEdge, DagNode, DagNodeType } from "./types";
 import type { WsParticipant } from "$lib/websocket";
 import { PLAYER_COLORS } from "./constants";
 import { computeOutcome, type ZoneOutcome } from "$lib/highlights";
+import type { WeaponCombo } from "$lib/zone-history";
+import { aggregateZoneCombos } from "$lib/weapons";
 
 // =============================================================================
 // Types
@@ -41,6 +43,7 @@ export interface PopupVisitor {
   timeSpentMs?: number; // duration in this zone (until next zone or race finish)
   deaths?: number;
   outcome: VisitOutcome;
+  weapons?: WeaponCombo[];
 }
 
 export interface NodePopupData {
@@ -264,6 +267,8 @@ export function computeVisitors(
       nodeLayers,
     );
 
+    const weaponsForZone = aggregateZoneCombos(p.zone_history, nodeId);
+
     visitors.push({
       displayName: p.twitch_display_name || p.twitch_username,
       color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
@@ -271,6 +276,7 @@ export function computeVisitors(
       timeSpentMs: hasTime && totalTime > 0 ? totalTime : undefined,
       deaths: totalDeaths > 0 ? totalDeaths : undefined,
       outcome,
+      weapons: weaponsForZone.length > 0 ? weaponsForZone : undefined,
     });
   }
   // Cleared first (by time asc), then others

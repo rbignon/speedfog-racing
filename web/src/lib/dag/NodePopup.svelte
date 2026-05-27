@@ -2,6 +2,7 @@
   import type { NodePopupData } from "./popupData";
   import { formatIgt } from "./popupData";
   import { NODE_COLORS } from "./constants";
+  import WeaponsPopover from "$lib/components/WeaponsPopover.svelte";
 
   interface Props {
     data: NodePopupData;
@@ -173,6 +174,11 @@
           <span class="visitor-deaths"
             >{#if visitor.deaths}💀 {visitor.deaths}{/if}</span
           >
+          <span class="visitor-weapons">
+            {#if visitor.weapons && visitor.weapons.length > 0}
+              <WeaponsPopover combos={visitor.weapons} maxRows={1} />
+            {/if}
+          </span>
           <span class="visitor-duration"
             >{#if visitor.timeSpentMs}{formatIgt(
                 visitor.timeSpentMs,
@@ -350,7 +356,7 @@
 
   .visitor-grid {
     display: grid;
-    grid-template-columns: auto 1fr auto auto auto;
+    grid-template-columns: auto 1fr auto auto auto auto;
     gap: 2px 6px;
     align-items: center;
     font-size: 0.8rem;
@@ -384,6 +390,11 @@
 
   .visitor-deaths {
     color: var(--color-danger, #ef4444);
+  }
+
+  .visitor-weapons {
+    display: inline-flex;
+    align-items: center;
   }
 
   .visitor-duration {
