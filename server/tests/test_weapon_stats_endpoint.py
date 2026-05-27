@@ -151,6 +151,7 @@ async def test_weapon_stats_aggregates_ticks_across_participants(test_client, as
     assert (2000000,) in by_ids
     assert by_ids[(2000000,)]["total_ticks"] == 7
     assert by_ids[(2000000,)]["race_count"] == 1
+    assert by_ids[(2000000,)]["player_count"] == 2
 
 
 @pytest.mark.asyncio
@@ -275,3 +276,57 @@ async def test_weapon_stats_merges_affinity_variants_of_same_base(test_client, a
     by_ids = {tuple(c["ids"]): c for c in combos}
     assert (23150000,) in by_ids
     assert by_ids[(23150000,)]["total_ticks"] == 251
+
+
+@pytest.mark.asyncio
+async def test_weapon_stats_attributes_top_player_per_combo(test_client, async_session):
+    """The user whose dominant combo is this weapon is exposed as top_player."""
+    now = datetime.now(UTC)
+    # Player 0 uses weapon X heavily (dominant), weapon Y a bit.
+    # Player 1 uses weapon Y heavily (dominant). So:
+    #   X: top_player = player 0
+    #   Y: top_player = player 1
+    await _seed_finished_race(
+        async_session,
+        pool_name="standard",
+        started_at=now,
+        histories=[
+            [
+                {
+                    "node_id": "z1",
+                    "igt_ms": 0,
+                    "weapons": [
+                        {"ids": [2000025], "ticks": 100},
+                        {"ids": [3070000], "ticks": 20},
+                    ],
+                }
+            ],
+            [
+                {
+                    "node_id": "z1",
+                    "igt_ms": 0,
+                    "weapons": [
+                        {"ids": [3070000], "ticks": 80},
+                    ],
+                }
+            ],
+        ],
+    )
+
+    async with test_client as client:
+        response = await client.get("/api/stats/weapons")
+
+    assert response.status_code == 200
+    combos = response.json()["combos"]
+    by_ids = {tuple(c["ids"]): c for c in combos}
+
+    x = by_ids[(2000000,)]
+    y = by_ids[(3070000,)]
+    # Player 0's dominant is 2000000 (100 ticks > 20 ticks).
+    assert x["top_player_username"] is not None
+    # Player 1's dominant is 3070000.
+    assert y["top_player_username"] is not None
+    # The two distinct users.
+    assert x["top_player_username"] != y["top_player_username"]
+    assert x["player_count"] == 1  # only player 0 used 2000000
+    assert y["player_count"] == 2  # both players used 3070000

@@ -655,6 +655,9 @@ async def get_weapon_stats(
 
     totals: dict[tuple[int, ...], int] = {}
     races: dict[tuple[int, ...], set[Any]] = {}
+    players: dict[tuple[int, ...], set[Any]] = {}
+    user_combo_ticks: dict[Any, dict[tuple[int, ...], int]] = {}
+
     for p in participants:
         history = p.zone_history or []
         for entry in history:
@@ -667,10 +670,49 @@ async def get_weapon_stats(
                 base_ids = tuple(i - (i % 1000) for i in ids)
                 totals[base_ids] = totals.get(base_ids, 0) + ticks
                 races.setdefault(base_ids, set()).add(p.race_id)
+                players.setdefault(base_ids, set()).add(p.user_id)
+                per_user = user_combo_ticks.setdefault(p.user_id, {})
+                per_user[base_ids] = per_user.get(base_ids, 0) + ticks
 
-    sorted_keys = sorted(totals, key=lambda k: totals[k], reverse=True)[:10]
-    combos_out = [
-        WeaponComboStat(ids=list(k), total_ticks=totals[k], race_count=len(races[k]))
-        for k in sorted_keys
-    ]
+    # For each user, find their dominant combo (most ticks across their participations).
+    user_dominant: dict[Any, tuple[int, ...]] = {}
+    for user_id, per_user in user_combo_ticks.items():
+        if not per_user:
+            continue
+        user_dominant[user_id] = max(per_user, key=lambda k: per_user[k])
+
+    # For each combo, find the top user whose dominant combo is this one
+    # (pick the user with the most ticks on this combo, breaks ties by user_id).
+    top_user_per_combo: dict[tuple[int, ...], Any] = {}
+    for user_id, dominant in user_dominant.items():
+        if dominant not in top_user_per_combo:
+            top_user_per_combo[dominant] = user_id
+        else:
+            current = top_user_per_combo[dominant]
+            if user_combo_ticks[user_id][dominant] > user_combo_ticks[current][dominant]:
+                top_user_per_combo[dominant] = user_id
+
+    sorted_keys = sorted(totals, key=lambda k: totals[k], reverse=True)[:20]
+
+    # Batch-fetch user info for the top players present in the top 20.
+    top_user_ids = {top_user_per_combo[k] for k in sorted_keys if k in top_user_per_combo}
+    users_by_id: dict[Any, User] = {}
+    if top_user_ids:
+        rows = (await db.execute(select(User).where(User.id.in_(top_user_ids)))).scalars().all()
+        users_by_id = {u.id: u for u in rows}
+
+    combos_out: list[WeaponComboStat] = []
+    for k in sorted_keys:
+        top_uid = top_user_per_combo.get(k)
+        top_user = users_by_id.get(top_uid) if top_uid is not None else None
+        combos_out.append(
+            WeaponComboStat(
+                ids=list(k),
+                total_ticks=totals[k],
+                race_count=len(races[k]),
+                player_count=len(players[k]),
+                top_player_username=top_user.twitch_username if top_user else None,
+                top_player_display_name=top_user.twitch_display_name if top_user else None,
+            )
+        )
     return WeaponStatsResponse(combos=combos_out)

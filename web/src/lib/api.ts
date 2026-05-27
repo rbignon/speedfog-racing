@@ -1635,6 +1635,9 @@ export interface WeaponComboStat {
   ids: number[];
   total_ticks: number;
   race_count: number;
+  player_count: number;
+  top_player_username: string | null;
+  top_player_display_name: string | null;
 }
 
 export interface WeaponStatsResponse {

@@ -823,6 +823,9 @@ class WeaponComboStat(BaseModel):
     ids: list[int]
     total_ticks: int
     race_count: int
+    player_count: int
+    top_player_username: str | None = None
+    top_player_display_name: str | None = None
 
 
 class WeaponStatsResponse(BaseModel):
