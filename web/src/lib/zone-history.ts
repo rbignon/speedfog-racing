@@ -7,11 +7,17 @@
  * self-healing).
  */
 
+export interface WeaponCombo {
+  ids: number[];
+  ticks: number;
+}
+
 export interface ZoneHistoryEntry {
   node_id: string;
   igt_ms: number;
   deaths?: number;
   type?: string;
+  weapons?: WeaponCombo[];
 }
 
 /**

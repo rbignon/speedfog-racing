@@ -1425,7 +1425,13 @@ export interface TrainingSession {
 export interface TrainingSessionDetail extends TrainingSession {
   seed_number: string | null;
   seed_total_paths: number | null;
-  zone_history: Array<{ node_id: string; igt_ms: number }> | null;
+  zone_history: Array<{
+    node_id: string;
+    igt_ms: number;
+    deaths?: number;
+    type?: string;
+    weapons?: Array<{ ids: number[]; ticks: number }>;
+  }> | null;
   graph_json: Record<string, unknown> | null;
   pool_config: PoolConfig | null;
 }
@@ -1497,6 +1503,7 @@ export interface Ghost {
     igt_ms: number;
     deaths?: number;
     type?: string;
+    weapons?: Array<{ ids: number[]; ticks: number }>;
   }>;
   igt_ms: number;
   death_count: number;
