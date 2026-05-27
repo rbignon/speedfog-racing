@@ -18,10 +18,27 @@
   let open = $state(false);
   let triggerEl: HTMLSpanElement | undefined = $state();
   let popupEl: HTMLDivElement | undefined = $state();
+  let popupTop = $state(0);
+  let popupLeft = $state(0);
+
+  const POPUP_WIDTH = 200;
 
   const rows = $derived(topCombos(combos, maxRows));
 
+  function recomputePosition() {
+    if (!triggerEl) return;
+    const rect = triggerEl.getBoundingClientRect();
+    let top = rect.bottom + 4;
+    let left = rect.left;
+    if (left + POPUP_WIDTH > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - POPUP_WIDTH - 8);
+    }
+    popupTop = top;
+    popupLeft = left;
+  }
+
   function openPopup() {
+    recomputePosition();
     open = true;
   }
   function closePopup() {
@@ -41,15 +58,24 @@
   function handleKey(e: KeyboardEvent) {
     if (e.key === "Escape") closePopup();
   }
+  function handleScrollOrResize() {
+    if (open) closePopup();
+  }
 
   onMount(() => {
     loadCatalogue();
     document.addEventListener("click", handleClickOutside);
     document.addEventListener("keydown", handleKey);
+    window.addEventListener("scroll", handleScrollOrResize, { capture: true });
+    window.addEventListener("resize", handleScrollOrResize);
   });
   onDestroy(() => {
     document.removeEventListener("click", handleClickOutside);
     document.removeEventListener("keydown", handleKey);
+    window.removeEventListener("scroll", handleScrollOrResize, {
+      capture: true,
+    });
+    window.removeEventListener("resize", handleScrollOrResize);
   });
 </script>
 
@@ -63,11 +89,17 @@
     aria-label={title ?? "Weapons"}
     onclick={(e) => {
       e.stopPropagation();
+      if (!open) {
+        recomputePosition();
+      }
       open = !open;
     }}
     onkeydown={(e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
+        if (!open) {
+          recomputePosition();
+        }
         open = !open;
       }
     }}
@@ -81,6 +113,7 @@
       class="popup"
       role="dialog"
       aria-label={title ?? "Weapons"}
+      style="top: {popupTop}px; left: {popupLeft}px;"
     >
       {#if title}
         <div class="popup-title">{title}</div>
@@ -100,7 +133,6 @@
 
 <style>
   .popover-anchor {
-    position: relative;
     display: inline-block;
   }
   .trigger {
@@ -113,8 +145,8 @@
     opacity: 1;
   }
   .popup {
-    position: absolute;
-    z-index: 50;
+    position: fixed;
+    z-index: 200;
     background: var(--color-bg-elevated, #1f1f2e);
     border: 1px solid var(--color-border, #333);
     border-radius: var(--radius-sm, 4px);
