@@ -911,57 +911,8 @@ def test_status_update_transitions_to_playing_with_start_zone(
 def test_status_update_weapons_filtered_into_zone_history(
     integration_client, race_with_participants, integration_db
 ):
-    """status_update.weapons populates zone_history[-1].weapons with the filter
-    applied: keeps a known weapon ID, drops an excluded category, and keeps the
-    upgrade level on the returned raw ID."""
-    import asyncio
-
-    race_id = race_with_participants["race_id"]
-    organizer = race_with_participants["organizer"]
-    players = race_with_participants["players"]
-
-    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
-        mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth()["type"] == "auth_ok"
-        mod0.send_ready()
-        mod0.receive()  # leaderboard_update
-
-    response = integration_client.post(
-        f"/api/races/{race_id}/start",
-        headers={"Authorization": f"Bearer {organizer.api_token}"},
-    )
-    assert response.status_code == 200
-
-    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
-        mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth()["type"] == "auth_ok"
-        # 2000025 = Longsword +25 (kept, upgrade preserved)
-        # 33200000 = Academy Glintstone Staff (excluded wep_type=57)
-        mod0.send_status_update(igt_ms=1000, death_count=0, weapons=[33200000, 2000025])
-        time.sleep(0.5)
-
-    async def check_db():
-        async with integration_db() as db:
-            result = await db.execute(
-                select(Participant).where(
-                    Participant.race_id == uuid.UUID(race_id),
-                    Participant.user_id == players[0]["user"].id,
-                )
-            )
-            p = result.scalar_one()
-            return p.zone_history
-
-    history = asyncio.run(check_db())
-    assert history is not None and len(history) >= 1
-    assert history[-1]["weapons"] == [None, 2000025]
-
-
-def test_status_update_weapons_no_overwrite_when_all_filtered(
-    integration_client, race_with_participants, integration_db
-):
-    """A subsequent status_update with weapons=[null, null] (loading screen or
-    all-filtered) must NOT overwrite the previously-recorded weapons on the
-    current zone_history entry."""
+    """A single tick with one tracked and one excluded weapon writes a
+    1-element ``ids`` entry; the staff is dropped."""
     import asyncio
 
     race_id = race_with_participants["race_id"]
@@ -983,10 +934,99 @@ def test_status_update_weapons_no_overwrite_when_all_filtered(
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
         assert mod0.auth()["type"] == "auth_ok"
-        # First tick: record a tracked weapon.
+        # 33200000 = Academy Glintstone Staff (excluded), 2000025 = Longsword +25.
+        mod0.send_status_update(igt_ms=1000, death_count=0, weapons=[33200000, 2000025])
+        time.sleep(0.5)
+
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            return result.scalar_one().zone_history
+
+    history = asyncio.run(check_db())
+    assert history is not None and len(history) >= 1
+    assert history[-1]["weapons"] == [{"ids": [2000025], "ticks": 1}]
+
+
+def test_status_update_weapons_multi_tick_canonicalisation(
+    integration_client, race_with_participants, integration_db
+):
+    """Single-weapon combos canonicalise across hands and ticks accumulate."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        # Three ticks of single-weapon Longsword across both hand slots.
+        mod0.send_status_update(igt_ms=1000, death_count=0, weapons=[None, 2000025])
+        time.sleep(0.2)
+        mod0.send_status_update(igt_ms=2000, death_count=0, weapons=[2000025, None])
+        time.sleep(0.2)
+        mod0.send_status_update(igt_ms=3000, death_count=0, weapons=[None, 2000025])
+        time.sleep(0.4)
+
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            return result.scalar_one().zone_history
+
+    history = asyncio.run(check_db())
+    assert history is not None and history[-1]["weapons"] == [{"ids": [2000025], "ticks": 3}]
+
+
+def test_status_update_weapons_no_overwrite_when_all_filtered(
+    integration_client, race_with_participants, integration_db
+):
+    """A tick filtered to (None, None) does NOT touch the existing counter."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
         mod0.send_status_update(igt_ms=1000, death_count=0, weapons=[None, 2000000])
         time.sleep(0.3)
-        # Second tick: loading screen / all-filtered. Must not erase.
         mod0.send_status_update(igt_ms=2000, death_count=0, weapons=[None, None])
         time.sleep(0.3)
 
@@ -1001,7 +1041,55 @@ def test_status_update_weapons_no_overwrite_when_all_filtered(
             return result.scalar_one().zone_history
 
     history = asyncio.run(check_db())
-    assert history is not None and history[-1]["weapons"] == [None, 2000000]
+    assert history is not None and history[-1]["weapons"] == [{"ids": [2000000], "ticks": 1}]
+
+
+def test_status_update_weapons_dual_preserves_mod_order(
+    integration_client, race_with_participants, integration_db
+):
+    """A dual combo stores ids in mod order; ``[X, Y]`` and ``[Y, X]`` are distinct."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=1000, death_count=0, weapons=[3070000, 2000025])
+        time.sleep(0.2)
+        mod0.send_status_update(igt_ms=2000, death_count=0, weapons=[2000025, 3070000])
+        time.sleep(0.4)
+
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            return result.scalar_one().zone_history
+
+    history = asyncio.run(check_db())
+    assert history is not None
+    assert history[-1]["weapons"] == [
+        {"ids": [3070000, 2000025], "ticks": 1},
+        {"ids": [2000025, 3070000], "ticks": 1},
+    ]
 
 
 # =============================================================================

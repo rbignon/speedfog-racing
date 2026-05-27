@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from speedfog_racing.services.grace_service import load_graces_mapping, resolve_zone_query
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import compute_zone_update, get_start_node
-from speedfog_racing.services.weapons import filter_equipped
+from speedfog_racing.services.weapons import bump_combo, filter_equipped
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     ErrorMessage,
@@ -595,13 +595,14 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if isinstance(raw_weapons, list) and len(raw_weapons) == 2 and entity.zone_history:
                 left = filter_equipped(raw_weapons[0] if isinstance(raw_weapons[0], int) else None)
                 right = filter_equipped(raw_weapons[1] if isinstance(raw_weapons[1], int) else None)
-                # Skip overwriting when the tick carries no tracked weapon: loading
-                # screens (mod-injected [None, None]), unreadable memory, empty
-                # hands, or two-handing a filtered weapon (staff/seal/shield). We
-                # keep the last meaningful weapons we saw in this zone.
+                # Skip when no tracked weapon was observed this tick (loading
+                # screen, all-filtered, unreadable memory). Preserves whatever
+                # counter was already accumulated for this zone.
                 if left is not None or right is not None:
+                    current = entity.zone_history[-1].get("weapons", []) or []
+                    new_weapons = bump_combo(current, left, right)
                     new_history = [dict(e) for e in entity.zone_history]
-                    new_history[-1]["weapons"] = [left, right]
+                    new_history[-1]["weapons"] = new_weapons
                     entity.zone_history = new_history
                     history_changed = True
 
