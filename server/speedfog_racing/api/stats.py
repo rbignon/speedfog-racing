@@ -28,6 +28,8 @@ from speedfog_racing.schemas import (
     LeaderboardResponse,
     PlayerProfilesResponse,
     TraitPlayerEntry,
+    WeaponComboStat,
+    WeaponStatsResponse,
     ZoneBacktrackEntry,
     ZoneStatEntry,
     ZoneStatsResponse,
@@ -623,3 +625,52 @@ async def get_player_profiles(db: AsyncSession = Depends(get_db)) -> PlayerProfi
         ]
 
     return PlayerProfilesResponse(profiles=profiles)
+
+
+@router.get("/weapons", response_model=WeaponStatsResponse)
+async def get_weapon_stats(
+    pool: str | None = Query(default=None),
+    days: int = Query(default=30, ge=1, le=3650),
+    db: AsyncSession = Depends(get_db),
+) -> WeaponStatsResponse:
+    """Top weapon combos by total ticks across recent public finished races."""
+    query = (
+        select(Participant)
+        .join(Race, Participant.race_id == Race.id)
+        .where(
+            or_(
+                Participant.status == ParticipantStatus.FINISHED,
+                (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+            ),
+            Race.status == RaceStatus.FINISHED,
+            Race.is_public == True,  # noqa: E712
+        )
+    )
+    cutoff = datetime.now(tz=UTC) - timedelta(days=days)
+    query = query.where(Race.started_at >= cutoff)
+    if pool is not None:
+        query = query.join(Seed, Race.seed_id == Seed.id).where(Seed.pool_name == pool)
+
+    participants = (await db.execute(query)).scalars().all()
+
+    totals: dict[tuple[int, ...], int] = {}
+    races: dict[tuple[int, ...], set[Any]] = {}
+    for p in participants:
+        history = p.zone_history or []
+        for entry in history:
+            combos = entry.get("weapons") or []
+            for combo in combos:
+                ids = combo.get("ids")
+                ticks = combo.get("ticks", 0)
+                if not isinstance(ids, list) or not isinstance(ticks, int) or ticks <= 0:
+                    continue
+                key = tuple(ids)
+                totals[key] = totals.get(key, 0) + ticks
+                races.setdefault(key, set()).add(p.race_id)
+
+    sorted_keys = sorted(totals, key=lambda k: totals[k], reverse=True)[:10]
+    combos_out = [
+        WeaponComboStat(ids=list(k), total_ticks=totals[k], race_count=len(races[k]))
+        for k in sorted_keys
+    ]
+    return WeaponStatsResponse(combos=combos_out)

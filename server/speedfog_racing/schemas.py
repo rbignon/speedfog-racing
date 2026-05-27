@@ -817,3 +817,13 @@ class WeaponCatalogueEntry(BaseModel):
 
     name: str
     wep_type: int
+
+
+class WeaponComboStat(BaseModel):
+    ids: list[int]
+    total_ticks: int
+    race_count: int
+
+
+class WeaponStatsResponse(BaseModel):
+    combos: list[WeaponComboStat]
