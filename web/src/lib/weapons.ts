@@ -37,15 +37,38 @@ export function aggregateZoneCombos(
   return sumCombos(all);
 }
 
-export function topCombos(combos: WeaponCombo[], n: number): TopCombo[] {
+export function topCombos(
+  combos: WeaponCombo[],
+  n: number,
+  minPercent: number = 0,
+): TopCombo[] {
   if (combos.length === 0) return [];
-  const total = combos.reduce((s, c) => s + c.ticks, 0);
-  if (total === 0) return [];
-  return combos
-    .slice()
-    .sort((a, b) => b.ticks - a.ticks)
-    .slice(0, n)
-    .map((c) => ({ ...c, percent: Math.round((c.ticks / total) * 100) }));
+  const totalAll = combos.reduce((s, c) => s + c.ticks, 0);
+  if (totalAll === 0) return [];
+
+  const sorted = combos.slice().sort((a, b) => b.ticks - a.ticks);
+  const kept = sorted
+    .filter((c) => (c.ticks / totalAll) * 100 >= minPercent)
+    .slice(0, n);
+  if (kept.length === 0) return [];
+
+  const sumKept = kept.reduce((s, c) => s + c.ticks, 0);
+  const raw = kept.map((c) => ({ entry: c, raw: (c.ticks / sumKept) * 100 }));
+  const floors = raw.map((r) => Math.floor(r.raw));
+  let remainder = 100 - floors.reduce((s, v) => s + v, 0);
+  const order = raw
+    .map((r, i) => ({ i, frac: r.raw - Math.floor(r.raw) }))
+    .sort((a, b) => b.frac - a.frac);
+  for (const { i } of order) {
+    if (remainder <= 0) break;
+    floors[i] += 1;
+    remainder -= 1;
+  }
+  return kept.map((entry, i) => ({
+    ids: entry.ids,
+    ticks: entry.ticks,
+    percent: floors[i],
+  }));
 }
 
 export function formatCombo(

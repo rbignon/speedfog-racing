@@ -211,6 +211,7 @@
                     {#if combos.length > 0}
                       <WeaponsPopover
                         {combos}
+                        minPercent={1}
                         title="{participant.twitch_display_name ??
                           participant.twitch_username}'s loadout"
                       />
@@ -268,6 +269,7 @@
                       {#if combos.length > 0}
                         <WeaponsPopover
                           {combos}
+                          minPercent={1}
                           title="{participant.twitch_display_name ??
                             participant.twitch_username}'s loadout"
                         />

@@ -59,7 +59,7 @@ describe("aggregateZoneCombos", () => {
 });
 
 describe("topCombos", () => {
-  it("sorts desc by ticks and annotates percent against the input total", () => {
+  it("sorts desc by ticks and renormalises percent over the kept subset", () => {
     const out = topCombos(
       [
         { ids: [1], ticks: 30 },
@@ -68,14 +68,61 @@ describe("topCombos", () => {
       ],
       2,
     );
+    // Kept subset is [60, 30] (sum 90). Percents renormalised to sum to 100.
     expect(out).toEqual([
-      { ids: [2], ticks: 60, percent: 60 },
-      { ids: [1], ticks: 30, percent: 30 },
+      { ids: [2], ticks: 60, percent: 67 },
+      { ids: [1], ticks: 30, percent: 33 },
     ]);
   });
 
   it("returns empty for empty input", () => {
     expect(topCombos([], 3)).toEqual([]);
+  });
+
+  it("drops combos under minPercent threshold and renormalises to 100", () => {
+    const out = topCombos(
+      [
+        { ids: [1], ticks: 60 },
+        { ids: [2], ticks: 30 },
+        { ids: [3], ticks: 5 },
+        { ids: [4], ticks: 2 },
+        { ids: [5], ticks: 2 },
+        { ids: [6], ticks: 1 },
+      ],
+      5,
+      5,
+    );
+    // Only the three combos >= 5% of 100 ticks survive.
+    expect(out.map((c) => c.ids[0])).toEqual([1, 2, 3]);
+    // Renormalised percentages sum to exactly 100.
+    expect(out.reduce((s, c) => s + c.percent, 0)).toBe(100);
+  });
+
+  it("returns empty when every combo is below minPercent", () => {
+    const out = topCombos(
+      [
+        { ids: [1], ticks: 1 },
+        { ids: [2], ticks: 1 },
+        { ids: [3], ticks: 1 },
+      ],
+      3,
+      40,
+    );
+    expect(out).toEqual([]);
+  });
+
+  it("falls back to default behaviour when minPercent is omitted", () => {
+    const out = topCombos(
+      [
+        { ids: [1], ticks: 70 },
+        { ids: [2], ticks: 30 },
+      ],
+      2,
+    );
+    expect(out).toEqual([
+      { ids: [1], ticks: 70, percent: 70 },
+      { ids: [2], ticks: 30, percent: 30 },
+    ]);
   });
 });
 

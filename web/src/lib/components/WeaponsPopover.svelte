@@ -12,9 +12,16 @@
     maxRows?: number;
     title?: string;
     showPercent?: boolean;
+    minPercent?: number;
   }
 
-  let { combos, maxRows = 3, title, showPercent = true }: Props = $props();
+  let {
+    combos,
+    maxRows = 3,
+    title,
+    showPercent = true,
+    minPercent = 0,
+  }: Props = $props();
 
   let open = $state(false);
   let triggerEl: HTMLSpanElement | undefined = $state();
@@ -24,7 +31,7 @@
 
   const POPUP_WIDTH = 200;
 
-  const rows = $derived(topCombos(combos, maxRows));
+  const rows = $derived(topCombos(combos, maxRows, minPercent));
 
   function recomputePosition() {
     if (!triggerEl) return;
@@ -80,59 +87,66 @@
   });
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<span class="popover-anchor" onmouseenter={openPopup} onmouseleave={closePopup}>
+{#if rows.length > 0}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <span
-    bind:this={triggerEl}
-    class="trigger"
-    role="button"
-    tabindex="0"
-    aria-label={title ?? "Weapons"}
-    onclick={(e) => {
-      e.stopPropagation();
-      if (!open) {
-        recomputePosition();
-      }
-      open = !open;
-    }}
-    onkeydown={(e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
+    class="popover-anchor"
+    onmouseenter={openPopup}
+    onmouseleave={closePopup}
+  >
+    <span
+      bind:this={triggerEl}
+      class="trigger"
+      role="button"
+      tabindex="0"
+      aria-label={title ?? "Weapons"}
+      onclick={(e) => {
+        e.stopPropagation();
         if (!open) {
           recomputePosition();
         }
         open = !open;
-      }
-    }}
-  >
-    ⚔
-  </span>
-
-  {#if open && rows.length > 0}
-    <div
-      bind:this={popupEl}
-      class="popup"
-      role="dialog"
-      aria-label={title ?? "Weapons"}
-      style="top: {popupTop}px; left: {popupLeft}px;"
+      }}
+      onkeydown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          if (!open) {
+            recomputePosition();
+          }
+          open = !open;
+        }
+      }}
     >
-      {#if title}
-        <div class="popup-title">{title}</div>
-      {/if}
-      <ul class="combo-list">
-        {#each rows as row}
-          <li>
-            <span class="combo-name">{formatCombo(row.ids, getWeaponName)}</span
-            >
-            {#if showPercent}
-              <span class="combo-percent">{row.percent}%</span>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
-</span>
+      ⚔
+    </span>
+
+    {#if open && rows.length > 0}
+      <div
+        bind:this={popupEl}
+        class="popup"
+        role="dialog"
+        aria-label={title ?? "Weapons"}
+        style="top: {popupTop}px; left: {popupLeft}px;"
+      >
+        {#if title}
+          <div class="popup-title">{title}</div>
+        {/if}
+        <ul class="combo-list">
+          {#each rows as row}
+            <li>
+              <span class="combo-name"
+                >{formatCombo(row.ids, getWeaponName)}</span
+              >
+              {#if showPercent}
+                <span class="combo-percent">{row.percent}%</span>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+  </span>
+{/if}
 
 <style>
   .popover-anchor {
