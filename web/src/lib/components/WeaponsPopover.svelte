@@ -117,7 +117,7 @@
         }
       }}
     >
-      ⚔
+      🗡
     </span>
 
     {#if open && rows.length > 0}
