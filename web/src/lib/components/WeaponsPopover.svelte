@@ -54,50 +54,55 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<span
-  bind:this={triggerEl}
-  class="trigger"
-  role="button"
-  tabindex="0"
-  aria-label={title ?? "Weapons"}
-  onmouseenter={openPopup}
-  onmouseleave={closePopup}
-  onclick={(e) => {
-    e.stopPropagation();
-    open = !open;
-  }}
-  onkeydown={(e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
+<span class="popover-anchor" onmouseenter={openPopup} onmouseleave={closePopup}>
+  <span
+    bind:this={triggerEl}
+    class="trigger"
+    role="button"
+    tabindex="0"
+    aria-label={title ?? "Weapons"}
+    onclick={(e) => {
+      e.stopPropagation();
       open = !open;
-    }
-  }}
->
-  ⚔
+    }}
+    onkeydown={(e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open = !open;
+      }
+    }}
+  >
+    ⚔
+  </span>
+
+  {#if open && rows.length > 0}
+    <div
+      bind:this={popupEl}
+      class="popup"
+      role="dialog"
+      aria-label={title ?? "Weapons"}
+    >
+      {#if title}
+        <div class="popup-title">{title}</div>
+      {/if}
+      <ul class="combo-list">
+        {#each rows as row}
+          <li>
+            <span class="combo-name">{formatCombo(row.ids, getWeaponName)}</span
+            >
+            <span class="combo-percent">{row.percent}%</span>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 </span>
 
-{#if open && rows.length > 0}
-  <div
-    bind:this={popupEl}
-    class="popup"
-    role="dialog"
-    aria-label={title ?? "Weapons"}
-  >
-    {#if title}
-      <div class="popup-title">{title}</div>
-    {/if}
-    <ul class="combo-list">
-      {#each rows as row}
-        <li>
-          <span class="combo-name">{formatCombo(row.ids, getWeaponName)}</span>
-          <span class="combo-percent">{row.percent}%</span>
-        </li>
-      {/each}
-    </ul>
-  </div>
-{/if}
-
 <style>
+  .popover-anchor {
+    position: relative;
+    display: inline-block;
+  }
   .trigger {
     cursor: pointer;
     user-select: none;
