@@ -16,6 +16,7 @@ from speedfog_racing.api.rewards import router as rewards_router
 from speedfog_racing.api.stats import router as stats_router
 from speedfog_racing.api.training import router as training_router
 from speedfog_racing.api.users import router as users_router
+from speedfog_racing.api.weapons import router as weapons_router
 
 api_router = APIRouter()
 
@@ -33,3 +34,4 @@ api_router.include_router(training_router, prefix="/training", tags=["training"]
 api_router.include_router(stats_router, prefix="/stats", tags=["stats"])
 api_router.include_router(feedback_router, prefix="/feedback", tags=["feedback"])
 api_router.include_router(rewards_router, prefix="/rewards", tags=["rewards"])
+api_router.include_router(weapons_router, prefix="/weapons", tags=["weapons"])

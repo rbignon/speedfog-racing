@@ -805,3 +805,8 @@ class AdminFeedbackListResponse(BaseModel):
     total: int
     average_rating: float | None
     distribution: dict[int, int]
+
+
+class WeaponCatalogueEntry(BaseModel):
+    name: str
+    wep_type: int
