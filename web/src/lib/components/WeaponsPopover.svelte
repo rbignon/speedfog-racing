@@ -11,9 +11,10 @@
     combos: WeaponCombo[];
     maxRows?: number;
     title?: string;
+    showPercent?: boolean;
   }
 
-  let { combos, maxRows = 3, title }: Props = $props();
+  let { combos, maxRows = 3, title, showPercent = true }: Props = $props();
 
   let open = $state(false);
   let triggerEl: HTMLSpanElement | undefined = $state();
@@ -123,7 +124,9 @@
           <li>
             <span class="combo-name">{formatCombo(row.ids, getWeaponName)}</span
             >
-            <span class="combo-percent">{row.percent}%</span>
+            {#if showPercent}
+              <span class="combo-percent">{row.percent}%</span>
+            {/if}
           </li>
         {/each}
       </ul>

@@ -176,7 +176,11 @@
           >
           <span class="visitor-weapons">
             {#if visitor.weapons && visitor.weapons.length > 0}
-              <WeaponsPopover combos={visitor.weapons} maxRows={1} />
+              <WeaponsPopover
+                combos={visitor.weapons}
+                maxRows={1}
+                showPercent={false}
+              />
             {/if}
           </span>
           <span class="visitor-duration"
