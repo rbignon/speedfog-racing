@@ -1631,6 +1631,16 @@ export interface ZoneStatsResponse {
   fastest: ZoneTimeEntry[];
 }
 
+export interface WeaponComboStat {
+  ids: number[];
+  total_ticks: number;
+  race_count: number;
+}
+
+export interface WeaponStatsResponse {
+  combos: WeaponComboStat[];
+}
+
 export interface BossStatEntry {
   display_name: string;
   type: string;
@@ -1718,6 +1728,14 @@ export async function fetchPlayerProfiles(): Promise<PlayerProfilesResponse> {
   const res = await fetch(`${API_BASE}/stats/players`);
   if (!res.ok) throw new Error("Failed to fetch player profiles");
   return res.json();
+}
+
+/**
+ * Fetch weapon combo usage statistics across races.
+ */
+export async function fetchWeaponStats(): Promise<WeaponStatsResponse> {
+  const response = await fetch(`${API_BASE}/stats/weapons`);
+  return handleResponse<WeaponStatsResponse>(response);
 }
 
 /**

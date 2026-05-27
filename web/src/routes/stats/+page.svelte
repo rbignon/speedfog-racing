@@ -6,14 +6,16 @@
   import ZonesTab from "$lib/components/stats/ZonesTab.svelte";
   import BossesTab from "$lib/components/stats/BossesTab.svelte";
   import PlayersTab from "$lib/components/stats/PlayersTab.svelte";
+  import WeaponsTab from "$lib/components/stats/WeaponsTab.svelte";
 
-  type TabId = "leaderboard" | "zones" | "bosses" | "players";
+  type TabId = "leaderboard" | "zones" | "bosses" | "players" | "weapons";
 
   const TABS: { id: TabId; label: string }[] = [
     { id: "leaderboard", label: "Leaderboard" },
     { id: "zones", label: "Zones" },
     { id: "bosses", label: "Major Bosses" },
     { id: "players", label: "Play Styles" },
+    { id: "weapons", label: "Weapons" },
   ];
 
   let activeTab: TabId = $derived.by(() => {
@@ -84,6 +86,11 @@
     {#if mountedTabs.has("players")}
       <div class="tab-panel" class:tab-hidden={activeTab !== "players"}>
         <PlayersTab />
+      </div>
+    {/if}
+    {#if mountedTabs.has("weapons")}
+      <div class="tab-panel" class:tab-hidden={activeTab !== "weapons"}>
+        <WeaponsTab />
       </div>
     {/if}
   </div>
