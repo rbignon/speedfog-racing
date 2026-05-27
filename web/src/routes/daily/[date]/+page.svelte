@@ -447,6 +447,7 @@
           {totalLayers}
           mode={dailyEnded ? "finished" : "running"}
           zoneNames={leaderboardZoneNames}
+          weaponsVisible={leaderboardZoneNames !== null}
           selectedIds={selectedParticipantIds}
           onToggle={handleLeaderboardToggle}
           onClearSelection={clearSelection}
