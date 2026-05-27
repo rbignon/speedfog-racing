@@ -4,11 +4,11 @@ How the mod reads the player's currently-equipped weapons from Elden Ring's memo
 
 ## Overview
 
-At each periodic `status_update` (1 Hz, see `mod/src/dll/tracker.rs`), the mod reads the active loadout slot of each hand and the weapon ID stored in that slot, sending the pair as `weapons: [Option<i32>; 2]` on the WebSocket. The server resolves each ID against a static catalogue, drops weapons whose `wep_type` is in the excluded set (staves, seals, shields, torches), and writes the surviving raw IDs onto the participant's current `zone_history` entry under the `weapons` key.
+At each periodic `status_update` (1 Hz, see `mod/src/dll/tracker.rs`), the mod reads the active loadout slot of each hand and the weapon ID stored in that slot, sending the pair as `weapons: [Option<i32>; 2]` on the WebSocket. The server resolves each ID against a static catalogue, drops weapons whose `wep_type` is in the excluded set (staves, seals, shields, torches), and counts how many ticks each unique combo is held.
 
 Storage uses raw runtime IDs (`param_row_id + upgrade_level`, e.g. `2000025` = Longsword +25). The catalogue maps the base param row to a name and a type at read time, which keeps the database resilient to renames and language changes.
 
-The field is intentionally per-zone with last-write-wins semantics: only weapon swaps the player keeps long enough to outlive the rest of their stay in the zone end up persisted. A tick that resolves to `[None, None]` after filtering is skipped, not written, so loading screens and stretches where the player only holds filtered types do not overwrite earlier meaningful captures.
+The field is per-zone, with storage as a list of per-tick combo counters. Each tick-update normalizes the equipped weapons into a canonical combo key (see "Canonicalisation" below), then either increments that combo's tick counter or appends a new entry. A tick that resolves to `[None, None]` after filtering is skipped, not written, so loading screens and stretches where the player only holds filtered types do not reset the accumulation for earlier observed combos.
 
 ## Mod-side: ChrAsm memory layout
 
@@ -76,17 +76,30 @@ The mod's `ClientMessage::StatusUpdate` carries the field, the server consumes i
 
 `weapons[0]` is the LEFT hand, `weapons[1]` is the RIGHT hand. The field is optional; older mod builds that predate the feature simply omit it.
 
-`zone_history` entries grow an optional `weapons` key with the same shape:
+`zone_history` entries grow an optional `weapons` key containing a list of per-tick combo counters:
 
 ```json
 {
   "node_id": "stormveil_godrick",
   "igt_ms": 234567,
-  "weapons": [null, 2000025]
+  "weapons": [
+    { "ids": [2000025], "ticks": 18 },
+    { "ids": [3070000, 2000025], "ticks": 5 }
+  ]
 }
 ```
 
+Each entry in the `weapons` list is a combo counter with `ids` (the canonical weapon list) and `ticks` (count of update ticks held in this zone). The list is ordered by first observation.
+
 Entries that pre-date the feature, or zones the player stayed in without ever wielding a tracked weapon, simply have no `weapons` key. Readers should treat the key's absence as "unknown".
+
+### Canonicalisation
+
+The `ids` key normalizes the observed left and right hands into a canonical form (Option B from the design spec):
+
+- **Single weapon:** if only one of left or right is a tracked ID, the key is `[X]` (a single-element list). Both `(None, X)` and `(X, None)` increment the same single-weapon counter, as hand information is intentionally dropped.
+- **Dual wield:** if both are tracked IDs, the key is `[left, right]` in mod-reported order (left, right). The combo `[X, Y]` is distinct from `[Y, X]`, preserving laterality for dual-wield weapon pairs.
+- **No tracked weapons:** a tick with `(None, None)` after filtering produces no write (the combo counter is not incremented and no new entry is created).
 
 ## Server-side
 
@@ -131,7 +144,7 @@ Ammo `wep_type` values (81 Arrow, 83 Greatarrow, 85 Bolt, 86 BallistaBolt) are a
 
 ### Handler write
 
-`_handle_status_update` in `websocket/handler.py`:
+`_handle_status_update` in `websocket/handler.py` processes each incoming weapons pair:
 
 ```python
 raw_weapons = msg.get("weapons")
@@ -139,13 +152,17 @@ if isinstance(raw_weapons, list) and len(raw_weapons) == 2 and entity.zone_histo
     left = filter_equipped(raw_weapons[0] if isinstance(raw_weapons[0], int) else None)
     right = filter_equipped(raw_weapons[1] if isinstance(raw_weapons[1], int) else None)
     if left is not None or right is not None:
+        current = entity.zone_history[-1].get("weapons", []) or []
+        new_weapons = bump_combo(current, left, right)
         new_history = [dict(e) for e in entity.zone_history]
-        new_history[-1]["weapons"] = [left, right]
+        new_history[-1]["weapons"] = new_weapons
         entity.zone_history = new_history
         history_changed = True
 ```
 
-The skip on `(None, None)` is load-bearing. The mod sends that payload during loading screens, the filter produces it whenever every slot holds an excluded type, and ChrAsm reads can fail transiently. Treating any of these as a write would erase the last meaningful weapons captured for the current zone. Semantically the field stores "last tracked weapons observed in this zone", not "weapons at the last tick".
+The skip on `(None, None)` is load-bearing. The mod sends that payload during loading screens, the filter produces it whenever every slot holds an excluded type, and ChrAsm reads can fail transiently. Skipping the write preserves the accumulated tick counter for any previously-observed combo in the current zone. Semantically the field stores "combos observed and duration-spent-holding each", not "weapons at the current tick".
+
+The `bump_combo` helper (in `services/weapons.py`) handles the canonicalisation and counter increment: it finds the matching combo in the current list (by its canonical `ids` key), increments its `ticks` counter, or appends a new entry if the combo is new.
 
 The `[dict(e) for e in entity.zone_history]` copy is the same pattern used by `attribute_deaths` (`handler.py:586`) to force SQLAlchemy to detect the JSON column mutation.
 
