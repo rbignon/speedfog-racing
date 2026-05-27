@@ -92,17 +92,18 @@ Entries that pre-date the feature, or zones the player stayed in without ever wi
 
 ### Lookup catalogue
 
-`server/data/weapons.csv` is the static name/type table, sourced from TarnishedTool's `Properties/Resources.resx` (the `Weapons` block). One row per affinity variant:
+`server/data/weapons.json` is the static name/type table, sourced from TarnishedTool's `Properties/Resources.resx` (the `Weapons` block). Keyed by base `EquipParamWeapon` row ID:
 
+```json
+{
+  "3070000": { "name": "Alabaster Lord's Sword", "wep_type": 5 },
+  "33200000": { "name": "Academy Glintstone Staff", "wep_type": 57 }
+}
 ```
-id,name,wep_type,gem_mount_type,upgrade_type
-3070000,Alabaster Lord's Sword,5,0,1
-33200000,Academy Glintstone Staff,57,2,0
-```
 
-`id` is the base `EquipParamWeapon` row ID; the runtime ID at any upgrade is `id + upgrade_level`. 478 rows at time of writing.
+The runtime ID at any upgrade is `base_id + upgrade_level`. 478 rows at time of writing.
 
-`speedfog_racing/services/weapons.py` loads the CSV at import time into a frozen `dict[int, WeaponInfo]` keyed by base id. The trailing two columns (`gem_mount_type`, `upgrade_type`) are ignored: not needed for tracking.
+`speedfog_racing/services/weapons.py` loads the JSON at import time into a frozen `dict[int, WeaponInfo]` keyed by base id.
 
 ### Excluded types
 
@@ -118,7 +119,7 @@ Weapons whose `wep_type` is in this set are dropped (the field never reaches `zo
 | 87    | Torch            |
 | 90    | Thrusting Shield |
 
-Ammo `wep_type` values (81 Arrow, 83 Greatarrow, 85 Bolt, 86 BallistaBolt) are absent from the CSV: arrows and bolts live in dedicated ChrAsm slots that the mod does not read, so they cannot reach the filter and there is no need to list them explicitly.
+Ammo `wep_type` values (81 Arrow, 83 Greatarrow, 85 Bolt, 86 BallistaBolt) are absent from the JSON catalogue: arrows and bolts live in dedicated ChrAsm slots that the mod does not read, so they cannot reach the filter and there is no need to list them explicitly.
 
 ### Filter
 
@@ -155,8 +156,28 @@ The write only happens after `entity.zone_history` is non-empty, which is guaran
 When a patch adds new weapons (typically a DLC), the catalogue needs a refresh. The procedure:
 
 1. Pull the latest `Weapons` block from upstream TarnishedTool's `Properties/Resources.resx`. The block is a `<data name="Weapons">` element containing the CSV inline.
-2. Replace `server/data/weapons.csv` with the new content. Preserve the leading header comment lines.
+
+2. Run a Python script to parse the CSV and emit JSON. A minimal conversion script:
+
+   ```python
+   import csv
+   import json
+
+   with open('weapons.csv', 'r') as f:
+       reader = csv.DictReader(f)
+       weapons = {}
+       for row in reader:
+           weapons[row['id']] = {
+               'name': row['name'],
+               'wep_type': int(row['wep_type'])
+           }
+
+   with open('server/data/weapons.json', 'w') as f:
+       json.dump(weapons, f, indent=2)
+   ```
+
 3. If new `wep_type` values appear and any should be excluded (a new shield type, etc.), update `EXCLUDED_WEP_TYPES` in `services/weapons.py` and add a row in the [Excluded types](#excluded-types) table above.
-4. Run `tests/test_weapons.py`. The `test_filter_rejects_shield_and_torch` test enumerates every excluded `wep_type` against the CSV and fails if a category becomes unrepresented in the snapshot.
+
+4. Run `tests/test_weapons.py`. The `test_filter_rejects_shield_and_torch` test enumerates every excluded `wep_type` against the JSON and fails if a category becomes unrepresented in the snapshot.
 
 No code change is needed for new weapons in already-tracked categories: they are picked up automatically.
