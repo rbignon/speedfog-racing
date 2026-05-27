@@ -199,20 +199,24 @@
                 >
               {/if}
               <span class="stats">
-                {formatIgt(participant.igt_ms)}
-                {#if participant.death_count > 0}
-                  <span class="death-count">{participant.death_count}</span>
-                {/if}
-                {#if weaponsVisible && participant.zone_history}
-                  {@const combos = aggregateAllCombos(participant.zone_history)}
-                  {#if combos.length > 0}
-                    <WeaponsPopover
-                      {combos}
-                      title="{participant.twitch_display_name ??
-                        participant.twitch_username}'s loadout"
-                    />
+                <span>{formatIgt(participant.igt_ms)}</span>
+                <span class="stats-right">
+                  {#if participant.death_count > 0}
+                    <span class="death-count">{participant.death_count}</span>
                   {/if}
-                {/if}
+                  {#if weaponsVisible && participant.zone_history}
+                    {@const combos = aggregateAllCombos(
+                      participant.zone_history,
+                    )}
+                    {#if combos.length > 0}
+                      <WeaponsPopover
+                        {combos}
+                        title="{participant.twitch_display_name ??
+                          participant.twitch_username}'s loadout"
+                      />
+                    {/if}
+                  {/if}
+                </span>
               </span>
             {:else}
               {@const badge = rewards.lookupBadge(
@@ -253,21 +257,23 @@
                   <span class="finished-time"
                     >{formatIgt(participant.igt_ms)}</span
                   >
-                  {#if participant.death_count > 0}
-                    <span class="death-count">{participant.death_count}</span>
-                  {/if}
-                  {#if weaponsVisible && participant.zone_history}
-                    {@const combos = aggregateAllCombos(
-                      participant.zone_history,
-                    )}
-                    {#if combos.length > 0}
-                      <WeaponsPopover
-                        {combos}
-                        title="{participant.twitch_display_name ??
-                          participant.twitch_username}'s loadout"
-                      />
+                  <span class="stats-right">
+                    {#if participant.death_count > 0}
+                      <span class="death-count">{participant.death_count}</span>
                     {/if}
-                  {/if}
+                    {#if weaponsVisible && participant.zone_history}
+                      {@const combos = aggregateAllCombos(
+                        participant.zone_history,
+                      )}
+                      {#if combos.length > 0}
+                        <WeaponsPopover
+                          {combos}
+                          title="{participant.twitch_display_name ??
+                            participant.twitch_username}'s loadout"
+                        />
+                      {/if}
+                    {/if}
+                  </span>
                 {:else}
                   <span class="status-text">{participant.status}</span>
                 {/if}
@@ -400,10 +406,19 @@
   }
 
   .stats {
-    display: block;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.4rem;
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
     font-variant-numeric: tabular-nums;
+  }
+
+  .stats-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
   }
 
   .finished-time {
