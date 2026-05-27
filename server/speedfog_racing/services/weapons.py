@@ -63,3 +63,44 @@ def filter_equipped(raw_id: int | None) -> int | None:
     if info is None or info.wep_type in EXCLUDED_WEP_TYPES:
         return None
     return raw_id
+
+
+def bump_combo(
+    weapons_list: list[dict[str, object]],
+    left: int | None,
+    right: int | None,
+) -> list[dict[str, object]]:
+    """Return a new list with the (left, right) combo bumped by one tick.
+
+    Canonicalisation rules (Option B from the design spec):
+    - Both sides ``None``: return the list unchanged.
+    - Exactly one side a tracked id ``X``: the combo key is ``[X]``. Both
+      ``(None, X)`` and ``(X, None)`` increment the same single-weapon entry,
+      hand information is intentionally dropped.
+    - Both sides tracked ids ``X, Y``: the combo key is ``[X, Y]`` in
+      mod-reported order (left, right). ``[X, Y]`` and ``[Y, X]`` are
+      different combos.
+
+    The caller normally skips invoking this helper when both inputs are
+    ``None``; the no-op return is defensive.
+    """
+    if left is None and right is None:
+        return weapons_list
+    if left is None:
+        ids: list[int] = [right]  # type: ignore[list-item]
+    elif right is None:
+        ids = [left]
+    else:
+        ids = [left, right]
+
+    out = [dict(entry) for entry in weapons_list]
+    for entry in out:
+        if entry.get("ids") == ids:
+            ticks_val: object = entry.get("ticks", 0)
+            if isinstance(ticks_val, int):
+                entry["ticks"] = ticks_val + 1
+            else:
+                entry["ticks"] = int(ticks_val) + 1  # type: ignore[call-overload]
+            return out
+    out.append({"ids": ids, "ticks": 1})
+    return out

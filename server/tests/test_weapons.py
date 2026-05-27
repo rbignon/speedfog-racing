@@ -3,6 +3,7 @@
 from speedfog_racing.services.weapons import (
     EXCLUDED_WEP_TYPES,
     WEAPONS,
+    bump_combo,
     filter_equipped,
 )
 
@@ -57,3 +58,53 @@ def test_filter_handles_none_zero_negative() -> None:
     assert filter_equipped(None) is None
     assert filter_equipped(0) is None
     assert filter_equipped(-1) is None
+
+
+def test_bump_combo_appends_single_weapon_when_list_empty() -> None:
+    out = bump_combo([], None, 2000025)
+    assert out == [{"ids": [2000025], "ticks": 1}]
+
+
+def test_bump_combo_increments_existing_single_weapon() -> None:
+    initial = [{"ids": [2000025], "ticks": 3}]
+    out = bump_combo(initial, None, 2000025)
+    assert out == [{"ids": [2000025], "ticks": 4}]
+
+
+def test_bump_combo_single_weapon_canonicalisation_left_then_right() -> None:
+    # (None, X) and (X, None) increment the same {ids: [X]} entry.
+    state = bump_combo([], None, 2000025)
+    state = bump_combo(state, 2000025, None)
+    state = bump_combo(state, None, 2000025)
+    assert state == [{"ids": [2000025], "ticks": 3}]
+
+
+def test_bump_combo_dual_preserves_mod_order() -> None:
+    out = bump_combo([], 3070000, 2000025)
+    assert out == [{"ids": [3070000, 2000025], "ticks": 1}]
+
+
+def test_bump_combo_dual_swapped_hands_is_a_distinct_combo() -> None:
+    # [X, Y] and [Y, X] must NOT merge: this anti-test catches accidental sorting.
+    state = bump_combo([], 3070000, 2000025)
+    state = bump_combo(state, 2000025, 3070000)
+    assert state == [
+        {"ids": [3070000, 2000025], "ticks": 1},
+        {"ids": [2000025, 3070000], "ticks": 1},
+    ]
+
+
+def test_bump_combo_appends_new_combo_alongside_existing() -> None:
+    initial = [{"ids": [2000025], "ticks": 5}]
+    out = bump_combo(initial, 3070000, 2000025)
+    assert out == [
+        {"ids": [2000025], "ticks": 5},
+        {"ids": [3070000, 2000025], "ticks": 1},
+    ]
+
+
+def test_bump_combo_returns_unchanged_when_both_none() -> None:
+    # Caller is expected to skip before calling, but the helper should be safe.
+    initial = [{"ids": [2000025], "ticks": 3}]
+    out = bump_combo(initial, None, None)
+    assert out == initial
