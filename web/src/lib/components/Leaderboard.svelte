@@ -3,12 +3,15 @@
   import { PLAYER_COLORS } from "$lib/dag/constants";
   import LiveBadge from "./LiveBadge.svelte";
   import { rewards } from "$lib/stores/rewards.svelte";
+  import WeaponsPopover from "./WeaponsPopover.svelte";
+  import { aggregateAllCombos } from "$lib/weapons";
 
   interface Props {
     participants: WsParticipant[];
     totalLayers?: number | null;
     mode?: "running" | "finished";
     zoneNames?: Map<string, string> | null;
+    weaponsVisible?: boolean;
     selectedIds?: Set<string>;
     onToggle?: (id: string, ctrlKey: boolean) => void;
     onClearSelection?: () => void;
@@ -19,6 +22,7 @@
     totalLayers = null,
     mode = "running",
     zoneNames = null,
+    weaponsVisible = false,
     selectedIds,
     onToggle,
     onClearSelection,
@@ -199,6 +203,16 @@
                 {#if participant.death_count > 0}
                   <span class="death-count">{participant.death_count}</span>
                 {/if}
+                {#if weaponsVisible && participant.zone_history}
+                  {@const combos = aggregateAllCombos(participant.zone_history)}
+                  {#if combos.length > 0}
+                    <WeaponsPopover
+                      {combos}
+                      title="{participant.twitch_display_name ??
+                        participant.twitch_username}'s loadout"
+                    />
+                  {/if}
+                {/if}
               </span>
             {:else}
               {@const badge = rewards.lookupBadge(
@@ -241,6 +255,18 @@
                   >
                   {#if participant.death_count > 0}
                     <span class="death-count">{participant.death_count}</span>
+                  {/if}
+                  {#if weaponsVisible && participant.zone_history}
+                    {@const combos = aggregateAllCombos(
+                      participant.zone_history,
+                    )}
+                    {#if combos.length > 0}
+                      <WeaponsPopover
+                        {combos}
+                        title="{participant.twitch_display_name ??
+                          participant.twitch_username}'s loadout"
+                      />
+                    {/if}
                   {/if}
                 {:else}
                   <span class="status-text">{participant.status}</span>

@@ -795,6 +795,13 @@
             dagHiddenByRunningRules
               ? null
               : zoneNames}
+            weaponsVisible={!(
+              (raceStatus === "running" &&
+                myWsParticipantId &&
+                !myParticipantFinished &&
+                !forceFullDag) ||
+              dagHiddenByRunningRules
+            )}
             selectedIds={selectedParticipantIds}
             onToggle={handleLeaderboardToggle}
             onClearSelection={clearSelection}
