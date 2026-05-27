@@ -808,5 +808,12 @@ class AdminFeedbackListResponse(BaseModel):
 
 
 class WeaponCatalogueEntry(BaseModel):
+    """OpenAPI schema for weapon catalogue entries.
+
+    Not wired as ``response_model`` today (the handler returns a raw dict
+    keyed by weapon ID string). Provided for documentation completeness and
+    reuse when locale-aware variants ship.
+    """
+
     name: str
     wep_type: int
