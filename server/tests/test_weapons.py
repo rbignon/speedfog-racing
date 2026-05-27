@@ -108,3 +108,14 @@ def test_bump_combo_returns_unchanged_when_both_none() -> None:
     initial = [{"ids": [2000025], "ticks": 3}]
     out = bump_combo(initial, None, None)
     assert out == initial
+
+
+def test_filter_preserves_affinity_and_upgrade_for_known_weapon() -> None:
+    # 23150925 = Rotten Greataxe (base 23150000) + Cold affinity (9 * 100) + +25.
+    # Must resolve via modulo 1000 to the base row and be kept (wep_type=41).
+    assert filter_equipped(23150925) == 23150925
+
+
+def test_filter_keeps_affinity_only_no_upgrade() -> None:
+    # 23150900 = Rotten Greataxe + Cold + 0.
+    assert filter_equipped(23150900) == 23150900

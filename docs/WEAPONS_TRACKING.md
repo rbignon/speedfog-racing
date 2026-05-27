@@ -6,7 +6,7 @@ How the mod reads the player's currently-equipped weapons from Elden Ring's memo
 
 At each periodic `status_update` (1 Hz, see `mod/src/dll/tracker.rs`), the mod reads the active loadout slot of each hand and the weapon ID stored in that slot, sending the pair as `weapons: [Option<i32>; 2]` on the WebSocket. The server resolves each ID against a static catalogue, drops weapons whose `wep_type` is in the excluded set (staves, seals, shields, torches), and counts how many ticks each unique combo is held.
 
-Storage uses raw runtime IDs (`param_row_id + upgrade_level`, e.g. `2000025` = Longsword +25). The catalogue maps the base param row to a name and a type at read time, which keeps the database resilient to renames and language changes.
+Storage uses raw runtime IDs (`param_row_id + affinity * 100 + upgrade_level`, e.g. `2000025` = Longsword +25, `23150925` = Rotten Greataxe Cold +25). The catalogue maps the base param row to a name and a type at read time, which keeps the database resilient to renames and language changes.
 
 The field is per-zone, with storage as a list of per-tick combo counters. Each tick-update normalizes the equipped weapons into a canonical combo key (see "Canonicalisation" below), then either increments that combo's tick counter or appends a new entry. A tick that resolves to `[None, None]` after filtering is skipped, not written, so loading screens and stretches where the player only holds filtered types do not reset the accumulation for earlier observed combos.
 
@@ -38,9 +38,11 @@ Reads use `libeldenring::memedit::PointerChain::<i32>::new(&[game_data_man, 0x8,
 
 ### Runtime weapon ID encoding
 
-`EquipParamWeapon` rows are pre-spaced so that the upgrade level fits in the low two digits of the row ID: a Longsword +0 reads as `2000000`, +25 as `2000025`, Mace +0 as `11000000`. Each affinity variant is its own row (Heavy Longsword, Keen Longsword, etc.), so an affinity change shows up as a different base ID rather than a flag overlay.
+`EquipParamWeapon` rows are pre-spaced on multiples of 1000. The low three digits of a runtime id encode two distinct things: the affinity in the hundreds digit (0 Standard, 1 Heavy, 2 Keen, 3 Quality, 4 Fire, 5 Flame Art, 6 Lightning, 7 Sacred, 8 Magic, 9 Cold, A Poison, B Blood, C Occult), and the upgrade level in the tens and units (0..25). A Cold Rotten Greataxe +25 reads as `23150925` = `23150000` (base row) + `9 * 100` (Cold affinity) + `25` (upgrade level).
 
-Three sentinel values map to `None`:
+Catalogue resolution strips the low three digits to recover the base row. The runtime id including affinity and upgrade is preserved both on the wire and in storage, so two combos differing only by affinity remain distinct in the per-zone counter.
+
+Three sentinel values map to `None` during filtering:
 
 - `110000`: Unarmed (the game writes this in any hand without an equipped weapon).
 - `0` and `-1`: unset / transient state during weapon swaps. Defensive.
@@ -51,7 +53,7 @@ Defined on `GameState` (`mod/src/eldenring/game_state.rs`). For each hand:
 
 1. Read the per-hand slot offset (`i32` in `[0..3)`). If the chain is unreadable, the hand resolves to `None`.
 2. Index into the per-hand `[PointerChain<i32>; 3]` array at that slot, read the `i32`. Out-of-range slot, non-positive value, or the Unarmed sentinel resolve to `None`.
-3. Otherwise return the raw `i32` with the upgrade-level suffix preserved.
+3. Otherwise return the raw `i32` with affinity and upgrade level preserved.
 
 The function is called once per `status_update`, not per frame, so it does not need a `FrameSnapshot` slot. The chains themselves are constructed once in `GameState::new`.
 
@@ -114,7 +116,7 @@ The `ids` key normalizes the observed left and right hands into a canonical form
 }
 ```
 
-The runtime ID at any upgrade is `base_id + upgrade_level`. 478 rows at time of writing.
+The runtime ID at any affinity and upgrade is `base_id + affinity * 100 + upgrade_level`. 478 rows at time of writing.
 
 `speedfog_racing/services/weapons.py` loads the JSON at import time into a frozen `dict[int, WeaponInfo]` keyed by base id.
 
@@ -138,9 +140,9 @@ Ammo `wep_type` values (81 Arrow, 83 Greatarrow, 85 Bolt, 86 BallistaBolt) are a
 
 `filter_equipped(raw_id)` in `services/weapons.py`:
 
-1. Strips the upgrade suffix via `base_id = raw_id - (raw_id % 100)`.
+1. Strips the low three digits (affinity and upgrade) via `base_id = raw_id - (raw_id % 1000)`.
 2. Looks up `base_id` in the catalogue.
-3. Returns the raw id (upgrade preserved) if found and `wep_type` is tracked, otherwise `None`. Also returns `None` for `None`, `0`, negative values.
+3. Returns the raw id (affinity and upgrade preserved) if found and `wep_type` is tracked, otherwise `None`. Also returns `None` for `None`, `0`, negative values.
 
 ### Handler write
 

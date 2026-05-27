@@ -1,9 +1,9 @@
 """EquipParamWeapon ID -> name/type lookup and the filter applied to mod-reported
 equipped weapons.
 
-The mod sends raw runtime weapon IDs (param row ID + upgrade level) in each
-status_update. The server strips the upgrade level, looks the base ID up in
-``weapons.json``, and drops weapons whose ``wep_type`` is in
+The mod sends raw runtime weapon IDs (param row ID + affinity + upgrade level) in
+each status_update. The server strips the affinity and upgrade level, looks the base
+ID up in ``weapons.json``, and drops weapons whose ``wep_type`` is in
 ``EXCLUDED_WEP_TYPES`` (staves, seals, shields, torches).
 
 Source for the catalogue and WepType numeric values: TarnishedTool.
@@ -53,12 +53,13 @@ def filter_equipped(raw_id: int | None) -> int | None:
     """Return the raw runtime weapon ID if it is a tracked melee/ranged weapon,
     ``None`` otherwise (empty hand, unknown ID, or excluded type).
 
-    Strips the upgrade level (rows are spaced at multiples of 100) before lookup,
-    but returns the raw ID with the upgrade preserved.
+    Strips the low three digits (affinity in the hundreds, upgrade level in
+    the tens and units) before lookup, but returns the raw ID with the
+    affinity and upgrade preserved.
     """
     if raw_id is None or raw_id <= 0:
         return None
-    base_id = raw_id - (raw_id % 100)
+    base_id = raw_id - (raw_id % 1000)
     info = WEAPONS.get(base_id)
     if info is None or info.wep_type in EXCLUDED_WEP_TYPES:
         return None
