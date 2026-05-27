@@ -1,0 +1,1918 @@
+{
+  "1000000": {
+    "name": "Dagger",
+    "wep_type": 1
+  },
+  "10000000": {
+    "name": "Twinblade",
+    "wep_type": 14
+  },
+  "10010000": {
+    "name": "Godskin Peeler",
+    "wep_type": 14
+  },
+  "10030000": {
+    "name": "Twinned Knight Swords",
+    "wep_type": 14
+  },
+  "10050000": {
+    "name": "Eleonora's Poleblade",
+    "wep_type": 14
+  },
+  "10080000": {
+    "name": "Gargoyle's Twinblade",
+    "wep_type": 14
+  },
+  "10090000": {
+    "name": "Gargoyle's Black Blades",
+    "wep_type": 14
+  },
+  "1010000": {
+    "name": "Black Knife",
+    "wep_type": 1
+  },
+  "1020000": {
+    "name": "Parrying Dagger",
+    "wep_type": 1
+  },
+  "1030000": {
+    "name": "Miséricorde",
+    "wep_type": 1
+  },
+  "1040000": {
+    "name": "Reduvia",
+    "wep_type": 1
+  },
+  "1050000": {
+    "name": "Crystal Knife",
+    "wep_type": 1
+  },
+  "10500000": {
+    "name": "Euporia",
+    "wep_type": 14
+  },
+  "10510000": {
+    "name": "Black Steel Twinblade",
+    "wep_type": 14
+  },
+  "1060000": {
+    "name": "Celebrant's Sickle",
+    "wep_type": 1
+  },
+  "1070000": {
+    "name": "Glintstone Kris",
+    "wep_type": 1
+  },
+  "1080000": {
+    "name": "Scorpion's Stinger",
+    "wep_type": 1
+  },
+  "1090000": {
+    "name": "Great Knife",
+    "wep_type": 1
+  },
+  "1100000": {
+    "name": "Wakizashi",
+    "wep_type": 1
+  },
+  "11000000": {
+    "name": "Mace",
+    "wep_type": 21
+  },
+  "11010000": {
+    "name": "Club",
+    "wep_type": 21
+  },
+  "11030000": {
+    "name": "Curved Club",
+    "wep_type": 21
+  },
+  "11040000": {
+    "name": "Warpick",
+    "wep_type": 21
+  },
+  "11050000": {
+    "name": "Morning Star",
+    "wep_type": 21
+  },
+  "11060000": {
+    "name": "Varré's Bouquet",
+    "wep_type": 21
+  },
+  "11070000": {
+    "name": "Spiked Club",
+    "wep_type": 21
+  },
+  "11080000": {
+    "name": "Hammer",
+    "wep_type": 21
+  },
+  "11090000": {
+    "name": "Monk's Flamemace",
+    "wep_type": 21
+  },
+  "1110000": {
+    "name": "Cinquedea",
+    "wep_type": 1
+  },
+  "11100000": {
+    "name": "Envoy's Horn",
+    "wep_type": 21
+  },
+  "11110000": {
+    "name": "Scepter of the All-Knowing",
+    "wep_type": 21
+  },
+  "11120000": {
+    "name": "Nox Flowing Hammer",
+    "wep_type": 21
+  },
+  "11130000": {
+    "name": "Ringed Finger",
+    "wep_type": 21
+  },
+  "11140000": {
+    "name": "Stone Club",
+    "wep_type": 21
+  },
+  "11150000": {
+    "name": "Marika's Hammer",
+    "wep_type": 21
+  },
+  "1130000": {
+    "name": "Ivory Sickle",
+    "wep_type": 1
+  },
+  "1140000": {
+    "name": "Bloodstained Dagger",
+    "wep_type": 1
+  },
+  "1150000": {
+    "name": "Erdsteel Dagger",
+    "wep_type": 1
+  },
+  "11500000": {
+    "name": "Flowerstone Gavel",
+    "wep_type": 21
+  },
+  "1160000": {
+    "name": "Blade of Calling",
+    "wep_type": 1
+  },
+  "12000000": {
+    "name": "Large Club",
+    "wep_type": 23
+  },
+  "12010000": {
+    "name": "Greathorn Hammer",
+    "wep_type": 23
+  },
+  "12020000": {
+    "name": "Battle Hammer",
+    "wep_type": 23
+  },
+  "12060000": {
+    "name": "Great Mace",
+    "wep_type": 23
+  },
+  "12080000": {
+    "name": "Curved Great Club",
+    "wep_type": 23
+  },
+  "12130000": {
+    "name": "Celebrant's Skull",
+    "wep_type": 23
+  },
+  "12140000": {
+    "name": "Pickaxe",
+    "wep_type": 23
+  },
+  "12150000": {
+    "name": "Beastclaw Greathammer",
+    "wep_type": 23
+  },
+  "12160000": {
+    "name": "Envoy's Long Horn",
+    "wep_type": 23
+  },
+  "12170000": {
+    "name": "Cranial Vessel Candlestand",
+    "wep_type": 23
+  },
+  "12180000": {
+    "name": "Great Stars",
+    "wep_type": 23
+  },
+  "12190000": {
+    "name": "Brick Hammer",
+    "wep_type": 23
+  },
+  "12200000": {
+    "name": "Devourer's Scepter",
+    "wep_type": 23
+  },
+  "12210000": {
+    "name": "Rotten Battle Hammer",
+    "wep_type": 23
+  },
+  "12500000": {
+    "name": "Smithscript Greathammer",
+    "wep_type": 23
+  },
+  "12510000": {
+    "name": "Anvil Hammer",
+    "wep_type": 41
+  },
+  "12520000": {
+    "name": "Black Steel Greathammer",
+    "wep_type": 23
+  },
+  "12530000": {
+    "name": "Bloodfiend's Arm",
+    "wep_type": 41
+  },
+  "13000000": {
+    "name": "Nightrider Flail",
+    "wep_type": 24
+  },
+  "13010000": {
+    "name": "Flail",
+    "wep_type": 24
+  },
+  "13020000": {
+    "name": "Family Heads",
+    "wep_type": 24
+  },
+  "13030000": {
+    "name": "Bastard's Stars",
+    "wep_type": 24
+  },
+  "13040000": {
+    "name": "Chainlink Flail",
+    "wep_type": 24
+  },
+  "13500000": {
+    "name": "Serpent Flail",
+    "wep_type": 24
+  },
+  "14000000": {
+    "name": "Battle Axe",
+    "wep_type": 17
+  },
+  "14010000": {
+    "name": "Forked Hatchet",
+    "wep_type": 17
+  },
+  "14020000": {
+    "name": "Hand Axe",
+    "wep_type": 17
+  },
+  "14030000": {
+    "name": "Jawbone Axe",
+    "wep_type": 17
+  },
+  "14040000": {
+    "name": "Iron Cleaver",
+    "wep_type": 17
+  },
+  "14050000": {
+    "name": "Ripple Blade",
+    "wep_type": 17
+  },
+  "14060000": {
+    "name": "Celebrant's Cleaver",
+    "wep_type": 17
+  },
+  "14080000": {
+    "name": "Icerind Hatchet",
+    "wep_type": 17
+  },
+  "14100000": {
+    "name": "Highland Axe",
+    "wep_type": 17
+  },
+  "14110000": {
+    "name": "Sacrificial Axe",
+    "wep_type": 17
+  },
+  "14120000": {
+    "name": "Rosus' Axe",
+    "wep_type": 17
+  },
+  "14140000": {
+    "name": "Stormhawk Axe",
+    "wep_type": 17
+  },
+  "14500000": {
+    "name": "Smithscript Axe",
+    "wep_type": 17
+  },
+  "14510000": {
+    "name": "Death Knight's Twin Axes",
+    "wep_type": 17
+  },
+  "14520000": {
+    "name": "Messmer Soldier's Axe",
+    "wep_type": 17
+  },
+  "14540000": {
+    "name": "Forked-Tongue Hatchet",
+    "wep_type": 17
+  },
+  "1500000": {
+    "name": "Main-gauche",
+    "wep_type": 1
+  },
+  "15000000": {
+    "name": "Greataxe",
+    "wep_type": 19
+  },
+  "15010000": {
+    "name": "Warped Axe",
+    "wep_type": 17
+  },
+  "15020000": {
+    "name": "Great Omenkiller Cleaver",
+    "wep_type": 19
+  },
+  "15030000": {
+    "name": "Crescent Moon Axe",
+    "wep_type": 19
+  },
+  "15040000": {
+    "name": "Axe of Godrick",
+    "wep_type": 19
+  },
+  "15050000": {
+    "name": "Longhaft Axe",
+    "wep_type": 19
+  },
+  "15060000": {
+    "name": "Rusted Anchor",
+    "wep_type": 19
+  },
+  "15080000": {
+    "name": "Executioner's Greataxe",
+    "wep_type": 19
+  },
+  "1510000": {
+    "name": "Fire Knight's Shortsword",
+    "wep_type": 1
+  },
+  "15110000": {
+    "name": "Winged Greathorn",
+    "wep_type": 19
+  },
+  "15120000": {
+    "name": "Butchering Knife",
+    "wep_type": 19
+  },
+  "15130000": {
+    "name": "Gargoyle's Great Axe",
+    "wep_type": 19
+  },
+  "15140000": {
+    "name": "Gargoyle's Black Axe",
+    "wep_type": 19
+  },
+  "15500000": {
+    "name": "Death Knight's Longhaft Axe",
+    "wep_type": 19
+  },
+  "15510000": {
+    "name": "Bonny Butchering Knife",
+    "wep_type": 19
+  },
+  "16000000": {
+    "name": "Short Spear",
+    "wep_type": 25
+  },
+  "16010000": {
+    "name": "Spear",
+    "wep_type": 25
+  },
+  "16020000": {
+    "name": "Crystal Spear",
+    "wep_type": 25
+  },
+  "16030000": {
+    "name": "Clayman's Harpoon",
+    "wep_type": 25
+  },
+  "16040000": {
+    "name": "Cleanrot Spear",
+    "wep_type": 25
+  },
+  "16050000": {
+    "name": "Partisan",
+    "wep_type": 25
+  },
+  "16060000": {
+    "name": "Celebrant's Rib-Rake",
+    "wep_type": 25
+  },
+  "16070000": {
+    "name": "Pike",
+    "wep_type": 25
+  },
+  "16080000": {
+    "name": "Torchpole",
+    "wep_type": 25
+  },
+  "16090000": {
+    "name": "Bolt of Gransax",
+    "wep_type": 25
+  },
+  "16110000": {
+    "name": "Cross-Naginata",
+    "wep_type": 25
+  },
+  "16120000": {
+    "name": "Death Ritual Spear",
+    "wep_type": 25
+  },
+  "16130000": {
+    "name": "Inquisitor's Girandole",
+    "wep_type": 25
+  },
+  "16140000": {
+    "name": "Spiked Spear",
+    "wep_type": 25
+  },
+  "16150000": {
+    "name": "Iron Spear",
+    "wep_type": 25
+  },
+  "16160000": {
+    "name": "Rotten Crystal Spear",
+    "wep_type": 25
+  },
+  "16500000": {
+    "name": "Smithscript Spear",
+    "wep_type": 25
+  },
+  "16520000": {
+    "name": "Swift Spear",
+    "wep_type": 25
+  },
+  "16540000": {
+    "name": "Bloodfiend's Fork",
+    "wep_type": 25
+  },
+  "16550000": {
+    "name": "Bloodfiend's Sacred Spear",
+    "wep_type": 28
+  },
+  "17010000": {
+    "name": "Mohgwyn's Sacred Spear",
+    "wep_type": 28
+  },
+  "17020000": {
+    "name": "Siluria's Tree",
+    "wep_type": 28
+  },
+  "17030000": {
+    "name": "Serpent-Hunter",
+    "wep_type": 28
+  },
+  "17050000": {
+    "name": "Vyke's War Spear",
+    "wep_type": 28
+  },
+  "17060000": {
+    "name": "Lance",
+    "wep_type": 28
+  },
+  "17070000": {
+    "name": "Treespear",
+    "wep_type": 28
+  },
+  "17500000": {
+    "name": "Spear of the Impaler",
+    "wep_type": 28
+  },
+  "17510000": {
+    "name": "Messmer Soldier's Spear",
+    "wep_type": 28
+  },
+  "17520000": {
+    "name": "Barbed Staff-Spear",
+    "wep_type": 28
+  },
+  "18000000": {
+    "name": "Halberd",
+    "wep_type": 29
+  },
+  "18010000": {
+    "name": "Pest's Glaive",
+    "wep_type": 29
+  },
+  "18020000": {
+    "name": "Lucerne",
+    "wep_type": 29
+  },
+  "18030000": {
+    "name": "Banished Knight's Halberd",
+    "wep_type": 29
+  },
+  "18040000": {
+    "name": "Commander's Standard",
+    "wep_type": 29
+  },
+  "18050000": {
+    "name": "Nightrider Glaive",
+    "wep_type": 29
+  },
+  "18060000": {
+    "name": "Ripple Crescent Halberd",
+    "wep_type": 29
+  },
+  "18070000": {
+    "name": "Vulgar Militia Saw",
+    "wep_type": 29
+  },
+  "18080000": {
+    "name": "Golden Halberd",
+    "wep_type": 29
+  },
+  "18090000": {
+    "name": "Glaive",
+    "wep_type": 29
+  },
+  "18100000": {
+    "name": "Loretta's War Sickle",
+    "wep_type": 29
+  },
+  "18110000": {
+    "name": "Guardian's Swordspear",
+    "wep_type": 29
+  },
+  "18130000": {
+    "name": "Vulgar Militia Shotel",
+    "wep_type": 29
+  },
+  "18140000": {
+    "name": "Dragon Halberd",
+    "wep_type": 29
+  },
+  "18150000": {
+    "name": "Gargoyle's Halberd",
+    "wep_type": 29
+  },
+  "18160000": {
+    "name": "Gargoyle's Black Halberd",
+    "wep_type": 29
+  },
+  "18500000": {
+    "name": "Spirit Glaive",
+    "wep_type": 29
+  },
+  "18510000": {
+    "name": "Poleblade of the Bud",
+    "wep_type": 29
+  },
+  "19000000": {
+    "name": "Scythe",
+    "wep_type": 31
+  },
+  "19010000": {
+    "name": "Grave Scythe",
+    "wep_type": 31
+  },
+  "19020000": {
+    "name": "Halo Scythe",
+    "wep_type": 31
+  },
+  "19060000": {
+    "name": "Winged Scythe",
+    "wep_type": 31
+  },
+  "19500000": {
+    "name": "Obsidian Lamina",
+    "wep_type": 31
+  },
+  "2000000": {
+    "name": "Longsword",
+    "wep_type": 3
+  },
+  "20000000": {
+    "name": "Whip",
+    "wep_type": 39
+  },
+  "20020000": {
+    "name": "Thorned Whip",
+    "wep_type": 39
+  },
+  "20030000": {
+    "name": "Magma Whip Candlestick",
+    "wep_type": 39
+  },
+  "20050000": {
+    "name": "Hoslow's Petal Whip",
+    "wep_type": 39
+  },
+  "20060000": {
+    "name": "Giant's Red Braid",
+    "wep_type": 39
+  },
+  "20070000": {
+    "name": "Urumi",
+    "wep_type": 39
+  },
+  "2010000": {
+    "name": "Short Sword",
+    "wep_type": 3
+  },
+  "2020000": {
+    "name": "Broadsword",
+    "wep_type": 3
+  },
+  "2040000": {
+    "name": "Lordsworn's Straight Sword",
+    "wep_type": 3
+  },
+  "2050000": {
+    "name": "Weathered Straight Sword",
+    "wep_type": 3
+  },
+  "20500000": {
+    "name": "Tooth Whip",
+    "wep_type": 39
+  },
+  "2060000": {
+    "name": "Ornamental Straight Sword",
+    "wep_type": 3
+  },
+  "2070000": {
+    "name": "Golden Epitaph",
+    "wep_type": 3
+  },
+  "2080000": {
+    "name": "Nox Flowing Sword",
+    "wep_type": 9
+  },
+  "2090000": {
+    "name": "Inseparable Sword",
+    "wep_type": 5
+  },
+  "21000000": {
+    "name": "Caestus",
+    "wep_type": 35
+  },
+  "21010000": {
+    "name": "Spiked Caestus",
+    "wep_type": 35
+  },
+  "21060000": {
+    "name": "Grafted Dragon",
+    "wep_type": 35
+  },
+  "21070000": {
+    "name": "Iron Ball",
+    "wep_type": 35
+  },
+  "21080000": {
+    "name": "Star Fist",
+    "wep_type": 35
+  },
+  "2110000": {
+    "name": "Coded Sword",
+    "wep_type": 3
+  },
+  "21100000": {
+    "name": "Katar",
+    "wep_type": 35
+  },
+  "21110000": {
+    "name": "Clinging Bone",
+    "wep_type": 35
+  },
+  "21120000": {
+    "name": "Veteran's Prosthesis",
+    "wep_type": 35
+  },
+  "21130000": {
+    "name": "Cipher Pata",
+    "wep_type": 35
+  },
+  "2140000": {
+    "name": "Sword of Night and Flame",
+    "wep_type": 3
+  },
+  "2150000": {
+    "name": "Crystal Sword",
+    "wep_type": 3
+  },
+  "21500000": {
+    "name": "Thiollier's Hidden Needle",
+    "wep_type": 35
+  },
+  "21510000": {
+    "name": "Pata",
+    "wep_type": 35
+  },
+  "21520000": {
+    "name": "Poisoned Hand",
+    "wep_type": 35
+  },
+  "21530000": {
+    "name": "Madding Hand",
+    "wep_type": 35
+  },
+  "21540000": {
+    "name": "Golem Fist",
+    "wep_type": 35
+  },
+  "21550000": {
+    "name": "Shield of Night",
+    "wep_type": 65
+  },
+  "2180000": {
+    "name": "Carian Knight's Sword",
+    "wep_type": 3
+  },
+  "2190000": {
+    "name": "Sword of St. Trina",
+    "wep_type": 3
+  },
+  "2200000": {
+    "name": "Miquellan Knight's Sword",
+    "wep_type": 3
+  },
+  "22000000": {
+    "name": "Hookclaws",
+    "wep_type": 37
+  },
+  "22010000": {
+    "name": "Venomous Fang",
+    "wep_type": 37
+  },
+  "22020000": {
+    "name": "Bloodhound Claws",
+    "wep_type": 37
+  },
+  "22030000": {
+    "name": "Raptor Talons",
+    "wep_type": 37
+  },
+  "2210000": {
+    "name": "Cane Sword",
+    "wep_type": 3
+  },
+  "2220000": {
+    "name": "Regalia of Eochaid",
+    "wep_type": 3
+  },
+  "2230000": {
+    "name": "Noble's Slender Sword",
+    "wep_type": 3
+  },
+  "2240000": {
+    "name": "Warhawk's Talon",
+    "wep_type": 3
+  },
+  "2250000": {
+    "name": "Lazuli Glintstone Sword",
+    "wep_type": 3
+  },
+  "22500000": {
+    "name": "Claws of Night",
+    "wep_type": 37
+  },
+  "2260000": {
+    "name": "Rotten Crystal Sword",
+    "wep_type": 3
+  },
+  "23000000": {
+    "name": "Prelate's Inferno Crozier",
+    "wep_type": 41
+  },
+  "23010000": {
+    "name": "Watchdog's Staff",
+    "wep_type": 41
+  },
+  "23020000": {
+    "name": "Great Club",
+    "wep_type": 41
+  },
+  "23030000": {
+    "name": "Envoy's Greathorn",
+    "wep_type": 41
+  },
+  "23040000": {
+    "name": "Duelist Greataxe",
+    "wep_type": 41
+  },
+  "23050000": {
+    "name": "Axe of Godfrey",
+    "wep_type": 41
+  },
+  "23060000": {
+    "name": "Dragon Greatclaw",
+    "wep_type": 41
+  },
+  "23070000": {
+    "name": "Staff of the Avatar",
+    "wep_type": 41
+  },
+  "23080000": {
+    "name": "Fallingstar Beast Jaw",
+    "wep_type": 41
+  },
+  "23100000": {
+    "name": "Ghiza's Wheel",
+    "wep_type": 41
+  },
+  "23110000": {
+    "name": "Giant-Crusher",
+    "wep_type": 41
+  },
+  "23120000": {
+    "name": "Golem's Halberd",
+    "wep_type": 41
+  },
+  "23130000": {
+    "name": "Troll's Hammer",
+    "wep_type": 41
+  },
+  "23140000": {
+    "name": "Rotten Staff",
+    "wep_type": 41
+  },
+  "23150000": {
+    "name": "Rotten Greataxe",
+    "wep_type": 41
+  },
+  "23500000": {
+    "name": "Devonia's Hammer",
+    "wep_type": 41
+  },
+  "23510000": {
+    "name": "Shadow Sunflower Blossom",
+    "wep_type": 41
+  },
+  "23520000": {
+    "name": "Gazing Finger",
+    "wep_type": 41
+  },
+  "24000000": {
+    "name": "Torch",
+    "wep_type": 87
+  },
+  "24020000": {
+    "name": "Steel-Wire Torch",
+    "wep_type": 87
+  },
+  "24040000": {
+    "name": "St. Trina's Torch",
+    "wep_type": 87
+  },
+  "24050000": {
+    "name": "Ghostflame Torch",
+    "wep_type": 87
+  },
+  "24060000": {
+    "name": "Beast-Repellent Torch",
+    "wep_type": 87
+  },
+  "24070000": {
+    "name": "Sentry's Torch",
+    "wep_type": 87
+  },
+  "24500000": {
+    "name": "Nanaya's Torch",
+    "wep_type": 87
+  },
+  "24510000": {
+    "name": "Lamenting Visage",
+    "wep_type": 87
+  },
+  "2510000": {
+    "name": "Velvet Sword of St. Trina",
+    "wep_type": 3
+  },
+  "2520000": {
+    "name": "Star-Lined Sword",
+    "wep_type": 13
+  },
+  "2530000": {
+    "name": "Carian Sorcery Sword",
+    "wep_type": 15
+  },
+  "2540000": {
+    "name": "Stone-Sheathed Sword",
+    "wep_type": 3
+  },
+  "2550000": {
+    "name": "Sword of Light",
+    "wep_type": 3
+  },
+  "2560000": {
+    "name": "Sword of Darkness",
+    "wep_type": 3
+  },
+  "3000000": {
+    "name": "Bastard Sword",
+    "wep_type": 5
+  },
+  "30000000": {
+    "name": "Buckler",
+    "wep_type": 65
+  },
+  "30010000": {
+    "name": "Perfumer's Shield",
+    "wep_type": 65
+  },
+  "30020000": {
+    "name": "Man-Serpent's Shield",
+    "wep_type": 65
+  },
+  "30030000": {
+    "name": "Rickety Shield",
+    "wep_type": 65
+  },
+  "30040000": {
+    "name": "Pillory Shield",
+    "wep_type": 65
+  },
+  "30060000": {
+    "name": "Beastman's Jar-Shield",
+    "wep_type": 67
+  },
+  "30070000": {
+    "name": "Red Thorn Roundshield",
+    "wep_type": 65
+  },
+  "30080000": {
+    "name": "Scripture Wooden Shield",
+    "wep_type": 65
+  },
+  "30090000": {
+    "name": "Riveted Wooden Shield",
+    "wep_type": 65
+  },
+  "3010000": {
+    "name": "Forked Greatsword",
+    "wep_type": 5
+  },
+  "30100000": {
+    "name": "Blue-White Wooden Shield",
+    "wep_type": 65
+  },
+  "30110000": {
+    "name": "Rift Shield",
+    "wep_type": 65
+  },
+  "30120000": {
+    "name": "Iron Roundshield",
+    "wep_type": 65
+  },
+  "30130000": {
+    "name": "Gilded Iron Shield",
+    "wep_type": 65
+  },
+  "30140000": {
+    "name": "Ice Crest Shield",
+    "wep_type": 65
+  },
+  "30150000": {
+    "name": "Smoldering Shield",
+    "wep_type": 65
+  },
+  "30190000": {
+    "name": "Spiralhorn Shield",
+    "wep_type": 65
+  },
+  "3020000": {
+    "name": "Iron Greatsword",
+    "wep_type": 5
+  },
+  "30200000": {
+    "name": "Coil Shield",
+    "wep_type": 65
+  },
+  "3030000": {
+    "name": "Lordsworn's Greatsword",
+    "wep_type": 5
+  },
+  "3040000": {
+    "name": "Knight's Greatsword",
+    "wep_type": 5
+  },
+  "3050000": {
+    "name": "Flamberge",
+    "wep_type": 5
+  },
+  "30510000": {
+    "name": "Smithscript Shield",
+    "wep_type": 65
+  },
+  "3060000": {
+    "name": "Ordovis's Greatsword",
+    "wep_type": 5
+  },
+  "3070000": {
+    "name": "Alabaster Lord's Sword",
+    "wep_type": 5
+  },
+  "3080000": {
+    "name": "Banished Knight's Greatsword",
+    "wep_type": 5
+  },
+  "3090000": {
+    "name": "Dark Moon Greatsword",
+    "wep_type": 5
+  },
+  "3100000": {
+    "name": "Sacred Relic Sword",
+    "wep_type": 5
+  },
+  "31000000": {
+    "name": "Kite Shield",
+    "wep_type": 67
+  },
+  "31010000": {
+    "name": "Marred Leather Shield",
+    "wep_type": 67
+  },
+  "31020000": {
+    "name": "Marred Wooden Shield",
+    "wep_type": 67
+  },
+  "31030000": {
+    "name": "Banished Knight's Shield",
+    "wep_type": 67
+  },
+  "31040000": {
+    "name": "Albinauric Shield",
+    "wep_type": 67
+  },
+  "31050000": {
+    "name": "Sun Realm Shield",
+    "wep_type": 67
+  },
+  "31060000": {
+    "name": "Silver Mirrorshield",
+    "wep_type": 67
+  },
+  "31070000": {
+    "name": "Round Shield",
+    "wep_type": 67
+  },
+  "31080000": {
+    "name": "Scorpion Kite Shield",
+    "wep_type": 67
+  },
+  "31090000": {
+    "name": "Twinbird Kite Shield",
+    "wep_type": 67
+  },
+  "31100000": {
+    "name": "Blue-Gold Kite Shield",
+    "wep_type": 67
+  },
+  "31130000": {
+    "name": "Brass Shield",
+    "wep_type": 67
+  },
+  "31140000": {
+    "name": "Great Turtle Shell",
+    "wep_type": 67
+  },
+  "31170000": {
+    "name": "Shield of the Guilty",
+    "wep_type": 65
+  },
+  "31190000": {
+    "name": "Carian Knight's Shield",
+    "wep_type": 67
+  },
+  "31230000": {
+    "name": "Large Leather Shield",
+    "wep_type": 67
+  },
+  "31240000": {
+    "name": "Horse Crest Wooden Shield",
+    "wep_type": 67
+  },
+  "31250000": {
+    "name": "Candletree Wooden Shield",
+    "wep_type": 67
+  },
+  "31260000": {
+    "name": "Flame Crest Wooden Shield",
+    "wep_type": 67
+  },
+  "31270000": {
+    "name": "Hawk Crest Wooden Shield",
+    "wep_type": 67
+  },
+  "31280000": {
+    "name": "Beast Crest Heater Shield",
+    "wep_type": 67
+  },
+  "31290000": {
+    "name": "Red Crest Heater Shield",
+    "wep_type": 67
+  },
+  "3130000": {
+    "name": "Helphen's Steeple",
+    "wep_type": 5
+  },
+  "31300000": {
+    "name": "Blue Crest Heater Shield",
+    "wep_type": 67
+  },
+  "31310000": {
+    "name": "Eclipse Crest Heater Shield",
+    "wep_type": 67
+  },
+  "31320000": {
+    "name": "Inverted Hawk Heater Shield",
+    "wep_type": 67
+  },
+  "31330000": {
+    "name": "Heater Shield",
+    "wep_type": 67
+  },
+  "31340000": {
+    "name": "Black Leather Shield",
+    "wep_type": 67
+  },
+  "3140000": {
+    "name": "Blasphemous Blade",
+    "wep_type": 5
+  },
+  "3150000": {
+    "name": "Marais Executioner's Sword",
+    "wep_type": 5
+  },
+  "31500000": {
+    "name": "Messmer Soldier Shield",
+    "wep_type": 67
+  },
+  "31510000": {
+    "name": "Wolf Crest Shield",
+    "wep_type": 67
+  },
+  "31520000": {
+    "name": "Serpent Crest Shield",
+    "wep_type": 67
+  },
+  "31530000": {
+    "name": "Golden Lion Shield",
+    "wep_type": 67
+  },
+  "3160000": {
+    "name": "Sword of Milos",
+    "wep_type": 5
+  },
+  "3170000": {
+    "name": "Golden Order Greatsword",
+    "wep_type": 5
+  },
+  "3180000": {
+    "name": "Claymore",
+    "wep_type": 5
+  },
+  "3190000": {
+    "name": "Gargoyle's Greatsword",
+    "wep_type": 5
+  },
+  "3200000": {
+    "name": "Death's Poker",
+    "wep_type": 5
+  },
+  "32000000": {
+    "name": "Dragon Towershield",
+    "wep_type": 69
+  },
+  "32020000": {
+    "name": "Distinguished Greatshield",
+    "wep_type": 69
+  },
+  "32030000": {
+    "name": "Crucible Hornshield",
+    "wep_type": 69
+  },
+  "32040000": {
+    "name": "Dragonclaw Shield",
+    "wep_type": 69
+  },
+  "32050000": {
+    "name": "Briar Greatshield",
+    "wep_type": 69
+  },
+  "32080000": {
+    "name": "Erdtree Greatshield",
+    "wep_type": 69
+  },
+  "32090000": {
+    "name": "Golden Beast Crest Shield",
+    "wep_type": 69
+  },
+  "3210000": {
+    "name": "Gargoyle's Blackblade",
+    "wep_type": 5
+  },
+  "32120000": {
+    "name": "Jellyfish Shield",
+    "wep_type": 69
+  },
+  "32130000": {
+    "name": "Fingerprint Stone Shield",
+    "wep_type": 69
+  },
+  "32140000": {
+    "name": "Icon Shield",
+    "wep_type": 69
+  },
+  "32150000": {
+    "name": "One-Eyed Shield",
+    "wep_type": 69
+  },
+  "32160000": {
+    "name": "Visage Shield",
+    "wep_type": 69
+  },
+  "32170000": {
+    "name": "Spiked Palisade Shield",
+    "wep_type": 69
+  },
+  "32190000": {
+    "name": "Manor Towershield",
+    "wep_type": 69
+  },
+  "32200000": {
+    "name": "Crossed-Tree Towershield",
+    "wep_type": 69
+  },
+  "32210000": {
+    "name": "Inverted Hawk Towershield",
+    "wep_type": 69
+  },
+  "32220000": {
+    "name": "Ant's Skull Plate",
+    "wep_type": 69
+  },
+  "32230000": {
+    "name": "Redmane Greatshield",
+    "wep_type": 69
+  },
+  "32240000": {
+    "name": "Eclipse Crest Greatshield",
+    "wep_type": 69
+  },
+  "32250000": {
+    "name": "Cuckoo Greatshield",
+    "wep_type": 69
+  },
+  "32260000": {
+    "name": "Golden Greatshield",
+    "wep_type": 69
+  },
+  "32270000": {
+    "name": "Gilded Greatshield",
+    "wep_type": 69
+  },
+  "32280000": {
+    "name": "Haligtree Crest Greatshield",
+    "wep_type": 69
+  },
+  "32290000": {
+    "name": "Wooden Greatshield",
+    "wep_type": 69
+  },
+  "32300000": {
+    "name": "Lordsworn's Shield",
+    "wep_type": 69
+  },
+  "32500000": {
+    "name": "Black Steel Greatshield",
+    "wep_type": 69
+  },
+  "32520000": {
+    "name": "Verdigris Greatshield",
+    "wep_type": 69
+  },
+  "33000000": {
+    "name": "Glintstone Staff",
+    "wep_type": 57
+  },
+  "33040000": {
+    "name": "Crystal Staff",
+    "wep_type": 57
+  },
+  "33050000": {
+    "name": "Gelmir Glintstone Staff",
+    "wep_type": 57
+  },
+  "33060000": {
+    "name": "Demi-Human Queen's Staff",
+    "wep_type": 57
+  },
+  "33090000": {
+    "name": "Carian Regal Scepter",
+    "wep_type": 57
+  },
+  "33120000": {
+    "name": "Digger's Staff",
+    "wep_type": 57
+  },
+  "33130000": {
+    "name": "Astrologer's Staff",
+    "wep_type": 57
+  },
+  "33170000": {
+    "name": "Carian Glintblade Staff",
+    "wep_type": 57
+  },
+  "33180000": {
+    "name": "Prince of Death's Staff",
+    "wep_type": 57
+  },
+  "33190000": {
+    "name": "Albinauric Staff",
+    "wep_type": 57
+  },
+  "33200000": {
+    "name": "Academy Glintstone Staff",
+    "wep_type": 57
+  },
+  "33210000": {
+    "name": "Carian Glintstone Staff",
+    "wep_type": 57
+  },
+  "33230000": {
+    "name": "Azur's Glintstone Staff",
+    "wep_type": 57
+  },
+  "33240000": {
+    "name": "Lusat's Glintstone Staff",
+    "wep_type": 57
+  },
+  "33250000": {
+    "name": "Meteorite Staff",
+    "wep_type": 57
+  },
+  "33260000": {
+    "name": "Staff of the Guilty",
+    "wep_type": 57
+  },
+  "33270000": {
+    "name": "Rotten Crystal Staff",
+    "wep_type": 57
+  },
+  "33280000": {
+    "name": "Staff of Loss",
+    "wep_type": 57
+  },
+  "33510000": {
+    "name": "Staff of the Great Beyond",
+    "wep_type": 57
+  },
+  "33520000": {
+    "name": "Maternal Staff",
+    "wep_type": 57
+  },
+  "34000000": {
+    "name": "Finger Seal",
+    "wep_type": 61
+  },
+  "34010000": {
+    "name": "Godslayer's Seal",
+    "wep_type": 61
+  },
+  "34020000": {
+    "name": "Giant's Seal",
+    "wep_type": 61
+  },
+  "34030000": {
+    "name": "Gravel Stone Seal",
+    "wep_type": 61
+  },
+  "34040000": {
+    "name": "Clawmark Seal",
+    "wep_type": 61
+  },
+  "34060000": {
+    "name": "Golden Order Seal",
+    "wep_type": 61
+  },
+  "34070000": {
+    "name": "Erdtree Seal",
+    "wep_type": 61
+  },
+  "34080000": {
+    "name": "Dragon Communion Seal",
+    "wep_type": 61
+  },
+  "34090000": {
+    "name": "Frenzied Flame Seal",
+    "wep_type": 61
+  },
+  "34500000": {
+    "name": "Dryleaf Seal",
+    "wep_type": 61
+  },
+  "34510000": {
+    "name": "Fire Knight's Seal",
+    "wep_type": 61
+  },
+  "34520000": {
+    "name": "Spiraltree Seal",
+    "wep_type": 61
+  },
+  "3500000": {
+    "name": "Sword Lance",
+    "wep_type": 16
+  },
+  "3510000": {
+    "name": "Greatsword of Damnation",
+    "wep_type": 5
+  },
+  "3520000": {
+    "name": "Lizard Greatsword",
+    "wep_type": 5
+  },
+  "3550000": {
+    "name": "Greatsword of Solitude",
+    "wep_type": 5
+  },
+  "4000000": {
+    "name": "Greatsword",
+    "wep_type": 7
+  },
+  "40000000": {
+    "name": "Shortbow",
+    "wep_type": 50
+  },
+  "40010000": {
+    "name": "Misbegotten Shortbow",
+    "wep_type": 50
+  },
+  "40020000": {
+    "name": "Red Branch Shortbow",
+    "wep_type": 50
+  },
+  "40030000": {
+    "name": "Harp Bow",
+    "wep_type": 50
+  },
+  "40050000": {
+    "name": "Composite Bow",
+    "wep_type": 50
+  },
+  "4010000": {
+    "name": "Watchdog's Greatsword",
+    "wep_type": 7
+  },
+  "4020000": {
+    "name": "Maliketh's Black Blade",
+    "wep_type": 7
+  },
+  "4030000": {
+    "name": "Troll's Golden Sword",
+    "wep_type": 7
+  },
+  "4040000": {
+    "name": "Zweihander",
+    "wep_type": 7
+  },
+  "4050000": {
+    "name": "Starscourge Greatsword",
+    "wep_type": 7
+  },
+  "40500000": {
+    "name": "Bone Bow",
+    "wep_type": 50
+  },
+  "4060000": {
+    "name": "Royal Greatsword",
+    "wep_type": 7
+  },
+  "4070000": {
+    "name": "Godslayer's Greatsword",
+    "wep_type": 7
+  },
+  "4080000": {
+    "name": "Ruins Greatsword",
+    "wep_type": 7
+  },
+  "4100000": {
+    "name": "Grafted Blade Greatsword",
+    "wep_type": 7
+  },
+  "41000000": {
+    "name": "Longbow",
+    "wep_type": 51
+  },
+  "41010000": {
+    "name": "Albinauric Bow",
+    "wep_type": 51
+  },
+  "41020000": {
+    "name": "Horn Bow",
+    "wep_type": 51
+  },
+  "41030000": {
+    "name": "Erdtree Bow",
+    "wep_type": 51
+  },
+  "41040000": {
+    "name": "Serpent Bow",
+    "wep_type": 51
+  },
+  "41060000": {
+    "name": "Pulley Bow",
+    "wep_type": 51
+  },
+  "41070000": {
+    "name": "Black Bow",
+    "wep_type": 51
+  },
+  "4110000": {
+    "name": "Troll Knight's Sword",
+    "wep_type": 7
+  },
+  "41510000": {
+    "name": "Ansbach's Longbow",
+    "wep_type": 51
+  },
+  "42000000": {
+    "name": "Lion Greatbow",
+    "wep_type": 53
+  },
+  "42010000": {
+    "name": "Golem Greatbow",
+    "wep_type": 53
+  },
+  "42030000": {
+    "name": "Erdtree Greatbow",
+    "wep_type": 53
+  },
+  "42040000": {
+    "name": "Greatbow",
+    "wep_type": 53
+  },
+  "42500000": {
+    "name": "Igon's Greatbow",
+    "wep_type": 53
+  },
+  "43000000": {
+    "name": "Soldier's Crossbow",
+    "wep_type": 55
+  },
+  "43020000": {
+    "name": "Light Crossbow",
+    "wep_type": 55
+  },
+  "43030000": {
+    "name": "Heavy Crossbow",
+    "wep_type": 55
+  },
+  "43050000": {
+    "name": "Pulley Crossbow",
+    "wep_type": 55
+  },
+  "43060000": {
+    "name": "Full Moon Crossbow",
+    "wep_type": 55
+  },
+  "43080000": {
+    "name": "Arbalest",
+    "wep_type": 55
+  },
+  "43110000": {
+    "name": "Crepus's Black-Key Crossbow",
+    "wep_type": 55
+  },
+  "43500000": {
+    "name": "Repeating Crossbow",
+    "wep_type": 55
+  },
+  "43510000": {
+    "name": "Spread Crossbow",
+    "wep_type": 55
+  },
+  "44000000": {
+    "name": "Hand Ballista",
+    "wep_type": 56
+  },
+  "44010000": {
+    "name": "Jar Cannon",
+    "wep_type": 56
+  },
+  "44500000": {
+    "name": "Rabbath's Cannon",
+    "wep_type": 56
+  },
+  "4500000": {
+    "name": "Ancient Meteoric Ore Greatsword",
+    "wep_type": 7
+  },
+  "4520000": {
+    "name": "Fire Knight's Greatsword",
+    "wep_type": 7
+  },
+  "4530000": {
+    "name": "Greatsword of Radahn (Lord)",
+    "wep_type": 7
+  },
+  "4540000": {
+    "name": "Moonrithyll's Knight Sword",
+    "wep_type": 7
+  },
+  "4550000": {
+    "name": "Greatsword of Radahn (Light)",
+    "wep_type": 7
+  },
+  "5000000": {
+    "name": "Estoc",
+    "wep_type": 15
+  },
+  "5010000": {
+    "name": "Cleanrot Knight's Sword",
+    "wep_type": 15
+  },
+  "5020000": {
+    "name": "Rapier",
+    "wep_type": 15
+  },
+  "5030000": {
+    "name": "Rogier's Rapier",
+    "wep_type": 15
+  },
+  "5040000": {
+    "name": "Antspur Rapier",
+    "wep_type": 15
+  },
+  "5050000": {
+    "name": "Frozen Needle",
+    "wep_type": 15
+  },
+  "5060000": {
+    "name": "Noble's Estoc",
+    "wep_type": 15
+  },
+  "6000000": {
+    "name": "Bloody Helice",
+    "wep_type": 16
+  },
+  "6010000": {
+    "name": "Godskin Stitcher",
+    "wep_type": 16
+  },
+  "6020000": {
+    "name": "Great Épée",
+    "wep_type": 16
+  },
+  "6040000": {
+    "name": "Dragon King's Cragblade",
+    "wep_type": 16
+  },
+  "60500000": {
+    "name": "Dryleaf Arts",
+    "wep_type": 88
+  },
+  "60510000": {
+    "name": "Dane's Footwork",
+    "wep_type": 88
+  },
+  "61500000": {
+    "name": "Firespark Perfume Bottle",
+    "wep_type": 89
+  },
+  "61510000": {
+    "name": "Chilling Perfume Bottle",
+    "wep_type": 89
+  },
+  "61520000": {
+    "name": "Frenzyflame Perfume Bottle",
+    "wep_type": 89
+  },
+  "61530000": {
+    "name": "Lightning Perfume Bottle",
+    "wep_type": 89
+  },
+  "61540000": {
+    "name": "Deadly Poison Perfume Bottle",
+    "wep_type": 89
+  },
+  "62500000": {
+    "name": "Dueling Shield",
+    "wep_type": 90
+  },
+  "62510000": {
+    "name": "Carian Thrusting Shield",
+    "wep_type": 90
+  },
+  "63500000": {
+    "name": "Smithscript Dagger",
+    "wep_type": 91
+  },
+  "64500000": {
+    "name": "Backhand Blade",
+    "wep_type": 92
+  },
+  "64510000": {
+    "name": "Smithscript Cirque",
+    "wep_type": 92
+  },
+  "64520000": {
+    "name": "Curseblade's Cirque",
+    "wep_type": 92
+  },
+  "6500000": {
+    "name": "Queelign's Greatsword",
+    "wep_type": 16
+  },
+  "66500000": {
+    "name": "Great Katana",
+    "wep_type": 94
+  },
+  "66510000": {
+    "name": "Dragon-Hunter's Great Katana",
+    "wep_type": 94
+  },
+  "66520000": {
+    "name": "Rakshasa's Great Katana",
+    "wep_type": 94
+  },
+  "67500000": {
+    "name": "Milady",
+    "wep_type": 93
+  },
+  "67510000": {
+    "name": "Leda's Sword",
+    "wep_type": 93
+  },
+  "67520000": {
+    "name": "Rellana's Twin Blades",
+    "wep_type": 93
+  },
+  "68500000": {
+    "name": "Beast Claw",
+    "wep_type": 95
+  },
+  "68510000": {
+    "name": "Red Bear's Claw",
+    "wep_type": 95
+  },
+  "7000000": {
+    "name": "Falchion",
+    "wep_type": 9
+  },
+  "7010000": {
+    "name": "Beastman's Curved Sword",
+    "wep_type": 9
+  },
+  "7020000": {
+    "name": "Shotel",
+    "wep_type": 9
+  },
+  "7030000": {
+    "name": "Shamshir",
+    "wep_type": 9
+  },
+  "7040000": {
+    "name": "Bandit's Curved Sword",
+    "wep_type": 9
+  },
+  "7050000": {
+    "name": "Magma Blade",
+    "wep_type": 9
+  },
+  "7060000": {
+    "name": "Flowing Curved Sword",
+    "wep_type": 9
+  },
+  "7070000": {
+    "name": "Wing of Astel",
+    "wep_type": 9
+  },
+  "7080000": {
+    "name": "Scavenger's Curved Sword",
+    "wep_type": 9
+  },
+  "7100000": {
+    "name": "Eclipse Shotel",
+    "wep_type": 9
+  },
+  "7110000": {
+    "name": "Serpent-God's Curved Sword",
+    "wep_type": 9
+  },
+  "7120000": {
+    "name": "Mantis Blade",
+    "wep_type": 9
+  },
+  "7140000": {
+    "name": "Scimitar",
+    "wep_type": 9
+  },
+  "7150000": {
+    "name": "Grossmesser",
+    "wep_type": 9
+  },
+  "7500000": {
+    "name": "Spirit Sword",
+    "wep_type": 9
+  },
+  "7510000": {
+    "name": "Falx",
+    "wep_type": 9
+  },
+  "7520000": {
+    "name": "Dancing Blade of Ranah",
+    "wep_type": 9
+  },
+  "7530000": {
+    "name": "Horned Warrior's Sword",
+    "wep_type": 9
+  },
+  "8010000": {
+    "name": "Onyx Lord's Greatsword",
+    "wep_type": 11
+  },
+  "8020000": {
+    "name": "Dismounter",
+    "wep_type": 11
+  },
+  "8030000": {
+    "name": "Bloodhound's Fang",
+    "wep_type": 11
+  },
+  "8040000": {
+    "name": "Magma Wyrm's Scalesword",
+    "wep_type": 11
+  },
+  "8050000": {
+    "name": "Zamor Curved Sword",
+    "wep_type": 11
+  },
+  "8060000": {
+    "name": "Omen Cleaver",
+    "wep_type": 11
+  },
+  "8070000": {
+    "name": "Monk's Flameblade",
+    "wep_type": 11
+  },
+  "8080000": {
+    "name": "Beastman's Cleaver",
+    "wep_type": 11
+  },
+  "8100000": {
+    "name": "Morgott's Cursed Sword",
+    "wep_type": 11
+  },
+  "8500000": {
+    "name": "Putrescence Cleaver",
+    "wep_type": 19
+  },
+  "8510000": {
+    "name": "Freyja's Greatsword",
+    "wep_type": 11
+  },
+  "8520000": {
+    "name": "Horned Warrior's Greatsword",
+    "wep_type": 11
+  },
+  "9000000": {
+    "name": "Uchigatana",
+    "wep_type": 13
+  },
+  "9010000": {
+    "name": "Nagakiba",
+    "wep_type": 13
+  },
+  "9020000": {
+    "name": "Hand of Malenia",
+    "wep_type": 13
+  },
+  "9030000": {
+    "name": "Meteoric Ore Blade",
+    "wep_type": 13
+  },
+  "9040000": {
+    "name": "Rivers of Blood",
+    "wep_type": 13
+  },
+  "9060000": {
+    "name": "Moonveil",
+    "wep_type": 13
+  },
+  "9070000": {
+    "name": "Dragonscale Blade",
+    "wep_type": 13
+  },
+  "9080000": {
+    "name": "Serpentbone Blade",
+    "wep_type": 13
+  },
+  "9500000": {
+    "name": "Sword of Night",
+    "wep_type": 13
+  }
+}

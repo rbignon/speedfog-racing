@@ -3,20 +3,20 @@ equipped weapons.
 
 The mod sends raw runtime weapon IDs (param row ID + upgrade level) in each
 status_update. The server strips the upgrade level, looks the base ID up in
-``weapons.csv``, and drops weapons whose ``wep_type`` is in ``EXCLUDED_WEP_TYPES``
-(staves, seals, shields, arrows, bolts, torches).
+``weapons.json``, and drops weapons whose ``wep_type`` is in
+``EXCLUDED_WEP_TYPES`` (staves, seals, shields, torches).
 
-Source for both the CSV and the WepType numeric values: TarnishedTool.
+Source for the catalogue and WepType numeric values: TarnishedTool.
 """
 
-import csv
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_WEAPONS_FILE = Path(__file__).parent.parent.parent / "data" / "weapons.csv"
+_WEAPONS_FILE = Path(__file__).parent.parent.parent / "data" / "weapons.json"
 
 EXCLUDED_WEP_TYPES: frozenset[int] = frozenset(
     {
@@ -29,9 +29,6 @@ EXCLUDED_WEP_TYPES: frozenset[int] = frozenset(
         90,  # ThrustingShield
     }
 )
-# Ammo wep_types (81 Arrow, 83 Greatarrow, 85 Bolt, 86 BallistaBolt) are not in
-# weapons.csv: arrows and bolts live in distinct ChrAsm slots (PrimaryArrow/Bolt)
-# which we do not read, so they can never reach this filter.
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,20 +38,10 @@ class WeaponInfo:
 
 
 def _load_weapons() -> dict[int, WeaponInfo]:
-    weapons: dict[int, WeaponInfo] = {}
-    with _WEAPONS_FILE.open(encoding="utf-8", newline="") as f:
-        reader = csv.reader(f)
-        for row in reader:
-            if not row or row[0].startswith("#"):
-                continue
-            if len(row) < 3:
-                continue
-            try:
-                weapon_id = int(row[0])
-                wep_type = int(row[2])
-            except ValueError:
-                continue
-            weapons[weapon_id] = WeaponInfo(name=row[1], wep_type=wep_type)
+    raw = json.loads(_WEAPONS_FILE.read_text(encoding="utf-8"))
+    weapons = {
+        int(k): WeaponInfo(name=v["name"], wep_type=int(v["wep_type"])) for k, v in raw.items()
+    }
     logger.info("Loaded %d weapons from %s", len(weapons), _WEAPONS_FILE)
     return weapons
 
