@@ -4,15 +4,20 @@ export interface TopCombo extends WeaponCombo {
   percent: number;
 }
 
+function normalizeId(id: number): number {
+  return id - (id % 1000);
+}
+
 function sumCombos(combos: WeaponCombo[]): WeaponCombo[] {
   const byKey = new Map<string, WeaponCombo>();
   for (const entry of combos) {
-    const key = entry.ids.join("_");
+    const normalized = entry.ids.map(normalizeId);
+    const key = normalized.join("_");
     const existing = byKey.get(key);
     if (existing) {
       existing.ticks += entry.ticks;
     } else {
-      byKey.set(key, { ids: [...entry.ids], ticks: entry.ticks });
+      byKey.set(key, { ids: normalized, ticks: entry.ticks });
     }
   }
   return [...byKey.values()].sort((a, b) => b.ticks - a.ticks);

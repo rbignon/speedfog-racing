@@ -664,9 +664,9 @@ async def get_weapon_stats(
                 ticks = combo.get("ticks", 0)
                 if not isinstance(ids, list) or not isinstance(ticks, int) or ticks <= 0:
                     continue
-                key = tuple(ids)
-                totals[key] = totals.get(key, 0) + ticks
-                races.setdefault(key, set()).add(p.race_id)
+                base_ids = tuple(i - (i % 1000) for i in ids)
+                totals[base_ids] = totals.get(base_ids, 0) + ticks
+                races.setdefault(base_ids, set()).add(p.race_id)
 
     sorted_keys = sorted(totals, key=lambda k: totals[k], reverse=True)[:10]
     combos_out = [

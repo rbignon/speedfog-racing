@@ -95,6 +95,10 @@ Each entry in the `weapons` list is a combo counter with `ids` (the canonical we
 
 Entries that pre-date the feature, or zones the player stayed in without ever wielding a tracked weapon, simply have no `weapons` key. Readers should treat the key's absence as "unknown".
 
+### Aggregation by base weapon id
+
+Aggregation across zones and across participants merges combos by their base row id: each id is stripped via `% 1000` (affinity and upgrade-level digits) when computing the aggregation key. Storage stays raw, so a future feature that wants to expose affinity or upgrade can read it from `zone_history.weapons` directly.
+
 ### Canonicalisation
 
 The `ids` key normalizes the observed left and right hands into a canonical form (Option B from the design spec):

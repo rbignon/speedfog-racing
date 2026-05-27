@@ -22,8 +22,8 @@ describe("aggregateAllCombos", () => {
       ]),
     ];
     expect(aggregateAllCombos(history)).toEqual([
-      { ids: [2000025], ticks: 8 },
-      { ids: [3070000, 2000025], ticks: 1 },
+      { ids: [2000000], ticks: 8 },
+      { ids: [3070000, 2000000], ticks: 1 },
     ]);
   });
 
@@ -41,7 +41,17 @@ describe("aggregateAllCombos", () => {
       ENTRY("a", undefined),
       ENTRY("b", [{ ids: [2000025], ticks: 2 }]),
     ];
-    expect(aggregateAllCombos(history)).toEqual([{ ids: [2000025], ticks: 2 }]);
+    expect(aggregateAllCombos(history)).toEqual([{ ids: [2000000], ticks: 2 }]);
+  });
+
+  it("merges affinity-only variants of the same base weapon", () => {
+    const history: ZoneHistoryEntry[] = [
+      ENTRY("a", [{ ids: [23150025], ticks: 51 }]), // Standard Rotten Greataxe +25
+      ENTRY("b", [{ ids: [23150925], ticks: 200 }]), // Cold Rotten Greataxe +25
+    ];
+    expect(aggregateAllCombos(history)).toEqual([
+      { ids: [23150000], ticks: 251 },
+    ]);
   });
 });
 
@@ -53,7 +63,7 @@ describe("aggregateZoneCombos", () => {
       ENTRY("a", [{ ids: [2000025], ticks: 2 }]),
     ];
     expect(aggregateZoneCombos(history, "a")).toEqual([
-      { ids: [2000025], ticks: 5 },
+      { ids: [2000000], ticks: 5 },
     ]);
   });
 });

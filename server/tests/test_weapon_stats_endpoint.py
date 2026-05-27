@@ -148,9 +148,9 @@ async def test_weapon_stats_aggregates_ticks_across_participants(test_client, as
     assert response.status_code == 200
     combos = response.json()["combos"]
     by_ids = {tuple(c["ids"]): c for c in combos}
-    assert (2000025,) in by_ids
-    assert by_ids[(2000025,)]["total_ticks"] == 7
-    assert by_ids[(2000025,)]["race_count"] == 1
+    assert (2000000,) in by_ids
+    assert by_ids[(2000000,)]["total_ticks"] == 7
+    assert by_ids[(2000000,)]["race_count"] == 1
 
 
 @pytest.mark.asyncio
@@ -180,8 +180,8 @@ async def test_weapon_stats_distinguishes_swapped_dual_combos(test_client, async
 
     assert response.status_code == 200
     pairs = {tuple(c["ids"]) for c in response.json()["combos"]}
-    assert (3070000, 2000025) in pairs
-    assert (2000025, 3070000) in pairs
+    assert (3070000, 2000000) in pairs
+    assert (2000000, 3070000) in pairs
 
 
 @pytest.mark.asyncio
@@ -210,7 +210,7 @@ async def test_weapon_stats_pool_filter(test_client, async_session):
 
     assert response.status_code == 200
     pairs = {tuple(c["ids"]) for c in response.json()["combos"]}
-    assert (2000025,) in pairs
+    assert (2000000,) in pairs
     assert (1000000,) not in pairs
 
 
@@ -241,5 +241,37 @@ async def test_weapon_stats_days_filter(test_client, async_session):
 
     assert response.status_code == 200
     pairs = {tuple(c["ids"]) for c in response.json()["combos"]}
-    assert (2000025,) in pairs
+    assert (2000000,) in pairs
     assert (5000000,) not in pairs
+
+
+@pytest.mark.asyncio
+async def test_weapon_stats_merges_affinity_variants_of_same_base(test_client, async_session):
+    """Standard and Cold Rotten Greataxe (same base 23150000) aggregate into one combo."""
+    now = datetime.now(UTC)
+    await _seed_finished_race(
+        async_session,
+        pool_name="standard",
+        started_at=now,
+        histories=[
+            [
+                {
+                    "node_id": "z1",
+                    "igt_ms": 0,
+                    "weapons": [
+                        {"ids": [23150025], "ticks": 51},
+                        {"ids": [23150925], "ticks": 200},
+                    ],
+                }
+            ],
+        ],
+    )
+
+    async with test_client as client:
+        response = await client.get("/api/stats/weapons")
+
+    assert response.status_code == 200
+    combos = response.json()["combos"]
+    by_ids = {tuple(c["ids"]): c for c in combos}
+    assert (23150000,) in by_ids
+    assert by_ids[(23150000,)]["total_ticks"] == 251
