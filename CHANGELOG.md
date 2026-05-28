@@ -2,6 +2,24 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.11.0] - 2026-05-28
+
+### Seeds
+
+- Removed the vanilla Stake of Marika at Mohg and Astel, which could respawn the player outside the boss arena and softlock the run
+- Hardcore mode: Lamenter's Gaol keys are now part of the item pool, Gargoyles nerfed
+
+### Races
+
+- Quit-outs are now allowed by the rules
+
+### Stats
+
+- New weapons tracking: the mod reports your equipped weapons (one or two hands) every second, attributed to the zone you are in
+- Race leaderboard rows show the dominant weapon combos used by each participant, with a popover detailing the top combos and their share of time played
+- Metro map node popups show the dominant weapon combo used in that zone across the field
+- New "Weapons" tab on the stats page
+
 ## [1.10.2] - 2026-05-22
 
 ### Seeds
