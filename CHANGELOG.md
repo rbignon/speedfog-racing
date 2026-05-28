@@ -2,6 +2,17 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.11.1] - 2026-05-28
+
+### Seeds
+
+- Fia's Champions downgraded to a minor boss
+- Parallel branches in the same graph layer now have closer weights, so sibling paths have more comparable durations
+
+### Mod
+
+- Support for Elden Ring 1.16.2
+
 ## [1.11.0] - 2026-05-28
 
 ### Seeds
