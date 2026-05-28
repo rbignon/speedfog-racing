@@ -107,9 +107,9 @@ fn start_mod(hmodule: HINSTANCE) {
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "system" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut c_void) -> bool {
     if reason == DLL_PROCESS_ATTACH {
-        /*if libeldenring::version::check_version().is_err() {
+        if libeldenring::version::check_version().is_err() {
             return false;
-        }*/
+        }
         std::thread::spawn(move || {
             start_mod(hmodule);
         });

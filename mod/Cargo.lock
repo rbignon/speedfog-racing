@@ -226,7 +226,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -582,7 +582,7 @@ checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
 [[package]]
 name = "libeldenring"
 version = "0.1.0"
-source = "git+https://github.com/veeenu/eldenring-practice-tool?tag=1.9.4#fbbf42504fe56efcb9913ffc4df4d73446f4864d"
+source = "git+https://github.com/rbignon/eldenring-practice-tool?rev=0f31a4f4ab4b2513f7035d7a336cb9249dc3fcd2#0f31a4f4ab4b2513f7035d7a336cb9249dc3fcd2"
 dependencies = [
  "log",
  "macro-param",
@@ -657,7 +657,7 @@ dependencies = [
 [[package]]
 name = "macro-param"
 version = "0.1.0"
-source = "git+https://github.com/veeenu/eldenring-practice-tool?tag=1.9.4#fbbf42504fe56efcb9913ffc4df4d73446f4864d"
+source = "git+https://github.com/rbignon/eldenring-practice-tool?rev=0f31a4f4ab4b2513f7035d7a336cb9249dc3fcd2#0f31a4f4ab4b2513f7035d7a336cb9249dc3fcd2"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -1021,7 +1021,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1243,7 +1243,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
