@@ -105,9 +105,23 @@
             <td class="num">{formatIgt(combo.total_ticks * 1000)}</td>
             <td>
               {#if combo.top_player_username}
-                <a class="top-player" href="/user/{combo.top_player_username}">
-                  {combo.top_player_display_name ?? combo.top_player_username}
-                </a>
+                <div class="top-player-info">
+                  {#if combo.top_player_avatar_url}
+                    <img
+                      src={combo.top_player_avatar_url}
+                      alt=""
+                      class="top-player-avatar"
+                    />
+                  {:else}
+                    <div class="top-player-avatar-placeholder"></div>
+                  {/if}
+                  <a
+                    href="/user/{combo.top_player_username}"
+                    class="top-player-name"
+                  >
+                    {combo.top_player_display_name ?? combo.top_player_username}
+                  </a>
+                </div>
               {/if}
             </td>
           </tr>
@@ -202,13 +216,42 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .top-player {
-    color: var(--color-purple);
-    text-decoration: none;
+  .top-player-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    overflow: hidden;
   }
 
-  .top-player:hover {
-    text-decoration: underline;
+  .top-player-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .top-player-avatar-placeholder {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--color-surface-elevated);
+    flex-shrink: 0;
+  }
+
+  .top-player-name {
+    color: var(--color-text);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: var(--font-size-sm);
+    transition: color var(--transition);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .top-player-name:hover {
+    color: var(--color-purple);
   }
 
   .empty-row {

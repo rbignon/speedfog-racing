@@ -826,6 +826,7 @@ class WeaponComboStat(BaseModel):
     player_count: int
     top_player_username: str | None = None
     top_player_display_name: str | None = None
+    top_player_avatar_url: str | None = None
 
 
 class WeaponStatsResponse(BaseModel):

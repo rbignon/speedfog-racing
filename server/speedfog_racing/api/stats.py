@@ -706,6 +706,7 @@ async def get_weapon_stats(
                 player_count=len(players[k]),
                 top_player_username=top_user.twitch_username if top_user else None,
                 top_player_display_name=top_user.twitch_display_name if top_user else None,
+                top_player_avatar_url=top_user.twitch_avatar_url if top_user else None,
             )
         )
     return WeaponStatsResponse(combos=combos_out)

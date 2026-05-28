@@ -1638,6 +1638,7 @@ export interface WeaponComboStat {
   player_count: number;
   top_player_username: string | null;
   top_player_display_name: string | null;
+  top_player_avatar_url: string | null;
 }
 
 export interface WeaponStatsResponse {

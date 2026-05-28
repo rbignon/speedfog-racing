@@ -330,6 +330,9 @@ async def test_weapon_stats_top_player_is_user_with_most_ticks_on_combo(test_cli
     # Player counts unchanged.
     assert x["player_count"] == 1
     assert y["player_count"] == 2
+    # Avatar URL key must be present in the response (seed helper sets no avatar, so None).
+    assert "top_player_avatar_url" in x
+    assert "top_player_avatar_url" in y
 
 
 @pytest.mark.asyncio
