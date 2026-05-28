@@ -674,23 +674,16 @@ async def get_weapon_stats(
                 per_user = user_combo_ticks.setdefault(p.user_id, {})
                 per_user[base_ids] = per_user.get(base_ids, 0) + ticks
 
-    # For each user, find their dominant combo (most ticks across their participations).
-    user_dominant: dict[Any, tuple[int, ...]] = {}
-    for user_id, per_user in user_combo_ticks.items():
-        if not per_user:
-            continue
-        user_dominant[user_id] = max(per_user, key=lambda k: per_user[k])
-
-    # For each combo, find the top user whose dominant combo is this one
-    # (pick the user with the most ticks on this combo, breaks ties by user_id).
+    # For each combo, find the user with the most ticks on this combo
+    # (regardless of whether it is their personal #1). Ties are broken
+    # arbitrarily by insertion order.
     top_user_per_combo: dict[tuple[int, ...], Any] = {}
-    for user_id, dominant in user_dominant.items():
-        if dominant not in top_user_per_combo:
-            top_user_per_combo[dominant] = user_id
-        else:
-            current = top_user_per_combo[dominant]
-            if user_combo_ticks[user_id][dominant] > user_combo_ticks[current][dominant]:
-                top_user_per_combo[dominant] = user_id
+    top_user_ticks_per_combo: dict[tuple[int, ...], int] = {}
+    for user_id, per_user in user_combo_ticks.items():
+        for combo_key, ticks in per_user.items():
+            if ticks > top_user_ticks_per_combo.get(combo_key, 0):
+                top_user_per_combo[combo_key] = user_id
+                top_user_ticks_per_combo[combo_key] = ticks
 
     sorted_keys = sorted(totals, key=lambda k: totals[k], reverse=True)[:20]
 

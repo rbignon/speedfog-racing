@@ -279,13 +279,12 @@ async def test_weapon_stats_merges_affinity_variants_of_same_base(test_client, a
 
 
 @pytest.mark.asyncio
-async def test_weapon_stats_attributes_top_player_per_combo(test_client, async_session):
-    """The user whose dominant combo is this weapon is exposed as top_player."""
+async def test_weapon_stats_top_player_is_user_with_most_ticks_on_combo(test_client, async_session):
+    """The top player for a combo is the user with the most ticks on it,
+    regardless of whether it is their personal dominant."""
     now = datetime.now(UTC)
-    # Player 0 uses weapon X heavily (dominant), weapon Y a bit.
-    # Player 1 uses weapon Y heavily (dominant). So:
-    #   X: top_player = player 0
-    #   Y: top_player = player 1
+    # Player 0: X=100 ticks, Y=20 ticks. Player 1: Y=80 ticks.
+    # X top = Player 0 (100 > nobody), Y top = Player 1 (80 > 20).
     await _seed_finished_race(
         async_session,
         pool_name="standard",
@@ -322,11 +321,58 @@ async def test_weapon_stats_attributes_top_player_per_combo(test_client, async_s
 
     x = by_ids[(2000000,)]
     y = by_ids[(3070000,)]
-    # Player 0's dominant is 2000000 (100 ticks > 20 ticks).
+    # Player 0 has the most ticks on X (100).
     assert x["top_player_username"] is not None
-    # Player 1's dominant is 3070000.
+    # Player 1 has the most ticks on Y (80 > 20).
     assert y["top_player_username"] is not None
-    # The two distinct users.
+    # The two top players are different users.
     assert x["top_player_username"] != y["top_player_username"]
-    assert x["player_count"] == 1  # only player 0 used 2000000
-    assert y["player_count"] == 2  # both players used 3070000
+    # Player counts unchanged.
+    assert x["player_count"] == 1
+    assert y["player_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_weapon_stats_same_user_can_be_top_of_multiple_combos(test_client, async_session):
+    """A user can be the top player on more than one combo when they out-tick
+    everyone else on each."""
+    now = datetime.now(UTC)
+    # Player 0: X=100, Y=50. Player 1: Y=10. Player 0 is top on both.
+    await _seed_finished_race(
+        async_session,
+        pool_name="standard",
+        started_at=now,
+        histories=[
+            [
+                {
+                    "node_id": "z1",
+                    "igt_ms": 0,
+                    "weapons": [
+                        {"ids": [2000025], "ticks": 100},
+                        {"ids": [3070000], "ticks": 50},
+                    ],
+                }
+            ],
+            [
+                {
+                    "node_id": "z1",
+                    "igt_ms": 0,
+                    "weapons": [
+                        {"ids": [3070000], "ticks": 10},
+                    ],
+                }
+            ],
+        ],
+    )
+
+    async with test_client as client:
+        response = await client.get("/api/stats/weapons")
+
+    assert response.status_code == 200
+    by_ids = {tuple(c["ids"]): c for c in response.json()["combos"]}
+    x = by_ids[(2000000,)]
+    y = by_ids[(3070000,)]
+    # Same user tops both.
+    assert x["top_player_username"] is not None
+    assert y["top_player_username"] is not None
+    assert x["top_player_username"] == y["top_player_username"]
