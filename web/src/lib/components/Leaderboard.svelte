@@ -11,7 +11,12 @@
     totalLayers?: number | null;
     mode?: "running" | "finished";
     zoneNames?: Map<string, string> | null;
-    weaponsVisible?: boolean;
+    // Gates display of the competitor info that would spoil an in-progress
+    // run: current zone, death count, weapon loadout. The owning page
+    // computes this from race state (status, my participant, late-join
+    // window, private-DAG flag, organizer override). The IGT, status, and
+    // identity remain visible regardless.
+    showRunDetails?: boolean;
     selectedIds?: Set<string>;
     onToggle?: (id: string, ctrlKey: boolean) => void;
     onClearSelection?: () => void;
@@ -22,7 +27,7 @@
     totalLayers = null,
     mode = "running",
     zoneNames = null,
-    weaponsVisible = false,
+    showRunDetails = false,
     selectedIds,
     onToggle,
     onClearSelection,
@@ -119,7 +124,10 @@
         {@const isFinished = participant.status === "finished"}
         {@const isPreRace =
           participant.status === "ready" || participant.status === "registered"}
-        {@const zone = isPlaying ? zoneName(participant.current_zone) : null}
+        {@const zone =
+          isPlaying && showRunDetails
+            ? zoneName(participant.current_zone)
+            : null}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <li
           class="participant"
@@ -201,10 +209,10 @@
                   >{formatIgt(participant.igt_ms)}</span
                 >
                 <span class="stats-right">
-                  {#if participant.death_count > 0}
+                  {#if showRunDetails && participant.death_count > 0}
                     <span class="death-count">{participant.death_count}</span>
                   {/if}
-                  {#if weaponsVisible && participant.zone_history}
+                  {#if showRunDetails && participant.zone_history}
                     {@const combos = aggregateAllCombos(
                       participant.zone_history,
                     )}

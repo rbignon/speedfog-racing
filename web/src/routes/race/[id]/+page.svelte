@@ -563,6 +563,20 @@
       (livePrivateDag || registrationOpenWindow),
   );
 
+  // Spoiler gate for in-race competitor info (current zone, deaths, weapon
+  // loadout). Hidden when I'm still racing (so the leaderboard does not leak
+  // others' progress to me) or when the late-join / private-DAG rules apply
+  // to a spectator. The forceFullDag toggle and the finished state both
+  // re-open visibility.
+  let showRunDetails = $derived(
+    !(
+      raceStatus === "running" &&
+      myWsParticipantId &&
+      !myParticipantFinished &&
+      !forceFullDag
+    ) && !dagHiddenByRunningRules,
+  );
+
   let canRenderDag = $derived(
     !!liveSeed?.graph_json &&
       (raceStatus === "running" ||
@@ -788,20 +802,8 @@
             participants={raceStore.leaderboard}
             {totalLayers}
             mode={raceStatus === "finished" ? "finished" : "running"}
-            zoneNames={(raceStatus === "running" &&
-              myWsParticipantId &&
-              !myParticipantFinished &&
-              !forceFullDag) ||
-            dagHiddenByRunningRules
-              ? null
-              : zoneNames}
-            weaponsVisible={!(
-              (raceStatus === "running" &&
-                myWsParticipantId &&
-                !myParticipantFinished &&
-                !forceFullDag) ||
-              dagHiddenByRunningRules
-            )}
+            {zoneNames}
+            {showRunDetails}
             selectedIds={selectedParticipantIds}
             onToggle={handleLeaderboardToggle}
             onClearSelection={clearSelection}

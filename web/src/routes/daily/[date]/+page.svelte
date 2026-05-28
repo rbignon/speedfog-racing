@@ -220,17 +220,15 @@
       new Date(initialRace.registration_closes_at).getTime() > now,
   );
   // Mirrors the race page rule (`dagHiddenByRunningRules` + "I'm still racing"):
-  // hide opponents' zones while the late-join window is open so a potential
-  // late joiner can't gain positional intel by spectating, and hide them from
-  // a participant who hasn't crossed the finish line yet to avoid spoilers.
-  // For a standard daily the late-join window spans the full 24h, so
-  // non-participants only ever see zones after the daily ends.
-  let leaderboardZoneNames = $derived.by(() => {
-    if (canShowFullDag) return zoneNames;
-    if (myParticipant) return null;
-    if (registrationOpenWindow) return null;
-    return zoneNames;
-  });
+  // hide opponents' run details (zone, deaths, weapon loadout) while the
+  // late-join window is open so a potential late joiner can't gain
+  // positional intel by spectating, and hide them from a participant who
+  // hasn't crossed the finish line yet to avoid spoilers. For a standard
+  // daily the late-join window spans the full 24h, so non-participants only
+  // ever see these details after the daily ends.
+  let showRunDetails = $derived(
+    canShowFullDag || (!myParticipant && !registrationOpenWindow),
+  );
   let countdownLabel = $derived.by(() => {
     if (!raceEndsAt) return "Closes today";
     const totalSeconds = Math.max(
@@ -446,8 +444,8 @@
           participants={raceStore.leaderboard}
           {totalLayers}
           mode={dailyEnded ? "finished" : "running"}
-          zoneNames={leaderboardZoneNames}
-          weaponsVisible={leaderboardZoneNames !== null}
+          {zoneNames}
+          {showRunDetails}
           selectedIds={selectedParticipantIds}
           onToggle={handleLeaderboardToggle}
           onClearSelection={clearSelection}
