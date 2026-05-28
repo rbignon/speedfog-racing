@@ -6,6 +6,7 @@
     getWeaponName,
     loadCatalogue,
   } from "$lib/stores/weaponsCatalogue.svelte";
+  import { portal } from "$lib/utils/portal";
 
   interface Props {
     combos: WeaponCombo[];
@@ -28,8 +29,12 @@
   let popupEl: HTMLDivElement | undefined = $state();
   let popupTop = $state(0);
   let popupLeft = $state(0);
+  let triggerHovered = false;
+  let popupHovered = false;
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
 
   const POPUP_WIDTH = 200;
+  const HOVER_CLOSE_DELAY_MS = 80;
 
   const rows = $derived(topCombos(combos, maxRows, minPercent));
 
@@ -45,12 +50,46 @@
     popupLeft = left;
   }
 
+  function cancelClose() {
+    if (closeTimer !== undefined) {
+      clearTimeout(closeTimer);
+      closeTimer = undefined;
+    }
+  }
   function openPopup() {
+    cancelClose();
     recomputePosition();
     open = true;
   }
   function closePopup() {
+    cancelClose();
     open = false;
+  }
+  // Portaled popup is no longer a DOM descendant of the anchor, so we need a
+  // short grace period when leaving either side to let the cursor cross the
+  // gap without the popup closing under it.
+  function queueClose() {
+    cancelClose();
+    closeTimer = setTimeout(() => {
+      closeTimer = undefined;
+      if (!triggerHovered && !popupHovered) open = false;
+    }, HOVER_CLOSE_DELAY_MS);
+  }
+  function onTriggerEnter() {
+    triggerHovered = true;
+    openPopup();
+  }
+  function onTriggerLeave() {
+    triggerHovered = false;
+    queueClose();
+  }
+  function onPopupEnter() {
+    popupHovered = true;
+    cancelClose();
+  }
+  function onPopupLeave() {
+    popupHovered = false;
+    queueClose();
   }
   function handleClickOutside(e: MouseEvent) {
     if (!open) return;
@@ -84,6 +123,7 @@
       capture: true,
     });
     window.removeEventListener("resize", handleScrollOrResize);
+    cancelClose();
   });
 </script>
 
@@ -91,8 +131,8 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <span
     class="popover-anchor"
-    onmouseenter={openPopup}
-    onmouseleave={closePopup}
+    onmouseenter={onTriggerEnter}
+    onmouseleave={onTriggerLeave}
   >
     <span
       bind:this={triggerEl}
@@ -102,18 +142,14 @@
       aria-label={title ?? "Weapons"}
       onclick={(e) => {
         e.stopPropagation();
-        if (!open) {
-          recomputePosition();
-        }
-        open = !open;
+        if (open) closePopup();
+        else openPopup();
       }}
       onkeydown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          if (!open) {
-            recomputePosition();
-          }
-          open = !open;
+          if (open) closePopup();
+          else openPopup();
         }
       }}
     >
@@ -123,10 +159,14 @@
     {#if open && rows.length > 0}
       <div
         bind:this={popupEl}
+        use:portal
         class="popup"
         role="dialog"
+        tabindex="-1"
         aria-label={title ?? "Weapons"}
         style="top: {popupTop}px; left: {popupLeft}px;"
+        onmouseenter={onPopupEnter}
+        onmouseleave={onPopupLeave}
       >
         {#if title}
           <div class="popup-title">{title}</div>
