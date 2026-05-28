@@ -54,21 +54,6 @@
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }
 
-  function getStatusClass(status: string): string {
-    switch (status) {
-      case "finished":
-        return "finished";
-      case "playing":
-        return "playing";
-      case "ready":
-        return "ready";
-      case "abandoned":
-        return "abandoned";
-      default:
-        return "";
-    }
-  }
-
   function templateFor(participant: WsParticipant) {
     const id = participant.equipped_name_template_id;
     if (!id || id === "default") return null;
@@ -135,12 +120,10 @@
         {@const isPreRace =
           participant.status === "ready" || participant.status === "registered"}
         {@const zone = isPlaying ? zoneName(participant.current_zone) : null}
-        {@const showConnDot = mode === "running" && (isPlaying || isPreRace)}
-        {@const showLayerFraction = isPlaying || isAbandoned}
-        {@const showStats = isPlaying || isAbandoned || isFinished}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <li
-          class="participant {getStatusClass(participant.status)}"
+          class="participant"
+          class:abandoned={isAbandoned}
           class:selected={hasSelection && selectedIds!.has(participant.id)}
           style="border-left: 3px solid {color}; {backgroundStyleFor(
             participant,
@@ -162,7 +145,7 @@
                   style={nameStyleFor(participant, color)}
                   onclick={(e) => e.stopPropagation()}
                 >
-                  {#if showConnDot}
+                  {#if mode === "running" && (isPlaying || isPreRace)}
                     <span
                       class="conn-dot"
                       class:connected={participant.mod_connected}
@@ -192,7 +175,7 @@
                   onclick={(e) => e.stopPropagation()}
                 />
               {/if}
-              {#if showLayerFraction}
+              {#if isPlaying || isAbandoned}
                 <span class="layer-fraction"
                   >{Math.min(
                     participant.current_layer + 1,
@@ -213,7 +196,7 @@
               >
             {/if}
             <span class="stats">
-              {#if showStats}
+              {#if isPlaying || isAbandoned || isFinished}
                 <span class:finished-time={isFinished}
                   >{formatIgt(participant.igt_ms)}</span
                 >
@@ -395,11 +378,6 @@
   .death-count::before {
     content: "\1F480";
     margin-left: 0.25em;
-  }
-
-  .dnf {
-    color: var(--color-text-disabled);
-    font-style: italic;
   }
 
   .zone.abandoned-label {
