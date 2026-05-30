@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,6 @@ from speedfog_racing.models import (
     Participant,
     ParticipantStatus,
     PhantomSkinUnlock,
-    Race,
     RewardNotification,
     User,
 )
@@ -434,46 +433,17 @@ class RewardsService:
     async def refresh_weekly_daily_champion(
         self, week_starting: date, reason: str | None = None
     ) -> None:
-        """Sync weekly_daily_champion to the user(s) who won the most daily seeds in
-        the [week_starting, week_starting + 7d) range.
-
-        A "win" is a Participant in a daily race (Race.daily_date IN that range)
-        with status FINISHED and the lowest igt_ms among finishers (one winner per day).
+        """Sync weekly_daily_champion to the user(s) with the highest total
+        points across the week's closed dailies. Selection criterion lives in
+        services.daily_points_service.compute_weekly_winners.
         """
-        week_end = week_starting + timedelta(days=7)
+        from speedfog_racing.services.daily_points_service import compute_weekly_winners
 
-        finishers = (
-            select(
-                Participant.race_id.label("race_id"),
-                func.min(Participant.igt_ms).label("min_igt"),
-            )
-            .join(Race, Race.id == Participant.race_id)
-            .where(
-                Race.daily_date >= week_starting,
-                Race.daily_date < week_end,
-                Participant.status == ParticipantStatus.FINISHED,
-            )
-            .group_by(Participant.race_id)
-            .subquery()
-        )
-
-        winners = (
-            select(Participant.user_id, func.count().label("wins"))
-            .join(
-                finishers,
-                (Participant.race_id == finishers.c.race_id)
-                & (Participant.igt_ms == finishers.c.min_igt),
-            )
-            .where(Participant.status == ParticipantStatus.FINISHED)
-            .group_by(Participant.user_id)
-        )
-        rows = (await self.session.execute(winners)).all()
-        if not rows:
-            await self.sync_transient_holders("weekly_daily_champion", set(), reason=reason)
+        winners = await compute_weekly_winners(self.session, week_starting)
+        if winners is None:
+            # Current or future week; not yet decided. Defensive no-op.
             return
-
-        max_wins = max(r.wins for r in rows)
-        holders = {r.user_id for r in rows if r.wins == max_wins}
+        holders = {w.user.id for w in winners}
         await self.sync_transient_holders("weekly_daily_champion", holders, reason=reason)
         for uid in holders:
             await self.grant_phantom_skin(uid, "cyan-aura", reason="weekly daily champion")

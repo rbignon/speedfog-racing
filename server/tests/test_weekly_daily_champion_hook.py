@@ -1,5 +1,5 @@
 """On Monday daily creation, the weekly_daily_champion badge transitions to
-last week's top winner(s)."""
+last week's top winner(s) by total points."""
 
 from datetime import UTC, date, datetime, timedelta
 
@@ -21,6 +21,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services.daily_seed_loop import create_daily_seed_if_needed
 
 TICK_TIME = datetime(2026, 4, 27, 8, 3, tzinfo=UTC)  # Monday
@@ -38,6 +39,13 @@ async def ds_async_engine():
 @pytest.fixture
 async def ds_async_session_maker(ds_async_engine):
     return async_sessionmaker(ds_async_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture
+async def ds_session(ds_async_engine):
+    factory = async_sessionmaker(ds_async_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        yield session
 
 
 async def _seed_pool_and_system_user(session_maker, *, seeds: int = 5) -> None:
@@ -81,7 +89,11 @@ async def _create_past_daily_with_winner(
     winner: User,
     other: User,
 ) -> None:
-    """Create a finished daily race on `daily_day` where `winner` finishes first."""
+    """Create a finished daily race on `daily_day` where `winner` finishes first.
+
+    Both participants have zone_history with 2 entries so they qualify for
+    the points formula.
+    """
     async with session_maker() as db:
         # Need a separate Seed row with CONSUMED status for the past race.
         seed = Seed(
@@ -122,6 +134,7 @@ async def _create_past_daily_with_winner(
                     user_id=winner_attached.id,
                     status=ParticipantStatus.FINISHED,
                     igt_ms=300_000,
+                    zone_history=[{"node_id": "a"}, {"node_id": "b"}],
                     finished_at=datetime.combine(daily_day, datetime.min.time(), tzinfo=UTC)
                     + timedelta(hours=1),
                 ),
@@ -130,12 +143,34 @@ async def _create_past_daily_with_winner(
                     user_id=other_attached.id,
                     status=ParticipantStatus.FINISHED,
                     igt_ms=600_000,
+                    zone_history=[{"node_id": "a"}, {"node_id": "b"}],
                     finished_at=datetime.combine(daily_day, datetime.min.time(), tzinfo=UTC)
                     + timedelta(hours=2),
                 ),
             ]
         )
         await db.commit()
+
+
+async def _holders_of(session: AsyncSession, badge_id: str) -> set:
+    rows = (
+        (
+            await session.execute(
+                select(BadgeGrant.user_id).where(
+                    BadgeGrant.badge_id == badge_id,
+                    BadgeGrant.revoked_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return set(rows)
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: create_daily_seed_if_needed triggers the rollup
+# ---------------------------------------------------------------------------
 
 
 async def test_monday_creation_grants_weekly_daily_champion_to_top_winner(
@@ -158,7 +193,7 @@ async def test_monday_creation_grants_weekly_daily_champion_to_top_winner(
     assert created is not None
     assert created.daily_date == date(2026, 4, 27)
 
-    # Assert the badge transitioned to user A.
+    # Assert the badge transitioned to user A (highest total points).
     async with ds_async_session_maker() as db:
         holders = (
             (
@@ -279,3 +314,160 @@ async def test_cyan_aura_persists_when_next_week_has_different_champion(
         # Both A (week 1 champion) and B (week 2 champion) keep the souvenir.
         assert user_a.id in unlocked_user_ids
         assert user_b.id in unlocked_user_ids
+
+
+# ---------------------------------------------------------------------------
+# Direct unit tests for refresh_weekly_daily_champion (points-based)
+# ---------------------------------------------------------------------------
+
+
+async def _make_user_direct(db: AsyncSession, twitch_id: str, username: str) -> User:
+    u = User(twitch_id=twitch_id, twitch_username=username, role=UserRole.USER)
+    db.add(u)
+    await db.flush()
+    return u
+
+
+async def _make_daily_direct(db: AsyncSession, *, organizer: User, daily_date: date) -> Race:
+    started = datetime.combine(daily_date, datetime.min.time(), tzinfo=UTC).replace(hour=8)
+    race = Race(
+        name=f"daily-{daily_date}",
+        organizer_id=organizer.id,
+        status=RaceStatus.FINISHED,
+        daily_date=daily_date,
+        exclude_from_elo=True,
+        is_public=True,
+        open_registration=True,
+        late_join_window_minutes=1440,
+        race_duration_minutes=1440,
+        started_at=started,
+        finished_at=started + timedelta(hours=2),
+        seeds_released_at=started,
+    )
+    db.add(race)
+    await db.flush()
+    return race
+
+
+async def _make_participant_direct(
+    db: AsyncSession,
+    *,
+    race: Race,
+    user: User,
+    igt_ms: int,
+) -> Participant:
+    p = Participant(
+        race_id=race.id,
+        user_id=user.id,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=igt_ms,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+    db.add(p)
+    await db.flush()
+    return p
+
+
+async def test_champion_is_user_with_highest_total_points(ds_session: AsyncSession) -> None:
+    """Highest total points across the week wins the badge.
+
+    Daily 1 (3 finishers, n=3):
+      alice rank 1 -> round(50 * 3/3) = 50
+      bob   rank 2 -> round(50 * 2/3) = 33
+      carol rank 3 -> round(50 * 1/3) = 17
+
+    Daily 2 (3 finishers):
+      bob   rank 1 -> 50
+      carol rank 2 -> 33
+      alice rank 3 -> 17
+
+    Daily 3 (3 finishers):
+      bob   rank 1 -> 50
+      alice rank 2 -> 33
+      carol rank 3 -> 17
+
+    Totals: alice = 50 + 17 + 33 = 100, bob = 33 + 50 + 50 = 133, carol = 17 + 33 + 17 = 67
+    Expected: bob holds weekly_daily_champion alone.
+    """
+    monday = date(2024, 1, 1)  # Far in the past so the week is closed.
+    organizer = await _make_user_direct(ds_session, "sys", "system")
+    alice = await _make_user_direct(ds_session, "alice", "alice")
+    bob = await _make_user_direct(ds_session, "bob", "bob")
+    carol = await _make_user_direct(ds_session, "carol", "carol")
+
+    d1 = await _make_daily_direct(ds_session, organizer=organizer, daily_date=monday)
+    d2 = await _make_daily_direct(
+        ds_session, organizer=organizer, daily_date=monday + timedelta(days=1)
+    )
+    d3 = await _make_daily_direct(
+        ds_session, organizer=organizer, daily_date=monday + timedelta(days=2)
+    )
+
+    # Daily 1: alice 1st, bob 2nd, carol 3rd.
+    await _make_participant_direct(ds_session, race=d1, user=alice, igt_ms=100_000)
+    await _make_participant_direct(ds_session, race=d1, user=bob, igt_ms=200_000)
+    await _make_participant_direct(ds_session, race=d1, user=carol, igt_ms=300_000)
+
+    # Daily 2: bob 1st, carol 2nd, alice 3rd.
+    await _make_participant_direct(ds_session, race=d2, user=bob, igt_ms=100_000)
+    await _make_participant_direct(ds_session, race=d2, user=carol, igt_ms=200_000)
+    await _make_participant_direct(ds_session, race=d2, user=alice, igt_ms=300_000)
+
+    # Daily 3: bob 1st, alice 2nd, carol 3rd.
+    await _make_participant_direct(ds_session, race=d3, user=bob, igt_ms=100_000)
+    await _make_participant_direct(ds_session, race=d3, user=alice, igt_ms=200_000)
+    await _make_participant_direct(ds_session, race=d3, user=carol, igt_ms=300_000)
+
+    await ds_session.flush()
+
+    await RewardsService(ds_session).refresh_weekly_daily_champion(week_starting=monday)
+    await ds_session.flush()
+
+    holders = await _holders_of(ds_session, "weekly_daily_champion")
+    assert holders == {bob.id}
+
+
+async def test_champion_handles_ties(ds_session: AsyncSession) -> None:
+    """Two users tied at max total points both hold the badge."""
+    monday = date(2024, 1, 8)
+    organizer = await _make_user_direct(ds_session, "sys2", "system2")
+    alice = await _make_user_direct(ds_session, "alice2", "alice2")
+    bob = await _make_user_direct(ds_session, "bob2", "bob2")
+
+    # Single daily with alice and bob tied (same igt_ms -> same rank -> same points).
+    d1 = await _make_daily_direct(ds_session, organizer=organizer, daily_date=monday)
+    await _make_participant_direct(ds_session, race=d1, user=alice, igt_ms=1000)
+    await _make_participant_direct(ds_session, race=d1, user=bob, igt_ms=1000)
+    await ds_session.flush()
+
+    await RewardsService(ds_session).refresh_weekly_daily_champion(week_starting=monday)
+    await ds_session.flush()
+
+    holders = await _holders_of(ds_session, "weekly_daily_champion")
+    assert alice.id in holders
+    assert bob.id in holders
+
+
+async def test_no_qualified_participations_clears_holders(ds_session: AsyncSession) -> None:
+    """Empty week: holder set is reset to empty."""
+    monday = date(2024, 1, 15)
+    organizer = await _make_user_direct(ds_session, "sys3", "system3")
+    alice = await _make_user_direct(ds_session, "alice3", "alice3")
+
+    # Daily race with a participant who has zone_history too short to qualify.
+    d1 = await _make_daily_direct(ds_session, organizer=organizer, daily_date=monday)
+    p = Participant(
+        race_id=d1.id,
+        user_id=alice.id,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=1000,
+        zone_history=[{"node_id": "a"}],  # Only 1 entry: below the 2-entry threshold.
+    )
+    ds_session.add(p)
+    await ds_session.flush()
+
+    await RewardsService(ds_session).refresh_weekly_daily_champion(week_starting=monday)
+    await ds_session.flush()
+
+    holders = await _holders_of(ds_session, "weekly_daily_champion")
+    assert holders == set()
