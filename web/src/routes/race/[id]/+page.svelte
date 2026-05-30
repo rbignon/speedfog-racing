@@ -798,6 +798,9 @@
 
       {#if raceStatus === "running" || raceStatus === "finished"}
         <div class="sidebar-section">
+          <div class="leaderboard-header">
+            <h2>{raceStatus === "finished" ? "Results" : "Leaderboard"}</h2>
+          </div>
           <Leaderboard
             participants={raceStore.leaderboard}
             {totalLayers}
@@ -1454,6 +1457,17 @@
     margin: 0 0 1rem 0;
     font-size: var(--font-size-lg);
     font-weight: 600;
+  }
+
+  .leaderboard-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .leaderboard-header h2 {
+    margin: 0;
   }
 
   .participant-list {

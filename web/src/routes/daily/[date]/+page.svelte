@@ -440,6 +440,9 @@
   <div class="daily-page">
     <aside class="sidebar">
       <div class="sidebar-section">
+        <div class="leaderboard-header">
+          <h2>Leaderboard</h2>
+        </div>
         <Leaderboard
           participants={raceStore.leaderboard}
           {totalLayers}
@@ -746,6 +749,20 @@
     flex-direction: column;
     overflow-y: auto;
     min-height: 0;
+  }
+
+  .leaderboard-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .leaderboard-header h2 {
+    color: var(--color-gold);
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    margin: 0;
   }
 
   .abandon-section {
