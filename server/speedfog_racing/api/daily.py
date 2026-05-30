@@ -40,7 +40,11 @@ from speedfog_racing.schemas import (
     RaceListResponse,
     RaceResponse,
     UserDailyStreakStats,
+    WeeklyLeaderboardEntry,
+    WeeklyLeaderboardResponse,
+    WeeklyLeaderboardUser,
 )
+from speedfog_racing.services.daily_points_service import compute_weekly_leaderboard
 from speedfog_racing.services.daily_seed_loop import daily_date_for
 from speedfog_racing.services.daily_streak_service import qualifies_for_streak
 
@@ -277,6 +281,40 @@ async def get_daily_week(
         days=days,
         has_earlier=has_earlier,
         my_streak=my_streak,
+    )
+
+
+@router.get("/week/leaderboard", response_model=WeeklyLeaderboardResponse)
+async def get_weekly_leaderboard(
+    anchor: date_type = Query(alias="date"),
+    db: AsyncSession = Depends(get_db),
+) -> WeeklyLeaderboardResponse:
+    """Return the weekly points leaderboard for the week containing ``date``."""
+    monday = anchor - timedelta(days=anchor.weekday())
+    data = await compute_weekly_leaderboard(db, monday)
+    return WeeklyLeaderboardResponse(
+        week_starting=data.week_starting,
+        week_ending=data.week_ending,
+        dailies_total=data.dailies_total,
+        entries=[
+            WeeklyLeaderboardEntry(
+                rank=e.rank,
+                user=WeeklyLeaderboardUser(
+                    id=e.user.id,
+                    twitch_username=e.user.twitch_username,
+                    twitch_display_name=e.user.twitch_display_name,
+                    twitch_avatar_url=e.user.twitch_avatar_url,
+                    equipped_badge_id=e.user.equipped_badge_id,
+                    equipped_name_template_id=e.user.equipped_name_template_id,
+                    equipped_phantom_skin_id=e.user.equipped_phantom_skin_id,
+                ),
+                total_points=e.total_points,
+                dailies_played=e.dailies_played,
+                total_deaths=e.total_deaths,
+                weapon_combos=e.weapon_combos,
+            )
+            for e in data.entries
+        ],
     )
 
 

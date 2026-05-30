@@ -540,6 +540,36 @@ class DailyWeekResponse(BaseModel):
     my_streak: UserDailyStreakStats | None = None
 
 
+class WeeklyLeaderboardUser(BaseModel):
+    """User identity carried by weekly-leaderboard rows."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    twitch_username: str
+    twitch_display_name: str | None = None
+    twitch_avatar_url: str | None = None
+    equipped_badge_id: str | None = None
+    equipped_name_template_id: str | None = None
+    equipped_phantom_skin_id: str | None = None
+
+
+class WeeklyLeaderboardEntry(BaseModel):
+    rank: int
+    user: WeeklyLeaderboardUser
+    total_points: int
+    dailies_played: int
+    total_deaths: int
+    weapon_combos: list[dict[str, object]] = []
+
+
+class WeeklyLeaderboardResponse(BaseModel):
+    week_starting: date
+    week_ending: date
+    dailies_total: int
+    entries: list[WeeklyLeaderboardEntry]
+
+
 class InviteInfoResponse(BaseModel):
     """Public information about an invite."""
 
