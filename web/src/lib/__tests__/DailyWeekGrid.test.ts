@@ -795,3 +795,82 @@ describe("cellStrip", () => {
     });
   });
 });
+
+function makeWinner(i: number, name: string) {
+  return {
+    user: {
+      id: `u-${i}`,
+      twitch_username: name.toLowerCase(),
+      twitch_display_name: name,
+      twitch_avatar_url: null,
+      equipped_badge_id: null,
+      equipped_name_template_id: null,
+      equipped_phantom_skin_id: null,
+    },
+    total_points: 200 - i,
+  };
+}
+
+describe("DailyWeekGrid: winners block", () => {
+  function fixtureWithWinners(winners: ReturnType<typeof makeWinner>[] | null) {
+    return { ...mockWeek, winners };
+  }
+
+  it("renders nothing when winners is null (current week)", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: { week: fixtureWithWinners(null), variant: "home" },
+    });
+    expect(container.querySelector(".grid-winners")).toBeNull();
+  });
+
+  it("renders nothing when winners is an empty array", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: { week: fixtureWithWinners([]), variant: "home" },
+    });
+    expect(container.querySelector(".grid-winners")).toBeNull();
+  });
+
+  it("renders the trophy and Alice for one winner", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: {
+        week: fixtureWithWinners([makeWinner(0, "Alice")]),
+        variant: "home",
+      },
+    });
+    const block = container.querySelector(".grid-winners");
+    expect(block?.textContent ?? "").toMatch(/🏆/);
+    expect(block?.textContent ?? "").toMatch(/Alice/);
+  });
+
+  it("renders Alice & Bob for two winners", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: {
+        week: fixtureWithWinners([
+          makeWinner(0, "Alice"),
+          makeWinner(1, "Bob"),
+        ]),
+        variant: "home",
+      },
+    });
+    const block = container.querySelector(".grid-winners");
+    expect(block?.textContent ?? "").toMatch(/Alice/);
+    expect(block?.textContent ?? "").toMatch(/Bob/);
+    expect(block?.textContent ?? "").toMatch(/&/);
+  });
+
+  it("renders Alice +2 for three winners", () => {
+    const { container } = render(DailyWeekGrid, {
+      props: {
+        week: fixtureWithWinners([
+          makeWinner(0, "Alice"),
+          makeWinner(1, "Bob"),
+          makeWinner(2, "Carol"),
+        ]),
+        variant: "home",
+      },
+    });
+    const block = container.querySelector(".grid-winners");
+    expect(block?.textContent ?? "").toMatch(/Alice/);
+    expect(block?.textContent ?? "").toMatch(/\+2/);
+  });
+});

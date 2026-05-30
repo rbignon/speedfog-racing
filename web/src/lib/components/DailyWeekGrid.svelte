@@ -4,6 +4,7 @@
   import { fetchDailyWeek } from "$lib/api";
   import { cellStrip } from "$lib/daily";
   import { formatIgt } from "$lib/utils/training";
+  import UserLink from "$lib/components/UserLink.svelte";
 
   interface Props {
     week: DailyWeekResponse;
@@ -163,27 +164,52 @@
         {/if}
       {/if}
     </span>
-    <div class="week-nav">
-      <button
-        type="button"
-        class="nav-btn"
-        data-week-nav="prev"
-        aria-label="Previous week"
-        onclick={() => navigate(-1)}
-        disabled={navigating || !displayedWeek.has_earlier}
-      >
-        <span aria-hidden="true">&larr;</span>
-      </button>
-      <button
-        type="button"
-        class="nav-btn"
-        data-week-nav="next"
-        aria-label="Next week"
-        onclick={() => navigate(1)}
-        disabled={navigating || !canGoNext}
-      >
-        <span aria-hidden="true">&rarr;</span>
-      </button>
+    <div class="grid-right">
+      {#if displayedWeek.winners && displayedWeek.winners.length > 0}
+        <span class="grid-winners">
+          <span class="trophy" aria-hidden="true">🏆</span>
+          {#if displayedWeek.winners.length === 1}
+            <UserLink
+              user={displayedWeek.winners[0].user as import("$lib/api").User}
+            />
+          {:else if displayedWeek.winners.length === 2}
+            <UserLink
+              user={displayedWeek.winners[0].user as import("$lib/api").User}
+            />
+            <span class="and"> &amp; </span>
+            <UserLink
+              user={displayedWeek.winners[1].user as import("$lib/api").User}
+            />
+          {:else}
+            <UserLink
+              user={displayedWeek.winners[0].user as import("$lib/api").User}
+            />
+            <span class="extra">+{displayedWeek.winners.length - 1}</span>
+          {/if}
+        </span>
+      {/if}
+      <div class="week-nav">
+        <button
+          type="button"
+          class="nav-btn"
+          data-week-nav="prev"
+          aria-label="Previous week"
+          onclick={() => navigate(-1)}
+          disabled={navigating || !displayedWeek.has_earlier}
+        >
+          <span aria-hidden="true">&larr;</span>
+        </button>
+        <button
+          type="button"
+          class="nav-btn"
+          data-week-nav="next"
+          aria-label="Next week"
+          onclick={() => navigate(1)}
+          disabled={navigating || !canGoNext}
+        >
+          <span aria-hidden="true">&rarr;</span>
+        </button>
+      </div>
     </div>
   </div>
   <div class="grid" bind:this={scrollContainer}>
@@ -489,6 +515,27 @@
   .streak-info .sep {
     margin: 0 0.25rem;
     color: var(--color-text-disabled);
+  }
+  .grid-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+  }
+  .grid-winners {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--color-gold);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .grid-winners .trophy {
+    font-size: inherit;
+  }
+  .grid-winners .and,
+  .grid-winners .extra {
+    color: var(--color-text-secondary);
   }
   .week-nav {
     display: flex;
