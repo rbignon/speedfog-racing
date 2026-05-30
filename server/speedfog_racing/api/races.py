@@ -76,6 +76,10 @@ from speedfog_racing.services import (
     get_pool,
     reroll_seed_for_race,
 )
+from speedfog_racing.services.daily_points_service import (
+    QualifiedParticipant,
+    compute_daily_points,
+)
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
@@ -115,33 +119,6 @@ def _seed_total_paths(seed: Seed) -> int:
     return int(gj.get("total_paths", 0))
 
 
-def _participants_with_daily_points(race: Race) -> list[ParticipantResponse]:
-    """Project Race.participants to ParticipantResponse, injecting daily_points
-    for finished daily races (None otherwise)."""
-    from speedfog_racing.services.daily_points_service import (
-        QualifiedParticipant,
-        compute_daily_points,
-    )
-
-    projections = [participant_response(p) for p in race.participants]
-    if race.daily_date is not None and race.status == RaceStatus.FINISHED:
-        qualified = [
-            QualifiedParticipant(
-                participant_id=p.id,
-                user_id=p.user_id,
-                status=p.status,
-                igt_ms=p.igt_ms,
-                zone_history_len=len(p.zone_history or []),
-            )
-            for p in race.participants
-            if len(p.zone_history or []) >= 2
-        ]
-        points_map = compute_daily_points(qualified)
-        for proj in projections:
-            proj.daily_points = points_map.get(proj.id)
-    return projections
-
-
 def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailResponse:
     """Convert Race model to RaceDetailResponse."""
     casters = (
@@ -170,6 +147,22 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
     if race.seed and race.seed.pool.config:
         pool_config = PoolConfig(**race.seed.pool.config)
     registration_closes_at, race_ends_at = compute_late_join_deadlines(race)
+    participants_list = [participant_response(p) for p in race.participants]
+    if race.daily_date is not None and race.status == RaceStatus.FINISHED:
+        qualified = [
+            QualifiedParticipant(
+                participant_id=p.id,
+                user_id=p.user_id,
+                status=p.status,
+                igt_ms=p.igt_ms,
+                zone_history_len=len(p.zone_history or []),
+            )
+            for p in race.participants
+            if len(p.zone_history or []) >= 2
+        ]
+        points_map = compute_daily_points(qualified)
+        for proj in participants_list:
+            proj.daily_points = points_map.get(proj.id)
     return RaceDetailResponse(
         id=race.id,
         name=race.name,
@@ -195,7 +188,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         seed_total_layers=race.seed.total_layers if race.seed else None,
         seed_total_nodes=_seed_total_nodes(race.seed) if race.seed else None,
         seed_total_paths=_seed_total_paths(race.seed) if race.seed else None,
-        participants=_participants_with_daily_points(race),
+        participants=participants_list,
         casters=casters,
         pending_invites=pending_invites,
         pool_config=pool_config,
