@@ -117,6 +117,7 @@ function week(days: DailyWeekDay[]): DailyWeekResponse {
     days,
     has_earlier: false,
     my_streak: null,
+    winners: null,
   };
 }
 

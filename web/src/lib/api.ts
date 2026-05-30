@@ -86,6 +86,7 @@ export interface Participant {
   igt_ms: number;
   death_count: number;
   color_index: number;
+  daily_points?: number | null;
 }
 
 export interface Caster {
@@ -318,12 +319,44 @@ export interface DailyWeekDay {
   freeze_protected: boolean;
 }
 
+export interface WeeklyLeaderboardUser {
+  id: string;
+  twitch_username: string;
+  twitch_display_name: string | null;
+  twitch_avatar_url: string | null;
+  equipped_badge_id: string | null;
+  equipped_name_template_id: string | null;
+  equipped_phantom_skin_id: string | null;
+}
+
+export interface WinnerSummary {
+  user: WeeklyLeaderboardUser;
+  total_points: number;
+}
+
+export interface WeeklyLeaderboardEntry {
+  rank: number;
+  user: WeeklyLeaderboardUser;
+  total_points: number;
+  dailies_played: number;
+  total_deaths: number;
+  weapon_combos: { ids: number[]; ticks: number }[];
+}
+
+export interface WeeklyLeaderboardResponse {
+  week_starting: string; // ISO date
+  week_ending: string; // ISO date
+  dailies_total: number;
+  entries: WeeklyLeaderboardEntry[];
+}
+
 export interface DailyWeekResponse {
   week_start: string;
   today: string;
   days: DailyWeekDay[];
   has_earlier: boolean;
   my_streak: UserDailyStreakStats | null;
+  winners: WinnerSummary[] | null;
 }
 
 /**
@@ -341,6 +374,23 @@ export async function fetchDailyWeek(
     headers: getAuthHeaders(),
   });
   return handleResponse<DailyWeekResponse>(response);
+}
+
+/**
+ * Fetch the weekly leaderboard for the week that contains the given date
+ * (YYYY-MM-DD). Returns ranked entries with per-daily points totals.
+ */
+export async function fetchWeeklyLeaderboard(
+  date: string,
+  customFetch: typeof fetch = fetch,
+): Promise<WeeklyLeaderboardResponse> {
+  const response = await customFetch(
+    `${API_BASE}/daily/week/leaderboard?date=${encodeURIComponent(date)}`,
+    {
+      headers: getAuthHeaders(),
+    },
+  );
+  return handleResponse<WeeklyLeaderboardResponse>(response);
 }
 
 /**

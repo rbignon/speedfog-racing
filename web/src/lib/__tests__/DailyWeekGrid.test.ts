@@ -136,6 +136,7 @@ const mockWeek: DailyWeekResponse = {
   ],
   has_earlier: true,
   my_streak: null,
+  winners: null,
 };
 
 describe("DailyWeekGrid", () => {
