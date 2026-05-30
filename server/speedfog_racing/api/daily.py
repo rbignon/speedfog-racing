@@ -43,8 +43,12 @@ from speedfog_racing.schemas import (
     WeeklyLeaderboardEntry,
     WeeklyLeaderboardResponse,
     WeeklyLeaderboardUser,
+    WinnerSummary,
 )
-from speedfog_racing.services.daily_points_service import compute_weekly_leaderboard
+from speedfog_racing.services.daily_points_service import (
+    compute_weekly_leaderboard,
+    compute_weekly_winners,
+)
 from speedfog_racing.services.daily_seed_loop import daily_date_for
 from speedfog_racing.services.daily_streak_service import qualifies_for_streak
 
@@ -275,12 +279,33 @@ async def get_daily_week(
 
     my_streak = UserDailyStreakStats.from_user(user) if user is not None else None
 
+    week_winners = await compute_weekly_winners(db, week_start)
+    if week_winners is None:
+        winners: list[WinnerSummary] | None = None
+    else:
+        winners = [
+            WinnerSummary(
+                user=WeeklyLeaderboardUser(
+                    id=e.user.id,
+                    twitch_username=e.user.twitch_username,
+                    twitch_display_name=e.user.twitch_display_name,
+                    twitch_avatar_url=e.user.twitch_avatar_url,
+                    equipped_badge_id=e.user.equipped_badge_id,
+                    equipped_name_template_id=e.user.equipped_name_template_id,
+                    equipped_phantom_skin_id=e.user.equipped_phantom_skin_id,
+                ),
+                total_points=e.total_points,
+            )
+            for e in week_winners
+        ]
+
     return DailyWeekResponse(
         week_start=week_start,
         today=today,
         days=days,
         has_earlier=has_earlier,
         my_streak=my_streak,
+        winners=winners,
     )
 
 

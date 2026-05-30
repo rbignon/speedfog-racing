@@ -538,6 +538,7 @@ class DailyWeekResponse(BaseModel):
     days: list[DailyWeekDay]
     has_earlier: bool
     my_streak: UserDailyStreakStats | None = None
+    winners: list["WinnerSummary"] | None = None
 
 
 class WeeklyLeaderboardUser(BaseModel):
@@ -568,6 +569,17 @@ class WeeklyLeaderboardResponse(BaseModel):
     week_ending: date
     dailies_total: int
     entries: list[WeeklyLeaderboardEntry]
+
+
+class WinnerSummary(BaseModel):
+    """Identity + total points of a weekly champion (or co-champion)."""
+
+    user: WeeklyLeaderboardUser
+    total_points: int
+
+
+# Resolve the forward reference to WinnerSummary in DailyWeekResponse.
+DailyWeekResponse.model_rebuild()
 
 
 class InviteInfoResponse(BaseModel):
