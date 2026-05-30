@@ -16,10 +16,15 @@ See docs/specs/2026-05-30-daily-weekly-points-design.md for the full rationale.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 from uuid import UUID
 
-from speedfog_racing.models import ParticipantStatus
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus, User
 
 
 @dataclass(frozen=True)
@@ -73,3 +78,147 @@ def compute_daily_points(
             j += 1
         i = j
     return points
+
+
+# --- weekly aggregation ----------------------------------------------------
+
+
+def _zone_history_len(participant: Participant) -> int:
+    history = participant.zone_history or []
+    return len(history)
+
+
+def _aggregate_weapon_combos(
+    zone_histories: list[list[dict]],  # type: ignore[type-arg]
+) -> list[dict[str, object]]:
+    """Mirror of web/src/lib/weapons.ts:aggregateAllCombos.
+
+    Concatenate all `weapons` arrays across the input histories, normalize each
+    id (id - id % 1000), sum ticks per normalized combo, return sorted desc.
+    """
+    totals: dict[tuple[int, ...], int] = {}
+    for history in zone_histories:
+        for entry in history:
+            for combo in entry.get("weapons", []) or []:
+                ids = tuple(int(i) - (int(i) % 1000) for i in combo["ids"])
+                totals[ids] = totals.get(ids, 0) + int(combo["ticks"])
+    return [
+        {"ids": list(ids), "ticks": ticks}
+        for ids, ticks in sorted(totals.items(), key=lambda kv: -kv[1])
+    ]
+
+
+@dataclass(frozen=True)
+class WeeklyUserSummary:
+    """User identity fields needed by the weekly leaderboard response."""
+
+    id: UUID
+    twitch_username: str
+    twitch_display_name: str | None
+    twitch_avatar_url: str | None
+    equipped_badge_id: str | None
+    equipped_name_template_id: str | None
+    equipped_phantom_skin_id: str | None
+
+
+@dataclass(frozen=True)
+class WeeklyLeaderboardEntry:
+    rank: int
+    user: WeeklyUserSummary
+    total_points: int
+    dailies_played: int
+    total_deaths: int
+    weapon_combos: list[dict[str, object]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class WeeklyLeaderboardData:
+    week_starting: date
+    week_ending: date
+    dailies_total: int
+    entries: list[WeeklyLeaderboardEntry]
+
+
+async def compute_weekly_leaderboard(
+    session: AsyncSession, week_starting: date
+) -> WeeklyLeaderboardData:
+    """Aggregate points across the closed dailies of the week containing
+    `week_starting`. Only Race rows with status == FINISHED contribute."""
+    week_ending = week_starting + timedelta(days=7)
+
+    races_q = (
+        select(Race)
+        .where(
+            Race.daily_date >= week_starting,
+            Race.daily_date < week_ending,
+            Race.status == RaceStatus.FINISHED,
+        )
+        .options(selectinload(Race.participants).selectinload(Participant.user))
+    )
+    races = list((await session.execute(races_q)).scalars())
+
+    per_user_points: dict[UUID, int] = {}
+    per_user_played: dict[UUID, int] = {}
+    per_user_deaths: dict[UUID, int] = {}
+    per_user_histories: dict[UUID, list[list[dict]]] = {}  # type: ignore[type-arg]
+    per_user_object: dict[UUID, User] = {}
+
+    for race in races:
+        qualified: list[QualifiedParticipant] = []
+        for p in race.participants:
+            if _zone_history_len(p) < 2:
+                continue
+            qualified.append(
+                QualifiedParticipant(
+                    participant_id=p.id,
+                    user_id=p.user_id,
+                    status=p.status,
+                    igt_ms=p.igt_ms,
+                    zone_history_len=_zone_history_len(p),
+                )
+            )
+        points = compute_daily_points(qualified)
+        for p in race.participants:
+            pts = points.get(p.id)
+            if pts is None:
+                continue
+            per_user_points[p.user_id] = per_user_points.get(p.user_id, 0) + pts
+            per_user_played[p.user_id] = per_user_played.get(p.user_id, 0) + 1
+            per_user_deaths[p.user_id] = per_user_deaths.get(p.user_id, 0) + (p.death_count or 0)
+            per_user_histories.setdefault(p.user_id, []).append(p.zone_history or [])
+            per_user_object[p.user_id] = p.user
+
+    ranked = sorted(per_user_points.items(), key=lambda kv: -kv[1])
+    entries: list[WeeklyLeaderboardEntry] = []
+    last_points: int | None = None
+    last_rank = 0
+    for i, (user_id, pts) in enumerate(ranked):
+        if pts != last_points:
+            last_rank = i + 1
+            last_points = pts
+        u = per_user_object[user_id]
+        entries.append(
+            WeeklyLeaderboardEntry(
+                rank=last_rank,
+                user=WeeklyUserSummary(
+                    id=u.id,
+                    twitch_username=u.twitch_username,
+                    twitch_display_name=u.twitch_display_name,
+                    twitch_avatar_url=u.twitch_avatar_url,
+                    equipped_badge_id=u.equipped_badge_id,
+                    equipped_name_template_id=u.equipped_name_template_id,
+                    equipped_phantom_skin_id=u.equipped_phantom_skin_id,
+                ),
+                total_points=pts,
+                dailies_played=per_user_played[user_id],
+                total_deaths=per_user_deaths[user_id],
+                weapon_combos=_aggregate_weapon_combos(per_user_histories[user_id]),
+            )
+        )
+
+    return WeeklyLeaderboardData(
+        week_starting=week_starting,
+        week_ending=week_ending - timedelta(days=1),
+        dailies_total=len(races),
+        entries=entries,
+    )
