@@ -25,6 +25,7 @@ export interface WsParticipant {
   stream_url?: string | null;
   equipped_badge_id?: string | null;
   equipped_name_template_id?: string | null;
+  daily_points?: number | null;
 }
 
 export interface WsRaceInfo {

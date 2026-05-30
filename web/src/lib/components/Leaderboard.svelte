@@ -105,12 +105,18 @@
 />
 
 <div class="leaderboard">
-  <div class="leaderboard-header">
-    <h2>{mode === "finished" ? "Results" : "Leaderboard"}</h2>
-    {#if hasSelection && onClearSelection}
-      <button class="show-all-btn" onclick={onClearSelection}>Show all</button>
-    {/if}
-  </div>
+  {#if hasSelection && onClearSelection}
+    <div class="selection-banner">
+      <span
+        >Selected: {selectedIds!.size} player{selectedIds!.size === 1
+          ? ""
+          : "s"}</span
+      >
+      <button type="button" class="clear-btn" onclick={onClearSelection}
+        >Show all ×</button
+      >
+    </div>
+  {/if}
 
   {#if participants.length === 0}
     <p class="empty">No participants yet</p>
@@ -192,6 +198,8 @@
                 >
               {:else if isFinished && mode === "running"}
                 <span class="finish-icon">✓</span>
+              {:else if isFinished && mode === "finished" && participant.daily_points != null}
+                <span class="points-earned">+{participant.daily_points}</span>
               {/if}
             </div>
             {#if isAbandoned}
@@ -244,32 +252,31 @@
     flex-direction: column;
   }
 
-  .leaderboard-header {
+  .selection-banner {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
-    margin-bottom: 1rem;
-  }
-
-  .leaderboard-header h2 {
-    color: var(--color-gold);
-    margin: 0;
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-  }
-
-  .show-all-btn {
-    background: none;
-    border: none;
-    padding: 0;
+    gap: 0.5rem;
+    padding: 0.35rem 0.6rem;
+    margin-bottom: 0.4rem;
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
     color: var(--color-text-secondary);
-    font-family: var(--font-family);
     font-size: var(--font-size-sm);
-    cursor: pointer;
-    transition: color var(--transition);
   }
 
-  .show-all-btn:hover {
+  .clear-btn {
+    background: transparent;
+    border: 0;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+    padding: 0.1rem 0.3rem;
+  }
+
+  .clear-btn:hover {
     color: var(--color-text);
   }
 
@@ -374,6 +381,14 @@
   .finish-icon {
     color: var(--color-success);
     font-size: 1.2rem;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .points-earned {
+    color: var(--color-success);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
     flex-shrink: 0;
     margin-left: auto;
   }
