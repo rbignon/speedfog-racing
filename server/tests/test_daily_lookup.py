@@ -417,3 +417,134 @@ async def test_recent_daily_returns_past_dailies_only(
     body = response.json()
     daily_dates = [r["daily_date"] for r in body["races"]]
     assert daily_dates == [yesterday.isoformat(), two_days_ago.isoformat()]
+
+
+@pytest.mark.asyncio
+async def test_finished_daily_includes_daily_points_on_participants(
+    dl_test_client, dl_async_session_maker
+) -> None:
+    """A FINISHED daily exposes daily_points per qualified participant."""
+    target = date(2026, 5, 10)
+    async with dl_async_session_maker() as db:
+        organizer = User(
+            twitch_id="sys-dp-10",
+            twitch_username="sys_dp_10",
+            twitch_display_name="System",
+            api_token=None,
+            role=UserRole.SYSTEM,
+        )
+        alice = User(
+            twitch_id="u-alice-dp",
+            twitch_username="alice_dp",
+            twitch_display_name="Alice",
+            api_token=f"tok-{uuid4().hex[:8]}",
+            role=UserRole.USER,
+        )
+        bob = User(
+            twitch_id="u-bob-dp",
+            twitch_username="bob_dp",
+            twitch_display_name="Bob",
+            api_token=f"tok-{uuid4().hex[:8]}",
+            role=UserRole.USER,
+        )
+        carol = User(
+            twitch_id="u-carol-dp",
+            twitch_username="carol_dp",
+            twitch_display_name="Carol",
+            api_token=f"tok-{uuid4().hex[:8]}",
+            role=UserRole.USER,
+        )
+        db.add_all([organizer, alice, bob, carol])
+        await db.flush()
+        started = datetime(2026, 5, 10, 8, 0, tzinfo=UTC)
+        race = Race(
+            name="Daily Seed - 2026-05-10",
+            organizer_id=organizer.id,
+            status=RaceStatus.FINISHED,
+            is_public=True,
+            open_registration=True,
+            daily_date=target,
+            exclude_from_elo=True,
+            started_at=started,
+            seeds_released_at=started,
+            late_join_window_minutes=1440,
+            race_duration_minutes=1440,
+        )
+        db.add(race)
+        await db.flush()
+        # Three finishers: alice 1st (1000ms), bob 2nd (2000ms), carol 3rd (3000ms).
+        # n=3: points are round(50*3/3)=50, round(50*2/3)=33, round(50*1/3)=17.
+        for user, igt in [(alice, 1000), (bob, 2000), (carol, 3000)]:
+            p = Participant(
+                race_id=race.id,
+                user_id=user.id,
+                status=ParticipantStatus.FINISHED,
+                igt_ms=igt,
+                current_layer=4,
+                death_count=0,
+                zone_history=[{"zone": "A"}, {"zone": "B"}],
+            )
+            db.add(p)
+        await db.commit()
+
+    response = await dl_test_client.get(f"/api/daily/{target.isoformat()}")
+    assert response.status_code == 200
+    by_name = {p["user"]["twitch_username"]: p for p in response.json()["participants"]}
+    assert by_name["alice_dp"]["daily_points"] == 50
+    assert by_name["bob_dp"]["daily_points"] == 33
+    assert by_name["carol_dp"]["daily_points"] == 17
+
+
+@pytest.mark.asyncio
+async def test_running_daily_omits_daily_points(dl_test_client, dl_async_session_maker) -> None:
+    """While a daily is RUNNING, daily_points is null on every participant."""
+    target = date(2026, 5, 11)
+    async with dl_async_session_maker() as db:
+        organizer = User(
+            twitch_id="sys-dp-11",
+            twitch_username="sys_dp_11",
+            twitch_display_name="System",
+            api_token=None,
+            role=UserRole.SYSTEM,
+        )
+        player = User(
+            twitch_id="u-player-dp",
+            twitch_username="player_dp",
+            twitch_display_name="Player",
+            api_token=f"tok-{uuid4().hex[:8]}",
+            role=UserRole.USER,
+        )
+        db.add_all([organizer, player])
+        await db.flush()
+        started = datetime(2026, 5, 11, 8, 0, tzinfo=UTC)
+        race = Race(
+            name="Daily Seed - 2026-05-11",
+            organizer_id=organizer.id,
+            status=RaceStatus.RUNNING,
+            is_public=True,
+            open_registration=True,
+            daily_date=target,
+            exclude_from_elo=True,
+            started_at=started,
+            seeds_released_at=started,
+            late_join_window_minutes=1440,
+            race_duration_minutes=1440,
+        )
+        db.add(race)
+        await db.flush()
+        p = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.PLAYING,
+            igt_ms=500,
+            current_layer=2,
+            death_count=0,
+            zone_history=[{"zone": "A"}, {"zone": "B"}],
+        )
+        db.add(p)
+        await db.commit()
+
+    response = await dl_test_client.get(f"/api/daily/{target.isoformat()}")
+    assert response.status_code == 200
+    for p in response.json()["participants"]:
+        assert p.get("daily_points") is None

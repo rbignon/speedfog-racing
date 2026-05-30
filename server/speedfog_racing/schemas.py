@@ -345,6 +345,7 @@ class ParticipantResponse(BaseModel):
     igt_ms: int
     death_count: int
     color_index: int = 0
+    daily_points: int | None = None
 
 
 class CasterResponse(BaseModel):

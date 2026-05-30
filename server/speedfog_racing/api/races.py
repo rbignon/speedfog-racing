@@ -115,6 +115,33 @@ def _seed_total_paths(seed: Seed) -> int:
     return int(gj.get("total_paths", 0))
 
 
+def _participants_with_daily_points(race: Race) -> list[ParticipantResponse]:
+    """Project Race.participants to ParticipantResponse, injecting daily_points
+    for finished daily races (None otherwise)."""
+    from speedfog_racing.services.daily_points_service import (
+        QualifiedParticipant,
+        compute_daily_points,
+    )
+
+    projections = [participant_response(p) for p in race.participants]
+    if race.daily_date is not None and race.status == RaceStatus.FINISHED:
+        qualified = [
+            QualifiedParticipant(
+                participant_id=p.id,
+                user_id=p.user_id,
+                status=p.status,
+                igt_ms=p.igt_ms,
+                zone_history_len=len(p.zone_history or []),
+            )
+            for p in race.participants
+            if len(p.zone_history or []) >= 2
+        ]
+        points_map = compute_daily_points(qualified)
+        for proj in projections:
+            proj.daily_points = points_map.get(proj.id)
+    return projections
+
+
 def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailResponse:
     """Convert Race model to RaceDetailResponse."""
     casters = (
@@ -168,7 +195,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         seed_total_layers=race.seed.total_layers if race.seed else None,
         seed_total_nodes=_seed_total_nodes(race.seed) if race.seed else None,
         seed_total_paths=_seed_total_paths(race.seed) if race.seed else None,
-        participants=[participant_response(p) for p in race.participants],
+        participants=_participants_with_daily_points(race),
         casters=casters,
         pending_invites=pending_invites,
         pool_config=pool_config,
