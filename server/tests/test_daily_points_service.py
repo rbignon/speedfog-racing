@@ -90,5 +90,11 @@ def test_strict_igt_tie_uses_sport_convention():
     assert points[c.participant_id] == 17  # round(50 * 1/3) = 17
 
 
+def test_single_abandoned_gets_50_points():
+    qp = _qp(status=ParticipantStatus.ABANDONED, igt_ms=300, zone_history_len=4)
+    points = compute_daily_points([qp])
+    assert points[qp.participant_id] == 50
+
+
 def test_empty_input_returns_empty_dict():
     assert compute_daily_points([]) == {}

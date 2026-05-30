@@ -49,18 +49,14 @@ def _rank_key(qp: QualifiedParticipant) -> tuple[int, int, int]:
     return (1, -qp.zone_history_len, -qp.igt_ms)
 
 
-def _tie_signature(qp: QualifiedParticipant) -> tuple[int, int, int]:
-    """Equality key for sport-convention ranking ties."""
-    return _rank_key(qp)
-
-
 def compute_daily_points(
     participants: list[QualifiedParticipant],
 ) -> dict[UUID, int]:
     """Return a mapping participant_id -> points for one closed daily.
 
     Implements sport-standard tie ranking: equal sort keys share a rank, the
-    next rank skips by the size of the tied group (1, 1, 3, 4 ...).
+    next rank skips by the size of the tied group (e.g. two tied at the top
+    both get rank 1, the next participant is rank 3).
     """
     n = len(participants)
     if n == 0:
@@ -70,9 +66,9 @@ def compute_daily_points(
     i = 0
     while i < n:
         rank = i + 1
-        sig = _tie_signature(ordered[i])
+        sig = _rank_key(ordered[i])
         j = i
-        while j < n and _tie_signature(ordered[j]) == sig:
+        while j < n and _rank_key(ordered[j]) == sig:
             points[ordered[j].participant_id] = round(50 * (n - rank + 1) / n)
             j += 1
         i = j
