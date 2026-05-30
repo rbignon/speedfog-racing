@@ -73,6 +73,7 @@
   let weekLeaderboardData: WeeklyLeaderboardResponse | null = $state(null);
   let weekLeaderboardLoading = $state(false);
   let weekLeaderboardError: string | null = $state(null);
+  let weekLeaderboardDate: string | null = $state(null);
 
   async function loadWeekLeaderboardIfNeeded() {
     if (weekLeaderboardData || weekLeaderboardLoading) return;
@@ -83,12 +84,23 @@
       weekLeaderboardData = await fetchWeeklyLeaderboard(
         initialRace.daily_date,
       );
+      weekLeaderboardDate = initialRace.daily_date;
     } catch (e) {
       weekLeaderboardError = e instanceof Error ? e.message : String(e);
     } finally {
       weekLeaderboardLoading = false;
     }
   }
+
+  $effect(() => {
+    if (initialRace.daily_date && initialRace.daily_date !== weekLeaderboardDate) {
+      weekLeaderboardData = null;
+      weekLeaderboardError = null;
+      if (activeLeaderboardTab === "week") {
+        void loadWeekLeaderboardIfNeeded();
+      }
+    }
+  });
 
   function selectLeaderboardTab(tab: "daily" | "week") {
     activeLeaderboardTab = tab;
