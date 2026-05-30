@@ -330,6 +330,46 @@ async def test_winners_returns_empty_for_past_week_no_qualified(db_session, monk
     assert winners == []
 
 
+async def test_winners_uses_rotation_date_at_monday_boundary(db_session, monkeypatch):
+    """At Monday 04:00 UTC the rotation date is still Sunday, so the prior
+    week (Mon to Sun) is still 'current' and winners must be None."""
+    from speedfog_racing.services import daily_points_service as svc
+
+    # Build a finished daily in the prior week so that, under raw UTC today,
+    # the winners would be visible at Monday 04:00 UTC.
+    organizer = await _make_user(db_session, "syswr")
+    alice = await _make_user(db_session, "alicewr")
+    prev_monday = date(2026, 5, 18)  # week to test
+    race = await _make_daily(
+        db_session,
+        organizer=organizer,
+        daily_date=prev_monday,
+        status=RaceStatus.FINISHED,
+    )
+    await _make_participant(
+        db_session,
+        race=race,
+        user=alice,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=1000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+
+    # Freeze "now" at Monday 2026-05-25 04:00 UTC. daily_date_for returns Sunday.
+    monkeypatch.setattr(
+        svc,
+        "_today",
+        lambda: date(2026, 5, 24),  # the rotation date at that instant
+    )
+    winners = await compute_weekly_winners(db_session, prev_monday)
+    assert winners is None  # week ending 2026-05-25 is still "current"
+
+    # Same wall time but raw UTC date -> would have flipped past.
+    monkeypatch.setattr(svc, "_today", lambda: date(2026, 5, 25))
+    winners = await compute_weekly_winners(db_session, prev_monday)
+    assert winners is not None  # week is now fully past
+
+
 async def test_winners_returns_all_tied_for_past_week(db_session, monkeypatch):
     from speedfog_racing.services import daily_points_service as svc
 

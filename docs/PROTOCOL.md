@@ -45,11 +45,13 @@ Reference document for API endpoints and WebSocket messages.
 
 ### Daily Seeds
 
-| Method | Endpoint                    | Auth | Description                                                                                  |
-| ------ | --------------------------- | ---- | -------------------------------------------------------------------------------------------- |
-| GET    | `/api/daily/today`          | -    | Current rotation day's Daily Seed as `RaceResponse`, or 404 if none yet.                     |
-| GET    | `/api/daily/{yyyy-mm-dd}`   | -    | Look up a Daily Seed by rotation date. Returns `RaceDetailResponse` or 404.                  |
-| GET    | `/api/daily/recent?limit=N` | -    | Past Daily Seeds (`daily_date < today`), most recent first. `limit` in `[1, 30]`, default 7. |
+| Method | Endpoint                             | Auth | Description                                                                                                                                                                                                                                                                                                 |
+| ------ | ------------------------------------ | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/daily/today`                   | -    | Current rotation day's Daily Seed as `RaceResponse`, or 404 if none yet.                                                                                                                                                                                                                                    |
+| GET    | `/api/daily/{yyyy-mm-dd}`            | -    | Look up a Daily Seed by rotation date. Returns `RaceDetailResponse` or 404.                                                                                                                                                                                                                                 |
+| GET    | `/api/daily/recent?limit=N`          | -    | Past Daily Seeds (`daily_date < today`), most recent first. `limit` in `[1, 30]`, default 7.                                                                                                                                                                                                                |
+| GET    | `/api/daily/week`                    | -    | Returns `DailyWeekResponse` (seven calendar-week cells + `my_streak` + `winners`). `winners`: `null` for the current/future week, `[]` for a past week with no qualified, otherwise list of `WinnerSummary {user, total_points}` tied at max points. Optional `?date=YYYY-MM-DD` anchors the returned week. |
+| GET    | `/api/daily/week/leaderboard?date=X` | -    | `WeeklyLeaderboardResponse`: ranking for the week containing `X`. Public, no auth. Fields `week_starting`, `week_ending`, `dailies_total` (closed dailies in displayed week), `entries[]` with `rank`, `user`, `total_points`, `dailies_played`, `total_deaths`, `weapon_combos`.                           |
 
 Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlying race / participant lifecycle (start, finish, abandon, reroll) and WebSocket protocol are unchanged. See [DAILY_SEED.md](DAILY_SEED.md) for the rotation, reroll-while-running, ELO-skip, and Discord rules.
 

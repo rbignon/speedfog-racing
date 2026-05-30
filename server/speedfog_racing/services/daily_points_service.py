@@ -11,7 +11,7 @@ The points formula is:
     r = participant's rank in the intra-daily ordering
     points(r, n) = round(50 * (n - r + 1) / n)
 
-See docs/specs/2026-05-30-daily-weekly-points-design.md for the full rationale.
+See docs/DAILY_SEED.md (Weekly Points section) for the operational reference.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus, User
+from speedfog_racing.services.daily_seed_loop import daily_date_for
 
 
 @dataclass(frozen=True)
@@ -228,8 +229,10 @@ async def compute_weekly_leaderboard(
 
 
 def _today() -> date:
-    """UTC today. Indirection lets tests freeze the clock via monkeypatch."""
-    return datetime.now(UTC).date()
+    """UTC rotation date. Indirection lets tests freeze the clock via
+    monkeypatch. Mirrors `services.daily_seed_loop.daily_date_for` so the
+    "past week" boundary aligns with the daily rotation."""
+    return daily_date_for(datetime.now(UTC))
 
 
 async def compute_weekly_winners(
