@@ -15,12 +15,14 @@
     downloadMySeedPack,
     fetchDailyByDate,
     fetchDailyWeek,
+    fetchWeeklyLeaderboard,
     getTwitchLoginUrl,
     joinRace,
     type DailyWeekResponse,
     type ParticipantStatus as ApiParticipantStatus,
     type RaceDetail,
     type RaceStatus as ApiRaceStatus,
+    type WeeklyLeaderboardResponse,
   } from "$lib/api";
   import {
     applyLiveDailyDayUpdate,
@@ -32,6 +34,7 @@
   import { parseDagGraph } from "$lib/dag/types";
   import { RaceReplay } from "$lib/replay";
   import Leaderboard from "$lib/components/Leaderboard.svelte";
+  import WeekLeaderboard from "$lib/components/WeekLeaderboard.svelte";
   import SpectatorCount from "$lib/components/SpectatorCount.svelte";
   import RaceControls from "$lib/components/RaceControls.svelte";
   import RaceStats from "$lib/components/RaceStats.svelte";
@@ -66,6 +69,31 @@
   let selectedParticipantIds = $state<Set<string>>(new Set());
   let highlightFocusNodeId = $state<string | null>(null);
   let dagView = $state<"map" | "replay">("map");
+  let activeLeaderboardTab: "daily" | "week" = $state("daily");
+  let weekLeaderboardData: WeeklyLeaderboardResponse | null = $state(null);
+  let weekLeaderboardLoading = $state(false);
+  let weekLeaderboardError: string | null = $state(null);
+
+  async function loadWeekLeaderboardIfNeeded() {
+    if (weekLeaderboardData || weekLeaderboardLoading) return;
+    if (!initialRace.daily_date) return;
+    weekLeaderboardLoading = true;
+    weekLeaderboardError = null;
+    try {
+      weekLeaderboardData = await fetchWeeklyLeaderboard(
+        initialRace.daily_date,
+      );
+    } catch (e) {
+      weekLeaderboardError = e instanceof Error ? e.message : String(e);
+    } finally {
+      weekLeaderboardLoading = false;
+    }
+  }
+
+  function selectLeaderboardTab(tab: "daily" | "week") {
+    activeLeaderboardTab = tab;
+    if (tab === "week") void loadWeekLeaderboardIfNeeded();
+  }
 
   function handleLeaderboardToggle(id: string, ctrlKey: boolean) {
     if (ctrlKey) {
@@ -291,6 +319,10 @@
           weekOverride = w;
         })
         .catch(() => {});
+      // Invalidate the cached weekly leaderboard so the Week tab reflects
+      // the just-ended daily's final standings on next open.
+      weekLeaderboardData = null;
+      if (activeLeaderboardTab === "week") void loadWeekLeaderboardIfNeeded();
     }
     prevDailyEnded = dailyEnded;
   });
@@ -442,17 +474,47 @@
       <div class="sidebar-section">
         <div class="leaderboard-header">
           <h2>Leaderboard</h2>
+          <div class="lb-tabs">
+            <button
+              type="button"
+              class="lb-tab"
+              class:active={activeLeaderboardTab === "daily"}
+              onclick={() => selectLeaderboardTab("daily")}
+            >
+              Daily
+            </button>
+            <button
+              type="button"
+              class="lb-tab"
+              class:active={activeLeaderboardTab === "week"}
+              onclick={() => selectLeaderboardTab("week")}
+            >
+              Week
+            </button>
+          </div>
         </div>
-        <Leaderboard
-          participants={raceStore.leaderboard}
-          {totalLayers}
-          mode={dailyEnded ? "finished" : "running"}
-          {zoneNames}
-          {showRunDetails}
-          selectedIds={selectedParticipantIds}
-          onToggle={handleLeaderboardToggle}
-          onClearSelection={clearSelection}
-        />
+
+        {#if activeLeaderboardTab === "daily"}
+          <Leaderboard
+            participants={raceStore.leaderboard}
+            {totalLayers}
+            mode={dailyEnded ? "finished" : "running"}
+            {zoneNames}
+            {showRunDetails}
+            selectedIds={selectedParticipantIds}
+            onToggle={handleLeaderboardToggle}
+            onClearSelection={clearSelection}
+          />
+        {:else if weekLeaderboardLoading}
+          <p class="lb-info">Loading...</p>
+        {:else if weekLeaderboardError}
+          <p class="lb-info">Failed to load: {weekLeaderboardError}</p>
+        {:else if weekLeaderboardData}
+          <WeekLeaderboard
+            data={weekLeaderboardData}
+            currentUserId={auth.user?.id ?? null}
+          />
+        {/if}
       </div>
 
       {#if canAbandon}
@@ -763,6 +825,35 @@
     font-size: var(--font-size-lg);
     font-weight: 600;
     margin: 0;
+  }
+
+  .lb-tabs {
+    display: inline-flex;
+    gap: 0.15rem;
+  }
+
+  .lb-tab {
+    appearance: none;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--color-text-secondary);
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+  }
+
+  .lb-tab.active {
+    color: var(--color-gold);
+    background: rgba(200, 164, 78, 0.1);
+    border-color: rgba(200, 164, 78, 0.35);
+  }
+
+  .lb-info {
+    color: var(--color-text-secondary);
+    text-align: center;
+    padding: 1rem 0.5rem;
   }
 
   .abandon-section {
