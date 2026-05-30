@@ -1,10 +1,14 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import type { DailyWeekDay, DailyWeekResponse } from "$lib/api";
+  import type {
+    DailyWeekDay,
+    DailyWeekResponse,
+    WinnerSummary,
+  } from "$lib/api";
   import { fetchDailyWeek } from "$lib/api";
   import { cellStrip } from "$lib/daily";
   import { formatIgt } from "$lib/utils/training";
-  import UserLink from "$lib/components/UserLink.svelte";
+  import { rewards } from "$lib/stores/rewards.svelte";
 
   interface Props {
     week: DailyWeekResponse;
@@ -127,6 +131,29 @@
     return null;
   }
 
+  function nameStyleForWinner(winner: WinnerSummary): string {
+    const id = winner.user.equipped_name_template_id;
+    if (!id || id === "default") return "";
+    const t = rewards.lookupTemplate(id);
+    if (!t) return "";
+    const parts: string[] = [];
+    if (t.gradient) {
+      parts.push(
+        `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]});`,
+        "-webkit-background-clip: text;",
+        "background-clip: text;",
+        "color: transparent;",
+        "padding-inline-end: 0.1em;",
+      );
+    } else if (t.color) {
+      parts.push(`color: ${t.color};`);
+    }
+    if (t.name_css) {
+      parts.push(t.name_css);
+    }
+    return parts.join(" ");
+  }
+
   let scrollContainer: HTMLDivElement | undefined = $state();
   onMount(() => {
     const el = scrollContainer;
@@ -169,21 +196,37 @@
         <span class="grid-winners">
           <span class="trophy" aria-hidden="true">🏆</span>
           {#if displayedWeek.winners.length === 1}
-            <UserLink
-              user={displayedWeek.winners[0].user as import("$lib/api").User}
-            />
+            {@const w = displayedWeek.winners[0]}
+            <a
+              href="/user/{w.user.twitch_username}"
+              class="player-name"
+              style={nameStyleForWinner(w)}
+              >{w.user.twitch_display_name || w.user.twitch_username}</a
+            >
           {:else if displayedWeek.winners.length === 2}
-            <UserLink
-              user={displayedWeek.winners[0].user as import("$lib/api").User}
-            />
+            {@const w0 = displayedWeek.winners[0]}
+            {@const w1 = displayedWeek.winners[1]}
+            <a
+              href="/user/{w0.user.twitch_username}"
+              class="player-name"
+              style={nameStyleForWinner(w0)}
+              >{w0.user.twitch_display_name || w0.user.twitch_username}</a
+            >
             <span class="and"> &amp; </span>
-            <UserLink
-              user={displayedWeek.winners[1].user as import("$lib/api").User}
-            />
+            <a
+              href="/user/{w1.user.twitch_username}"
+              class="player-name"
+              style={nameStyleForWinner(w1)}
+              >{w1.user.twitch_display_name || w1.user.twitch_username}</a
+            >
           {:else}
-            <UserLink
-              user={displayedWeek.winners[0].user as import("$lib/api").User}
-            />
+            {@const w0 = displayedWeek.winners[0]}
+            <a
+              href="/user/{w0.user.twitch_username}"
+              class="player-name"
+              style={nameStyleForWinner(w0)}
+              >{w0.user.twitch_display_name || w0.user.twitch_username}</a
+            >
             <span class="extra">+{displayedWeek.winners.length - 1}</span>
           {/if}
         </span>
@@ -567,5 +610,15 @@
   .nav-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  .player-name {
+    color: var(--color-text);
+    text-decoration: none;
+    transition: color var(--transition);
+  }
+
+  .player-name:hover {
+    color: var(--color-purple);
   }
 </style>

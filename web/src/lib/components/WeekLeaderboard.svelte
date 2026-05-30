@@ -1,7 +1,10 @@
 <script lang="ts">
-  import type { WeeklyLeaderboardResponse } from "$lib/api";
-  import UserLink from "$lib/components/UserLink.svelte";
+  import type {
+    WeeklyLeaderboardResponse,
+    WeeklyLeaderboardUser,
+  } from "$lib/api";
   import WeaponsPopover from "$lib/components/WeaponsPopover.svelte";
+  import { rewards } from "$lib/stores/rewards.svelte";
 
   interface Props {
     data: WeeklyLeaderboardResponse;
@@ -13,6 +16,29 @@
   const isEmpty = $derived(data.entries.length === 0);
   const isAwaitingFirstResults = $derived(isEmpty && data.dailies_total === 0);
   const isPastWithNoQualified = $derived(isEmpty && data.dailies_total > 0);
+
+  function nameStyleFor(user: WeeklyLeaderboardUser): string {
+    const id = user.equipped_name_template_id;
+    if (!id || id === "default") return "";
+    const t = rewards.lookupTemplate(id);
+    if (!t) return "";
+    const parts: string[] = [];
+    if (t.gradient) {
+      parts.push(
+        `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]});`,
+        "-webkit-background-clip: text;",
+        "background-clip: text;",
+        "color: transparent;",
+        "padding-inline-end: 0.1em;",
+      );
+    } else if (t.color) {
+      parts.push(`color: ${t.color};`);
+    }
+    if (t.name_css) {
+      parts.push(t.name_css);
+    }
+    return parts.join(" ");
+  }
 </script>
 
 <div class="week-leaderboard">
@@ -23,20 +49,25 @@
   {:else}
     <ol class="list">
       {#each data.entries as entry (entry.user.id)}
+        {@const displayName =
+          entry.user.twitch_display_name || entry.user.twitch_username}
         <li
           class="row"
           class:me={currentUserId !== null && entry.user.id === currentUserId}
         >
-          <span class="rank-circle r-{Math.min(entry.rank, 3)}"
-            >{entry.rank}</span
+          <span
+            class="rank"
+            class:rank-gold={entry.rank === 1}
+            class:rank-silver={entry.rank === 2}
+            class:rank-bronze={entry.rank === 3}>{entry.rank}</span
           >
           <div class="middle">
             <div class="name-line">
-              <!-- WeeklyLeaderboardUser is structurally identical to User -->
-              <UserLink
-                user={entry.user as import("$lib/api").User}
-                showBadge
-              />
+              <a
+                href="/user/{entry.user.twitch_username}"
+                class="player-name"
+                style={nameStyleFor(entry.user)}>{displayName}</a
+              >
             </div>
             <div class="sub-left">
               {entry.dailies_played} / {data.dailies_total}
@@ -90,36 +121,34 @@
     border-radius: var(--radius-sm);
   }
 
-  .rank-circle {
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
+  .rank {
     color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    text-align: right;
+    padding-right: 0.25rem;
   }
 
-  .rank-circle.r-1 {
-    background: rgba(200, 164, 78, 0.18);
-    border-color: var(--color-gold);
+  .rank-gold {
     color: var(--color-gold);
   }
 
-  .rank-circle.r-2 {
-    background: rgba(184, 197, 214, 0.15);
-    border-color: #b8c5d6;
+  .rank-silver {
     color: #b8c5d6;
   }
 
-  .rank-circle.r-3 {
-    background: rgba(212, 165, 116, 0.15);
-    border-color: #d4a574;
+  .rank-bronze {
     color: #d4a574;
+  }
+
+  .player-name {
+    color: var(--color-text);
+    text-decoration: none;
+    transition: color var(--transition);
+  }
+
+  .player-name:hover {
+    color: var(--color-purple);
   }
 
   .middle {

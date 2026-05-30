@@ -849,11 +849,11 @@
     background: transparent;
     border: 1px solid transparent;
     color: var(--color-text-secondary);
-    padding: 0.2rem 0.55rem;
+    padding: 0.15rem 0.4rem;
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-family: inherit;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs, 11px);
   }
 
   .lb-tab.active {
