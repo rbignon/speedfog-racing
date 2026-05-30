@@ -17,7 +17,7 @@ See docs/specs/2026-05-30-daily-weekly-points-design.md for the full rationale.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -222,3 +222,29 @@ async def compute_weekly_leaderboard(
         dailies_total=len(races),
         entries=entries,
     )
+
+
+# --- winners selection -----------------------------------------------------
+
+
+def _today() -> date:
+    """UTC today. Indirection lets tests freeze the clock via monkeypatch."""
+    return datetime.now(UTC).date()
+
+
+async def compute_weekly_winners(
+    session: AsyncSession, week_starting: date
+) -> list[WeeklyLeaderboardEntry] | None:
+    """Return the users tied at max(total_points) for the given week, or None
+    if the week is current or future (not yet decided).
+
+    A week is past iff today is on or after the next week's Monday
+    (week_starting + 7 days).
+    """
+    if _today() < week_starting + timedelta(days=7):
+        return None
+    data = await compute_weekly_leaderboard(session, week_starting)
+    if not data.entries:
+        return []
+    top = data.entries[0].total_points
+    return [e for e in data.entries if e.total_points == top]

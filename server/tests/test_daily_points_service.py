@@ -14,6 +14,7 @@ from speedfog_racing.services.daily_points_service import (
     QualifiedParticipant,
     compute_daily_points,
     compute_weekly_leaderboard,
+    compute_weekly_winners,
 )
 
 
@@ -306,3 +307,63 @@ async def test_weekly_leaderboard_aggregates_across_days(db_session: AsyncSessio
     assert by_user["alice3"].rank == 1
     assert by_user["bob3"].rank == 1
     assert data.dailies_total == 2
+
+
+# --- compute_weekly_winners ------------------------------------------------
+
+
+async def test_winners_returns_none_for_current_week(db_session, monkeypatch):
+    """Current week: not yet decided -> None."""
+    from speedfog_racing.services import daily_points_service as svc
+
+    monkeypatch.setattr(svc, "_today", lambda: date(2026, 5, 27))
+    # 2026-05-27 is Wednesday inside week starting 2026-05-25.
+    winners = await compute_weekly_winners(db_session, date(2026, 5, 25))
+    assert winners is None
+
+
+async def test_winners_returns_empty_for_past_week_no_qualified(db_session, monkeypatch):
+    from speedfog_racing.services import daily_points_service as svc
+
+    monkeypatch.setattr(svc, "_today", lambda: date(2026, 6, 8))
+    winners = await compute_weekly_winners(db_session, date(2026, 5, 25))
+    assert winners == []
+
+
+async def test_winners_returns_all_tied_for_past_week(db_session, monkeypatch):
+    from speedfog_racing.services import daily_points_service as svc
+
+    monkeypatch.setattr(svc, "_today", lambda: date(2026, 6, 8))
+
+    organizer = await _make_user(db_session, "sysw")
+    alice = await _make_user(db_session, "alicew")
+    bob = await _make_user(db_session, "bobw")
+    monday = date(2026, 5, 25)
+
+    race = await _make_daily(
+        db_session, organizer=organizer, daily_date=monday, status=RaceStatus.FINISHED
+    )
+    # Tied at IGT -> both rank 1 -> both 50 pts.
+    await _make_participant(
+        db_session,
+        race=race,
+        user=alice,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=1000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+    await _make_participant(
+        db_session,
+        race=race,
+        user=bob,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=1000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+
+    winners = await compute_weekly_winners(db_session, monday)
+    assert winners is not None
+    names = {w.user.twitch_username for w in winners}
+    assert names == {"alicew", "bobw"}
+    for w in winners:
+        assert w.total_points == 50
