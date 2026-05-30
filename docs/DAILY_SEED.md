@@ -433,6 +433,24 @@ Daily-streak state surfaces through existing responses; no new endpoints are add
 - The grid's toolbar carries streak info on the left (`🔥 {N}-day streak · ❄️ {F} freeze[s]`, hidden when `current_streak == 0`, with `· ❄️ {F} freeze[s]` rendered only when `freeze_count > 0`) and prev/next-week arrows on the right. The toolbar row itself is always present so the arrows stay right-aligned regardless. The streak info reads from `displayedWeek.my_streak` and updates live via the `daily_streak_update` WS message; when that message carries `freeze_consumed_for`, the page also patches the matching day's `freeze_protected` so the cell strip flips to "❄️ Freeze" in the same frame as the toolbar (without it, the cell would stay "Abandoned" until the next reload).
 - `UserStatsCards` takes a `streakDisplay?: "current" | "best" | null` prop. `/dashboard` passes `current` (`🔥 N` corner badge on the Daily cell when `current > 0`); `/user/[username]` passes `best` (`🏆 N` when `best > 0`). The badge is hidden when the relevant value is 0.
 
+## Weekly Points
+
+Closed dailies score qualified participants with `points(r, n) = round(50 * (n - r + 1) / n)`, where `n` is the number of qualified participants in the daily (`zone_history` length >= 2) and `r` is the participant's rank in the intra-daily ordering (FINISHED by `igt_ms` ascending, then qualified ABANDONED by `len(zone_history)` then `igt_ms` descending, sport-standard ties).
+
+Points appear:
+
+- On the per-row top-right slot of the daily leaderboard once the daily transitions to `FINISHED`. The slot renders `+XX` in green, alongside the existing `✓` shown during `mode === "running"` for finished participants.
+- Aggregated weekly on the Daily/Week toggle in the `/daily/[date]` leaderboard. The Week view sums points across the closed dailies of the displayed week, with cumulative deaths and weapon combos. The current daily contributes only after closing.
+
+API surface:
+
+- `GET /api/daily/week/leaderboard?date=YYYY-MM-DD` returns the ranking for the week containing the date. Public, no auth required.
+- `GET /api/daily/week?date=YYYY-MM-DD` carries a `winners` field: `null` for the current or future week, `[]` for a past week with no qualified runs, otherwise the list of users tied at max points. Drives the `🏆` block on the `DailyWeekGrid` toolbar (past weeks only, truncated to `Name & Name` for 2 or `Name +N` for 3+).
+
+The `weekly_daily_champion` transient badge and the `cyan-aura` permanent skin are granted to the points champion(s) of the prior week. See [REWARDS.md](REWARDS.md) for the badge lifecycle.
+
+Computation is on demand, no schema change: the helpers in `services/daily_points_service.py` (`compute_daily_points`, `compute_weekly_leaderboard`, `compute_weekly_winners`) are called from the race-detail builder, the two daily endpoints, and the rewards hook.
+
 ## See also
 
 - [RACE_LIFECYCLE.md](RACE_LIFECYCLE.md) for the underlying race / participant state machines (Daily Seeds reuse them as-is).
