@@ -473,7 +473,7 @@ async def test_finished_daily_includes_daily_points_on_participants(
         db.add(race)
         await db.flush()
         # Three finishers: alice 1st (1000ms), bob 2nd (2000ms), carol 3rd (3000ms).
-        # n=3: points are round(50*3/3)=50, round(50*2/3)=33, round(50*1/3)=17.
+        # n=3: points are round(100*3/3)=100, round(100*2/3)=67, round(100*1/3)=33.
         for user, igt in [(alice, 1000), (bob, 2000), (carol, 3000)]:
             p = Participant(
                 race_id=race.id,
@@ -490,9 +490,9 @@ async def test_finished_daily_includes_daily_points_on_participants(
     response = await dl_test_client.get(f"/api/daily/{target.isoformat()}")
     assert response.status_code == 200
     by_name = {p["user"]["twitch_username"]: p for p in response.json()["participants"]}
-    assert by_name["alice_dp"]["daily_points"] == 50
-    assert by_name["bob_dp"]["daily_points"] == 33
-    assert by_name["carol_dp"]["daily_points"] == 17
+    assert by_name["alice_dp"]["daily_points"] == 100
+    assert by_name["bob_dp"]["daily_points"] == 67
+    assert by_name["carol_dp"]["daily_points"] == 33
 
 
 @pytest.mark.asyncio

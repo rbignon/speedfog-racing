@@ -125,4 +125,4 @@ async def test_winners_list_for_past_week_with_finisher(
     assert body["winners"] is not None
     assert len(body["winners"]) == 1
     assert body["winners"][0]["user"]["twitch_username"] == "alice_w"
-    assert body["winners"][0]["total_points"] == 50
+    assert body["winners"][0]["total_points"] == 100

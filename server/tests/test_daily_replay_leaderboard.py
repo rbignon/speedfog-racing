@@ -575,8 +575,8 @@ async def _seed_finished_daily(
 def test_spectator_race_state_carries_daily_points_on_finished_daily(
     daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession]
 ) -> None:
-    """A finished daily's race_state exposes per-rank daily_points: 50 for the
-    rank-1 finisher and 25 for rank 2 (n=2), null for the non-qualified
+    """A finished daily's race_state exposes per-rank daily_points: 100 for the
+    rank-1 finisher and 50 for rank 2 (n=2), null for the non-qualified
     abandoner. Guards the WS surface the +XX indicator reads from."""
     race_id = asyncio.run(_seed_finished_daily(daily_db))
 
@@ -596,6 +596,6 @@ def test_spectator_race_state_carries_daily_points_on_finished_daily(
     alice = _participant_by_username(race_state, "alice_dp")
     bob = _participant_by_username(race_state, "bob_dp")
     carol = _participant_by_username(race_state, "carol_dp")
-    assert alice["daily_points"] == 50
-    assert bob["daily_points"] == 25
+    assert alice["daily_points"] == 100
+    assert bob["daily_points"] == 50
     assert carol["daily_points"] is None

@@ -435,7 +435,9 @@ Daily-streak state surfaces through existing responses; no new endpoints are add
 
 ## Weekly Points
 
-Closed dailies score qualified participants with `points(r, n) = round(50 * (n - r + 1) / n)`, where `n` is the number of qualified participants in the daily (`zone_history` length >= 2) and `r` is the participant's rank in the intra-daily ordering (FINISHED by `igt_ms` ascending, then qualified ABANDONED by `current_layer` descending then `igt_ms` ascending, sport-standard ties). The abandoned ordering mirrors `sort_leaderboard`, so the points never contradict the rank shown in the live and results leaderboard: a deeper run always outscores a shallower one, regardless of how many zones each logged.
+Closed dailies score qualified participants with `points(r, n) = round(100 * (n - r + 1) / n)`, where `n` is the number of qualified participants in the daily (`zone_history` length >= 2) and `r` is the participant's rank in the intra-daily ordering (FINISHED by `igt_ms` ascending, then qualified ABANDONED by `current_layer` descending then `igt_ms` ascending, sport-standard ties). The abandoned ordering mirrors `sort_leaderboard`, so the points never contradict the rank shown in the live and results leaderboard: a deeper run always outscores a shallower one, regardless of how many zones each logged.
+
+The result is bounded so that only the 1st place ever reaches 100 (every other rank is capped at 99) and every qualified runner scores at least 1. The cap and floor only bite on very large fields (n >= ~200), where rounding would otherwise let rank 2 tie the winner or push the tail to 0; below that they are inert and the raw formula stands. The 100-point maximum makes a perfect week read as 700.
 
 Points appear:
 

@@ -11,6 +11,11 @@ The points formula is:
     r = participant's rank in the intra-daily ordering
     points(r, n) = round(MAX_DAILY_POINTS * (n - r + 1) / n)
 
+bounded so that only the 1st place ever reaches MAX_DAILY_POINTS (every other
+rank is capped at MAX_DAILY_POINTS - 1) and every qualified runner scores at
+least 1. The cap and floor only bite on very large fields (n >= ~2*MAX_DAILY_POINTS),
+where rounding would otherwise let rank 2 tie the winner or push the tail to 0.
+
 See docs/DAILY_SEED.md (Weekly Points section) for the operational reference.
 """
 
@@ -29,7 +34,10 @@ from speedfog_racing.services.daily_seed_loop import daily_date_for
 
 # Points awarded to a 1st place, and thus the most a single daily can yield.
 # The whole per-rank ladder scales off this; lower ranks earn proportionally less.
-MAX_DAILY_POINTS = 50
+# 100 (rather than 50) keeps the cap/floor inactive up to ~199 participants and
+# makes a perfect week read as 700; its many divisors also land common field
+# sizes on round per-rank values.
+MAX_DAILY_POINTS = 100
 
 
 @dataclass(frozen=True)
@@ -82,9 +90,13 @@ def compute_daily_points(
     while i < n:
         rank = i + 1
         sig = _rank_key(ordered[i])
+        value = round(MAX_DAILY_POINTS * (n - rank + 1) / n)
+        if rank != 1:
+            value = min(value, MAX_DAILY_POINTS - 1)  # only the 1st place reaches MAX
+        value = max(1, value)  # every qualified runner scores at least 1
         j = i
         while j < n and _rank_key(ordered[j]) == sig:
-            points[ordered[j].participant_id] = round(MAX_DAILY_POINTS * (n - rank + 1) / n)
+            points[ordered[j].participant_id] = value
             j += 1
         i = j
     return points

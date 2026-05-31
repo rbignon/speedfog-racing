@@ -53,25 +53,37 @@ def _qp(
     )
 
 
-def test_single_finisher_gets_50_points():
+def test_single_finisher_gets_max_points():
     qp = _qp(status=ParticipantStatus.FINISHED, igt_ms=1500)
     points = compute_daily_points([qp])
-    assert points[qp.participant_id] == 50
+    assert points[qp.participant_id] == 100
 
 
 def test_five_finishers_linear_ladder():
     qps = [_qp(status=ParticipantStatus.FINISHED, igt_ms=100 + i) for i in range(5)]
     points = compute_daily_points(qps)
-    expected = [50, 40, 30, 20, 10]
+    expected = [100, 80, 60, 40, 20]
     for qp, exp in zip(qps, expected, strict=True):
         assert points[qp.participant_id] == exp
 
 
-def test_fifty_finishers_last_gets_1_point():
-    qps = [_qp(status=ParticipantStatus.FINISHED, igt_ms=100 + i) for i in range(50)]
+def test_only_first_place_reaches_max_on_large_field():
+    """At n=200 the raw formula rounds rank 2 up to MAX (round(100*199/200) =
+    round(99.5) = 100). The cap must keep MAX unique to the winner."""
+    qps = [_qp(status=ParticipantStatus.FINISHED, igt_ms=100 + i) for i in range(200)]
     points = compute_daily_points(qps)
-    assert points[qps[0].participant_id] == 50
+    assert points[qps[0].participant_id] == 100
+    assert points[qps[1].participant_id] == 99
+    assert sum(1 for v in points.values() if v == 100) == 1
+
+
+def test_large_field_last_place_floored_to_one():
+    """At n=250 the raw last value is round(100/250) = round(0.4) = 0. The
+    floor must keep every qualified runner strictly positive."""
+    qps = [_qp(status=ParticipantStatus.FINISHED, igt_ms=100 + i) for i in range(250)]
+    points = compute_daily_points(qps)
     assert points[qps[-1].participant_id] == 1
+    assert min(points.values()) == 1
 
 
 def test_finished_then_abandoned_ordering():
@@ -80,9 +92,9 @@ def test_finished_then_abandoned_ordering():
     earlier_abandon = _qp(status=ParticipantStatus.ABANDONED, igt_ms=500, current_layer=5)
     points = compute_daily_points([finisher, further_abandon, earlier_abandon])
     # n = 3. Ranks: finisher=1, further_abandon=2 (deeper layer), earlier_abandon=3.
-    assert points[finisher.participant_id] == 50  # round(50 * 3/3) = 50
-    assert points[further_abandon.participant_id] == 33  # round(50 * 2/3) = 33
-    assert points[earlier_abandon.participant_id] == 17  # round(50 * 1/3) = 17
+    assert points[finisher.participant_id] == 100  # round(100 * 3/3) = 100
+    assert points[further_abandon.participant_id] == 67  # round(100 * 2/3) = 67
+    assert points[earlier_abandon.participant_id] == 33  # round(100 * 1/3) = 33
 
 
 def test_abandoned_ranked_by_layer_then_igt():
@@ -94,9 +106,9 @@ def test_abandoned_ranked_by_layer_then_igt():
     shallow = _qp(status=ParticipantStatus.ABANDONED, igt_ms=500, current_layer=12)
     points = compute_daily_points([deep_slow, deep_fast, shallow])
     # n = 3. Ranks: deep_fast=1, deep_slow=2, shallow=3.
-    assert points[deep_fast.participant_id] == 50
-    assert points[deep_slow.participant_id] == 33
-    assert points[shallow.participant_id] == 17
+    assert points[deep_fast.participant_id] == 100
+    assert points[deep_slow.participant_id] == 67
+    assert points[shallow.participant_id] == 33
 
 
 def test_deeper_layer_outranks_longer_history():
@@ -108,8 +120,8 @@ def test_deeper_layer_outranks_longer_history():
     meander_shallow = _qp(status=ParticipantStatus.ABANDONED, igt_ms=2800, current_layer=18)
     points = compute_daily_points([direct_deep, meander_shallow])
     # n = 2. direct_deep=rank1, meander_shallow=rank2.
-    assert points[direct_deep.participant_id] == 50
-    assert points[meander_shallow.participant_id] == 25
+    assert points[direct_deep.participant_id] == 100
+    assert points[meander_shallow.participant_id] == 50
 
 
 def test_strict_igt_tie_uses_sport_convention():
@@ -119,15 +131,15 @@ def test_strict_igt_tie_uses_sport_convention():
     c = _qp(status=ParticipantStatus.FINISHED, igt_ms=2000)
     points = compute_daily_points([a, b, c])
     # n = 3. Ranks: a=1, b=1, c=3.
-    assert points[a.participant_id] == 50
-    assert points[b.participant_id] == 50
-    assert points[c.participant_id] == 17  # round(50 * 1/3) = 17
+    assert points[a.participant_id] == 100
+    assert points[b.participant_id] == 100
+    assert points[c.participant_id] == 33  # round(100 * 1/3) = 33
 
 
-def test_single_abandoned_gets_50_points():
+def test_single_abandoned_gets_max_points():
     qp = _qp(status=ParticipantStatus.ABANDONED, igt_ms=300, current_layer=4)
     points = compute_daily_points([qp])
-    assert points[qp.participant_id] == 50
+    assert points[qp.participant_id] == 100
 
 
 def test_empty_input_returns_empty_dict():
@@ -238,8 +250,8 @@ async def test_daily_points_for_race_scores_finished_daily(db_session: AsyncSess
     )
 
     points = daily_points_for_race(await _reload_race(db_session, race.id))
-    assert points[a.id] == 50  # rank 1 of n=2
-    assert points[b.id] == 25  # rank 2 of n=2 -> round(50 * 1/2)
+    assert points[a.id] == 100  # rank 1 of n=2
+    assert points[b.id] == 50  # rank 2 of n=2 -> round(100 * 1/2)
     assert c.id not in points  # non-qualified gets no entry
 
 
@@ -274,8 +286,8 @@ async def test_daily_points_for_race_ranks_abandoned_by_layer(db_session: AsyncS
     )
 
     points = daily_points_for_race(await _reload_race(db_session, race.id))
-    assert points[d.id] == 50  # rank 1 of n=2: deeper layer
-    assert points[s.id] == 25  # rank 2 of n=2: shallower despite longer history
+    assert points[d.id] == 100  # rank 1 of n=2: deeper layer
+    assert points[s.id] == 50  # rank 2 of n=2: shallower despite longer history
 
 
 async def test_daily_points_for_race_empty_while_running(db_session: AsyncSession) -> None:
@@ -353,7 +365,7 @@ async def test_weekly_leaderboard_only_counts_finished_dailies(db_session: Async
     assert len(data.entries) == 1
     entry = data.entries[0]
     assert entry.user.twitch_username == "alice"
-    assert entry.total_points == 50
+    assert entry.total_points == 100
     assert entry.dailies_played == 1
 
 
@@ -435,9 +447,9 @@ async def test_weekly_leaderboard_aggregates_across_days(db_session: AsyncSessio
 
     data = await compute_weekly_leaderboard(db_session, monday)
     by_user = {e.user.twitch_username: e for e in data.entries}
-    assert by_user["alice3"].total_points == 75
+    assert by_user["alice3"].total_points == 150  # 100 (win) + 50 (2nd of 2)
     assert by_user["alice3"].dailies_played == 2
-    assert by_user["bob3"].total_points == 75
+    assert by_user["bob3"].total_points == 150  # 50 (2nd of 2) + 100 (win)
     assert by_user["bob3"].dailies_played == 2
     assert by_user["alice3"].rank == 1
     assert by_user["bob3"].rank == 1
@@ -518,7 +530,7 @@ async def test_winners_returns_all_tied_for_past_week(db_session, monkeypatch):
     race = await _make_daily(
         db_session, organizer=organizer, daily_date=monday, status=RaceStatus.FINISHED
     )
-    # Tied at IGT -> both rank 1 -> both 50 pts.
+    # Tied at IGT -> both rank 1 -> both 100 pts.
     await _make_participant(
         db_session,
         race=race,
@@ -541,4 +553,4 @@ async def test_winners_returns_all_tied_for_past_week(db_session, monkeypatch):
     names = {w.user.twitch_username for w in winners}
     assert names == {"alicew", "bobw"}
     for w in winners:
-        assert w.total_points == 50
+        assert w.total_points == 100

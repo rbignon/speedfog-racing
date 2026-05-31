@@ -372,21 +372,21 @@ async def test_champion_is_user_with_highest_total_points(ds_session: AsyncSessi
     """Highest total points across the week wins the badge.
 
     Daily 1 (3 finishers, n=3):
-      alice rank 1 -> round(50 * 3/3) = 50
-      bob   rank 2 -> round(50 * 2/3) = 33
-      carol rank 3 -> round(50 * 1/3) = 17
+      alice rank 1 -> round(100 * 3/3) = 100
+      bob   rank 2 -> round(100 * 2/3) = 67
+      carol rank 3 -> round(100 * 1/3) = 33
 
     Daily 2 (3 finishers):
-      bob   rank 1 -> 50
-      carol rank 2 -> 33
-      alice rank 3 -> 17
+      bob   rank 1 -> 100
+      carol rank 2 -> 67
+      alice rank 3 -> 33
 
     Daily 3 (3 finishers):
-      bob   rank 1 -> 50
-      alice rank 2 -> 33
-      carol rank 3 -> 17
+      bob   rank 1 -> 100
+      alice rank 2 -> 67
+      carol rank 3 -> 33
 
-    Totals: alice = 50 + 17 + 33 = 100, bob = 33 + 50 + 50 = 133, carol = 17 + 33 + 17 = 67
+    Totals: alice = 100 + 33 + 67 = 200, bob = 67 + 100 + 100 = 267, carol = 33 + 67 + 33 = 133
     Expected: bob holds weekly_daily_champion alone.
     """
     monday = date(2024, 1, 1)  # Far in the past so the week is closed.

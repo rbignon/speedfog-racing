@@ -125,8 +125,8 @@ async def test_returns_aggregated_ranking_for_past_week(wl_client, wl_async_sess
     assert body["week_ending"] == "2026-05-31"
     assert body["dailies_total"] == 1
     assert [e["user"]["twitch_username"] for e in body["entries"]] == ["alicewl", "bobwl"]
-    assert body["entries"][0]["total_points"] == 50
-    assert body["entries"][1]["total_points"] == 25
+    assert body["entries"][0]["total_points"] == 100
+    assert body["entries"][1]["total_points"] == 50
     assert body["entries"][0]["rank"] == 1
     assert body["entries"][1]["rank"] == 2
     assert body["entries"][0]["dailies_played"] == 1
