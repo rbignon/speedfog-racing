@@ -42,28 +42,25 @@ def _qp(
     user_id: UUID | None = None,
     status: ParticipantStatus,
     igt_ms: int,
-    zone_history_len: int,
+    current_layer: int = 0,
 ) -> QualifiedParticipant:
     return QualifiedParticipant(
         participant_id=uuid4(),
         user_id=user_id or uuid4(),
         status=status,
         igt_ms=igt_ms,
-        zone_history_len=zone_history_len,
+        current_layer=current_layer,
     )
 
 
 def test_single_finisher_gets_50_points():
-    qp = _qp(status=ParticipantStatus.FINISHED, igt_ms=1500, zone_history_len=10)
+    qp = _qp(status=ParticipantStatus.FINISHED, igt_ms=1500)
     points = compute_daily_points([qp])
     assert points[qp.participant_id] == 50
 
 
 def test_five_finishers_linear_ladder():
-    qps = [
-        _qp(status=ParticipantStatus.FINISHED, igt_ms=100 + i, zone_history_len=10)
-        for i in range(5)
-    ]
+    qps = [_qp(status=ParticipantStatus.FINISHED, igt_ms=100 + i) for i in range(5)]
     points = compute_daily_points(qps)
     expected = [50, 40, 30, 20, 10]
     for qp, exp in zip(qps, expected, strict=True):
@@ -71,44 +68,55 @@ def test_five_finishers_linear_ladder():
 
 
 def test_fifty_finishers_last_gets_1_point():
-    qps = [
-        _qp(status=ParticipantStatus.FINISHED, igt_ms=100 + i, zone_history_len=10)
-        for i in range(50)
-    ]
+    qps = [_qp(status=ParticipantStatus.FINISHED, igt_ms=100 + i) for i in range(50)]
     points = compute_daily_points(qps)
     assert points[qps[0].participant_id] == 50
     assert points[qps[-1].participant_id] == 1
 
 
 def test_finished_then_abandoned_ordering():
-    finisher = _qp(status=ParticipantStatus.FINISHED, igt_ms=1000, zone_history_len=15)
-    further_abandon = _qp(status=ParticipantStatus.ABANDONED, igt_ms=900, zone_history_len=12)
-    earlier_abandon = _qp(status=ParticipantStatus.ABANDONED, igt_ms=500, zone_history_len=5)
+    finisher = _qp(status=ParticipantStatus.FINISHED, igt_ms=1000)
+    further_abandon = _qp(status=ParticipantStatus.ABANDONED, igt_ms=900, current_layer=12)
+    earlier_abandon = _qp(status=ParticipantStatus.ABANDONED, igt_ms=500, current_layer=5)
     points = compute_daily_points([finisher, further_abandon, earlier_abandon])
-    # n = 3. Ranks: finisher=1, further_abandon=2, earlier_abandon=3.
+    # n = 3. Ranks: finisher=1, further_abandon=2 (deeper layer), earlier_abandon=3.
     assert points[finisher.participant_id] == 50  # round(50 * 3/3) = 50
     assert points[further_abandon.participant_id] == 33  # round(50 * 2/3) = 33
     assert points[earlier_abandon.participant_id] == 17  # round(50 * 1/3) = 17
 
 
-def test_abandoned_tiebreak_uses_zone_history_then_igt():
-    a = _qp(status=ParticipantStatus.ABANDONED, igt_ms=800, zone_history_len=10)
-    # same zone_history_len as a, higher igt -> ranks above a
-    b = _qp(status=ParticipantStatus.ABANDONED, igt_ms=1200, zone_history_len=10)
-    # fewer zones -> last
-    c = _qp(status=ParticipantStatus.ABANDONED, igt_ms=900, zone_history_len=5)
-    points = compute_daily_points([a, b, c])
-    # n = 3. Ranks: b=1, a=2, c=3.
-    assert points[b.participant_id] == 50
-    assert points[a.participant_id] == 33
-    assert points[c.participant_id] == 17
+def test_abandoned_ranked_by_layer_then_igt():
+    # Mirrors sort_leaderboard: deeper current_layer first, then faster igt.
+    deep_slow = _qp(status=ParticipantStatus.ABANDONED, igt_ms=1200, current_layer=20)
+    # same layer as deep_slow, reached it faster -> ranks above it
+    deep_fast = _qp(status=ParticipantStatus.ABANDONED, igt_ms=800, current_layer=20)
+    # shallower layer -> last, regardless of its (lower) igt
+    shallow = _qp(status=ParticipantStatus.ABANDONED, igt_ms=500, current_layer=12)
+    points = compute_daily_points([deep_slow, deep_fast, shallow])
+    # n = 3. Ranks: deep_fast=1, deep_slow=2, shallow=3.
+    assert points[deep_fast.participant_id] == 50
+    assert points[deep_slow.participant_id] == 33
+    assert points[shallow.participant_id] == 17
+
+
+def test_deeper_layer_outranks_longer_history():
+    """Regression: a direct run that reached a deeper layer must outscore a
+    meandering run that visited more zones but stopped shallower. The old
+    ranking keyed on len(zone_history), which inverted this whenever the
+    deeper run took a more direct route (fewer logged zones)."""
+    direct_deep = _qp(status=ParticipantStatus.ABANDONED, igt_ms=6000, current_layer=19)
+    meander_shallow = _qp(status=ParticipantStatus.ABANDONED, igt_ms=2800, current_layer=18)
+    points = compute_daily_points([direct_deep, meander_shallow])
+    # n = 2. direct_deep=rank1, meander_shallow=rank2.
+    assert points[direct_deep.participant_id] == 50
+    assert points[meander_shallow.participant_id] == 25
 
 
 def test_strict_igt_tie_uses_sport_convention():
     """Two finishers tied at the same IGT share rank 1, next rank skips to 3."""
-    a = _qp(status=ParticipantStatus.FINISHED, igt_ms=1000, zone_history_len=10)
-    b = _qp(status=ParticipantStatus.FINISHED, igt_ms=1000, zone_history_len=10)
-    c = _qp(status=ParticipantStatus.FINISHED, igt_ms=2000, zone_history_len=10)
+    a = _qp(status=ParticipantStatus.FINISHED, igt_ms=1000)
+    b = _qp(status=ParticipantStatus.FINISHED, igt_ms=1000)
+    c = _qp(status=ParticipantStatus.FINISHED, igt_ms=2000)
     points = compute_daily_points([a, b, c])
     # n = 3. Ranks: a=1, b=1, c=3.
     assert points[a.participant_id] == 50
@@ -117,7 +125,7 @@ def test_strict_igt_tie_uses_sport_convention():
 
 
 def test_single_abandoned_gets_50_points():
-    qp = _qp(status=ParticipantStatus.ABANDONED, igt_ms=300, zone_history_len=4)
+    qp = _qp(status=ParticipantStatus.ABANDONED, igt_ms=300, current_layer=4)
     points = compute_daily_points([qp])
     assert points[qp.participant_id] == 50
 
@@ -171,6 +179,7 @@ async def _make_participant(
     igt_ms: int,
     zone_history: list[dict],  # type: ignore[type-arg]
     death_count: int = 0,
+    current_layer: int = 0,
 ) -> Participant:
     p = Participant(
         race_id=race.id,
@@ -179,6 +188,7 @@ async def _make_participant(
         igt_ms=igt_ms,
         zone_history=zone_history,
         death_count=death_count,
+        current_layer=current_layer,
     )
     db.add(p)
     await db.flush()
@@ -231,6 +241,41 @@ async def test_daily_points_for_race_scores_finished_daily(db_session: AsyncSess
     assert points[a.id] == 50  # rank 1 of n=2
     assert points[b.id] == 25  # rank 2 of n=2 -> round(50 * 1/2)
     assert c.id not in points  # non-qualified gets no entry
+
+
+async def test_daily_points_for_race_ranks_abandoned_by_layer(db_session: AsyncSession) -> None:
+    """daily_points_for_race must rank abandoned runs by current_layer, not by
+    zone_history length. The deeper run wins even though it logged fewer zones."""
+    organizer = await _make_user(db_session, "dpfr-l-org")
+    deep = await _make_user(db_session, "dpfr-l-deep")
+    shallow = await _make_user(db_session, "dpfr-l-shallow")
+    race = await _make_daily(
+        db_session, organizer=organizer, daily_date=date(2026, 5, 25), status=RaceStatus.FINISHED
+    )
+    # Deeper layer, shorter history (direct route).
+    d = await _make_participant(
+        db_session,
+        race=race,
+        user=deep,
+        status=ParticipantStatus.ABANDONED,
+        igt_ms=6000,
+        current_layer=19,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}, {"node_id": "c"}],
+    )
+    # Shallower layer, longer history (meandering + backtracks).
+    s = await _make_participant(
+        db_session,
+        race=race,
+        user=shallow,
+        status=ParticipantStatus.ABANDONED,
+        igt_ms=2800,
+        current_layer=18,
+        zone_history=[{"node_id": str(i)} for i in range(8)],
+    )
+
+    points = daily_points_for_race(await _reload_race(db_session, race.id))
+    assert points[d.id] == 50  # rank 1 of n=2: deeper layer
+    assert points[s.id] == 25  # rank 2 of n=2: shallower despite longer history
 
 
 async def test_daily_points_for_race_empty_while_running(db_session: AsyncSession) -> None:

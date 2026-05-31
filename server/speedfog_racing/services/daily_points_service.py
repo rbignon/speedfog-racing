@@ -39,20 +39,25 @@ class QualifiedParticipant:
     user_id: UUID
     status: ParticipantStatus
     igt_ms: int
-    zone_history_len: int
+    current_layer: int
 
 
 def _rank_key(qp: QualifiedParticipant) -> tuple[int, int, int]:
     """Sort key for intra-daily ranking.
 
     FINISHED first (sorted by igt_ms ascending), then ABANDONED (sorted by
-    zone_history_len descending, igt_ms descending as tie-break).
+    current_layer descending, igt_ms ascending as tie-break).
+
+    This mirrors `websocket.race.manager.sort_leaderboard`, the ordering shown
+    to players in the live and results leaderboard. Scoring must not diverge
+    from what the leaderboard displays: ranking abandoned runs by how deep they
+    reached (current_layer is the monotone max layer), then by how fast.
     """
     if qp.status == ParticipantStatus.FINISHED:
         return (0, qp.igt_ms, 0)
-    # Abandoned: higher zone_history_len is better -> negate for ascending sort.
-    # Within same zone_history_len, higher igt_ms is better -> negate as well.
-    return (1, -qp.zone_history_len, -qp.igt_ms)
+    # Abandoned: deeper current_layer is better -> negate for ascending sort.
+    # Within the same layer, lower igt_ms (reached it faster) ranks higher.
+    return (1, -qp.current_layer, qp.igt_ms)
 
 
 def compute_daily_points(
@@ -96,7 +101,7 @@ def daily_points_for_race(race: Race) -> dict[UUID, int]:
             user_id=p.user_id,
             status=p.status,
             igt_ms=p.igt_ms,
-            zone_history_len=len(p.zone_history or []),
+            current_layer=p.current_layer,
         )
         for p in race.participants
         if len(p.zone_history or []) >= 2
@@ -198,7 +203,7 @@ async def compute_weekly_leaderboard(
                     user_id=p.user_id,
                     status=p.status,
                     igt_ms=p.igt_ms,
-                    zone_history_len=_zone_history_len(p),
+                    current_layer=p.current_layer,
                 )
             )
         points = compute_daily_points(qualified)
