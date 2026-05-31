@@ -140,6 +140,8 @@ class ParticipantInfo(BaseModel):
     equipped_badge_id: str | None = None
     equipped_name_template_id: str | None = None
     name_template: NameTemplatePayload | None = None
+    # Per-rank Daily Seed points, only set on a FINISHED daily (null otherwise).
+    daily_points: int | None = None
 
 
 class RaceInfo(BaseModel):

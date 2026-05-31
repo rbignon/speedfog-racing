@@ -439,7 +439,7 @@ Closed dailies score qualified participants with `points(r, n) = round(50 * (n -
 
 Points appear:
 
-- On the per-row top-right slot of the daily leaderboard once the daily transitions to `FINISHED`. The slot renders `+XX` in green, alongside the existing `✓` shown during `mode === "running"` for finished participants.
+- On the per-row top-right slot of the daily leaderboard once the daily transitions to `FINISHED`. The slot renders `+XX` in green, alongside the existing `✓` shown during `mode === "running"` for finished participants. The value is computed server-side and delivered as `daily_points` on each participant in the WebSocket `race_state` (see [PROTOCOL.md](PROTOCOL.md)); the live leaderboard reads it from the WS store, so the same value also rides the REST `RaceDetailResponse`.
 - Aggregated weekly on the Daily/Week toggle in the `/daily/[date]` leaderboard. The Week view sums points across the closed dailies of the displayed week, with cumulative deaths and weapon combos. The current daily contributes only after closing.
 
 API surface:
@@ -449,7 +449,7 @@ API surface:
 
 The `weekly_daily_champion` transient badge and the `cyan-aura` permanent skin are granted to the points champion(s) of the prior week. See [REWARDS.md](REWARDS.md) for the badge lifecycle.
 
-Computation is on demand, no schema change: the helpers in `services/daily_points_service.py` (`compute_daily_points`, `compute_weekly_leaderboard`, `compute_weekly_winners`) are called from the race-detail builder, the two daily endpoints, and the rewards hook.
+Computation is on demand, no schema change: the helpers in `services/daily_points_service.py` (`compute_daily_points`, `compute_weekly_leaderboard`, `compute_weekly_winners`, plus `daily_points_for_race` which gates per-race scoring to closed dailies) are called from the race-detail builder, the WebSocket `race_state` broadcast, the two daily endpoints, and the rewards hook.
 
 ## See also
 

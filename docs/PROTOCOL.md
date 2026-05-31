@@ -632,6 +632,8 @@ Sent immediately on connection (after optional auth). Full race state. Also re-s
 
 `zone_history` is always included (as a list, possibly empty) in `race_state` for every participant. It seeds the client's local history store, which is then kept in sync via `zone_history` snapshot messages. See [zone_history updates](#zone_history-updates).
 
+Each participant carries `daily_points` (integer) only on a **finished daily**: it is the per-rank Daily Seed score `round(50 * (n - r + 1) / n)` for qualified participants, and `null` for non-qualified ones and for any non-daily or still-running race. It is computed server-side (single source: `daily_points_service.daily_points_for_race`) and feeds the `+XX` indicator in the web leaderboard. The high-frequency `player_update` and `leaderboard_update` messages do not carry it (a finished daily emits no such updates).
+
 #### `player_update`
 
 Single player update. **Broadcast to all connections** (mods + spectators). Triggered by periodic `status_update` from mod, revisited nodes, or `zone_query` resolution. Includes `layer_entry_igt` so mods can recompute gaps client-side. `zone_history` is always `null` in this message (see [zone_history updates](#zone_history-updates)).

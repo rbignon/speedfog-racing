@@ -698,6 +698,7 @@ def participant_to_info(
     gap_ms: int | None = None,
     layer_entry_igt: int | None = None,
     include_zone_history: bool = False,
+    daily_points: int | None = None,
 ) -> ParticipantInfo:
     """Convert a Participant model to ParticipantInfo schema.
 
@@ -746,6 +747,7 @@ def participant_to_info(
         equipped_badge_id=participant.user.equipped_badge_id,
         equipped_name_template_id=participant.user.equipped_name_template_id,
         name_template=name_template_payload,
+        daily_points=daily_points,
     )
 
 

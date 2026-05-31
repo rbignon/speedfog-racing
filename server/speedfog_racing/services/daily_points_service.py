@@ -81,6 +81,29 @@ def compute_daily_points(
     return points
 
 
+def daily_points_for_race(race: Race) -> dict[UUID, int]:
+    """Map participant_id -> points for a race, empty unless it is a closed daily.
+
+    Single source of the "only FINISHED dailies are scored" gate, shared by the
+    REST race-detail builder and the WebSocket race_state broadcast so neither
+    has to re-derive the qualified projection.
+    """
+    if race.daily_date is None or race.status != RaceStatus.FINISHED:
+        return {}
+    qualified = [
+        QualifiedParticipant(
+            participant_id=p.id,
+            user_id=p.user_id,
+            status=p.status,
+            igt_ms=p.igt_ms,
+            zone_history_len=len(p.zone_history or []),
+        )
+        for p in race.participants
+        if len(p.zone_history or []) >= 2
+    ]
+    return compute_daily_points(qualified)
+
+
 # --- weekly aggregation ----------------------------------------------------
 
 

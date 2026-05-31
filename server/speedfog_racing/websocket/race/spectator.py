@@ -32,6 +32,7 @@ from speedfog_racing.services.chat_access import (
     can_write_public_chat,
     race_role,
 )
+from speedfog_racing.services.daily_points_service import daily_points_for_race
 from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.websocket.handler import BaseSpectatorHandler
 from speedfog_racing.websocket.race.manager import (
@@ -470,9 +471,14 @@ async def send_race_state(
     connected_ids = set(room.mods.keys()) if room else set()
     graph = race.seed.graph_json if race.seed else None
     sorted_participants, _ = sort_leaderboard(race.participants)
+    points_map = daily_points_for_race(race)
     participant_infos: list[ParticipantInfo] = [
         participant_to_info(
-            p, connected_ids=connected_ids, graph_json=graph, include_zone_history=True
+            p,
+            connected_ids=connected_ids,
+            graph_json=graph,
+            include_zone_history=True,
+            daily_points=points_map.get(p.id),
         )
         for p in sorted_participants
     ]

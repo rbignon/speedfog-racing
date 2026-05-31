@@ -6,7 +6,9 @@ from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import selectinload
 
 from speedfog_racing.database import Base
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus, User
@@ -15,6 +17,7 @@ from speedfog_racing.services.daily_points_service import (
     compute_daily_points,
     compute_weekly_leaderboard,
     compute_weekly_winners,
+    daily_points_for_race,
 )
 
 
@@ -180,6 +183,93 @@ async def _make_participant(
     db.add(p)
     await db.flush()
     return p
+
+
+async def _reload_race(db: AsyncSession, race_id) -> Race:  # type: ignore[no-untyped-def]
+    return (
+        await db.execute(
+            select(Race).where(Race.id == race_id).options(selectinload(Race.participants))
+        )
+    ).scalar_one()
+
+
+async def test_daily_points_for_race_scores_finished_daily(db_session: AsyncSession) -> None:
+    organizer = await _make_user(db_session, "dpfr-org")
+    alice = await _make_user(db_session, "dpfr-alice")
+    bob = await _make_user(db_session, "dpfr-bob")
+    carol = await _make_user(db_session, "dpfr-carol")
+    race = await _make_daily(
+        db_session, organizer=organizer, daily_date=date(2026, 5, 25), status=RaceStatus.FINISHED
+    )
+    a = await _make_participant(
+        db_session,
+        race=race,
+        user=alice,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=1000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+    b = await _make_participant(
+        db_session,
+        race=race,
+        user=bob,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=2000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+    # Single zone -> non-qualified, excluded from ranking and from n.
+    c = await _make_participant(
+        db_session,
+        race=race,
+        user=carol,
+        status=ParticipantStatus.ABANDONED,
+        igt_ms=0,
+        zone_history=[{"node_id": "a"}],
+    )
+
+    points = daily_points_for_race(await _reload_race(db_session, race.id))
+    assert points[a.id] == 50  # rank 1 of n=2
+    assert points[b.id] == 25  # rank 2 of n=2 -> round(50 * 1/2)
+    assert c.id not in points  # non-qualified gets no entry
+
+
+async def test_daily_points_for_race_empty_while_running(db_session: AsyncSession) -> None:
+    organizer = await _make_user(db_session, "dpfr-org2")
+    alice = await _make_user(db_session, "dpfr-alice2")
+    race = await _make_daily(
+        db_session, organizer=organizer, daily_date=date(2026, 5, 25), status=RaceStatus.RUNNING
+    )
+    await _make_participant(
+        db_session,
+        race=race,
+        user=alice,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=1000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+    assert daily_points_for_race(await _reload_race(db_session, race.id)) == {}
+
+
+async def test_daily_points_for_race_empty_for_non_daily(db_session: AsyncSession) -> None:
+    organizer = await _make_user(db_session, "dpfr-org3")
+    alice = await _make_user(db_session, "dpfr-alice3")
+    race = Race(
+        name="regular",
+        organizer_id=organizer.id,
+        status=RaceStatus.FINISHED,
+        is_public=True,
+    )
+    db_session.add(race)
+    await db_session.flush()
+    await _make_participant(
+        db_session,
+        race=race,
+        user=alice,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=1000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+    assert daily_points_for_race(await _reload_race(db_session, race.id)) == {}
 
 
 async def test_weekly_leaderboard_only_counts_finished_dailies(db_session: AsyncSession) -> None:

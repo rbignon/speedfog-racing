@@ -76,10 +76,7 @@ from speedfog_racing.services import (
     get_pool,
     reroll_seed_for_race,
 )
-from speedfog_racing.services.daily_points_service import (
-    QualifiedParticipant,
-    compute_daily_points,
-)
+from speedfog_racing.services.daily_points_service import daily_points_for_race
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
@@ -148,21 +145,9 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         pool_config = PoolConfig(**race.seed.pool.config)
     registration_closes_at, race_ends_at = compute_late_join_deadlines(race)
     participants_list = [participant_response(p) for p in race.participants]
-    if race.daily_date is not None and race.status == RaceStatus.FINISHED:
-        qualified = [
-            QualifiedParticipant(
-                participant_id=p.id,
-                user_id=p.user_id,
-                status=p.status,
-                igt_ms=p.igt_ms,
-                zone_history_len=len(p.zone_history or []),
-            )
-            for p in race.participants
-            if len(p.zone_history or []) >= 2
-        ]
-        points_map = compute_daily_points(qualified)
-        for proj in participants_list:
-            proj.daily_points = points_map.get(proj.id)
+    points_map = daily_points_for_race(race)
+    for proj in participants_list:
+        proj.daily_points = points_map.get(proj.id)
     return RaceDetailResponse(
         id=race.id,
         name=race.name,

@@ -464,3 +464,138 @@ def test_daily_heartbeat_routes_player_update_to_spectators_only(
             "spectator did not receive real player_update for the heartbeating viewer"
         )
         assert bravo_update["player"]["igt_ms"] == 60_000
+
+
+# ---------------------------------------------------------------------------
+# Regression: race_state carries per-rank daily_points on a finished daily
+# ---------------------------------------------------------------------------
+async def _seed_finished_daily(
+    session_maker: async_sessionmaker[AsyncSession],
+) -> uuid.UUID:
+    """Insert a FINISHED daily with two qualified finishers and one
+    non-qualified abandoner, so the race_state broadcast exercises
+    ``daily_points_for_race``."""
+    started = datetime.now(UTC) - timedelta(hours=26)
+    async with session_maker() as db:
+        organizer = User(
+            twitch_id=f"sys-{uuid.uuid4().hex[:8]}",
+            twitch_username="sys_dp",
+            twitch_display_name="System",
+            role=UserRole.SYSTEM,
+        )
+        alice = User(
+            twitch_id=f"a-{uuid.uuid4().hex[:8]}",
+            twitch_username="alice_dp",
+            twitch_display_name="AliceDp",
+            role=UserRole.USER,
+        )
+        bob = User(
+            twitch_id=f"b-{uuid.uuid4().hex[:8]}",
+            twitch_username="bob_dp",
+            twitch_display_name="BobDp",
+            role=UserRole.USER,
+        )
+        carol = User(
+            twitch_id=f"c-{uuid.uuid4().hex[:8]}",
+            twitch_username="carol_dp",
+            twitch_display_name="CarolDp",
+            role=UserRole.USER,
+        )
+        db.add_all([organizer, alice, bob, carol])
+        await db.flush()
+
+        seed = Seed(
+            seed_number=f"dp-{uuid.uuid4().hex[:6]}",
+            pool_name="standard",
+            graph_json=_GRAPH_JSON,
+            total_layers=3,
+            folder_path=f"/tmp/dp-{uuid.uuid4().hex[:6]}",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Daily Points Test",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            is_public=True,
+            open_registration=True,
+            daily_date=started.date(),
+            exclude_from_elo=True,
+            started_at=started,
+            seeds_released_at=started,
+            late_join_window_minutes=1440,
+            race_duration_minutes=1440,
+        )
+        db.add(race)
+        await db.flush()
+
+        two_zones = [
+            {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "end", "igt_ms": 1, "type": "fog"},
+        ]
+        db.add_all(
+            [
+                Participant(
+                    race_id=race.id,
+                    user_id=alice.id,
+                    status=ParticipantStatus.FINISHED,
+                    current_layer=3,
+                    igt_ms=1000,
+                    death_count=0,
+                    zone_history=two_zones,
+                ),
+                Participant(
+                    race_id=race.id,
+                    user_id=bob.id,
+                    status=ParticipantStatus.FINISHED,
+                    current_layer=3,
+                    igt_ms=2000,
+                    death_count=0,
+                    zone_history=two_zones,
+                ),
+                # Non-qualified: a single zone, excluded from ranking and n.
+                Participant(
+                    race_id=race.id,
+                    user_id=carol.id,
+                    status=ParticipantStatus.ABANDONED,
+                    current_layer=1,
+                    igt_ms=0,
+                    death_count=0,
+                    zone_history=[{"node_id": "start", "igt_ms": 0, "type": "spawn"}],
+                ),
+            ]
+        )
+        await db.commit()
+        return race.id
+
+
+def test_spectator_race_state_carries_daily_points_on_finished_daily(
+    daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession]
+) -> None:
+    """A finished daily's race_state exposes per-rank daily_points: 50 for the
+    rank-1 finisher and 25 for rank 2 (n=2), null for the non-qualified
+    abandoner. Guards the WS surface the +XX indicator reads from."""
+    race_id = asyncio.run(_seed_finished_daily(daily_db))
+
+    race_state: dict[str, Any] | None = None
+    with daily_client.websocket_connect(f"/ws/race/{race_id}") as spec_ws:
+        spec_ws.send_json({"type": "no_auth"})
+        for _ in range(20):
+            try:
+                msg = _receive_with_timeout(spec_ws, timeout=2)
+            except TimeoutError:
+                break
+            if msg.get("type") == "race_state":
+                race_state = msg
+                break
+
+    assert race_state is not None, "spectator received no race_state"
+    alice = _participant_by_username(race_state, "alice_dp")
+    bob = _participant_by_username(race_state, "bob_dp")
+    carol = _participant_by_username(race_state, "carol_dp")
+    assert alice["daily_points"] == 50
+    assert bob["daily_points"] == 25
+    assert carol["daily_points"] is None
