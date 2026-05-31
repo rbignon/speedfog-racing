@@ -74,7 +74,7 @@
     text-decoration: none;
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.5rem;
     /* Allow the link to shrink inside flex/grid parents so the name can
        truncate rather than overflow onto neighbouring content. A no-op where
        the parent does not constrain the width. */

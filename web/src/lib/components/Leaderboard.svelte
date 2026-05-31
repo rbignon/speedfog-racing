@@ -414,7 +414,7 @@
   }
 
   .death-count::before {
-    content: "\1F480";
+    content: "💀 ";
     margin-left: 0.25em;
   }
 

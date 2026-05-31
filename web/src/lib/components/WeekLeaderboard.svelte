@@ -175,6 +175,10 @@
     content: "💀 ";
   }
 
+  .deaths {
+    color: var(--color-danger);
+  }
+
   .empty {
     color: var(--color-text-secondary);
     text-align: center;
