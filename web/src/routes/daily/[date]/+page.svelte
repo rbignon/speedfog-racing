@@ -148,6 +148,10 @@
     // Week navigation via the grid arrows does not change ``data.race``, so it
     // does not trigger this and the Week view stays put.
     activeLeaderboardTab = "daily";
+    // The selection holds participant IDs from the previous daily; the new one
+    // has different participants, so clear it to avoid a stale "N selected"
+    // pill and phantom DAG highlights.
+    selectedParticipantIds = new Set();
   });
 
   let wsError = $derived(raceStore.wsError);

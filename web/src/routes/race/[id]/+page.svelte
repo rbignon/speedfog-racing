@@ -140,6 +140,10 @@
   // Update initialRace when route data changes (navigation between races)
   $effect(() => {
     initialRace = data.race;
+    // The selection holds participant IDs from the previous race; a different
+    // race has different participants, so clear it to avoid a stale
+    // "N selected" pill and phantom DAG highlights.
+    selectedParticipantIds = new Set();
   });
 
   // Live data from WebSocket
