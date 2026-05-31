@@ -105,23 +105,10 @@
 />
 
 <div class="leaderboard">
-  {#if hasSelection && onClearSelection}
-    <div class="selection-banner">
-      <span
-        >Selected: {selectedIds!.size} player{selectedIds!.size === 1
-          ? ""
-          : "s"}</span
-      >
-      <button type="button" class="clear-btn" onclick={onClearSelection}
-        >Show all ×</button
-      >
-    </div>
-  {/if}
-
   {#if participants.length === 0}
     <p class="empty">No participants yet</p>
   {:else}
-    <ol class="list">
+    <ol class="list" class:has-selection={hasSelection}>
       {#each participants as participant, index (participant.id)}
         {@const color = playerColor(participant)}
         {@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
@@ -130,6 +117,7 @@
         {@const isFinished = participant.status === "finished"}
         {@const isPreRace =
           participant.status === "ready" || participant.status === "registered"}
+        {@const isSelected = selectedIds?.has(participant.id) ?? false}
         {@const zone =
           isPlaying && showRunDetails
             ? zoneName(participant.current_zone)
@@ -138,14 +126,30 @@
         <li
           class="participant"
           class:abandoned={isAbandoned}
-          class:selected={hasSelection && selectedIds!.has(participant.id)}
-          style="border-left: 3px solid {color}; {backgroundStyleFor(
+          class:selected={isSelected}
+          style="--player-color: {color}; border-left: 3px solid {color}; {backgroundStyleFor(
             participant,
           )}"
           onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
           role={onToggle ? "button" : undefined}
           tabindex={onToggle ? 0 : undefined}
         >
+          {#if onToggle && hasSelection}
+            <button
+              type="button"
+              class="select-box"
+              class:checked={isSelected}
+              aria-pressed={isSelected}
+              aria-label="Toggle {participant.twitch_display_name ||
+                participant.twitch_username} for comparison"
+              title="Add to comparison"
+              onclick={(e) => {
+                e.stopPropagation();
+                onToggle?.(participant.id, true);
+              }}
+              >{#if isSelected}✓{/if}</button
+            >
+          {/if}
           <span class="rank" style="background: {color}; color: #1a1a2e;"
             >{index + 1}</span
           >
@@ -256,6 +260,12 @@
       {/each}
     </ol>
   {/if}
+
+  {#if hasSelection && onClearSelection}
+    <button type="button" class="clear-pill" onclick={onClearSelection}>
+      <span class="count">{selectedIds!.size}</span> selected ×
+    </button>
+  {/if}
 </div>
 
 <style>
@@ -264,34 +274,80 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    position: relative;
   }
 
-  .selection-banner {
+  .select-box {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    padding: 0;
+    border-radius: 4px;
+    border: 1.5px solid var(--color-text-disabled);
+    background: transparent;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.35rem 0.6rem;
-    margin-bottom: 0.4rem;
+    justify-content: center;
+    font-family: inherit;
+    font-size: 0.65rem;
+    line-height: 1;
+    font-weight: 900;
+    color: transparent;
+    cursor: pointer;
+    opacity: 0.4;
+    /* Tighten the gap to the rank badge (the row gap is 0.75rem). */
+    margin-right: -0.25rem;
+    transition:
+      opacity var(--transition),
+      background var(--transition),
+      border-color var(--transition);
+  }
+
+  .participant:hover .select-box {
+    opacity: 1;
+  }
+
+  .select-box:hover {
+    border-color: var(--color-text-secondary);
+  }
+
+  .select-box.checked {
+    opacity: 1;
+    background: var(--player-color);
+    border-color: var(--player-color);
+    color: #1a1a2e;
+  }
+
+  .clear-pill {
+    position: absolute;
+    bottom: 0.6rem;
+    right: 0.6rem;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.7rem;
     background: var(--color-surface-elevated);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: 999px;
     color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .clear-btn {
-    background: transparent;
-    border: 0;
-    color: var(--color-text-secondary);
-    cursor: pointer;
     font-family: inherit;
-    font-size: inherit;
-    padding: 0.1rem 0.3rem;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    transition:
+      color var(--transition),
+      border-color var(--transition);
   }
 
-  .clear-btn:hover {
+  .clear-pill:hover {
     color: var(--color-text);
+    border-color: var(--color-text-secondary);
+  }
+
+  .clear-pill .count {
+    color: var(--color-text);
+    font-weight: 600;
   }
 
   .list {
@@ -303,6 +359,11 @@
     gap: 0.5rem;
     overflow-y: auto;
     flex: 1;
+  }
+
+  .list.has-selection {
+    /* Leave room so the last row can scroll clear of the floating clear pill. */
+    padding-bottom: 2.75rem;
   }
 
   .participant {

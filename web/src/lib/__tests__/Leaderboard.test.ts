@@ -1,5 +1,5 @@
-import { render } from "@testing-library/svelte";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render } from "@testing-library/svelte";
+import { describe, expect, it, vi } from "vitest";
 import Leaderboard from "$lib/components/Leaderboard.svelte";
 
 function fakeParticipant(over: Record<string, unknown> = {}) {
@@ -86,8 +86,8 @@ describe("Leaderboard: +XX indicator (finished mode)", () => {
   });
 });
 
-describe("Leaderboard: Show all banner", () => {
-  it("renders the banner when hasSelection is true", () => {
+describe("Leaderboard: clear-selection pill", () => {
+  it("renders the pill with the selected count when there is a selection", () => {
     const { container } = render(Leaderboard, {
       props: {
         participants: [fakeParticipant()],
@@ -97,10 +97,12 @@ describe("Leaderboard: Show all banner", () => {
         onClearSelection: () => {},
       },
     });
-    expect(container.querySelector(".selection-banner")).not.toBeNull();
+    const pill = container.querySelector(".clear-pill");
+    expect(pill).not.toBeNull();
+    expect(pill?.querySelector(".count")?.textContent).toBe("1");
   });
 
-  it("does not render the banner when selection is empty", () => {
+  it("does not render the pill when selection is empty", () => {
     const { container } = render(Leaderboard, {
       props: {
         participants: [fakeParticipant()],
@@ -110,6 +112,86 @@ describe("Leaderboard: Show all banner", () => {
         onClearSelection: () => {},
       },
     });
-    expect(container.querySelector(".selection-banner")).toBeNull();
+    expect(container.querySelector(".clear-pill")).toBeNull();
+  });
+});
+
+describe("Leaderboard: select-box checkbox", () => {
+  it("hides the checkboxes until at least one player is selected", () => {
+    const empty = render(Leaderboard, {
+      props: {
+        participants: [fakeParticipant()],
+        mode: "running",
+        showRunDetails: true,
+        selectedIds: new Set<string>(),
+        onToggle: () => {},
+      },
+    });
+    expect(empty.container.querySelector(".select-box")).toBeNull();
+
+    // Once something is selected, every row exposes its checkbox.
+    const withSelection = render(Leaderboard, {
+      props: {
+        participants: [fakeParticipant(), fakeParticipant({ id: "p-2" })],
+        mode: "running",
+        showRunDetails: true,
+        selectedIds: new Set(["p-1"]),
+        onToggle: () => {},
+      },
+    });
+    expect(
+      withSelection.container.querySelectorAll(".select-box"),
+    ).toHaveLength(2);
+  });
+
+  it("toggles a row additively (ctrl-style) without firing the row's single-select", async () => {
+    const onToggle = vi.fn();
+    const { container } = render(Leaderboard, {
+      props: {
+        participants: [fakeParticipant(), fakeParticipant({ id: "p-2" })],
+        mode: "running",
+        showRunDetails: true,
+        // p-1 already selected, so the checkboxes are visible.
+        selectedIds: new Set(["p-1"]),
+        onToggle,
+      },
+    });
+    // Click the unselected row's box to add it to the comparison.
+    const box = container.querySelector(".select-box:not(.checked)");
+    expect(box).not.toBeNull();
+    await fireEvent.click(box!);
+    // stopPropagation keeps the row's onclick from also firing, so the
+    // callback is invoked exactly once, with the additive (ctrlKey) flag.
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onToggle).toHaveBeenCalledWith("p-2", true);
+  });
+
+  it("single-selects via a row-body click (ctrlKey false), distinct from the checkbox", async () => {
+    const onToggle = vi.fn();
+    const { container } = render(Leaderboard, {
+      props: {
+        participants: [fakeParticipant()],
+        mode: "running",
+        showRunDetails: true,
+        selectedIds: new Set<string>(),
+        onToggle,
+      },
+    });
+    await fireEvent.click(container.querySelector(".participant")!);
+    // Row body is the single-select path: no additive flag.
+    expect(onToggle).toHaveBeenCalledWith("p-1", false);
+  });
+
+  it("marks the box checked for selected participants", () => {
+    const { container } = render(Leaderboard, {
+      props: {
+        participants: [fakeParticipant()],
+        mode: "running",
+        showRunDetails: true,
+        selectedIds: new Set(["p-1"]),
+        onToggle: () => {},
+      },
+    });
+    expect(container.querySelector(".select-box.checked")).not.toBeNull();
   });
 });
