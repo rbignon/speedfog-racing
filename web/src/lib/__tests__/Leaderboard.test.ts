@@ -46,6 +46,33 @@ describe("Leaderboard: +XX indicator (finished mode)", () => {
     expect(indicator).toBeNull();
   });
 
+  it("renders +XX for a qualified abandoner and moves the layer to the Abandoned line", () => {
+    const { container } = render(Leaderboard, {
+      props: {
+        participants: [
+          fakeParticipant({
+            status: "abandoned",
+            current_layer: 11,
+            daily_points: 7,
+          }),
+        ],
+        mode: "finished",
+        totalLayers: 12,
+        showRunDetails: true,
+      },
+    });
+    // Points take the top-right slot, even for abandoners.
+    expect(
+      container.querySelector(".points-earned")?.textContent ?? "",
+    ).toMatch(/\+7/);
+    // The layer fraction is no longer in the top-right slot...
+    expect(container.querySelector(".layer-fraction")).toBeNull();
+    // ...it sits on the Abandoned line instead.
+    expect(
+      container.querySelector(".abandoned-label")?.textContent ?? "",
+    ).toMatch(/Abandoned.*12\/12/s);
+  });
+
   it("keeps the ✓ behavior in running mode", () => {
     const { container } = render(Leaderboard, {
       props: {

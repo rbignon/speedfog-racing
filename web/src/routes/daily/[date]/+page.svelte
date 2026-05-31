@@ -522,15 +522,18 @@
             onToggle={handleLeaderboardToggle}
             onClearSelection={clearSelection}
           />
-        {:else if weekLeaderboardLoading}
-          <p class="lb-info">Loading...</p>
-        {:else if weekLeaderboardError}
-          <p class="lb-info">Failed to load: {weekLeaderboardError}</p>
         {:else if weekLeaderboardData}
+          <!-- Stale-while-revalidate: keep the current week visible while a
+               week switch refetches, so navigating the grid does not flash an
+               empty/loading state. -->
           <WeekLeaderboard
             data={weekLeaderboardData}
             currentUserId={auth.user?.id ?? null}
           />
+        {:else if weekLeaderboardLoading}
+          <p class="lb-info">Loading...</p>
+        {:else if weekLeaderboardError}
+          <p class="lb-info">Failed to load: {weekLeaderboardError}</p>
         {/if}
       </div>
 

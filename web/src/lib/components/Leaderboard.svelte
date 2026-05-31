@@ -189,7 +189,12 @@
                   onclick={(e) => e.stopPropagation()}
                 />
               {/if}
-              {#if isPlaying || isAbandoned}
+              {#if mode === "finished" && participant.daily_points != null}
+                <!-- Qualified finishers and abandoners both earn points on a
+                     closed daily; the abandoner's layer moves to the
+                     Abandoned line below. -->
+                <span class="points-earned">+{participant.daily_points}</span>
+              {:else if isPlaying}
                 <span class="layer-fraction"
                   >{Math.min(
                     participant.current_layer + 1,
@@ -198,12 +203,20 @@
                 >
               {:else if isFinished && mode === "running"}
                 <span class="finish-icon">✓</span>
-              {:else if isFinished && mode === "finished" && participant.daily_points != null}
-                <span class="points-earned">+{participant.daily_points}</span>
               {/if}
             </div>
             {#if isAbandoned}
-              <span class="zone abandoned-label">Abandoned</span>
+              <span class="zone abandoned-label">
+                <span>Abandoned</span>
+                {#if totalLayers}
+                  <span class="abandoned-layers"
+                    >{Math.min(
+                      participant.current_layer + 1,
+                      totalLayers,
+                    )}/{totalLayers}</span
+                  >
+                {/if}
+              </span>
             {:else if zone}
               <span
                 class="zone"
@@ -388,6 +401,7 @@
 
   .points-earned {
     color: var(--color-success);
+    font-size: var(--font-size-sm);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
@@ -406,6 +420,15 @@
 
   .zone.abandoned-label {
     color: var(--color-text-secondary);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .abandoned-layers {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
   }
 
   .name-row {

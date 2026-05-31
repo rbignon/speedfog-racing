@@ -73,8 +73,9 @@
 
   .list {
     list-style: none;
-    padding: 0;
     margin: 0;
+    /* Right padding keeps row content off the scrollbar. */
+    padding: 0 0.4rem 0 0;
     flex: 1;
     overflow-y: auto;
   }
@@ -136,7 +137,7 @@
   }
 
   .points {
-    color: var(--color-gold);
+    color: var(--color-success);
     font-weight: 600;
     font-size: var(--font-size-sm);
   }
