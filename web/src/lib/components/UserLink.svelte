@@ -78,7 +78,7 @@
   }
 
   .user-link:hover .user-link-name {
-    text-decoration: underline;
+    color: var(--color-purple);
   }
 
   .user-link-avatar {

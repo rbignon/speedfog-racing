@@ -1,22 +1,19 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import type {
-    DailyWeekDay,
-    DailyWeekResponse,
-    WinnerSummary,
-  } from "$lib/api";
+  import type { DailyWeekDay, DailyWeekResponse } from "$lib/api";
   import { fetchDailyWeek } from "$lib/api";
   import { cellStrip } from "$lib/daily";
   import { formatIgt } from "$lib/utils/training";
-  import { rewards } from "$lib/stores/rewards.svelte";
+  import UserLink from "$lib/components/UserLink.svelte";
 
   interface Props {
     week: DailyWeekResponse;
     variant?: "home" | "dashboard" | "daily-detail";
     selectedDate?: string;
+    onWeekChange?: (weekStart: string) => void;
   }
 
-  let { week, variant = "home", selectedDate }: Props = $props();
+  let { week, variant = "home", selectedDate, onWeekChange }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let displayedWeek = $state<DailyWeekResponse>(week);
@@ -36,6 +33,14 @@
         displayedWeek = incoming;
       }
     });
+  });
+
+  // Report the displayed week back to the parent (fires on mount and whenever
+  // local navigation or a parent update moves the week). Lets a host page bind
+  // other views, e.g. a weekly leaderboard, to the week shown in the toolbar.
+  $effect(() => {
+    const ws = displayedWeek.week_start;
+    untrack(() => onWeekChange?.(ws));
   });
 
   function currentWeekMondayFor(todayIso: string): string {
@@ -131,29 +136,6 @@
     return null;
   }
 
-  function nameStyleForWinner(winner: WinnerSummary): string {
-    const id = winner.user.equipped_name_template_id;
-    if (!id || id === "default") return "";
-    const t = rewards.lookupTemplate(id);
-    if (!t) return "";
-    const parts: string[] = [];
-    if (t.gradient) {
-      parts.push(
-        `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]});`,
-        "-webkit-background-clip: text;",
-        "background-clip: text;",
-        "color: transparent;",
-        "padding-inline-end: 0.1em;",
-      );
-    } else if (t.color) {
-      parts.push(`color: ${t.color};`);
-    }
-    if (t.name_css) {
-      parts.push(t.name_css);
-    }
-    return parts.join(" ");
-  }
-
   let scrollContainer: HTMLDivElement | undefined = $state();
   onMount(() => {
     const el = scrollContainer;
@@ -196,37 +178,13 @@
         <span class="grid-winners">
           <span class="trophy" aria-hidden="true">🏆</span>
           {#if displayedWeek.winners.length === 1}
-            {@const w = displayedWeek.winners[0]}
-            <a
-              href="/user/{w.user.twitch_username}"
-              class="player-name"
-              style={nameStyleForWinner(w)}
-              >{w.user.twitch_display_name || w.user.twitch_username}</a
-            >
+            <UserLink user={displayedWeek.winners[0].user} showBadge />
           {:else if displayedWeek.winners.length === 2}
-            {@const w0 = displayedWeek.winners[0]}
-            {@const w1 = displayedWeek.winners[1]}
-            <a
-              href="/user/{w0.user.twitch_username}"
-              class="player-name"
-              style={nameStyleForWinner(w0)}
-              >{w0.user.twitch_display_name || w0.user.twitch_username}</a
-            >
+            <UserLink user={displayedWeek.winners[0].user} showBadge />
             <span class="and"> &amp; </span>
-            <a
-              href="/user/{w1.user.twitch_username}"
-              class="player-name"
-              style={nameStyleForWinner(w1)}
-              >{w1.user.twitch_display_name || w1.user.twitch_username}</a
-            >
+            <UserLink user={displayedWeek.winners[1].user} showBadge />
           {:else}
-            {@const w0 = displayedWeek.winners[0]}
-            <a
-              href="/user/{w0.user.twitch_username}"
-              class="player-name"
-              style={nameStyleForWinner(w0)}
-              >{w0.user.twitch_display_name || w0.user.twitch_username}</a
-            >
+            <UserLink user={displayedWeek.winners[0].user} showBadge />
             <span class="extra">+{displayedWeek.winners.length - 1}</span>
           {/if}
         </span>
@@ -610,15 +568,5 @@
   .nav-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
-  }
-
-  .player-name {
-    color: var(--color-text);
-    text-decoration: none;
-    transition: color var(--transition);
-  }
-
-  .player-name:hover {
-    color: var(--color-purple);
   }
 </style>

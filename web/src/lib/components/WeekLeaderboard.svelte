@@ -1,10 +1,7 @@
 <script lang="ts">
-  import type {
-    WeeklyLeaderboardResponse,
-    WeeklyLeaderboardUser,
-  } from "$lib/api";
+  import type { WeeklyLeaderboardResponse } from "$lib/api";
+  import UserLink from "$lib/components/UserLink.svelte";
   import WeaponsPopover from "$lib/components/WeaponsPopover.svelte";
-  import { rewards } from "$lib/stores/rewards.svelte";
 
   interface Props {
     data: WeeklyLeaderboardResponse;
@@ -16,29 +13,6 @@
   const isEmpty = $derived(data.entries.length === 0);
   const isAwaitingFirstResults = $derived(isEmpty && data.dailies_total === 0);
   const isPastWithNoQualified = $derived(isEmpty && data.dailies_total > 0);
-
-  function nameStyleFor(user: WeeklyLeaderboardUser): string {
-    const id = user.equipped_name_template_id;
-    if (!id || id === "default") return "";
-    const t = rewards.lookupTemplate(id);
-    if (!t) return "";
-    const parts: string[] = [];
-    if (t.gradient) {
-      parts.push(
-        `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]});`,
-        "-webkit-background-clip: text;",
-        "background-clip: text;",
-        "color: transparent;",
-        "padding-inline-end: 0.1em;",
-      );
-    } else if (t.color) {
-      parts.push(`color: ${t.color};`);
-    }
-    if (t.name_css) {
-      parts.push(t.name_css);
-    }
-    return parts.join(" ");
-  }
 </script>
 
 <div class="week-leaderboard">
@@ -49,8 +23,6 @@
   {:else}
     <ol class="list">
       {#each data.entries as entry (entry.user.id)}
-        {@const displayName =
-          entry.user.twitch_display_name || entry.user.twitch_username}
         <li
           class="row"
           class:me={currentUserId !== null && entry.user.id === currentUserId}
@@ -63,11 +35,7 @@
           >
           <div class="middle">
             <div class="name-line">
-              <a
-                href="/user/{entry.user.twitch_username}"
-                class="player-name"
-                style={nameStyleFor(entry.user)}>{displayName}</a
-              >
+              <UserLink user={entry.user} showBadge />
             </div>
             <div class="sub-left">
               {entry.dailies_played} / {data.dailies_total}
@@ -97,6 +65,8 @@
 
 <style>
   .week-leaderboard {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
   }
@@ -105,6 +75,8 @@
     list-style: none;
     padding: 0;
     margin: 0;
+    flex: 1;
+    overflow-y: auto;
   }
 
   .row {
@@ -139,16 +111,6 @@
 
   .rank-bronze {
     color: #d4a574;
-  }
-
-  .player-name {
-    color: var(--color-text);
-    text-decoration: none;
-    transition: color var(--transition);
-  }
-
-  .player-name:hover {
-    color: var(--color-purple);
   }
 
   .middle {

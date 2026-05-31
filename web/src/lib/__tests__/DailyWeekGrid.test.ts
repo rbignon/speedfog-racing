@@ -1,4 +1,5 @@
 import { fireEvent, render } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { describe, expect, it, vi } from "vitest";
 import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
 import type { DailyWeekDay, DailyWeekResponse } from "$lib/api";
@@ -872,5 +873,35 @@ describe("DailyWeekGrid: winners block", () => {
     const block = container.querySelector(".grid-winners");
     expect(block?.textContent ?? "").toMatch(/Alice/);
     expect(block?.textContent ?? "").toMatch(/\+2/);
+  });
+});
+
+describe("DailyWeekGrid: onWeekChange", () => {
+  it("reports the initial week on mount and the navigated week on prev", async () => {
+    const { fetchDailyWeek } = await import("$lib/api");
+    const earlierWeek: DailyWeekResponse = {
+      ...mockWeek,
+      week_start: "2026-04-20",
+      has_earlier: false,
+    };
+    vi.mocked(fetchDailyWeek).mockResolvedValueOnce(earlierWeek);
+
+    const reported: string[] = [];
+    const { container } = render(DailyWeekGrid, {
+      props: {
+        week: mockWeek,
+        variant: "home",
+        onWeekChange: (w: string) => reported.push(w),
+      },
+    });
+    await tick();
+    expect(reported).toEqual(["2026-04-27"]);
+
+    const prev = container.querySelector(
+      'button[data-week-nav="prev"]',
+    ) as HTMLButtonElement;
+    await fireEvent.click(prev);
+    await tick();
+    expect(reported[reported.length - 1]).toBe("2026-04-20");
   });
 });

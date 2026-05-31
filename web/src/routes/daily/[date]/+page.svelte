@@ -73,18 +73,20 @@
   let weekLeaderboardData: WeeklyLeaderboardResponse | null = $state(null);
   let weekLeaderboardLoading = $state(false);
   let weekLeaderboardError: string | null = $state(null);
-  let weekLeaderboardDate: string | null = $state(null);
+  // ``week_start`` (Monday) the cached leaderboard is for, and the week
+  // currently shown in the DailyWeekGrid toolbar. The Week tab follows the
+  // grid: scrolling weeks in the toolbar reloads the leaderboard for that
+  // week, decoupled from the daily this page is showing.
+  let weekLeaderboardLoadedWeek: string | null = $state(null);
+  let gridWeekStart: string | null = $state(null);
 
-  async function loadWeekLeaderboardIfNeeded() {
-    if (weekLeaderboardData || weekLeaderboardLoading) return;
-    if (!initialRace.daily_date) return;
+  async function loadWeekLeaderboard(weekStart: string) {
+    if (weekLeaderboardLoading) return;
     weekLeaderboardLoading = true;
     weekLeaderboardError = null;
     try {
-      weekLeaderboardData = await fetchWeeklyLeaderboard(
-        initialRace.daily_date,
-      );
-      weekLeaderboardDate = initialRace.daily_date;
+      weekLeaderboardData = await fetchWeeklyLeaderboard(weekStart);
+      weekLeaderboardLoadedWeek = weekStart;
     } catch (e) {
       weekLeaderboardError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -92,19 +94,22 @@
     }
   }
 
+  // Lazily load (or reload) whenever the Week tab is active and the grid's
+  // displayed week differs from what is cached. Re-runs on tab switch, on grid
+  // week navigation, and on cache invalidation (see the daily-ended effect).
+  // Converges under rapid week changes: each completed load updates
+  // ``weekLeaderboardLoadedWeek``, retriggering this effect until it matches.
   $effect(() => {
-    if (initialRace.daily_date && initialRace.daily_date !== weekLeaderboardDate) {
-      weekLeaderboardData = null;
-      weekLeaderboardError = null;
-      if (activeLeaderboardTab === "week") {
-        void loadWeekLeaderboardIfNeeded();
-      }
-    }
+    if (activeLeaderboardTab !== "week") return;
+    // Before the grid reports its week, fall back to the page's own week
+    // (same Monday), so the tab is never stuck empty.
+    const ws = gridWeekStart ?? data.week?.week_start ?? initialRace.daily_date;
+    if (!ws || weekLeaderboardLoadedWeek === ws) return;
+    void loadWeekLeaderboard(ws);
   });
 
-  function selectLeaderboardTab(tab: "daily" | "week") {
-    activeLeaderboardTab = tab;
-    if (tab === "week") void loadWeekLeaderboardIfNeeded();
+  function handleGridWeekChange(weekStart: string) {
+    gridWeekStart = weekStart;
   }
 
   function handleLeaderboardToggle(id: string, ctrlKey: boolean) {
@@ -331,10 +336,10 @@
           weekOverride = w;
         })
         .catch(() => {});
-      // Invalidate the cached weekly leaderboard so the Week tab reflects
-      // the just-ended daily's final standings on next open.
-      weekLeaderboardData = null;
-      if (activeLeaderboardTab === "week") void loadWeekLeaderboardIfNeeded();
+      // Invalidate the cached weekly leaderboard so the Week tab refetches the
+      // just-ended daily's final standings (the load effect picks it up when
+      // the Week tab is, or becomes, active).
+      weekLeaderboardLoadedWeek = null;
     }
     prevDailyEnded = dailyEnded;
   });
@@ -491,7 +496,7 @@
               type="button"
               class="lb-tab"
               class:active={activeLeaderboardTab === "daily"}
-              onclick={() => selectLeaderboardTab("daily")}
+              onclick={() => (activeLeaderboardTab = "daily")}
             >
               Daily
             </button>
@@ -499,7 +504,7 @@
               type="button"
               class="lb-tab"
               class:active={activeLeaderboardTab === "week"}
-              onclick={() => selectLeaderboardTab("week")}
+              onclick={() => (activeLeaderboardTab = "week")}
             >
               Week
             </button>
@@ -594,6 +599,7 @@
           week={liveWeek}
           variant="daily-detail"
           selectedDate={initialRace.daily_date ?? undefined}
+          onWeekChange={handleGridWeekChange}
         />
       {/if}
 
