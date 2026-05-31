@@ -143,6 +143,11 @@
     initialRace = data.race;
     // Drop the previous daily's refetched override on URL nav.
     weekOverride = null;
+    // Landing on a specific daily (e.g. clicking a DailyWeekGrid cell) means
+    // the viewer wants that daily's standings, so snap back to the Daily tab.
+    // Week navigation via the grid arrows does not change ``data.race``, so it
+    // does not trigger this and the Week view stays put.
+    activeLeaderboardTab = "daily";
   });
 
   let wsError = $derived(raceStore.wsError);
