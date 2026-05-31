@@ -35,7 +35,7 @@
           >
           <div class="middle">
             <div class="name-line">
-              <UserLink user={entry.user} showBadge />
+              <UserLink user={entry.user} showBadge showAvatar />
             </div>
             <div class="sub-left">
               {entry.dailies_played} / {data.dailies_total}
