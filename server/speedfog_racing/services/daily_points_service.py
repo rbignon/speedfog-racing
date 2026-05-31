@@ -9,7 +9,7 @@ The points formula is:
 
     n = qualified participants (zone_history length >= 2)
     r = participant's rank in the intra-daily ordering
-    points(r, n) = round(50 * (n - r + 1) / n)
+    points(r, n) = round(MAX_DAILY_POINTS * (n - r + 1) / n)
 
 See docs/DAILY_SEED.md (Weekly Points section) for the operational reference.
 """
@@ -26,6 +26,10 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus, User
 from speedfog_racing.services.daily_seed_loop import daily_date_for
+
+# Points awarded to a 1st place, and thus the most a single daily can yield.
+# The whole per-rank ladder scales off this; lower ranks earn proportionally less.
+MAX_DAILY_POINTS = 50
 
 
 @dataclass(frozen=True)
@@ -80,7 +84,7 @@ def compute_daily_points(
         sig = _rank_key(ordered[i])
         j = i
         while j < n and _rank_key(ordered[j]) == sig:
-            points[ordered[j].participant_id] = round(50 * (n - rank + 1) / n)
+            points[ordered[j].participant_id] = round(MAX_DAILY_POINTS * (n - rank + 1) / n)
             j += 1
         i = j
     return points
