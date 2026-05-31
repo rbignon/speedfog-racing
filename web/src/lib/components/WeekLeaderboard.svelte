@@ -122,6 +122,9 @@
     display: flex;
     align-items: center;
     gap: 0.3rem;
+    /* Let the UserLink shrink so long names truncate instead of pushing into
+       the points column. */
+    min-width: 0;
   }
 
   .sub-left {

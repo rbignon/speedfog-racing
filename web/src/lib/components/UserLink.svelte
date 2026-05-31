@@ -75,10 +75,21 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
+    /* Allow the link to shrink inside flex/grid parents so the name can
+       truncate rather than overflow onto neighbouring content. A no-op where
+       the parent does not constrain the width. */
+    min-width: 0;
   }
 
   .user-link:hover .user-link-name {
     color: var(--color-purple);
+  }
+
+  .user-link-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .user-link-avatar {
@@ -86,6 +97,7 @@
     height: 20px;
     border-radius: 50%;
     object-fit: cover;
+    flex-shrink: 0;
   }
 
   .user-link-badge {
