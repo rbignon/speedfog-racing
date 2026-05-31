@@ -101,7 +101,7 @@
     grid-template-columns: 1.5rem 1fr auto;
     column-gap: 0.4rem;
     align-items: center;
-    padding: 0.35rem 0;
+    padding: 0.75rem 0;
     border-bottom: 1px solid var(--color-border);
   }
 
