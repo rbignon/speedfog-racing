@@ -1,7 +1,11 @@
 <script lang="ts">
-  import type { WeeklyLeaderboardResponse } from "$lib/api";
+  import type {
+    WeeklyLeaderboardResponse,
+    WeeklyLeaderboardUser,
+  } from "$lib/api";
   import UserLink from "$lib/components/UserLink.svelte";
   import WeaponsPopover from "$lib/components/WeaponsPopover.svelte";
+  import { rewards } from "$lib/stores/rewards.svelte";
 
   interface Props {
     data: WeeklyLeaderboardResponse;
@@ -13,6 +17,15 @@
   const isEmpty = $derived(data.entries.length === 0);
   const isAwaitingFirstResults = $derived(isEmpty && data.dailies_total === 0);
   const isPastWithNoQualified = $derived(isEmpty && data.dailies_total > 0);
+
+  // Tint the row with the player's name-template backdrop, mirroring the
+  // /stats leaderboard. The viewer's own row keeps the .me highlight instead.
+  function rowStyleFor(user: WeeklyLeaderboardUser): string {
+    const id = user.equipped_name_template_id;
+    if (!id || id === "default") return "";
+    const t = rewards.lookupTemplate(id);
+    return t?.background_css ? `background: ${t.background_css};` : "";
+  }
 </script>
 
 <div class="week-leaderboard">
@@ -23,9 +36,12 @@
   {:else}
     <ol class="list">
       {#each data.entries as entry (entry.user.id)}
+        {@const isMe =
+          currentUserId !== null && entry.user.id === currentUserId}
         <li
           class="row"
-          class:me={currentUserId !== null && entry.user.id === currentUserId}
+          class:me={isMe}
+          style={isMe ? undefined : rowStyleFor(entry.user)}
         >
           <span
             class="rank"

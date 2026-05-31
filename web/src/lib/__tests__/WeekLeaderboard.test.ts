@@ -1,7 +1,53 @@
 import { render } from "@testing-library/svelte";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import WeekLeaderboard from "$lib/components/WeekLeaderboard.svelte";
-import type { WeeklyLeaderboardResponse } from "$lib/api";
+import type {
+  WeeklyLeaderboardEntry,
+  WeeklyLeaderboardResponse,
+} from "$lib/api";
+import { rewards } from "$lib/stores/rewards.svelte";
+
+function seedCatalog() {
+  rewards.catalog = {
+    badges: [],
+    name_templates: [
+      {
+        id: "elo_crown",
+        name: "ELO Crown",
+        color: null,
+        gradient: ["#FFE9A8", "#C8A44E"],
+        name_css: null,
+        background_css:
+          "radial-gradient(ellipse 60% 100% at 25% 50%, rgba(200,164,78,0.18), transparent 70%)",
+        sort_order: 10,
+      },
+    ],
+    phantom_skins: [],
+  };
+}
+
+function entry(
+  id: string,
+  rank: number,
+  templateId: string | null,
+): WeeklyLeaderboardEntry {
+  return {
+    rank,
+    user: {
+      id,
+      twitch_username: id,
+      twitch_display_name: id,
+      twitch_avatar_url: null,
+      equipped_badge_id: null,
+      equipped_name_template_id: templateId,
+      equipped_phantom_skin_id: null,
+    },
+    total_points: 100 - rank,
+    dailies_played: 5,
+    total_deaths: 0,
+    weapon_combos: [],
+  };
+}
 
 function fakeResponse(
   over: Partial<WeeklyLeaderboardResponse> = {},
@@ -84,4 +130,26 @@ describe("WeekLeaderboard", () => {
     });
     expect(container.querySelector(".row.me")).not.toBeNull();
   });
+
+  it("tints other players' rows with their template background, but not the viewer's own", () => {
+    seedCatalog();
+    const data = fakeResponse({
+      entries: [entry("other", 1, "elo_crown"), entry("me", 2, "elo_crown")],
+    });
+    const { container } = render(WeekLeaderboard, {
+      data,
+      currentUserId: "me",
+    });
+    const rows = container.querySelectorAll(".row");
+    // Same equipped template on both, but the viewer's row keeps .me instead.
+    expect(rows[0].getAttribute("style") ?? "").toContain("radial-gradient");
+    expect(rows[1].classList.contains("me")).toBe(true);
+    expect(rows[1].getAttribute("style") ?? "").not.toContain(
+      "radial-gradient",
+    );
+  });
+});
+
+afterEach(() => {
+  rewards.catalog = null;
 });
