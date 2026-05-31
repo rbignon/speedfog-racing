@@ -1,0 +1,32 @@
+{
+  "_comment": "Cross-language parity fixture for weapon-combo aggregation. The TS reference (web/src/lib/weapons.ts:aggregateAllCombos) and its Python mirror (server/.../daily_points_service.py:_aggregate_weapon_combos) must both turn `input` (one zone history) into `expected`. Ticks are kept distinct so the desc sort is order-deterministic across both languages.",
+  "input": [
+    {
+      "node_id": "start",
+      "igt_ms": 0,
+      "weapons": [
+        { "ids": [2000025], "ticks": 5 },
+        { "ids": [3070000, 2000999], "ticks": 2 }
+      ]
+    },
+    {
+      "node_id": "fog_a",
+      "igt_ms": 100000,
+      "weapons": [{ "ids": [2000700], "ticks": 3 }]
+    },
+    {
+      "node_id": "fog_b",
+      "igt_ms": 200000,
+      "weapons": null
+    },
+    {
+      "node_id": "end",
+      "igt_ms": 300000,
+      "weapons": [{ "ids": [3070000, 2000999], "ticks": 4 }]
+    }
+  ],
+  "expected": [
+    { "ids": [2000000], "ticks": 8 },
+    { "ids": [3070000, 2000000], "ticks": 6 }
+  ]
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ZoneHistoryEntry } from "$lib/zone-history";
+import parityFixture from "./fixtures/weapon-combos-parity.json";
+import type { ZoneHistoryEntry, WeaponCombo } from "$lib/zone-history";
 import {
   aggregateAllCombos,
   aggregateZoneCombos,
@@ -11,6 +12,18 @@ const ENTRY = (
   node_id: string,
   weapons: { ids: number[]; ticks: number }[] | undefined,
 ): ZoneHistoryEntry => ({ node_id, igt_ms: 0, weapons });
+
+// Shared cross-language fixture: the Python mirror
+// (daily_points_service._aggregate_weapon_combos) asserts the same input ->
+// expected mapping in server/tests/test_daily_points_service.py. Editing one
+// side without the other breaks the parity guard.
+describe("aggregateAllCombos parity fixture (mirrored in Python)", () => {
+  it("matches the shared fixture", () => {
+    const input = parityFixture.input as ZoneHistoryEntry[];
+    const expected = parityFixture.expected as WeaponCombo[];
+    expect(aggregateAllCombos(input)).toEqual(expected);
+  });
+});
 
 describe("aggregateAllCombos", () => {
   it("sums ticks per ids tuple across entries", () => {
