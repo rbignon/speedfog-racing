@@ -112,6 +112,7 @@ export interface PoolConfig {
   care_package_items: string[] | null;
   items_randomized: boolean | null;
   auto_upgrade_weapons: boolean | null;
+  auto_equip: boolean | null;
   remove_requirements: boolean | null;
   major_boss_ratio: string | null;
   randomize_bosses: string | null;

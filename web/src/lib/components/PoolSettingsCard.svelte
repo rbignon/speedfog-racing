@@ -76,6 +76,12 @@
         <span class="value">Yes</span>
       </div>
     {/if}
+    {#if poolConfig.auto_equip}
+      <div class="info-item">
+        <span class="label">Auto Equip</span>
+        <span class="value">Yes</span>
+      </div>
+    {/if}
     {#if poolConfig.remove_requirements}
       <div class="info-item">
         <span class="label">No Stat Reqs</span>

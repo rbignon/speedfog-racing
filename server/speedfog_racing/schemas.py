@@ -411,6 +411,7 @@ class PoolConfig(BaseModel):
     care_package_items: list[str] | None = None
     items_randomized: bool | None = None
     auto_upgrade_weapons: bool | None = None
+    auto_equip: bool | None = None
     remove_requirements: bool | None = None
     major_boss_ratio: str | None = None
     randomize_bosses: str | None = None

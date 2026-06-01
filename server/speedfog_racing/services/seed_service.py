@@ -168,6 +168,7 @@ def _normalize_pool_config(data: dict[str, Any]) -> dict[str, Any]:
         "care_package_items": care_package_items or None,
         "items_randomized": item_randomizer.get("enabled"),
         "auto_upgrade_weapons": item_randomizer.get("auto_upgrade_weapons"),
+        "auto_equip": item_randomizer.get("auto_equip"),
         "remove_requirements": item_randomizer.get("remove_requirements"),
         "major_boss_ratio": major_boss_label,
         "randomize_bosses": _normalize_randomize_bosses(enemy.get("randomize_bosses")),
