@@ -2,6 +2,20 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.12.0] - 2026-06-01
+
+### Daily Seed
+
+- Daily seeds now award points: finishing a daily scores points out of **100** based on your rank in the field, so a perfect week tops out at **700**.
+- New weekly leaderboard: points add up across the week's daily seeds, with a Daily / Week toggle on the daily page to switch between a single day's standings and the running weekly totals
+- The weekly champion(s) are now decided by total weekly points instead of by most first-place finishes
+- Qualified abandoners earn points too: you score as long as you got past the first fog gate
+
+### Seeds
+
+- Demi-Human boss arenas are now classified as small
+- New mode: **UWYG Boss Rush**, an "Use What You Get" linear boss rush
+
 ## [1.11.1] - 2026-05-28
 
 ### Seeds
