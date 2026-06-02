@@ -50,7 +50,7 @@
     </div>
 
     {#if ruleLines.length > 0}
-      <div class="section">
+      <div class="section mode-rules">
         <h3>Mode Rules</h3>
         <ul>
           {#each ruleLines as line}
@@ -175,6 +175,16 @@
   .recovery {
     background: var(--color-bg);
     border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+  }
+
+  /* Gold left-accent callout: marks pool-specific rules as distinct from the
+     generic sections, reusing the app-wide highlight pattern. */
+  .mode-rules {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-gold);
     border-radius: var(--radius-sm);
     padding: 0.75rem 1rem;
   }
