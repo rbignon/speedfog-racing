@@ -1202,6 +1202,7 @@ export async function updateAdminUserRole(
 
 export interface AdminPool {
   name: string;
+  display_name: string;
   enabled: boolean;
   last_scanned_at: string | null;
   available: number;
@@ -1394,6 +1395,7 @@ export interface ReportedSeed {
   id: string;
   seed_number: string;
   pool_name: string;
+  pool_display_name: string;
   difficulty_score: number;
   reported_by: string;
   reported_reason: string | null;

@@ -53,11 +53,34 @@ describe("daily helpers", () => {
     expect(dailyTitle("2026-04-27")).toContain("Monday");
   });
 
-  it("uses the pool name for the theme label", () => {
-    expect(dailyTheme({ pool_name: "training_standard" } as RaceDetail)).toBe(
-      "Training Standard",
-    );
-    expect(dailyTheme({ pool_name: null } as RaceDetail)).toBe("Unknown");
+  it("prefers the pool config display name for the theme label", () => {
+    expect(
+      dailyTheme({
+        pool_name: "boss_rush",
+        pool_config: { name: "Boss Rush" },
+      } as RaceDetail),
+    ).toBe("Boss Rush");
+  });
+
+  it("falls back to the title-cased normalized name when no display name", () => {
+    expect(
+      dailyTheme({
+        pool_name: "training_standard",
+        pool_config: null,
+      } as RaceDetail),
+    ).toBe("Training Standard");
+    expect(
+      dailyTheme({
+        pool_name: "training_standard",
+        pool_config: { name: null },
+      } as RaceDetail),
+    ).toBe("Training Standard");
+  });
+
+  it("returns Unknown when no pool is assigned", () => {
+    expect(
+      dailyTheme({ pool_name: null, pool_config: null } as RaceDetail),
+    ).toBe("Unknown");
   });
 
   it("returns the matching participant for the current user", () => {

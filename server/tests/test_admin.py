@@ -908,10 +908,15 @@ async def test_activity_orders_by_date_across_sources(
 async def test_reported_seeds_list(test_client, admin_user, organizer_user, async_session):
     """Admin can list reported seeds."""
     async with async_session() as db:
+        # Config name ("Boss Rush Mode") deliberately differs from the
+        # title-cased normalized name ("Boss Rush"), so the assertion below
+        # fails if the response title-cases pool_name instead of reading the
+        # Seed -> Pool join.
+        db.add(Pool(name="boss_rush", enabled=True, config={"name": "Boss Rush Mode"}))
         db.add(
             Seed(
                 seed_number="rep001",
-                pool_name="standard",
+                pool_name="boss_rush",
                 graph_json={"total_layers": 5, "nodes": {}},
                 total_layers=5,
                 folder_path="/test/rep001",
@@ -932,6 +937,9 @@ async def test_reported_seeds_list(test_client, admin_user, organizer_user, asyn
         data = response.json()
         assert len(data) == 1
         assert data[0]["seed_number"] == "rep001"
+        assert data[0]["pool_name"] == "boss_rush"
+        # Resolved via the Seed -> Pool join, not the raw normalized name.
+        assert data[0]["pool_display_name"] == "Boss Rush Mode"
         assert data[0]["reported_reason"] == "broken fog gate"
         assert data[0]["reported_by"] == "organizer_user"
 
@@ -1031,6 +1039,8 @@ async def seeded_pools(async_session):
     row (added by the ``after_create`` listener in conftest.py)."""
     async with async_session() as db:
         db.add(Pool(name="sprint", enabled=False, config={"name": "Sprint"}))
+        # No display name in config: exercises the title-case fallback.
+        db.add(Pool(name="long_run", enabled=False, config={}))
         await db.commit()
 
 
@@ -1047,6 +1057,10 @@ async def test_admin_list_pools_includes_disabled(test_client, admin_user, seede
         pools_by_name = {p["name"]: p for p in body}
         assert pools_by_name["standard"]["enabled"] is True
         assert pools_by_name["sprint"]["enabled"] is False
+        # display_name uses the config name, falling back to the title-cased
+        # normalized name when the config has none.
+        assert pools_by_name["sprint"]["display_name"] == "Sprint"
+        assert pools_by_name["long_run"]["display_name"] == "Long Run"
 
 
 @pytest.mark.asyncio

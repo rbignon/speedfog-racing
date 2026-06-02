@@ -843,7 +843,10 @@
                 {#each reportedSeeds as seed (seed.id)}
                   <tr>
                     <td class="mono">{seed.seed_number}</td>
-                    <td>{formatPoolName(seed.pool_name)}</td>
+                    <td
+                      >{seed.pool_display_name ||
+                        formatPoolName(seed.pool_name)}</td
+                    >
                     <td>{seed.reported_by}</td>
                     <td class="reason-cell" title={seed.reported_reason || ""}
                       >{seed.reported_reason || "-"}</td
@@ -891,7 +894,9 @@
           <tbody>
             {#each [...adminPools].sort( (a, b) => a.name.localeCompare(b.name), ) as pool (pool.name)}
               <tr class:pool-disabled={!pool.enabled}>
-                <td class="pool-name">{formatPoolName(pool.name)}</td>
+                <td class="pool-name"
+                  >{pool.display_name || formatPoolName(pool.name)}</td
+                >
                 <td>
                   <label class="pool-toggle">
                     <input

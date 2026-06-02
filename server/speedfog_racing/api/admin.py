@@ -157,6 +157,7 @@ class AdminPoolResponse(BaseModel):
     """Admin view of a pool row."""
 
     name: str
+    display_name: str
     enabled: bool
     last_scanned_at: datetime | None
     available: int = 0
@@ -182,6 +183,7 @@ async def admin_list_pools(
     return [
         AdminPoolResponse(
             name=p.name,
+            display_name=format_pool_display_name(p),
             enabled=p.enabled,
             last_scanned_at=p.last_scanned_at,
             **stats.get(p.name, {}),
@@ -205,6 +207,7 @@ async def admin_update_pool(
     stats = (await get_pool_stats(db)).get(pool.name, {})
     return AdminPoolResponse(
         name=pool.name,
+        display_name=format_pool_display_name(pool),
         enabled=pool.enabled,
         last_scanned_at=pool.last_scanned_at,
         **stats,
@@ -745,6 +748,7 @@ class ReportedSeedResponse(BaseModel):
     id: uuid.UUID
     seed_number: str
     pool_name: str
+    pool_display_name: str
     difficulty_score: float
     reported_by: str
     reported_reason: str | None
@@ -775,6 +779,7 @@ async def list_reported_seeds(
             id=s.id,
             seed_number=s.seed_number,
             pool_name=s.pool_name,
+            pool_display_name=format_pool_display_name(s.pool),
             difficulty_score=s.difficulty_score,
             reported_by=s.reported_by.twitch_username if s.reported_by else "unknown",
             reported_reason=s.reported_reason,

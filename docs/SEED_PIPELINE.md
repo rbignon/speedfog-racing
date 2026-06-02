@@ -133,7 +133,10 @@ toggle; rescans never touch `enabled`.
 Response builders that need the display name read from the eager
 `seed.pool` relationship (`Seed.pool` uses `lazy="joined"`), so no
 extra DB round-trips are needed to render pool names in race / training
-responses.
+responses, the admin reported-seeds list, and the admin pools list
+(which reads the display name straight off each `Pool` row). All of
+these resolve names via `format_pool_display_name`, which prefers the
+config name and falls back to title-casing the normalized name.
 
 ---
 

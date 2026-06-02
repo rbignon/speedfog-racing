@@ -10,7 +10,6 @@ import type {
   DailyWeekResponse,
   Participant,
   ParticipantStatus,
-  Race,
   RaceDetail,
 } from "$lib/api";
 import { formatPoolName } from "$lib/utils/format";
@@ -34,9 +33,16 @@ export function dailyTitle(date: string): string {
   })}`;
 }
 
-/** Title-cased pool name, or "Unknown" if no pool was assigned yet. */
-export function dailyTheme(race: Pick<Race, "pool_name">): string {
-  return race.pool_name ? formatPoolName(race.pool_name) : "Unknown";
+/**
+ * Pool display name for the theme label, or "Unknown" if no pool was assigned
+ * yet. Prefers the config's display name (e.g. "Boss Rush") and falls back to
+ * title-casing the normalized name (e.g. "boss_rush" -> "Boss Rush").
+ */
+export function dailyTheme(
+  race: Pick<RaceDetail, "pool_name" | "pool_config">,
+): string {
+  if (!race.pool_name) return "Unknown";
+  return race.pool_config?.name || formatPoolName(race.pool_name);
 }
 
 /** Find the participant matching ``userId`` (or null when not playing). */
