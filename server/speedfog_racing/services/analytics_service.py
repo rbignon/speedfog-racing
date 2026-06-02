@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
     Participant,
+    Pool,
     Race,
     RaceStatus,
     Seed,
@@ -379,10 +380,20 @@ async def _compute_pool_usage(db: AsyncSession) -> list[dict[str, Any]]:
         pool = raw_pool.removeprefix("training_")
         training_counts[pool] = training_counts.get(pool, 0) + count
 
+    # Map each normalized pool name to its configured display name. Training
+    # rows were merged onto their race pool name above, so the lookup keys off
+    # the race pool. Missing entries (pool removed, or no display name in the
+    # config) stay None; the frontend title-cases pool_name as a fallback.
+    pool_configs_q = await db.execute(select(Pool.name, Pool.config))
+    display_by_name: dict[str, str | None] = {
+        name: (config or {}).get("name") for name, config in pool_configs_q.all()
+    }
+
     all_pools = set(race_counts) | set(training_counts)
     entries: list[dict[str, Any]] = [
         {
             "pool_name": pool,
+            "pool_display_name": display_by_name.get(pool),
             "race_runs": race_counts.get(pool, 0),
             "training_runs": training_counts.get(pool, 0),
             "total_runs": race_counts.get(pool, 0) + training_counts.get(pool, 0),

@@ -1242,6 +1242,7 @@ export interface AnalyticsTimezone {
 
 export interface AnalyticsPoolUsage {
   pool_name: string;
+  pool_display_name: string | null;
   race_runs: number;
   training_runs: number;
   total_runs: number;

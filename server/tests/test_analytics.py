@@ -128,6 +128,7 @@ from datetime import UTC, date, datetime, timedelta  # noqa: E402
 from speedfog_racing.models import (  # noqa: E402
     Participant,
     ParticipantStatus,
+    Pool,
     Race,
     RaceStatus,
     Seed,
@@ -428,6 +429,12 @@ async def test_compute_analytics_pool_usage_merges_training_prefix(async_session
             api_token=generate_token(),
         )
         db.add(user)
+        # Config name differs from the title-cased normalized name so the
+        # assertion fails if the merged row title-cases instead of reading the
+        # race pool's config. The training_boss_rush pool has no config name,
+        # confirming the merged row keys off the race pool, not the training one.
+        db.add(Pool(name="boss_rush", enabled=True, config={"name": "Boss Rush Gauntlet"}))
+        db.add(Pool(name="training_boss_rush", enabled=True, config={}))
         await db.flush()
 
         race_seed = Seed(
@@ -488,6 +495,8 @@ async def test_compute_analytics_pool_usage_merges_training_prefix(async_session
     entry = pools["boss_rush"]
     assert entry["race_runs"] == 1
     assert entry["training_runs"] == 1
+    # Merged row carries the race pool's configured display name.
+    assert entry["pool_display_name"] == "Boss Rush Gauntlet"
 
 
 @pytest.mark.asyncio

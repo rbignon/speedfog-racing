@@ -1167,7 +1167,8 @@
                   {#if hasRace}
                     <tr class="race-row">
                       <td class="pool-name" rowspan={rowCount}>
-                        {formatPoolName(pool.pool_name)}
+                        {pool.pool_display_name ||
+                          formatPoolName(pool.pool_name)}
                       </td>
                       <td class="type-label race-type">Race</td>
                       <td class="runs-cell">
@@ -1186,7 +1187,8 @@
                     <tr class={hasRace ? "training-row" : "training-row-first"}>
                       {#if !hasRace}
                         <td class="pool-name" rowspan={rowCount}>
-                          {formatPoolName(pool.pool_name)}
+                          {pool.pool_display_name ||
+                            formatPoolName(pool.pool_name)}
                         </td>
                       {/if}
                       <td class="type-label training-type">Solo</td>
