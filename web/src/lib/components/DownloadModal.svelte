@@ -5,6 +5,7 @@
     downloading: boolean;
     error: string | null;
     actionLabel?: string;
+    rules?: string | null;
   }
 
   let {
@@ -13,7 +14,15 @@
     downloading,
     error,
     actionLabel = "Download Race Package",
+    rules = null,
   }: Props = $props();
+
+  const ruleLines = $derived(
+    (rules ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0),
+  );
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -39,6 +48,17 @@
         <li>Skips are allowed</li>
       </ul>
     </div>
+
+    {#if ruleLines.length > 0}
+      <div class="section">
+        <h3>Mode Rules</h3>
+        <ul>
+          {#each ruleLines as line}
+            <li>{line}</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
 
     <div class="section">
       <h3>Installation</h3>

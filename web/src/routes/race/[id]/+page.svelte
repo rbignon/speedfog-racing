@@ -1358,6 +1358,7 @@
       <DownloadModal
         {downloading}
         error={downloadError}
+        rules={initialRace.pool_config?.rules ?? null}
         onClose={() => (showDownloadModal = false)}
         onDownload={handleDownload}
       />

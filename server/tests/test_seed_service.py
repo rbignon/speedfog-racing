@@ -653,6 +653,19 @@ def test_normalize_pool_config_major_boss_ratio_uses_layers_count():
     assert low["major_boss_ratio"] == "Low"  # 0.10
 
 
+def test_normalize_pool_config_carries_display_rules():
+    """A multi-line display.rules string is surfaced verbatim for the modal."""
+    rules = "No backtracking past a cleared arena\nBell-bearing trades are off"
+    out = _normalize_pool_config({"display": {"rules": rules}})
+    assert out["rules"] == rules
+
+
+def test_normalize_pool_config_rules_absent_is_none():
+    """Pools without display.rules expose rules as None, not an empty string."""
+    assert _normalize_pool_config({"display": {}})["rules"] is None
+    assert _normalize_pool_config({"display": {"rules": ""}})["rules"] is None
+
+
 def test_pool_config_schema_derives_layers_count_from_legacy_json():
     """Stored Pool.config rows from before the refactor still populate layers_count."""
     from speedfog_racing.schemas import PoolConfig

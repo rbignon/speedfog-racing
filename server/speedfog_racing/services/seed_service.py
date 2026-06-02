@@ -158,6 +158,7 @@ def _normalize_pool_config(data: dict[str, Any]) -> dict[str, Any]:
         "sort_order": display.get("sort_order", 99),
         "estimated_duration": display.get("estimated_duration"),
         "description": display.get("description") or None,
+        "rules": display.get("rules") or None,
         "final_tier": structure.get("final_tier"),
         "layers_count": layers_count,
         "starting_runes": starting_runes,

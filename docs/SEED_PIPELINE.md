@@ -55,7 +55,7 @@ python tools/generate_pool.py \
 
 Pool configs live at `tools/pools/<pool>.toml`. Each TOML file contains:
 
-- `[display]`: metadata shown in the web UI (estimated_duration, description, type, sort_order)
+- `[display]`: metadata shown in the web UI (estimated_duration, description, type, sort_order, rules). `rules` is an optional multi-line string; each non-empty line becomes a "Mode Rules" bullet in the download modal.
 - `[structure]`: seed generation parameters (final_tier, layers_count)
 - `[requirements]`: zone constraints (legacy_dungeons, bosses, mini_dungeons, major_bosses)
 - `[care_package]`: items granted at each tier (weapons, shields, spells, etc.)

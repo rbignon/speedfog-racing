@@ -401,6 +401,7 @@ class PoolConfig(BaseModel):
     sort_order: int = 99
     estimated_duration: str | None = None
     description: str | None = None
+    rules: str | None = None
     layers_count: int | None = None
     final_tier: int | None = None
     starting_runes: int | None = None
