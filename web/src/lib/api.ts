@@ -1084,6 +1084,7 @@ export interface PoolTypeStats {
 
 export interface UserPoolStatsEntry {
   pool_name: string;
+  pool_display_name: string | null;
   race: PoolTypeStats | null;
   training: PoolTypeStats | null;
   total_runs: number;

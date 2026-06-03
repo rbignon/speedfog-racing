@@ -23,7 +23,7 @@
       .filter((p) => p.total_runs > 0)
       .map((p) => ({
         ...p,
-        _displayName: formatPoolName(p.pool_name),
+        _displayName: p.pool_display_name || formatPoolName(p.pool_name),
         _bestMs: bestTime(p),
       }))
       .sort((a, b) => {

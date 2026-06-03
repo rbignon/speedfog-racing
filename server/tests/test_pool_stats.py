@@ -14,6 +14,7 @@ from speedfog_racing.main import app
 from speedfog_racing.models import (
     Participant,
     ParticipantStatus,
+    Pool,
     Race,
     RaceStatus,
     Seed,
@@ -72,6 +73,10 @@ async def user_with_pool_data(async_session):
             role=UserRole.ORGANIZER,
         )
         db.add_all([player, organizer])
+        # Config display name differs from the title-cased normalized name
+        # ("sprint" -> "Sprint"), so the assertion fails if the endpoint
+        # title-cases pool_name instead of reading the Pool config.
+        db.add(Pool(name="sprint", enabled=True, config={"name": "Sprint Mode"}))
         await db.flush()
 
         # Seeds for two pools
@@ -201,6 +206,12 @@ async def test_pool_stats_returns_aggregated_data(test_client, user_with_pool_da
         # Standard has more total runs (2 race + 1 training = 3) than Sprint (1 race)
         assert pools[0]["pool_name"] == "standard"
         assert pools[1]["pool_name"] == "sprint"
+
+        # Display name resolves from the pool config (the merged "standard" row
+        # keys off the race pool); "Sprint Mode" differs from the title-cased
+        # "Sprint", proving the value is read from config, not derived.
+        assert pools[0]["pool_display_name"] == "Standard"
+        assert pools[1]["pool_display_name"] == "Sprint Mode"
 
         # Standard race stats
         std_race = pools[0]["race"]

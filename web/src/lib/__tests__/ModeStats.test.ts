@@ -7,9 +7,11 @@ function pool(
   name: string,
   runs: number,
   best: number | null,
+  displayName: string | null = null,
 ): UserPoolStatsEntry {
   return {
     pool_name: name,
+    pool_display_name: displayName,
     total_runs: runs,
     race: { runs: Math.floor(runs / 2), best_time_ms: best },
     training: { runs: Math.ceil(runs / 2), best_time_ms: best },
@@ -42,5 +44,14 @@ describe("ModeStats", () => {
   it("renders nothing when there are no pools", () => {
     const { container } = render(ModeStats, { pools: [] });
     expect(container.textContent?.trim()).toBe("");
+  });
+
+  it("prefers the configured display name over the title-cased pool name", () => {
+    const pools = [pool("uwyg_boss_rush", 12, 1_900_000, "UWYG Boss Rush")];
+    render(ModeStats, { pools });
+
+    expect(screen.queryByText("UWYG Boss Rush")).not.toBeNull();
+    // The title-cased fallback ("Uwyg Boss Rush") must not be shown.
+    expect(screen.queryByText("Uwyg Boss Rush")).toBeNull();
   });
 });

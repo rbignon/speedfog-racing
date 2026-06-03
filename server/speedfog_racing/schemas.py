@@ -220,6 +220,7 @@ class UserPoolStatsEntry(BaseModel):
     """Per-pool stats for a user."""
 
     pool_name: str
+    pool_display_name: str | None = None
     race: PoolTypeStatsResponse | None = None
     training: PoolTypeStatsResponse | None = None
     total_runs: int

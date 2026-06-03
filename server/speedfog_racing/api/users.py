@@ -25,6 +25,7 @@ from speedfog_racing.models import (
     Participant,
     ParticipantStatus,
     PlayerTraitScores,
+    Pool,
     Race,
     RaceStatus,
     Seed,
@@ -256,6 +257,15 @@ async def get_user_pool_stats(
             best_time_ms=row.best_time_ms,
         )
 
+    # Map each normalized pool name to its configured display name. Training
+    # rows were merged onto their race pool name above, so the lookup keys off
+    # the race pool. Missing entries (pool removed, or no display name in the
+    # config) stay None; the frontend title-cases pool_name as a fallback.
+    pool_configs_q = await db.execute(select(Pool.name, Pool.config))
+    display_by_name: dict[str, str | None] = {
+        name: (config or {}).get("name") for name, config in pool_configs_q.all()
+    }
+
     # Merge all pool names
     all_pools = set(race_stats.keys()) | set(training_stats.keys())
     entries = []
@@ -266,6 +276,7 @@ async def get_user_pool_stats(
         entries.append(
             UserPoolStatsEntry(
                 pool_name=pool_name,
+                pool_display_name=display_by_name.get(pool_name),
                 race=race,
                 training=training,
                 total_runs=total_runs,
