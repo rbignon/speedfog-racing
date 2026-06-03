@@ -1041,6 +1041,14 @@ async def seeded_pools(async_session):
         db.add(Pool(name="sprint", enabled=False, config={"name": "Sprint"}))
         # No display name in config: exercises the title-case fallback.
         db.add(Pool(name="long_run", enabled=False, config={}))
+        # Training pool: exercises the ``type`` field plumbing.
+        db.add(
+            Pool(
+                name="solo_practice",
+                enabled=False,
+                config={"name": "Solo Practice", "type": "training"},
+            )
+        )
         await db.commit()
 
 
@@ -1061,6 +1069,10 @@ async def test_admin_list_pools_includes_disabled(test_client, admin_user, seede
         # normalized name when the config has none.
         assert pools_by_name["sprint"]["display_name"] == "Sprint"
         assert pools_by_name["long_run"]["display_name"] == "Long Run"
+        # ``type`` surfaces the pool config's type, defaulting to "race" when
+        # the config omits it (the admin UI suffixes training pools with " (Solo)").
+        assert pools_by_name["solo_practice"]["type"] == "training"
+        assert pools_by_name["long_run"]["type"] == "race"
 
 
 @pytest.mark.asyncio

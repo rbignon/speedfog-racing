@@ -1203,6 +1203,7 @@ export async function updateAdminUserRole(
 export interface AdminPool {
   name: string;
   display_name: string;
+  type: string;
   enabled: boolean;
   last_scanned_at: string | null;
   available: number;

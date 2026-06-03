@@ -158,6 +158,7 @@ class AdminPoolResponse(BaseModel):
 
     name: str
     display_name: str
+    type: str = "race"
     enabled: bool
     last_scanned_at: datetime | None
     available: int = 0
@@ -184,6 +185,7 @@ async def admin_list_pools(
         AdminPoolResponse(
             name=p.name,
             display_name=format_pool_display_name(p),
+            type=p.config.get("type", "race"),
             enabled=p.enabled,
             last_scanned_at=p.last_scanned_at,
             **stats.get(p.name, {}),
@@ -208,6 +210,7 @@ async def admin_update_pool(
     return AdminPoolResponse(
         name=pool.name,
         display_name=format_pool_display_name(pool),
+        type=pool.config.get("type", "race"),
         enabled=pool.enabled,
         last_scanned_at=pool.last_scanned_at,
         **stats,

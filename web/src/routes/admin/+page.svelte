@@ -895,7 +895,10 @@
             {#each [...adminPools].sort( (a, b) => a.name.localeCompare(b.name), ) as pool (pool.name)}
               <tr class:pool-disabled={!pool.enabled}>
                 <td class="pool-name"
-                  >{pool.display_name || formatPoolName(pool.name)}</td
+                  >{pool.display_name ||
+                    formatPoolName(pool.name)}{pool.type === "training"
+                    ? " (Solo)"
+                    : ""}</td
                 >
                 <td>
                   <label class="pool-toggle">

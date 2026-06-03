@@ -136,7 +136,10 @@ extra DB round-trips are needed to render pool names in race / training
 responses, the admin reported-seeds list, and the admin pools list
 (which reads the display name straight off each `Pool` row). All of
 these resolve names via `format_pool_display_name`, which prefers the
-config name and falls back to title-casing the normalized name.
+config name and falls back to title-casing the normalized name. The
+admin pools list also exposes each pool's `type` (`race` / `training`,
+read from `Pool.config`) so the admin UI can suffix training pools with
+" (Solo)".
 
 ---
 
