@@ -1,0 +1,47 @@
+# SpeedFog Racing - Fixed Route Pool Configuration
+# Linear run: no branching, every player takes the exact same path.
+extends = "boss_rush"
+
+[display]
+name = "UWYG Boss Rush"
+sort_order = 9
+description = "\"Use What You Get\" linear boss rush"
+rules = """
+Don't change your equipment (weapons, armor, crystal tears, talismans)
+Choose any starting class freely
+If your starting class comes with multiple weapons, keep only one per hand
+You can rebirth at a grace to add endurance if necessary
+You can use Sentry Torch sold at Roundtable for Invisible Assassin
+"""
+
+[structure]
+layers_count = 30
+max_parallel_paths = 1
+max_entrances = 1
+max_exits = 1
+max_branches = 1
+final_tier = 18
+exclude_zones = ["volcano_rykard"]
+
+[item_randomizer]
+auto_equip = true
+
+[starting_items]
+talisman_pouches = 1
+starting_runes = 100000
+
+[care_package]
+enabled = true
+weapon_upgrade = 25
+weapons = 0
+shields = 0
+catalysts = 0
+talismans = 0
+sorceries = 0
+incantations = 0
+head_armor = 0
+body_armor = 0
+arm_armor = 0
+leg_armor = 0
+crystal_tears = 0
+ashes_of_war = 3

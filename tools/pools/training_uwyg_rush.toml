@@ -1,0 +1,6 @@
+# SpeedFog Racing - Training Boss Rush Pool Configuration
+# ~1 hour solo runs, nothing but bosses
+extends = ["uwyg_rush", "_training_base"]
+
+[display]
+description = "\"Use What You Get\" linear boss rush"
