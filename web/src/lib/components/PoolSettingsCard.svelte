@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PoolConfig } from "$lib/api";
   import { formatPoolName } from "$lib/utils/format";
+  import ModeRulesPopover from "./ModeRulesPopover.svelte";
 
   let {
     poolName,
@@ -33,7 +34,12 @@
 </script>
 
 <div class="card" class:compact>
-  <h3 class="title">{title}</h3>
+  <div class="card-header">
+    <h3 class="title">{title}</h3>
+    {#if poolConfig.rules}
+      <ModeRulesPopover rules={poolConfig.rules} align="right" />
+    {/if}
+  </div>
   {#if poolConfig.description}
     <p class="description">{poolConfig.description}</p>
   {/if}
@@ -182,11 +188,19 @@
     padding: 1rem;
   }
 
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0 0 0.25rem 0;
+  }
+
   .title {
     color: var(--color-gold);
     font-size: var(--font-size-lg);
     font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    margin: 0;
   }
 
   .card.compact .title {
