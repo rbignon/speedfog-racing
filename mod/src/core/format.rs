@@ -119,6 +119,49 @@ pub fn compute_gap(
     }
 }
 
+/// How a ranked leaderboard of `n` entries should be displayed when only a
+/// limited number of rows fit, given the local player's 0-based rank `my_index`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LeaderboardLayout {
+    /// Anchor the local row: show the top 9, a "…" separator, then the local
+    /// player's own row (used when the local player ranks outside the top 10).
+    pub need_anchor: bool,
+    /// Number of top-ranked rows to render before any anchor.
+    pub top_count: usize,
+    /// Count for the "+ N more" footer. When anchored this is the number of
+    /// players ranked *below* the local row, so it answers "how many are behind
+    /// me"; the "…" already stands in for those ranked between the top and the
+    /// local row. Without an anchor it is every participant past the rendered
+    /// rows.
+    pub footer_more: usize,
+}
+
+/// Compute the display layout for a leaderboard of `n` entries.
+///
+/// `my_index` is the local player's 0-based rank, or `None` when there is no
+/// local player (e.g. a spectator).
+pub fn compute_leaderboard_layout(n: usize, my_index: Option<usize>) -> LeaderboardLayout {
+    match my_index {
+        // Local player ranks outside the top 10: show the top 9, a "…", then
+        // the local row; the footer counts only the players ranked below it.
+        Some(idx) if n > 10 && idx >= 10 => LeaderboardLayout {
+            need_anchor: true,
+            top_count: 9,
+            footer_more: n.saturating_sub(idx + 1),
+        },
+        // Everyone ranks within (or fits inside) the top 10: plain view, the
+        // footer counts whoever is left past the rendered rows.
+        _ => {
+            let top_count = 10.min(n);
+            LeaderboardLayout {
+                need_anchor: false,
+                top_count,
+                footer_more: n.saturating_sub(top_count),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,5 +389,62 @@ mod tests {
         let mut buf = String::new();
         write_participant_right_text(&mut buf, "abandoned", 2, 5, 45_000);
         assert_eq!(buf, "abandoned");
+    }
+
+    #[test]
+    fn test_layout_anchor_footer_counts_only_players_below() {
+        // 20 players, local is 15th (index 14): board shows top 9, "…", then
+        // our anchored row, so "+ N more" must report the 5 players ranked
+        // behind us, not all 10 rows that are hidden.
+        let layout = compute_leaderboard_layout(20, Some(14));
+        assert!(layout.need_anchor);
+        assert_eq!(layout.top_count, 9);
+        assert_eq!(layout.footer_more, 5);
+    }
+
+    #[test]
+    fn test_layout_anchor_last_place_has_no_footer() {
+        // Local player is dead last: nobody is behind, so no "+ N more".
+        let layout = compute_leaderboard_layout(20, Some(19));
+        assert!(layout.need_anchor);
+        assert_eq!(layout.footer_more, 0);
+    }
+
+    #[test]
+    fn test_layout_anchor_threshold() {
+        // Smallest field that triggers an anchor: 11 players, local is last
+        // (index 10). Top 9 + "…" + self = 10 rows, nobody ranked behind.
+        let layout = compute_leaderboard_layout(11, Some(10));
+        assert!(layout.need_anchor);
+        assert_eq!(layout.top_count, 9);
+        assert_eq!(layout.footer_more, 0);
+    }
+
+    #[test]
+    fn test_layout_no_anchor_counts_hidden_tail() {
+        // Local player ranks inside the top 10 (index 3): plain top-10 view, so
+        // the footer counts everyone past row 10.
+        let layout = compute_leaderboard_layout(20, Some(3));
+        assert!(!layout.need_anchor);
+        assert_eq!(layout.top_count, 10);
+        assert_eq!(layout.footer_more, 10);
+    }
+
+    #[test]
+    fn test_layout_spectator_no_anchor() {
+        // No local player (spectator): never anchor, footer is the hidden tail.
+        let layout = compute_leaderboard_layout(20, None);
+        assert!(!layout.need_anchor);
+        assert_eq!(layout.top_count, 10);
+        assert_eq!(layout.footer_more, 10);
+    }
+
+    #[test]
+    fn test_layout_small_field_fits_without_footer() {
+        // Eight players, all fit: no anchor, no footer.
+        let layout = compute_leaderboard_layout(8, Some(6));
+        assert!(!layout.need_anchor);
+        assert_eq!(layout.top_count, 8);
+        assert_eq!(layout.footer_more, 0);
     }
 }

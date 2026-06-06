@@ -12,8 +12,8 @@ pub mod types;
 
 pub use color::parse_hex_color;
 pub use format::{
-    compute_gap, format_gap, format_gap_into, format_time_into, parse_splits,
-    write_participant_right_text,
+    compute_gap, compute_leaderboard_layout, format_gap, format_gap_into, format_time_into,
+    parse_splits, write_participant_right_text, LeaderboardLayout,
 };
 pub use map_utils::format_map_id;
 pub use protocol::{

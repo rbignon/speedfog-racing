@@ -739,18 +739,10 @@ impl RaceTracker {
         }
 
         cache.my_index = self.my_participant_index;
-        cache.need_anchor = participants.len() > 10 && cache.my_index.is_some_and(|idx| idx >= 10);
-        cache.top_count = if cache.need_anchor {
-            9
-        } else {
-            10.min(participants.len())
-        };
-        cache.displayed = if cache.need_anchor {
-            cache.top_count + usize::from(cache.my_index.is_some())
-        } else {
-            cache.top_count
-        };
-        cache.footer_more = participants.len().saturating_sub(cache.displayed);
+        let layout = crate::core::compute_leaderboard_layout(participants.len(), cache.my_index);
+        cache.need_anchor = layout.need_anchor;
+        cache.top_count = layout.top_count;
+        cache.footer_more = layout.footer_more;
         cache.version = self.leaderboard_version;
         cache.local_igt_bucket = local_igt_bucket;
         cache.max_width = max_width;

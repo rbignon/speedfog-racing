@@ -160,7 +160,6 @@ pub(crate) struct LeaderboardCache {
     pub my_index: Option<usize>,
     pub need_anchor: bool,
     pub top_count: usize,
-    pub displayed: usize,
     pub footer_more: usize,
     pub version: u64,
     pub local_igt_bucket: Option<u32>,
