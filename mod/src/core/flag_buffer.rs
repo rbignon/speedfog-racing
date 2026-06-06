@@ -61,7 +61,7 @@ impl FlagBuffer {
     /// Returns the number of flags moved.
     pub fn park_deferred(&mut self) -> usize {
         let count = self.deferred.len();
-        self.pending.extend(self.deferred.drain(..));
+        self.pending.append(&mut self.deferred);
         count
     }
 

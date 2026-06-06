@@ -80,6 +80,9 @@ pub fn format_gap_into(buf: &mut String, ms: i32) {
 ///
 /// Returns `None` for leader, non-playing statuses, or missing splits.
 /// Uses the caller's `igt_ms` (local IGT for self, server snapshot for others).
+// The eight parameters are all distinct gap-calc inputs; bundling them into a
+// struct would not read more clearly than the positional arguments here.
+#[allow(clippy::too_many_arguments)]
 pub fn compute_gap(
     igt_ms: i32,
     current_layer: i32,
