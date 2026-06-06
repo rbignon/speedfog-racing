@@ -21,6 +21,8 @@ max_entrances = 1
 max_exits = 1
 max_branches = 1
 final_tier = 18
+
+[requirements]
 exclude_zones = ["volcano_rykard"]
 
 [item_randomizer]
