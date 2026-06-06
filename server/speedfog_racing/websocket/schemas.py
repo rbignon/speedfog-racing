@@ -167,6 +167,9 @@ class RaceInfo(BaseModel):
     race_ends_at: str | None = None
     private_dag: bool = False
     countdown_seconds: int = 0
+    # Current seed FK, so a connected mod can detect that its loaded seed pack
+    # went stale after a reroll (it compares this against its config seed_id).
+    seed_id: str | None = None
 
 
 def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
@@ -196,6 +199,7 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
         race_ends_at=race_ends_at.isoformat() if race_ends_at else None,
         private_dag=race.private_dag,
         countdown_seconds=countdown_seconds,
+        seed_id=str(race.seed_id) if race.seed_id else None,
     )
 
 

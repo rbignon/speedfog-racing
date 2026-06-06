@@ -252,3 +252,53 @@ async def test_running_daily_reroll_resets_participants_and_releases_seed(
             .all()
         )
         assert public_messages == []
+
+
+@pytest.mark.asyncio
+async def test_running_daily_reroll_notifies_mod_of_new_seed_id(
+    dr_test_client, dr_async_session_maker
+) -> None:
+    """A connected mod must receive a race_info_update carrying the new seed_id
+    so its overlay can flag the now-stale loaded seed pack."""
+    import json
+    from unittest.mock import AsyncMock
+
+    from speedfog_racing.websocket.race.manager import ModConnection, manager
+
+    race = await _running_daily_with_progress(dr_async_session_maker)
+    admin_token = await _make_admin(dr_async_session_maker)
+    old_seed_id = race.seed_id
+
+    async with dr_async_session_maker() as db:
+        participant = (
+            await db.execute(select(Participant).where(Participant.race_id == race.id))
+        ).scalar_one()
+
+    mod_ws = AsyncMock()
+    room = manager.get_or_create_room(race.id)
+    room.mods[participant.id] = ModConnection(
+        websocket=mod_ws,
+        participant_id=participant.id,
+        user_id=participant.user_id,
+    )
+    try:
+        response = await dr_test_client.post(
+            f"/api/races/{race.id}/reroll-seed",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 200, response.text
+
+        async with dr_async_session_maker() as db:
+            new_seed_id = (
+                await db.execute(select(Race.seed_id).where(Race.id == race.id))
+            ).scalar_one()
+        assert new_seed_id != old_seed_id  # sanity: the reroll changed the seed
+
+        sent = [json.loads(c.args[0]) for c in mod_ws.send_text.call_args_list]
+        race_info_updates = [m for m in sent if m.get("type") == "race_info_update"]
+        assert race_info_updates, (
+            f"mod received no race_info_update; got types {[m.get('type') for m in sent]}"
+        )
+        assert race_info_updates[-1]["race"]["seed_id"] == str(new_seed_id)
+    finally:
+        manager.rooms.pop(race.id, None)

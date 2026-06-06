@@ -1560,6 +1560,9 @@ async def reroll_seed(
             race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
         )
     await broadcast_race_state_update(race_id, race)
+    # race_state is spectator-only; mods learn the new seed_id (to flag a stale
+    # loaded pack) through race_info_update, which reaches mods + spectators.
+    await broadcast_race_info_update(race)
 
     return _race_detail_response(race, user=user)
 
