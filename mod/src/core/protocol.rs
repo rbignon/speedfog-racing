@@ -120,6 +120,11 @@ pub struct RaceInfo {
     pub private_dag: bool,
     #[serde(default)]
     pub countdown_seconds: u32,
+    /// Current seed id of the race. Lets the mod detect that its loaded seed
+    /// pack went stale (e.g. after a reroll) outside the `auth_ok` handshake,
+    /// by comparing it against the configured pack's seed id.
+    #[serde(default)]
+    pub seed_id: Option<String>,
     /// Pre-parsed `race_ends_at` filled by [`RaceInfo::reparse_dates`] after
     /// receipt so the per-frame countdown UI doesn't reparse the string.
     /// Not part of the wire format.
@@ -646,6 +651,15 @@ mod tests {
         let json = r#"{"id": "123", "name": "Test", "status": "running", "countdown_seconds": 10}"#;
         let info: RaceInfo = serde_json::from_str(json).unwrap();
         assert_eq!(info.countdown_seconds, 10);
+    }
+
+    #[test]
+    fn test_race_info_with_seed_id() {
+        // seed_id rides on race_info so the mod can spot a stale loaded pack
+        // (e.g. after a reroll) outside the auth_ok handshake.
+        let json = r#"{"id": "123", "name": "Test", "status": "running", "seed_id": "seed-xyz"}"#;
+        let info: RaceInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.seed_id.as_deref(), Some("seed-xyz"));
     }
 
     #[test]

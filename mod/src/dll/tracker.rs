@@ -1107,20 +1107,16 @@ impl RaceTracker {
                 self.frozen_igt_ms = None;
 
                 // Detect seed mismatch (stale seed pack after re-roll)
-                let config_seed_id = &self.config.server.seed_id;
-                if !config_seed_id.is_empty() {
-                    if let Some(ref server_seed_id) = seed.seed_id {
-                        if config_seed_id != server_seed_id {
-                            warn!(
-                                config = %config_seed_id,
-                                server = %server_seed_id,
-                                "Seed mismatch: seed pack is outdated"
-                            );
-                            self.seed_mismatch = true;
-                        } else {
-                            self.seed_mismatch = false;
-                        }
-                    }
+                self.seed_mismatch = crate::core::is_seed_stale(
+                    &self.config.server.seed_id,
+                    seed.seed_id.as_deref(),
+                );
+                if self.seed_mismatch {
+                    warn!(
+                        config = %self.config.server.seed_id,
+                        server = ?seed.seed_id,
+                        "Seed mismatch: seed pack is outdated"
+                    );
                 }
 
                 self.race_state.seed = Some(seed);
@@ -1246,6 +1242,23 @@ impl RaceTracker {
                     "[WS] Race info updated"
                 );
                 race.reparse_dates();
+                // A reroll changes the race's seed_id mid-session; re-check
+                // whether the loaded pack went stale (auth_ok is the only other
+                // place this is evaluated). Only act when the payload carries a
+                // seed_id, so an older server omitting it can't clear the flag.
+                if race.seed_id.is_some() {
+                    self.seed_mismatch = crate::core::is_seed_stale(
+                        &self.config.server.seed_id,
+                        race.seed_id.as_deref(),
+                    );
+                    if self.seed_mismatch {
+                        warn!(
+                            config = %self.config.server.seed_id,
+                            server = ?race.seed_id,
+                            "Seed mismatch after reroll: seed pack is outdated"
+                        );
+                    }
+                }
                 self.race_state.race = Some(race);
             }
             IncomingMessage::PlayerUpdate(player) => {

@@ -165,6 +165,16 @@ pub fn compute_leaderboard_layout(n: usize, my_index: Option<usize>) -> Leaderbo
     }
 }
 
+/// Whether the player's loaded seed pack is stale relative to the server.
+///
+/// `config_seed_id` is the seed id of the pack the player loaded (empty when
+/// none is configured); `server_seed_id` is the race's current seed id, when
+/// the server reports one. Stale means the player has a configured pack and the
+/// server's seed differs, e.g. after a reroll.
+pub fn is_seed_stale(config_seed_id: &str, server_seed_id: Option<&str>) -> bool {
+    !config_seed_id.is_empty() && server_seed_id.is_some_and(|s| s != config_seed_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,5 +459,28 @@ mod tests {
         assert!(!layout.need_anchor);
         assert_eq!(layout.top_count, 8);
         assert_eq!(layout.footer_more, 0);
+    }
+
+    #[test]
+    fn test_seed_stale_when_server_differs() {
+        assert!(is_seed_stale("pack-abc", Some("server-xyz")));
+    }
+
+    #[test]
+    fn test_seed_not_stale_when_server_matches() {
+        assert!(!is_seed_stale("pack-abc", Some("pack-abc")));
+    }
+
+    #[test]
+    fn test_seed_not_stale_when_config_empty() {
+        // No configured pack: nothing to be stale against, even if the server
+        // reports a seed.
+        assert!(!is_seed_stale("", Some("server-xyz")));
+    }
+
+    #[test]
+    fn test_seed_not_stale_when_server_unknown() {
+        // No server seed_id in the payload: leave the player alone.
+        assert!(!is_seed_stale("pack-abc", None));
     }
 }
