@@ -383,10 +383,11 @@ Race status changed. Broadcast to all mods and spectators. Includes `started_at`
 
 #### `race_info_update`
 
-A refreshed [RaceInfo](#raceinfo) snapshot broadcast to all mods and spectators whenever a race-level field changes outside the normal lifecycle messages. Receivers replace their cached RaceInfo wholesale (no per-field merge). Emitted in two situations:
+A refreshed [RaceInfo](#raceinfo) snapshot broadcast to all mods and spectators whenever a race-level field changes outside the normal lifecycle messages. Receivers replace their cached RaceInfo wholesale (no per-field merge). Emitted in three situations:
 
 - The organizer issues a `PATCH /races/{id}` that mutates a tracked field (`name`, `is_public`, `open_registration`, `max_participants`, `scheduled_at`, `late_join_window_minutes`, `race_duration_minutes`, `private_dag`). No-op PATCHes do not broadcast.
 - The race transitions from `setup` to `running` (`POST /races/{id}/start`). At that point `started_at` becomes non-null and `race_ends_at` becomes computable; the broadcast lets mods that authed in `setup` pick up the new deadlines without reconnecting.
+- The seed is rerolled (`POST /races/{id}/reroll-seed`). `race_state` carries the new full seed to spectators, but mods are not on that channel, so the `race_info_update` is what delivers the new `seed_id` to a connected mod, letting it raise the "SEED OUTDATED" banner mid-session (not just at the next `auth_ok`).
 
 ```json
 {
@@ -981,8 +982,9 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 | `started_at`        | `string?` | ISO 8601 timestamp of effective gameplay start (server sets it to `now + countdown_seconds` at race launch) |
 | `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                                                                 |
 | `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff)                                     |
+| `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                       |
 
-**Note:** The mod's overlay reads `id`, `name`, `status`, and `race_ends_at` (countdown warning when less than 1h remains). Other fields are present on the wire but currently unused by the mod.
+**Note:** The mod's overlay reads `id`, `name`, `status`, `race_ends_at` (countdown warning when less than 1h remains), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
 
 ### SeedInfo
 
