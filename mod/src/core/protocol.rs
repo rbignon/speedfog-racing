@@ -212,7 +212,9 @@ pub enum ServerMessage {
     /// Authentication successful
     AuthOk {
         participant_id: String,
-        race: RaceInfo,
+        // Boxed to keep `ServerMessage` small: `RaceInfo` dwarfs every other
+        // variant, so an inline copy would bloat all of them (large_enum_variant).
+        race: Box<RaceInfo>,
         seed: SeedInfo,
         participants: Vec<ParticipantInfo>,
         #[serde(default)]
@@ -235,7 +237,7 @@ pub enum ServerMessage {
     RaceStatusChange { status: String },
     /// Race-level info changed (race_ends_at extension, etc.) and the cached
     /// RaceInfo on the client must be replaced wholesale with this snapshot.
-    RaceInfoUpdate { race: RaceInfo },
+    RaceInfoUpdate { race: Box<RaceInfo> },
     /// Single player update
     PlayerUpdate { player: ParticipantInfo },
     /// Zone update (unicast to originating mod)

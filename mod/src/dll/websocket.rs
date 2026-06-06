@@ -490,7 +490,7 @@ fn connect_and_auth(
                 } => {
                     let _ = incoming_tx.send(IncomingMessage::AuthOk {
                         participant_id,
-                        race,
+                        race: *race,
                         seed,
                         participants,
                         phantom_skin,
@@ -674,7 +674,7 @@ fn message_loop(
                         }
                         ServerMessage::RaceInfoUpdate { race } => {
                             if incoming_tx
-                                .send(IncomingMessage::RaceInfoUpdate(race))
+                                .send(IncomingMessage::RaceInfoUpdate(*race))
                                 .is_err()
                             {
                                 warn!(
