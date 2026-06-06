@@ -267,6 +267,12 @@ pub enum ServerMessage {
     Ping,
     /// Generic error from server (e.g., race not running)
     Error { message: String },
+    /// Daily-streak update, unicast by the server to a user's connections
+    /// after a daily run. The in-game mod has no use for it; it is modeled
+    /// here only so the message deserializes cleanly and is dropped by the
+    /// catch-all match arm, instead of tripping the parse-failure warning.
+    /// The payload (current/best/freeze_count/...) is intentionally ignored.
+    DailyStreakUpdate {},
 }
 
 // =============================================================================
@@ -696,6 +702,22 @@ mod tests {
             }
             _ => panic!("Expected RaceInfoUpdate"),
         }
+    }
+
+    #[test]
+    fn test_server_daily_streak_update_deserialize_ignores_payload() {
+        // The mod does not consume daily_streak_update, but it must still
+        // deserialize (otherwise it trips the "failed to parse" warning on
+        // every broadcast) and drop the payload fields.
+        let json = r#"{
+            "type": "daily_streak_update",
+            "current": 7,
+            "best": 12,
+            "freeze_count": 2,
+            "freeze_consumed_for": "2026-06-06"
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg, ServerMessage::DailyStreakUpdate {});
     }
 
     #[test]

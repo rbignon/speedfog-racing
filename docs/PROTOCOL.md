@@ -486,6 +486,22 @@ Single player update, broadcast to all connections (mods + spectators). See also
 
 **Daily races (mods skipped).** On daily races (`daily_date != null`), `player_update` is routed to spectators only. Mods consume `player_update` by overwriting the matching row in their local participant list, which would desync that single row from the projected leaderboard until the next `leaderboard_update` tick (~1s). Mods receive their per-viewer projection through `leaderboard_update` instead.
 
+#### `daily_streak_update`
+
+Daily-streak progression for a user, unicast by the server to **every** connection of that user on the race room, including the mod connection, after a daily run resolves.
+
+```json
+{
+  "type": "daily_streak_update",
+  "current": 7,
+  "best": 12,
+  "freeze_count": 2,
+  "freeze_consumed_for": "2026-06-06"
+}
+```
+
+The mod has no use for this message and **intentionally ignores it**: it is modeled as a no-op `ServerMessage` variant so it deserializes cleanly instead of tripping a parse-failure warning on every broadcast. The payload (consumed by the web clients) is dropped by the mod's catch-all match arm.
+
 #### `ping`
 
 Heartbeat ping. Sent by the server every 30 seconds. The mod must respond with `pong`.
