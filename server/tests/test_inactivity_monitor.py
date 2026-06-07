@@ -402,6 +402,202 @@ async def test_does_not_abandon_late_joiner_within_window(async_session):
 
 
 @pytest.mark.asyncio
+async def test_does_not_abandon_noshow_before_late_join_window_closes(async_session):
+    """With a late-join window (and no race duration), a no-show registered
+    before the race must not be abandoned until the window has closed plus the
+    inactivity timeout: the no-show clock is anchored to the window close, not
+    to Race.started_at."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="ljnoshow1",
+            twitch_username="ljnoshow_player",
+            api_token="ljnoshow_tok",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="org_ljnoshow",
+            twitch_username="org_ljnoshow",
+            api_token="org_ljnoshow_tok",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="s_ljnoshow",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/ljnoshow",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        # Window closes at started_at + 60min = now + 15min (still open).
+        race = Race(
+            name="Late Join No-Show Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC) - timedelta(minutes=45),
+            late_join_window_minutes=60,
+        )
+        db.add(race)
+        await db.flush()
+
+        # Registered well before the race: created_at alone would mark them as a
+        # no-show, but the open late-join window must defer the abandonment.
+        p = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.REGISTERED,
+            igt_ms=0,
+            last_igt_change_at=None,
+            created_at=datetime.now(UTC) - timedelta(minutes=90),
+        )
+        db.add(p)
+        await db.commit()
+        p_id = p.id
+
+    abandoned_race_ids, _ = await abandon_inactive_participants(async_session)
+    assert len(abandoned_race_ids) == 0
+
+    async with async_session() as db:
+        p = await db.get(Participant, p_id)
+        assert p.status == ParticipantStatus.REGISTERED
+
+
+@pytest.mark.asyncio
+async def test_abandons_playing_during_open_late_join_window(async_session):
+    """The late-join window only defers the no-show branch. A PLAYING
+    participant with stale IGT is still abandoned even while the window is
+    open, since that branch is anchored on per-participant activity."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="ljplaying1",
+            twitch_username="ljplaying_player",
+            api_token="ljplaying_tok",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="org_ljplaying",
+            twitch_username="org_ljplaying",
+            api_token="org_ljplaying_tok",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="s_ljplaying",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/ljplaying",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        # Window still open (closes at started_at + 60min = now + 20min).
+        race = Race(
+            name="Late Join Playing Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC) - timedelta(minutes=40),
+            late_join_window_minutes=60,
+        )
+        db.add(race)
+        await db.flush()
+
+        p = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.PLAYING,
+            igt_ms=100000,
+            last_igt_change_at=datetime.now(UTC) - timedelta(minutes=36),
+        )
+        db.add(p)
+        await db.commit()
+        p_id = p.id
+
+    abandoned_race_ids, abandoned_pids = await abandon_inactive_participants(async_session)
+    assert len(abandoned_race_ids) == 1
+    assert p_id in abandoned_pids
+
+    async with async_session() as db:
+        p = await db.get(Participant, p_id)
+        assert p.status == ParticipantStatus.ABANDONED
+
+
+@pytest.mark.asyncio
+async def test_abandons_noshow_after_late_join_window_closes(async_session):
+    """Once the late-join window has elapsed by more than the inactivity
+    timeout, a no-show in a race without a race duration is abandoned."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="ljnoshow2",
+            twitch_username="ljnoshow2_player",
+            api_token="ljnoshow2_tok",
+            role=UserRole.USER,
+        )
+        organizer = User(
+            twitch_id="org_ljnoshow2",
+            twitch_username="org_ljnoshow2",
+            api_token="org_ljnoshow2_tok",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, organizer])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="s_ljnoshow2",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/ljnoshow2",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        # Window closed at started_at + 60min = now - 40min, i.e. more than the
+        # 30min inactivity timeout ago.
+        race = Race(
+            name="Late Join Closed Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC) - timedelta(minutes=100),
+            late_join_window_minutes=60,
+        )
+        db.add(race)
+        await db.flush()
+
+        p = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            status=ParticipantStatus.REGISTERED,
+            igt_ms=0,
+            last_igt_change_at=None,
+            created_at=datetime.now(UTC) - timedelta(minutes=100),
+        )
+        db.add(p)
+        await db.commit()
+        p_id = p.id
+
+    abandoned_race_ids, abandoned_pids = await abandon_inactive_participants(async_session)
+    assert len(abandoned_race_ids) == 1
+    assert p_id in abandoned_pids
+
+    async with async_session() as db:
+        p = await db.get(Participant, p_id)
+        assert p.status == ParticipantStatus.ABANDONED
+
+
+@pytest.mark.asyncio
 async def test_does_not_abandon_early_registrant_at_race_start(async_session):
     """A participant who registered well before the race started must not be
     abandoned the moment the race starts (the cutoff is per-participant, but
