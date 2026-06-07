@@ -2,6 +2,29 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.13.0] - 2026-06-07
+
+### Seeds
+
+- **UWYG Boss Rush**: Rykard is no longer part of the boss rush
+- Reduced the weight of the Volcano Manor stretch reached after Godskin Noble
+- Six bosses downgraded to minor: Ancestor Spirit, Dryleaf Dane (Leda fight), Ancient Dragon-Man, Elemer of the Briar, Devonia, and Jori Elder Inquisitor
+- Two outgoing fog gates from the same node can share a proximity group again: with balanced parallel branches, adjacent gates now create genuine path divergence between players instead of forcing everyone toward the nearest one
+- Exclude DLC mausoleums from candidate arenas
+
+### Modes
+
+- Each mode can now define its own rules, shown as a **Mode Rules** section in the seed download window and in a quick popover on the mode's settings card
+
+### Races
+
+- Fix: the no-show timeout now waits for the late-join window to close before abandoning early registrants, so someone who registered ahead of an open window is no longer swept before it elapses
+
+### Mod Overlay
+
+- Fixed the leaderboard "+ N more" footer: when you rank outside the top 9 in a large race, it now counts only the players hidden below your row instead of also counting those already represented by the "…" separator
+- The seed-mismatch banner now also fires mid-session: if a daily seed is rerolled while you are already running, the overlay flags your loaded seed pack as stale instead of noticing only at the next connection
+
 ## [1.12.0] - 2026-06-01
 
 ### Daily Seed
