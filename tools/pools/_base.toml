@@ -27,7 +27,7 @@ sentry_torch_shop = true
 tolerance = 5
 
 [structure]
-max_parallel_paths = 4
+max_parallel_paths = 3
 split_probability = 0.9
 merge_probability = 0.5
 max_entrances = 2
