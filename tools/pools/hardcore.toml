@@ -35,9 +35,9 @@ flamepeak_firegiant = 1    # through-pass
 mohgwyn_boss = 1           # through-pass
 farumazula_maliketh = 1    # through-pass
 leyndell2_throne = 1       # through-pass
-haligtree_malenia = 4      # through-pass
-farumazula_placidusax = 4  # dead-end
-leyndell_erdtree = 6       # dead-end
+haligtree_malenia = 3      # through-pass
+farumazula_placidusax = 3  # dead-end
+leyndell_erdtree = 4       # dead-end
 # DLC remembrance bosses + Bayle
 belurat_boss = 1           # through-pass
 ensis_boss = 1             # through-pass
@@ -49,7 +49,7 @@ storehouse_messmer = 2     # through-pass
 rauhruins_romina = 1       # through-pass
 fingergrounds = 2          # dead-end
 jaggedpeak_bayle = 2       # through-pass
-enirilim_radahn = 6        # dead-end
+enirilim_radahn = 4        # dead-end
 
 [starting_items]
 whetblades = false
