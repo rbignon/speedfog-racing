@@ -8,6 +8,7 @@
 mod event_flags;
 mod game_state;
 pub mod item_spawner;
+pub mod menu_input_patch;
 mod scan;
 pub mod sp_effect_apply;
 pub mod sp_effect_runner;
