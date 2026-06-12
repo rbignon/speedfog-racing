@@ -164,6 +164,7 @@ When a participant downloads their seed pack (`GET /races/{id}/my-seed-pack`), t
 
    [overlay]
    enabled = true
+   anchor = "top-right"
    font_path = ""
    font_size = <user's preference or 18.0>
    background_color = "#141414"

@@ -306,6 +306,9 @@ seed_id = "{race.seed_id}"
 
 [overlay]
 enabled = true
+# Screen corner the overlay is anchored to:
+#   "top-left", "top-right", "bottom-left" or "bottom-right"
+anchor = "top-right"
 # Font to use for the overlay. Can be:
 #   - Empty "" (default): Uses Windows system font (Segoe UI)
 #   - Filename only "arial.ttf": Looks in C:\\Windows\\Fonts\\ then DLL directory
@@ -341,6 +344,9 @@ training = true
 
 [overlay]
 enabled = true
+# Screen corner the overlay is anchored to:
+#   "top-left", "top-right", "bottom-left" or "bottom-right"
+anchor = "top-right"
 font_path = ""
 font_size = {_get_overlay_setting(session.user.overlay_settings, "font_size")}
 background_color = "#141414"
