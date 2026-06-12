@@ -110,7 +110,11 @@ pub unsafe extern "system" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut c
         if libeldenring::version::check_version().is_err() {
             return false;
         }
+        // HINSTANCE wraps a raw pointer and is not Send; round-trip through
+        // usize to move it into the spawned thread.
+        let hmodule_addr = hmodule.0 as usize;
         std::thread::spawn(move || {
+            let hmodule = HINSTANCE(hmodule_addr as *mut c_void);
             start_mod(hmodule);
         });
     }

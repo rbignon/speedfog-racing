@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tracing::info;
-use windows::Win32::Foundation::HINSTANCE;
+use windows::Win32::Foundation::{HINSTANCE, HMODULE};
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 
 use super::hotkey::{deserialize_optional_hotkey, serialize_optional_hotkey, Hotkey};
@@ -205,7 +205,7 @@ impl RaceConfig {
     /// Get DLL directory path
     pub fn get_dll_directory(hmodule: HINSTANCE) -> Option<PathBuf> {
         let mut buffer = [0u16; 260];
-        let len = unsafe { GetModuleFileNameW(hmodule, &mut buffer) } as usize;
+        let len = unsafe { GetModuleFileNameW(Some(HMODULE(hmodule.0)), &mut buffer) } as usize;
         if len == 0 || len >= buffer.len() {
             return None;
         }
