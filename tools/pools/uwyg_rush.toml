@@ -9,7 +9,7 @@ description = "\"Use What You Get\" linear boss rush"
 rules = """
 Don't change your equipment (weapons, armor, crystal tears, talismans)
 Choose any starting class freely
-If your starting class comes with multiple weapons, keep only one per hand
+If your starting class comes with multiple weapons, keep only one in your right hand
 You can rebirth at a grace to add endurance if necessary
 You can use Sentry Torch sold at Roundtable for Invisible Assassin
 """
