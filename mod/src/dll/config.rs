@@ -2,6 +2,7 @@
 //!
 //! Loads settings from speedfog_racing.toml next to the DLL.
 
+use hudhook::imgui::Key;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -175,7 +176,7 @@ fn default_toggle_debug() -> Option<Hotkey> {
 }
 
 fn default_toggle_leaderboard() -> Option<Hotkey> {
-    Some(Hotkey { key: 0x79 }) // F10
+    Some(Hotkey { key: Key::F10 })
 }
 
 impl Default for KeyBindings {

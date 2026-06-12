@@ -21,7 +21,6 @@ use crate::profile_span;
 
 use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
-use super::hotkey::begin_hotkey_frame;
 use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
 
 /// Defensive timeout: if a zone update hasn't been revealed after this duration
@@ -480,14 +479,12 @@ impl RaceTracker {
             .unwrap_or(false)
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, ui: &hudhook::imgui::Ui) {
         profile_span!("tracker_update");
-        // Process hotkeys at start of frame
-        begin_hotkey_frame();
 
         // Check toggle_ui hotkey
         if let Some(ref hotkey) = self.config.keybindings.toggle_ui {
-            if hotkey.is_just_pressed() {
+            if hotkey.is_just_pressed(ui) {
                 self.show_ui = !self.show_ui;
                 info!(show_ui = self.show_ui, "[HOTKEY] Toggle UI");
             }
@@ -495,7 +492,7 @@ impl RaceTracker {
 
         // Check toggle_debug hotkey
         if let Some(ref hotkey) = self.config.keybindings.toggle_debug {
-            if hotkey.is_just_pressed() {
+            if hotkey.is_just_pressed(ui) {
                 self.show_debug = !self.show_debug;
                 info!(show_debug = self.show_debug, "[HOTKEY] Toggle debug");
             }
@@ -503,7 +500,7 @@ impl RaceTracker {
 
         // Check toggle_leaderboard hotkey
         if let Some(ref hotkey) = self.config.keybindings.toggle_leaderboard {
-            if hotkey.is_just_pressed() {
+            if hotkey.is_just_pressed(ui) {
                 self.show_leaderboard = !self.show_leaderboard;
                 info!(
                     show_leaderboard = self.show_leaderboard,

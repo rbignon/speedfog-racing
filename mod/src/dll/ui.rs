@@ -96,7 +96,7 @@ impl RaceTracker {
         profile_span!("frame");
 
         // Per-frame update
-        self.update();
+        self.update(ui);
 
         // Always build a window (hudhook crashes otherwise)
         if !self.show_ui {
