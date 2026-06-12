@@ -180,11 +180,10 @@ impl RaceWebSocketClient {
             }));
 
             if let Err(panic_info) = result {
-                let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                    format!("WS thread panic: {}", s)
-                } else {
-                    "WS thread panic".to_string()
-                };
+                let msg = format!(
+                    "WS thread panic: {}",
+                    crate::panic_message(panic_info.as_ref())
+                );
                 error!("{}", msg);
                 let _ = incoming_tx.send(IncomingMessage::Error(msg));
                 let _ = incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Error));

@@ -129,7 +129,7 @@ pub unsafe extern "system" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut c
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| start_mod(hmodule)))
             {
                 error!(
-                    message = panic_message(payload.as_ref()),
+                    panic = panic_message(payload.as_ref()),
                     "Mod initialization panicked; ejecting"
                 );
                 eject();
