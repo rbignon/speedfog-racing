@@ -72,6 +72,27 @@ impl ImguiRenderLoop for RaceTracker {
     }
 
     fn render(&mut self, ui: &mut hudhook::imgui::Ui) {
+        if self.render_panicked {
+            build_hidden_window(ui);
+            crate::core::profile::frame_mark();
+            return;
+        }
+        if let Err(payload) =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.render_frame(ui)))
+        {
+            self.render_panicked = true;
+            error!(
+                panic = crate::panic_message(payload.as_ref()),
+                "Render panicked; overlay disabled until the game restarts"
+            );
+            build_hidden_window(ui);
+            crate::core::profile::frame_mark();
+        }
+    }
+}
+
+impl RaceTracker {
+    fn render_frame(&mut self, ui: &hudhook::imgui::Ui) {
         profile_span!("frame");
 
         // Per-frame update
@@ -79,11 +100,7 @@ impl ImguiRenderLoop for RaceTracker {
 
         // Always build a window (hudhook crashes otherwise)
         if !self.show_ui {
-            ui.window("##hidden")
-                .position([-100.0, -100.0], Condition::Always)
-                .size([1.0, 1.0], Condition::Always)
-                .no_decoration()
-                .build(|| {});
+            build_hidden_window(ui);
             crate::core::profile::frame_mark();
             return;
         }
@@ -140,9 +157,7 @@ impl ImguiRenderLoop for RaceTracker {
 
         crate::core::profile::frame_mark();
     }
-}
 
-impl RaceTracker {
     /// Write the IGT display string into a buffer.
     fn write_igt(&self, buf: &mut String) {
         if self.am_i_finished() {
@@ -873,6 +888,16 @@ fn wrap_text(ui: &hudhook::imgui::Ui, indent: &str, text: &str, max_width: f32) 
     }
 
     lines
+}
+
+/// hudhook requires at least one ImGui window per frame; this builds an
+/// invisible placeholder.
+fn build_hidden_window(ui: &hudhook::imgui::Ui) {
+    ui.window("##hidden")
+        .position([-100.0, -100.0], Condition::Always)
+        .size([1.0, 1.0], Condition::Always)
+        .no_decoration()
+        .build(|| {});
 }
 
 /// Truncate text to fit within `max_width` pixels, adding "\u{2026}" if needed.

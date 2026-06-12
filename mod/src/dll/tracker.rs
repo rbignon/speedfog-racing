@@ -221,6 +221,8 @@ pub struct RaceTracker {
     pub(crate) show_ui: bool,
     pub(crate) show_debug: bool,
     pub(crate) show_leaderboard: bool,
+    /// Set when a frame panicked; rendering and updates stop for the session.
+    pub(crate) render_panicked: bool,
     last_sent_debug: Option<String>,
     last_received_debug: Option<String>,
 
@@ -401,6 +403,7 @@ impl RaceTracker {
             show_ui: true,
             show_debug: false,
             show_leaderboard: true,
+            render_panicked: false,
             last_sent_debug: None,
             last_received_debug: None,
             my_participant_id: None,
