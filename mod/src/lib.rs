@@ -38,6 +38,16 @@ use crate::dll::RaceTracker;
 #[cfg(target_os = "windows")]
 static LOG_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> = OnceLock::new();
 
+/// Best-effort extraction of a panic payload message for logging.
+#[cfg(target_os = "windows")]
+pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("<non-string panic payload>")
+}
+
 #[cfg(target_os = "windows")]
 fn init_logging(hmodule: HINSTANCE) {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -115,7 +125,15 @@ pub unsafe extern "system" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut c
         let hmodule_addr = hmodule.0 as usize;
         std::thread::spawn(move || {
             let hmodule = HINSTANCE(hmodule_addr as *mut c_void);
-            start_mod(hmodule);
+            if let Err(payload) =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| start_mod(hmodule)))
+            {
+                error!(
+                    message = panic_message(payload.as_ref()),
+                    "Mod initialization panicked; ejecting"
+                );
+                eject();
+            }
         });
     }
     true
