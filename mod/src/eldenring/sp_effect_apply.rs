@@ -22,14 +22,11 @@
 use std::ffi::c_void;
 use std::sync::OnceLock;
 
+use super::scan::{module_base_and_size, scan_pattern};
 use libeldenring::pointers::Pointers;
 use libeldenring::prelude::base_addresses::Version;
 use libeldenring::version::get_version;
 use tracing::{debug, error, info, warn};
-use windows::Win32::Foundation::HMODULE;
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::ProcessStatus::{GetModuleInformation, MODULEINFO};
-use windows::Win32::System::Threading::GetCurrentProcess;
 
 const PLAYER_INS_OFFSET_NEW: usize = 0x1E508; // V1_07_0+
 const PLAYER_INS_OFFSET_OLD: usize = 0x18468; // V1_02 .. V1_06
@@ -138,51 +135,6 @@ fn player_ins_offset() -> usize {
     }
 }
 
-/// Get the eldenring.exe module base + size for AOB scanning.
-fn module_base_and_size() -> Option<(usize, usize)> {
-    unsafe {
-        // eldenring.exe is the main exe; passing None to GetModuleHandleW
-        // returns a handle to it (the executable that loaded the DLL).
-        let h = GetModuleHandleW(None).ok()?;
-        let module: HMODULE = h;
-        let mut info = MODULEINFO::default();
-        if GetModuleInformation(
-            GetCurrentProcess(),
-            module,
-            &mut info,
-            std::mem::size_of::<MODULEINFO>() as u32,
-        )
-        .is_err()
-        {
-            return None;
-        }
-        Some((info.lpBaseOfDll as usize, info.SizeOfImage as usize))
-    }
-}
-
-/// Scan the module's address range for the AOB pattern. Returns the address
-/// of the first match, or None.
-fn scan_pattern(base: usize, size: usize, pattern: &[Option<u8>]) -> Option<usize> {
-    if pattern.is_empty() || size < pattern.len() {
-        return None;
-    }
-    // SAFETY: the module was loaded by the OS and base..base+size is mapped
-    // for read. We bound our reads to that range.
-    let mem = unsafe { std::slice::from_raw_parts(base as *const u8, size) };
-    let last = size - pattern.len();
-    'outer: for i in 0..=last {
-        for (j, p) in pattern.iter().enumerate() {
-            if let Some(b) = p {
-                if mem[i + j] != *b {
-                    continue 'outer;
-                }
-            }
-        }
-        return Some(base + i);
-    }
-    None
-}
-
 /// Resolve the apply-function address (idempotent, cached after first success).
 fn resolve_apply_fn() -> Option<usize> {
     *APPLY_FN_ADDR.get_or_init(|| {
@@ -284,30 +236,6 @@ mod tests {
         assert_eq!(APPLY_SP_EFFECT_PATTERN[0], Some(0x48));
         assert_eq!(APPLY_SP_EFFECT_PATTERN[1], Some(0x89));
         assert_eq!(APPLY_SP_EFFECT_PATTERN[2], Some(0x6C));
-    }
-
-    #[test]
-    fn scan_pattern_finds_exact_match() {
-        let buf: [u8; 9] = [0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x00, 0x00, 0x00];
-        let pat = [Some(0x12u8), None, Some(0x56), Some(0x78)];
-        let base = buf.as_ptr() as usize;
-        let found = scan_pattern(base, buf.len(), &pat).unwrap();
-        assert_eq!(found, base + 2);
-    }
-
-    #[test]
-    fn scan_pattern_returns_none_when_absent() {
-        let buf = [0x00u8; 32];
-        let pat = [Some(0xAA), Some(0xBB)];
-        let base = buf.as_ptr() as usize;
-        assert!(scan_pattern(base, buf.len(), &pat).is_none());
-    }
-
-    #[test]
-    fn scan_pattern_handles_empty_pattern() {
-        let buf = [0x00u8; 4];
-        let base = buf.as_ptr() as usize;
-        assert!(scan_pattern(base, buf.len(), &[]).is_none());
     }
 
     // No test for player_ins_offset(): it calls libeldenring::version::get_version()
