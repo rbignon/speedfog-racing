@@ -12,6 +12,9 @@ race_id = "YOUR_RACE_ID_HERE"
 [overlay]
 # Enable/disable the overlay
 enabled = true
+# Screen corner the overlay is anchored to:
+#   "top-left", "top-right", "bottom-left" or "bottom-right"
+anchor = "top-right"
 # Font size in pixels
 font_size = 16
 # Font path. Leave empty to use the bundled Source Sans 3 font.
@@ -20,6 +23,7 @@ font_size = 16
 # font_path = ""
 
 [keybindings]
+# Hotkeys only respond while the game window has focus.
 # Key to toggle UI visibility (set to "none" to disable)
 toggle_ui = "f9"
 # Key to toggle debug section (set to "none" to disable)

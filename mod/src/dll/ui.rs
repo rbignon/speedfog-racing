@@ -66,8 +66,11 @@ impl ImguiRenderLoop for RaceTracker {
             Ok(Err(e)) => {
                 error!(error = %e, "Failed to load death icon");
             }
-            Err(_) => {
-                error!("Death icon texture load panicked (DX12 not ready?)");
+            Err(payload) => {
+                error!(
+                    panic = crate::panic_message(payload.as_ref()),
+                    "Death icon texture load panicked (DX12 not ready?)"
+                );
             }
         }
     }
