@@ -50,4 +50,36 @@ The patch fails safe: if the module info is unavailable, the AOB is not found,
 the match is not unique, or the memory write fails, it logs and the mod
 continues without patching (the delay simply remains). On builds without the
 delay (e.g. 1.11) the AOB does not match, so the patch is a no-op. If a future
-build changes the setter shape, re-derive the AOB and update `SETTER_PATTERN`.
+build changes the setter shape so the AOB no longer matches, re-derive it (see
+Maintenance below).
+
+## Maintenance: re-deriving the AOB after a game update
+
+`SETTER_PATTERN` in `mod/src/eldenring/menu_input_patch.rs` is a byte signature,
+so a game update that recompiles the setter can break it. The symptom is the log
+line `menu-input patch: setter not found` while the delay is clearly present in
+game. To recover, locate the setter on the new executable and regenerate the
+pattern with the bundled tool:
+
+```
+uv run tools/find_menu_input_setter.py path/to/eldenring.exe
+```
+
+It prints a ready-to-paste `SETTER_PATTERN`; drop it into `menu_input_patch.rs`
+and run `cargo fmt`. The executable must be the decrypted / unpacked image (e.g.
+a memory dump, or a build with the anti-tamper layer stripped); the live retail
+exe is packed and will not scan correctly.
+
+The tool finds the setter two independent ways and requires them to agree:
+
+- Method A (AOB): the same byte signature the mod embeds. It matches only builds
+  that actually have the delay, so it correctly reports "not found" on 1.11 and
+  pre-1.12 builds, which is a useful sanity check.
+- Method B (semantic): scans small `.pdata` functions for the setter's shape, a
+  `T* set(T* this) { this->field = getter(); return this; }` whose getter entry
+  is an obfuscation `jmp` trampoline. Being register, offset, and byte agnostic,
+  it still finds the setter after the exact bytes drift, and rebuilds the AOB
+  from what it found (wildcarding the call displacement and the field offset).
+
+`--patch stub` (recommended) or `--patch nop` additionally writes a statically
+patched copy of the exe, handy for isolating the behavior outside the mod.
