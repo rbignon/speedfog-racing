@@ -7,6 +7,10 @@ name = "Hardcore"
 sort_order = 4
 estimated_duration = "~1h"
 description = "Punishing race with scarce resources and tougher encounters"
+rules = """
+Weapons are +0
+Smithing stones are sold at Roundtable
+"""
 
 [run]
 sentry_torch_shop = false
