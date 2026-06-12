@@ -13,6 +13,7 @@ use tracing::{error, info};
 use crate::core::write_participant_right_text;
 use crate::profile_span;
 
+use super::config::OverlayAnchor;
 use super::death_icon::DeathIcon;
 use super::tracker::{
     FlagReadResult, LeaderboardRowCache, RaceTracker, RenderBuffers,
@@ -117,9 +118,20 @@ impl RaceTracker {
         let _text_disabled_token = ui.push_style_color(StyleColor::TextDisabled, c.text_disabled);
         let _border_token = ui.push_style_color(StyleColor::Border, c.border);
 
-        let [dw, _dh] = ui.io().display_size;
+        let [dw, dh] = ui.io().display_size;
         let scale = self.config.overlay.font_size / 16.0;
         let max_width = 320.0 * scale;
+
+        // Pin the window's anchored corner via pivot so the actual
+        // auto-resized edge is pinned, not an estimated width.
+        let ox = self.config.overlay.position_offset_x;
+        let oy = self.config.overlay.position_offset_y;
+        let (pos, pivot) = match self.config.overlay.anchor {
+            OverlayAnchor::TopLeft => ([ox, oy], [0.0, 0.0]),
+            OverlayAnchor::TopRight => ([dw - ox, oy], [1.0, 0.0]),
+            OverlayAnchor::BottomLeft => ([ox, dh - oy], [0.0, 1.0]),
+            OverlayAnchor::BottomRight => ([dw - ox, dh - oy], [1.0, 1.0]),
+        };
 
         let flags =
             WindowFlags::NO_TITLE_BAR | WindowFlags::ALWAYS_AUTO_RESIZE | WindowFlags::NO_SCROLLBAR;
@@ -127,13 +139,8 @@ impl RaceTracker {
         {
             profile_span!("imgui_window");
             ui.window("SpeedFog Race")
-                .position(
-                    [
-                        dw - max_width - self.config.overlay.position_offset_x,
-                        self.config.overlay.position_offset_y,
-                    ],
-                    Condition::FirstUseEver,
-                )
+                .position(pos, Condition::Always)
+                .position_pivot(pivot)
                 .flags(flags)
                 .build(|| {
                     self.render_seed_mismatch_warning(ui);

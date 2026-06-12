@@ -41,6 +41,20 @@ impl Default for ServerSettings {
     }
 }
 
+/// Screen corner the overlay window is anchored to.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OverlayAnchor {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+fn default_anchor() -> OverlayAnchor {
+    OverlayAnchor::TopRight
+}
+
 /// Overlay display settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverlaySettings {
@@ -84,11 +98,16 @@ pub struct OverlaySettings {
     #[serde(default = "default_border_color")]
     pub border_color: String,
 
-    /// Horizontal margin from the right edge of the screen in pixels.
+    /// Screen corner the overlay is anchored to:
+    /// "top-left", "top-right", "bottom-left" or "bottom-right".
+    #[serde(default = "default_anchor")]
+    pub anchor: OverlayAnchor,
+
+    /// Horizontal margin from the anchored corner in pixels.
     #[serde(default = "default_position_offset_x")]
     pub position_offset_x: f32,
 
-    /// Vertical margin from the top edge of the screen in pixels.
+    /// Vertical margin from the anchored corner in pixels.
     #[serde(default = "default_position_offset_y")]
     pub position_offset_y: f32,
 }
@@ -133,6 +152,7 @@ impl Default for OverlaySettings {
             text_disabled_color: default_text_disabled_color(),
             show_border: false,
             border_color: default_border_color(),
+            anchor: default_anchor(),
             position_offset_x: default_position_offset_x(),
             position_offset_y: default_position_offset_y(),
         }
