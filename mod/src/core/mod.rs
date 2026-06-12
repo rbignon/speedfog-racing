@@ -1,5 +1,6 @@
 //! Core module - platform-independent types
 
+pub mod aob;
 pub mod color;
 pub mod constants;
 pub mod flag_buffer;
