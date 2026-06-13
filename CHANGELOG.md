@@ -2,6 +2,18 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.14.0] - 2026-06-13
+
+### Seeds
+
+- Removed the Caelid Guardian Golem from the boss pool
+- Lowered the chance of Promised Consort Radahn (PCR) or Radabeast being picked as the final boss
+- The default maximum number of parallel paths is now 3 (was 4)
+
+### Mod
+
+- The Elden Ring 1.12+ menu input delay is now removed by a dedicated DLL (`MenuInputDelayFix.dll`) bundled in every seed pack
+
 ## [1.13.0] - 2026-06-07
 
 ### Seeds
