@@ -365,11 +365,6 @@ impl RaceTracker {
             }
         }
 
-        // Remove the 1.12+ menu input delay ("prevent accidental skips") so
-        // confirm is instant, matching pre-1.12 menuing. No-op on builds
-        // without the delay. See docs/MENU_INPUT_SKIP.md.
-        crate::eldenring::menu_input_patch::install();
-
         // Pre-parse overlay colors
         let s = &config.overlay;
         let cached_colors = CachedColors {

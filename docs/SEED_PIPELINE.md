@@ -286,6 +286,7 @@ seed_a1b2c3d4e5f6.zip
     ├── launch_speedfog.bat        # Windows launcher
     ├── lib/
     │   ├── speedfog_racing.dll    # Racing overlay mod
+    │   ├── MenuInputDelayFix.dll  # Menu input-delay fix (from the speedfog base package)
     │   ├── RandomizerHelper.dll     # Item rando helper
     │   ├── RandomizerHelper_config.ini
     │   └── speedfog_racing.toml       # ← injected per-participant at download time
