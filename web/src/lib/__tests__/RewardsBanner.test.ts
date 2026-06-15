@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/svelte";
+import { render, screen } from "@testing-library/svelte";
 import RewardsBanner from "$lib/components/RewardsBanner.svelte";
 
 describe("RewardsBanner", () => {

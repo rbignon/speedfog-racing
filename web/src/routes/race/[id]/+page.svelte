@@ -50,7 +50,6 @@
     abandonRace,
     type RaceDetail,
   } from "$lib/api";
-  import { formatScheduledTime } from "$lib/utils/time";
   import { joinableStore } from "$lib/stores/joinable.svelte";
 
   let downloading = $state(false);
@@ -158,12 +157,6 @@
   let raceStatus = $derived(liveRace?.status ?? initialRace.status);
   let totalLayers = $derived(
     liveSeed?.total_layers ?? initialRace.seed_total_layers,
-  );
-  let totalNodes = $derived(
-    liveSeed?.total_nodes ?? initialRace.seed_total_nodes,
-  );
-  let totalPaths = $derived(
-    liveSeed?.total_paths ?? initialRace.seed_total_paths,
   );
   let seedsReleased = $derived(
     liveRace
@@ -902,8 +895,6 @@
 
       {#if !auth.isLoggedIn && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow))}
         <p class="login-hint">
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
           <a
             href={getTwitchLoginUrl()}
             data-sveltekit-reload

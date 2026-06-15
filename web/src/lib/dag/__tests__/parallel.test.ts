@@ -7,7 +7,7 @@ import {
   gameplayValidBridge,
 } from "../parallel";
 import type { DirectedAdjacency } from "../parallel";
-import type { PositionedNode, RoutedEdge, DagLayout } from "../types";
+import type { PositionedNode, RoutedEdge } from "../types";
 
 // =============================================================================
 // Helpers

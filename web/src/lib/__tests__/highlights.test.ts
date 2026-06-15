@@ -5,8 +5,6 @@ import {
   descriptionText,
   buildNodeInfo,
   zSeg,
-  type ZoneTime,
-  type Highlight,
 } from "$lib/highlights";
 import type { WsParticipant } from "$lib/websocket";
 

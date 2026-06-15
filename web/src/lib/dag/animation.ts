@@ -263,7 +263,8 @@ export function computeEdgeDrawTimings(layout: DagLayout): EdgeDrawTiming[] {
   const timings: EdgeDrawTiming[] = [];
 
   // Each layer group gets a fraction proportional to its total length
-  let layerLengths: { layer: number; length: number; indices: number[] }[] = [];
+  const layerLengths: { layer: number; length: number; indices: number[] }[] =
+    [];
   let allLayerLength = 0;
   for (const layer of layers) {
     const indices = layerGroups.get(layer)!;

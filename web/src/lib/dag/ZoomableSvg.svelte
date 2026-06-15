@@ -239,7 +239,6 @@
   bind:clientWidth={containerWidth}
 >
   {#if width > 0 && height > 0}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <svg
       bind:this={svgEl}
       viewBox="0 0 {width} {height}"

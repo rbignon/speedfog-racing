@@ -10,7 +10,7 @@
     LABEL_COLOR,
     LABEL_OFFSET_Y,
   } from "./constants";
-  import type { PositionedNode, RoutedEdge, DagLayout } from "./types";
+  import type { PositionedNode, DagLayout } from "./types";
 
   interface Props {
     layout: DagLayout;

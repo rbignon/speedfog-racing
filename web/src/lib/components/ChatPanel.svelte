@@ -66,7 +66,7 @@
 
   $effect(() => {
     // Trigger scroll when messages change
-    const _ = messages.length;
+    void messages.length;
     if (listEl) {
       // Use requestAnimationFrame so the new DOM node is painted first
       requestAnimationFrame(() => {

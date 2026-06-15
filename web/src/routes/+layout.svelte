@@ -57,7 +57,8 @@
   });
 
   $effect(() => {
-    joinableStore.refreshKey;
+    // Re-run when the joinable-races cache is invalidated
+    void joinableStore.refreshKey;
     if (auth.isLoggedIn) {
       fetchJoinableRaces()
         .then((races) => {
