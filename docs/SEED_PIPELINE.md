@@ -147,6 +147,8 @@ read from `Pool.config`) so the admin UI can suffix training pools with
 
 When a participant downloads their seed pack (`GET /races/{id}/my-seed-pack`), the server assembles a personalized zip on-the-fly.
 
+The web client first mints a short-lived signed ticket (`/seed-pack-ticket` for races, `/pack-ticket` for training), then lets the browser download the zip natively via a `?t=` query param instead of buffering the whole response in JS. This gives native download progress, ETA, and resume.
+
 ### Steps
 
 1. **Copy base zip** to a temp file (`tempfile.mkstemp(suffix=".zip")`).
