@@ -38,6 +38,7 @@ from speedfog_racing.discord import (
     set_event_status,
     update_scheduled_event,
 )
+from speedfog_racing.download_ticket import sign_download_ticket, verify_download_ticket
 from speedfog_racing.models import (
     Caster,
     ChatChannel,
@@ -58,6 +59,7 @@ from speedfog_racing.schemas import (
     AddParticipantResponse,
     CasterResponse,
     CreateRaceRequest,
+    DownloadTicketResponse,
     InviteResponse,
     ParticipantResponse,
     PendingInviteResponse,
@@ -1846,18 +1848,79 @@ async def delete_race(
 # =============================================================================
 
 
-@router.get("/{race_id}/my-seed-pack")
-async def download_my_seed_pack(
+@router.get("/{race_id}/seed-pack-ticket", response_model=DownloadTicketResponse)
+async def create_seed_pack_ticket(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     _sentry: None = Depends(sentry_race_context),
+) -> DownloadTicketResponse:
+    """Mint a short-lived signed ticket for a native seed-pack download.
+
+    Runs the same gating as the download endpoint so failures surface in the
+    download modal instead of a broken browser download.
+    """
+    race = await _get_race_or_404(db, race_id)
+    if race.seeds_released_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Seeds have not been released yet",
+        )
+    result = await db.execute(
+        select(Participant).where(Participant.race_id == race_id, Participant.user_id == user.id)
+    )
+    participant = result.scalar_one_or_none()
+    if participant is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a participant in this race",
+        )
+    if not race.seed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Race has no seed assigned",
+        )
+    ticket = sign_download_ticket("race", user.id, race_id, datetime.now(UTC))
+    return DownloadTicketResponse(ticket=ticket)
+
+
+@router.get("/{race_id}/my-seed-pack")
+async def download_my_seed_pack(
+    race_id: UUID,
+    t: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user_opt: User | None = Depends(get_current_user_optional),
+    _sentry: None = Depends(sentry_race_context),
 ) -> StreamingResponse:
     """Download the authenticated user's personalized seed pack for a race.
 
-    Streams the original seed zip with an injected per-participant config.
-    No temp file or full-file copy. Uses ~64 KB of RAM.
+    Auth via the bearer header or a signed ``?t=`` download ticket (minted by
+    ``/seed-pack-ticket``) so the browser can download natively. Streams the
+    original seed zip with an injected per-participant config.
     """
+    # Resolve the user from a download ticket or the bearer header.
+    if t is not None:
+        ticket_user_id = verify_download_ticket(t, "race", race_id, datetime.now(UTC))
+        if ticket_user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or expired download ticket",
+            )
+        user = await db.get(User, ticket_user_id)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or expired download ticket",
+            )
+    elif user_opt is not None:
+        user = user_opt
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     race = await _get_race_or_404(db, race_id)
 
     # Gate download on seed release

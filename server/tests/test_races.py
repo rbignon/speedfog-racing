@@ -877,6 +877,111 @@ async def test_download_my_seed_pack_success(
         assert "speedfog_player1.zip" in response.headers["content-disposition"]
 
 
+@pytest.mark.asyncio
+async def test_seed_pack_ticket_download_flow(
+    test_client, organizer, player, seed_with_zip, seed_zip_context
+):
+    """Mint a ticket then download the zip with ?t= (no auth header)."""
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Test Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "player1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        ticket_resp = await client.get(
+            f"/api/races/{race_id}/seed-pack-ticket",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert ticket_resp.status_code == 200
+        ticket = ticket_resp.json()["ticket"]
+
+        # Download with the ticket only, NO Authorization header.
+        dl = await client.get(f"/api/races/{race_id}/my-seed-pack?t={ticket}")
+        assert dl.status_code == 200
+        assert dl.headers["content-type"] == "application/zip"
+        assert "speedfog_player1.zip" in dl.headers["content-disposition"]
+
+
+@pytest.mark.asyncio
+async def test_seed_pack_ticket_forbidden_before_release(
+    test_client, organizer, player, seed_with_zip
+):
+    """Minting a ticket before seeds are released is forbidden."""
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Test Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "player1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        resp = await client.get(
+            f"/api/races/{race_id}/seed-pack-ticket",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert resp.status_code == 403
+        assert "released" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_seed_pack_ticket_forbidden_for_non_participant(
+    test_client, organizer, player, seed_with_zip
+):
+    """After release, a non-participant cannot mint a ticket."""
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Test Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "player1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        # organizer is not a participant in their own race
+        resp = await client.get(
+            f"/api/races/{race_id}/seed-pack-ticket",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert resp.status_code == 403
+        assert "participant" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_my_seed_pack_rejects_bad_ticket(test_client, organizer, player, seed_with_zip):
+    """A malformed ?t= ticket is rejected with 403."""
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Test Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+        dl = await client.get(f"/api/races/{race_id}/my-seed-pack?t=not-a-real-ticket")
+        assert dl.status_code == 403
+
+
 # =============================================================================
 # Race Reset Tests
 # =============================================================================
