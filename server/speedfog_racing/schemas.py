@@ -158,6 +158,12 @@ class UserResponse(BaseModel):
     equipped_name_template_id: str | None = None
 
 
+class DownloadTicketResponse(BaseModel):
+    """Short-lived signed ticket for a native (header-less) pack download."""
+
+    ticket: str
+
+
 class ParticipantPreview(UserResponse):
     """User with optional placement for race previews.
 
