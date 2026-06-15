@@ -1573,28 +1573,19 @@ export async function fetchTrainingGhosts(sessionId: string): Promise<Ghost[]> {
 }
 
 export async function downloadTrainingPack(sessionId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/training/${sessionId}/pack`, {
-    headers: getAuthHeaders(),
-  });
-
-  if (!response.ok) {
-    const error: ApiError = await response
-      .json()
-      .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail);
-  }
-
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
+  const response = await fetch(
+    `${API_BASE}/training/${sessionId}/pack-ticket`,
+    {
+      headers: getAuthHeaders(),
+    },
+  );
+  const { ticket } = await handleResponse<{ ticket: string }>(response);
   const a = document.createElement("a");
-  a.href = url;
-  const disposition = response.headers.get("content-disposition");
-  const match = disposition?.match(/filename="?([^"]+)"?/);
-  a.download = match?.[1] ?? `speedfog_solo_${sessionId}.zip`;
+  a.href = `${API_BASE}/training/${sessionId}/pack?t=${encodeURIComponent(ticket)}`;
+  a.download = "";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 // =============================================================================
@@ -1602,33 +1593,20 @@ export async function downloadTrainingPack(sessionId: string): Promise<void> {
 // =============================================================================
 
 /**
- * Download the authenticated user's seed pack via fetch + blob.
- * Triggers a browser download since the endpoint requires auth headers.
+ * Mint a download ticket, then trigger a native browser download for the
+ * authenticated user's seed pack.
  */
 export async function downloadMySeedPack(raceId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/races/${raceId}/my-seed-pack`, {
+  const response = await fetch(`${API_BASE}/races/${raceId}/seed-pack-ticket`, {
     headers: getAuthHeaders(),
   });
-
-  if (!response.ok) {
-    const error: ApiError = await response
-      .json()
-      .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail);
-  }
-
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
+  const { ticket } = await handleResponse<{ ticket: string }>(response);
   const a = document.createElement("a");
-  a.href = url;
-  // Extract filename from content-disposition or use default
-  const disposition = response.headers.get("content-disposition");
-  const match = disposition?.match(/filename="?([^"]+)"?/);
-  a.download = match?.[1] ?? `speedfog_race_${raceId}.zip`;
+  a.href = `${API_BASE}/races/${raceId}/my-seed-pack?t=${encodeURIComponent(ticket)}`;
+  a.download = "";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 // =============================================================================
