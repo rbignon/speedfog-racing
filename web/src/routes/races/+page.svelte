@@ -110,7 +110,7 @@
   {/if}
 
   <section class="race-section">
-    <h2>Recent Results</h2>
+    <h2>Recent Races</h2>
     {#if loadingFinished}
       <p class="loading">Loading results...</p>
     {:else if finishedRaces.length === 0}

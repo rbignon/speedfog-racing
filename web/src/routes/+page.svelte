@@ -201,7 +201,7 @@
 
   {#if !loadingRecent && recentRaces.length > 0}
     <section class="public-races">
-      <h2>Recent Results</h2>
+      <h2>Recent Races</h2>
       <div class="race-grid">
         {#each recentRaces as race}
           <RaceCard {race} />
