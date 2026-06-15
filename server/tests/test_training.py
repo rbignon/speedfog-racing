@@ -4,7 +4,9 @@ import asyncio
 import os
 import tempfile
 import uuid
+import zipfile
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -166,6 +168,60 @@ async def training_seed(async_session, sample_graph_json, training_pool):
         await db.commit()
         await db.refresh(seed)
         return seed
+
+
+@pytest.fixture
+def training_zip_path():
+    """A real on-disk seed zip for streaming the training pack."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = Path(tmpdir) / "seed_train_zip.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("speedfog_train/lib/speedfog_racing.dll", "mock dll")
+            zf.writestr("speedfog_train/launch_speedfog.bat", "@echo off")
+        yield zip_path
+
+
+@pytest.fixture
+async def active_training_session(
+    async_session, training_user, training_pool, sample_graph_json, training_zip_path
+):
+    """An ACTIVE training session whose seed points at a real zip on disk."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="train_zip",
+            pool_name="training_standard",
+            graph_json=sample_graph_json,
+            total_layers=10,
+            folder_path=str(training_zip_path),
+            status=SeedStatus.AVAILABLE,
+        )
+        db.add(seed)
+        await db.flush()
+        session = TrainingSession(
+            user_id=training_user.id,
+            seed_id=seed.id,
+            status=TrainingSessionStatus.ACTIVE,
+        )
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        return session
+
+
+@pytest.fixture
+async def other_training_user(async_session):
+    """A second user who does not own the training session."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="train_user_2",
+            twitch_username="trainer2",
+            api_token=generate_token(),
+            role=UserRole.USER,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
 
 
 # =============================================================================
@@ -1920,6 +1976,48 @@ async def test_download_pack_requires_auth(test_client, training_user, training_
 
         resp = await client.get(f"/api/training/{session_id}/pack")
         assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_training_pack_ticket_download_flow(
+    test_client, training_user, active_training_session
+):
+    """Mint a training ticket then download the zip with ?t= (no auth header)."""
+    session_id = active_training_session.id
+    async with test_client as client:
+        ticket_resp = await client.get(
+            f"/api/training/{session_id}/pack-ticket",
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert ticket_resp.status_code == 200
+        ticket = ticket_resp.json()["ticket"]
+
+        dl = await client.get(f"/api/training/{session_id}/pack?t={ticket}")
+        assert dl.status_code == 200
+        assert dl.headers["content-type"] == "application/zip"
+
+
+@pytest.mark.asyncio
+async def test_training_pack_ticket_rejects_non_owner(
+    test_client, other_training_user, active_training_session
+):
+    """A non-owner cannot mint a ticket (403)."""
+    session_id = active_training_session.id
+    async with test_client as client:
+        resp = await client.get(
+            f"/api/training/{session_id}/pack-ticket",
+            headers={"Authorization": f"Bearer {other_training_user.api_token}"},
+        )
+        assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_training_pack_rejects_bad_ticket(test_client, active_training_session):
+    """A malformed ?t= ticket is rejected with 403."""
+    session_id = active_training_session.id
+    async with test_client as client:
+        dl = await client.get(f"/api/training/{session_id}/pack?t=not-a-real-ticket")
+        assert dl.status_code == 403
 
 
 # =============================================================================

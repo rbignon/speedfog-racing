@@ -15,6 +15,7 @@ from starlette.responses import StreamingResponse
 from speedfog_racing.api.helpers import format_pool_display_name, parse_enum_csv, user_response
 from speedfog_racing.auth import get_current_user, get_current_user_optional
 from speedfog_racing.database import get_db
+from speedfog_racing.download_ticket import sign_download_ticket, verify_download_ticket
 from speedfog_racing.models import (
     TrainingSession,
     TrainingSessionStatus,
@@ -23,6 +24,7 @@ from speedfog_racing.models import (
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.schemas import (
     CreateTrainingRequest,
+    DownloadTicketResponse,
     GhostResponse,
     PoolConfig,
     TrainingSessionDetailResponse,
@@ -243,13 +245,56 @@ async def abandon_session(
     return _build_detail_response(session)
 
 
-@router.get("/{session_id}/pack")
-async def download_pack(
+@router.get("/{session_id}/pack-ticket", response_model=DownloadTicketResponse)
+async def create_pack_ticket(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+) -> DownloadTicketResponse:
+    """Mint a short-lived signed ticket for a native training-pack download."""
+    session = await _get_session_or_404(db, session_id, user.id)
+    if session.status != TrainingSessionStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only download pack for active sessions",
+        )
+    ticket = sign_download_ticket("training", user.id, session_id, datetime.now(UTC))
+    return DownloadTicketResponse(ticket=ticket)
+
+
+@router.get("/{session_id}/pack")
+async def download_pack(
+    session_id: uuid.UUID,
+    t: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user_opt: User | None = Depends(get_current_user_optional),
 ) -> StreamingResponse:
-    """Download seed pack for a training session."""
+    """Download seed pack for a training session.
+
+    Auth via the bearer header or a signed ``?t=`` download ticket.
+    """
+    if t is not None:
+        ticket_user_id = verify_download_ticket(t, "training", session_id, datetime.now(UTC))
+        if ticket_user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or expired download ticket",
+            )
+        user = await db.get(User, ticket_user_id)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or expired download ticket",
+            )
+    elif user_opt is not None:
+        user = user_opt
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     session = await _get_session_or_404(db, session_id, user.id)
     if session.status != TrainingSessionStatus.ACTIVE:
         raise HTTPException(
