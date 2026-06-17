@@ -43,6 +43,55 @@
   </section>
 
   <section class="section">
+    <h2>Key Features</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <strong>Balanced Paths</strong>
+        <p>
+          Every path through the map has the same structure and difficulty. No
+          shortcut, no lucky route, only execution matters.
+        </p>
+      </div>
+      <div class="feature-card">
+        <strong>Daily Seed</strong>
+        <p>
+          A new seed every day, the same for everyone. Race the clock
+          asynchronously, climb the daily and weekly leaderboards, and keep your
+          streak alive.
+        </p>
+      </div>
+      <div class="feature-card">
+        <strong>Zone Tracking</strong>
+        <p>
+          Every fog gate traversal is detected automatically, feeding real-time
+          zone progression and time gaps into the live leaderboard.
+        </p>
+      </div>
+      <div class="feature-card">
+        <strong>Solo Mode</strong>
+        <p>
+          Play on fresh seeds at your own pace, no account required. Your
+          sessions are saved with times, deaths, and route maps.
+        </p>
+      </div>
+      <div class="feature-card">
+        <strong>Care Package</strong>
+        <p>
+          Every run starts with a randomized build: weapons, armor, spells, and
+          talismans. Same seed, same build, fair from the first fog gate.
+        </p>
+      </div>
+      <div class="feature-card">
+        <strong>Multiple Formats</strong>
+        <p>
+          Sprint, Standard, or Hardcore: select a game mode that fits your
+          playstyle. From quick 30-minute runs to punishing gauntlets.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
     <h2>How Races Work</h2>
     <div class="steps">
       <div class="step">
@@ -137,55 +186,6 @@
       The in-game overlay during a race. Leaderboard, progression, exits, and
       IGT, all visible without leaving the game.
     </p>
-  </section>
-
-  <section class="section">
-    <h2>Key Features</h2>
-    <div class="feature-grid">
-      <div class="feature-card">
-        <strong>Balanced Paths</strong>
-        <p>
-          Every path through the map has the same structure and difficulty. No
-          shortcut, no lucky route, only execution matters.
-        </p>
-      </div>
-      <div class="feature-card">
-        <strong>Daily Seed</strong>
-        <p>
-          A new seed every day, the same for everyone. Race the clock
-          asynchronously, climb the daily and weekly leaderboards, and keep your
-          streak alive.
-        </p>
-      </div>
-      <div class="feature-card">
-        <strong>Zone Tracking</strong>
-        <p>
-          Every fog gate traversal is detected automatically, feeding real-time
-          zone progression and time gaps into the live leaderboard.
-        </p>
-      </div>
-      <div class="feature-card">
-        <strong>Solo Mode</strong>
-        <p>
-          Play on fresh seeds at your own pace, no account required. Your
-          sessions are saved with times, deaths, and route maps.
-        </p>
-      </div>
-      <div class="feature-card">
-        <strong>Care Package</strong>
-        <p>
-          Every run starts with a randomized build: weapons, armor, spells, and
-          talismans. Same seed, same build, fair from the first fog gate.
-        </p>
-      </div>
-      <div class="feature-card">
-        <strong>Multiple Formats</strong>
-        <p>
-          Sprint, Standard, or Hardcore: select a game mode that fits your
-          playstyle. From quick 30-minute runs to punishing gauntlets.
-        </p>
-      </div>
-    </div>
   </section>
 
   <p class="cta">
