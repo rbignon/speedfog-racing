@@ -629,18 +629,54 @@
 
       <div class="dag-wrapper">
         {#if !myParticipant && !dailyEnded}
-          <button
-            class="dag-placeholder play-now-cta"
-            onclick={handlePlayNow}
-            disabled={joining}
-          >
-            <span class="play-now-label"
-              >{joining ? "Joining..." : "Play now"}</span
+          <div class="dag-placeholder play-now-cta">
+            <svg
+              class="play-now-ghost"
+              viewBox="0 0 880 400"
+              preserveAspectRatio="xMidYMid slice"
+              aria-hidden="true"
             >
-            {#if joinError}
-              <span class="play-now-error">{joinError}</span>
-            {/if}
-          </button>
+              <g
+                fill="none"
+                stroke-width="7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M70 200 H810" style="stroke: var(--color-purple)" />
+                <path
+                  d="M250 200 L330 100 H560"
+                  style="stroke: var(--color-gold)"
+                />
+                <path
+                  d="M600 200 L680 310 H814"
+                  style="stroke: var(--color-success)"
+                />
+              </g>
+              <g fill="#cdd6e4">
+                <circle cx="70" cy="200" r="10" />
+                <circle cx="250" cy="200" r="10" />
+                <circle cx="430" cy="200" r="10" />
+                <circle cx="600" cy="200" r="10" />
+                <circle cx="780" cy="200" r="10" />
+                <circle cx="560" cy="100" r="10" />
+                <circle cx="814" cy="310" r="10" />
+              </g>
+            </svg>
+            <div class="play-now-glow" aria-hidden="true"></div>
+            <div class="play-now-stack">
+              <button
+                class="btn btn-primary btn-lg"
+                onclick={handlePlayNow}
+                disabled={joining}
+              >
+                {joining ? "Joining..." : "Play now"}
+              </button>
+              <span class="play-now-help">Your race map appears here</span>
+              {#if joinError}
+                <span class="play-now-error">{joinError}</span>
+              {/if}
+            </div>
+          </div>
         {:else if graphJson && raceStatus === "finished"}
           {#if dagView === "map"}
             <MetroDagFull
@@ -1083,39 +1119,46 @@
     margin: 0;
   }
 
-  /* The Play now CTA reuses .dag-placeholder's box but adopts a
-	   "button label" type ramp (uppercase, letter-spaced, muted) so it
-	   reads differently from the H1, plus a slightly elevated surface
-	   so it stands out from the other cards on the page. */
+  /* The Play now CTA reuses .dag-placeholder's box (the future DAG slot) but
+	   layers a faint stylized "ghost DAG" silhouette and a gold glow behind a
+	   real centered button, so the empty slot teases where the race map will
+	   appear instead of reading as a dead block. */
   .play-now-cta {
-    flex-direction: column;
-    gap: 0.5rem;
-    width: 100%;
-    text-align: center;
-    background: var(--color-surface-elevated);
+    position: relative;
+    overflow: hidden;
     border: 1px solid var(--color-border);
+  }
+
+  .play-now-ghost {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.16;
+  }
+
+  .play-now-glow {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      circle at 50% 50%,
+      rgba(200, 164, 78, 0.12),
+      transparent 50%
+    );
+  }
+
+  .play-now-stack {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.875rem;
+    text-align: center;
+  }
+
+  .play-now-help {
     color: var(--color-text-secondary);
-    font-family: inherit;
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition:
-      background var(--transition),
-      color var(--transition),
-      border-color var(--transition);
-  }
-
-  .play-now-cta:hover:not(:disabled) {
-    border-color: var(--color-purple);
-    color: var(--color-purple-hover);
-    background: rgba(139, 92, 246, 0.1);
-  }
-
-  .play-now-cta:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    font-size: var(--font-size-sm);
   }
 
   .play-now-error {
