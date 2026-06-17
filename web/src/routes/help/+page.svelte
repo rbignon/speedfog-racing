@@ -349,6 +349,7 @@
             <PoolSettingsCard
               poolName={selectedPool}
               poolConfig={selectedConfig}
+              compact
             />
           </div>
         {/if}
