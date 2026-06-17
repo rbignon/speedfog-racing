@@ -26,6 +26,7 @@ The catalog is static Python configuration in [`server/speedfog_racing/rewards/c
 | `contributor`           | Contributor    | permanent | Admin grant only.                                                                                                                                                                                          |
 | `top1_elo`              | ELO Champion   | transient | Auto: holder(s) of the highest ELO with `elo_races >= PROVISIONAL_THRESHOLD`.                                                                                                                              |
 | `weekly_daily_champion` | Daily Champion | transient | Auto: highest total weekly points over the previous Mon-Sun week (see Daily Seed `Weekly Points`).                                                                                                         |
+| `frog`                  | Frog           | permanent | Auto: granted on a user's first FINISHED race participation (daily seeds count, solo training sessions do not). Checked after each race finish, same hook as `veteran`. The playful "Speedfrog" mascot.    |
 
 Lifecycle:
 
@@ -44,6 +45,7 @@ Ties are allowed: when the qualifying condition selects multiple players (e.g. s
 | `runebearer` | Silver gradient (top 5 ELO souvenir) | Granted permanently the first time a player enters the top 5 ELO |
 | `pioneer`    | Serif italic on parchment backdrop   | Granted to accounts created before the rewards system launched   |
 | `weathered`  | Bronze gradient (veteran tenure)     | Granted alongside the `veteran` badge, same threshold            |
+| `speedfrog`  | Green gradient (Speedfrog mascot)    | Granted on the player's first finished race (Speedfog -> frog)   |
 
 Name templates are **always permanent**. Once unlocked, they remain unlocked even if the player no longer meets the original condition (the gold-on-the-name memento outlasts the dynamic badge).
 
@@ -168,7 +170,7 @@ server/speedfog_racing/
 - `sync_transient_holders(badge_id, new_holder_ids: set[UUID], reason=None) -> SyncResult`: atomic diff against current holders. Auto-clears `equipped_badge_id` on revoked users. Emits `badge_granted` / `badge_revoked` notifications.
 - `refresh_top1_elo_holders(reason=None)`: queries the top ELO from `users` (filtered by `elo_races >= PROVISIONAL_THRESHOLD`), syncs `top1_elo`, then idempotently grants `elo_crown` to each holder.
 - `refresh_weekly_daily_champion(week_starting: date, reason=None)`: aggregates daily wins over `[week_starting, week_starting + 7d)`, syncs `weekly_daily_champion` to the top winner(s).
-- `check_veteran_eligibility(user_id)`: counts the user's `Participant` rows with `status=FINISHED` and grants both `veteran` (badge) and `weathered` (name template) idempotently when the count is at least `VETERAN_RACE_THRESHOLD` (defined in `rewards/catalog.py`).
+- `check_finish_reward_milestones(user_id)`: counts the user's `Participant` rows with `status=FINISHED` and grants finished-race milestone rewards idempotently. At the first finish it grants `frog` (badge) and `speedfrog` (name template); at `VETERAN_RACE_THRESHOLD` (defined in `rewards/catalog.py`) it additionally grants `veteran` (badge), `weathered` (name template), and `crimson-aura` (phantom skin).
 - `set_equipped_badge(user_id, badge_id: str | None)`: validates ownership, updates `users.equipped_badge_id`. Raises `NotOwnedError` if the user does not currently hold the badge.
 - `set_equipped_name_template(user_id, template_id: str | None)`: validates ownership (`default` is always allowed), updates `users.equipped_name_template_id`.
 - `check_daily_streak_eligibility(user_id)`: reads `users.daily_best_streak` and grants the permanent `molten-aura` phantom skin once it is at least `DAILY_STREAK_REWARD_THRESHOLD` (defined in `rewards/catalog.py`). Idempotent.
@@ -182,9 +184,9 @@ server/speedfog_racing/
 ### Integration points
 
 - **Top 1 ELO** (`services/race_lifecycle.py`): after each `update_elo_ratings(...)` call, invoke `refresh_top1_elo_holders()`. This also handles the `runebearer` (top 5) unlock when a player enters the top 5 (see [Top 5 ELO unlock](#top-5-elo-unlock) below).
-- **Veteran** (`services/race_lifecycle.py`): in the same hook (after `refresh_top1_elo_holders`), iterate every participant who just transitioned to FINISHED and call `check_veteran_eligibility(user_id)`. The service counts `Participant` rows with `status=FINISHED` for that user across all races; once the count reaches `VETERAN_RACE_THRESHOLD` the badge is granted (idempotent, so calling on every race finish is safe). The matching `weathered` name template is granted in the same call.
+- **Finished-race milestones** (`services/race_lifecycle.py`): in the same hook (after `refresh_top1_elo_holders`), iterate every participant who just transitioned to FINISHED and call `check_finish_reward_milestones(user_id)`. The service counts `Participant` rows with `status=FINISHED` for that user across all races (daily seeds included, solo training sessions excluded since they create no `Participant` row). The first finish grants the `frog` badge + `speedfrog` template; once the count reaches `VETERAN_RACE_THRESHOLD` the `veteran` badge + `weathered` template + `crimson-aura` skin are granted. All grants are idempotent, so calling on every race finish is safe.
 - **Weekly daily champion** (`services/daily_seed_loop.py`): when generating a daily seed for a Monday, call `refresh_weekly_daily_champion(week_starting=monday-7d)`. Selects the user(s) with the maximum `total_points` across the closed dailies of the prior week (ties allowed). Past weeks before the rollout are not backfilled.
-- **Phantom skins**: extend the existing detectors in place. `refresh_top1_elo_holders` grants `gold-aura` (top 1) and `silver-aura` (top 5) idempotently alongside `elo_crown` and `runebearer`. `refresh_weekly_daily_champion` grants the **permanent** `cyan-aura` souvenir to current champion(s) (the underlying transient badge stays as-is). `check_veteran_eligibility` grants `crimson-aura` alongside the `weathered` template. `emerald-aura` is backfill-only (no live detector). `violet-aura` has no automatic detector and is granted exclusively via the admin endpoint.
+- **Phantom skins**: extend the existing detectors in place. `refresh_top1_elo_holders` grants `gold-aura` (top 1) and `silver-aura` (top 5) idempotently alongside `elo_crown` and `runebearer`. `refresh_weekly_daily_champion` grants the **permanent** `cyan-aura` souvenir to current champion(s) (the underlying transient badge stays as-is). `check_finish_reward_milestones` grants `crimson-aura` alongside the `weathered` template. `emerald-aura` is backfill-only (no live detector). `violet-aura` has no automatic detector and is granted exclusively via the admin endpoint.
 - **Daily streak souvenir** (`websocket/race/mod.py`): inside `_apply_daily_streak`, after `apply_qualification_to_user` persists a streak increment, call `RewardsService.check_daily_streak_eligibility(user_id)`. The service reads `users.daily_best_streak` (so the same predicate covers live grants and backfill) and grants `molten-aura` once it reaches `DAILY_STREAK_REWARD_THRESHOLD`.
 - **Account deletion**: any `delete_user` flow must call `refresh_top1_elo_holders()` and `refresh_weekly_daily_champion(current_week_start)` after the deletion to reseat the holder sets.
 
@@ -325,10 +327,11 @@ When the user has a phantom skin equipped (other than `none`), the profile avata
 2. Grant `archon` template to every user with `role == admin`. Future admin promotions are not auto-granted: an operator manually issues the template via `POST /api/admin/users/{id}/templates`. This is intentional, the case is rare.
 3. Run `refresh_top1_elo_holders()` to grant the current top 1 ELO badge, the `elo_crown` template (top 1), and the `runebearer` template (top 5).
 4. Grant `veteran` badge, `weathered` template, and `crimson-aura` phantom skin to every user whose count of FINISHED participations is at least `VETERAN_RACE_THRESHOLD`.
-5. Grant `molten-aura` phantom skin to every user whose `daily_best_streak` is at least `DAILY_STREAK_REWARD_THRESHOLD`.
-6. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
+5. Grant `frog` badge and `speedfrog` template to every user with at least one FINISHED participation.
+6. Grant `molten-aura` phantom skin to every user whose `daily_best_streak` is at least `DAILY_STREAK_REWARD_THRESHOLD`.
+7. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
 
-7. `cyan-aura` is **not** retroactively granted to past weekly Daily Champions; the next live `refresh_weekly_daily_champion` rollup grants it to the current week's champion(s).
+8. `cyan-aura` is **not** retroactively granted to past weekly Daily Champions; the next live `refresh_weekly_daily_champion` rollup grants it to the current week's champion(s).
 
 Each grant emits a `RewardNotification`, so each affected user sees their consolidated banner on their next visit.
 
@@ -390,8 +393,11 @@ Mapping today:
 | `contributor`           | `#A78BFA` (head) + `#5B21B6` (handle) | Craft / authorship, ties to charter purple. Bicolor: see exception above |
 | `top1_elo`              | `#C8A44E`                             | Champion = the only true gold use in the badge set                       |
 | `weekly_daily_champion` | `#DDB95F`                             | Time-bound gold derivative, subordinate to `top1_elo`                    |
+| `frog`                  | `#3E9E5C` (body) + `#15391F` (eyes)   | Frog green. Intentional mascot exception, see note below                 |
 
 The `top1_elo` icon is the **only** badge using `#C8A44E`. This keeps the charter's "gold appears sparingly as punctuation" principle intact: the top ELO holder is the one place where gold marks a person, just as it marks the #1 leaderboard rank elsewhere.
+
+**`frog` is a deliberate exception** to the restricted palette and the "clean Elden Ring nod, not a literal asset" theme. It is a playful brand mascot (Speedfog -> frog), not a prestige or lore marker, so it uses frog green (outside the gold/steel/purple/amber/off-white set) and a literal frog silhouette. Its two fills stay within the same color family (a darker green for the eyes), so the bicolor rule is respected. It is the only mascot-tier badge; new prestige badges must stay within the restricted palette.
 
 ### Badge concepts
 
@@ -404,6 +410,7 @@ Each entry below describes the iconographic intent. Implementation files in `web
 | `contributor`           | Tilted war hammer: trapezoidal head with a small triangular pick on one side, thick handle, rotated -25°. The only bicolor badge: head in `#A78BFA`, handle in darker `#5B21B6` for tool-relief depth. |
 | `top1_elo`              | 3-fleuron crown, symmetrical, with a thin horizontal moulding cutout across the base band                                                                                                              |
 | `weekly_daily_champion` | Sun disk (centered circle) with 7 small triangular rays evenly spaced around it (one per day of the week)                                                                                              |
+| `frog`                  | Front-facing frog: wide rounded body, two raised eye bumps on top with dark pupils, a small smile arc. Placeholder flat SVG; may be swapped for a legible in-game frog cutout (PNG) at the same id.    |
 
 `veteran` deliberately avoids any shield silhouette (the `Cautious` play-style trait already uses one); chevrons keep it disjoint. `contributor` is a hammer rather than the originally proposed quill because at 16x16 a feather/quill silhouette degrades into "ambiguous diagonal blade" without legible barbs. `early_adopter`'s trail-of-particles design replaces an earlier "comet trail" attempt that read as a magic wand at small sizes.
 

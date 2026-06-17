@@ -52,6 +52,14 @@ BADGES: dict[str, Badge] = {
         lifecycle="transient",
         sort_order=2,
     ),
+    "frog": Badge(
+        id="frog",
+        name="Frog",
+        description="Granted after finishing your first race.",
+        icon_filename="frog.svg",
+        lifecycle="permanent",
+        sort_order=5,
+    ),
 }
 
 DEFAULT_TEMPLATE_ID: Final = "default"
@@ -64,6 +72,17 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         description="Standard white name.",
         color="#FFFFFF",
         sort_order=0,
+    ),
+    "speedfrog": NameTemplate(
+        id="speedfrog",
+        name="Speedfrog",
+        description="Granted after finishing your first race.",
+        gradient=("#A8E9B8", "#3E9E5C"),
+        name_css="font-weight: 600; text-shadow: 0 0 4px rgba(62, 158, 92, 0.28);",
+        background_css=(
+            "radial-gradient(ellipse 60% 100% at 25% 50%, rgba(62, 158, 92, 0.18), transparent 70%)"
+        ),
+        sort_order=5,
     ),
     "elo_crown": NameTemplate(
         id="elo_crown",

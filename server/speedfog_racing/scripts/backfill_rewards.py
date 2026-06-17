@@ -89,6 +89,21 @@ async def backfill_rewards(
 
     async with session_maker() as db:
         svc = RewardsService(db)
+        finishers = await db.execute(
+            select(Participant.user_id, func.count(Participant.id).label("finished"))
+            .where(Participant.status == ParticipantStatus.FINISHED)
+            .group_by(Participant.user_id)
+        )
+        finisher_rows = list(finishers.all())
+        for row in finisher_rows:
+            reason = f"backfill: finished {row.finished} race(s)"
+            await svc.grant_permanent_badge(row.user_id, "frog", reason=reason)
+            await svc.grant_name_template(row.user_id, "speedfrog", reason=reason)
+        await db.commit()
+        logger.info("Granted frog + speedfrog to %d account(s)", len(finisher_rows))
+
+    async with session_maker() as db:
+        svc = RewardsService(db)
         streakers = await db.execute(
             select(User.id, User.daily_best_streak).where(
                 User.daily_best_streak >= DAILY_STREAK_REWARD_THRESHOLD

@@ -15,6 +15,7 @@ from speedfog_racing.models import (
     PhantomSkinUnlock,
     Race,
     RaceStatus,
+    RewardNotification,
     User,
     UserRole,
 )
@@ -298,6 +299,61 @@ async def test_backfill_grants_veteran_to_users_above_threshold(async_session_ma
         )
         assert set(grants) == {veteran_id}
         assert rookie_id not in set(grants)
+
+
+async def test_backfill_grants_frog_pack_to_finishers(async_session_maker):
+    """Users with at least one finished race receive frog + speedfrog and notifications."""
+    async with async_session_maker() as db:
+        finisher = User(twitch_id="t-frog", twitch_username="frogger")
+        idle = User(twitch_id="t-idle", twitch_username="idle")
+        db.add_all([finisher, idle])
+        await db.commit()
+        await db.refresh(finisher)
+        await db.refresh(idle)
+        finisher_id = finisher.id
+        idle_id = idle.id
+
+        race = Race(name="f-0", status=RaceStatus.FINISHED, organizer_id=finisher_id)
+        db.add(race)
+        await db.flush()
+        db.add(Participant(race_id=race.id, user_id=finisher_id, status=ParticipantStatus.FINISHED))
+        await db.commit()
+
+    await backfill_rewards(async_session_maker, cutoff=date(2026, 4, 1))
+
+    async with async_session_maker() as db:
+        badge_holders = set(
+            (await db.execute(select(BadgeGrant.user_id).where(BadgeGrant.badge_id == "frog")))
+            .scalars()
+            .all()
+        )
+        template_holders = set(
+            (
+                await db.execute(
+                    select(NameTemplateUnlock.user_id).where(
+                        NameTemplateUnlock.template_id == "speedfrog"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert badge_holders == {finisher_id}
+        assert template_holders == {finisher_id}
+        assert idle_id not in badge_holders
+
+        notif_kinds = {
+            (k, r)
+            for k, r in (
+                await db.execute(
+                    select(RewardNotification.kind, RewardNotification.reward_id).where(
+                        RewardNotification.user_id == finisher_id
+                    )
+                )
+            ).all()
+        }
+        assert ("badge_granted", "frog") in notif_kinds
+        assert ("name_template_unlocked", "speedfrog") in notif_kinds
 
 
 async def test_backfill_veteran_idempotent(async_session_maker):

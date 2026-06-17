@@ -641,12 +641,21 @@ async def test_check_veteran_below_threshold_does_not_grant(async_session):
         await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD - 1)
 
     async with async_session() as db:
-        await RewardsService(db).check_veteran_eligibility(u.id)
+        await RewardsService(db).check_finish_reward_milestones(u.id)
         await db.commit()
 
     async with async_session() as db:
         grants = (
-            (await db.execute(select(BadgeGrant).where(BadgeGrant.user_id == u.id))).scalars().all()
+            (
+                await db.execute(
+                    select(BadgeGrant).where(
+                        BadgeGrant.user_id == u.id,
+                        BadgeGrant.badge_id == "veteran",
+                    )
+                )
+            )
+            .scalars()
+            .all()
         )
         assert grants == []
 
@@ -662,7 +671,7 @@ async def test_check_veteran_at_threshold_grants_once(async_session):
         await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD)
 
     async with async_session() as db:
-        await RewardsService(db).check_veteran_eligibility(u.id)
+        await RewardsService(db).check_finish_reward_milestones(u.id)
         await db.commit()
 
     async with async_session() as db:
@@ -692,7 +701,7 @@ async def test_check_veteran_grants_weathered_template_alongside_badge(async_ses
         await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD)
 
     async with async_session() as db:
-        await RewardsService(db).check_veteran_eligibility(u.id)
+        await RewardsService(db).check_finish_reward_milestones(u.id)
         await db.commit()
 
     async with async_session() as db:
@@ -722,7 +731,7 @@ async def test_check_veteran_below_threshold_skips_template(async_session):
         await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD - 1)
 
     async with async_session() as db:
-        await RewardsService(db).check_veteran_eligibility(u.id)
+        await RewardsService(db).check_finish_reward_milestones(u.id)
         await db.commit()
 
     async with async_session() as db:
@@ -731,6 +740,7 @@ async def test_check_veteran_below_threshold_skips_template(async_session):
                 await db.execute(
                     select(NameTemplateUnlock).where(
                         NameTemplateUnlock.user_id == u.id,
+                        NameTemplateUnlock.template_id == "weathered",
                     )
                 )
             )
@@ -752,9 +762,9 @@ async def test_check_veteran_idempotent_after_grant(async_session):
 
     async with async_session() as db:
         svc = RewardsService(db)
-        await svc.check_veteran_eligibility(u.id)
-        await svc.check_veteran_eligibility(u.id)
-        await svc.check_veteran_eligibility(u.id)
+        await svc.check_finish_reward_milestones(u.id)
+        await svc.check_finish_reward_milestones(u.id)
+        await svc.check_finish_reward_milestones(u.id)
         await db.commit()
 
     async with async_session() as db:
@@ -787,7 +797,7 @@ async def test_check_veteran_excludes_abandoned_participations(async_session):
         )
 
     async with async_session() as db:
-        await RewardsService(db).check_veteran_eligibility(u.id)
+        await RewardsService(db).check_finish_reward_milestones(u.id)
         await db.commit()
 
     async with async_session() as db:
@@ -804,6 +814,139 @@ async def test_check_veteran_excludes_abandoned_participations(async_session):
             .all()
         )
         assert grants == []
+
+
+async def _frog_badge_grants(db, user_id):
+    return (
+        (
+            await db.execute(
+                select(BadgeGrant).where(
+                    BadgeGrant.user_id == user_id, BadgeGrant.badge_id == "frog"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def _speedfrog_template_unlocks(db, user_id):
+    return (
+        (
+            await db.execute(
+                select(NameTemplateUnlock).where(
+                    NameTemplateUnlock.user_id == user_id,
+                    NameTemplateUnlock.template_id == "speedfrog",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def test_check_finish_first_race_grants_frog_and_speedfrog(async_session):
+    async with async_session() as db:
+        u = User(twitch_id="tf1", twitch_username="f1")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, 1)
+
+    async with async_session() as db:
+        await RewardsService(db).check_finish_reward_milestones(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        assert len(await _frog_badge_grants(db, u.id)) == 1
+        assert len(await _speedfrog_template_unlocks(db, u.id)) == 1
+
+
+async def test_check_finish_first_race_emits_notifications(async_session):
+    async with async_session() as db:
+        u = User(twitch_id="tf2", twitch_username="f2")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, 1)
+
+    async with async_session() as db:
+        await RewardsService(db).check_finish_reward_milestones(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        notifs = (
+            (await db.execute(select(RewardNotification).where(RewardNotification.user_id == u.id)))
+            .scalars()
+            .all()
+        )
+        kinds = {(n.kind, n.reward_id) for n in notifs}
+        assert ("badge_granted", "frog") in kinds
+        assert ("name_template_unlocked", "speedfrog") in kinds
+
+
+async def test_check_finish_frog_idempotent(async_session):
+    async with async_session() as db:
+        u = User(twitch_id="tf3", twitch_username="f3")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, 3)
+
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.check_finish_reward_milestones(u.id)
+        await svc.check_finish_reward_milestones(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        assert len(await _frog_badge_grants(db, u.id)) == 1
+        assert len(await _speedfrog_template_unlocks(db, u.id)) == 1
+
+
+async def test_check_finish_daily_participation_grants_frog(async_session):
+    from datetime import date
+
+    async with async_session() as db:
+        u = User(twitch_id="tf4", twitch_username="f4")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        race = Race(
+            name="daily",
+            status=RaceStatus.FINISHED,
+            organizer_id=u.id,
+            daily_date=date(2026, 6, 17),
+        )
+        db.add(race)
+        await db.flush()
+        db.add(Participant(race_id=race.id, user_id=u.id, status=ParticipantStatus.FINISHED))
+        await db.commit()
+
+    async with async_session() as db:
+        await RewardsService(db).check_finish_reward_milestones(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        assert len(await _frog_badge_grants(db, u.id)) == 1
+        assert len(await _speedfrog_template_unlocks(db, u.id)) == 1
+
+
+async def test_check_finish_no_finished_races_skips_frog(async_session):
+    async with async_session() as db:
+        u = User(twitch_id="tf5", twitch_username="f5")
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        await _seed_finished_participations(db, u.id, 3, status=ParticipantStatus.ABANDONED)
+
+    async with async_session() as db:
+        await RewardsService(db).check_finish_reward_milestones(u.id)
+        await db.commit()
+
+    async with async_session() as db:
+        assert await _frog_badge_grants(db, u.id) == []
+        assert await _speedfrog_template_unlocks(db, u.id) == []
 
 
 async def test_grant_phantom_skin_creates_unlock_and_notification(async_session):
@@ -1092,7 +1235,7 @@ async def test_check_veteran_grants_crimson_aura_alongside_template(async_sessio
         await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD)
 
     async with async_session() as db:
-        await RewardsService(db).check_veteran_eligibility(u.id)
+        await RewardsService(db).check_finish_reward_milestones(u.id)
         await db.commit()
 
     async with async_session() as db:
@@ -1122,7 +1265,7 @@ async def test_check_veteran_below_threshold_skips_crimson_aura(async_session):
         await _seed_finished_participations(db, u.id, VETERAN_RACE_THRESHOLD - 1)
 
     async with async_session() as db:
-        await RewardsService(db).check_veteran_eligibility(u.id)
+        await RewardsService(db).check_finish_reward_milestones(u.id)
         await db.commit()
 
     async with async_session() as db:

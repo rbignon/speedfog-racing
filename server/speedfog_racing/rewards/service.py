@@ -448,12 +448,16 @@ class RewardsService:
         for uid in holders:
             await self.grant_phantom_skin(uid, "cyan-aura", reason="weekly daily champion")
 
-    async def check_veteran_eligibility(self, user_id: uuid.UUID) -> None:
-        """Grant the veteran badge and weathered template at VETERAN_RACE_THRESHOLD finishes.
+    async def check_finish_reward_milestones(self, user_id: uuid.UUID) -> None:
+        """Grant finished-race milestone rewards.
+
+        - Frog badge + Speedfrog template at the first finished race.
+        - Veteran badge + weathered template + crimson-aura at VETERAN_RACE_THRESHOLD.
 
         Idempotent: grant_permanent_badge and grant_name_template both no-op on
         re-grant. Safe to call after every race finish; counts only Participant
-        rows with status=FINISHED across all races.
+        rows with status=FINISHED across all races (daily seeds included, solo
+        training sessions excluded since they create no Participant row).
         """
         count = await self.session.scalar(
             select(func.count(Participant.id)).where(
@@ -461,8 +465,13 @@ class RewardsService:
                 Participant.status == ParticipantStatus.FINISHED,
             )
         )
-        if (count or 0) >= VETERAN_RACE_THRESHOLD:
-            reason = f"finished {count} races"
+        finished = count or 0
+        if finished >= 1:
+            reason = f"finished {finished} race(s)"
+            await self.grant_permanent_badge(user_id, "frog", reason=reason)
+            await self.grant_name_template(user_id, "speedfrog", reason=reason)
+        if finished >= VETERAN_RACE_THRESHOLD:
+            reason = f"finished {finished} races"
             await self.grant_permanent_badge(user_id, "veteran", reason=reason)
             await self.grant_name_template(user_id, "weathered", reason=reason)
             await self.grant_phantom_skin(user_id, "crimson-aura", reason=reason)
