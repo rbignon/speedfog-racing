@@ -210,6 +210,39 @@ async def test_monday_creation_grants_weekly_daily_champion_to_top_winner(
         assert set(holders) == {user_a.id}
 
 
+async def test_monday_creation_grants_weekly_daily_winner_to_all_day_winners(
+    ds_async_session_maker,
+) -> None:
+    """Tier 2: every user who won at least one daily last week gets the
+    transient weekly_daily_winner badge, which is broader than the points
+    champion."""
+    await _seed_pool_and_system_user(ds_async_session_maker)
+    user_a = await _make_user(ds_async_session_maker, "uaw", "alice_w")
+    user_b = await _make_user(ds_async_session_maker, "ubw", "bob_w")
+
+    # Previous week: A wins 04-22 and 04-23, B wins 04-24.
+    # Points: A = 100 + 100 + 50 = 250 (champion); B = 50 + 50 + 100 = 200.
+    # Daily winners (>=1 win): {A, B}.
+    await _create_past_daily_with_winner(
+        ds_async_session_maker, daily_day=date(2026, 4, 22), winner=user_a, other=user_b
+    )
+    await _create_past_daily_with_winner(
+        ds_async_session_maker, daily_day=date(2026, 4, 23), winner=user_a, other=user_b
+    )
+    await _create_past_daily_with_winner(
+        ds_async_session_maker, daily_day=date(2026, 4, 24), winner=user_b, other=user_a
+    )
+
+    created = await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
+    assert created is not None
+
+    async with ds_async_session_maker() as db:
+        champions = await _holders_of(db, "weekly_daily_champion")
+        winners = await _holders_of(db, "weekly_daily_winner")
+    assert champions == {user_a.id}
+    assert winners == {user_a.id, user_b.id}
+
+
 async def test_non_monday_creation_does_not_touch_weekly_badge(
     ds_async_session_maker,
 ) -> None:
@@ -317,7 +350,7 @@ async def test_cyan_aura_persists_when_next_week_has_different_champion(
 
 
 # ---------------------------------------------------------------------------
-# Direct unit tests for refresh_weekly_daily_champion (points-based)
+# Direct unit tests for refresh_weekly_daily_rewards (points-based)
 # ---------------------------------------------------------------------------
 
 
@@ -420,7 +453,7 @@ async def test_champion_is_user_with_highest_total_points(ds_session: AsyncSessi
 
     await ds_session.flush()
 
-    await RewardsService(ds_session).refresh_weekly_daily_champion(week_starting=monday)
+    await RewardsService(ds_session).refresh_weekly_daily_rewards(week_starting=monday)
     await ds_session.flush()
 
     holders = await _holders_of(ds_session, "weekly_daily_champion")
@@ -440,7 +473,7 @@ async def test_champion_handles_ties(ds_session: AsyncSession) -> None:
     await _make_participant_direct(ds_session, race=d1, user=bob, igt_ms=1000)
     await ds_session.flush()
 
-    await RewardsService(ds_session).refresh_weekly_daily_champion(week_starting=monday)
+    await RewardsService(ds_session).refresh_weekly_daily_rewards(week_starting=monday)
     await ds_session.flush()
 
     holders = await _holders_of(ds_session, "weekly_daily_champion")
@@ -466,7 +499,7 @@ async def test_no_qualified_participations_clears_holders(ds_session: AsyncSessi
     ds_session.add(p)
     await ds_session.flush()
 
-    await RewardsService(ds_session).refresh_weekly_daily_champion(week_starting=monday)
+    await RewardsService(ds_session).refresh_weekly_daily_rewards(week_starting=monday)
     await ds_session.flush()
 
     holders = await _holders_of(ds_session, "weekly_daily_champion")

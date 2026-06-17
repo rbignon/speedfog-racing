@@ -295,3 +295,39 @@ async def compute_weekly_winners(
         return []
     top = data.entries[0].total_points
     return [e for e in data.entries if e.total_points == top]
+
+
+async def compute_weekly_daily_winners(
+    session: AsyncSession, week_starting: date
+) -> set[UUID] | None:
+    """Return the user ids who ranked 1st on at least one closed daily of the
+    given week, or None if the week is current or future (not yet decided).
+
+    A daily win is the top `compute_daily_points` score for that day (ties
+    included). Past-week gating mirrors `compute_weekly_winners`.
+    """
+    if _today() < week_starting + timedelta(days=7):
+        return None
+    week_ending = week_starting + timedelta(days=7)
+
+    races_q = (
+        select(Race)
+        .where(
+            Race.daily_date >= week_starting,
+            Race.daily_date < week_ending,
+            Race.status == RaceStatus.FINISHED,
+        )
+        .options(selectinload(Race.participants))
+    )
+    races = list((await session.execute(races_q)).scalars())
+
+    winners: set[UUID] = set()
+    for race in races:
+        points = daily_points_for_race(race)
+        if not points:
+            continue
+        top = max(points.values())
+        for p in race.participants:
+            if points.get(p.id) == top:
+                winners.add(p.user_id)
+    return winners

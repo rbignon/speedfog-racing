@@ -161,7 +161,7 @@ async def create_daily_seed_if_needed(
 
         if today.weekday() == 0:  # Monday: roll up the previous week's daily wins.
             week_starting = today - timedelta(days=7)
-            await RewardsService(db).refresh_weekly_daily_champion(
+            await RewardsService(db).refresh_weekly_daily_rewards(
                 week_starting=week_starting,
                 reason="weekly daily rollup",
             )

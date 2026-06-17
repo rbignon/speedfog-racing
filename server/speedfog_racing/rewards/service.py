@@ -430,23 +430,37 @@ class RewardsService:
                 await self.grant_name_template(uid, "runebearer", reason="entered top 5 ELO")
                 await self.grant_phantom_skin(uid, "silver-aura", reason="entered top 5 ELO")
 
-    async def refresh_weekly_daily_champion(
+    async def refresh_weekly_daily_rewards(
         self, week_starting: date, reason: str | None = None
     ) -> None:
-        """Sync weekly_daily_champion to the user(s) with the highest total
-        points across the week's closed dailies. Selection criterion lives in
-        services.daily_points_service.compute_weekly_winners.
-        """
-        from speedfog_racing.services.daily_points_service import compute_weekly_winners
+        """Sync the two weekly daily-seed badges for the given week.
 
-        winners = await compute_weekly_winners(self.session, week_starting)
-        if winners is None:
+        - weekly_daily_champion (transient) + cyan-aura (permanent): the user(s)
+          with the highest total points across the week's closed dailies.
+        - weekly_daily_winner (transient): every user who ranked 1st on at least
+          one closed daily that week (broader; no skin).
+
+        Selection criteria live in services.daily_points_service
+        (compute_weekly_winners and compute_weekly_daily_winners).
+        """
+        from speedfog_racing.services.daily_points_service import (
+            compute_weekly_daily_winners,
+            compute_weekly_winners,
+        )
+
+        champions = await compute_weekly_winners(self.session, week_starting)
+        if champions is None:
             # Current or future week; not yet decided. Defensive no-op.
             return
-        holders = {w.user.id for w in winners}
-        await self.sync_transient_holders("weekly_daily_champion", holders, reason=reason)
-        for uid in holders:
+        champion_ids = {w.user.id for w in champions}
+        await self.sync_transient_holders("weekly_daily_champion", champion_ids, reason=reason)
+        for uid in champion_ids:
             await self.grant_phantom_skin(uid, "cyan-aura", reason="weekly daily champion")
+
+        daily_winners = await compute_weekly_daily_winners(self.session, week_starting)
+        await self.sync_transient_holders(
+            "weekly_daily_winner", daily_winners or set(), reason=reason
+        )
 
     async def check_finish_reward_milestones(self, user_id: uuid.UUID) -> None:
         """Grant finished-race milestone rewards.

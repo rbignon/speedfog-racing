@@ -554,3 +554,125 @@ async def test_winners_returns_all_tied_for_past_week(db_session, monkeypatch):
     assert names == {"alicew", "bobw"}
     for w in winners:
         assert w.total_points == 100
+
+
+# --- compute_weekly_daily_winners ------------------------------------------
+
+
+async def test_daily_winners_returns_none_for_current_week(db_session, monkeypatch):
+    from speedfog_racing.services import daily_points_service as svc
+
+    monkeypatch.setattr(svc, "_today", lambda: date(2026, 5, 27))
+    result = await svc.compute_weekly_daily_winners(db_session, date(2026, 5, 25))
+    assert result is None
+
+
+async def test_daily_winners_empty_for_past_week_no_dailies(db_session, monkeypatch):
+    from speedfog_racing.services import daily_points_service as svc
+
+    monkeypatch.setattr(svc, "_today", lambda: date(2026, 6, 8))
+    result = await svc.compute_weekly_daily_winners(db_session, date(2026, 5, 25))
+    assert result == set()
+
+
+async def test_daily_winners_union_across_days_with_ties(db_session, monkeypatch):
+    """Anyone ranked 1st on any closed daily of the week is a winner; ties on a
+    single day pull all tied users in."""
+    from speedfog_racing.services import daily_points_service as svc
+
+    monkeypatch.setattr(svc, "_today", lambda: date(2026, 6, 8))
+    org = await _make_user(db_session, "dw-org")
+    alice = await _make_user(db_session, "dw-alice")
+    bob = await _make_user(db_session, "dw-bob")
+    carol = await _make_user(db_session, "dw-carol")
+    dave = await _make_user(db_session, "dw-dave")
+
+    day1 = await _make_daily(
+        db_session, organizer=org, daily_date=date(2026, 5, 25), status=RaceStatus.FINISHED
+    )
+    await _make_participant(
+        db_session,
+        race=day1,
+        user=alice,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=1000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+    await _make_participant(
+        db_session,
+        race=day1,
+        user=bob,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=2000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+
+    day2 = await _make_daily(
+        db_session, organizer=org, daily_date=date(2026, 5, 27), status=RaceStatus.FINISHED
+    )
+    # carol and dave tie at IGT -> both rank 1 on day 2.
+    await _make_participant(
+        db_session,
+        race=day2,
+        user=carol,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=1000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+    await _make_participant(
+        db_session,
+        race=day2,
+        user=dave,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=1000,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+
+    result = await svc.compute_weekly_daily_winners(db_session, date(2026, 5, 25))
+    assert result == {alice.id, carol.id, dave.id}
+
+
+async def test_daily_winners_differ_from_points_champion(db_session, monkeypatch):
+    """A consistent 2nd-place racer can be the weekly points champion without
+    ever winning a daily; the daily-winner set must exclude them and include the
+    actual day winners."""
+    from speedfog_racing.services import daily_points_service as svc
+
+    monkeypatch.setattr(svc, "_today", lambda: date(2026, 6, 8))
+    org = await _make_user(db_session, "dwc-org")
+    alice = await _make_user(db_session, "dwc-alice")
+    bob = await _make_user(db_session, "dwc-bob")
+    carol = await _make_user(db_session, "dwc-carol")
+    dave = await _make_user(db_session, "dwc-dave")
+
+    for day, winner in [
+        (date(2026, 5, 25), alice),
+        (date(2026, 5, 27), carol),
+        (date(2026, 5, 29), dave),
+    ]:
+        race = await _make_daily(
+            db_session, organizer=org, daily_date=day, status=RaceStatus.FINISHED
+        )
+        await _make_participant(
+            db_session,
+            race=race,
+            user=winner,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=1000,
+            zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+        )
+        await _make_participant(
+            db_session,
+            race=race,
+            user=bob,
+            status=ParticipantStatus.FINISHED,
+            igt_ms=2000,
+            zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+        )
+
+    daily_winners = await svc.compute_weekly_daily_winners(db_session, date(2026, 5, 25))
+    assert daily_winners == {alice.id, carol.id, dave.id}
+
+    points_champions = await compute_weekly_winners(db_session, date(2026, 5, 25))
+    assert points_champions is not None
+    assert {w.user.id for w in points_champions} == {bob.id}

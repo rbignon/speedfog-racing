@@ -47,10 +47,18 @@ BADGES: dict[str, Badge] = {
     "weekly_daily_champion": Badge(
         id="weekly_daily_champion",
         name="Daily Champion",
-        description="Won the most daily seeds last week.",
+        description="Scored the most daily-seed points last week.",
         icon_filename="weekly_daily_champion.svg",
         lifecycle="transient",
         sort_order=2,
+    ),
+    "weekly_daily_winner": Badge(
+        id="weekly_daily_winner",
+        name="Daily Winner",
+        description="Won at least one daily seed last week.",
+        icon_filename="weekly_daily_winner.svg",
+        lifecycle="transient",
+        sort_order=3,
     ),
     "frog": Badge(
         id="frog",
@@ -189,7 +197,7 @@ PHANTOM_SKINS: dict[str, PhantomSkin] = {
     "cyan-aura": PhantomSkin(
         id="cyan-aura",
         name="Cyan Aura",
-        description="Granted the first time you finish the week as Daily Champion.",
+        description="Granted the first time you top the weekly daily-seed points ranking.",
         screenshot_filename="cyan-aura.jpg",
         sort_order=30,
     ),
