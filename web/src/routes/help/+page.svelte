@@ -1,10 +1,26 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { PUBLIC_BASE_URL } from "$env/static/public";
   import MetroDag from "$lib/dag/MetroDag.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
 
   let openDetails = $state<Set<string>>(new Set());
   let activePool = $state("standard");
+
+  // The daily seed rotates at 08:00 UTC; show that moment in the visitor's
+  // local time. Computed in onMount so the prerendered HTML (build timezone)
+  // is not baked in, avoiding a hydration mismatch.
+  let dailyRotationLocal = $state("");
+  onMount(() => {
+    const rotation = new Date();
+    rotation.setUTCHours(8, 0, 0, 0);
+    dailyRotationLocal = rotation.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZoneName: "short",
+    });
+  });
 
   function toggleDetail(id: string) {
     const next = new Set(openDetails);
@@ -151,10 +167,6 @@
       <strong>Quick Start</strong>
       <span>Get playing in minutes</span>
     </a>
-    <a href="#daily" class="toc-card">
-      <strong>Daily Seed</strong>
-      <span>One seed a day, async</span>
-    </a>
     <a href="#game-rules" class="toc-card">
       <strong>Game Rules</strong>
       <span>Map, zones, bosses, victory</span>
@@ -199,7 +211,11 @@
     <div class="paths">
       <div class="path-card">
         <h3>Daily</h3>
-        <p class="path-subtitle">One shared seed, a new one every day</p>
+        <p class="path-subtitle">
+          One shared seed, a new one every day{dailyRotationLocal
+            ? ` at ${dailyRotationLocal}`
+            : ""}
+        </p>
         <ol>
           <li>
             Open <a href="/daily"><strong>Daily</strong></a> in the navigation bar.
@@ -246,30 +262,6 @@
       New to SpeedFog? The Daily is the easiest way to start competing, and Solo
       lets you explore any mode with no invite and no waiting. Your times,
       deaths, and route maps are saved so you can track your progress.
-    </p>
-  </section>
-
-  <!-- ==================== DAILY SEED ==================== -->
-  <section class="section" id="daily">
-    <h2>Daily Seed</h2>
-    <p>
-      Every day at <strong>08:00 UTC</strong> a new seed goes live, the same for
-      everyone, open for <strong>24 hours</strong>. It is the daily challenge:
-      one run, your time against the whole field, no organizing and no waiting.
-    </p>
-    <p>
-      You get <strong>one attempt</strong> per day. Like a race, the route map
-      stays hidden while you play and is revealed once you finish. Daily runs
-      <strong>don't affect your ELO</strong>.
-    </p>
-    <p>
-      Results feed two boards: a <strong>daily leaderboard</strong> for that
-      day's seed and a <strong>weekly leaderboard</strong> that totals points
-      across the week. Play day after day to build your <strong>streak</strong>.
-    </p>
-    <p>
-      Find today's seed from <a href="/daily"><strong>Daily</strong></a> in the navigation
-      bar, or browse past days from the week grid on the home page.
     </p>
   </section>
 
