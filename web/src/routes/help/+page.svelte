@@ -1,16 +1,39 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { PUBLIC_BASE_URL } from "$env/static/public";
+  import { fetchPoolStats, type PoolStats, type PoolInfo } from "$lib/api";
   import MetroDag from "$lib/dag/MetroDag.svelte";
+  import PoolTabs from "$lib/components/PoolTabs.svelte";
+  import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
 
   let openDetails = $state<Set<string>>(new Set());
-  let activePool = $state("standard");
+
+  // Game modes are fetched from the API (same source as the race creation
+  // page) so this list never drifts from the real pool configs.
+  let pools = $state<PoolStats>({});
+  let poolsLoading = $state(true);
+  let poolsError = $state<string | null>(null);
+  let selectedPool = $state<string | null>(null);
+
+  let sortedPools = $derived(
+    Object.entries(pools)
+      .map(([p, info]) => [p, info] as [string, PoolInfo])
+      .sort(
+        (a, b) =>
+          (a[1].pool_config?.sort_order ?? 99) -
+            (b[1].pool_config?.sort_order ?? 99) || a[0].localeCompare(b[0]),
+      ),
+  );
+  let selectedConfig = $derived(
+    selectedPool ? (pools[selectedPool]?.pool_config ?? null) : null,
+  );
 
   // The daily seed rotates at 08:00 UTC; show that moment in the visitor's
   // local time. Computed in onMount so the prerendered HTML (build timezone)
   // is not baked in, avoiding a hydration mismatch.
   let dailyRotationLocal = $state("");
+
   onMount(() => {
     const rotation = new Date();
     rotation.setUTCHours(8, 0, 0, 0);
@@ -20,7 +43,23 @@
       hour12: false,
       timeZoneName: "short",
     });
+    loadPools();
   });
+
+  async function loadPools() {
+    try {
+      pools = await fetchPoolStats();
+      // Documentation context: default to the first mode by sort order,
+      // regardless of seed availability.
+      const first = sortedPools[0];
+      if (first) selectedPool = first[0];
+    } catch (e) {
+      console.error("Failed to fetch pools:", e);
+      poolsError = "Failed to load game modes.";
+    } finally {
+      poolsLoading = false;
+    }
+  }
 
   function toggleDetail(id: string) {
     const next = new Set(openDetails);
@@ -32,118 +71,6 @@
   function isOpen(id: string): boolean {
     return openDetails.has(id);
   }
-
-  const pools: Record<
-    string,
-    {
-      label: string;
-      duration: string;
-      pitch: string;
-      layers: string;
-      majorBosses: string;
-      finalTier: number;
-      startingRunes: string;
-      weaponUpgrade: number;
-      bossRandomization: string;
-      curve: string;
-      carePackage: string;
-      notes: string[];
-    }
-  > = {
-    standard: {
-      label: "Standard",
-      duration: "~1h",
-      pitch:
-        "The balanced format. Good variety of zones, fair resources, straightforward difficulty curve.",
-      layers: "25–30",
-      majorBosses: "Medium",
-      finalTier: 18,
-      startingRunes: "25k",
-      weaponUpgrade: 24,
-      bossRandomization: "Minor bosses only",
-      curve: "Linear",
-      carePackage: "Catalysts, talismans, spells",
-      notes: ["Gargoyles nerfed"],
-    },
-    sprint: {
-      label: "Sprint",
-      duration: "~30min",
-      pitch:
-        "Short and fast. Less depth, quicker to the final boss. Great for warmups or time-limited sessions.",
-      layers: "10–15",
-      majorBosses: "Medium",
-      finalTier: 13,
-      startingRunes: "25k",
-      weaponUpgrade: 24,
-      bossRandomization: "Minor bosses only",
-      curve: "Linear",
-      carePackage: "Weapons, shields, catalysts, talismans, spells",
-      notes: ["Gargoyles nerfed"],
-    },
-    chill: {
-      label: "Chill",
-      duration: "~1h",
-      pitch:
-        "Generous resources and a late difficulty spike. More legacy dungeons to explore, easier item drops. Good entry point.",
-      layers: "25–30",
-      majorBosses: "Medium",
-      finalTier: 10,
-      startingRunes: "100k",
-      weaponUpgrade: 24,
-      bossRandomization: "None",
-      curve: "Late spike",
-      carePackage: "Weapons, shields, catalysts, talismans, spells",
-      notes: [
-        "Extra Golden Seeds and Sacred Tears",
-        "Gargoyles and Malenia nerfed",
-      ],
-    },
-    hardcore: {
-      label: "Hardcore",
-      duration: "~1h",
-      pitch:
-        "Scarce resources, early difficulty spike, high boss density. No whetblades, minimal care package.",
-      layers: "25–30",
-      majorBosses: "High",
-      finalTier: 28,
-      startingRunes: "50k",
-      weaponUpgrade: 0,
-      bossRandomization: "None",
-      curve: "Early spike",
-      carePackage: "Minimal",
-      notes: ["No whetblades"],
-    },
-    boss_shuffle: {
-      label: "Boss Shuffle",
-      duration: "~1h",
-      pitch:
-        "Same structure as Standard, but every boss is randomized, majors included.",
-      layers: "25–30",
-      majorBosses: "Medium",
-      finalTier: 18,
-      startingRunes: "25k",
-      weaponUpgrade: 24,
-      bossRandomization: "All bosses shuffled",
-      curve: "Linear",
-      carePackage: "Catalysts, talismans, spells",
-      notes: ["Gargoyles nerfed"],
-    },
-    expedition: {
-      label: "Expedition",
-      duration: "~5h",
-      pitch:
-        "Epic race through most of the Lands Between. Massive route with narrow paths, high boss count, and a long grind to the final boss.",
-      layers: "90–100",
-      majorBosses: "Low",
-      finalTier: 28,
-      startingRunes: "25k",
-      weaponUpgrade: 24,
-      bossRandomization: "Minor bosses only",
-      curve: "Early ramp",
-      carePackage: "Catalysts, talismans, spells",
-      notes: ["Gargoyles nerfed", "Narrow paths (max 2 parallel)"],
-    },
-  };
 </script>
 
 <svelte:head>
@@ -403,69 +330,30 @@
       <strong>Standard</strong> is the default; other modes twist the formula.
     </p>
 
-    <div class="pool-container">
-      <div class="pool-tabs">
-        {#each Object.entries(pools) as [key, pool]}
-          <button
-            class="pool-tab"
-            class:active={activePool === key}
-            onclick={() => (activePool = key)}
-          >
-            {pool.label}
-            <span class="pool-tab-duration">{pool.duration}</span>
-          </button>
-        {/each}
-      </div>
-
-      {#each Object.entries(pools) as [key, pool]}
-        {#if activePool === key}
-          <div class="pool-card">
-            <p class="pool-pitch">{pool.pitch}</p>
-            <div class="pool-grid">
-              <div class="pool-stat">
-                <span class="pool-stat-label">Depth</span>
-                <span class="pool-stat-value">{pool.layers}</span>
-              </div>
-              <div class="pool-stat">
-                <span class="pool-stat-label">Final Tier</span>
-                <span class="pool-stat-value">{pool.finalTier}</span>
-              </div>
-              <div class="pool-stat">
-                <span class="pool-stat-label">Major Bosses</span>
-                <span class="pool-stat-value">{pool.majorBosses}</span>
-              </div>
-              <div class="pool-stat">
-                <span class="pool-stat-label">Starting Runes</span>
-                <span class="pool-stat-value">{pool.startingRunes}</span>
-              </div>
-              <div class="pool-stat">
-                <span class="pool-stat-label">Starting Weapons</span>
-                <span class="pool-stat-value">+{pool.weaponUpgrade}</span>
-              </div>
-              <div class="pool-stat">
-                <span class="pool-stat-label">Boss Shuffle</span>
-                <span class="pool-stat-value">{pool.bossRandomization}</span>
-              </div>
-              <div class="pool-stat">
-                <span class="pool-stat-label">Difficulty Curve</span>
-                <span class="pool-stat-value">{pool.curve}</span>
-              </div>
-              <div class="pool-stat">
-                <span class="pool-stat-label">Care Package</span>
-                <span class="pool-stat-value">{pool.carePackage}</span>
-              </div>
-            </div>
-            {#if pool.notes.length > 0}
-              <ul class="pool-notes">
-                {#each pool.notes as note}
-                  <li>{note}</li>
-                {/each}
-              </ul>
-            {/if}
+    {#if poolsLoading}
+      <p class="pool-status">Loading game modes...</p>
+    {:else if poolsError}
+      <p class="pool-status">{poolsError}</p>
+    {:else if sortedPools.length === 0}
+      <p class="pool-status">No game modes available right now.</p>
+    {:else}
+      <div class="pool-container">
+        <PoolTabs
+          pools={sortedPools}
+          selected={selectedPool}
+          onselect={(p) => (selectedPool = p)}
+          gateAvailability={false}
+        />
+        {#if selectedPool && selectedConfig}
+          <div class="pool-content">
+            <PoolSettingsCard
+              poolName={selectedPool}
+              poolConfig={selectedConfig}
+            />
           </div>
         {/if}
-      {/each}
-    </div>
+      </div>
+    {/if}
   </section>
 
   <!-- ==================== DURING THE RACE ==================== -->
@@ -1202,108 +1090,27 @@
     text-align: center;
   }
 
-  /* Pool container: tabs + card as one unit */
+  /* Game modes: PoolTabs + PoolSettingsCard framed as one unit */
   .pool-container {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     overflow: hidden;
   }
 
-  /* Pool tabs */
-  .pool-tabs {
-    display: flex;
-    background: var(--color-surface);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .pool-tab {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.1rem;
-    padding: 0.6rem 0.5rem;
-    background: var(--color-surface);
-    border: none;
-    border-right: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
-    font-family: var(--font-family);
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    cursor: pointer;
-    transition: all var(--transition);
-  }
-
-  .pool-tab:last-child {
-    border-right: none;
-  }
-
-  .pool-tab:hover {
-    color: var(--color-text);
-    background: var(--color-surface-elevated);
-  }
-
-  .pool-tab.active {
-    background: var(--color-surface-elevated);
-    color: var(--color-gold);
-    box-shadow: inset 0 -2px 0 var(--color-gold);
-  }
-
-  .pool-tab-duration {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-disabled);
-  }
-
-  .pool-tab.active .pool-tab-duration {
-    color: var(--color-text-secondary);
-  }
-
-  /* Pool card */
-  .pool-card {
-    background: var(--color-surface-elevated);
+  .pool-content {
     padding: 1.25rem;
+    background: var(--color-surface-elevated);
   }
 
-  .pool-card .pool-pitch {
-    color: var(--color-text);
-    font-size: var(--font-size-sm);
-    margin: 0 0 1rem;
+  .pool-content > :global(.card) {
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
   }
 
-  .pool-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.6rem;
-  }
-
-  .pool-stat {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-
-  .pool-stat-label {
-    font-size: var(--font-size-xs);
+  .pool-status {
     color: var(--color-text-disabled);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .pool-stat-value {
-    font-size: var(--font-size-sm);
-    color: var(--color-text);
-    font-weight: 500;
-  }
-
-  ul.pool-notes {
-    margin: 0.85rem 0 0;
-    padding-left: 1.25rem;
-    font-size: var(--font-size-xs);
-    color: var(--color-text-disabled);
-  }
-
-  ul.pool-notes li {
-    margin-bottom: 0.1rem;
+    font-style: italic;
   }
 
   /* Overlay two-column layout */
@@ -1494,15 +1301,6 @@
 
     .paths {
       grid-template-columns: 1fr;
-    }
-
-    .pool-tab {
-      font-size: var(--font-size-xs);
-      padding: 0.5rem 0.25rem;
-    }
-
-    .pool-grid {
-      grid-template-columns: 1fr 1fr;
     }
 
     .overlay-layout {

@@ -8,18 +8,20 @@
     onselect,
     disabled = false,
     recommended = null,
+    gateAvailability = true,
   }: {
     pools: [string, PoolInfo][];
     selected: string | null;
     onselect: (pool: string) => void;
     disabled?: boolean;
     recommended?: string | null;
+    gateAvailability?: boolean;
   } = $props();
 </script>
 
 <div class="pool-tabs" role="tablist">
   {#each pools as [pool, info] (pool)}
-    {@const isDisabled = info.available === 0 || disabled}
+    {@const isDisabled = (gateAvailability && info.available === 0) || disabled}
     <button
       type="button"
       class="pool-tab"
