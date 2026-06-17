@@ -8,7 +8,7 @@
   <title>About – SpeedFog Racing</title>
   <meta
     name="description"
-    content="Learn how SpeedFog Racing works: race through randomized Elden Ring fog gates with live leaderboards, spectator views, and metro-style progression maps."
+    content="Learn how SpeedFog Racing works: race through randomized Elden Ring fog gates with a daily seed challenge, live leaderboards, and metro-style progression maps."
   />
   <link rel="canonical" href="{PUBLIC_BASE_URL}/about" />
 </svelte:head>
@@ -32,13 +32,13 @@
       into the expected area, each gate teleports you somewhere entirely different.
     </p>
     <p>
-      Speedfog is a competitive racing platform, letting players race through <strong
-        >balanced</strong
-      >
-      route maps where every path is equally long and challenging. It features live
-      leaderboards, in-game overlay with progress tracking, spectator views, and an
-      interactive
-      <strong>metro-style graph</strong> showing each player's path through the fog.
+      Speedfog is a competitive racing platform, letting players race through
+      <strong>balanced</strong> route maps where every path is equally long and
+      challenging. Compete in organized multiplayer races, take on a new
+      <strong>daily seed</strong>, or practice solo at your own pace. It
+      features live leaderboards, an in-game overlay with progress tracking, and
+      an interactive <strong>metro-style graph</strong> showing each player's path
+      through the fog.
     </p>
   </section>
 
@@ -50,8 +50,8 @@
         <div>
           <strong>Set up</strong>
           <p>
-            An organizer creates a race, adds participants, and optionally
-            assigns casters who can spectate with full map visibility.
+            An organizer creates a race and adds the participants who will
+            compete, then shares an invite link.
           </p>
         </div>
       </div>
@@ -123,9 +123,8 @@
     </p>
     <p>
       Zone progression is <strong>tracked automatically</strong> through fog
-      gates: walk through one and the server knows exactly where you are.
-      Spectators and casters see
-      <strong>time gaps</strong> between players, zone by zone.
+      gates: walk through one and the server knows exactly where you are. The
+      live leaderboard shows <strong>time gaps</strong> between players, zone by zone.
     </p>
     <div class="screenshot-container">
       <img
@@ -151,17 +150,18 @@
         </p>
       </div>
       <div class="feature-card">
-        <strong>Live Spectating</strong>
+        <strong>Daily Seed</strong>
         <p>
-          Spectators follow the race in real time on the route map. Casters get
-          full visibility for streaming, with dedicated OBS overlays.
+          A new seed every day, the same for everyone. Race the clock
+          asynchronously, climb the daily and weekly leaderboards, and keep your
+          streak alive.
         </p>
       </div>
       <div class="feature-card">
         <strong>Zone Tracking</strong>
         <p>
-          Every fog gate traversal is detected automatically. Spectators see
-          real-time zone progression and time gaps between players.
+          Every fog gate traversal is detected automatically, feeding real-time
+          zone progression and time gaps into the live leaderboard.
         </p>
       </div>
       <div class="feature-card">
