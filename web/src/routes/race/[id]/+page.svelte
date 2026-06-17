@@ -28,6 +28,7 @@
     computePublicAccess,
     computePublicLockedReason,
   } from "$lib/public-chat-access";
+  import { isFrogTitle } from "$lib/format";
   import ObsOverlayModal from "$lib/components/ObsOverlayModal.svelte";
   import DownloadModal from "$lib/components/DownloadModal.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
@@ -153,6 +154,7 @@
 
   // Use live data if available, otherwise fall back to initial
   let raceName = $derived(liveRace?.name ?? initialRace.name);
+  let isFrogRace = $derived(isFrogTitle(raceName));
   let raceStatus = $derived(liveRace?.status ?? initialRace.status);
   let totalLayers = $derived(
     liveSeed?.total_layers ?? initialRace.seed_total_layers,
@@ -980,7 +982,11 @@
     <main class="main-content">
       <header class="race-header">
         <div>
-          <h1>{raceName}</h1>
+          <h1 class:frog={isFrogRace}>
+            {#if isFrogRace}
+              <img src="/badges/frog.svg" alt="" class="frog-icon" />
+            {/if}{raceName}
+          </h1>
           <p class="organizer">
             Organized by {initialRace.organizer.twitch_display_name ||
               initialRace.organizer.twitch_username}
@@ -1593,6 +1599,17 @@
     color: var(--color-text);
     font-size: var(--font-size-2xl);
     font-weight: 600;
+  }
+
+  .race-header h1.frog {
+    color: #3e9e5c;
+  }
+
+  .race-header h1 .frog-icon {
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.12em;
+    margin-right: 0.35rem;
   }
 
   .header-right {

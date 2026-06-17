@@ -3,7 +3,7 @@
   import { goto } from "$app/navigation";
   import { raceDisplayDate } from "$lib/utils/time";
   import { formatPoolName } from "$lib/utils/format";
-  import { statusLabel } from "$lib/format";
+  import { isFrogTitle, statusLabel } from "$lib/format";
   import LiveIndicator from "./LiveIndicator.svelte";
 
   let {
@@ -17,6 +17,7 @@
   } = $props();
 
   let isRunning = $derived(race.status === "running");
+  let isFrog = $derived(isFrogTitle(race.name));
   let displayName = $derived(
     race.organizer.twitch_display_name || race.organizer.twitch_username,
   );
@@ -73,7 +74,10 @@
         {#if isRunning}
           <LiveIndicator dotOnly />
         {/if}
-        <span class="race-name">{race.name}</span>
+        {#if isFrog}
+          <img src="/badges/frog.svg" alt="" class="frog-icon" />
+        {/if}
+        <span class="race-name" class:frog={isFrog}>{race.name}</span>
       </div>
       <div class="race-badges">
         {#if showOpenBadge}
@@ -283,6 +287,16 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .race-name.frog {
+    color: #3e9e5c;
+  }
+
+  .frog-icon {
+    width: 1.1rem;
+    height: 1.1rem;
+    flex-shrink: 0;
   }
 
   .race-badges {

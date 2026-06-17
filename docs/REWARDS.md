@@ -401,6 +401,8 @@ The `top1_elo` icon is the **only** badge using `#C8A44E`. This keeps the charte
 
 **`frog` is a deliberate exception** to the restricted palette and the "clean Elden Ring nod, not a literal asset" theme. It is a playful brand mascot (Speedfog -> frog), not a prestige or lore marker, so it uses frog green (outside the gold/steel/purple/amber/off-white set) and a literal frog silhouette. Its two fills stay within the same color family (a darker green for the eyes), so the bicolor rule is respected. It is the only mascot-tier badge; new prestige badges must stay within the restricted palette.
 
+**Title easter egg:** when a race title contains the substring "frog" (case-insensitive), the title is tinted frog green (`#3E9E5C`) and prefixed with the `frog.svg` badge on race cards and the race page header. Detection lives in `isFrogTitle` (`web/src/lib/format.ts`); it is purely cosmetic and unrelated to the reward grant above.
+
 ### Badge concepts
 
 Each entry below describes the iconographic intent. Implementation files in `web/static/badges/<id>.svg`.

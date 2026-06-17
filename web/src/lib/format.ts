@@ -1,3 +1,8 @@
+/** Easter egg: race titles mentioning "frog" get the Speedfrog treatment. */
+export function isFrogTitle(name: string): boolean {
+  return name.toLowerCase().includes("frog");
+}
+
 /** Human-friendly label for race and solo statuses. */
 export function statusLabel(s: string): string {
   switch (s) {
