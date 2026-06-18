@@ -1,0 +1,6 @@
+# SpeedFog Racing - Training Hardcore Pool Configuration
+# ~1 hour solo runs, reduced resources and harder loot
+extends = ["hardcore_boss_rush", "_training_base"]
+
+[display]
+description = "Punishing solo run with nothing but bosses"

@@ -1,0 +1,15 @@
+# SpeedFog Racing - Fixed Route Pool Configuration
+# Linear run: no branching, every player takes the exact same path.
+extends = "standard"
+
+[display]
+name = "Linear Route"
+sort_order = 10
+description = "Linear run with no branching, every player follows the same path"
+
+[structure]
+layers_count = 30
+max_parallel_paths = 1
+max_entrances = 1
+max_exits = 1
+max_branches = 1

@@ -4,7 +4,7 @@ extends = "standard"
 
 [display]
 name = "Boss Shuffle"
-sort_order = 5
+sort_order = 4
 description = "Standard race with randomized boss encounters"
 
 [structure]
