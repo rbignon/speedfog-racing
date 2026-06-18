@@ -5,7 +5,7 @@ extends = "_base"
 [display]
 name = "Expedition"
 sort_order = 5
-estimated_duration = "~5h"
+estimated_duration = "~4h"
 description = "Epic race through most of the Lands Between"
 
 [requirements]
@@ -15,7 +15,7 @@ mini_dungeons = 15
 major_bosses = 15
 
 [structure]
-layers_count = 100
+layers_count = 90
 max_parallel_paths = 2
 max_exits = 2
 max_entrances = 2
