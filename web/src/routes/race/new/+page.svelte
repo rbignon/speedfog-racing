@@ -23,6 +23,7 @@
   let lateJoinWindowMinutes = $state(10);
   let raceDurationMinutes = $state(120);
   let privateDag = $state(false);
+  let customRules = $state("");
   let showAdvanced = $state(false);
   let pools: PoolStats = $state({});
   let loading = $state(true);
@@ -47,7 +48,10 @@
   let selectedAvailable = $derived(pools[poolName]?.available ?? 0);
 
   let advancedCount = $derived(
-    (autoEndEnabled ? 1 : 0) + (lateJoinEnabled ? 1 : 0) + (privateDag ? 1 : 0),
+    (autoEndEnabled ? 1 : 0) +
+      (lateJoinEnabled ? 1 : 0) +
+      (privateDag ? 1 : 0) +
+      (customRules.trim() ? 1 : 0),
   );
 
   $effect(() => {
@@ -105,6 +109,7 @@
         lateJoinEnabled ? lateJoinWindowMinutes : null,
         autoEndEnabled ? raceDurationMinutes : null,
         privateDag,
+        customRules.trim() || null,
       );
       goto(`/race/${race.id}`);
     } catch (e) {
@@ -321,7 +326,7 @@
             {#if advancedCount > 0}
               {advancedCount} set
             {:else}
-              late joiners · auto-end · private map
+              late joiners · auto-end · private map · custom rules
             {/if}
           </span>
         </button>
@@ -393,6 +398,22 @@
               </label>
               <p class="hint">
                 Useful for asynchronous races where spoilers matter.
+              </p>
+            </div>
+
+            <div class="form-group">
+              <label for="custom-rules">Custom rules</label>
+              <textarea
+                id="custom-rules"
+                bind:value={customRules}
+                maxlength="1000"
+                rows="4"
+                placeholder="One rule per line"
+                disabled={creating}
+              ></textarea>
+              <p class="hint">
+                Shown to players in the download popup and on the race page. One
+                rule per line.
               </p>
             </div>
           </div>
@@ -476,6 +497,18 @@
   input[type="text"]:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  textarea {
+    width: 100%;
+    background: var(--color-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.75rem;
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    resize: vertical;
   }
 
   .optional {
