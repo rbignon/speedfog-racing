@@ -772,6 +772,7 @@
       {downloading}
       error={downloadError}
       rules={initialRace.pool_config?.rules ?? null}
+      customRules={initialRace.custom_rules ?? null}
       actionLabel="Download Daily Seed Pack"
     />
   {/if}

@@ -1352,6 +1352,7 @@
         {downloading}
         error={downloadError}
         rules={initialRace.pool_config?.rules ?? null}
+        customRules={raceStore.race?.custom_rules ?? initialRace.custom_rules}
         onClose={() => (showDownloadModal = false)}
         onDownload={handleDownload}
       />

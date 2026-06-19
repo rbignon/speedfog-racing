@@ -6,6 +6,7 @@
     error: string | null;
     actionLabel?: string;
     rules?: string | null;
+    customRules?: string | null;
   }
 
   let {
@@ -15,10 +16,18 @@
     error,
     actionLabel = "Download Race Package",
     rules = null,
+    customRules = null,
   }: Props = $props();
 
   const ruleLines = $derived(
     (rules ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0),
+  );
+
+  const customRuleLines = $derived(
+    (customRules ?? "")
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line.length > 0),
@@ -54,6 +63,17 @@
         <h3>Mode Rules</h3>
         <ul>
           {#each ruleLines as line}
+            <li>{line}</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    {#if customRuleLines.length > 0}
+      <div class="section mode-rules">
+        <h3>Race Rules</h3>
+        <ul>
+          {#each customRuleLines as line}
             <li>{line}</li>
           {/each}
         </ul>
