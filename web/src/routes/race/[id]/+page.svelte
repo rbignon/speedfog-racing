@@ -74,6 +74,10 @@
   let durationInput = $state<number>(120);
   let durationError = $state<string | null>(null);
   let durationSaving = $state(false);
+  let editingRules = $state(false);
+  let rulesInput = $state("");
+  let rulesError = $state<string | null>(null);
+  let rulesSaving = $state(false);
   let selectedParticipantIds = $state<Set<string>>(new Set());
   let showDownloadModal = $state(false);
   let deleting = $state(false);
@@ -156,6 +160,18 @@
   let raceName = $derived(liveRace?.name ?? initialRace.name);
   let isFrogRace = $derived(isFrogTitle(raceName));
   let raceStatus = $derived(liveRace?.status ?? initialRace.status);
+  let liveCustomRules = $derived(
+    raceStore.race?.custom_rules ?? initialRace.custom_rules ?? null,
+  );
+  let customRuleLines = $derived(
+    (liveCustomRules ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0),
+  );
+  let canEditRules = $derived(
+    raceStatus === "setup" || raceStatus === "running",
+  );
   let totalLayers = $derived(
     liveSeed?.total_layers ?? initialRace.seed_total_layers,
   );
@@ -744,6 +760,28 @@
     }
   }
 
+  function startEditRules() {
+    rulesInput = liveCustomRules ?? "";
+    rulesError = null;
+    editingRules = true;
+  }
+
+  async function saveRules() {
+    rulesSaving = true;
+    rulesError = null;
+    try {
+      await updateRace(initialRace.id, {
+        custom_rules: rulesInput.trim() || null,
+      });
+      initialRace = await fetchRace(initialRace.id);
+      editingRules = false;
+    } catch (e) {
+      rulesError = e instanceof Error ? e.message : "Failed to update";
+    } finally {
+      rulesSaving = false;
+    }
+  }
+
   function handleRaceUpdated(updated: RaceDetail) {
     initialRace = updated;
   }
@@ -1320,6 +1358,54 @@
           poolName={initialRace.pool_name || "standard"}
           poolConfig={initialRace.pool_config}
         />
+      {/if}
+
+      {#if customRuleLines.length > 0 || (isOrganizer && canEditRules)}
+        <div class="race-rules-card">
+          <div class="race-rules-head">
+            <h3>Race Rules</h3>
+            {#if isOrganizer && canEditRules && !editingRules}
+              <button class="btn-edit" onclick={startEditRules}>
+                {customRuleLines.length > 0 ? "Edit" : "Add"}
+              </button>
+            {/if}
+          </div>
+          {#if editingRules}
+            <textarea
+              class="race-rules-input"
+              bind:value={rulesInput}
+              maxlength="1000"
+              rows="5"
+              placeholder="One rule per line"
+              disabled={rulesSaving}
+            ></textarea>
+            <div class="schedule-edit-actions">
+              <button
+                class="btn-inline"
+                onclick={saveRules}
+                disabled={rulesSaving}
+              >
+                {rulesSaving ? "..." : "Save"}
+              </button>
+              <button
+                class="btn-inline btn-inline-secondary"
+                onclick={() => (editingRules = false)}
+                disabled={rulesSaving}
+              >
+                Cancel
+              </button>
+            </div>
+            {#if rulesError}
+              <span class="schedule-error">{rulesError}</span>
+            {/if}
+          {:else if customRuleLines.length > 0}
+            <ul class="race-rules-list">
+              {#each customRuleLines as line}
+                <li>{line}</li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
       {/if}
     </main>
 
@@ -2061,5 +2147,42 @@
     font-weight: 500;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+
+  .race-rules-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-gold);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+  }
+  .race-rules-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .race-rules-head h3 {
+    margin: 0;
+    font-size: var(--font-size-base);
+    color: var(--color-text);
+  }
+  .race-rules-list {
+    margin: 0.5rem 0 0;
+    padding-left: 1.25rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .race-rules-input {
+    width: 100%;
+    margin-top: 0.5rem;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.75rem;
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    resize: vertical;
   }
 </style>
