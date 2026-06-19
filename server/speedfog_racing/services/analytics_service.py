@@ -284,6 +284,59 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
     }
 
     # ------------------------------------------------------------------
+    # Active players per week (last 26 ISO weeks)
+    # ------------------------------------------------------------------
+    # Distinct users who actually played a daily, race, or solo in each
+    # ISO week. This is a deeper, separate window from the 12-week
+    # ``weekly`` section above, so it loads its own rows and keeps its own
+    # week axis; the existing charts are unchanged.
+    active_week_keys = _build_week_list(now, 26)
+    active_week_set = set(active_week_keys)
+    active_window_cutoff = now - timedelta(weeks=27)
+    week_active: dict[tuple[int, int], set[uuid.UUID]] = {k: set() for k in active_week_keys}
+
+    # Daily and non-daily participations are one query: the only difference
+    # between them (``daily_date``) is irrelevant to "did this user play",
+    # and the qualification bar is identical. ``daily_qualified_filter`` is
+    # reused here as the generic "actually played" predicate (zone_history >= 2).
+    play_rows = (
+        await db.execute(
+            select(Participant.user_id, Race.started_at)
+            .join(Race, Race.id == Participant.race_id)
+            .where(
+                Race.started_at >= active_window_cutoff,
+                daily_qualified_filter,
+            )
+        )
+    ).all()
+    for user_id, started_at in play_rows:
+        if user_id is None or started_at is None:
+            continue
+        wk = _iso_week_key(_ensure_utc(started_at))
+        if wk in active_week_set:
+            week_active[wk].add(user_id)
+
+    # Solo: creating a training session is itself a play action.
+    solo_rows = (
+        await db.execute(
+            select(TrainingSession.user_id, TrainingSession.created_at).where(
+                TrainingSession.created_at >= active_window_cutoff
+            )
+        )
+    ).all()
+    for user_id, created_at in solo_rows:
+        if user_id is None or created_at is None:
+            continue
+        wk = _iso_week_key(_ensure_utc(created_at))
+        if wk in active_week_set:
+            week_active[wk].add(user_id)
+
+    active_users = {
+        "weeks": [f"W{wk[1]}" for wk in active_week_keys],
+        "counts": [len(week_active[wk]) for wk in active_week_keys],
+    }
+
+    # ------------------------------------------------------------------
     # Heatmaps (12 rows x 7 cols, UTC)
     # ------------------------------------------------------------------
     # row = 2-hour bucket (00-01 ... 22-23), col = weekday (0=Mon, 6=Sun)
@@ -337,6 +390,7 @@ async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
     return {
         "kpis": kpis,
         "weekly": weekly,
+        "active_users": active_users,
         "heatmaps": heatmaps,
         "timezones": tz_list,
         "pool_usage": pool_usage,

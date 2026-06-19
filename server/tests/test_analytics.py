@@ -835,3 +835,127 @@ async def test_compute_analytics_daily_qualified_participants(async_session):
     assert len(top) == 1
     assert top[0]["twitch_username"] == "orgd"
     assert top[0]["race_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_active_users(async_session):
+    """active_users counts DISTINCT players who actually played (daily/race/solo)
+    per ISO week over 26 weeks: dedup across modes, qualified-only races,
+    and out-of-window activity excluded."""
+    now = datetime.now(tz=UTC)
+    async with async_session() as db:
+        organizer = User(twitch_id="au_org", twitch_username="auorg", api_token=generate_token())
+        user_a = User(twitch_id="au_a", twitch_username="aua", api_token=generate_token())
+        user_b = User(twitch_id="au_b", twitch_username="aub", api_token=generate_token())
+        user_c = User(twitch_id="au_c", twitch_username="auc", api_token=generate_token())
+        user_d = User(twitch_id="au_d", twitch_username="aud", api_token=generate_token())
+        user_e = User(twitch_id="au_e", twitch_username="aue", api_token=generate_token())
+        db.add_all([organizer, user_a, user_b, user_c, user_d, user_e])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="900",
+            pool_name="standard",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/900",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        daily_race = Race(
+            name="daily",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now - timedelta(hours=2),
+            daily_date=date.today(),
+        )
+        normal_race = Race(
+            name="race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=now - timedelta(hours=3),
+            finished_at=now - timedelta(hours=1),
+        )
+        db.add_all([daily_race, normal_race])
+        await db.flush()
+
+        qualified = [{"node_id": "a"}, {"node_id": "b"}, {"node_id": "c"}]
+        one_zone = [{"node_id": "a"}]
+
+        db.add_all(
+            [
+                # user_a: qualified DAILY participant this week.
+                Participant(
+                    race_id=daily_race.id,
+                    user_id=user_a.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.PLAYING,
+                    zone_history=qualified,
+                ),
+                # user_b: qualified non-daily RACE participant this week...
+                Participant(
+                    race_id=normal_race.id,
+                    user_id=user_b.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.FINISHED,
+                    zone_history=qualified,
+                ),
+                # user_c: UNqualified race participant (one zone) -> excluded.
+                Participant(
+                    race_id=normal_race.id,
+                    user_id=user_c.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.ABANDONED,
+                    zone_history=one_zone,
+                ),
+            ]
+        )
+        db.add_all(
+            [
+                # ...user_b also has a solo this week -> still counted once (distinct).
+                TrainingSession(
+                    user_id=user_b.id,
+                    seed_id=seed.id,
+                    mod_token=generate_token(),
+                    status=TrainingSessionStatus.FINISHED,
+                    created_at=now - timedelta(hours=2),
+                ),
+                # user_e: solo only, this week.
+                TrainingSession(
+                    user_id=user_e.id,
+                    seed_id=seed.id,
+                    mod_token=generate_token(),
+                    status=TrainingSessionStatus.ABANDONED,
+                    created_at=now - timedelta(hours=2),
+                ),
+                # user_d: solo 30 weeks ago -> outside the 26-week window.
+                TrainingSession(
+                    user_id=user_d.id,
+                    seed_id=seed.id,
+                    mod_token=generate_token(),
+                    status=TrainingSessionStatus.FINISHED,
+                    created_at=now - timedelta(weeks=30),
+                ),
+            ]
+        )
+        await db.commit()
+
+    async with async_session() as db:
+        result = await compute_analytics(db)
+
+    active = result["active_users"]
+    assert len(active["weeks"]) == 26
+    assert len(active["counts"]) == 26
+    for label in active["weeks"]:
+        assert label.startswith("W")
+        assert label[1:].isdigit()
+
+    # Current week (last bucket): user_a (daily) + user_b (race & solo, once) + user_e (solo) = 3.
+    # user_c is unqualified, user_d is out of window.
+    assert active["counts"][-1] == 3
+    # No other week has activity, so the whole 26-week series sums to 3.
+    assert sum(active["counts"]) == 3
