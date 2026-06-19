@@ -168,6 +168,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         registration_closes_at=registration_closes_at,
         race_ends_at=race_ends_at,
         private_dag=race.private_dag,
+        custom_rules=race.custom_rules,
         daily_date=race.daily_date,
         exclude_from_elo=race.exclude_from_elo,
         participant_count=len(race.participants),
@@ -296,6 +297,7 @@ async def create_race(
         late_join_window_minutes=request.late_join_window_minutes,
         race_duration_minutes=request.race_duration_minutes,
         private_dag=request.private_dag,
+        custom_rules=(request.custom_rules or "").strip() or None,
     )
     db.add(race)
     await db.flush()

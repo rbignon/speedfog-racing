@@ -266,6 +266,7 @@ class Race(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     late_join_window_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     race_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    custom_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
     private_dag: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )

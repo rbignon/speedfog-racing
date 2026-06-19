@@ -76,6 +76,7 @@ class CreateRaceRequest(BaseModel):
     late_join_window_minutes: int | None = None
     race_duration_minutes: int | None = None
     private_dag: bool = False
+    custom_rules: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
     def validate_open_registration(self) -> "CreateRaceRequest":
@@ -388,6 +389,7 @@ class RaceResponse(BaseModel):
     registration_closes_at: datetime | None = None
     race_ends_at: datetime | None = None
     private_dag: bool = False
+    custom_rules: str | None = None
     daily_date: date | None = None
     exclude_from_elo: bool = False
     participant_count: int
@@ -474,6 +476,7 @@ class RaceDetailResponse(BaseModel):
     registration_closes_at: datetime | None = None
     race_ends_at: datetime | None = None
     private_dag: bool = False
+    custom_rules: str | None = None
     daily_date: date | None = None
     exclude_from_elo: bool = False
     participant_count: int

@@ -202,6 +202,54 @@ async def test_create_race_allowed_for_organizer(test_client, organizer, seed):
 
 
 @pytest.mark.asyncio
+async def test_create_race_with_custom_rules(test_client, organizer, seed):
+    """custom_rules is persisted and returned on create."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={
+                "name": "Ruled Race",
+                "pool_name": "standard",
+                "custom_rules": "No summons\nFirst to Margit wins",
+            },
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["custom_rules"] == "No summons\nFirst to Margit wins"
+
+        detail = await client.get(
+            f"/api/races/{response.json()['id']}",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert detail.json()["custom_rules"] == "No summons\nFirst to Margit wins"
+
+
+@pytest.mark.asyncio
+async def test_create_race_blank_custom_rules_becomes_null(test_client, organizer, seed):
+    """Whitespace-only custom_rules normalizes to None."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Blank Rules", "pool_name": "standard", "custom_rules": "   \n  "},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["custom_rules"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_race_custom_rules_too_long_rejected(test_client, organizer, seed):
+    """custom_rules over 1000 chars is rejected with 422."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Too Long", "pool_name": "standard", "custom_rules": "x" * 1001},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_create_race_no_seeds_available(test_client, organizer):
     """Creating a race fails if no seeds are available."""
     async with test_client as client:
