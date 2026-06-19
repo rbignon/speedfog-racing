@@ -43,6 +43,7 @@ export interface WsRaceInfo {
   registration_closes_at?: string | null;
   race_ends_at?: string | null;
   private_dag?: boolean;
+  custom_rules?: string | null;
   countdown_seconds?: number;
   // Current seed id, mirrored from the wire RaceInfo for completeness; the web
   // reads the active seed from race_state, so this field is unused here.
