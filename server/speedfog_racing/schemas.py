@@ -111,6 +111,7 @@ class UpdateRaceRequest(BaseModel):
     is_public: editable at any status.
     late_join_window_minutes: SETUP only.
     race_duration_minutes: SETUP, or RUNNING to extend (never shorten).
+    custom_rules: SETUP or RUNNING only; blank/whitespace is stored as null.
     """
 
     scheduled_at: datetime | None = None
@@ -120,6 +121,7 @@ class UpdateRaceRequest(BaseModel):
     late_join_window_minutes: int | None = None
     race_duration_minutes: int | None = None
     private_dag: bool | None = None
+    custom_rules: str | None = Field(default=None, max_length=1000)
 
 
 class AddParticipantRequest(BaseModel):

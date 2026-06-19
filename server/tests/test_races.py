@@ -2995,3 +2995,155 @@ async def test_regular_user_still_cannot_manage_race(test_client, organizer, pla
                 **({"json": {"name": "Hacked"}} if method == "patch" else {}),
             )
             assert resp.status_code == 403, f"{method.upper()} {path} should be 403"
+
+
+async def test_update_custom_rules_gating(test_client, organizer, async_session):
+    """custom_rules is editable in RUNNING, blocked on FINISHED."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_rules_1",
+            pool_name="standard",
+            graph_json={},
+            total_layers=5,
+            folder_path="/test/rules1",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Rules Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    with mock_patch("speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()):
+        async with test_client as client:
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"custom_rules": "No bleed builds"},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["custom_rules"] == "No bleed builds"
+
+            # Flip to FINISHED and confirm rejection
+            async with async_session() as db:
+                r = await db.get(Race, race_id)
+                r.status = RaceStatus.FINISHED
+                await db.commit()
+
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"custom_rules": "Too late"},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 400
+
+
+async def test_update_custom_rules_broadcasts_on_change_only(test_client, organizer, async_session):
+    """Changing custom_rules broadcasts; re-sending the same value does not."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_rules_2",
+            pool_name="standard",
+            graph_json={},
+            total_layers=5,
+            folder_path="/test/rules2",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Broadcast Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            custom_rules="Original",
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    with mock_patch(
+        "speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()
+    ) as mock_broadcast:
+        async with test_client as client:
+            changed = await client.patch(
+                f"/api/races/{race_id}",
+                json={"custom_rules": "Updated"},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert changed.status_code == 200
+            assert mock_broadcast.call_count == 1
+
+            same = await client.patch(
+                f"/api/races/{race_id}",
+                json={"custom_rules": "Updated"},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert same.status_code == 200
+            assert mock_broadcast.call_count == 1  # no extra broadcast on no-op
+
+
+async def test_update_custom_rules_normalization(test_client, organizer, async_session):
+    """Whitespace-only input normalizes to null; explicit null clears existing value."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_rules_3",
+            pool_name="standard",
+            graph_json={},
+            total_layers=5,
+            folder_path="/test/rules3",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Normalization Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            custom_rules="Existing rule",
+        )
+        db.add(race)
+        await db.commit()
+        race_id = race.id
+
+    with mock_patch("speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()):
+        async with test_client as client:
+            # Whitespace-only input should normalize to null
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"custom_rules": "   \n  "},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["custom_rules"] is None
+
+            # Restore a value, then clear it with explicit null
+            await client.patch(
+                f"/api/races/{race_id}",
+                json={"custom_rules": "Some rule"},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"custom_rules": None},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["custom_rules"] is None

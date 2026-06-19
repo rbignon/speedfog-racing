@@ -564,6 +564,7 @@ async def update_race(
         race.late_join_window_minutes,
         race.race_duration_minutes,
         race.private_dag,
+        race.custom_rules,
     )
 
     # is_public can be changed at any status
@@ -658,6 +659,15 @@ async def update_race(
             )
         race.private_dag = bool(request.private_dag)
 
+    # custom_rules: SETUP or RUNNING only (descriptive text, blank -> None)
+    if "custom_rules" in request.model_fields_set:
+        if race.status == RaceStatus.FINISHED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="custom_rules can only be edited in SETUP or RUNNING status",
+            )
+        race.custom_rules = (request.custom_rules or "").strip() or None
+
     # Re-enforce late-join duration invariants on the combined post-PATCH state.
     # Only meaningful in SETUP since late_join_window_minutes is immutable in
     # RUNNING and race_duration_minutes can only be extended (preserves invariants).
@@ -720,6 +730,7 @@ async def update_race(
         race.late_join_window_minutes,
         race.race_duration_minutes,
         race.private_dag,
+        race.custom_rules,
     )
     if post_snapshot != pre_snapshot:
         await broadcast_race_info_update(race)
