@@ -161,7 +161,9 @@
   let isFrogRace = $derived(isFrogTitle(raceName));
   let raceStatus = $derived(liveRace?.status ?? initialRace.status);
   let liveCustomRules = $derived(
-    raceStore.race?.custom_rules ?? initialRace.custom_rules ?? null,
+    raceStore.race
+      ? (raceStore.race.custom_rules ?? null)
+      : (initialRace.custom_rules ?? null),
   );
   let customRuleLines = $derived(
     (liveCustomRules ?? "")
