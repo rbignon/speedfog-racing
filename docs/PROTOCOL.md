@@ -386,7 +386,7 @@ Race status changed. Broadcast to all mods and spectators. Includes `started_at`
 
 A refreshed [RaceInfo](#raceinfo) snapshot broadcast to all mods and spectators whenever a race-level field changes outside the normal lifecycle messages. Receivers replace their cached RaceInfo wholesale (no per-field merge). Emitted in three situations:
 
-- The organizer issues a `PATCH /races/{id}` that mutates a tracked field (`name`, `is_public`, `open_registration`, `max_participants`, `scheduled_at`, `late_join_window_minutes`, `race_duration_minutes`, `private_dag`). No-op PATCHes do not broadcast.
+- The organizer issues a `PATCH /races/{id}` that mutates a tracked field (`name`, `is_public`, `open_registration`, `max_participants`, `scheduled_at`, `late_join_window_minutes`, `race_duration_minutes`, `private_dag`, `custom_rules`). No-op PATCHes do not broadcast.
 - The race transitions from `setup` to `running` (`POST /races/{id}/start`). At that point `started_at` becomes non-null and `race_ends_at` becomes computable; the broadcast lets mods that authed in `setup` pick up the new deadlines without reconnecting.
 - The seed is rerolled (`POST /races/{id}/reroll-seed`). `race_state` carries the new full seed to spectators, but mods are not on that channel, so the `race_info_update` is what delivers the new `seed_id` to a connected mod, letting it raise the "SEED OUTDATED" banner mid-session (not just at the next `auth_ok`).
 
