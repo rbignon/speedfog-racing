@@ -1236,6 +1236,11 @@ export interface AnalyticsWeekly {
   avg_participants: number[];
 }
 
+export interface AnalyticsActiveUsers {
+  weeks: string[];
+  counts: number[];
+}
+
 export interface AnalyticsTimezone {
   timezone: string;
   offset_minutes: number;
@@ -1262,6 +1267,7 @@ export interface AnalyticsTopOrganizer {
 export interface AdminAnalytics {
   kpis: AnalyticsKpis;
   weekly: AnalyticsWeekly;
+  active_users: AnalyticsActiveUsers;
   heatmaps: {
     race_players: number[][];
     solo: number[][];

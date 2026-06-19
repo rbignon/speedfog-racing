@@ -464,6 +464,7 @@
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
+  let activeUsersCanvas: HTMLCanvasElement = $state() as HTMLCanvasElement;
   let newUsersCanvas: HTMLCanvasElement = $state() as HTMLCanvasElement;
   let raceSoloCanvas: HTMLCanvasElement = $state() as HTMLCanvasElement;
   let soloCompletionCanvas: HTMLCanvasElement = $state() as HTMLCanvasElement;
@@ -492,6 +493,32 @@
       },
     };
     const defaultPlugins = { legend: { display: false } };
+
+    charts.push(
+      new Chart(activeUsersCanvas, {
+        type: "line",
+        data: {
+          labels: data.active_users.weeks,
+          datasets: [
+            {
+              label: "Active players",
+              data: data.active_users.counts,
+              borderColor: "#22c55e",
+              backgroundColor: "rgba(34,197,94,0.15)",
+              borderWidth: 2,
+              fill: true,
+              tension: 0.3,
+              pointRadius: 2,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: defaultPlugins,
+          scales: defaultScales,
+        },
+      }),
+    );
 
     charts.push(
       new Chart(newUsersCanvas, {
@@ -1042,6 +1069,11 @@
             {analytics.kpis.solo_completion_pct}% finished
           </div>
         </div>
+      </div>
+
+      <div class="chart-box chart-full">
+        <div class="chart-title">Active players per week</div>
+        <canvas bind:this={activeUsersCanvas}></canvas>
       </div>
 
       <div class="charts-grid">
