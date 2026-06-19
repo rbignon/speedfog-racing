@@ -170,6 +170,10 @@ class RaceInfo(BaseModel):
     # Current seed FK, so a connected mod can detect that its loaded seed pack
     # went stale after a reroll (it compares this against its config seed_id).
     seed_id: str | None = None
+    # Web-only: organizer race rules shown in the download popup / race page.
+    # The mod ignores this field (no deny_unknown_fields), so it is safe for
+    # older mod builds.
+    custom_rules: str | None = None
 
 
 def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
@@ -200,6 +204,7 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
         private_dag=race.private_dag,
         countdown_seconds=countdown_seconds,
         seed_id=str(race.seed_id) if race.seed_id else None,
+        custom_rules=race.custom_rules,
     )
 
 

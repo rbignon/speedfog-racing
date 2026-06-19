@@ -3147,3 +3147,22 @@ async def test_update_custom_rules_normalization(test_client, organizer, async_s
             )
             assert resp.status_code == 200
             assert resp.json()["custom_rules"] is None
+
+
+@pytest.mark.asyncio
+async def test_build_race_info_includes_custom_rules(async_session, organizer):
+    """build_race_info carries custom_rules so it reaches connected clients."""
+    from speedfog_racing.websocket.schemas import build_race_info
+
+    async with async_session() as db:
+        race = Race(
+            name="WS Rules",
+            organizer_id=organizer.id,
+            status=RaceStatus.SETUP,
+            custom_rules="Stream required",
+        )
+        db.add(race)
+        await db.commit()
+        await db.refresh(race)
+        info = build_race_info(race)
+        assert info.custom_rules == "Stream required"
