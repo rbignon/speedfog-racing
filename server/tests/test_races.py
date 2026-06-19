@@ -221,6 +221,7 @@ async def test_create_race_with_custom_rules(test_client, organizer, seed):
             f"/api/races/{response.json()['id']}",
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
+        assert detail.status_code == 200
         assert detail.json()["custom_rules"] == "No summons\nFirst to Margit wins"
 
 
@@ -2998,7 +2999,7 @@ async def test_regular_user_still_cannot_manage_race(test_client, organizer, pla
 
 
 async def test_update_custom_rules_gating(test_client, organizer, async_session):
-    """custom_rules is editable in RUNNING, blocked on FINISHED."""
+    """custom_rules editable in RUNNING (SETUP covered in sibling tests), blocked on FINISHED."""
     from unittest.mock import AsyncMock
     from unittest.mock import patch as mock_patch
 
@@ -3135,11 +3136,12 @@ async def test_update_custom_rules_normalization(test_client, organizer, async_s
             assert resp.json()["custom_rules"] is None
 
             # Restore a value, then clear it with explicit null
-            await client.patch(
+            restore_resp = await client.patch(
                 f"/api/races/{race_id}",
                 json={"custom_rules": "Some rule"},
                 headers={"Authorization": f"Bearer {organizer.api_token}"},
             )
+            assert restore_resp.status_code == 200
             resp = await client.patch(
                 f"/api/races/{race_id}",
                 json={"custom_rules": None},

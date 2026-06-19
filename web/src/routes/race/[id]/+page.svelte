@@ -1440,7 +1440,7 @@
         {downloading}
         error={downloadError}
         rules={initialRace.pool_config?.rules ?? null}
-        customRules={raceStore.race?.custom_rules ?? initialRace.custom_rules}
+        customRules={liveCustomRules}
         onClose={() => (showDownloadModal = false)}
         onDownload={handleDownload}
       />
@@ -2186,5 +2186,10 @@
     font-family: var(--font-family);
     font-size: var(--font-size-sm);
     resize: vertical;
+  }
+
+  .race-rules-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>

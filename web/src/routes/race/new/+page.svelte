@@ -511,6 +511,11 @@
     resize: vertical;
   }
 
+  textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .optional {
     font-weight: 400;
     text-transform: none;
