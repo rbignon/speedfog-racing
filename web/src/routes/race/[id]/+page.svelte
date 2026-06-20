@@ -1355,13 +1355,6 @@
         </div>
       </div>
 
-      {#if initialRace.pool_config}
-        <PoolSettingsCard
-          poolName={initialRace.pool_name || "standard"}
-          poolConfig={initialRace.pool_config}
-        />
-      {/if}
-
       {#if customRuleLines.length > 0 || (isOrganizer && canEditRules)}
         <div class="race-rules-card">
           <div class="race-rules-head">
@@ -1408,6 +1401,13 @@
             </ul>
           {/if}
         </div>
+      {/if}
+
+      {#if initialRace.pool_config}
+        <PoolSettingsCard
+          poolName={initialRace.pool_name || "standard"}
+          poolConfig={initialRace.pool_config}
+        />
       {/if}
     </main>
 
