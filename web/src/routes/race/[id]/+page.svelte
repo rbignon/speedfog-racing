@@ -2152,7 +2152,7 @@
   }
 
   .race-rules-card {
-    background: var(--color-bg);
+    background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-left: 3px solid var(--color-gold);
     border-radius: var(--radius-sm);
@@ -2178,7 +2178,7 @@
   .race-rules-input {
     width: 100%;
     margin-top: 0.5rem;
-    background: var(--color-surface);
+    background: var(--color-bg);
     color: var(--color-text);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
