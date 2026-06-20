@@ -2,6 +2,30 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.15.0] - 2026-06-18
+
+### Rewards
+
+- New **Speedfrog** green name style and a Frog badge, granted the first time you finish a race or daily seed
+- New **Daily Winner** badge for everyone who placed 1st on at least one daily seed during the past week
+
+### Seeds
+
+- Removed the useless "Shadow Realm Blessing" entry from the Site of Grace menu: the DLC blessing submenu it opens is irrelevant in SpeedFog, since enemies are scaled by fog tiers rather than Scadutree leveling
+- Reduced the weight of Leonine Misbegotten
+- Zone cluster weights rebalanced from production data
+
+### Daily Seed
+
+- Redesigned the "Play now" button
+
+### Website
+
+- Seed packs now download natively through the browser, with progress, ETA, and resume support, instead of being buffered in memory
+- Reworker about and help pages
+- Removed the Beta badge from the site
+- Added an easter egg
+
 ## [1.14.0] - 2026-06-13
 
 ### Seeds
