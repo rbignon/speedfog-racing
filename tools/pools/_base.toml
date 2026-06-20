@@ -71,3 +71,6 @@ reduce_upgrade_cost = true
 dlc = true
 item_preset = true
 allcraft = true
+
+[plugin.summer]
+enabled = true
