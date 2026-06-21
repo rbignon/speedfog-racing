@@ -2,6 +2,19 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.16.0] - 2026-06-21
+
+### Seeds
+
+- **Summer theme** (available in English and French)
+- A much wider selection of weapons can now drop from bosses (thanks to Pirl)
+- Torrent can be summoned again in the Astel, Ancestor Spirits, and Fia's Champions boss arenas
+- Fix: the Crucible Spiritcaller Snail can no longer be placed in an arena the player can escape from
+
+### Races
+
+- Organizers can now set **custom rules** for a race (e.g. _"Powerstance forbidden"_): added in the advanced options at creation, and shown to players on the race page and in the seed download window
+
 ## [1.15.0] - 2026-06-18
 
 ### Rewards
