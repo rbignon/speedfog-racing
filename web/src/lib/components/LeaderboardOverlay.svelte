@@ -2,6 +2,7 @@
   import type { WsParticipant } from "$lib/websocket";
   import { PLAYER_COLORS } from "$lib/dag/constants";
   import { rewards } from "$lib/stores/rewards.svelte";
+  import { formatGap } from "$lib/gap";
 
   interface Props {
     participants: WsParticipant[];
@@ -95,11 +96,27 @@
               totalLayers || Infinity,
             )}{totalLayers ? `/${totalLayers}` : ""}</span
           >
+          {#if participant.gap_ms != null}
+            <span
+              class="gap"
+              class:ahead={participant.gap_ms < 0}
+              class:behind={participant.gap_ms > 0}
+              >{formatGap(participant.gap_ms)}</span
+            >
+          {/if}
           {#if participant.death_count > 0}
             <span class="deaths">{participant.death_count}</span>
           {/if}
         {:else if participant.status === "finished"}
           <span class="igt finished">{formatIgt(participant.igt_ms)}</span>
+          {#if participant.gap_ms != null}
+            <span
+              class="gap"
+              class:ahead={participant.gap_ms < 0}
+              class:behind={participant.gap_ms > 0}
+              >{formatGap(participant.gap_ms)}</span
+            >
+          {/if}
           {#if participant.death_count > 0}
             <span class="deaths">{participant.death_count}</span>
           {/if}
@@ -190,6 +207,14 @@
   .deaths::before {
     content: "\1F480";
     margin-right: 0.15em;
+  }
+
+  .gap.ahead {
+    color: #4ade80;
+  }
+
+  .gap.behind {
+    color: #f87171;
   }
 
   .dnf {

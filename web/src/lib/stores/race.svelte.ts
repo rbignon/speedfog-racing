@@ -13,11 +13,23 @@ import {
   type WsSeedInfo,
 } from "$lib/websocket";
 import { preserveZoneHistory } from "$lib/zone-history";
+import { computeGap } from "$lib/gap";
 
 class RaceStore {
   race = $state<WsRaceInfo | null>(null);
   seed = $state<WsSeedInfo | null>(null);
   participants = $state<WsParticipant[]>([]);
+  // Inputs for the live gap recomputation, captured from leaderboard_update
+  // (the only message that carries them). leaderSplits is the leader's
+  // per-layer entry IGTs; layerEntryIgts maps participant id -> its own layer
+  // entry IGT. Both are rebuilt wholesale on each leaderboard_update.
+  // Correctness relies on the server emitting a leaderboard_update on every
+  // layer crossing (first-visit broadcast): that keeps each player's cached
+  // layer_entry_igt consistent with the current_layer that intervening
+  // player_update ticks advance, so the gap never computes against a stale
+  // entry IGT.
+  leaderSplits = $state<Record<number, number> | null>(null);
+  layerEntryIgts = $state<Record<string, number>>({});
   // null while no race_state has arrived yet → page falls back to the
   // initial REST fetch's pending_invites until the WS catches up.
   pendingInvites = $state<WsPendingInvite[] | null>(null);
@@ -39,38 +51,34 @@ class RaceStore {
   private currentLocale: string | null = null;
   private finishCheckTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Render in the server's order (the server is the single source of ranking
+  // truth, identical to the in-game mod) and attach each player's live gap to
+  // the rank-0 leader. Re-sorting client-side would diverge from the mod and,
+  // because the playing tie-break would key on the ever-changing total IGT,
+  // make near-tied rows flicker every tick. The leader carries no gap.
   leaderboard = $derived.by(() => {
-    return [...this.participants].sort((a, b) => {
-      const statusPriority: Record<string, number> = {
-        finished: 0,
-        playing: 1,
-        ready: 2,
-        registered: 3,
-        abandoned: 4,
-      };
-
-      const aPriority = statusPriority[a.status] ?? 99;
-      const bPriority = statusPriority[b.status] ?? 99;
-
-      if (aPriority !== bPriority) {
-        return aPriority - bPriority;
-      }
-
-      // Finished: sort by IGT (ascending)
-      if (a.status === "finished") {
-        return a.igt_ms - b.igt_ms;
-      }
-
-      // Playing/Abandoned: sort by layer (descending), then IGT (ascending)
-      if (a.status === "playing" || a.status === "abandoned") {
-        if (a.current_layer !== b.current_layer) {
-          return b.current_layer - a.current_layer;
-        }
-        return a.igt_ms - b.igt_ms;
-      }
-
-      return 0;
-    });
+    const ps = this.participants;
+    if (ps.length === 0) return ps;
+    const splits = this.leaderSplits;
+    const entries = this.layerEntryIgts;
+    const leader = ps[0];
+    const leaderIgtMs = leader.igt_ms;
+    const leaderFinished = leader.status === "finished";
+    return ps.map((p, i) => ({
+      ...p,
+      gap_ms: splits
+        ? computeGap({
+            status: p.status,
+            igtMs: p.igt_ms,
+            currentLayer: p.current_layer,
+            layerEntryIgt: entries[p.id] ?? null,
+            leaderSplits: splits,
+            isLeader: i === 0,
+            leaderIgtMs,
+            leaderFinished,
+          })
+        : null,
+    }));
   });
 
   /**
@@ -94,6 +102,8 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
+    this.leaderSplits = null;
+    this.layerEntryIgts = {};
     this.pendingInvites = null;
     this.chatMessagesParticipants = [];
     this.chatMessagesPublic = [];
@@ -145,6 +155,15 @@ class RaceStore {
           this.participants = msg.participants.map((p) =>
             preserveZoneHistory(p, historyById.get(p.id)),
           );
+          // Capture the gap inputs this message uniquely carries. The full
+          // participant list lets us rebuild layerEntryIgts wholesale, which
+          // self-heals stale ids; leader_splits is absent until a leader exists.
+          this.leaderSplits = msg.leader_splits ?? null;
+          const entries: Record<string, number> = {};
+          for (const p of msg.participants) {
+            if (p.layer_entry_igt != null) entries[p.id] = p.layer_entry_igt;
+          }
+          this.layerEntryIgts = entries;
         },
 
         onPlayerUpdate: (msg) => {
@@ -246,6 +265,8 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
+    this.leaderSplits = null;
+    this.layerEntryIgts = {};
     this.pendingInvites = null;
     this.chatMessagesParticipants = [];
     this.chatMessagesPublic = [];

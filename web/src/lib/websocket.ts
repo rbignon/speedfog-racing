@@ -16,7 +16,14 @@ export interface WsParticipant {
   status: string;
   current_zone: string | null;
   current_layer: number;
+  // IGT at which the player entered current_layer. Only carried by
+  // leaderboard_update (omitted by race_state / player_update); fed into the
+  // client-side gap recomputation. See $lib/gap.
+  layer_entry_igt?: number | null;
   igt_ms: number;
+  // Gap to the leader in ms (negative = ahead). Recomputed live by the race
+  // store from leader_splits + layer_entry_igt; the server snapshot is ignored.
+  gap_ms?: number | null;
   death_count: number;
   color_index: number;
   mod_connected: boolean;
@@ -75,6 +82,9 @@ export interface RaceStateMessage {
 export interface LeaderboardUpdateMessage {
   type: "leaderboard_update";
   participants: WsParticipant[];
+  // Leader's per-layer entry IGTs (layer -> igt_ms), the reference splits the
+  // race store uses to recompute each player's gap live. Only present here.
+  leader_splits?: Record<number, number> | null;
 }
 
 export interface PlayerUpdateMessage {

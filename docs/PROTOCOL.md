@@ -1010,10 +1010,12 @@ Included in `auth_ok` (mod) and `race_state` (spectator):
 Participants in `leaderboard_update` are pre-sorted by priority:
 
 1. **Finished**: by `igt_ms` ascending (fastest first)
-2. **Playing**: by `current_layer` descending (furthest first), then `igt_ms` ascending
+2. **Playing**: by `current_layer` descending (furthest first), then layer entry IGT ascending
 3. **Ready**
 4. **Registered**
 5. **Abandoned**
+
+Both the in-game mod and the web frontend render participants in this server-provided order; neither re-sorts. The server is the single source of ranking truth, which keeps the two displays consistent and avoids the tie-break flicker a client-side re-sort on the ever-changing total `igt_ms` would cause for near-tied playing rows.
 
 ### zone_history updates
 
@@ -1040,7 +1042,7 @@ Mods never receive `zone_history` snapshots (they don't consume `zone_history`).
 
 ### Gap Timing
 
-Gap timing uses a LiveSplit-style formula. The server computes `gap_ms` for web spectators and sends `leader_splits` + `layer_entry_igt` so the mod can compute gaps client-side at frame rate.
+Gap timing uses a LiveSplit-style formula. The server computes `gap_ms` and sends `leader_splits` + `layer_entry_igt`; both the mod and the web frontend ignore the `gap_ms` snapshot and recompute the gap client-side from those inputs (the mod at frame rate, the web on each store update). The server `gap_ms` field is retained on the wire for contract compatibility.
 
 #### Server-side (`gap_ms`)
 
@@ -1053,9 +1055,11 @@ Computed during `broadcast_leaderboard` for web spectators:
 - **Finished:** `igt_ms - leader_igt_ms`, direct time delta
 - **Ready / Registered / Abandoned:** `null`
 
-#### Client-side (mod)
+#### Client-side (mod and web)
 
 The mod ignores `gap_ms` and recomputes gaps locally each frame using `leader_splits` + `layer_entry_igt`. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's snapshot `igt_ms`. For other players, the mod uses their server-provided `igt_ms` directly; gaps step in discrete increments aligned with the server's `player_update` cadence (~1s).
+
+The web frontend recomputes the same gap in `web/src/lib/gap.ts` (a direct port of the mod/server formula), driven by the race store from the retained `leader_splits` + each participant's `layer_entry_igt` + live `igt_ms`. It has no local-memory IGT, so it uses the server snapshot `igt_ms` for every player including the viewer; gaps refresh on each `leaderboard_update` / `player_update` tick. The web shows the gap during a live race (including a player who finishes mid-race); a fully finished race loaded from `race_state` carries no `leader_splits`, so no gap is shown there.
 
 #### Color coding
 
