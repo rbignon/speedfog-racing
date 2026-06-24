@@ -336,8 +336,9 @@ async def create_race(
     # Reload race with relationships
     race = await _get_race_or_404(db, race.id, load_participants=True)
 
-    # Fire-and-forget Discord notification (public races only)
-    if race.is_public:
+    # Fire-and-forget Discord notification. Skipped for invite-only races:
+    # pinging the @Runner role about a race only invited players can join is noise.
+    if race.is_public and race.open_registration:
         scheduled_str = f"<t:{int(race.scheduled_at.timestamp())}:F>" if race.scheduled_at else None
         task = asyncio.create_task(
             notify_race_created(

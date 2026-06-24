@@ -145,6 +145,68 @@ async def test_create_race_no_event_when_private(test_client, organizer, seed):
 
 
 # =============================================================================
+# Race creation → Discord webhook notification
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_create_public_open_race_sends_notification(test_client, organizer, seed):
+    """A public race with open registration pings @Runner via notify_race_created."""
+    scheduled = (datetime.now(UTC) + timedelta(hours=2)).isoformat()
+
+    with (
+        patch(
+            "speedfog_racing.api.races.notify_race_created", new_callable=AsyncMock
+        ) as mock_notify,
+        patch("speedfog_racing.api.races.create_scheduled_event", new_callable=AsyncMock),
+    ):
+        async with test_client as client:
+            resp = await client.post(
+                "/api/races",
+                json={
+                    "name": "Public Open Race",
+                    "pool_name": "standard",
+                    "is_public": True,
+                    "scheduled_at": scheduled,
+                    "open_registration": True,
+                    "max_participants": 8,
+                },
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 201, resp.text
+            await asyncio.sleep(0.1)
+            mock_notify.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_create_public_invite_only_race_skips_notification(test_client, organizer, seed):
+    """A public but invite-only race does not ping @Runner: invitees join by link."""
+    scheduled = (datetime.now(UTC) + timedelta(hours=2)).isoformat()
+
+    with (
+        patch(
+            "speedfog_racing.api.races.notify_race_created", new_callable=AsyncMock
+        ) as mock_notify,
+        patch("speedfog_racing.api.races.create_scheduled_event", new_callable=AsyncMock),
+    ):
+        async with test_client as client:
+            resp = await client.post(
+                "/api/races",
+                json={
+                    "name": "Public Invite-Only Race",
+                    "pool_name": "standard",
+                    "is_public": True,
+                    "scheduled_at": scheduled,
+                    "open_registration": False,
+                },
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 201, resp.text
+            await asyncio.sleep(0.1)
+            mock_notify.assert_not_called()
+
+
+# =============================================================================
 # Race deletion → Discord event deletion
 # =============================================================================
 

@@ -109,7 +109,7 @@ This posts a message with two buttons ("Become a Runner" / "Remove Runner") in t
 
 When `DISCORD_WEBHOOK_URL` is set, race lifecycle events post embeds:
 
-- **Race created**: with pool, organizer, schedule info. Mentions `@Runner` if `DISCORD_RUNNER_ROLE_ID` is set.
+- **Race created**: with pool, organizer, schedule info. Mentions `@Runner` if `DISCORD_RUNNER_ROLE_ID` is set. Skipped for invite-only races (open registration disabled), since only invited players can join.
 - **Race started**: with participant count
 - **Race finished**: with podium (top 3 times)
 
