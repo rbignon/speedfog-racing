@@ -607,7 +607,7 @@ For the `public` channel the server also refreshes the connection's cached parti
 
 #### `race_state`
 
-Sent immediately on connection (after optional auth). Full race state. Also re-sent on status transitions (SETUP → RUNNING, RUNNING → FINISHED) and when seeds are released, with recomputed DAG access.
+Sent immediately on connection (after optional auth). Full race state. Also re-sent on status transitions (SETUP → RUNNING, RUNNING → FINISHED) and when seeds are released, with recomputed DAG access. On the initial connection it is immediately followed by a unicast `leaderboard_update` so the client has the gap inputs (`leader_splits` + `layer_entry_igt`) that `race_state` omits; see [Gap Timing](#gap-timing).
 
 ```json
 {
@@ -1059,7 +1059,9 @@ Computed during `broadcast_leaderboard` for web spectators:
 
 The mod ignores `gap_ms` and recomputes gaps locally each frame using `leader_splits` + `layer_entry_igt`. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's snapshot `igt_ms`. For other players, the mod uses their server-provided `igt_ms` directly; gaps step in discrete increments aligned with the server's `player_update` cadence (~1s).
 
-The web frontend recomputes the same gap in `web/src/lib/gap.ts` (a direct port of the mod/server formula), driven by the race store from the retained `leader_splits` + each participant's `layer_entry_igt` + live `igt_ms`. It has no local-memory IGT, so it uses the server snapshot `igt_ms` for every player including the viewer; gaps refresh on each `leaderboard_update` / `player_update` tick. The web shows the gap during a live race (including a player who finishes mid-race); a fully finished race loaded from `race_state` carries no `leader_splits`, so no gap is shown there.
+The web frontend recomputes the same gap in `web/src/lib/gap.ts` (a direct port of the mod/server formula), driven by the race store from the retained `leader_splits` + each participant's `layer_entry_igt` + live `igt_ms`. It has no local-memory IGT, so it uses the server snapshot `igt_ms` for every player including the viewer; gaps refresh on each `leaderboard_update` / `player_update` tick.
+
+`race_state` carries no `leader_splits` / `layer_entry_igt`, so the spectator endpoint unicasts a `leaderboard_update` immediately after the initial `race_state` (`send_leaderboard_state`); a freshly connected web client therefore has the gap inputs at once instead of waiting for the next layer-crossing broadcast. This mirrors the mod, whose own connection triggers a room-wide leaderboard broadcast. Because `leader_splits` is rebuilt from the leader's `zone_history`, it is also populated for finished races, so the leaderboard shows each finisher's delta to the winner. Only a pre-race leaderboard (no leader yet) has no gap.
 
 #### Color coding
 

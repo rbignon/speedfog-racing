@@ -376,21 +376,9 @@ class ConnectionManager:
         if not room:
             return
 
-        sorted_participants, entry_igts = sort_leaderboard(participants, graph_json=graph_json)
         connected_ids = set(room.mods.keys())
-
-        leader_splits, leader_igt_ms, has_leader = _build_leader_context(
-            sorted_participants, graph_json
-        )
-
-        real_payload = _build_leaderboard_payload(
-            sorted_participants,
-            entry_igts,
-            connected_ids=connected_ids,
-            graph_json=graph_json,
-            leader_splits=leader_splits,
-            leader_igt_ms=leader_igt_ms,
-            has_leader=has_leader,
+        real_payload = build_leaderboard_payload(
+            participants, connected_ids=connected_ids, graph_json=graph_json
         )
 
         if daily_date is None:
@@ -869,6 +857,34 @@ def _build_leaderboard_payload(
         leader_splits=leader_splits if leader_splits else None,
     )
     return message.model_dump_json()
+
+
+def build_leaderboard_payload(
+    participants: Sequence[Participant],
+    *,
+    connected_ids: set[uuid.UUID],
+    graph_json: dict[str, Any] | None,
+) -> str:
+    """Build the real-state ``leaderboard_update`` JSON for ``participants``.
+
+    Shared by the room broadcast (``broadcast_leaderboard``) and the spectator
+    connect path, which unicasts it so a freshly connected web spectator gets
+    the gap inputs (``leader_splits`` + ``layer_entry_igt``) immediately
+    instead of waiting for the next layer-crossing broadcast.
+    """
+    sorted_participants, entry_igts = sort_leaderboard(participants, graph_json=graph_json)
+    leader_splits, leader_igt_ms, has_leader = _build_leader_context(
+        sorted_participants, graph_json
+    )
+    return _build_leaderboard_payload(
+        sorted_participants,
+        entry_igts,
+        connected_ids=connected_ids,
+        graph_json=graph_json,
+        leader_splits=leader_splits,
+        leader_igt_ms=leader_igt_ms,
+        has_leader=has_leader,
+    )
 
 
 def _build_projected_payload_for_viewer(

@@ -38,6 +38,7 @@ from speedfog_racing.websocket.handler import BaseSpectatorHandler
 from speedfog_racing.websocket.race.manager import (
     SEND_TIMEOUT,
     SpectatorConnection,
+    build_leaderboard_payload,
     manager,
     participant_to_info,
     sort_leaderboard,
@@ -238,6 +239,10 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
 
             # Send initial race state (session still open for lazy access)
             await send_race_state(self.websocket, race, locale=self._conn.locale)
+            # Follow it with a leaderboard_update so the gap (which rides on
+            # leader_splits + layer_entry_igt, absent from race_state) shows
+            # immediately instead of after the next layer-crossing broadcast.
+            await send_leaderboard_state(self.websocket, race)
         # Session closed, released back to pool within ~2s of connect
 
         # Load chat history in parallel, send sequentially (safe for single WS).
@@ -517,6 +522,22 @@ async def send_race_state(
         pending_invites=pending_invites,
     )
     await websocket.send_text(message.model_dump_json())
+
+
+async def send_leaderboard_state(websocket: WebSocket, race: Race) -> None:
+    """Unicast a ``leaderboard_update`` to a just-connected spectator.
+
+    ``race_state`` carries no gap inputs, so without this the web leaderboard
+    shows no gap until the next layer-crossing broadcast. Mirrors the in-game
+    mod, whose own connection triggers a room-wide leaderboard broadcast.
+    """
+    room = manager.get_room(race.id)
+    connected_ids = set(room.mods.keys()) if room else set()
+    graph = race.seed.graph_json if race.seed else None
+    payload = build_leaderboard_payload(
+        race.participants, connected_ids=connected_ids, graph_json=graph
+    )
+    await websocket.send_text(payload)
 
 
 async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:

@@ -655,6 +655,98 @@ class TestConnectionManager:
         assert mod_ws.send_text.call_args[0][0] == spec_ws.send_text.call_args[0][0]
 
     @pytest.mark.asyncio
+    async def test_send_leaderboard_state_carries_gap_inputs(self):
+        """A connecting spectator gets a leaderboard_update with the gap inputs
+        (leader_splits + layer_entry_igt) that race_state omits, so the gap
+        shows immediately instead of after the next layer-crossing broadcast."""
+        from speedfog_racing.websocket.race.spectator import send_leaderboard_state
+
+        graph = {"nodes": {"n0": {"layer": 0}, "n1": {"layer": 1}, "n2": {"layer": 2}}}
+        leader = MockParticipant(
+            user=MockUser(twitch_username="leader"),
+            status=ParticipantStatus.PLAYING,
+            current_zone="n2",
+            current_layer=2,
+            igt_ms=90000,
+            layer_entry_igts={"2": 75000},
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 30000},
+                {"node_id": "n2", "igt_ms": 75000},
+            ],
+        )
+        chaser = MockParticipant(
+            user=MockUser(twitch_username="chaser"),
+            status=ParticipantStatus.PLAYING,
+            current_zone="n1",
+            current_layer=1,
+            igt_ms=60000,
+            layer_entry_igts={"1": 40000},
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 40000},
+            ],
+        )
+        # Passed unsorted on purpose: the payload must come out in ranked order.
+        race = MockRace(seed=MockSeed(graph_json=graph), participants=[chaser, leader])
+
+        spec_ws = AsyncMock()
+        await send_leaderboard_state(spec_ws, race)
+
+        spec_ws.send_text.assert_called_once()
+        payload = json.loads(spec_ws.send_text.call_args[0][0])
+        assert payload["type"] == "leaderboard_update"
+        assert [p["id"] for p in payload["participants"]] == [str(leader.id), str(chaser.id)]
+        # Leader splits derived from the leader's zone_history (JSON string keys).
+        assert payload["leader_splits"] == {"0": 0, "1": 30000, "2": 75000}
+        # The chaser carries its own layer entry IGT, the per-player gap input.
+        chaser_info = next(p for p in payload["participants"] if p["id"] == str(chaser.id))
+        assert chaser_info["layer_entry_igt"] == 40000
+
+    @pytest.mark.asyncio
+    async def test_send_leaderboard_state_finished_race_has_winner_delta(self):
+        """A finished race still surfaces leader_splits and each finisher's gap,
+        so the finished-race page shows the delta to the winner."""
+        from speedfog_racing.websocket.race.spectator import send_leaderboard_state
+
+        graph = {"nodes": {"n0": {"layer": 0}, "n1": {"layer": 1}}}
+        winner = MockParticipant(
+            user=MockUser(twitch_username="winner"),
+            status=ParticipantStatus.FINISHED,
+            current_zone="n1",
+            current_layer=1,
+            igt_ms=100000,
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 50000},
+            ],
+        )
+        runner_up = MockParticipant(
+            user=MockUser(twitch_username="runnerup"),
+            status=ParticipantStatus.FINISHED,
+            current_zone="n1",
+            current_layer=1,
+            igt_ms=130000,
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 60000},
+            ],
+        )
+        race = MockRace(seed=MockSeed(graph_json=graph), participants=[runner_up, winner])
+
+        spec_ws = AsyncMock()
+        await send_leaderboard_state(spec_ws, race)
+
+        payload = json.loads(spec_ws.send_text.call_args[0][0])
+        assert payload["leader_splits"] is not None
+        # Winner ranks first (lowest IGT) and carries no gap.
+        winner_info = next(p for p in payload["participants"] if p["id"] == str(winner.id))
+        assert winner_info["gap_ms"] is None
+        # Runner-up's gap is the raw IGT delta to the winner.
+        runner_info = next(p for p in payload["participants"] if p["id"] == str(runner_up.id))
+        assert runner_info["gap_ms"] == 30000
+
+    @pytest.mark.asyncio
     async def test_broadcast_leaderboard_daily_projects_for_playing_mod(self):
         """Daily race: a playing mod sees a projected payload, spectator sees real state."""
         from datetime import date as _date
