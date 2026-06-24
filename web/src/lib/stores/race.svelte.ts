@@ -15,6 +15,22 @@ import {
 import { preserveZoneHistory } from "$lib/zone-history";
 import { computeGap } from "$lib/gap";
 
+/**
+ * Restore daily_points from the previous participant when an incoming
+ * high-frequency message drops it. daily_points (a finished daily's per-rank
+ * score) rides only on race_state; leaderboard_update and player_update omit
+ * it, so without this the connect-time leaderboard_update would null the
+ * "+points" indicator on a finished-daily page. Mirrors preserveZoneHistory.
+ */
+export function preserveDailyPoints<T extends { daily_points?: number | null }>(
+  incoming: T,
+  previous: number | null | undefined,
+): T {
+  if (incoming.daily_points != null) return incoming;
+  if (previous == null) return incoming;
+  return { ...incoming, daily_points: previous };
+}
+
 class RaceStore {
   race = $state<WsRaceInfo | null>(null);
   seed = $state<WsSeedInfo | null>(null);
@@ -145,16 +161,18 @@ class RaceStore {
         },
 
         onLeaderboardUpdate: (msg) => {
-          // Server no longer retransmits zone_history in leaderboard_update
-          // (it arrives via race_state initially + zone_history snapshots).
-          // Always preserve the locally-held history when the message carries
-          // none, so the DAG keeps its trail.
-          const historyById = new Map(
-            this.participants.map((p) => [p.id, p.zone_history]),
-          );
-          this.participants = msg.participants.map((p) =>
-            preserveZoneHistory(p, historyById.get(p.id)),
-          );
+          // Restore the fields race_state carries but this high-frequency
+          // message drops: zone_history (so the DAG keeps its trail) and
+          // daily_points (so a finished daily's "+points" indicator survives
+          // the connect-time leaderboard_update).
+          const prevById = new Map(this.participants.map((p) => [p.id, p]));
+          this.participants = msg.participants.map((p) => {
+            const prev = prevById.get(p.id);
+            return preserveDailyPoints(
+              preserveZoneHistory(p, prev?.zone_history),
+              prev?.daily_points,
+            );
+          });
           // Capture the gap inputs this message uniquely carries. The full
           // participant list lets us rebuild layerEntryIgts wholesale, which
           // self-heals stale ids; leader_splits is absent until a leader exists.
@@ -167,14 +185,14 @@ class RaceStore {
         },
 
         onPlayerUpdate: (msg) => {
-          // Same as leaderboard_update: preserve existing zone_history when
-          // the message does not carry one (which is now the default).
+          // Same as leaderboard_update: restore the race_state-only fields the
+          // message drops (zone_history, daily_points).
           const existing = this.participants.find(
             (p) => p.id === msg.player.id,
           );
-          const player = preserveZoneHistory(
-            msg.player,
-            existing?.zone_history,
+          const player = preserveDailyPoints(
+            preserveZoneHistory(msg.player, existing?.zone_history),
+            existing?.daily_points,
           );
           this.participants = this.participants.map((p) =>
             p.id === player.id ? player : p,
