@@ -231,10 +231,10 @@
             {/if}
             <span class="stats">
               {#if isPlaying || isAbandoned || isFinished}
-                <span class:finished-time={isFinished}
+                <span class="time" class:finished-time={isFinished}
                   >{formatIgt(participant.igt_ms)}</span
                 >
-                {#if participant.gap_ms != null}
+                {#if participant.gap_ms != null && !hasSelection}
                   <span
                     class="gap"
                     class:ahead={participant.gap_ms < 0}
@@ -438,12 +438,19 @@
 
   .stats {
     display: flex;
-    justify-content: space-between;
     align-items: center;
     gap: 0.4rem;
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Fixed-width time column so the gap that follows lands in the same place on
+     every row, independent of time length (M:SS vs H:MM:SS) or death count.
+     Sized to fit H:MM:SS at --font-size-sm. */
+  .time {
+    flex: 0 0 auto;
+    min-width: 3.4rem;
   }
 
   .stats-right {
@@ -452,6 +459,7 @@
     gap: 0.25rem;
     flex-shrink: 0;
     white-space: nowrap;
+    margin-left: auto;
   }
 
   .gap {
