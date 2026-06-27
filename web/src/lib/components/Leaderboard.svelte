@@ -5,7 +5,7 @@
   import { rewards } from "$lib/stores/rewards.svelte";
   import WeaponsPopover from "./WeaponsPopover.svelte";
   import { aggregateAllCombos } from "$lib/weapons";
-  import { formatGap } from "$lib/gap";
+  import { formatGapCompact } from "$lib/gap";
 
   interface Props {
     participants: WsParticipant[];
@@ -239,7 +239,7 @@
                     class="gap"
                     class:ahead={participant.gap_ms < 0}
                     class:behind={participant.gap_ms > 0}
-                    >{formatGap(participant.gap_ms)}</span
+                    >{formatGapCompact(participant.gap_ms)}</span
                   >
                 {/if}
                 <span class="stats-right">
@@ -450,6 +450,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .gap {
@@ -462,7 +464,7 @@
   }
 
   .gap.behind {
-    color: var(--color-danger, #ef4444);
+    color: var(--color-text-secondary);
   }
 
   .finished-time {
