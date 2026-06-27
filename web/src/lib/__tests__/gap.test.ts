@@ -106,6 +106,7 @@ describe("formatGap", () => {
 
 describe("formatGapCompact", () => {
   it("keeps M:SS precision under 10 minutes", () => {
+    expect(formatGapCompact(0)).toBe("+0:00");
     expect(formatGapCompact(49_000)).toBe("+0:49");
     expect(formatGapCompact(599_000)).toBe("+9:59");
   });
