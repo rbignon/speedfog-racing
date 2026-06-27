@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { computeGap, formatGap, type GapInput } from "$lib/gap";
+import {
+  computeGap,
+  formatGap,
+  formatGapCompact,
+  type GapInput,
+} from "$lib/gap";
 
 describe("computeGap", () => {
   // A mid-race baseline: leader entered layer 1 at 1:00 and layer 2 at 2:00,
@@ -96,5 +101,30 @@ describe("formatGap", () => {
   it("renders the hour component on both sides", () => {
     expect(formatGap(3_723_000)).toBe("+1:02:03");
     expect(formatGap(-3_723_000)).toBe("-1:02:03");
+  });
+});
+
+describe("formatGapCompact", () => {
+  it("keeps M:SS precision under 10 minutes", () => {
+    expect(formatGapCompact(49_000)).toBe("+0:49");
+    expect(formatGapCompact(599_000)).toBe("+9:59");
+  });
+
+  it("switches to whole minutes from 10 minutes to under 1 hour", () => {
+    expect(formatGapCompact(600_000)).toBe("+10m");
+    expect(formatGapCompact(681_000)).toBe("+11m"); // was +11:21
+    expect(formatGapCompact(1_983_000)).toBe("+33m"); // was +33:03
+    expect(formatGapCompact(3_540_000)).toBe("+59m");
+  });
+
+  it("switches to HhMM from 1 hour", () => {
+    expect(formatGapCompact(3_600_000)).toBe("+1h00");
+    expect(formatGapCompact(3_939_000)).toBe("+1h05"); // was +1:05:39
+  });
+
+  it("preserves the ahead sign across tiers", () => {
+    expect(formatGapCompact(-49_000)).toBe("-0:49");
+    expect(formatGapCompact(-681_000)).toBe("-11m");
+    expect(formatGapCompact(-3_939_000)).toBe("-1h05");
   });
 });

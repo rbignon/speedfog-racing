@@ -83,3 +83,28 @@ export function formatGap(ms: number): string {
   }
   return `${sign}${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
+
+/**
+ * Format a gap with degressive precision for the web leaderboard page:
+ * precise when small (seconds matter), coarse when large (they do not).
+ *
+ *   < 10 min -> `+M:SS`  (+0:49, +9:59)
+ *   < 1 h    -> `+Mm`    (+11m, +33m)
+ *   >= 1 h   -> `+HhMM`  (+1h05)
+ *
+ * Intentionally web-leaderboard only: it DIVERGES from `formatGap` (the
+ * verbatim mod port shared with the OBS overlay), which keeps `+H:MM:SS`.
+ */
+export function formatGapCompact(ms: number): string {
+  const sign = ms < 0 ? "-" : "+";
+  const totalSeconds = Math.floor(Math.abs(ms) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  if (minutes < 10) {
+    return `${sign}${minutes}:${(totalSeconds % 60).toString().padStart(2, "0")}`;
+  }
+  if (minutes < 60) {
+    return `${sign}${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  return `${sign}${hours}h${(minutes % 60).toString().padStart(2, "0")}`;
+}
