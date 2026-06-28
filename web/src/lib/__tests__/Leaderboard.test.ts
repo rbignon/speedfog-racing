@@ -195,3 +195,31 @@ describe("Leaderboard: select-box checkbox", () => {
     expect(container.querySelector(".select-box.checked")).not.toBeNull();
   });
 });
+
+describe("Leaderboard: gap visibility in selection mode", () => {
+  it("shows the gap normally but hides it once a selection is active", () => {
+    // Selection mode narrows the row (select-boxes appear), so the gap is
+    // dropped to keep the row readable.
+    const noSelection = render(Leaderboard, {
+      props: {
+        participants: [fakeParticipant({ gap_ms: 49_000 })],
+        mode: "running",
+        showRunDetails: true,
+        selectedIds: new Set<string>(),
+        onToggle: () => {},
+      },
+    });
+    expect(noSelection.container.querySelector(".gap")).not.toBeNull();
+
+    const withSelection = render(Leaderboard, {
+      props: {
+        participants: [fakeParticipant({ gap_ms: 49_000 })],
+        mode: "running",
+        showRunDetails: true,
+        selectedIds: new Set(["p-1"]),
+        onToggle: () => {},
+      },
+    });
+    expect(withSelection.container.querySelector(".gap")).toBeNull();
+  });
+});

@@ -447,7 +447,9 @@
 
   /* Fixed-width time column so the gap that follows lands in the same place on
      every row, independent of time length (M:SS vs H:MM:SS) or death count.
-     Sized to fit H:MM:SS at --font-size-sm. */
+     Sized to fit a single-digit-hour H:MM:SS at --font-size-sm; a 10h+ run
+     would grow past it and nudge only that row's gap, which is implausible
+     for this domain. */
   .time {
     flex: 0 0 auto;
     min-width: 3.4rem;
