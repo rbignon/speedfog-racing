@@ -18,7 +18,7 @@
   let isPublic = $state(true);
   let openRegistration = $state(true);
   let maxParticipants = $state(30);
-  let lateJoinEnabled = $state(false);
+  let lateJoinEnabled = $state(true);
   let autoEndEnabled = $state(false);
   let lateJoinWindowMinutes = $state(10);
   let raceDurationMinutes = $state(120);
@@ -47,9 +47,10 @@
   let selectedConfig = $derived(pools[poolName]?.pool_config ?? null);
   let selectedAvailable = $derived(pools[poolName]?.available ?? 0);
 
+  // Counts advanced options that deviate from their defaults (late join is on by default).
   let advancedCount = $derived(
     (autoEndEnabled ? 1 : 0) +
-      (lateJoinEnabled ? 1 : 0) +
+      (lateJoinEnabled ? 0 : 1) +
       (privateDag ? 1 : 0) +
       (customRules.trim() ? 1 : 0),
   );
