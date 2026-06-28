@@ -474,7 +474,7 @@
   }
 
   .gap.behind {
-    color: var(--color-text-secondary);
+    color: var(--color-gold);
   }
 
   .finished-time {

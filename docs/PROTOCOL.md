@@ -1069,7 +1069,7 @@ The web frontend recomputes the same gap in `web/src/lib/gap.ts` (a direct port 
 - **Positive gap** (behind leader's pace): soft red (`+M:SS`)
 - **Zero gap**: default text color
 
-The web leaderboard page (`Leaderboard.svelte`) diverges: it formats the gap with `formatGapCompact` (degressive precision: `+M:SS` under 10 min, `+Mm` under 1 h, `+HhMM` from 1 h) and draws a positive gap in neutral grey, so the death count is the only red accent per row. Negative gaps stay green. The in-game mod and the OBS overlay keep the verbatim `formatGap` (`+H:MM:SS`) and the colors above.
+The web leaderboard page (`Leaderboard.svelte`) diverges: it formats the gap with `formatGapCompact` (degressive precision: `+M:SS` under 10 min, `+Mm` under 1 h, `+HhMM` from 1 h) and draws a positive gap in gold (`--color-gold`), keeping red for the death count alone and distinguishing the gap from the grey IGT of in-progress runs. Negative gaps stay green. The in-game mod and the OBS overlay keep the verbatim `formatGap` (`+H:MM:SS`) and the colors above.
 
 #### Leader splits
 
