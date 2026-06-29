@@ -10,6 +10,7 @@
     adminScanPool,
     fetchAdminActivity,
     fetchAdminRaces,
+    deleteRace,
     adminRecalculateStats,
     fetchReportedSeeds,
     resolveReportedSeed,
@@ -226,6 +227,20 @@
       error = e instanceof Error ? e.message : "Failed to load races.";
     } finally {
       racesLoading = false;
+    }
+  }
+
+  async function handleRemoveRace(race: Race) {
+    if (!confirm(`Remove race "${race.name}"? This cannot be undone.`)) return;
+    actionLoading = { ...actionLoading, [`remove_${race.id}`]: true };
+    try {
+      await deleteRace(race.id);
+      inflightRaces = inflightRaces.filter((r) => r.id !== race.id);
+      error = null;
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Failed to remove race.";
+    } finally {
+      actionLoading = { ...actionLoading, [`remove_${race.id}`]: false };
     }
   }
 
@@ -1484,6 +1499,7 @@
               <th>Visibility</th>
               <th class="num-col">Players</th>
               <th>When</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1527,6 +1543,19 @@
                   {formatFullDate(
                     race.started_at ?? race.scheduled_at ?? race.created_at,
                   )}
+                </td>
+                <td class="actions-cell">
+                  {#if race.status === "setup"}
+                    <button
+                      class="action-btn remove"
+                      disabled={actionLoading[`remove_${race.id}`]}
+                      onclick={() => handleRemoveRace(race)}
+                    >
+                      {actionLoading[`remove_${race.id}`]
+                        ? "Removing..."
+                        : "Remove"}
+                    </button>
+                  {/if}
                 </td>
               </tr>
             {/each}
@@ -1844,12 +1873,14 @@
     cursor: not-allowed;
   }
 
-  .action-btn.discard {
+  .action-btn.discard,
+  .action-btn.remove {
     color: var(--color-danger-dark);
     border-color: var(--color-danger-dark);
   }
 
-  .action-btn.discard:hover:not(:disabled) {
+  .action-btn.discard:hover:not(:disabled),
+  .action-btn.remove:hover:not(:disabled) {
     background: var(--color-danger-dark);
     color: white;
   }

@@ -1448,6 +1448,46 @@ async def test_delete_race_non_organizer(test_client, organizer, player, seed):
 
 
 @pytest.mark.asyncio
+async def test_delete_race_allowed_for_admin_non_organizer(
+    test_client, organizer, async_session, seed
+):
+    """An admin can delete a race they do not organize (the admin override in
+    ``_require_organizer``).
+
+    This backs the admin "Races" tab Remove button, used to clean up orphan
+    setup races created by other organizers. Deletion is not status-gated on
+    the server; the button is shown only for setup races client-side.
+    """
+    async with async_session() as db:
+        admin = User(
+            twitch_id="admin_del",
+            twitch_username="admin_del",
+            api_token="admin_del_token",
+            role=UserRole.ADMIN,
+        )
+        db.add(admin)
+        await db.commit()
+        await db.refresh(admin)
+
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Orphan Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+
+        response = await client.delete(
+            f"/api/races/{race_id}",
+            headers={"Authorization": f"Bearer {admin.api_token}"},
+        )
+        assert response.status_code == 204
+
+        get_response = await client.get(f"/api/races/{race_id}")
+        assert get_response.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_delete_race_releases_seed(test_client, organizer, async_session):
     """Deleting a race releases the seed back to available status."""
     async with async_session() as db:
