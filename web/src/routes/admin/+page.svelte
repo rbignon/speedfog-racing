@@ -1509,21 +1509,26 @@
                   <a href="/race/{race.id}" class="username-link">{race.name}</a
                   >
                 </td>
-                <td class="user-cell">
-                  {#if race.organizer.twitch_avatar_url}
-                    <img
-                      src={race.organizer.twitch_avatar_url}
-                      alt=""
-                      class="avatar"
-                    />
-                  {/if}
-                  <a
-                    href="/user/{race.organizer.twitch_username}"
-                    class="username-link"
-                  >
-                    {race.organizer.twitch_display_name ||
-                      race.organizer.twitch_username}
-                  </a>
+                <td>
+                  <!-- Flex lives on an inner wrapper, not the <td>, so the cell
+                       keeps vertical-align: middle and lines up with the plain
+                       text cells in the row. -->
+                  <div class="user-cell">
+                    {#if race.organizer.twitch_avatar_url}
+                      <img
+                        src={race.organizer.twitch_avatar_url}
+                        alt=""
+                        class="avatar"
+                      />
+                    {/if}
+                    <a
+                      href="/user/{race.organizer.twitch_username}"
+                      class="username-link"
+                    >
+                      {race.organizer.twitch_display_name ||
+                        race.organizer.twitch_username}
+                    </a>
+                  </div>
                 </td>
                 <td>
                   <span class="badge badge-{race.status}"
@@ -1544,18 +1549,20 @@
                     race.started_at ?? race.scheduled_at ?? race.created_at,
                   )}
                 </td>
-                <td class="actions-cell">
-                  {#if race.status === "setup"}
-                    <button
-                      class="action-btn remove"
-                      disabled={actionLoading[`remove_${race.id}`]}
-                      onclick={() => handleRemoveRace(race)}
-                    >
-                      {actionLoading[`remove_${race.id}`]
-                        ? "Removing..."
-                        : "Remove"}
-                    </button>
-                  {/if}
+                <td>
+                  <div class="actions-cell">
+                    {#if race.status === "setup"}
+                      <button
+                        class="action-btn remove"
+                        disabled={actionLoading[`remove_${race.id}`]}
+                        onclick={() => handleRemoveRace(race)}
+                      >
+                        {actionLoading[`remove_${race.id}`]
+                          ? "Removing..."
+                          : "Remove"}
+                      </button>
+                    {/if}
+                  </div>
                 </td>
               </tr>
             {/each}
