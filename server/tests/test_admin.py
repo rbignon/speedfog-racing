@@ -900,6 +900,118 @@ async def test_activity_orders_by_date_across_sources(
 
 
 # =============================================================================
+# In-Flight Races Tests
+# =============================================================================
+
+
+@pytest.fixture
+async def inflight_races(async_session, admin_user, regular_user):
+    """Create a mix of races so the admin in-flight endpoint can be exercised:
+
+    - a PRIVATE RUNNING race organized by ``regular_user`` (admin is not a member),
+    - a PUBLIC SETUP race,
+    - a FINISHED race (must be excluded),
+    - a SETUP daily race (must be excluded).
+    """
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="inflight_seed",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/inflight/seed",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        private_running = Race(
+            name="Private Running",
+            organizer_id=regular_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            is_public=False,
+            started_at=datetime(2026, 6, 1, tzinfo=UTC),
+        )
+        public_setup = Race(
+            name="Public Setup",
+            organizer_id=regular_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            is_public=True,
+        )
+        finished = Race(
+            name="Finished Race",
+            organizer_id=regular_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        daily_setup = Race(
+            name="Daily Setup",
+            organizer_id=regular_user.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            daily_date=date(2026, 6, 2),
+        )
+        db.add_all([private_running, public_setup, finished, daily_setup])
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_admin_races_requires_auth(test_client):
+    """In-flight races endpoint requires authentication."""
+    async with test_client as client:
+        response = await client.get("/api/admin/races")
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_admin_races_requires_admin(test_client, regular_user):
+    """In-flight races endpoint requires admin role."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/races",
+            headers={"Authorization": f"Bearer {regular_user.api_token}"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_races_lists_non_finished_including_private(
+    test_client, admin_user, inflight_races
+):
+    """Admin sees every non-finished race, private ones included, but not
+    finished or daily races."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/races",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        races = response.json()["races"]
+        names = {r["name"] for r in races}
+        assert names == {"Private Running", "Public Setup"}
+
+        # The whole point of the tab: a private race the admin isn't part of is
+        # surfaced and serialized as private.
+        private = next(r for r in races if r["name"] == "Private Running")
+        assert private["is_public"] is False
+
+
+@pytest.mark.asyncio
+async def test_admin_races_orders_running_before_setup(test_client, admin_user, inflight_races):
+    """Running races sort ahead of setup races."""
+    async with test_client as client:
+        response = await client.get(
+            "/api/admin/races",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        statuses = [r["status"] for r in response.json()["races"]]
+        assert statuses == ["running", "setup"]
+
+
+# =============================================================================
 # Reported Seed Management Tests
 # =============================================================================
 

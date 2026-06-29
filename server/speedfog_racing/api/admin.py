@@ -6,7 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel
-from sqlalchemy import func, literal, select, union_all
+from sqlalchemy import case, func, literal, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,6 +14,7 @@ from speedfog_racing.api.helpers import (
     compute_race_stats,
     format_pool_display_name,
     race_date,
+    race_response,
     user_response,
 )
 from speedfog_racing.auth import require_admin
@@ -26,6 +27,7 @@ from speedfog_racing.models import (
     Participant,
     Pool,
     Race,
+    RaceStatus,
     Seed,
     SeedStatus,
     TrainingSession,
@@ -44,6 +46,7 @@ from speedfog_racing.schemas import (
     AdminFeedbackListResponse,
     DailyParticipantActivity,
     RaceCasterActivity,
+    RaceListResponse,
     RaceOrganizerActivity,
     RaceParticipantActivity,
     TrainingActivity,
@@ -738,6 +741,53 @@ async def get_global_activity(
     # ``total``.
     has_more = (offset + len(page_rows)) < total
     return ActivityTimelineResponse(items=items, total=total, has_more=has_more)
+
+
+# =============================================================================
+# In-Flight Races
+# =============================================================================
+
+
+@router.get("/races", response_model=RaceListResponse)
+async def list_inflight_races(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> RaceListResponse:
+    """List every non-finished race (SETUP or RUNNING), private ones included.
+
+    Requires admin role. Unlike the public ``/api/races`` feed, this applies no
+    visibility filter, so an admin sees private races they are not part of.
+    Daily Seed races are excluded; they have their own surfaces under /daily and
+    the admin daily schedule.
+    """
+    query = (
+        select(Race)
+        .options(
+            selectinload(Race.organizer),
+            selectinload(Race.seed),
+            selectinload(Race.participants).selectinload(Participant.user),
+            selectinload(Race.casters).selectinload(Caster.user),
+        )
+        .where(
+            Race.status.in_([RaceStatus.SETUP, RaceStatus.RUNNING]),
+            Race.daily_date.is_(None),
+        )
+        # Running first, then setup (the only two statuses the filter admits);
+        # within a status, soonest scheduled first (nulls last), newest created
+        # as the tiebreaker. Mirrors the mixed ordering of ``list_races``.
+        .order_by(
+            case((Race.status == RaceStatus.RUNNING, 0), else_=1),
+            case(
+                (Race.scheduled_at.is_(None), 1),
+                else_=0,
+            ),
+            Race.scheduled_at.asc(),
+            Race.created_at.desc(),
+        )
+    )
+    result = await db.execute(query)
+    races = list(result.scalars().all())
+    return RaceListResponse(races=[race_response(r) for r in races])
 
 
 # =============================================================================

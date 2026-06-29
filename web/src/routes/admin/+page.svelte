@@ -9,6 +9,7 @@
     adminDiscardPool,
     adminScanPool,
     fetchAdminActivity,
+    fetchAdminRaces,
     adminRecalculateStats,
     fetchReportedSeeds,
     resolveReportedSeed,
@@ -18,6 +19,7 @@
     updateAdminDailySchedule,
     type AdminUser,
     type AdminPool,
+    type Race,
     type ActivityTimeline,
     type ReportedSeed,
     type AdminAnalytics,
@@ -31,7 +33,14 @@
   import { Chart, registerables } from "chart.js";
   Chart.register(...registerables);
 
-  type Tab = "stats" | "activity" | "users" | "feedback" | "seeds" | "daily";
+  type Tab =
+    | "stats"
+    | "activity"
+    | "races"
+    | "users"
+    | "feedback"
+    | "seeds"
+    | "daily";
   let activeTab: Tab = $state("stats");
 
   let users: AdminUser[] = $state([]);
@@ -100,6 +109,10 @@
   let activity: ActivityTimeline | null = $state(null);
   let activityLoading = $state(false);
   let activityLoadingMore = $state(false);
+
+  let inflightRaces: Race[] = $state([]);
+  let racesLoading = $state(false);
+  let racesLoaded = $state(false);
 
   let recalcLoading = $state(false);
   let recalcMessage = $state<{
@@ -204,6 +217,18 @@
     }
   }
 
+  async function loadInflightRaces() {
+    racesLoading = true;
+    try {
+      inflightRaces = await fetchAdminRaces();
+      racesLoaded = true;
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Failed to load races.";
+    } finally {
+      racesLoading = false;
+    }
+  }
+
   function switchTab(tab: Tab) {
     activeTab = tab;
     if (tab === "users" && users.length === 0 && loading) {
@@ -218,6 +243,10 @@
     }
     if (tab === "activity" && !activity) {
       loadActivity();
+    }
+    // Refetch on every open so the monitoring view stays current.
+    if (tab === "races") {
+      loadInflightRaces();
     }
     if (tab === "feedback" && !feedbackLoaded) {
       loadFeedback();
@@ -711,6 +740,13 @@
       onclick={() => switchTab("activity")}
     >
       Activity
+    </button>
+    <button
+      class="tab"
+      class:active={activeTab === "races"}
+      onclick={() => switchTab("races")}
+    >
+      Races
     </button>
     <button
       class="tab"
@@ -1432,6 +1468,72 @@
         </button>
       {/if}
     {/if}
+  {:else if activeTab === "races"}
+    {#if racesLoading && !racesLoaded}
+      <p class="loading">Loading races...</p>
+    {:else if inflightRaces.length === 0}
+      <p class="empty">No races in progress.</p>
+    {:else}
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Organizer</th>
+              <th>Status</th>
+              <th>Visibility</th>
+              <th class="num-col">Players</th>
+              <th>When</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each inflightRaces as race (race.id)}
+              <tr>
+                <td>
+                  <a href="/race/{race.id}" class="username-link">{race.name}</a
+                  >
+                </td>
+                <td class="user-cell">
+                  {#if race.organizer.twitch_avatar_url}
+                    <img
+                      src={race.organizer.twitch_avatar_url}
+                      alt=""
+                      class="avatar"
+                    />
+                  {/if}
+                  <a
+                    href="/user/{race.organizer.twitch_username}"
+                    class="username-link"
+                  >
+                    {race.organizer.twitch_display_name ||
+                      race.organizer.twitch_username}
+                  </a>
+                </td>
+                <td>
+                  <span class="badge badge-{race.status}"
+                    >{statusLabel(race.status)}</span
+                  >
+                </td>
+                <td>
+                  <span
+                    class="badge {race.is_public
+                      ? 'vis-public'
+                      : 'vis-private'}"
+                    >{race.is_public ? "Public" : "Private"}</span
+                  >
+                </td>
+                <td class="num-cell">{race.participant_count}</td>
+                <td class="date-cell">
+                  {formatFullDate(
+                    race.started_at ?? race.scheduled_at ?? race.created_at,
+                  )}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
   {:else if activeTab === "feedback"}
     <div class="feedback-stats">
       <span class="feedback-stat">
@@ -1885,6 +1987,18 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
+  }
+
+  /* Visibility badges in the Races tab. Private is warning-tinted so the
+     races an admin can't otherwise see stand out. */
+  .vis-public {
+    background: rgba(156, 163, 175, 0.15);
+    color: var(--color-text-secondary);
+  }
+
+  .vis-private {
+    background: rgba(200, 164, 78, 0.15);
+    color: var(--color-warning);
   }
 
   .activity-badge {

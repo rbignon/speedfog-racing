@@ -1460,6 +1460,17 @@ export async function fetchAdminActivity(
 }
 
 /**
+ * Fetch all non-finished races, private ones included (admin only).
+ */
+export async function fetchAdminRaces(): Promise<Race[]> {
+  const response = await fetch(`${API_BASE}/admin/races`, {
+    headers: getAuthHeaders(),
+  });
+  const data = await handleResponse<RaceListResponse>(response);
+  return data.races;
+}
+
+/**
  * Recalculate all user/participant stats (admin only).
  */
 export async function adminRecalculateStats(): Promise<{ status: string }> {
