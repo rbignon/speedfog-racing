@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     discord_public_key: str | None = None
     discord_channel_id: str | None = None
 
+    # events.malenia.win calendar (optional)
+    malenia_api_token: str | None = None
+    malenia_api_base: str = "https://events.malenia.win/api"
+
     # Race
     countdown_seconds: int = 10
 

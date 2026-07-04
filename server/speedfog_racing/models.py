@@ -263,6 +263,7 @@ class Race(Base):
     )
     max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
     discord_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    malenia_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     late_join_window_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     race_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
