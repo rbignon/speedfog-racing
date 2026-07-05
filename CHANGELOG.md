@@ -2,6 +2,21 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.17.0] - 2026-07-05
+
+### Races
+
+- The race leaderboard on the website now matches the in-game overlay: rows follow the same ordering, and a **LiveSplit-style gap to the leader** is shown and updated live, identical to what the mod displays
+- **Late join** (10-minute window) is now enabled by default when creating a race
+- Public but invite-only races no longer ping the @Runner role on Discord
+- Public scheduled races are now published to the [events.malenia.win](https://events.malenia.win) community calendar, with the participant list kept in sync as players join and leave
+
+### Seeds
+
+- Item Randomizer updated to **v0.12alpha**
+- Randomized boss names now display correctly on every arena
+- Zone rebalance: increased the weight of Mohgwyn Palace, the Stone Coffin Fissure, and Rykard. Mohgwyn Palace is now classified as a mini dungeon instead of a legacy dungeon
+
 ## [1.16.0] - 2026-06-21
 
 ### Seeds
