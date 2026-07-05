@@ -23,14 +23,20 @@ from speedfog_racing.discord import (
     update_scheduled_event,
 )
 from speedfog_racing.malenia import (
+    add_event_participant,
     create_calendar_event,
     delete_calendar_event,
+    remove_event_participant_by_login,
     update_calendar_event,
 )
-from speedfog_racing.models import Race
+from speedfog_racing.models import Participant, Race
 
 # Seed.pool is lazy="joined", so loading the seed brings the pool along.
-_LOAD_OPTS = (selectinload(Race.seed), selectinload(Race.organizer))
+_LOAD_OPTS = (
+    selectinload(Race.seed),
+    selectinload(Race.organizer),
+    selectinload(Race.participants).selectinload(Participant.user),
+)
 
 
 def _qualifies(race: Race) -> bool:
@@ -38,9 +44,10 @@ def _qualifies(race: Race) -> bool:
 
 
 async def _create_on_providers(session: AsyncSession, race: Race) -> None:
-    """Create the event on both providers and persist the ids on ``race``."""
+    """Create the event on both providers, persist ids, and seed malenia participants."""
     assert race.scheduled_at is not None  # guaranteed by _qualifies
     mode_display = format_pool_display_name(race.seed.pool if race.seed else None)
+    participant_logins = [p.user.twitch_username for p in race.participants]
     discord_id = await create_scheduled_event(
         race_name=race.name, race_id=str(race.id), scheduled_at=race.scheduled_at
     )
@@ -58,6 +65,9 @@ async def _create_on_providers(session: AsyncSession, race: Race) -> None:
         race.malenia_event_id = malenia_id
     if discord_id or malenia_id:
         await session.commit()
+    if malenia_id:
+        for login in participant_logins:
+            await add_event_participant(malenia_id, login)
 
 
 async def create_calendar_events(race_id: UUID) -> None:
@@ -132,3 +142,23 @@ async def delete_calendar_events(
         await delete_scheduled_event(discord_event_id)
     if malenia_event_id:
         await delete_calendar_event(malenia_event_id)
+
+
+async def add_calendar_participant(race_id: UUID, twitch_username: str) -> None:
+    """Add a participant to the race's malenia event (no-op if there is no event)."""
+    async with async_session_maker() as session:
+        event_id = (
+            await session.execute(select(Race.malenia_event_id).where(Race.id == race_id))
+        ).scalar_one_or_none()
+        if event_id:
+            await add_event_participant(event_id, twitch_username)
+
+
+async def remove_calendar_participant(race_id: UUID, twitch_username: str) -> None:
+    """Remove a participant from the race's malenia event (no-op if there is no event)."""
+    async with async_session_maker() as session:
+        event_id = (
+            await session.execute(select(Race.malenia_event_id).where(Race.id == race_id))
+        ).scalar_one_or_none()
+        if event_id:
+            await remove_event_participant_by_login(event_id, twitch_username)

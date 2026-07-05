@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
-from speedfog_racing.models import Race, RaceStatus, Seed, SeedStatus, User, UserRole
+from speedfog_racing.models import Participant, Race, RaceStatus, Seed, SeedStatus, User, UserRole
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ async def async_session():
     await engine.dispose()
 
 
-async def _make_race(maker, **overrides):
+async def _make_race(maker, *, organizer_participates=False, **overrides):
     async with maker() as db:
         user = User(
             twitch_id=f"cs-{uuid4().hex[:8]}",
@@ -53,6 +53,9 @@ async def _make_race(maker, **overrides):
         fields.update(overrides)
         race = Race(**fields)
         db.add(race)
+        await db.flush()
+        if organizer_participates:
+            db.add(Participant(race_id=race.id, user_id=user.id, color_index=0))
         await db.commit()
         await db.refresh(race)
         return race.id
@@ -177,3 +180,85 @@ async def test_delete_calls_both_wrappers(async_session):
         await calendar_sync.delete_calendar_events(discord_event_id="d1", malenia_event_id="m1")
         md_d.assert_called_once_with("d1")
         md_m.assert_called_once_with("m1")
+
+
+@pytest.mark.asyncio
+async def test_add_calendar_participant_calls_wrapper(async_session):
+    from speedfog_racing.services import calendar_sync
+
+    race_id = await _make_race(async_session, malenia_event_id="m1")
+    with (
+        patch("speedfog_racing.services.calendar_sync.async_session_maker", async_session),
+        patch(
+            "speedfog_racing.services.calendar_sync.add_event_participant", new_callable=AsyncMock
+        ) as mock_add,
+    ):
+        await calendar_sync.add_calendar_participant(race_id, "runner")
+        mock_add.assert_awaited_once_with("m1", "runner")
+
+
+@pytest.mark.asyncio
+async def test_add_calendar_participant_skips_without_event(async_session):
+    from speedfog_racing.services import calendar_sync
+
+    race_id = await _make_race(async_session)  # no malenia_event_id
+    with (
+        patch("speedfog_racing.services.calendar_sync.async_session_maker", async_session),
+        patch(
+            "speedfog_racing.services.calendar_sync.add_event_participant", new_callable=AsyncMock
+        ) as mock_add,
+    ):
+        await calendar_sync.add_calendar_participant(race_id, "runner")
+        mock_add.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_remove_calendar_participant_calls_wrapper(async_session):
+    from speedfog_racing.services import calendar_sync
+
+    race_id = await _make_race(async_session, malenia_event_id="m1")
+    with (
+        patch("speedfog_racing.services.calendar_sync.async_session_maker", async_session),
+        patch(
+            "speedfog_racing.services.calendar_sync.remove_event_participant_by_login",
+            new_callable=AsyncMock,
+        ) as mock_remove,
+    ):
+        await calendar_sync.remove_calendar_participant(race_id, "runner")
+        mock_remove.assert_awaited_once_with("m1", "runner")
+
+
+@pytest.mark.asyncio
+async def test_create_seeds_participants(async_session):
+    from speedfog_racing.services import calendar_sync
+
+    race_id = await _make_race(async_session, organizer_participates=True)
+    with (
+        _patch_providers(async_session) as (_m, mc_d, mc_m, *_),
+        patch(
+            "speedfog_racing.services.calendar_sync.add_event_participant", new_callable=AsyncMock
+        ) as mock_add,
+    ):
+        mc_d.return_value = "discord-id"
+        mc_m.return_value = "malenia-id"
+        await calendar_sync.create_calendar_events(race_id)
+        mock_add.assert_awaited_once_with("malenia-id", "csorg")
+
+
+@pytest.mark.asyncio
+async def test_create_seeds_nothing_without_participants(async_session):
+    from speedfog_racing.services import calendar_sync
+
+    race_id = await _make_race(async_session)  # organizer does not participate
+    with (
+        _patch_providers(async_session) as (_m, mc_d, mc_m, *_),
+        patch(
+            "speedfog_racing.services.calendar_sync.add_event_participant", new_callable=AsyncMock
+        ) as mock_add,
+    ):
+        # AsyncMock() would otherwise return a truthy auto-Mock, which fails to bind
+        # as discord_event_id when committed to the DB.
+        mc_d.return_value = None
+        mc_m.return_value = "malenia-id"
+        await calendar_sync.create_calendar_events(race_id)
+        mock_add.assert_not_awaited()
