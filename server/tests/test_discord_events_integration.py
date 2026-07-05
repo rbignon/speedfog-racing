@@ -3,7 +3,7 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -400,3 +400,153 @@ async def test_finish_race_completes_discord_event(test_client, organizer, seed,
             assert resp.status_code == 200, resp.text
             await asyncio.sleep(0.1)
             mock_status.assert_called_once_with("discord-event-finish", 3)
+
+
+# =============================================================================
+# Participant sync -> malenia
+# =============================================================================
+
+
+async def _make_second_user(async_session):
+    from speedfog_racing.models import User
+
+    async with async_session() as db:
+        u = User(
+            twitch_id=f"p2-{uuid4().hex[:8]}",
+            twitch_username=f"racer_{uuid4().hex[:6]}",
+            twitch_display_name="Racer",
+            api_token=f"p2-token-{uuid4().hex[:8]}",
+        )
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+        return u
+
+
+async def _make_public_scheduled_race(async_session, organizer, seed, **overrides):
+    fields = dict(
+        name="Participant Sync Race",
+        organizer_id=organizer.id,
+        seed_id=seed.id,
+        status=RaceStatus.SETUP,
+        is_public=True,
+        scheduled_at=datetime.now(UTC) + timedelta(hours=2),
+    )
+    fields.update(overrides)
+    async with async_session() as db:
+        race = Race(**fields)
+        db.add(race)
+        await db.commit()
+        await db.refresh(race)
+        return str(race.id)
+
+
+@pytest.mark.asyncio
+async def test_join_syncs_calendar_participant(test_client, organizer, seed, async_session):
+    second = await _make_second_user(async_session)
+    race_id = await _make_public_scheduled_race(
+        async_session, organizer, seed, open_registration=True, max_participants=8
+    )
+    with patch(
+        "speedfog_racing.api.races.add_calendar_participant", new_callable=AsyncMock
+    ) as mock_add:
+        async with test_client as client:
+            resp = await client.post(
+                f"/api/races/{race_id}/join",
+                headers={"Authorization": f"Bearer {second.api_token}"},
+            )
+            assert resp.status_code == 200, resp.text
+            await asyncio.sleep(0.1)
+            mock_add.assert_awaited_once_with(UUID(race_id), second.twitch_username)
+
+
+@pytest.mark.asyncio
+async def test_join_private_race_skips_participant_sync(
+    test_client, organizer, seed, async_session
+):
+    second = await _make_second_user(async_session)
+    race_id = await _make_public_scheduled_race(
+        async_session, organizer, seed, is_public=False, open_registration=True, max_participants=8
+    )
+    with patch(
+        "speedfog_racing.api.races.add_calendar_participant", new_callable=AsyncMock
+    ) as mock_add:
+        async with test_client as client:
+            resp = await client.post(
+                f"/api/races/{race_id}/join",
+                headers={"Authorization": f"Bearer {second.api_token}"},
+            )
+            assert resp.status_code == 200, resp.text
+            await asyncio.sleep(0.1)
+            mock_add.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_add_participant_syncs_calendar_participant(
+    test_client, organizer, seed, async_session
+):
+    second = await _make_second_user(async_session)
+    race_id = await _make_public_scheduled_race(async_session, organizer, seed)
+    with patch(
+        "speedfog_racing.api.races.add_calendar_participant", new_callable=AsyncMock
+    ) as mock_add:
+        async with test_client as client:
+            resp = await client.post(
+                f"/api/races/{race_id}/participants",
+                json={"twitch_username": second.twitch_username},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 200, resp.text
+            await asyncio.sleep(0.1)
+            mock_add.assert_awaited_once_with(UUID(race_id), second.twitch_username)
+
+
+@pytest.mark.asyncio
+async def test_leave_syncs_calendar_participant_removal(
+    test_client, organizer, seed, async_session
+):
+    from speedfog_racing.models import Participant
+
+    second = await _make_second_user(async_session)
+    race_id = await _make_public_scheduled_race(async_session, organizer, seed)
+    async with async_session() as db:
+        db.add(Participant(race_id=UUID(race_id), user_id=second.id, color_index=1))
+        await db.commit()
+    with patch(
+        "speedfog_racing.api.races.remove_calendar_participant", new_callable=AsyncMock
+    ) as mock_remove:
+        async with test_client as client:
+            resp = await client.post(
+                f"/api/races/{race_id}/leave",
+                headers={"Authorization": f"Bearer {second.api_token}"},
+            )
+            assert resp.status_code == 204
+            await asyncio.sleep(0.1)
+            mock_remove.assert_awaited_once_with(UUID(race_id), second.twitch_username)
+
+
+@pytest.mark.asyncio
+async def test_remove_participant_syncs_calendar_removal(
+    test_client, organizer, seed, async_session
+):
+    from speedfog_racing.models import Participant
+
+    second = await _make_second_user(async_session)
+    race_id = await _make_public_scheduled_race(async_session, organizer, seed)
+    async with async_session() as db:
+        p = Participant(race_id=UUID(race_id), user_id=second.id, color_index=1)
+        db.add(p)
+        await db.commit()
+        await db.refresh(p)
+        participant_id = str(p.id)
+    with patch(
+        "speedfog_racing.api.races.remove_calendar_participant", new_callable=AsyncMock
+    ) as mock_remove:
+        async with test_client as client:
+            resp = await client.delete(
+                f"/api/races/{race_id}/participants/{participant_id}",
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 204
+            await asyncio.sleep(0.1)
+            mock_remove.assert_awaited_once_with(UUID(race_id), second.twitch_username)

@@ -76,8 +76,10 @@ from speedfog_racing.services import (
     reroll_seed_for_race,
 )
 from speedfog_racing.services.calendar_sync import (
+    add_calendar_participant,
     create_calendar_events,
     delete_calendar_events,
+    remove_calendar_participant,
     update_calendar_events,
 )
 from speedfog_racing.services.daily_points_service import daily_points_for_race
@@ -803,6 +805,13 @@ async def add_participant(
         )
         await broadcast_race_state_update(race_id, race)
 
+        # Fire-and-forget: mirror the add to the malenia participant list
+        if race.is_public and race.scheduled_at:
+            p_task = asyncio.create_task(
+                add_calendar_participant(race.id, target_user.twitch_username)
+            )
+            p_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
         return AddParticipantResponse(participant=participant_response(participant))
 
     else:
@@ -885,12 +894,18 @@ async def remove_participant(
         )
 
     display = participant.user.twitch_display_name or participant.user.twitch_username
+    removed_username = participant.user.twitch_username
     await db.delete(participant)
     sys_json = await persist_system_chat(
         db, race_id, ChatChannel.PARTICIPANTS, f"{display} has been removed from the race"
     )
     await db.commit()
     logger.info("Participant removed: race=%s, participant=%s", race_id, participant_id)
+
+    # Fire-and-forget: mirror the removal to the malenia participant list
+    if race.is_public and race.scheduled_at:
+        p_task = asyncio.create_task(remove_calendar_participant(race.id, removed_username))
+        p_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     room = manager.get_room(race_id)
     if room:
@@ -1172,6 +1187,11 @@ async def join_race(
     )
     await broadcast_race_state_update(race_id, race)
 
+    # Fire-and-forget: mirror the join to the malenia participant list
+    if race.is_public and race.scheduled_at:
+        p_task = asyncio.create_task(add_calendar_participant(race.id, user.twitch_username))
+        p_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
     return participant_response(participant)
 
 
@@ -1219,6 +1239,11 @@ async def leave_race(
         db, race_id, ChatChannel.PARTICIPANTS, f"{display} has left the race"
     )
     await db.commit()
+
+    # Fire-and-forget: mirror the leave to the malenia participant list
+    if race.is_public and race.scheduled_at:
+        p_task = asyncio.create_task(remove_calendar_participant(race.id, user.twitch_username))
+        p_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     room = manager.get_room(race_id)
     if room:
