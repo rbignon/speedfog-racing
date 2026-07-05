@@ -203,6 +203,7 @@ Participants are sorted for display using a stable sort with composite key:
 4. `fire_race_finished_notifications(race)`, fires on **all** finish paths:
    - Discord webhook (public races only, with podium)
    - Discord scheduled event → COMPLETED (if event exists)
+   - malenia calendar event → no transition (malenia has no active/completed status)
 
 The ordering ensures spectators have full graph data before the status change UI update triggers.
 

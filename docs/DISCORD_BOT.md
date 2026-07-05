@@ -79,6 +79,11 @@ DISCORD_CHANNEL_ID=123456789012345678
 
 # Used for race URLs in notifications and scheduled events
 BASE_URL=https://your-domain.com
+
+# events.malenia.win calendar (optional): public scheduled races are mirrored there
+MALENIA_API_TOKEN=your-bearer-token
+# Defaults to https://events.malenia.win/api; override only if needed
+MALENIA_API_BASE=https://events.malenia.win/api
 ```
 
 | Variable                       | Required for    | Description                                                         |
@@ -131,6 +136,8 @@ When `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID` are set, public races with a sch
 | Delete race                    | Delete event                         |
 
 Events link to the race page URL.
+
+The same lifecycle also publishes public scheduled races to the community calendar at events.malenia.win, when `MALENIA_API_TOKEN` is set. Both providers are driven together by `services/calendar_sync.py`, so a race create, reschedule, or delete updates the Discord event and the malenia event in one place. malenia has no active/completed status, so only create/update/delete are mirrored (the Discord-only ACTIVE/COMPLETED transitions on start/finish have no counterpart).
 
 ### Runner Role (Bot)
 
