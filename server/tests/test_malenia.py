@@ -29,9 +29,9 @@ async def test_create_calendar_event_builds_payload(monkeypatch):
     method, path = mock_req.call_args[0]
     body = mock_req.call_args[1]["json"]
     assert (method, path) == ("POST", "/events")
-    assert body["title"] == "Fog Race"
+    assert body["title"] == "Speedfog - Fog Race"
     assert body["starts_at"] == scheduled.isoformat()
-    assert body["ends_at"] == (scheduled + timedelta(hours=3)).isoformat()
+    assert body["ends_at"] == (scheduled + timedelta(hours=2)).isoformat()
     assert body["event_url"] == "https://example.test/race/abc"
     assert body["image_url"] == "https://example.test/api/og/race/abc.png"
     assert body["organizer_login"] == "runnerlogin"
@@ -39,6 +39,7 @@ async def test_create_calendar_event_builds_payload(monkeypatch):
     assert body["all_day"] is False
     assert "No summons" in body["description"]
     assert "Standard" in body["description"]
+    assert "SpeedFog" in body["description"]
 
 
 @pytest.mark.asyncio
@@ -70,6 +71,7 @@ async def test_update_calendar_event_sends_only_provided_fields():
         )
         meta_body = mock_req.call_args[1]["json"]
         assert set(meta_body) == {"title", "description"}
+        assert meta_body["title"] == "Speedfog - New"
 
 
 @pytest.mark.asyncio

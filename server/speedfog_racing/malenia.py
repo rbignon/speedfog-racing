@@ -7,14 +7,23 @@ Every call is a no-op when ``settings.malenia_api_token`` is unset.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 
 from speedfog_racing.config import settings
-from speedfog_racing.discord import EVENT_DURATION
 
 logger = logging.getLogger(__name__)
+
+# malenia calendar events run 2h (shorter than the 3h Discord scheduled event).
+EVENT_DURATION = timedelta(hours=2)
+
+# Added to every event description so calendar visitors who do not know the
+# format understand what a SpeedFog race is.
+SPEEDFOG_BLURB = (
+    "SpeedFog is a competitive Elden Ring speedrunning race: everyone plays the "
+    "same randomized fog-gate seed and races to the finish, fastest in-game time wins."
+)
 
 
 async def _malenia_api_request(
@@ -58,9 +67,14 @@ def _image_url(race_id: str) -> str:
     return f"{settings.base_url.rstrip('/')}/api/og/race/{race_id}.png"
 
 
+def _title(race_name: str) -> str:
+    """Prefix the race name so it stands out among other event types on the calendar."""
+    return f"Speedfog - {race_name}"
+
+
 def _description(mode_display: str, custom_rules: str | None) -> str:
-    """Build the event description from the mode and optional custom rules."""
-    text = f"Mode: {mode_display}"
+    """Build the event description: mode, a blurb about SpeedFog, then optional rules."""
+    text = f"Mode: {mode_display}\n\n{SPEEDFOG_BLURB}"
     if custom_rules:
         text = f"{text}\n\n{custom_rules}"
     return text
@@ -80,7 +94,7 @@ async def create_calendar_event(
         "POST",
         "/events",
         json={
-            "title": race_name,
+            "title": _title(race_name),
             "starts_at": scheduled_at.isoformat(),
             "ends_at": (scheduled_at + EVENT_DURATION).isoformat(),
             "event_url": _event_url(race_id),
@@ -112,7 +126,7 @@ async def update_calendar_event(
         body["starts_at"] = scheduled_at.isoformat()
         body["ends_at"] = (scheduled_at + EVENT_DURATION).isoformat()
     if race_name is not None:
-        body["title"] = race_name
+        body["title"] = _title(race_name)
     if mode_display is not None:
         body["description"] = _description(mode_display, custom_rules)
     if not body:
