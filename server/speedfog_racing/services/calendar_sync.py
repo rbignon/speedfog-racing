@@ -2,7 +2,9 @@
 
 Owns the create/update/delete lifecycle for calendar events across both
 providers so the API routes stay provider-agnostic. This module is the only
-place that reads or writes ``Race.discord_event_id`` / ``Race.malenia_event_id``.
+place that writes ``Race.discord_event_id`` / ``Race.malenia_event_id`` (the
+start and delete race routes still read them, to drive Discord status and
+teardown).
 """
 
 from __future__ import annotations

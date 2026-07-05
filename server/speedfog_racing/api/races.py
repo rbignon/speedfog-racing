@@ -670,7 +670,10 @@ async def update_race(
 
     await db.commit()
 
-    # Fire-and-forget calendar re-sync across providers (Discord + malenia)
+    # Fire-and-forget calendar re-sync across providers (Discord + malenia).
+    # metadata_changed drives the malenia title/description repatch; mode/pool is
+    # omitted because it is immutable via PATCH, so name and custom_rules are the
+    # only description inputs that can change here.
     scheduled_changed = "scheduled_at" in request.model_fields_set
     metadata_changed = race.name != pre_snapshot[0] or race.custom_rules != pre_snapshot[8]
     ev_task = asyncio.create_task(
