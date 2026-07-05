@@ -28,15 +28,12 @@ from speedfog_racing.auth import (
     get_user_by_twitch_username,
 )
 from speedfog_racing.config import settings
-from speedfog_racing.database import async_session_maker, get_db
+from speedfog_racing.database import get_db
 from speedfog_racing.discord import (
-    create_scheduled_event,
-    delete_scheduled_event,
     fire_race_finished_notifications,
     notify_race_created,
     notify_race_started,
     set_event_status,
-    update_scheduled_event,
 )
 from speedfog_racing.download_ticket import sign_download_ticket, verify_download_ticket
 from speedfog_racing.models import (
@@ -78,7 +75,11 @@ from speedfog_racing.services import (
     get_pool,
     reroll_seed_for_race,
 )
-from speedfog_racing.services.calendar_sync import create_calendar_events, delete_calendar_events
+from speedfog_racing.services.calendar_sync import (
+    create_calendar_events,
+    delete_calendar_events,
+    update_calendar_events,
+)
 from speedfog_racing.services.daily_points_service import daily_points_for_race
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.seed_pack_service import (
@@ -534,7 +535,6 @@ async def update_race(
     race = await _get_race_or_404(db, race_id, load_participants=True)
     _require_organizer(race, user)
 
-    old_event_id = race.discord_event_id
     # Snapshot every RaceInfo field PATCH could mutate, so we only broadcast
     # race_info_update when something actually changed (no-op PATCHes stay
     # quiet). `name` is currently immutable via PATCH but included in the
@@ -670,41 +670,17 @@ async def update_race(
 
     await db.commit()
 
-    # Sync Discord scheduled event
-    if old_event_id:
-        if not race.is_public or race.scheduled_at is None:
-            # Race no longer qualifies → delete event
-            race.discord_event_id = None
-            await db.commit()
-            task = asyncio.create_task(delete_scheduled_event(old_event_id))
-            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-        elif "scheduled_at" in request.model_fields_set and race.scheduled_at:
-            # Time changed → update event
-            task = asyncio.create_task(
-                update_scheduled_event(old_event_id, scheduled_at=race.scheduled_at)
-            )
-            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-    elif race.is_public and race.scheduled_at:
-        # Newly qualifies → create event
-        _race_id = race.id
-        _race_name = race.name
-        _scheduled_at = race.scheduled_at
-
-        async def _create_discord_event() -> None:
-            event_id = await create_scheduled_event(
-                race_name=_race_name,
-                race_id=str(_race_id),
-                scheduled_at=_scheduled_at,
-            )
-            if event_id:
-                async with async_session_maker() as s:
-                    r = await s.get(Race, _race_id)
-                    if r:
-                        r.discord_event_id = event_id
-                        await s.commit()
-
-        ev_task = asyncio.create_task(_create_discord_event())
-        ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+    # Fire-and-forget calendar re-sync across providers (Discord + malenia)
+    scheduled_changed = "scheduled_at" in request.model_fields_set
+    metadata_changed = race.name != pre_snapshot[0] or race.custom_rules != pre_snapshot[8]
+    ev_task = asyncio.create_task(
+        update_calendar_events(
+            race.id,
+            scheduled_changed=scheduled_changed,
+            metadata_changed=metadata_changed,
+        )
+    )
+    ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     post_snapshot = (
         race.name,

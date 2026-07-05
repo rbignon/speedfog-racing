@@ -237,6 +237,80 @@ async def test_delete_race_deletes_discord_event(test_client, organizer, seed, a
 
 
 # =============================================================================
+# Race update -> calendar re-sync
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_reschedule_calls_update_calendar_events(test_client, organizer, seed, async_session):
+    """PATCHing scheduled_at re-syncs the calendar with scheduled_changed=True."""
+    async with async_session() as db:
+        race = Race(
+            name="Reschedule Test",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            is_public=True,
+            scheduled_at=datetime.now(UTC) + timedelta(hours=2),
+            discord_event_id="d1",
+            malenia_event_id="m1",
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    new_time = (datetime.now(UTC) + timedelta(hours=5)).isoformat()
+    with patch(
+        "speedfog_racing.api.races.update_calendar_events", new_callable=AsyncMock
+    ) as mock_update:
+        async with test_client as client:
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"scheduled_at": new_time},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 200, resp.text
+            await asyncio.sleep(0.1)
+            mock_update.assert_called_once()
+            assert mock_update.call_args[1]["scheduled_changed"] is True
+            assert mock_update.call_args[1]["metadata_changed"] is False
+
+
+@pytest.mark.asyncio
+async def test_edit_rules_calls_update_calendar_events(test_client, organizer, seed, async_session):
+    """PATCHing custom_rules re-syncs the calendar with metadata_changed=True."""
+    async with async_session() as db:
+        race = Race(
+            name="Rules Test",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            is_public=True,
+            scheduled_at=datetime.now(UTC) + timedelta(hours=2),
+            discord_event_id="d1",
+            malenia_event_id="m1",
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    with patch(
+        "speedfog_racing.api.races.update_calendar_events", new_callable=AsyncMock
+    ) as mock_update:
+        async with test_client as client:
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"custom_rules": "No torrent"},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 200, resp.text
+            await asyncio.sleep(0.1)
+            mock_update.assert_called_once()
+            assert mock_update.call_args[1]["metadata_changed"] is True
+            assert mock_update.call_args[1]["scheduled_changed"] is False
+
+
+# =============================================================================
 # Race start → event ACTIVE
 # =============================================================================
 
