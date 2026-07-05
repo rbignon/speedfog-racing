@@ -79,3 +79,45 @@ async def test_update_calendar_event_noop_when_nothing_changed():
     with patch.object(malenia, "_malenia_api_request", new_callable=AsyncMock) as mock_req:
         await malenia.update_calendar_event("evt-1")
     mock_req.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_add_event_participant_posts_login():
+    with patch.object(malenia, "_malenia_api_request", new_callable=AsyncMock) as mock_req:
+        await malenia.add_event_participant("evt-1", "runner")
+    mock_req.assert_awaited_once_with(
+        "POST", "/events/evt-1/participants", json={"login": "runner"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_remove_event_participant_by_login_deletes_matching_id():
+    detail = {
+        "participants": [
+            {"id": "uuid-aaa", "twitch_username": "Someone"},
+            {"id": "uuid-bbb", "twitch_username": "TargetUser"},
+        ]
+    }
+    with patch.object(malenia, "_malenia_api_request", new_callable=AsyncMock) as mock_req:
+        mock_req.side_effect = [detail, {}]
+        await malenia.remove_event_participant_by_login("evt-1", "targetuser")
+    assert mock_req.call_count == 2
+    assert mock_req.call_args_list[0].args == ("GET", "/events/evt-1")
+    assert mock_req.call_args_list[1].args == ("DELETE", "/events/evt-1/participants/uuid-bbb")
+
+
+@pytest.mark.asyncio
+async def test_remove_event_participant_by_login_no_match_skips_delete():
+    detail = {"participants": [{"id": "uuid-aaa", "twitch_username": "Someone"}]}
+    with patch.object(malenia, "_malenia_api_request", new_callable=AsyncMock) as mock_req:
+        mock_req.side_effect = [detail]
+        await malenia.remove_event_participant_by_login("evt-1", "ghost")
+    assert mock_req.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_remove_event_participant_by_login_no_participants_is_noop():
+    with patch.object(malenia, "_malenia_api_request", new_callable=AsyncMock) as mock_req:
+        mock_req.side_effect = [{}]
+        await malenia.remove_event_participant_by_login("evt-1", "anyone")
+    assert mock_req.call_count == 1

@@ -137,3 +137,31 @@ async def update_calendar_event(
 async def delete_calendar_event(event_id: str) -> None:
     """Delete a malenia calendar event."""
     await _malenia_api_request("DELETE", f"/events/{event_id}")
+
+
+async def add_event_participant(event_id: str, login: str) -> None:
+    """Add a participant to a malenia event by Twitch login (auto-created if unknown)."""
+    await _malenia_api_request("POST", f"/events/{event_id}/participants", json={"login": login})
+
+
+async def remove_event_participant_by_login(event_id: str, login: str) -> None:
+    """Remove the event participant with the given Twitch login.
+
+    malenia's delete endpoint needs the participant's malenia UUID, which we do
+    not store, so we fetch the event and match on ``twitch_username``.
+    """
+    detail = await _malenia_api_request("GET", f"/events/{event_id}")
+    if not detail:
+        return
+    participants = detail.get("participants")
+    if not isinstance(participants, list):
+        return
+    target = login.lower()
+    for participant in participants:
+        if not isinstance(participant, dict):
+            continue
+        if str(participant.get("twitch_username", "")).lower() == target:
+            user_id = participant.get("id")
+            if user_id:
+                await _malenia_api_request("DELETE", f"/events/{event_id}/participants/{user_id}")
+            return
