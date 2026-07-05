@@ -116,8 +116,35 @@ async def test_remove_event_participant_by_login_no_match_skips_delete():
 
 
 @pytest.mark.asyncio
-async def test_remove_event_participant_by_login_no_participants_is_noop():
+async def test_remove_event_participant_by_login_empty_response_is_noop():
     with patch.object(malenia, "_malenia_api_request", new_callable=AsyncMock) as mock_req:
         mock_req.side_effect = [{}]
         await malenia.remove_event_participant_by_login("evt-1", "anyone")
     assert mock_req.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_remove_event_participant_by_login_participants_not_a_list():
+    with patch.object(malenia, "_malenia_api_request", new_callable=AsyncMock) as mock_req:
+        mock_req.side_effect = [{"participants": "oops"}]
+        await malenia.remove_event_participant_by_login("evt-1", "anyone")
+    assert mock_req.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_remove_event_participant_by_login_match_without_id_skips_delete():
+    detail = {"participants": [{"twitch_username": "TargetUser"}]}
+    with patch.object(malenia, "_malenia_api_request", new_callable=AsyncMock) as mock_req:
+        mock_req.side_effect = [detail]
+        await malenia.remove_event_participant_by_login("evt-1", "targetuser")
+    assert mock_req.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_remove_event_participant_by_login_skips_non_dict_items():
+    detail = {"participants": ["junk", {"id": "uuid-ccc", "twitch_username": "Target"}]}
+    with patch.object(malenia, "_malenia_api_request", new_callable=AsyncMock) as mock_req:
+        mock_req.side_effect = [detail, {}]
+        await malenia.remove_event_participant_by_login("evt-1", "target")
+    assert mock_req.call_count == 2
+    assert mock_req.call_args_list[1].args == ("DELETE", "/events/evt-1/participants/uuid-ccc")
