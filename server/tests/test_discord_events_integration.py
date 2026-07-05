@@ -526,6 +526,33 @@ async def test_leave_syncs_calendar_participant_removal(
 
 
 @pytest.mark.asyncio
+async def test_accept_invite_syncs_calendar_participant(
+    test_client, organizer, seed, async_session
+):
+    from speedfog_racing.models import Invite
+
+    second = await _make_second_user(async_session)
+    race_id = await _make_public_scheduled_race(async_session, organizer, seed)
+    async with async_session() as db:
+        invite = Invite(race_id=UUID(race_id), twitch_username=second.twitch_username)
+        db.add(invite)
+        await db.commit()
+        await db.refresh(invite)
+        token = invite.token
+    with patch(
+        "speedfog_racing.api.invites.add_calendar_participant", new_callable=AsyncMock
+    ) as mock_add:
+        async with test_client as client:
+            resp = await client.post(
+                f"/api/invite/{token}/accept",
+                headers={"Authorization": f"Bearer {second.api_token}"},
+            )
+            assert resp.status_code == 200, resp.text
+            await asyncio.sleep(0.1)
+            mock_add.assert_awaited_once_with(UUID(race_id), second.twitch_username)
+
+
+@pytest.mark.asyncio
 async def test_remove_participant_syncs_calendar_removal(
     test_client, organizer, seed, async_session
 ):

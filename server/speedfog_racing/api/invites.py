@@ -1,5 +1,6 @@
 """Invite management API routes."""
 
+import asyncio
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,6 +16,7 @@ from speedfog_racing.schemas import (
     AcceptInviteResponse,
     InviteInfoResponse,
 )
+from speedfog_racing.services.calendar_sync import add_calendar_participant
 from speedfog_racing.websocket import broadcast_race_state_update
 from speedfog_racing.websocket.race.manager import manager
 
@@ -145,6 +147,11 @@ async def accept_invite(
         daily_date=race.daily_date,
     )
     await broadcast_race_state_update(invite.race_id, race)
+
+    # Fire-and-forget: mirror the accepted invite to the malenia participant list
+    if race.is_public and race.scheduled_at:
+        p_task = asyncio.create_task(add_calendar_participant(race.id, user.twitch_username))
+        p_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     return AcceptInviteResponse(
         participant=participant_response(participant),

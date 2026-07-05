@@ -139,7 +139,7 @@ Events link to the race page URL.
 
 The same lifecycle also publishes public scheduled races to the community calendar at events.malenia.win, when `MALENIA_API_TOKEN` is set. Both providers are driven together by `services/calendar_sync.py`, so a race create, reschedule, or delete updates the Discord event and the malenia event in one place. malenia has no active/completed status, so only create/update/delete are mirrored (the Discord-only ACTIVE/COMPLETED transitions on start/finish have no counterpart).
 
-The event's participant list is kept in sync with the race participants: joining or being added to a public scheduled race adds the runner to the malenia event, leaving or being removed takes them off. Unknown Twitch logins are created on malenia automatically, so every participant resolves. Participant sync is malenia-only (Discord scheduled events have no bot-addable participant list).
+The event's participant list is kept in sync with the race participants: joining, accepting an invite, or being added to a public scheduled race adds the runner to the malenia event, leaving or being removed takes them off. Unknown Twitch logins are created on malenia automatically, so every participant resolves. Participant sync is malenia-only (Discord scheduled events have no bot-addable participant list).
 
 ### Runner Role (Bot)
 
