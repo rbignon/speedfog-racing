@@ -88,36 +88,28 @@ def test_client(async_session):
 
 
 @pytest.mark.asyncio
-async def test_create_race_creates_discord_event(test_client, organizer, seed, async_session):
-    """Creating a public race with scheduled_at should fire create_scheduled_event."""
+async def test_create_race_syncs_calendar_event(test_client, organizer, seed):
+    """Creating a public race with scheduled_at fires calendar_sync.create_calendar_events."""
     scheduled = (datetime.now(UTC) + timedelta(hours=2)).isoformat()
 
-    with (
-        patch(
-            "speedfog_racing.api.races.create_scheduled_event", new_callable=AsyncMock
-        ) as mock_create,
-        # Also patch async_session_maker since the fire-and-forget task uses it
-        patch("speedfog_racing.api.races.async_session_maker", async_session),
-    ):
-        mock_create.return_value = "discord-event-123"
-
+    with patch(
+        "speedfog_racing.api.races.create_calendar_events", new_callable=AsyncMock
+    ) as mock_sync:
         async with test_client as client:
             resp = await client.post(
                 "/api/races",
                 json={
-                    "name": "Discord Event Test",
+                    "name": "Calendar Event Test",
                     "pool_name": "standard",
                     "is_public": True,
                     "scheduled_at": scheduled,
                 },
                 headers={"Authorization": f"Bearer {organizer.api_token}"},
             )
-
             assert resp.status_code == 201, resp.text
-            # Let fire-and-forget tasks complete
             await asyncio.sleep(0.1)
-            mock_create.assert_called_once()
-            assert mock_create.call_args[1]["race_name"] == "Discord Event Test"
+            mock_sync.assert_called_once()
+            assert str(mock_sync.call_args[0][0]) == resp.json()["id"]
 
 
 @pytest.mark.asyncio
@@ -126,8 +118,8 @@ async def test_create_race_no_event_when_private(test_client, organizer, seed):
     scheduled = (datetime.now(UTC) + timedelta(hours=2)).isoformat()
 
     with patch(
-        "speedfog_racing.api.races.create_scheduled_event", new_callable=AsyncMock
-    ) as mock_create:
+        "speedfog_racing.api.races.create_calendar_events", new_callable=AsyncMock
+    ) as mock_sync:
         async with test_client as client:
             resp = await client.post(
                 "/api/races",
@@ -141,7 +133,7 @@ async def test_create_race_no_event_when_private(test_client, organizer, seed):
             )
             assert resp.status_code == 201
             await asyncio.sleep(0.1)
-            mock_create.assert_not_called()
+            mock_sync.assert_not_called()
 
 
 # =============================================================================
@@ -158,7 +150,7 @@ async def test_create_public_open_race_sends_notification(test_client, organizer
         patch(
             "speedfog_racing.api.races.notify_race_created", new_callable=AsyncMock
         ) as mock_notify,
-        patch("speedfog_racing.api.races.create_scheduled_event", new_callable=AsyncMock),
+        patch("speedfog_racing.api.races.create_calendar_events", new_callable=AsyncMock),
     ):
         async with test_client as client:
             resp = await client.post(
@@ -187,7 +179,7 @@ async def test_create_public_invite_only_race_skips_notification(test_client, or
         patch(
             "speedfog_racing.api.races.notify_race_created", new_callable=AsyncMock
         ) as mock_notify,
-        patch("speedfog_racing.api.races.create_scheduled_event", new_callable=AsyncMock),
+        patch("speedfog_racing.api.races.create_calendar_events", new_callable=AsyncMock),
     ):
         async with test_client as client:
             resp = await client.post(
@@ -230,7 +222,7 @@ async def test_delete_race_deletes_discord_event(test_client, organizer, seed, a
         race_id = str(race.id)
 
     with patch(
-        "speedfog_racing.api.races.delete_scheduled_event", new_callable=AsyncMock
+        "speedfog_racing.api.races.delete_calendar_events", new_callable=AsyncMock
     ) as mock_delete:
         async with test_client as client:
             resp = await client.delete(
@@ -239,7 +231,9 @@ async def test_delete_race_deletes_discord_event(test_client, organizer, seed, a
             )
             assert resp.status_code == 204
             await asyncio.sleep(0.1)
-            mock_delete.assert_called_once_with("discord-event-to-delete")
+            mock_delete.assert_called_once_with(
+                discord_event_id="discord-event-to-delete", malenia_event_id=None
+            )
 
 
 # =============================================================================

@@ -78,6 +78,7 @@ from speedfog_racing.services import (
     get_pool,
     reroll_seed_for_race,
 )
+from speedfog_racing.services.calendar_sync import create_calendar_events, delete_calendar_events
 from speedfog_racing.services.daily_points_service import daily_points_for_race
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.seed_pack_service import (
@@ -352,26 +353,9 @@ async def create_race(
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
-    # Fire-and-forget Discord scheduled event (public races with scheduled_at)
+    # Fire-and-forget calendar sync (public races with scheduled_at)
     if race.is_public and race.scheduled_at:
-        _race_id = race.id
-        _race_name = race.name
-        _scheduled_at = race.scheduled_at
-
-        async def _create_discord_event() -> None:
-            event_id = await create_scheduled_event(
-                race_name=_race_name,
-                race_id=str(_race_id),
-                scheduled_at=_scheduled_at,
-            )
-            if event_id:
-                async with async_session_maker() as s:
-                    r = await s.get(Race, _race_id)
-                    if r:
-                        r.discord_event_id = event_id
-                        await s.commit()
-
-        ev_task = asyncio.create_task(_create_discord_event())
+        ev_task = asyncio.create_task(create_calendar_events(race.id))
         ev_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     return race_response(race, user)
@@ -1847,13 +1831,18 @@ async def delete_race(
             seed.status = SeedStatus.AVAILABLE
 
     discord_event_id = race.discord_event_id
+    malenia_event_id = race.malenia_event_id
 
     await db.delete(race)
     await db.commit()
 
-    # Fire-and-forget: delete Discord scheduled event
-    if discord_event_id:
-        task = asyncio.create_task(delete_scheduled_event(discord_event_id))
+    # Fire-and-forget: delete the calendar event on both providers
+    if discord_event_id or malenia_event_id:
+        task = asyncio.create_task(
+            delete_calendar_events(
+                discord_event_id=discord_event_id, malenia_event_id=malenia_event_id
+            )
+        )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
 
