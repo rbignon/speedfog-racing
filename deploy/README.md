@@ -114,6 +114,16 @@ The script:
 | `.env.example`               | Production environment variable template                  |
 | `deploy.sh`                  | One-command deploy script (run from dev machine)          |
 
+## Continuous Integration
+
+GitHub Actions run on every push and pull request touching the matching component:
+
+- `Server CI` (`.github/workflows/ci-server.yml`): ruff lint + format check, mypy, pytest (SQLite), and an `alembic upgrade head` run against a PostgreSQL 16 service container to validate the migration chain.
+- `Web CI` (`.github/workflows/ci-web.yml`): svelte-check, prettier check, vitest, production build. ESLint is not part of CI yet (deferred error baseline).
+- `Build Mod (Windows)` (`.github/workflows/build-mod.yml`): cargo test + release DLL artifact.
+
+CI does not deploy anything; deployment stays manual via `deploy/deploy.sh`.
+
 ## Secrets Rotation
 
 ### Rotating SECRET_KEY
