@@ -12,7 +12,6 @@ use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::color::parse_hex_color;
-use crate::core::flag_buffer::detect_save_reload;
 use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::race_machine::{
     BufferedEventFlag, BufferedZoneQuery, ConnectionStatus, Effect, FrameSnapshot, MachineMessage,
@@ -26,9 +25,6 @@ use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
 use super::websocket::RaceWebSocketClient;
 
-/// Defensive timeout: if a zone update hasn't been revealed after this duration
-/// (e.g., loading screen flag is unreadable), reveal anyway.
-const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(15);
 const DEBUG_REFRESH_INTERVAL: Duration = Duration::from_millis(250);
 pub(crate) const LEADERBOARD_REFRESH_INTERVAL_MS: u32 = 250;
 
@@ -267,6 +263,7 @@ impl RaceTracker {
         };
 
         let config_seed_id = config.server.seed_id.clone();
+        let config_training = config.server.training;
 
         // Create WebSocket client
         let mut ws_client = RaceWebSocketClient::new(config.server.clone());
@@ -288,6 +285,7 @@ impl RaceTracker {
                     .unwrap_or_default()
                     .as_millis() as u64,
                 config_seed_id,
+                config_training,
                 Instant::now(),
             ),
             show_ui: true,
@@ -363,19 +361,22 @@ impl RaceTracker {
             }
         }
 
-        let need_live_snapshot = self.show_ui || self.ws_client.is_connected();
-        // IGT also needed when a race is set up so save-reload detection and
-        // event-flag polling stay correct even with UI hidden and WS dropped.
-        let need_igt = need_live_snapshot || !self.machine.event_ids.is_empty();
-        self.machine.frame_snapshot = {
+        // Gather tick inputs: the machine decides what to read, the shell
+        // performs the game-memory reads, the machine consumes them.
+        let now = Instant::now();
+        let connected = self.ws_client.is_connected();
+        let needs = self.machine.pre_tick(now, self.show_ui, connected);
+
+        let snapshot = {
             profile_span!("frame_snapshot");
             FrameSnapshot {
-                igt_ms: need_igt.then(|| self.game_state.read_igt()).flatten(),
-                death_count: need_live_snapshot
+                igt_ms: needs.igt.then(|| self.game_state.read_igt()).flatten(),
+                death_count: needs
+                    .deaths
                     .then(|| self.game_state.read_deaths())
                     .flatten(),
                 position_readable: self.game_state.is_position_readable(),
-                loading_screen: if self.machine.pending_zone_update.is_some() {
+                loading_screen: if needs.loading {
                     self.game_state.is_in_loading_screen()
                 } else {
                     None
@@ -383,237 +384,82 @@ impl RaceTracker {
             }
         };
 
-        // Save reload detection: an IGT regression means the player loaded a
-        // different save. Reset per-save event-flag state so a pre-set
-        // finish_event from a stale save doesn't block the fresh save's real
-        // finish (see EVENT_FLAG_TRACKING.md).
-        if let Some(current_igt) = self.machine.frame_snapshot.igt_ms {
-            if detect_save_reload(self.machine.last_observed_igt, current_igt) {
-                info!(
-                    prev_igt_ms = self.machine.last_observed_igt,
-                    new_igt_ms = current_igt,
-                    "[RACE] Save reload detected, clearing per-save event-flag state"
-                );
-                self.machine.triggered_flags.clear();
-                self.machine.flag_buffer.clear_deferred();
-                self.machine.flag_buffer.clear_pending();
-            }
-            self.machine.last_observed_igt = Some(current_igt);
-        }
-
-        // Check position readability once per frame for loading screen detection.
-        // Uses is_position_readable() to avoid allocating a map_id String.
-        let position_readable = self.machine.frame_snapshot.position_readable;
-
-        // Reveal pending zone update once the loading screen ends and the
-        // player position is readable. The loading flag may clear before the
-        // fade-in completes, so position_readable acts as an additional guard.
-        // Defensive timeout ensures the zone is always revealed eventually.
-        if self.machine.pending_zone_update.is_some() {
-            let timed_out = self
-                .pending_zone_received_at
-                .is_some_and(|t| t.elapsed() >= ZONE_REVEAL_TIMEOUT);
-            let loading_done = match self.machine.frame_snapshot.loading_screen {
-                Some(false) => true,
-                Some(true) => false,
-                // Flag unreadable: skip this check
-                None => true,
-            };
-            let should_reveal = timed_out || (loading_done && position_readable);
-            if should_reveal {
-                let zone = self.machine.pending_zone_update.take().unwrap();
-                if timed_out {
-                    warn!(name = %zone.display_name, "[RACE] Zone revealed (timeout)");
-                } else {
-                    info!(name = %zone.display_name, "[RACE] Zone revealed");
-                }
-                self.machine.race_state.current_zone = Some(zone);
-                self.machine.pending_zone_received_at = None;
-                self.machine.pre_reveal_layer = None;
-            }
-        }
-
-        // Loading screen exit: send deferred event_flags (certain) or zone_query (probabilistic)
-        if position_readable && !self.machine.was_position_readable {
+        // Warp capture + position: read on loading-exit frames only.
+        let loading_exit = snapshot.position_readable && !self.machine.was_position_readable;
+        let (warp_capture, position) = if loading_exit {
             profile_span!("loading_exit_scan");
-            // Force one immediate flag scan to catch flags set during loading
-            // (e.g. Erdtree burn, Maliketh warp) that the 10Hz poll couldn't read
-            // because is_flag_set() returns None while position is unreadable.
-            if !self.machine.event_ids.is_empty() {
-                let igt_ms = self.machine.frame_snapshot.igt_ms.unwrap_or(0);
-                // Resolve category page once (all event_ids share the same category)
-                let event_ids: Vec<u32> = self.machine.event_ids.clone();
-                let page = self.event_flag_reader.resolve_category(event_ids[0]);
-                let page_ref = page.as_ref();
-                for &flag_id in &event_ids {
-                    if let Some(true) = self.event_flag_reader.is_flag_set_cached(flag_id, page_ref)
-                    {
-                        if self.machine.finish_event == Some(flag_id) {
-                            if !self.machine.triggered_flags.contains(&flag_id) {
-                                self.machine.triggered_flags.insert(flag_id);
-                                if self.ws_client.is_connected()
-                                    && self.is_race_running()
-                                    && !self.am_i_finished()
-                                    && !self.is_countdown_active()
-                                {
-                                    self.send_tracked_event_flag(flag_id, igt_ms);
-                                    self.machine.last_sent_debug = Some(format!(
-                                        "event_flag({}, igt={}ms) [finish/loading-exit]",
-                                        flag_id, igt_ms
-                                    ));
-                                    info!(flag_id, "[RACE] Finish event caught at loading exit");
-                                } else if !self.am_i_finished() {
-                                    self.machine.flag_buffer.add_pending(flag_id, igt_ms);
-                                }
-                            }
-                        } else {
-                            self.event_flag_reader
-                                .set_flag_cached(flag_id, false, page_ref);
-                            self.machine.flag_buffer.defer(flag_id, igt_ms);
-                            info!(flag_id, "[RACE] Event flag caught at loading exit");
-                        }
-                    }
-                }
-            }
+            let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
+            (
+                (grace_id > 0).then_some(grace_id),
+                self.game_state.read_position(),
+            )
+        } else {
+            (None, None)
+        };
 
-            if self.ws_client.is_connected()
-                && self.is_race_running()
-                && !self.am_i_finished()
-                && !self.is_countdown_active()
-            {
-                if self.machine.flag_buffer.has_deferred() {
-                    // Fog gate traversal: send deferred flags now that loading is done
-                    let deferred: Vec<_> = self.machine.flag_buffer.drain_deferred().collect();
-                    for (flag_id, igt_ms) in deferred {
-                        self.send_tracked_event_flag(flag_id, igt_ms);
-                        self.machine.last_sent_debug = Some(format!(
-                            "event_flag({}, igt={}ms) [deferred]",
-                            flag_id, igt_ms
-                        ));
-                        info!(flag_id, "[RACE] Deferred event flag sent at loading exit");
-                    }
-                } else {
-                    // No fog gate (death/respawn/quit-out/fast-travel)
-                    let igt_ms = self.machine.frame_snapshot.igt_ms.unwrap_or(0);
-                    let pos = self.game_state.read_position();
-                    let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
-                    let grace_opt = if grace_id > 0 { Some(grace_id) } else { None };
-                    let map_id = pos.as_ref().map(|p| p.map_id_str.clone());
-                    let position = pos.as_ref().map(|p| [p.x, p.y, p.z]);
-                    let play_region_id = pos.as_ref().and_then(|p| p.play_region_id);
-
-                    if grace_opt.is_some() || map_id.is_some() {
-                        self.send_tracked_zone_query(
-                            igt_ms,
-                            grace_opt,
-                            map_id.clone(),
-                            position,
-                            play_region_id,
-                        );
-                        self.machine.last_sent_debug = Some(format!(
-                            "zone_query(grace={:?}, map={:?})",
-                            grace_opt, map_id
-                        ));
-                        info!(?grace_opt, "[RACE] Zone query sent at loading exit");
-                    }
-
-                    if grace_id > 0 {
-                        crate::eldenring::warp_hook::clear_captured_grace_entity_id();
-                    }
-                }
-            } else {
-                // Disconnected during a live race: buffer deferred flags for
-                // re-send on reconnect (they are already cleared from game
-                // memory, so the safety-net rescan cannot recover them).
-                if self.is_race_running() && !self.am_i_finished() {
-                    let count = self.machine.flag_buffer.park_deferred();
-                    if count > 0 {
-                        info!(
-                            count,
-                            "[RACE] Deferred flags moved to pending (disconnected)"
-                        );
-                    }
-                } else {
-                    self.machine.flag_buffer.clear_deferred();
-                }
-                let grace_id = crate::eldenring::warp_hook::get_captured_grace_entity_id();
-                if grace_id > 0 {
-                    crate::eldenring::warp_hook::clear_captured_grace_entity_id();
-                }
-            }
-
-            // Remind the player when they load a save (or start a new game)
-            // before the race has begun. Auto-dismisses after 3s.
-            if self.is_race_setup() {
-                self.set_status("Race hasn't started yet".to_string());
-            }
-        }
-        self.machine.was_position_readable = position_readable;
-
-        // Event flag polling runs ALWAYS (even when disconnected).
-        // Regular flags are cleared after capture (for re-traversal detection) and
-        // deferred until loading exit; finish_event is sent immediately.
-        if !self.machine.event_ids.is_empty()
-            && self.machine.last_flag_poll.elapsed() >= Duration::from_millis(100)
+        // Flag reads: 10Hz poll cadence, loading-exit scan, or reconnect rescan.
+        let mut flag_reads = None;
+        let mut flag_reader_ok = None;
+        if self
+            .machine
+            .wants_flag_reads(needs, snapshot.position_readable, connected)
         {
             profile_span!("event_flag_poll");
-            self.machine.last_flag_poll = Instant::now();
-
-            // Log flag reader status transitions (not every tick)
             let status = self.event_flag_reader.diagnose();
             let current_ok = matches!(status, FlagReaderStatus::Ok { .. });
+            // Log flag reader status transitions (not every read)
             if self.machine.last_flag_reader_ok != Some(current_ok) {
                 if current_ok {
                     info!("[RACE] Flag reader recovered (Ok)");
                 } else {
                     warn!("[RACE] Flag reader degraded: {}", status);
                 }
-                self.machine.last_flag_reader_ok = Some(current_ok);
             }
+            flag_reader_ok = Some(current_ok);
 
-            // Snapshot already populated at the top of update() because
-            // event_ids is non-empty (see need_igt).
-            let igt_ms = self.machine.frame_snapshot.igt_ms.unwrap_or(0);
-            // Resolve category page once for all event_ids (same category)
-            let poll_ids: Vec<u32> = self.machine.event_ids.clone();
-            let page = self.event_flag_reader.resolve_category(poll_ids[0]);
+            // Resolve category page once (all event_ids share the same category)
+            let ids: Vec<u32> = self.machine.event_ids.clone();
+            let page = self.event_flag_reader.resolve_category(ids[0]);
             let page_ref = page.as_ref();
-            for &flag_id in &poll_ids {
-                if self.machine.finish_event == Some(flag_id) {
-                    // finish_event: one-shot, use triggered_flags guard
-                    if !self.machine.triggered_flags.contains(&flag_id) {
-                        if let Some(true) =
-                            self.event_flag_reader.is_flag_set_cached(flag_id, page_ref)
-                        {
-                            self.machine.triggered_flags.insert(flag_id);
-                            if self.ws_client.is_connected()
-                                && self.is_race_running()
-                                && !self.am_i_finished()
-                                && !self.is_countdown_active()
-                            {
-                                self.send_tracked_event_flag(flag_id, igt_ms);
-                                self.machine.last_sent_debug = Some(format!(
-                                    "event_flag({}, igt={}ms) [finish]",
-                                    flag_id, igt_ms
-                                ));
-                                info!(flag_id, "[RACE] Finish event sent immediately");
-                            } else if !self.am_i_finished() {
-                                self.machine.flag_buffer.add_pending(flag_id, igt_ms);
-                            }
-                        }
-                    }
-                } else {
-                    // Regular fog gate: clear after capture so re-traversals are detected
-                    if let Some(true) = self.event_flag_reader.is_flag_set_cached(flag_id, page_ref)
-                    {
-                        self.event_flag_reader
-                            .set_flag_cached(flag_id, false, page_ref);
-                        self.machine.flag_buffer.defer(flag_id, igt_ms);
-                        info!(flag_id, "[RACE] Event flag deferred until loading exit");
-                    }
-                }
-            }
+            let reads: Vec<(u32, bool)> = ids
+                .iter()
+                .filter_map(|&flag_id| {
+                    self.event_flag_reader
+                        .is_flag_set_cached(flag_id, page_ref)
+                        .map(|set| (flag_id, set))
+                })
+                .collect();
+            flag_reads = Some(reads);
         }
+
+        // Weapons: read only when a status_update may fire this frame.
+        // Skip the read during loading screens: ChrAsm may hold stale or
+        // in-flight values while the player struct is being repopulated.
+        let weapons = if connected
+            && self
+                .machine
+                .wants_status_update(now, snapshot.igt_ms.unwrap_or(0))
+        {
+            if self.game_state.is_in_loading_screen() == Some(true) {
+                [None, None]
+            } else {
+                self.game_state.read_equipped_weapons()
+            }
+        } else {
+            [None, None]
+        };
+
+        let input = TickInput {
+            snapshot,
+            connected,
+            warp_capture,
+            position,
+            flag_reads,
+            weapons,
+            flag_reader_ok,
+        };
+        let effects = self.machine.tick(input, now);
+        self.execute_effects(effects);
 
         if self.show_debug
             && self
@@ -623,73 +469,9 @@ impl RaceTracker {
             self.refresh_debug_info();
         }
 
-        // Skip rest if not connected (status updates, ready, diagnostics)
-        if !self.ws_client.is_connected() {
-            return;
-        }
-
-        // Read game state
-        let igt_ms = self.machine.frame_snapshot.igt_ms.unwrap_or(0);
-        let deaths = self.machine.frame_snapshot.death_count.unwrap_or(0);
-
-        // Send ready on (re)connection (skip in training mode since server auto-starts)
-        if !self.machine.ready_sent {
-            if !self.config.server.training {
-                self.ws_client.send_ready();
-                self.machine.last_sent_debug = Some("ready".to_string());
-                info!("[RACE] Sent ready signal");
-            }
-            self.machine.ready_sent = true;
-
-            if self.is_race_running() && !self.am_i_finished() && !self.is_countdown_active() {
-                // Replay in-flight event flags (sent but not ACKed before disconnect)
-                // with their original message_id for server-side dedup.
-                self.replay_in_flight_event_flags();
-
-                // Replay in-flight zone queries (sent but not ACKed before disconnect)
-                self.replay_in_flight_zone_queries();
-
-                // Drain event flags buffered during disconnection (never sent)
-                let pending: Vec<_> = self.machine.flag_buffer.drain_pending().collect();
-                for (flag_id, flag_igt) in pending {
-                    self.send_tracked_event_flag(flag_id, flag_igt);
-                    self.machine.last_sent_debug =
-                        Some(format!("event_flag({}, igt={})", flag_id, flag_igt));
-                    info!(flag_id, "[RACE] Buffered event flag sent");
-                }
-
-                // Safety-net rescan: catch any flags still set in memory that polling missed
-                let rescan_ids: Vec<u32> = self.machine.event_ids.clone();
-                let rescan_page = self.event_flag_reader.resolve_category(rescan_ids[0]);
-                let rp = rescan_page.as_ref();
-                for &flag_id in &rescan_ids {
-                    if self.machine.finish_event == Some(flag_id) {
-                        if !self.machine.triggered_flags.contains(&flag_id) {
-                            if let Some(true) =
-                                self.event_flag_reader.is_flag_set_cached(flag_id, rp)
-                            {
-                                self.machine.triggered_flags.insert(flag_id);
-                                self.send_tracked_event_flag(flag_id, igt_ms);
-                                self.machine.last_sent_debug =
-                                    Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
-                                info!(flag_id, "[RACE] Finish event re-sent after reconnect");
-                            }
-                        }
-                    } else if let Some(true) =
-                        self.event_flag_reader.is_flag_set_cached(flag_id, rp)
-                    {
-                        self.event_flag_reader.set_flag_cached(flag_id, false, rp);
-                        self.send_tracked_event_flag(flag_id, igt_ms);
-                        self.machine.last_sent_debug =
-                            Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
-                        info!(flag_id, "[RACE] Event flag re-sent after reconnect");
-                    }
-                }
-            }
-        }
-
-        // One-time flag reader diagnostic (first poll with event_ids)
-        if !self.flags_diagnosed && !self.machine.event_ids.is_empty() {
+        // One-time flag reader diagnostic (first connected frame with event_ids).
+        // Kept in the shell: raw reader access, diagnostics only.
+        if connected && !self.flags_diagnosed && !self.machine.event_ids.is_empty() {
             self.flags_diagnosed = true;
             let status = self.event_flag_reader.diagnose();
             info!("[RACE] Flag reader: {}", status);
@@ -740,119 +522,6 @@ impl RaceTracker {
             // Test a FogRando flag to confirm their category is readable
             let fogrando_sample = self.event_flag_reader.is_flag_set(1040292100);
             info!(result = ?fogrando_sample, "[RACE] FogRando flag 1040292100 read");
-        }
-
-        // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
-        // During quit-outs IGT is 0, skip to avoid erroneous data.
-        // Stop once finished since IGT is frozen at finish time.
-        if self.machine.last_status_update.elapsed() >= Duration::from_secs(1)
-            && igt_ms > 0
-            && self.is_race_running()
-            && !self.am_i_finished()
-            && !self.is_countdown_active()
-        {
-            // Skip the weapon read during loading screens: ChrAsm may hold stale
-            // or in-flight values while the player struct is being repopulated.
-            let weapons = if self.game_state.is_in_loading_screen() == Some(true) {
-                [None, None]
-            } else {
-                self.game_state.read_equipped_weapons()
-            };
-            self.ws_client.send_status_update(igt_ms, deaths, weapons);
-            self.machine.last_status_update = Instant::now();
-        }
-    }
-
-    fn send_tracked_event_flag(&mut self, flag_id: u32, igt_ms: u32) {
-        let message_id = self.machine.next_event_message_id;
-        self.machine.next_event_message_id = self.machine.next_event_message_id.wrapping_add(1);
-        self.machine
-            .in_flight_event_flags
-            .insert(message_id, BufferedEventFlag { flag_id, igt_ms });
-        self.ws_client.send_event_flag(flag_id, igt_ms, message_id);
-    }
-
-    fn send_tracked_zone_query(
-        &mut self,
-        igt_ms: u32,
-        grace_entity_id: Option<u32>,
-        map_id: Option<String>,
-        position: Option<[f32; 3]>,
-        play_region_id: Option<u32>,
-    ) {
-        let message_id = self.machine.next_event_message_id;
-        self.machine.next_event_message_id = self.machine.next_event_message_id.wrapping_add(1);
-        self.machine.in_flight_zone_queries.insert(
-            message_id,
-            BufferedZoneQuery {
-                igt_ms,
-                grace_entity_id,
-                map_id: map_id.clone(),
-                position,
-                play_region_id,
-            },
-        );
-        self.ws_client.send_zone_query(
-            igt_ms,
-            grace_entity_id,
-            map_id,
-            position,
-            play_region_id,
-            message_id,
-        );
-    }
-
-    /// Replay in-flight event flags (sent but not yet ACKed) with their
-    /// original `message_id`, preserving server-side idempotency.
-    ///
-    /// Entries stay in `in_flight_event_flags` after replay: they are only
-    /// removed when the server sends `EventFlagAck` for each one.
-    fn replay_in_flight_event_flags(&mut self) {
-        if self.machine.in_flight_event_flags.is_empty() {
-            return;
-        }
-
-        let mut entries: Vec<(u64, BufferedEventFlag)> = self
-            .in_flight_event_flags
-            .iter()
-            .map(|(&k, &v)| (k, v))
-            .collect();
-        entries.sort_unstable_by_key(|(id, _)| *id);
-        for (message_id, event) in entries {
-            self.ws_client
-                .send_event_flag(event.flag_id, event.igt_ms, message_id);
-            info!(
-                message_id,
-                flag_id = event.flag_id,
-                "[RACE] Replaying in-flight event flag"
-            );
-        }
-    }
-
-    fn replay_in_flight_zone_queries(&mut self) {
-        if self.machine.in_flight_zone_queries.is_empty() {
-            return;
-        }
-
-        let mut message_ids: Vec<u64> = self
-            .machine
-            .in_flight_zone_queries
-            .keys()
-            .copied()
-            .collect();
-        message_ids.sort_unstable();
-        for message_id in message_ids {
-            if let Some(zq) = self.machine.in_flight_zone_queries.get(&message_id) {
-                self.ws_client.send_zone_query(
-                    zq.igt_ms,
-                    zq.grace_entity_id,
-                    zq.map_id.clone(),
-                    zq.position,
-                    zq.play_region_id,
-                    message_id,
-                );
-                info!(message_id, "[RACE] Replaying in-flight zone query");
-            }
         }
     }
 

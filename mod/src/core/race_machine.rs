@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
+use crate::core::types::PlayerPosition;
 
 // =============================================================================
 // CONNECTION / MESSAGES (moved from dll/websocket.rs)
@@ -173,16 +174,18 @@ pub struct FrameNeeds {
 pub struct TickInput {
     pub snapshot: FrameSnapshot,
     pub connected: bool,
-    /// Captured grace entity id from the warp hook, if any.
+    /// Captured grace entity id from the warp hook (loading-exit frames only).
     pub warp_capture: Option<u32>,
-    /// `(flag_id, is_set)` for every flag in `flags_to_poll()`, omitting
-    /// flags whose category could not be resolved. Only filled when the
-    /// preceding `pre_tick` asked for `poll_flags`.
-    pub flag_reads: Vec<(u32, bool)>,
+    /// Player position (loading-exit frames only), for zone queries.
+    pub position: Option<PlayerPosition>,
+    /// `(flag_id, is_set)` for every readable flag in `event_ids`. `Some`
+    /// when the shell performed reads this frame (`wants_flag_reads`),
+    /// `None` otherwise. Unreadable flags are omitted from the vec.
+    pub flag_reads: Option<Vec<(u32, bool)>>,
     /// Weapons for the status_update, read by the shell only when
     /// `wants_status_update` said one may fire this frame.
     pub weapons: [Option<i32>; 2],
-    /// Whether the flag reader diagnosed OK this poll (None = not polled).
+    /// Whether the flag reader diagnosed OK (None = flags not read).
     pub flag_reader_ok: Option<bool>,
 }
 
@@ -289,12 +292,14 @@ pub struct RaceMachine {
     pub last_received_debug: Option<String>,
     /// Seed id from the local pack config, for stale-pack detection
     pub config_seed_id: String,
+    /// Training mode: the server auto-starts, so `ready` is never sent.
+    pub training: bool,
 }
 
 impl RaceMachine {
     /// `seed_message_id`: initial value for the message-id counter (the shell
     /// seeds it from wall-clock millis so ids stay unique across sessions).
-    pub fn new(seed_message_id: u64, config_seed_id: String, now: Instant) -> Self {
+    pub fn new(seed_message_id: u64, config_seed_id: String, training: bool, now: Instant) -> Self {
         Self {
             race_state: RaceState::default(),
             my_participant_id: None,
@@ -326,6 +331,7 @@ impl RaceMachine {
             last_sent_debug: None,
             last_received_debug: None,
             config_seed_id,
+            training,
         }
     }
 
@@ -775,6 +781,450 @@ impl RaceMachine {
     }
 }
 
+/// Defensive timeout: if a zone update hasn't been revealed after this duration
+/// (e.g., loading screen flag is unreadable), reveal anyway.
+const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(15);
+
+impl RaceMachine {
+    /// What the shell should read from the game this frame.
+    pub fn pre_tick(&self, now: Instant, show_ui: bool, connected: bool) -> FrameNeeds {
+        let live = show_ui || connected;
+        FrameNeeds {
+            // IGT also needed when a race is set up so save-reload detection
+            // and event-flag polling stay correct with UI hidden and WS down.
+            igt: live || !self.event_ids.is_empty(),
+            deaths: live,
+            loading: self.pending_zone_update.is_some(),
+            poll_flags: !self.event_ids.is_empty()
+                && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
+        }
+    }
+
+    /// Whether the shell must read the event flags this frame: 10Hz poll
+    /// cadence, loading-screen exit scan, or the reconnect safety-net rescan.
+    pub fn wants_flag_reads(
+        &self,
+        needs: FrameNeeds,
+        position_readable: bool,
+        connected: bool,
+    ) -> bool {
+        if self.event_ids.is_empty() {
+            return false;
+        }
+        needs.poll_flags
+            || (position_readable && !self.was_position_readable)
+            || (connected && !self.ready_sent)
+    }
+
+    /// Whether a status_update may fire this frame (gates the weapon read).
+    pub fn wants_status_update(&self, now: Instant, igt_ms: u32) -> bool {
+        now.duration_since(self.last_status_update) >= Duration::from_secs(1)
+            && igt_ms > 0
+            && self.is_race_running()
+            && !self.am_i_finished()
+            && !self.is_countdown_active(now)
+    }
+
+    /// One frame of the race lifecycle. Consumes the shell-gathered inputs
+    /// and returns the effects to execute, in order. Mirrors the pre-machine
+    /// `RaceTracker::update()` body exactly (minus shell concerns).
+    pub fn tick(&mut self, input: TickInput, now: Instant) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        self.frame_snapshot = input.snapshot;
+
+        // Save reload detection: an IGT regression means the player loaded a
+        // different save. Reset per-save event-flag state so a pre-set
+        // finish_event from a stale save doesn't block the fresh save's real
+        // finish (see EVENT_FLAG_TRACKING.md).
+        if let Some(current_igt) = self.frame_snapshot.igt_ms {
+            if crate::core::flag_buffer::detect_save_reload(self.last_observed_igt, current_igt) {
+                info!(
+                    prev_igt_ms = self.last_observed_igt,
+                    new_igt_ms = current_igt,
+                    "[RACE] Save reload detected, clearing per-save event-flag state"
+                );
+                self.triggered_flags.clear();
+                self.flag_buffer.clear_deferred();
+                self.flag_buffer.clear_pending();
+            }
+            self.last_observed_igt = Some(current_igt);
+        }
+
+        let position_readable = self.frame_snapshot.position_readable;
+
+        // Reveal pending zone update once the loading screen ends and the
+        // player position is readable. The loading flag may clear before the
+        // fade-in completes, so position_readable acts as an additional guard.
+        // Defensive timeout ensures the zone is always revealed eventually.
+        if self.pending_zone_update.is_some() {
+            let timed_out = self
+                .pending_zone_received_at
+                .is_some_and(|t| now.duration_since(t) >= ZONE_REVEAL_TIMEOUT);
+            let loading_done = match self.frame_snapshot.loading_screen {
+                Some(false) => true,
+                Some(true) => false,
+                // Flag unreadable: skip this check
+                None => true,
+            };
+            let should_reveal = timed_out || (loading_done && position_readable);
+            if should_reveal {
+                let zone = self.pending_zone_update.take().unwrap();
+                if timed_out {
+                    warn!(name = %zone.display_name, "[RACE] Zone revealed (timeout)");
+                } else {
+                    info!(name = %zone.display_name, "[RACE] Zone revealed");
+                }
+                self.race_state.current_zone = Some(zone);
+                self.pending_zone_received_at = None;
+                self.pre_reveal_layer = None;
+            }
+        }
+
+        // Flags cleared (captured) earlier in this tick: later read consumers
+        // must treat them as unset, mirroring the pre-machine behavior where
+        // each stage re-read memory after the previous stage's clears.
+        let mut cleared: HashSet<u32> = HashSet::new();
+
+        // Loading screen exit: send deferred event_flags (certain) or zone_query (probabilistic)
+        if position_readable && !self.was_position_readable {
+            // Force one immediate flag scan to catch flags set during loading
+            // (e.g. Erdtree burn, Maliketh warp) that the 10Hz poll couldn't read
+            // because is_flag_set() returns None while position is unreadable.
+            if !self.event_ids.is_empty() {
+                let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
+                if let Some(ref reads) = input.flag_reads {
+                    for &(flag_id, is_set) in reads {
+                        if !is_set {
+                            continue;
+                        }
+                        if self.finish_event == Some(flag_id) {
+                            if !self.triggered_flags.contains(&flag_id) {
+                                self.triggered_flags.insert(flag_id);
+                                if input.connected
+                                    && self.is_race_running()
+                                    && !self.am_i_finished()
+                                    && !self.is_countdown_active(now)
+                                {
+                                    effects.push(self.queue_event_flag(flag_id, igt_ms));
+                                    self.last_sent_debug = Some(format!(
+                                        "event_flag({}, igt={}ms) [finish/loading-exit]",
+                                        flag_id, igt_ms
+                                    ));
+                                    info!(flag_id, "[RACE] Finish event caught at loading exit");
+                                } else if !self.am_i_finished() {
+                                    self.flag_buffer.add_pending(flag_id, igt_ms);
+                                }
+                            }
+                        } else {
+                            effects.push(Effect::SetGameFlag {
+                                flag_id,
+                                value: false,
+                            });
+                            cleared.insert(flag_id);
+                            self.flag_buffer.defer(flag_id, igt_ms);
+                            info!(flag_id, "[RACE] Event flag caught at loading exit");
+                        }
+                    }
+                }
+            }
+
+            if input.connected
+                && self.is_race_running()
+                && !self.am_i_finished()
+                && !self.is_countdown_active(now)
+            {
+                if self.flag_buffer.has_deferred() {
+                    // Fog gate traversal: send deferred flags now that loading is done
+                    let deferred: Vec<_> = self.flag_buffer.drain_deferred().collect();
+                    for (flag_id, igt_ms) in deferred {
+                        effects.push(self.queue_event_flag(flag_id, igt_ms));
+                        self.last_sent_debug = Some(format!(
+                            "event_flag({}, igt={}ms) [deferred]",
+                            flag_id, igt_ms
+                        ));
+                        info!(flag_id, "[RACE] Deferred event flag sent at loading exit");
+                    }
+                } else {
+                    // No fog gate (death/respawn/quit-out/fast-travel)
+                    let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
+                    let grace_opt = input.warp_capture;
+                    let map_id = input.position.as_ref().map(|p| p.map_id_str.clone());
+                    let position = input.position.as_ref().map(|p| [p.x, p.y, p.z]);
+                    let play_region_id = input.position.as_ref().and_then(|p| p.play_region_id);
+
+                    if grace_opt.is_some() || map_id.is_some() {
+                        effects.push(self.queue_zone_query(
+                            igt_ms,
+                            grace_opt,
+                            map_id.clone(),
+                            position,
+                            play_region_id,
+                        ));
+                        self.last_sent_debug = Some(format!(
+                            "zone_query(grace={:?}, map={:?})",
+                            grace_opt, map_id
+                        ));
+                        info!(?grace_opt, "[RACE] Zone query sent at loading exit");
+                    }
+
+                    if grace_opt.is_some() {
+                        effects.push(Effect::ClearWarpCapture);
+                    }
+                }
+            } else {
+                // Disconnected during a live race: buffer deferred flags for
+                // re-send on reconnect (they are already cleared from game
+                // memory, so the safety-net rescan cannot recover them).
+                if self.is_race_running() && !self.am_i_finished() {
+                    let count = self.flag_buffer.park_deferred();
+                    if count > 0 {
+                        info!(
+                            count,
+                            "[RACE] Deferred flags moved to pending (disconnected)"
+                        );
+                    }
+                } else {
+                    self.flag_buffer.clear_deferred();
+                }
+                if input.warp_capture.is_some() {
+                    effects.push(Effect::ClearWarpCapture);
+                }
+            }
+
+            // Remind the player when they load a save (or start a new game)
+            // before the race has begun. Auto-dismisses after 3s.
+            if self.is_race_setup() {
+                self.set_status("Race hasn't started yet".to_string(), now);
+            }
+        }
+        self.was_position_readable = position_readable;
+
+        // Event flag polling runs ALWAYS (even when disconnected).
+        // Regular flags are cleared after capture (for re-traversal detection) and
+        // deferred until loading exit; finish_event is sent immediately.
+        let poll_due = !self.event_ids.is_empty()
+            && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100);
+        if poll_due {
+            if let Some(ref reads) = input.flag_reads {
+                self.last_flag_poll = now;
+                if let Some(ok) = input.flag_reader_ok {
+                    self.last_flag_reader_ok = Some(ok);
+                }
+
+                let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
+                for &(flag_id, is_set) in reads {
+                    if !is_set || cleared.contains(&flag_id) {
+                        continue;
+                    }
+                    if self.finish_event == Some(flag_id) {
+                        // finish_event: one-shot, use triggered_flags guard
+                        if !self.triggered_flags.contains(&flag_id) {
+                            self.triggered_flags.insert(flag_id);
+                            if input.connected
+                                && self.is_race_running()
+                                && !self.am_i_finished()
+                                && !self.is_countdown_active(now)
+                            {
+                                effects.push(self.queue_event_flag(flag_id, igt_ms));
+                                self.last_sent_debug = Some(format!(
+                                    "event_flag({}, igt={}ms) [finish]",
+                                    flag_id, igt_ms
+                                ));
+                                info!(flag_id, "[RACE] Finish event sent immediately");
+                            } else if !self.am_i_finished() {
+                                self.flag_buffer.add_pending(flag_id, igt_ms);
+                            }
+                        }
+                    } else {
+                        // Regular fog gate: clear after capture so re-traversals are detected
+                        effects.push(Effect::SetGameFlag {
+                            flag_id,
+                            value: false,
+                        });
+                        cleared.insert(flag_id);
+                        self.flag_buffer.defer(flag_id, igt_ms);
+                        info!(flag_id, "[RACE] Event flag deferred until loading exit");
+                    }
+                }
+            }
+        }
+
+        // Everything below needs a live connection (ready, replays, status updates).
+        if !input.connected {
+            return effects;
+        }
+
+        let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
+        let deaths = self.frame_snapshot.death_count.unwrap_or(0);
+
+        // Send ready on (re)connection (skip in training mode since server auto-starts)
+        if !self.ready_sent {
+            if !self.training {
+                effects.push(Effect::SendReady);
+                self.last_sent_debug = Some("ready".to_string());
+                info!("[RACE] Sent ready signal");
+            }
+            self.ready_sent = true;
+
+            if self.is_race_running() && !self.am_i_finished() && !self.is_countdown_active(now) {
+                // Replay in-flight event flags (sent but not ACKed before disconnect)
+                // with their original message_id for server-side dedup.
+                self.replay_in_flight_event_flags(&mut effects);
+
+                // Replay in-flight zone queries (sent but not ACKed before disconnect)
+                self.replay_in_flight_zone_queries(&mut effects);
+
+                // Drain event flags buffered during disconnection (never sent)
+                let pending: Vec<_> = self.flag_buffer.drain_pending().collect();
+                for (flag_id, flag_igt) in pending {
+                    effects.push(self.queue_event_flag(flag_id, flag_igt));
+                    self.last_sent_debug =
+                        Some(format!("event_flag({}, igt={})", flag_id, flag_igt));
+                    info!(flag_id, "[RACE] Buffered event flag sent");
+                }
+
+                // Safety-net rescan: catch any flags still set in memory that polling missed
+                if let Some(ref reads) = input.flag_reads {
+                    for &(flag_id, is_set) in reads {
+                        if !is_set || cleared.contains(&flag_id) {
+                            continue;
+                        }
+                        if self.finish_event == Some(flag_id) {
+                            if !self.triggered_flags.contains(&flag_id) {
+                                self.triggered_flags.insert(flag_id);
+                                effects.push(self.queue_event_flag(flag_id, igt_ms));
+                                self.last_sent_debug =
+                                    Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
+                                info!(flag_id, "[RACE] Finish event re-sent after reconnect");
+                            }
+                        } else {
+                            effects.push(Effect::SetGameFlag {
+                                flag_id,
+                                value: false,
+                            });
+                            cleared.insert(flag_id);
+                            effects.push(self.queue_event_flag(flag_id, igt_ms));
+                            self.last_sent_debug =
+                                Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
+                            info!(flag_id, "[RACE] Event flag re-sent after reconnect");
+                        }
+                    }
+                }
+            }
+        }
+
+        // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
+        // During quit-outs IGT is 0, skip to avoid erroneous data.
+        // Stop once finished since IGT is frozen at finish time.
+        if self.wants_status_update(now, igt_ms) {
+            effects.push(Effect::SendStatusUpdate {
+                igt_ms,
+                death_count: deaths,
+                weapons: input.weapons,
+            });
+            self.last_status_update = now;
+        }
+
+        effects
+    }
+
+    /// Register an event flag as in-flight and return its send effect.
+    fn queue_event_flag(&mut self, flag_id: u32, igt_ms: u32) -> Effect {
+        let message_id = self.next_event_message_id;
+        self.next_event_message_id = self.next_event_message_id.wrapping_add(1);
+        self.in_flight_event_flags
+            .insert(message_id, BufferedEventFlag { flag_id, igt_ms });
+        Effect::SendEventFlag {
+            flag_id,
+            igt_ms,
+            message_id,
+        }
+    }
+
+    /// Register a zone query as in-flight and return its send effect.
+    fn queue_zone_query(
+        &mut self,
+        igt_ms: u32,
+        grace_entity_id: Option<u32>,
+        map_id: Option<String>,
+        position: Option<[f32; 3]>,
+        play_region_id: Option<u32>,
+    ) -> Effect {
+        let message_id = self.next_event_message_id;
+        self.next_event_message_id = self.next_event_message_id.wrapping_add(1);
+        self.in_flight_zone_queries.insert(
+            message_id,
+            BufferedZoneQuery {
+                igt_ms,
+                grace_entity_id,
+                map_id: map_id.clone(),
+                position,
+                play_region_id,
+            },
+        );
+        Effect::SendZoneQuery {
+            igt_ms,
+            message_id,
+            grace_entity_id,
+            map_id,
+            position,
+            play_region_id,
+        }
+    }
+
+    /// Replay in-flight event flags (sent but not yet ACKed) with their
+    /// original `message_id`, preserving server-side idempotency.
+    ///
+    /// Entries stay in `in_flight_event_flags` after replay: they are only
+    /// removed when the server sends `EventFlagAck` for each one.
+    fn replay_in_flight_event_flags(&mut self, effects: &mut Vec<Effect>) {
+        if self.in_flight_event_flags.is_empty() {
+            return;
+        }
+
+        let mut entries: Vec<(u64, BufferedEventFlag)> = self
+            .in_flight_event_flags
+            .iter()
+            .map(|(&k, &v)| (k, v))
+            .collect();
+        entries.sort_unstable_by_key(|(id, _)| *id);
+        for (message_id, event) in entries {
+            effects.push(Effect::SendEventFlag {
+                flag_id: event.flag_id,
+                igt_ms: event.igt_ms,
+                message_id,
+            });
+            info!(
+                message_id,
+                flag_id = event.flag_id,
+                "[RACE] Replaying in-flight event flag"
+            );
+        }
+    }
+
+    fn replay_in_flight_zone_queries(&mut self, effects: &mut Vec<Effect>) {
+        if self.in_flight_zone_queries.is_empty() {
+            return;
+        }
+
+        let mut message_ids: Vec<u64> = self.in_flight_zone_queries.keys().copied().collect();
+        message_ids.sort_unstable();
+        for message_id in message_ids {
+            if let Some(zq) = self.in_flight_zone_queries.get(&message_id) {
+                effects.push(Effect::SendZoneQuery {
+                    igt_ms: zq.igt_ms,
+                    message_id,
+                    grace_entity_id: zq.grace_entity_id,
+                    map_id: zq.map_id.clone(),
+                    position: zq.position,
+                    play_region_id: zq.play_region_id,
+                });
+                info!(message_id, "[RACE] Replaying in-flight zone query");
+            }
+        }
+    }
+}
+
 // =============================================================================
 // TESTS
 // =============================================================================
@@ -816,7 +1266,7 @@ mod tests {
     #[test]
     fn test_race_start_sets_running_and_countdown() {
         let now = Instant::now();
-        let mut m = RaceMachine::new(1, String::new(), now);
+        let mut m = RaceMachine::new(1, String::new(), false, now);
         let fx = m.handle_message(auth_ok("setup", &[100], Some(900)), now);
         assert!(fx.is_empty());
         assert!(m.is_race_setup());
