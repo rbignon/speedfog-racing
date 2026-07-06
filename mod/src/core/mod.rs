@@ -8,6 +8,7 @@ pub mod format;
 pub mod map_utils;
 pub mod profile;
 pub mod protocol;
+pub mod race_machine;
 pub mod traits;
 pub mod types;
 
@@ -19,6 +20,10 @@ pub use format::{
 pub use map_utils::format_map_id;
 pub use protocol::{
     is_permanent_close, ClientMessage, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage,
+};
+pub use race_machine::{
+    BufferedEventFlag, BufferedZoneQuery, ConnectionStatus, Effect, FrameNeeds, FrameSnapshot,
+    MachineMessage, RaceState, TickInput, ZoneUpdateData,
 };
 pub use traits::GameStateReader;
 pub use types::PlayerPosition;

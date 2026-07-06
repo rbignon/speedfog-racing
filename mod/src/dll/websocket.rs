@@ -24,15 +24,9 @@ use crate::profile_span;
 // TYPES
 // =============================================================================
 
-/// Connection status
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConnectionStatus {
-    Disconnected,
-    Connecting,
-    Connected,
-    Reconnecting,
-    Error,
-}
+// Re-exported so existing `super::websocket::ConnectionStatus` imports keep
+// working; the type itself lives in the platform-independent core.
+pub use crate::core::race_machine::{ConnectionStatus, MachineMessage};
 
 /// Outgoing messages (main thread -> WS thread)
 #[derive(Debug)]
@@ -59,71 +53,6 @@ pub enum OutgoingMessage {
     Shutdown,
 }
 
-/// Incoming messages (WS thread -> main thread)
-#[derive(Debug)]
-pub enum IncomingMessage {
-    StatusChanged(ConnectionStatus),
-    AuthOk {
-        participant_id: String,
-        race: RaceInfo,
-        seed: SeedInfo,
-        participants: Vec<ParticipantInfo>,
-        /// User's equipped phantom skin name, or None when not equipped or
-        /// when the server sent the literal "none". Resolved to SpEffect IDs
-        /// at apply-time via `seed.phantom_skins[name]`.
-        phantom_skin: Option<String>,
-        /// Server release version when a newer compatible mod build exists.
-        latest_mod_version: Option<String>,
-    },
-    AuthError(String),
-    RaceStart(u32),
-    LeaderboardUpdate {
-        participants: Vec<ParticipantInfo>,
-        leader_splits: Option<HashMap<i32, i32>>,
-    },
-    RaceStatusChange(String),
-    /// Server pushed a refreshed RaceInfo (race_ends_at extension, etc.).
-    /// Replaces the cached race info wholesale.
-    RaceInfoUpdate(RaceInfo),
-    PlayerUpdate(ParticipantInfo),
-    ZoneUpdate {
-        node_id: String,
-        display_name: String,
-        tier: Option<i32>,
-        original_tier: Option<i32>,
-        layer: Option<i32>,
-        is_first_visit: bool,
-        exits: Vec<ExitInfo>,
-        message_id: Option<u64>,
-    },
-    /// Aggregated death counts per zone for death marker flags
-    DeathCounts(HashMap<String, u32>),
-    /// Event flag drained from outgoing channel on reconnect, must be re-buffered
-    RequeueEventFlag {
-        flag_id: u32,
-        igt_ms: u32,
-        message_id: u64,
-    },
-    EventFlagAck {
-        message_id: u64,
-    },
-    /// Zone query drained from outgoing channel on reconnect, must be re-buffered
-    RequeueZoneQuery {
-        igt_ms: u32,
-        grace_entity_id: Option<u32>,
-        map_id: Option<String>,
-        position: Option<[f32; 3]>,
-        play_region_id: Option<u32>,
-        message_id: u64,
-    },
-    ZoneQueryAck {
-        message_id: u64,
-    },
-    Error(String),
-    /// Server rejected permanently (4xxx close code or auth failure). Stop reconnecting.
-    PermanentError(String),
-}
-
 // =============================================================================
 // WEBSOCKET CLIENT
 // =============================================================================
@@ -132,7 +61,7 @@ pub enum IncomingMessage {
 pub struct RaceWebSocketClient {
     settings: ServerSettings,
     tx: Option<Sender<OutgoingMessage>>,
-    rx: Option<Receiver<IncomingMessage>>,
+    rx: Option<Receiver<MachineMessage>>,
     thread_handle: Option<JoinHandle<()>>,
     shutdown_flag: Arc<AtomicBool>,
     current_status: ConnectionStatus,
@@ -168,7 +97,7 @@ impl RaceWebSocketClient {
         }
 
         let (outgoing_tx, outgoing_rx) = bounded::<OutgoingMessage>(128);
-        let (incoming_tx, incoming_rx) = bounded::<IncomingMessage>(128);
+        let (incoming_tx, incoming_rx) = bounded::<MachineMessage>(128);
 
         self.tx = Some(outgoing_tx);
         self.rx = Some(incoming_rx);
@@ -188,8 +117,8 @@ impl RaceWebSocketClient {
                     crate::panic_message(panic_info.as_ref())
                 );
                 error!("{}", msg);
-                let _ = incoming_tx.send(IncomingMessage::Error(msg));
-                let _ = incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Error));
+                let _ = incoming_tx.send(MachineMessage::Error(msg));
+                let _ = incoming_tx.send(MachineMessage::StatusChanged(ConnectionStatus::Error));
             }
         });
 
@@ -265,11 +194,11 @@ impl RaceWebSocketClient {
         }
     }
 
-    pub fn poll(&mut self) -> Option<IncomingMessage> {
+    pub fn poll(&mut self) -> Option<MachineMessage> {
         let rx = self.rx.as_ref()?;
         match rx.try_recv() {
             Ok(msg) => {
-                if let IncomingMessage::StatusChanged(status) = &msg {
+                if let MachineMessage::StatusChanged(status) = &msg {
                     self.current_status = *status;
                 }
                 Some(msg)
@@ -304,7 +233,7 @@ impl Drop for RaceWebSocketClient {
 fn websocket_thread(
     settings: ServerSettings,
     outgoing_rx: Receiver<OutgoingMessage>,
-    incoming_tx: Sender<IncomingMessage>,
+    incoming_tx: Sender<MachineMessage>,
     shutdown_flag: Arc<AtomicBool>,
 ) {
     #[cfg(feature = "profile-tracy")]
@@ -335,7 +264,7 @@ fn websocket_thread(
         let url = format!("{}/ws/{}/{}", ws_base, endpoint, settings.race_id);
 
         info!(url = %url, "[WS] Connecting...");
-        let _ = incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Connecting));
+        let _ = incoming_tx.send(MachineMessage::StatusChanged(ConnectionStatus::Connecting));
 
         match connect_and_auth(&url, &settings.mod_token, &incoming_tx) {
             Ok(mut socket) => {
@@ -356,7 +285,7 @@ fn websocket_thread(
                 while let Ok(msg) = outgoing_rx.try_recv() {
                     match msg {
                         OutgoingMessage::Shutdown => {
-                            let _ = incoming_tx.send(IncomingMessage::StatusChanged(
+                            let _ = incoming_tx.send(MachineMessage::StatusChanged(
                                 ConnectionStatus::Disconnected,
                             ));
                             return;
@@ -368,7 +297,7 @@ fn websocket_thread(
                         } => {
                             // Re-queue event flags back to the tracker for re-buffering.
                             // These were queued but never transmitted before disconnect.
-                            let _ = incoming_tx.send(IncomingMessage::RequeueEventFlag {
+                            let _ = incoming_tx.send(MachineMessage::RequeueEventFlag {
                                 flag_id,
                                 igt_ms,
                                 message_id,
@@ -382,7 +311,7 @@ fn websocket_thread(
                             play_region_id,
                             message_id,
                         } => {
-                            let _ = incoming_tx.send(IncomingMessage::RequeueZoneQuery {
+                            let _ = incoming_tx.send(MachineMessage::RequeueZoneQuery {
                                 igt_ms,
                                 grace_entity_id,
                                 map_id,
@@ -400,7 +329,7 @@ fn websocket_thread(
                 }
 
                 let _ =
-                    incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Connected));
+                    incoming_tx.send(MachineMessage::StatusChanged(ConnectionStatus::Connected));
                 reconnect_delay = Duration::from_secs(1);
 
                 let result = message_loop(
@@ -417,7 +346,7 @@ fn websocket_thread(
                 let _ = socket.close(None);
 
                 if result.is_err() && !shutdown_flag.load(Ordering::SeqCst) {
-                    let _ = incoming_tx.send(IncomingMessage::StatusChanged(
+                    let _ = incoming_tx.send(MachineMessage::StatusChanged(
                         ConnectionStatus::Reconnecting,
                     ));
                 }
@@ -428,15 +357,15 @@ fn websocket_thread(
 
                 if e.starts_with("Auth failed:") {
                     // Auth rejection is permanent, do not reconnect
-                    let _ = incoming_tx.send(IncomingMessage::PermanentError(e.clone()));
+                    let _ = incoming_tx.send(MachineMessage::PermanentError(e.clone()));
                     let _ =
-                        incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Error));
+                        incoming_tx.send(MachineMessage::StatusChanged(ConnectionStatus::Error));
                     break;
                 }
 
                 error!(error = %e, attempts = consecutive_failures, "[WS] Connection failed");
-                let _ = incoming_tx.send(IncomingMessage::Error(e.clone()));
-                let _ = incoming_tx.send(IncomingMessage::StatusChanged(ConnectionStatus::Error));
+                let _ = incoming_tx.send(MachineMessage::Error(e.clone()));
+                let _ = incoming_tx.send(MachineMessage::StatusChanged(ConnectionStatus::Error));
             }
         }
 
@@ -454,7 +383,7 @@ fn websocket_thread(
         reconnect_delay = (reconnect_delay * 2).min(max_delay);
     }
 
-    let _ = incoming_tx.send(IncomingMessage::StatusChanged(
+    let _ = incoming_tx.send(MachineMessage::StatusChanged(
         ConnectionStatus::Disconnected,
     ));
 }
@@ -462,7 +391,7 @@ fn websocket_thread(
 fn connect_and_auth(
     url: &str,
     mod_token: &str,
-    incoming_tx: &Sender<IncomingMessage>,
+    incoming_tx: &Sender<MachineMessage>,
 ) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, String> {
     let (mut socket, _) = connect(url).map_err(|e| format!("Connect failed: {}", e))?;
 
@@ -493,7 +422,7 @@ fn connect_and_auth(
                     phantom_skin,
                     latest_mod_version,
                 } => {
-                    let _ = incoming_tx.send(IncomingMessage::AuthOk {
+                    let _ = incoming_tx.send(MachineMessage::AuthOk {
                         participant_id,
                         race: *race,
                         seed,
@@ -504,7 +433,7 @@ fn connect_and_auth(
                     Ok(socket)
                 }
                 ServerMessage::AuthError { message } => {
-                    let _ = incoming_tx.send(IncomingMessage::AuthError(message.clone()));
+                    let _ = incoming_tx.send(MachineMessage::AuthError(message.clone()));
                     Err(format!("Auth failed: {}", message))
                 }
                 _ => Err(format!("Unexpected response: {:?}", msg)),
@@ -520,7 +449,7 @@ fn connect_and_auth(
                     } else {
                         reason
                     };
-                    let _ = incoming_tx.send(IncomingMessage::PermanentError(msg));
+                    let _ = incoming_tx.send(MachineMessage::PermanentError(msg));
                     return Err(format!("Auth failed: server closed (code={})", code));
                 }
             }
@@ -533,7 +462,7 @@ fn connect_and_auth(
 fn message_loop(
     socket: &mut WebSocket<MaybeTlsStream<TcpStream>>,
     outgoing_rx: &Receiver<OutgoingMessage>,
-    incoming_tx: &Sender<IncomingMessage>,
+    incoming_tx: &Sender<MachineMessage>,
     shutdown_flag: &Arc<AtomicBool>,
     stop_reconnect: &AtomicBool,
 ) -> Result<(), String> {
@@ -653,7 +582,7 @@ fn message_loop(
                         }
                         ServerMessage::RaceStart { countdown_seconds } => {
                             if incoming_tx
-                                .send(IncomingMessage::RaceStart(countdown_seconds))
+                                .send(MachineMessage::RaceStart(countdown_seconds))
                                 .is_err()
                             {
                                 warn!("[WS] Incoming channel full/closed: race_start dropped");
@@ -663,14 +592,17 @@ fn message_loop(
                             participants,
                             leader_splits,
                         } => {
-                            let _ = incoming_tx.send(IncomingMessage::LeaderboardUpdate {
+                            let _ = incoming_tx.send(MachineMessage::LeaderboardUpdate {
                                 participants,
                                 leader_splits: leader_splits.map(crate::core::parse_splits),
                             });
                         }
                         ServerMessage::RaceStatusChange { status } => {
                             if incoming_tx
-                                .send(IncomingMessage::RaceStatusChange(status))
+                                .send(MachineMessage::RaceStatusChange {
+                                    status,
+                                    current_igt: None,
+                                })
                                 .is_err()
                             {
                                 warn!(
@@ -680,7 +612,7 @@ fn message_loop(
                         }
                         ServerMessage::RaceInfoUpdate { race } => {
                             if incoming_tx
-                                .send(IncomingMessage::RaceInfoUpdate(*race))
+                                .send(MachineMessage::RaceInfoUpdate(*race))
                                 .is_err()
                             {
                                 warn!(
@@ -689,7 +621,7 @@ fn message_loop(
                             }
                         }
                         ServerMessage::PlayerUpdate { player } => {
-                            let _ = incoming_tx.send(IncomingMessage::PlayerUpdate(player));
+                            let _ = incoming_tx.send(MachineMessage::PlayerUpdate(player));
                         }
                         ServerMessage::ZoneUpdate {
                             node_id,
@@ -702,7 +634,7 @@ fn message_loop(
                             message_id,
                         } => {
                             if incoming_tx
-                                .send(IncomingMessage::ZoneUpdate {
+                                .send(MachineMessage::ZoneUpdate {
                                     node_id,
                                     display_name,
                                     tier,
@@ -718,16 +650,16 @@ fn message_loop(
                             }
                         }
                         ServerMessage::EventFlagAck { message_id } => {
-                            let _ = incoming_tx.send(IncomingMessage::EventFlagAck { message_id });
+                            let _ = incoming_tx.send(MachineMessage::EventFlagAck { message_id });
                         }
                         ServerMessage::ZoneQueryAck { message_id } => {
-                            let _ = incoming_tx.send(IncomingMessage::ZoneQueryAck { message_id });
+                            let _ = incoming_tx.send(MachineMessage::ZoneQueryAck { message_id });
                         }
                         ServerMessage::DeathCounts { counts } => {
-                            let _ = incoming_tx.send(IncomingMessage::DeathCounts(counts));
+                            let _ = incoming_tx.send(MachineMessage::DeathCounts(counts));
                         }
                         ServerMessage::Error { message } => {
-                            if incoming_tx.send(IncomingMessage::Error(message)).is_err() {
+                            if incoming_tx.send(MachineMessage::Error(message)).is_err() {
                                 warn!("[WS] Incoming channel full/closed: error dropped");
                             }
                         }
@@ -746,7 +678,7 @@ fn message_loop(
                         } else {
                             reason.clone()
                         };
-                        let _ = incoming_tx.send(IncomingMessage::PermanentError(msg));
+                        let _ = incoming_tx.send(MachineMessage::PermanentError(msg));
                     }
                     return Err(format!(
                         "Server closed (code={}, reason={})",

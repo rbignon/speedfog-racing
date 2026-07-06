@@ -15,13 +15,17 @@ use windows::Win32::Foundation::HINSTANCE;
 use crate::core::color::parse_hex_color;
 use crate::core::flag_buffer::{detect_save_reload, FlagBuffer};
 use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
+use crate::core::race_machine::{
+    BufferedEventFlag, BufferedZoneQuery, ConnectionStatus, FrameSnapshot, MachineMessage,
+    RaceState, ZoneUpdateData,
+};
 use crate::core::traits::GameStateReader;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
 use crate::profile_span;
 
 use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
-use super::websocket::{ConnectionStatus, IncomingMessage, RaceWebSocketClient};
+use super::websocket::RaceWebSocketClient;
 
 /// Defensive timeout: if a zone update hasn't been revealed after this duration
 /// (e.g., loading screen flag is unreadable), reveal anyway.
@@ -32,46 +36,6 @@ pub(crate) const LEADERBOARD_REFRESH_INTERVAL_MS: u32 = 250;
 // =============================================================================
 // RACE STATE
 // =============================================================================
-
-/// Zone update data received from server
-#[derive(Debug, Clone)]
-pub struct ZoneUpdateData {
-    pub display_name: String,
-    pub tier: Option<i32>,
-    pub original_tier: Option<i32>,
-    pub layer: Option<i32>,
-    #[allow(dead_code)] // Kept for future use (e.g., spectator UI)
-    pub is_first_visit: bool,
-    pub exits: Vec<ExitInfo>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct BufferedEventFlag {
-    flag_id: u32,
-    igt_ms: u32,
-}
-
-#[derive(Debug, Clone)]
-struct BufferedZoneQuery {
-    igt_ms: u32,
-    grace_entity_id: Option<u32>,
-    map_id: Option<String>,
-    position: Option<[f32; 3]>,
-    play_region_id: Option<u32>,
-}
-
-/// Current race state from server
-#[derive(Debug, Clone, Default)]
-pub struct RaceState {
-    pub race: Option<RaceInfo>,
-    pub seed: Option<SeedInfo>,
-    pub participants: Vec<ParticipantInfo>,
-    pub leader_splits: Option<HashMap<i32, i32>>,
-    pub race_started_at: Option<Instant>,
-    pub countdown_end: Option<Instant>,
-    pub current_zone: Option<ZoneUpdateData>,
-    pub death_counts: HashMap<String, u32>,
-}
 
 /// Pre-allocated buffers reused across frames to avoid per-frame heap allocations.
 pub(crate) struct RenderBuffers {
@@ -99,15 +63,6 @@ pub enum FlagReadResult {
     NotSet,
     /// Flag is set
     Set,
-}
-
-/// Cached frame-local memory reads reused by update and rendering.
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct FrameSnapshot {
-    pub igt_ms: Option<u32>,
-    pub death_count: Option<u32>,
-    pub position_readable: bool,
-    pub loading_screen: Option<bool>,
 }
 
 /// Debug overlay info
@@ -1007,9 +962,9 @@ impl RaceTracker {
         }
     }
 
-    fn handle_ws_message(&mut self, msg: IncomingMessage) {
+    fn handle_ws_message(&mut self, msg: MachineMessage) {
         match msg {
-            IncomingMessage::StatusChanged(status) => {
+            MachineMessage::StatusChanged(status) => {
                 info!(status = ?status, "[WS] Status changed");
                 match status {
                     ConnectionStatus::Connected => {
@@ -1035,7 +990,7 @@ impl RaceTracker {
                     }
                 }
             }
-            IncomingMessage::AuthOk {
+            MachineMessage::AuthOk {
                 participant_id,
                 mut race,
                 seed,
@@ -1179,12 +1134,12 @@ impl RaceTracker {
                 self.race_state.participants = participants;
                 self.bump_leaderboard_version();
             }
-            IncomingMessage::AuthError(msg) => {
+            MachineMessage::AuthError(msg) => {
                 self.last_received_debug = Some(format!("auth_error({})", msg));
                 error!(message = %msg, "[WS] Auth failed");
                 self.last_auth_error = Some(msg);
             }
-            IncomingMessage::RaceStart(countdown_seconds) => {
+            MachineMessage::RaceStart(countdown_seconds) => {
                 self.last_received_debug = Some(format!("race_start(cd={})", countdown_seconds));
                 info!(countdown_seconds, "[WS] Race started!");
                 let now = Instant::now();
@@ -1202,7 +1157,7 @@ impl RaceTracker {
                 }
                 self.bump_leaderboard_version();
             }
-            IncomingMessage::LeaderboardUpdate {
+            MachineMessage::LeaderboardUpdate {
                 participants,
                 leader_splits,
             } => {
@@ -1236,7 +1191,7 @@ impl RaceTracker {
                 self.refresh_my_participant_index();
                 self.bump_leaderboard_version();
             }
-            IncomingMessage::RaceStatusChange(status) => {
+            MachineMessage::RaceStatusChange { status, .. } => {
                 self.last_received_debug = Some(format!("race_status_change({})", status));
                 info!(status = %status, "[WS] Race status changed");
                 // If race ends and we haven't finished, freeze our current game IGT.
@@ -1252,7 +1207,7 @@ impl RaceTracker {
                 }
                 self.bump_leaderboard_version();
             }
-            IncomingMessage::RaceInfoUpdate(mut race) => {
+            MachineMessage::RaceInfoUpdate(mut race) => {
                 self.last_received_debug = Some(format!("race_info_update(name={})", race.name));
                 info!(
                     race_ends_at = ?race.race_ends_at,
@@ -1279,7 +1234,7 @@ impl RaceTracker {
                 }
                 self.race_state.race = Some(race);
             }
-            IncomingMessage::PlayerUpdate(player) => {
+            MachineMessage::PlayerUpdate(player) => {
                 // Snapshot current_layer on increase (same rationale as LeaderboardUpdate).
                 if self.pre_reveal_layer.is_none() {
                     if let Some(my_id) = &self.my_participant_id {
@@ -1303,7 +1258,7 @@ impl RaceTracker {
                 self.refresh_my_participant_index();
                 self.bump_leaderboard_version();
             }
-            IncomingMessage::ZoneUpdate {
+            MachineMessage::ZoneUpdate {
                 node_id,
                 display_name,
                 tier,
@@ -1330,7 +1285,7 @@ impl RaceTracker {
                 });
                 self.pending_zone_received_at = Some(Instant::now());
             }
-            IncomingMessage::EventFlagAck { message_id } => {
+            MachineMessage::EventFlagAck { message_id } => {
                 if let Some(event) = self.in_flight_event_flags.remove(&message_id) {
                     info!(
                         message_id,
@@ -1341,7 +1296,7 @@ impl RaceTracker {
                     warn!(message_id, "[WS] Ack for unknown event flag");
                 }
             }
-            IncomingMessage::RequeueEventFlag {
+            MachineMessage::RequeueEventFlag {
                 flag_id,
                 igt_ms,
                 message_id,
@@ -1353,7 +1308,7 @@ impl RaceTracker {
                 self.flag_buffer.add_pending(flag_id, igt_ms);
                 info!(flag_id, message_id, "[WS] Re-queued drained event flag");
             }
-            IncomingMessage::RequeueZoneQuery {
+            MachineMessage::RequeueZoneQuery {
                 igt_ms,
                 grace_entity_id,
                 map_id,
@@ -1372,14 +1327,14 @@ impl RaceTracker {
                     });
                 info!(message_id, "[WS] Re-queued drained zone query");
             }
-            IncomingMessage::ZoneQueryAck { message_id } => {
+            MachineMessage::ZoneQueryAck { message_id } => {
                 if self.in_flight_zone_queries.remove(&message_id).is_some() {
                     info!(message_id, "[WS] Zone query acknowledged (no zone_update)");
                 } else {
                     warn!(message_id, "[WS] Ack for unknown zone query");
                 }
             }
-            IncomingMessage::DeathCounts(counts) => {
+            MachineMessage::DeathCounts(counts) => {
                 self.last_received_debug = Some(format!("death_counts({} zones)", counts.len()));
                 self.race_state.death_counts = counts.clone();
                 if let Some(ref seed) = self.race_state.seed {
@@ -1402,12 +1357,12 @@ impl RaceTracker {
                     }
                 }
             }
-            IncomingMessage::Error(e) => {
+            MachineMessage::Error(e) => {
                 self.last_received_debug = Some(format!("error({})", e));
                 warn!(error = %e, "[WS] Error");
                 self.set_status(e);
             }
-            IncomingMessage::PermanentError(msg) => {
+            MachineMessage::PermanentError(msg) => {
                 self.last_received_debug = Some(format!("permanent_error({})", msg));
                 error!(message = %msg, "[WS] Permanent error, stopping reconnection");
                 self.permanent_error = Some(msg);
