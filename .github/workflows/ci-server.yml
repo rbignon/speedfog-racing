@@ -77,7 +77,7 @@ jobs:
           cache-dependency-glob: server/uv.lock
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync
 
       - name: Apply all migrations
         run: uv run alembic upgrade head
