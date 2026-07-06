@@ -1233,7 +1233,11 @@ impl RaceMachine {
 mod tests {
     use super::*;
 
-    pub(crate) fn test_race(status: &str) -> RaceInfo {
+    // ------------------------------------------------------------------
+    // Harness
+    // ------------------------------------------------------------------
+
+    fn test_race(status: &str) -> RaceInfo {
         serde_json::from_str(&format!(
             r#"{{"id":"r1","name":"Test Race","status":"{}"}}"#,
             status
@@ -1241,27 +1245,102 @@ mod tests {
         .unwrap()
     }
 
-    pub(crate) fn test_seed(event_ids: &[u32], finish_event: Option<u32>) -> SeedInfo {
+    fn test_seed(event_ids: &[u32], finish_event: Option<u32>, death_flags: &str) -> SeedInfo {
         let finish = finish_event
             .map(|f| f.to_string())
             .unwrap_or_else(|| "null".to_string());
         serde_json::from_str(&format!(
-            r#"{{"total_layers": 3, "event_ids": {:?}, "finish_event": {}}}"#,
-            event_ids, finish
+            r#"{{"total_layers": 3, "event_ids": {:?}, "finish_event": {}, "death_flags": {}}}"#,
+            event_ids, finish, death_flags
         ))
         .unwrap()
     }
 
-    pub(crate) fn auth_ok(status: &str, event_ids: &[u32], finish: Option<u32>) -> MachineMessage {
+    fn test_participant(id: &str, status: &str, layer: i32) -> ParticipantInfo {
+        serde_json::from_str(&format!(
+            r#"{{"id":"{}","twitch_username":"u_{}","twitch_display_name":null,
+                 "status":"{}","current_zone":null,"current_layer":{},
+                 "igt_ms":0,"death_count":0}}"#,
+            id, id, status, layer
+        ))
+        .unwrap()
+    }
+
+    fn auth_ok(status: &str, event_ids: &[u32], finish: Option<u32>) -> MachineMessage {
         MachineMessage::AuthOk {
             participant_id: "p1".to_string(),
             race: test_race(status),
-            seed: test_seed(event_ids, finish),
-            participants: Vec::new(),
+            seed: test_seed(event_ids, finish, "{}"),
+            participants: vec![test_participant("p1", "playing", 1)],
             phantom_skin: None,
             latest_mod_version: None,
         }
     }
+
+    /// Machine authed into a running race with regular flags [100, 200] and
+    /// finish flag 900, `now` = machine birth time.
+    fn running_machine(now: Instant) -> RaceMachine {
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("running", &[100, 200, 900], Some(900)), now);
+        m
+    }
+
+    fn snap(igt: Option<u32>, pos: bool, loading: Option<bool>) -> FrameSnapshot {
+        FrameSnapshot {
+            igt_ms: igt,
+            death_count: Some(0),
+            position_readable: pos,
+            loading_screen: loading,
+        }
+    }
+
+    fn tick_in(
+        snapshot: FrameSnapshot,
+        connected: bool,
+        reads: Option<Vec<(u32, bool)>>,
+    ) -> TickInput {
+        TickInput {
+            snapshot,
+            connected,
+            warp_capture: None,
+            position: None,
+            flag_reads: reads,
+            weapons: [None, None],
+            flag_reader_ok: None,
+        }
+    }
+
+    fn sent_flags(effects: &[Effect]) -> Vec<u32> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::SendEventFlag { flag_id, .. } => Some(*flag_id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn sent_message_ids(effects: &[Effect]) -> Vec<u64> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::SendEventFlag { message_id, .. } => Some(*message_id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn ms(v: u64) -> Duration {
+        Duration::from_millis(v)
+    }
+
+    fn secs(v: u64) -> Duration {
+        Duration::from_secs(v)
+    }
+
+    // ------------------------------------------------------------------
+    // Message handling basics
+    // ------------------------------------------------------------------
 
     #[test]
     fn test_race_start_sets_running_and_countdown() {
@@ -1275,6 +1354,483 @@ mod tests {
         assert!(fx.is_empty());
         assert!(m.is_race_running());
         assert!(m.is_countdown_active(now));
-        assert!(!m.is_countdown_active(now + Duration::from_secs(4)));
+        assert!(!m.is_countdown_active(now + secs(4)));
+    }
+
+    // ------------------------------------------------------------------
+    // Flag lifecycle scenarios
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_defer_then_drain_at_loading_exit() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+
+        // Regular flag set during the 10Hz poll: cleared in game + deferred,
+        // NOT sent yet.
+        let t1 = now + ms(150);
+        let fx = m.tick(
+            tick_in(
+                snap(Some(1000), true, None),
+                true,
+                Some(vec![(100, true), (200, false), (900, false)]),
+            ),
+            t1,
+        );
+        assert!(sent_flags(&fx).is_empty(), "no send before loading exit");
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: 100,
+            value: false
+        }));
+        assert!(m.flag_buffer.has_deferred());
+        // Regular flags are not tracked in triggered_flags
+        assert!(!m.triggered_flags.contains(&100));
+
+        // Loading screen (position unreadable), then exit: deferred flag sent.
+        let t2 = t1 + ms(50);
+        m.tick(tick_in(snap(Some(1200), false, None), true, None), t2);
+        let t3 = t2 + ms(30);
+        let fx = m.tick(
+            tick_in(
+                snap(Some(1300), true, None),
+                true,
+                Some(vec![(100, false), (200, false), (900, false)]),
+            ),
+            t3,
+        );
+        assert_eq!(sent_flags(&fx), vec![100]);
+        assert!(!m.flag_buffer.has_deferred());
+        assert_eq!(m.in_flight_event_flags.len(), 1);
+
+        // Second identical poll read: nothing new (flag cleared in memory
+        // would read false; even a stale true defers again by design).
+        let t4 = t3 + ms(150);
+        let fx = m.tick(
+            tick_in(
+                snap(Some(1500), true, None),
+                true,
+                Some(vec![(100, false), (200, false), (900, false)]),
+            ),
+            t4,
+        );
+        assert!(sent_flags(&fx).is_empty());
+    }
+
+    #[test]
+    fn test_finish_flag_sends_immediately() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        // First tick marks ready_sent (SendReady fires once).
+        m.tick(
+            tick_in(snap(Some(500), true, None), true, None),
+            now + ms(10),
+        );
+
+        let fx = m.tick(
+            tick_in(
+                snap(Some(60_000), true, None),
+                true,
+                Some(vec![(100, false), (200, false), (900, true)]),
+            ),
+            now + ms(150),
+        );
+        // Sent in the SAME tick, no defer, no game-memory clear for finish.
+        assert_eq!(sent_flags(&fx), vec![900]);
+        assert!(m.triggered_flags.contains(&900));
+        assert!(!fx
+            .iter()
+            .any(|e| matches!(e, Effect::SetGameFlag { flag_id: 900, .. })));
+    }
+
+    #[test]
+    fn test_finish_flag_pending_when_gated_then_flushed_on_reconnect() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.handle_message(MachineMessage::RaceStart(10), now);
+
+        // Finish flag during countdown: buffered pending, no send.
+        let fx = m.tick(
+            tick_in(
+                snap(Some(1000), true, None),
+                true,
+                Some(vec![(100, false), (200, false), (900, true)]),
+            ),
+            now + ms(150),
+        );
+        assert!(sent_flags(&fx).is_empty());
+        assert!(m.triggered_flags.contains(&900));
+
+        // Reconnect after the countdown: pending drained.
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            now + secs(11),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(20_000), true, None), true, Some(vec![])),
+            now + secs(12),
+        );
+        assert_eq!(sent_flags(&fx), vec![900]);
+    }
+
+    #[test]
+    fn test_park_and_replay_on_reconnect_with_requeue() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(
+            tick_in(snap(Some(500), true, None), true, None),
+            now + ms(10),
+        );
+
+        // Defer a regular flag, then lose the connection: parked to pending.
+        m.tick(
+            tick_in(
+                snap(Some(1000), true, None),
+                true,
+                Some(vec![(100, true), (200, false), (900, false)]),
+            ),
+            now + ms(150),
+        );
+        let fx = m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            now + ms(200),
+        );
+        assert!(fx.is_empty());
+        assert!(!m.flag_buffer.has_deferred(), "deferred parked to pending");
+
+        // Reconnected: pending drained with a fresh message_id.
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            now + ms(300),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(2000), true, None), true, Some(vec![])),
+            now + ms(350),
+        );
+        assert_eq!(sent_flags(&fx), vec![100]);
+        let first_id = sent_message_ids(&fx)[0];
+        assert!(m.in_flight_event_flags.contains_key(&first_id));
+
+        // Server reports the message never left the socket: requeued.
+        m.handle_message(
+            MachineMessage::RequeueEventFlag {
+                flag_id: 100,
+                igt_ms: 1000,
+                message_id: first_id,
+            },
+            now + ms(400),
+        );
+        assert!(!m.in_flight_event_flags.contains_key(&first_id));
+
+        // Next reconnect drains it again with a NEW, larger message_id.
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            now + ms(500),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(3000), true, None), true, Some(vec![])),
+            now + ms(550),
+        );
+        assert_eq!(sent_flags(&fx), vec![100]);
+        let second_id = sent_message_ids(&fx)[0];
+        assert!(second_id > first_id, "message ids stay monotonic");
+    }
+
+    #[test]
+    fn test_save_reload_purges_per_save_state() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(
+            tick_in(snap(Some(500), true, None), true, None),
+            now + ms(10),
+        );
+
+        // Capture a finish flag and defer a regular one.
+        m.tick(
+            tick_in(
+                snap(Some(50_000), true, None),
+                true,
+                Some(vec![(100, true), (200, false), (900, false)]),
+            ),
+            now + ms(150),
+        );
+        assert!(m.flag_buffer.has_deferred());
+
+        // IGT regression = save reload: per-save state cleared, no sends.
+        let fx = m.tick(
+            tick_in(snap(Some(1_000), true, None), true, None),
+            now + ms(200),
+        );
+        assert!(sent_flags(&fx).is_empty());
+        assert!(m.triggered_flags.is_empty());
+        assert!(!m.flag_buffer.has_deferred());
+    }
+
+    // ------------------------------------------------------------------
+    // Zone reveal scenarios
+    // ------------------------------------------------------------------
+
+    fn zone_update(name: &str, message_id: Option<u64>) -> MachineMessage {
+        MachineMessage::ZoneUpdate {
+            node_id: "n1".to_string(),
+            display_name: name.to_string(),
+            tier: Some(2),
+            original_tier: Some(2),
+            layer: Some(2),
+            is_first_visit: true,
+            exits: Vec::new(),
+            message_id,
+        }
+    }
+
+    #[test]
+    fn test_zone_reveal_waits_for_loading_end() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.handle_message(zone_update("Stormveil", None), now + ms(100));
+        assert!(m.pending_zone_update.is_some());
+
+        // Still loading: not revealed.
+        m.tick(
+            tick_in(snap(Some(1000), false, Some(true)), true, None),
+            now + ms(200),
+        );
+        assert!(m.race_state.current_zone.is_none());
+
+        // Loading done + position readable: revealed.
+        m.tick(
+            tick_in(snap(Some(1200), true, Some(false)), true, Some(vec![])),
+            now + ms(300),
+        );
+        let zone = m.race_state.current_zone.as_ref().expect("revealed");
+        assert_eq!(zone.display_name, "Stormveil");
+        assert!(m.pending_zone_update.is_none());
+        assert!(m.pending_zone_received_at.is_none());
+    }
+
+    #[test]
+    fn test_zone_reveal_defensive_timeout() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.handle_message(zone_update("Leyndell", None), now);
+
+        // 14s in, still loading: not revealed.
+        m.tick(
+            tick_in(snap(Some(1000), false, Some(true)), true, None),
+            now + secs(14),
+        );
+        assert!(m.race_state.current_zone.is_none());
+
+        // 16s in, still loading: revealed anyway (defensive timeout).
+        m.tick(
+            tick_in(snap(Some(1000), false, Some(true)), true, None),
+            now + secs(16),
+        );
+        assert_eq!(
+            m.race_state.current_zone.as_ref().unwrap().display_name,
+            "Leyndell"
+        );
+    }
+
+    #[test]
+    fn test_pre_reveal_layer_freezes_until_reveal() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        assert_eq!(m.my_participant().unwrap().current_layer, 1);
+
+        // Zone update pending + leaderboard bumps my layer: old layer frozen.
+        m.handle_message(zone_update("Caelid", None), now + ms(100));
+        m.handle_message(
+            MachineMessage::LeaderboardUpdate {
+                participants: vec![test_participant("p1", "playing", 2)],
+                leader_splits: None,
+            },
+            now + ms(150),
+        );
+        assert_eq!(m.pre_reveal_layer, Some(1));
+
+        // Reveal clears the freeze.
+        m.tick(
+            tick_in(snap(Some(1200), true, Some(false)), true, Some(vec![])),
+            now + ms(300),
+        );
+        assert!(m.pre_reveal_layer.is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // Race lifecycle scenarios
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_frozen_igt_on_race_end_and_reset_on_auth() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+
+        // Race ends while I am still playing: IGT frozen from the shell read.
+        m.handle_message(
+            MachineMessage::RaceStatusChange {
+                status: "finished".to_string(),
+                current_igt: Some(4242),
+            },
+            now + secs(60),
+        );
+        assert_eq!(m.frozen_igt_ms, Some(4242));
+        assert_eq!(m.frame_snapshot.igt_ms, Some(4242));
+
+        // Reconnect resets the freeze.
+        m.handle_message(auth_ok("running", &[100], Some(900)), now + secs(61));
+        assert!(m.frozen_igt_ms.is_none());
+    }
+
+    #[test]
+    fn test_countdown_gates_loading_exit_sends() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(
+            tick_in(snap(Some(500), true, None), true, None),
+            now + ms(10),
+        );
+        m.handle_message(MachineMessage::RaceStart(10), now + ms(20));
+
+        // Defer a flag during countdown.
+        m.tick(
+            tick_in(
+                snap(Some(1000), true, None),
+                true,
+                Some(vec![(100, true), (200, false), (900, false)]),
+            ),
+            now + ms(150),
+        );
+        assert!(m.flag_buffer.has_deferred());
+
+        // Loading exit during countdown: nothing sent, deferred parked.
+        m.tick(
+            tick_in(snap(Some(1100), false, None), true, None),
+            now + ms(200),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(1200), true, None), true, Some(vec![])),
+            now + ms(250),
+        );
+        assert!(sent_flags(&fx).is_empty());
+        assert!(!m.flag_buffer.has_deferred(), "parked to pending");
+    }
+
+    #[test]
+    fn test_ack_idempotence() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(
+            tick_in(snap(Some(500), true, None), true, None),
+            now + ms(10),
+        );
+
+        // Unknown ack: no state change, no panic.
+        let fx = m.handle_message(MachineMessage::EventFlagAck { message_id: 999 }, now);
+        assert!(fx.is_empty());
+
+        // Send a finish flag, then ack it: removed from in-flight.
+        let fx = m.tick(
+            tick_in(
+                snap(Some(60_000), true, None),
+                true,
+                Some(vec![(100, false), (200, false), (900, true)]),
+            ),
+            now + ms(150),
+        );
+        let id = sent_message_ids(&fx)[0];
+        assert!(m.in_flight_event_flags.contains_key(&id));
+        m.handle_message(MachineMessage::EventFlagAck { message_id: id }, now);
+        assert!(!m.in_flight_event_flags.contains_key(&id));
+    }
+
+    #[test]
+    fn test_status_update_cadence_and_gating() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(
+            tick_in(snap(Some(500), true, None), true, None),
+            now + ms(10),
+        );
+
+        let has_status = |fx: &[Effect]| {
+            fx.iter()
+                .any(|e| matches!(e, Effect::SendStatusUpdate { .. }))
+        };
+
+        // 1.2s after birth: fires.
+        let fx = m.tick(
+            tick_in(snap(Some(5000), true, None), true, None),
+            now + ms(1200),
+        );
+        assert!(has_status(&fx));
+
+        // 200ms later: throttled.
+        let fx = m.tick(
+            tick_in(snap(Some(5200), true, None), true, None),
+            now + ms(1400),
+        );
+        assert!(!has_status(&fx));
+
+        // Another second later: fires again.
+        let fx = m.tick(
+            tick_in(snap(Some(6300), true, None), true, None),
+            now + ms(2400),
+        );
+        assert!(has_status(&fx));
+
+        // IGT 0 (quit-out): skipped.
+        let fx = m.tick(
+            tick_in(snap(Some(0), true, None), true, None),
+            now + ms(3600),
+        );
+        assert!(!has_status(&fx));
+
+        // Once I am finished: skipped.
+        m.handle_message(
+            MachineMessage::LeaderboardUpdate {
+                participants: vec![test_participant("p1", "finished", 3)],
+                leader_splits: None,
+            },
+            now + ms(3700),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(9000), true, None), true, None),
+            now + ms(4800),
+        );
+        assert!(!has_status(&fx));
+    }
+
+    #[test]
+    fn test_death_counts_emit_threshold_flags() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(
+            MachineMessage::AuthOk {
+                participant_id: "p1".to_string(),
+                race: test_race("running"),
+                seed: test_seed(&[100], None, r#"{"zone_a": [10, 11, 12]}"#),
+                participants: vec![test_participant("p1", "playing", 1)],
+                phantom_skin: None,
+                latest_mod_version: None,
+            },
+            now,
+        );
+
+        let mut counts = HashMap::new();
+        counts.insert("zone_a".to_string(), 4u32);
+        let fx = m.handle_message(MachineMessage::DeathCounts(counts), now);
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: 10,
+            value: true
+        }));
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: 11,
+            value: true
+        }));
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: 12,
+            value: false
+        }));
+        assert_eq!(m.race_state.death_counts.get("zone_a"), Some(&4));
     }
 }
