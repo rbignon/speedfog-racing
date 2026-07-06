@@ -13,6 +13,7 @@
   import { rewards } from "$lib/stores/rewards.svelte";
   import NavUserSearch from "$lib/components/NavUserSearch.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
+  import { appUpdate } from "$lib/stores/appUpdate.svelte";
 
   let { children } = $props();
 
@@ -54,6 +55,7 @@
     rewards.ensureLoaded().catch(() => {
       // Silently ignore: rewards rendering falls back to inherit/default colors when the catalog is unavailable.
     });
+    if (!isOverlay) appUpdate.start();
   });
 
   $effect(() => {
@@ -232,6 +234,22 @@
 
 {#if showFeedback}
   <FeedbackModal source="user_menu" onClose={() => (showFeedback = false)} />
+{/if}
+
+{#if appUpdate.updateAvailable && !appUpdate.dismissed && !isOverlay}
+  <div class="update-toast" role="status">
+    <span>A new version of SpeedFog Racing is available.</span>
+    <button class="update-refresh" onclick={() => location.reload()}
+      >Refresh</button
+    >
+    <button
+      class="update-dismiss"
+      aria-label="Dismiss"
+      onclick={() => appUpdate.dismiss()}
+    >
+      ✕
+    </button>
+  </div>
 {/if}
 
 <style>
@@ -519,5 +537,41 @@
       flex-wrap: wrap;
       justify-content: center;
     }
+  }
+
+  .update-toast {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-gold);
+    border-radius: 8px;
+  }
+
+  .update-refresh {
+    background: var(--color-gold);
+    color: var(--color-bg);
+    border: none;
+    border-radius: 6px;
+    padding: 0.3rem 0.7rem;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .update-dismiss {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.7;
+  }
+
+  .update-dismiss:hover {
+    opacity: 1;
   }
 </style>
