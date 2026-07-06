@@ -704,12 +704,6 @@ impl RaceTracker {
         self.machine.race_state.current_zone.as_ref()
     }
 
-    /// During the zone reveal wait, returns the frozen current_layer from
-    /// before the leaderboard update. Returns None outside the wait.
-    pub fn pre_reveal_layer(&self) -> Option<i32> {
-        self.machine.pre_reveal_layer
-    }
-
     pub fn my_participant_id(&self) -> Option<&String> {
         self.machine.my_participant_id.as_ref()
     }
