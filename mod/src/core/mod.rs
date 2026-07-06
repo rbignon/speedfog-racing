@@ -9,7 +9,6 @@ pub mod map_utils;
 pub mod profile;
 pub mod protocol;
 pub mod race_machine;
-pub mod traits;
 pub mod types;
 
 pub use color::parse_hex_color;
@@ -25,5 +24,4 @@ pub use race_machine::{
     BufferedEventFlag, BufferedZoneQuery, ConnectionStatus, Effect, FrameNeeds, FrameSnapshot,
     MachineMessage, RaceState, TickInput, ZoneUpdateData,
 };
-pub use traits::GameStateReader;
 pub use types::PlayerPosition;

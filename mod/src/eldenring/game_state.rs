@@ -1,4 +1,4 @@
-//! Elden Ring GameStateReader implementation
+//! Elden Ring game-state memory reader
 //!
 //! Reads player position and animation state from Elden Ring memory
 //! using libeldenring pointer chains.
@@ -16,7 +16,6 @@ use crate::core::constants::{
     GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET, INVALID_MAP_ID, UNARMED_WEAPON_ID,
 };
 use crate::core::map_utils::format_map_id;
-use crate::core::traits::GameStateReader;
 use crate::core::types::PlayerPosition;
 use crate::profile_span;
 
@@ -177,8 +176,9 @@ impl Default for GameState {
     }
 }
 
-impl GameStateReader for GameState {
-    fn wait_for_game_loaded(&self) {
+impl GameState {
+    /// Block until the game is fully loaded (menu timer > 0).
+    pub fn wait_for_game_loaded(&self) {
         let poll_interval = Duration::from_millis(100);
         loop {
             if let Some(menu_timer) = self.pointers.menu_timer.read() {
@@ -190,7 +190,10 @@ impl GameStateReader for GameState {
         }
     }
 
-    fn read_position(&self) -> Option<PlayerPosition> {
+    /// Read current player position and map data.
+    ///
+    /// Returns None if position data is not available (e.g., during loading).
+    pub fn read_position(&self) -> Option<PlayerPosition> {
         profile_span!("read_position");
         let [x, y, z, _, _] = self.pointers.global_position.read()?;
         let map_id = self.pointers.global_position.read_map_id()?;
@@ -210,7 +213,9 @@ impl GameStateReader for GameState {
         })
     }
 
-    fn read_animation(&self) -> Option<u32> {
+    /// Read current animation ID.
+    #[allow(dead_code)] // RE-documented pointer, kept for future use
+    pub fn read_animation(&self) -> Option<u32> {
         self.pointers.cur_anim.read()
     }
 }

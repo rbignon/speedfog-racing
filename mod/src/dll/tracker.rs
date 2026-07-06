@@ -17,7 +17,6 @@ use crate::core::race_machine::{
     BufferedEventFlag, BufferedZoneQuery, ConnectionStatus, Effect, FrameSnapshot, MachineMessage,
     RaceMachine, ZoneUpdateData,
 };
-use crate::core::traits::GameStateReader;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
 use crate::profile_span;
 

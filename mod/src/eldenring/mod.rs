@@ -3,7 +3,8 @@
 //! This module contains all the code that reads from the Elden Ring process memory,
 //! including player position, animation state, and event flag tracking.
 //!
-//! The implementations here satisfy the traits defined in `core::traits`.
+//! Game-memory reading and hooking, consumed by the dll shell; the pure
+//! race logic in `core::race_machine` receives these reads as plain data.
 
 mod event_flags;
 mod game_state;
