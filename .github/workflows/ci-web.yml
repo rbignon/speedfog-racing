@@ -33,6 +33,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # $env/static/public members are generated at svelte-kit sync time
+      # from the environment; without PUBLIC_BASE_URL both check and build
+      # fail. The committed template carries the production value.
+      - name: Provide public env from template
+        run: cp .env.example .env
+
       - name: Type check
         run: npm run check
 
