@@ -3621,3 +3621,95 @@ def test_zone_query_unresolved_sends_ack_with_message_id(
         mod0.send_zone_query(99999999, message_id=55)
         ack = mod0.receive_until_type("zone_query_ack")
         assert ack["message_id"] == 55
+
+
+class TestModVersionHandshake:
+    """Auth-time protocol/version compatibility (see docs/PROTOCOL.md)."""
+
+    def test_auth_without_version_fields_accepted(self, integration_client, race_with_participants):
+        # Pre-versioning mods omit both fields: assumed protocol 1.0, no notice.
+        race_id = race_with_participants["race_id"]
+        players = race_with_participants["players"]
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            mod = ModTestClient(ws, players[0]["mod_token"])
+            response = mod.auth()
+            assert response["type"] == "auth_ok"
+            assert response.get("latest_mod_version") is None
+
+    def test_auth_incompatible_protocol_rejected(self, integration_client, race_with_participants):
+        race_id = race_with_participants["race_id"]
+        players = race_with_participants["players"]
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            mod = ModTestClient(ws, players[0]["mod_token"])
+            ws.send_json(
+                {
+                    "type": "auth",
+                    "mod_token": players[0]["mod_token"],
+                    "protocol_version": "2.0",
+                    "mod_version": "9.9.9",
+                }
+            )
+            response = mod.receive()
+            assert response["type"] == "auth_error"
+            assert "not compatible" in response["message"]
+
+    def test_auth_older_minor_gets_update_notice(
+        self, monkeypatch, integration_client, race_with_participants
+    ):
+        import speedfog_racing.websocket.handler as handler_module
+        from speedfog_racing import __version__
+
+        monkeypatch.setattr(handler_module, "PROTOCOL_VERSION", "1.1")
+        race_id = race_with_participants["race_id"]
+        players = race_with_participants["players"]
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            mod = ModTestClient(ws, players[0]["mod_token"])
+            ws.send_json(
+                {
+                    "type": "auth",
+                    "mod_token": players[0]["mod_token"],
+                    "protocol_version": "1.0",
+                    "mod_version": "1.17.0",
+                }
+            )
+            response = mod.receive()
+            assert response["type"] == "auth_ok"
+            assert response["latest_mod_version"] == __version__
+
+    def test_auth_min_mod_version_gate(
+        self, monkeypatch, integration_client, race_with_participants
+    ):
+        from speedfog_racing.config import settings
+
+        monkeypatch.setattr(settings, "min_mod_version", "1.18.0")
+        race_id = race_with_participants["race_id"]
+        players = race_with_participants["players"]
+
+        # Too old: rejected with an explicit message.
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            mod = ModTestClient(ws, players[0]["mod_token"])
+            ws.send_json(
+                {
+                    "type": "auth",
+                    "mod_token": players[0]["mod_token"],
+                    "protocol_version": "1.0",
+                    "mod_version": "1.17.0",
+                }
+            )
+            response = mod.receive()
+            assert response["type"] == "auth_error"
+            assert "no longer supported" in response["message"]
+
+        # Recent enough: accepted.
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            mod = ModTestClient(ws, players[0]["mod_token"])
+            ws.send_json(
+                {
+                    "type": "auth",
+                    "mod_token": players[0]["mod_token"],
+                    "protocol_version": "1.0",
+                    "mod_version": "1.18.0",
+                }
+            )
+            response = mod.receive()
+            assert response["type"] == "auth_ok"

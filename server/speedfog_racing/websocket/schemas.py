@@ -13,6 +13,12 @@ from pydantic import BaseModel, Field
 
 from speedfog_racing.models import compute_late_join_deadlines
 
+# Wire-protocol version, independent from release numbers. Bump rules:
+# breaking change -> major + 1 (minor resets to 0); backward-compatible
+# addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
+# with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
+PROTOCOL_VERSION = "1.0"
+
 # --- Client -> Server Messages (Mod) ---
 
 
@@ -21,6 +27,11 @@ class AuthMessage(BaseModel):
 
     type: Literal["auth"] = "auth"
     mod_token: str
+    # Wire-protocol version spoken by the mod ("major.minor"). Absent on
+    # pre-versioning builds, which speak protocol 1.0 by definition.
+    protocol_version: str | None = None
+    # Mod release version, for logs and admin display only, never decisions.
+    mod_version: str | None = None
 
 
 class ReadyMessage(BaseModel):
@@ -240,6 +251,9 @@ class AuthOkMessage(BaseModel):
     seed: SeedInfo
     participants: list[ParticipantInfo]
     phantom_skin: str | None = None
+    # Server release version, present only when a newer compatible mod build
+    # exists (protocol minor ahead of the client's). Old mods ignore it.
+    latest_mod_version: str | None = None
 
 
 class AuthErrorMessage(BaseModel):

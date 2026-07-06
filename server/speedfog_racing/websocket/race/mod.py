@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing import __version__
 from speedfog_racing.config import settings
 from speedfog_racing.discord import fire_race_finished_notifications
 from speedfog_racing.models import (
@@ -331,6 +332,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             ),
             participants=participant_infos,
             phantom_skin=phantom_skin,
+            latest_mod_version=__version__ if self.update_available else None,
         )
         await self.websocket.send_text(message.model_dump_json())
 

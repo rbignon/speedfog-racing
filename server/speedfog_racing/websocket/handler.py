@@ -18,11 +18,14 @@ import sentry_sdk
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from speedfog_racing.config import settings
 from speedfog_racing.services.grace_service import load_graces_mapping, resolve_zone_query
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import compute_zone_update, get_start_node
 from speedfog_racing.services.weapons import bump_combo, filter_equipped
+from speedfog_racing.versioning import evaluate_mod_compat
 from speedfog_racing.websocket.schemas import (
+    PROTOCOL_VERSION,
     AuthErrorMessage,
     ErrorMessage,
     EventFlagAckMessage,
@@ -398,6 +401,9 @@ class BaseModHandler(BaseHandler, Generic[T]):
         session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
         super().__init__(websocket, entity_id, session_maker)
+        self.mod_version: str | None = None
+        self.mod_protocol_version: str | None = None
+        self.update_available = False
         self._message_handlers = {
             "status_update": self._handle_status_update,
             "event_flag": self._handle_event_flag,
@@ -440,6 +446,32 @@ class BaseModHandler(BaseHandler, Generic[T]):
         if auth_msg.get("type") != "auth" or "mod_token" not in auth_msg:
             await self._send_auth_error("Invalid auth message")
             return False
+
+        self.mod_protocol_version = auth_msg.get("protocol_version")
+        self.mod_version = auth_msg.get("mod_version")
+        compat = evaluate_mod_compat(
+            self.mod_protocol_version,
+            self.mod_version,
+            server_protocol=PROTOCOL_VERSION,
+            min_release=settings.min_mod_version,
+        )
+        if compat.reject_reason is not None:
+            logger.info(
+                "Mod rejected (version): %s, protocol=%s, version=%s",
+                self.entity_id,
+                self.mod_protocol_version or "absent",
+                self.mod_version or "unknown",
+            )
+            await self._send_auth_error(compat.reject_reason)
+            return False
+        self.update_available = compat.update_available
+        logger.info(
+            "Mod version: %s, protocol=%s, version=%s",
+            self.entity_id,
+            self.mod_protocol_version or "absent",
+            self.mod_version or "unknown",
+        )
+        sentry_sdk.set_tag("mod_version", self.mod_version or "unknown")
 
         return await self._authenticate(auth_msg["mod_token"])
 

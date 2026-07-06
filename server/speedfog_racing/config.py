@@ -50,6 +50,9 @@ class Settings(BaseSettings):
 
     # Race
     countdown_seconds: int = 10
+    # Reject mods whose release version is older than this (emergency gate for
+    # non-protocol issues, e.g. a crashing build). None disables the gate.
+    min_mod_version: str | None = None
 
     # Server
     log_level: str = "INFO"
