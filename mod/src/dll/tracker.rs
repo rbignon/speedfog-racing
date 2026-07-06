@@ -8,14 +8,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::color::parse_hex_color;
-use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
+use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::race_machine::{
-    BufferedEventFlag, BufferedZoneQuery, ConnectionStatus, Effect, FrameSnapshot, MachineMessage,
-    RaceMachine, ZoneUpdateData,
+    ConnectionStatus, Effect, FrameSnapshot, MachineMessage, RaceMachine, TickInput, ZoneUpdateData,
 };
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
 use crate::profile_span;
@@ -171,6 +170,8 @@ pub struct RaceTracker {
     pub(crate) show_leaderboard: bool,
     /// Set when a frame panicked; rendering and updates stop for the session.
     pub(crate) render_panicked: bool,
+    // One-time diagnostic log flag
+    flags_diagnosed: bool,
 
     // Item spawner thread handle (prevents double-spawn on reconnect)
     spawner_thread: Option<JoinHandle<()>>,
@@ -714,11 +715,6 @@ impl RaceTracker {
     }
 
     pub fn my_participant(&self) -> Option<&ParticipantInfo> {
-        let idx = self.machine.my_participant_index?;
-        self.machine.race_state.participants.get(idx)
-    }
-
-    pub fn my_participant(&self) -> Option<&ParticipantInfo> {
         self.machine.my_participant()
     }
 
@@ -746,6 +742,7 @@ impl RaceTracker {
         let flag_reader_ok = matches!(flag_reader_status, FlagReaderStatus::Ok { .. });
 
         let sample_reads: Vec<(u32, FlagReadResult)> = self
+            .machine
             .event_ids
             .iter()
             .take(5)

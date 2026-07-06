@@ -1004,12 +1004,15 @@ impl RaceMachine {
         // deferred until loading exit; finish_event is sent immediately.
         let poll_due = !self.event_ids.is_empty()
             && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100);
+        // Record the reader health on every read frame (the shell logs the
+        // transition when it performs the reads; recording here keeps the
+        // transition from being re-logged on subsequent read frames).
+        if let Some(ok) = input.flag_reader_ok {
+            self.last_flag_reader_ok = Some(ok);
+        }
         if poll_due {
             if let Some(ref reads) = input.flag_reads {
                 self.last_flag_poll = now;
-                if let Some(ok) = input.flag_reader_ok {
-                    self.last_flag_reader_ok = Some(ok);
-                }
 
                 let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
                 for &(flag_id, is_set) in reads {

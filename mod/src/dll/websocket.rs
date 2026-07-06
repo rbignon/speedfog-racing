@@ -3,7 +3,6 @@
 //! Handles connection, authentication, and race message exchange.
 
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
-use std::collections::HashMap;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -14,10 +13,7 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
 use super::config::ServerSettings;
-use crate::core::protocol::{
-    is_permanent_close, ClientMessage, ExitInfo, ParticipantInfo, RaceInfo, SeedInfo,
-    ServerMessage, PROTOCOL_VERSION,
-};
+use crate::core::protocol::{is_permanent_close, ClientMessage, ServerMessage, PROTOCOL_VERSION};
 use crate::profile_span;
 
 // =============================================================================

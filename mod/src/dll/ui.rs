@@ -274,6 +274,7 @@ impl RaceTracker {
                     write!(buf_right, "{}", secs).ok();
                     gold
                 } else if let Some(go_start) = self
+                    .machine
                     .race_state
                     .countdown_end
                     .or(self.machine.race_state.race_started_at)
@@ -331,7 +332,7 @@ impl RaceTracker {
         let me = self.my_participant();
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let zone = self.current_zone_info();
-        let frozen_layer = self.machine.pre_reveal_layer();
+        let frozen_layer = self.machine.pre_reveal_layer;
 
         // Show layer progress only while actively playing or finished; otherwise
         // show the participant status so pre-launch states (registered/ready)
