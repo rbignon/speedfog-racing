@@ -285,6 +285,7 @@ class RaceParticipantActivity(ActivityItemBase):
     igt_ms: int
     death_count: int
     is_mod_connected: bool = False
+    mod_version: str | None = None
     is_organizer: bool = False
 
 
@@ -300,6 +301,7 @@ class DailyParticipantActivity(ActivityItemBase):
     igt_ms: int
     death_count: int
     is_mod_connected: bool = False
+    mod_version: str | None = None
 
 
 class RaceOrganizerActivity(ActivityItemBase):
@@ -326,6 +328,7 @@ class TrainingActivity(ActivityItemBase):
     igt_ms: int
     death_count: int
     is_mod_connected: bool = False
+    mod_version: str | None = None
 
 
 ActivityItem = (

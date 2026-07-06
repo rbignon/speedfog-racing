@@ -3713,3 +3713,28 @@ class TestModVersionHandshake:
             )
             response = mod.receive()
             assert response["type"] == "auth_ok"
+
+    def test_mod_version_stored_on_connection(self, integration_client, race_with_participants):
+        from speedfog_racing.websocket.race.manager import manager as race_manager
+
+        race_id = race_with_participants["race_id"]
+        players = race_with_participants["players"]
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            mod = ModTestClient(ws, players[0]["mod_token"])
+            ws.send_json(
+                {
+                    "type": "auth",
+                    "mod_token": players[0]["mod_token"],
+                    "protocol_version": "1.0",
+                    "mod_version": "1.17.0",
+                }
+            )
+            response = mod.receive()
+            assert response["type"] == "auth_ok"
+            mod.receive_until_type("leaderboard_update")
+            assert (
+                race_manager.get_mod_version(
+                    uuid.UUID(str(race_id)), uuid.UUID(response["participant_id"])
+                )
+                == "1.17.0"
+            )

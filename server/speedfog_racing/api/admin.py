@@ -672,6 +672,7 @@ async def get_global_activity(
                         igt_ms=p.igt_ms,
                         death_count=p.death_count,
                         is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
+                        mod_version=race_manager.get_mod_version(race.id, p.id),
                     )
                 )
             else:
@@ -687,6 +688,7 @@ async def get_global_activity(
                         igt_ms=p.igt_ms,
                         death_count=p.death_count,
                         is_mod_connected=race_manager.is_mod_connected(race.id, p.id),
+                        mod_version=race_manager.get_mod_version(race.id, p.id),
                         is_organizer=p.user_id == race.organizer_id,
                     )
                 )
@@ -732,6 +734,7 @@ async def get_global_activity(
                     igt_ms=t.igt_ms,
                     death_count=t.death_count,
                     is_mod_connected=training_manager.is_mod_connected(t.id),
+                    mod_version=training_manager.get_mod_version(t.id),
                 )
             )
 

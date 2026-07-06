@@ -1400,7 +1400,9 @@
                   class="conn-dot connected"
                   role="img"
                   aria-label="Mod connected"
-                  title="Mod connected"
+                  title={item.mod_version
+                    ? `Mod connected (v${item.mod_version})`
+                    : "Mod connected"}
                 ></span>
               {/if}
               {#if item.type === "race_participant" || item.type === "race_organizer" || item.type === "race_caster"}

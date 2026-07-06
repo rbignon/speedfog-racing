@@ -202,7 +202,9 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         session = self._auth_session
         del self._auth_session  # Release reference
 
-        await training_manager.connect_mod(session_id, self._user_id, self.websocket)
+        await training_manager.connect_mod(
+            session_id, self._user_id, self.websocket, mod_version=self.mod_version
+        )
         await _broadcast_participant_update(session, spectator_only=True)
 
         # Fire-and-forget: notify Discord if player is live on Twitch.

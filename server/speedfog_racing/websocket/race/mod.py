@@ -343,7 +343,12 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         assert self._participant_id is not None
         assert self._user_id is not None
         await manager.connect_mod(
-            self._race_id, self._participant_id, self._user_id, self.websocket, self.locale
+            self._race_id,
+            self._participant_id,
+            self._user_id,
+            self.websocket,
+            self.locale,
+            mod_version=self.mod_version,
         )
         # Broadcast updated connection status using detached objects from auth session
         participant = self._auth_participant

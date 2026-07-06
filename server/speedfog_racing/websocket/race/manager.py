@@ -46,6 +46,7 @@ class ModConnection:
     participant_id: uuid.UUID
     user_id: uuid.UUID
     locale: str = "en"
+    mod_version: str | None = None
 
 
 @dataclass
@@ -255,6 +256,7 @@ class ConnectionManager:
         user_id: uuid.UUID,
         websocket: WebSocket,
         locale: str = "en",
+        mod_version: str | None = None,
     ) -> None:
         """Register a mod connection, replacing any existing one for this participant.
 
@@ -268,6 +270,7 @@ class ConnectionManager:
             participant_id=participant_id,
             user_id=user_id,
             locale=locale,
+            mod_version=mod_version,
         )
         if existing is not None:
             logger.info(f"Mod replaced: race={race_id}, participant={participant_id}")
@@ -353,6 +356,14 @@ class ConnectionManager:
         """Check if a mod is connected."""
         room = self.get_room(race_id)
         return room is not None and participant_id in room.mods
+
+    def get_mod_version(self, race_id: uuid.UUID, participant_id: uuid.UUID) -> str | None:
+        """Release version reported by the connected mod, if any."""
+        room = self.get_room(race_id)
+        if not room:
+            return None
+        conn = room.mods.get(participant_id)
+        return conn.mod_version if conn else None
 
     async def broadcast_leaderboard(
         self,

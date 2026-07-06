@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class TrainingModConnection:
     websocket: WebSocket
     user_id: uuid.UUID
+    mod_version: str | None = None
 
 
 @dataclass
@@ -100,6 +101,7 @@ class TrainingConnectionManager:
         session_id: uuid.UUID,
         user_id: uuid.UUID,
         websocket: WebSocket,
+        mod_version: str | None = None,
     ) -> None:
         """Register a mod connection, replacing any existing one.
 
@@ -108,7 +110,9 @@ class TrainingConnectionManager:
         """
         room = self.get_or_create_room(session_id)
         existing = room.mod
-        room.mod = TrainingModConnection(websocket=websocket, user_id=user_id)
+        room.mod = TrainingModConnection(
+            websocket=websocket, user_id=user_id, mod_version=mod_version
+        )
         if existing is not None:
             logger.info(f"Mod replaced for training session {session_id}")
             try:
@@ -161,6 +165,11 @@ class TrainingConnectionManager:
     def is_mod_connected(self, session_id: uuid.UUID) -> bool:
         room = self.rooms.get(session_id)
         return room is not None and room.mod is not None
+
+    def get_mod_version(self, session_id: uuid.UUID) -> str | None:
+        """Release version reported by the connected mod, if any."""
+        room = self.rooms.get(session_id)
+        return room.mod.mod_version if room and room.mod else None
 
 
 training_manager = TrainingConnectionManager()
