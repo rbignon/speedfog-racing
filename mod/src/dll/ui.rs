@@ -176,7 +176,7 @@ impl RaceTracker {
             } else {
                 buf.push_str("--:--:--");
             }
-        } else if let Some(frozen) = self.frozen_igt_ms {
+        } else if let Some(frozen) = self.machine.frozen_igt_ms {
             write_time_u32(buf, frozen);
         } else if !self.is_race_running() {
             buf.push_str("--:--:--");
@@ -190,7 +190,7 @@ impl RaceTracker {
     /// Danger banner shown when the config's seed_id doesn't match the server's
     /// seed_id. This means the player has an outdated seed pack after a re-roll.
     fn render_seed_mismatch_warning(&self, ui: &hudhook::imgui::Ui) {
-        if self.seed_mismatch {
+        if self.machine.seed_mismatch {
             let danger = self.cached_colors.danger;
             ui.text_colored(danger, "SEED OUTDATED");
             ui.text_colored(danger, "Re-download your seed pack");
@@ -244,7 +244,7 @@ impl RaceTracker {
         let success = c.success;
 
         // --- Line 1: connection dot + race name (left), local IGT highlighted (right) ---
-        let dot_color = if self.permanent_error.is_some() {
+        let dot_color = if self.machine.permanent_error.is_some() {
             c.danger
         } else {
             match self.ws_status() {
@@ -266,7 +266,7 @@ impl RaceTracker {
                 gold
             }
             "running" => {
-                let countdown_secs = self.race_state.countdown_end.and_then(|end| {
+                let countdown_secs = self.machine.race_state.countdown_end.and_then(|end| {
                     end.checked_duration_since(std::time::Instant::now())
                         .map(|remaining| remaining.as_secs() + 1)
                 });
@@ -276,7 +276,7 @@ impl RaceTracker {
                 } else if let Some(go_start) = self
                     .race_state
                     .countdown_end
-                    .or(self.race_state.race_started_at)
+                    .or(self.machine.race_state.race_started_at)
                 {
                     if go_start.elapsed() < Duration::from_secs(3) {
                         buf_right.push_str("GO!");
@@ -331,7 +331,7 @@ impl RaceTracker {
         let me = self.my_participant();
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let zone = self.current_zone_info();
-        let frozen_layer = self.pre_reveal_layer();
+        let frozen_layer = self.machine.pre_reveal_layer();
 
         // Show layer progress only while actively playing or finished; otherwise
         // show the participant status so pre-launch states (registered/ready)
@@ -661,7 +661,7 @@ impl RaceTracker {
         let local_igt_bucket = self
             .read_igt()
             .map(|igt| igt / LEADERBOARD_REFRESH_INTERVAL_MS);
-        let should_refresh = self.leaderboard_cache.version != self.leaderboard_version
+        let should_refresh = self.leaderboard_cache.version != self.machine.leaderboard_version
             || self.leaderboard_cache.local_igt_bucket != local_igt_bucket
             || (self.leaderboard_cache.max_width - max_width).abs() > f32::EPSILON;
         if !should_refresh {
@@ -676,8 +676,8 @@ impl RaceTracker {
         let spacing = ui.calc_text_size(" ")[0];
         // Access fields directly (not through &self methods) so the borrow
         // checker can see they are disjoint from leaderboard_cache.
-        let participants = &self.race_state.participants;
-        let leader_splits = self.race_state.leader_splits.as_ref();
+        let participants = &self.machine.race_state.participants;
+        let leader_splits = self.machine.race_state.leader_splits.as_ref();
         let local_igt = self.read_igt().map(|v| v as i32);
         let my_id = self.my_participant_id().cloned();
 
@@ -763,12 +763,12 @@ impl RaceTracker {
             cache.rows.push(row);
         }
 
-        cache.my_index = self.my_participant_index;
+        cache.my_index = self.machine.my_participant_index;
         let layout = crate::core::compute_leaderboard_layout(participants.len(), cache.my_index);
         cache.need_anchor = layout.need_anchor;
         cache.top_count = layout.top_count;
         cache.footer_more = layout.footer_more;
-        cache.version = self.leaderboard_version;
+        cache.version = self.machine.leaderboard_version;
         cache.local_igt_bucket = local_igt_bucket;
         cache.max_width = max_width;
         cache.spacing = spacing;
@@ -779,7 +779,7 @@ impl RaceTracker {
     fn render_status_message(&self, ui: &hudhook::imgui::Ui) {
         let c = &self.cached_colors;
         // Permanent errors are always visible
-        if let Some(ref err) = self.permanent_error {
+        if let Some(ref err) = self.machine.permanent_error {
             ui.separator();
             ui.text_colored(c.danger, err);
             return;
