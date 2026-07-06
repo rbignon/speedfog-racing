@@ -7,6 +7,13 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Wire-protocol version, independent from the crate release version.
+/// Bump rules: breaking change -> major + 1 (minor resets to 0);
+/// backward-compatible addition worth signalling -> minor + 1; otherwise
+/// unchanged. Keep in sync with PROTOCOL_VERSION in
+/// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
+pub const PROTOCOL_VERSION: &str = "1.0";
+
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
 // =============================================================================
@@ -16,7 +23,13 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
     /// Authentication with mod token
-    Auth { mod_token: String },
+    Auth {
+        mod_token: String,
+        /// Wire-protocol version spoken by this build ("major.minor").
+        protocol_version: String,
+        /// Crate release version, for server logs and admin display only.
+        mod_version: String,
+    },
     /// Player is ready to race
     Ready,
     /// Periodic status update.
@@ -224,6 +237,10 @@ pub enum ServerMessage {
         participants: Vec<ParticipantInfo>,
         #[serde(default)]
         phantom_skin: Option<String>,
+        /// Server release version, present only when a newer compatible mod
+        /// build exists (protocol minor ahead). Absent from old servers.
+        #[serde(default)]
+        latest_mod_version: Option<String>,
     },
     /// Authentication failed
     AuthError { message: String },
@@ -302,10 +319,14 @@ mod tests {
     fn test_client_auth_serialize() {
         let msg = ClientMessage::Auth {
             mod_token: "test123".to_string(),
+            protocol_version: PROTOCOL_VERSION.to_string(),
+            mod_version: env!("CARGO_PKG_VERSION").to_string(),
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"auth""#));
         assert!(json.contains(r#""mod_token":"test123""#));
+        assert!(json.contains(r#""protocol_version":"1.0""#));
+        assert!(json.contains(&format!(r#""mod_version":"{}""#, env!("CARGO_PKG_VERSION"))));
     }
 
     #[test]
@@ -372,6 +393,42 @@ mod tests {
                 // event_ids defaults to empty vec when absent
                 assert!(seed.event_ids.is_empty());
             }
+            _ => panic!("Expected AuthOk"),
+        }
+    }
+
+    #[test]
+    fn test_server_auth_ok_latest_mod_version() {
+        // New server pushing an update notice.
+        let json = r#"{
+            "type": "auth_ok",
+            "participant_id": "abc-123",
+            "race": {"id": "123", "name": "Test Race", "status": "setup"},
+            "seed": {"total_layers": 5},
+            "participants": [],
+            "latest_mod_version": "1.18.0"
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::AuthOk {
+                latest_mod_version, ..
+            } => assert_eq!(latest_mod_version.as_deref(), Some("1.18.0")),
+            _ => panic!("Expected AuthOk"),
+        }
+
+        // Old server: field absent, defaults to None.
+        let json_old = r#"{
+            "type": "auth_ok",
+            "participant_id": "abc-123",
+            "race": {"id": "123", "name": "Test Race", "status": "setup"},
+            "seed": {"total_layers": 5},
+            "participants": []
+        }"#;
+        let msg: ServerMessage = serde_json::from_str(json_old).unwrap();
+        match msg {
+            ServerMessage::AuthOk {
+                latest_mod_version, ..
+            } => assert!(latest_mod_version.is_none()),
             _ => panic!("Expected AuthOk"),
         }
     }

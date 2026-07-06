@@ -784,6 +784,11 @@ impl RaceTracker {
             ui.text_colored(c.danger, err);
             return;
         }
+        // Update-available notice (transient, low-key)
+        if let Some(notice) = self.get_update_notice() {
+            ui.separator();
+            ui.text_colored(c.gold, notice);
+        }
         // Temporary status messages (auto-dismiss)
         if let Some(status) = self.get_status() {
             ui.separator();

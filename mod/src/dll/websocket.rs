@@ -15,7 +15,8 @@ use tungstenite::{connect, Message, WebSocket};
 
 use super::config::ServerSettings;
 use crate::core::protocol::{
-    is_permanent_close, ClientMessage, ExitInfo, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage,
+    is_permanent_close, ClientMessage, ExitInfo, ParticipantInfo, RaceInfo, SeedInfo,
+    ServerMessage, PROTOCOL_VERSION,
 };
 use crate::profile_span;
 
@@ -71,6 +72,8 @@ pub enum IncomingMessage {
         /// when the server sent the literal "none". Resolved to SpEffect IDs
         /// at apply-time via `seed.phantom_skins[name]`.
         phantom_skin: Option<String>,
+        /// Server release version when a newer compatible mod build exists.
+        latest_mod_version: Option<String>,
     },
     AuthError(String),
     RaceStart(u32),
@@ -466,6 +469,8 @@ fn connect_and_auth(
     // Send auth
     let auth = ClientMessage::Auth {
         mod_token: mod_token.to_string(),
+        protocol_version: PROTOCOL_VERSION.to_string(),
+        mod_version: env!("CARGO_PKG_VERSION").to_string(),
     };
     let json = serde_json::to_string(&auth).map_err(|e| format!("JSON: {}", e))?;
     socket
@@ -486,6 +491,7 @@ fn connect_and_auth(
                     seed,
                     participants,
                     phantom_skin,
+                    latest_mod_version,
                 } => {
                     let _ = incoming_tx.send(IncomingMessage::AuthOk {
                         participant_id,
@@ -493,6 +499,7 @@ fn connect_and_auth(
                         seed,
                         participants,
                         phantom_skin,
+                        latest_mod_version,
                     });
                     Ok(socket)
                 }

@@ -251,6 +251,9 @@ pub struct RaceTracker {
     // Temporary status message (yellow banner, auto-expires after 3s)
     status_message: Option<(String, Instant)>,
 
+    // Update-available notice (gold line, auto-expires after 10s)
+    update_notice: Option<(String, Instant)>,
+
     // One-time diagnostic log flag
     flags_diagnosed: bool,
 
@@ -421,6 +424,7 @@ impl RaceTracker {
             last_flag_poll: Instant::now(),
             ready_sent: false,
             status_message: None,
+            update_notice: None,
             flags_diagnosed: false,
             last_flag_reader_ok: None,
             spawner_thread: None,
@@ -1037,6 +1041,7 @@ impl RaceTracker {
                 seed,
                 participants,
                 phantom_skin,
+                latest_mod_version,
             } => {
                 info!(race = %race.name, participant_id = %participant_id, participants = participants.len(), "[WS] Auth OK");
                 if let Some(ref name) = phantom_skin {
@@ -1117,6 +1122,19 @@ impl RaceTracker {
                         server = ?seed.seed_id,
                         "Seed mismatch: seed pack is outdated"
                     );
+                }
+
+                if let Some(latest) = latest_mod_version {
+                    info!(latest = %latest, "[WS] Mod update available");
+                    // Formatted once at receipt; rendering reads it by reference.
+                    self.update_notice = Some((
+                        format!(
+                            "Mod update available: v{} (you have v{})",
+                            latest,
+                            env!("CARGO_PKG_VERSION")
+                        ),
+                        Instant::now(),
+                    ));
                 }
 
                 self.race_state.seed = Some(seed);
@@ -1454,6 +1472,17 @@ impl RaceTracker {
     pub fn get_status(&self) -> Option<&str> {
         self.status_message.as_ref().and_then(|(msg, time)| {
             if time.elapsed() < Duration::from_secs(3) {
+                Some(msg.as_str())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Get the update-available notice if still within its 10s display window.
+    pub fn get_update_notice(&self) -> Option<&str> {
+        self.update_notice.as_ref().and_then(|(msg, time)| {
+            if time.elapsed() < Duration::from_secs(10) {
                 Some(msg.as_str())
             } else {
                 None
