@@ -35,7 +35,6 @@ Client connects
        │
        ├──invalid token──→ send auth_error + close(4003)
        ├──race finished──→ send auth_error + close(4003)
-       ├──already connected──→ send auth_error + close(4003)
        │
        ▼
   send auth_ok
@@ -45,6 +44,8 @@ Client connects
        │
        ▼
   register in ConnectionManager
+  (replaces any stale connection for the
+   same participant; old socket closed 4000)
        │
        ▼
   broadcast leaderboard_update
@@ -72,7 +73,7 @@ Client connects
 
 **Auth timeout (5s)**: The server waits up to `MOD_AUTH_TIMEOUT = 5.0s` for the first `auth` message. Prevents connections that connect but never authenticate from occupying resources.
 
-**Duplicate connection guard**: `manager.is_mod_connected(race_id, participant_id)` is checked during auth. A second connection for the same participant is rejected with code 4003. This prevents split-brain when the mod reconnects before the server detects the old connection's disconnect.
+**Connection replacement**: there is no duplicate-connection rejection; last writer wins. `manager.connect_mod()` registers the new connection and, if one already existed for the same participant (typically a ghost after a network drop), closes it with code 4000 ("replaced by new connection") so the old handler's receive loop exits. `disconnect_mod()` only removes the registry entry when it still refers to the disconnecting websocket, so the old handler's cleanup cannot evict the replacement. This handles mod reconnects that happen before the server notices the old connection is dead.
 
 **Per-message DB sessions**: Each message handler (`handle_ready`, `handle_status_update`, `handle_event_flag`, `handle_zone_query`, `handle_finished`) opens its own `async with session_maker() as db:` block. Objects are loaded with `selectinload` for eager access. After commit, detached objects remain readable thanks to `expire_on_commit=False`. Broadcasts use these detached objects, no additional DB round-trip needed.
 

@@ -1094,6 +1094,7 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 | Code   | Reason                                                | Endpoints                     |
 | ------ | ----------------------------------------------------- | ----------------------------- |
 | `1000` | Normal closure (room shutdown, race reset)            | All                           |
+| `4000` | Replaced by a new connection (same participant)       | Mod, Training                 |
 | `4001` | Auth timeout (no message received within deadline)    | Mod, Training, Training Spec  |
 | `4003` | Auth error (invalid JSON, invalid message, auth fail) | Mod, Training, Training Spec  |
 | `4004` | Resource not found (race or session doesn't exist)    | Spectator, Training Spectator |
