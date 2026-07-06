@@ -256,12 +256,12 @@ Gaps are color-coded: green for negative (ahead), soft red for positive (behind)
 
 | Constant               | Value      | Location                | Purpose                                      |
 | ---------------------- | ---------- | ----------------------- | -------------------------------------------- |
-| Poll interval          | 100ms      | `tracker.rs`            | Event flag read frequency                    |
-| `ZONE_REVEAL_TIMEOUT`  | 15s        | `tracker.rs`            | Defensive timeout for zone reveal            |
+| Poll interval          | 100ms      | `core/race_machine.rs`  | Event flag read frequency                    |
+| `ZONE_REVEAL_TIMEOUT`  | 15s        | `core/race_machine.rs`  | Defensive timeout for zone reveal            |
 | `EVENT_FLAG_BASE`      | 1050294000 | `output.py`             | First SpeedFog event flag ID (saved, 4xxx)   |
 | Flag range             | 0-999      | category 1050294        | Zone tracking + finish + death markers       |
 | Divisor                | 1000       | game memory             | Flags per category page                      |
 | Max tree iterations    | 64         | `event_flags.rs`        | Guard against infinite tree traversal        |
-| Status update interval | 1s         | `tracker.rs`            | Throttle for IGT/death broadcasts            |
+| Status update interval | 1s         | `core/race_machine.rs`  | Throttle for IGT/death broadcasts            |
 | Inactivity timeout     | 15min      | `inactivity_monitor.py` | Auto-abandon threshold (stale IGT + no-show) |
 | Inactivity poll        | 60s        | `inactivity_monitor.py` | Monitor check frequency                      |

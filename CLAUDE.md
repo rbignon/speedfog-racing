@@ -84,7 +84,7 @@ SvelteKit file-based routing under `web/src/routes/`. Key paths: `/race/[id]` (r
 
 ### Mod architecture
 
-Rust DLL entry point in `lib.rs`. `dll/` has the main loop (`mod.rs`), ImGui overlay (`ui.rs`), WebSocket client (`websocket.rs`), game event tracker (`tracker.rs`). `eldenring/` has game-specific logic: memory reading (`game_state.rs`), event flags (`event_flags.rs`), warp detection (`warp_hook.rs`). Cross-platform core in `core/` (protocol, types, constants).
+Rust DLL entry point in `lib.rs`. `dll/` has the main loop (`mod.rs`), ImGui overlay (`ui.rs`), WebSocket client (`websocket.rs`), and the thin Windows shell (`tracker.rs`): memory reads, effect execution, threads, render caches. The race state machine itself is pure and lives in `core/race_machine.rs` (`RaceMachine`): `handle_message` and `tick` consume shell-gathered inputs and return `Effect`s to execute; this is where all race logic and its Linux-runnable scenario tests live. `eldenring/` has game-specific logic: memory reading (`game_state.rs`), event flags (`event_flags.rs`), warp detection (`warp_hook.rs`). Cross-platform core in `core/` (protocol, types, constants, race machine).
 
 **Per-frame perf is non-negotiable.** `RaceTracker::update` and `ImguiRenderLoop::render` run once per game frame (60+ FPS). Anything done in those paths, or in helpers they call (`render_*`, `write_*`), runs that often. Before adding work to a per-frame path:
 
