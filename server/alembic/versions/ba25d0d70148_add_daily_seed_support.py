@@ -63,6 +63,31 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("weekday"),
     )
 
+    # The schedule rows below reference the "standard" pool. Databases
+    # migrated from production already have it (backfilled from seeds in
+    # 9d6fcec26ada); a fresh database does not, so create it here. `config`
+    # stays an empty JSON object, populated later by `speedfog-scan-seeds`,
+    # same convention as the pools backfill.
+    if is_postgres:
+        op.execute(
+            sa.text(
+                """
+                INSERT INTO pools (id, name, enabled, config, created_at)
+                VALUES (gen_random_uuid(), 'standard', true, '{}'::json, now())
+                ON CONFLICT (name) DO NOTHING
+                """
+            )
+        )
+    else:
+        op.execute(
+            sa.text(
+                """
+                INSERT OR IGNORE INTO pools (id, name, enabled, config, created_at)
+                VALUES (:id, 'standard', 1, '{}', CURRENT_TIMESTAMP)
+                """
+            ).bindparams(id="00000000-0000-0000-0000-000000000002")
+        )
+
     op.bulk_insert(
         sa.table(
             "daily_seed_schedule",

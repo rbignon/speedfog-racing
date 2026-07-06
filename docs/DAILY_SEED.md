@@ -93,7 +93,7 @@ A single Alembic migration (`ba25d0d70148_add_daily_seed_support`):
 3. Relaxes `users.api_token` to nullable.
 4. Adds the `SYSTEM` value to the PostgreSQL `userrole` enum inside an `autocommit_block()` (`ALTER TYPE ... ADD VALUE` cannot run inside a transaction).
 5. Inserts the system user (idempotent: `ON CONFLICT DO NOTHING` on PostgreSQL, `INSERT OR IGNORE` on SQLite).
-6. Creates `daily_seed_schedule` and seeds it with seven rows pointing at `standard`.
+6. Creates `daily_seed_schedule` and seeds it with seven rows pointing at `standard`. The `standard` pool itself is created first if missing (fresh database; empty `config`, populated later by `speedfog-scan-seeds`), idempotent like the system-user insert.
 
 ---
 
