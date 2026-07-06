@@ -103,6 +103,28 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 
 ---
 
+## Protocol Version
+
+The mod-server wire protocol carries its own version, independent from
+release numbers. Current: **1.0**. It is defined in
+`server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
+`mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
+
+Bump rules:
+
+- Breaking change to the wire protocol: major + 1 (minor resets to 0).
+- Backward-compatible addition worth signalling: minor + 1 (optional).
+- No wire change: unchanged.
+
+At auth, the mod sends `protocol_version`; a different major (either
+direction) is rejected with `auth_error` and close code 4003. A mod that
+omits the field is assumed to speak protocol 1.0. Same major with an older
+minor is accepted and gets `latest_mod_version` in `auth_ok` (soft update
+notice). The `MIN_MOD_VERSION` server setting can additionally reject old
+_release_ versions for non-protocol emergencies.
+
+---
+
 ## WebSocket: Mod Connection
 
 **Endpoint:** `WS /ws/mod/{race_id}`
@@ -131,9 +153,15 @@ First message after connection. Authenticates the mod. Must arrive within 5 seco
 ```json
 {
   "type": "auth",
-  "mod_token": "player_specific_token"
+  "mod_token": "player_specific_token",
+  "protocol_version": "1.0",
+  "mod_version": "1.17.0"
 }
 ```
+
+`protocol_version` (optional): wire-protocol version spoken by the mod (see [Protocol Version](#protocol-version)). Absent on pre-versioning builds, which are assumed to speak `1.0`. An incompatible major is rejected with `auth_error` + close 4003.
+
+`mod_version` (optional): mod release version, used for server logs and the admin activity view only, never for decisions (except the emergency `MIN_MOD_VERSION` gate).
 
 #### `ready`
 
@@ -295,6 +323,8 @@ Authentication successful. Contains initial race state.
 `spawn_items`: list of items to spawn at runtime via `func_item_inject`. Used for item types not supported by EMEVD's `DirectlyGivePlayerItem` (e.g., Gem/Ash of War, type 4). Each entry has `id` (EquipParamGem row ID) and `qty` (default 1). The mod spawns these once after game load, using `items_spawned_flag` to prevent re-giving on reconnect or game restart. `null` if no runtime-spawned items exist.
 
 `items_spawned_flag`: (int, optional) Event flag ID for runtime item spawn prevention. When present, the mod checks this flag before spawning items, and sets it after. Persists in save file (saved flag range). `null` if not provided by graph.json (backward compat: mod skips flag check).
+
+`latest_mod_version`: (string, optional) server release version, present only when a newer compatible mod build exists (server protocol minor ahead of the client's). The mod shows it as a transient update notice. Absent (or `null`) otherwise; old mods ignore it.
 
 **Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`. `started_at` is the effective gameplay start: on race launch the server sets it to `now + countdown_seconds` so the countdown window doesn't eat into the configured duration. `race_ends_at` is `null` until the race transitions to `running` (it is computed from `started_at + race_duration_minutes`); when the race starts, the server pushes a [`race_info_update`](#race_info_update) so mods that authed in `setup` pick up the now-populated value.
 
@@ -1096,7 +1126,7 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 | `1000` | Normal closure (room shutdown, race reset)            | All                           |
 | `4000` | Replaced by a new connection (same participant)       | Mod, Training                 |
 | `4001` | Auth timeout (no message received within deadline)    | Mod, Training, Training Spec  |
-| `4003` | Auth error (invalid JSON, invalid message, auth fail) | Mod, Training, Training Spec  |
+| `4003` | Auth error (invalid JSON/message, auth fail, version) | Mod, Training, Training Spec  |
 | `4004` | Resource not found (race or session doesn't exist)    | Spectator, Training Spectator |
 
 ### Security Notes

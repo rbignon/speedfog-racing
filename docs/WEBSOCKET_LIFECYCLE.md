@@ -33,6 +33,7 @@ Client connects
        ▼
   authenticate_mod()
        │
+       ├──incompatible protocol / gated version──→ send auth_error + close(4003)
        ├──invalid token──→ send auth_error + close(4003)
        ├──race finished──→ send auth_error + close(4003)
        │
@@ -72,6 +73,8 @@ Client connects
 ### Key Mechanisms
 
 **Auth timeout (5s)**: The server waits up to `MOD_AUTH_TIMEOUT = 5.0s` for the first `auth` message. Prevents connections that connect but never authenticate from occupying resources.
+
+**Version compatibility**: the auth message may carry `protocol_version` and `mod_version`. A protocol major mismatch (absent = assumed 1.0) or a release older than the optional `MIN_MOD_VERSION` setting is rejected with `auth_error` + close 4003 before any registration. Same-major, older-minor mods are accepted and receive `latest_mod_version` in `auth_ok`, which the overlay shows as a transient update notice. The reported version is kept on the connection and shown in the admin activity feed.
 
 **Connection replacement**: there is no duplicate-connection rejection; last writer wins. `manager.connect_mod()` registers the new connection and, if one already existed for the same participant (typically a ghost after a network drop), closes it with code 4000 ("replaced by new connection") so the old handler's receive loop exits. `disconnect_mod()` only removes the registry entry when it still refers to the disconnecting websocket, so the old handler's cleanup cannot evict the replacement. This handles mod reconnects that happen before the server notices the old connection is dead.
 
