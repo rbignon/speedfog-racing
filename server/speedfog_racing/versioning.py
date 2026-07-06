@@ -6,7 +6,10 @@ addition worth signalling -> minor + 1). Release versions are for humans and
 for the emergency `min_mod_version` gate.
 """
 
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 def parse_version(value: str | None) -> tuple[int, ...] | None:
@@ -67,6 +70,13 @@ def evaluate_mod_compat(
 
     if min_release is not None:
         minimum = parse_version(min_release)
+        if minimum is None:
+            # The emergency gate is exactly the setting an operator reaches for
+            # during an incident; a typo silently disabling it must be visible.
+            logger.warning(
+                "min_mod_version %r is not a parsable version; the release gate is disabled",
+                min_release,
+            )
         release = parse_version(client_release)
         if minimum is not None and (release is None or release < minimum):
             return ModCompat(

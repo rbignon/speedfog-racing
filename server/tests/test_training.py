@@ -3,6 +3,7 @@
 import asyncio
 import os
 import tempfile
+import time
 import uuid
 import zipfile
 from datetime import UTC, datetime
@@ -864,6 +865,37 @@ def test_training_mod_websocket_auth(training_ws_client, training_session_data):
         # Should immediately receive race_start
         start = ws.receive_json()
         assert start["type"] == "race_start"
+
+
+def test_training_mod_version_stored_on_connection(training_ws_client, training_session_data):
+    """The mod version sent at auth is kept on the training connection."""
+    from speedfog_racing.websocket.training.manager import training_manager
+
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json(
+            {
+                "type": "auth",
+                "mod_token": token,
+                "protocol_version": "1.0",
+                "mod_version": "1.17.0",
+            }
+        )
+        auth_ok = ws.receive_json()
+        assert auth_ok["type"] == "auth_ok"
+        assert auth_ok.get("latest_mod_version") is None
+
+        # auth_ok is sent before connect_mod registers the connection, so the
+        # server thread may still be registering when we get here; poll briefly.
+        session_uuid = uuid.UUID(str(sid))
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            if training_manager.get_mod_version(session_uuid) == "1.17.0":
+                break
+            time.sleep(0.01)
+        assert training_manager.get_mod_version(session_uuid) == "1.17.0"
 
 
 def test_training_mod_duplicate_connection_replaces_old(training_ws_client, training_session_data):

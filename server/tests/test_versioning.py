@@ -78,6 +78,16 @@ class TestEvaluateModCompat:
         compat = evaluate_mod_compat("1.0", "1.18.0", server_protocol="1.0", min_release="1.18.0")
         assert compat.reject_reason is None
 
+    def test_min_release_gate_unparsable_disables_gate_with_warning(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            compat = evaluate_mod_compat(
+                "1.0", "0.0.1", server_protocol="1.0", min_release="v1.18.0"
+            )
+        assert compat.reject_reason is None
+        assert "min_mod_version" in caplog.text
+
     def test_protocol_reject_wins_over_min_release(self):
         compat = evaluate_mod_compat("2.0", "1.0.0", server_protocol="1.0", min_release="1.18.0")
         assert "not compatible" in (compat.reject_reason or "")
