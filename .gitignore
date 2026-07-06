@@ -45,6 +45,11 @@ target/
 # Superpowers
 .superpowers/
 
+# Local design docs (kept out of history on purpose)
+docs/specs/
+docs/plans/
+docs/superpowers/
+
 # OS
 .DS_Store
 Thumbs.db
