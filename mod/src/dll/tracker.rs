@@ -305,17 +305,8 @@ impl RaceTracker {
         })
     }
 
-    /// Returns true if we're in the countdown period before the race effectively starts.
-    pub fn is_countdown_active(&self) -> bool {
-        self.machine.is_countdown_active(Instant::now())
-    }
-
     pub fn is_race_running(&self) -> bool {
         self.machine.is_race_running()
-    }
-
-    pub fn is_race_setup(&self) -> bool {
-        self.machine.is_race_setup()
     }
 
     /// Check if the local player has finished the race.
@@ -710,11 +701,6 @@ impl RaceTracker {
 
     pub fn my_participant(&self) -> Option<&ParticipantInfo> {
         self.machine.my_participant()
-    }
-
-    /// Set a status message that will be displayed temporarily (3 seconds).
-    pub fn set_status(&mut self, message: String) {
-        self.machine.set_status(message, Instant::now());
     }
 
     /// Get current status message if still valid (within 3 seconds).
