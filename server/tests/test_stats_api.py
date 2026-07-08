@@ -1338,10 +1338,13 @@ class TestZoneStatsAggregation:
 
         assert detail.display_name == "Ancient Ruins of Rauh - East"
 
-    async def test_aggregate_zone_stats_detects_backtracks(
+    async def test_aggregate_zone_stats_ignores_plain_revisits(
         self, async_session, three_races_with_zone_history
     ):
-        """Player 1 backtracks to stormveil, so stormveil should have backtrack count."""
+        """Player 1 re-enters stormveil via a plain fog entry: transit through an
+        already-visited zone is not a backtrack. Only entries preceding a
+        type "backtrack" entry count (the zone the player turned away from).
+        """
         race_ids, user_ids = three_races_with_zone_history
         async with async_session() as db:
             participants = (
@@ -1369,8 +1372,7 @@ class TestZoneStatsAggregation:
 
             stormveil = next((d for n, d in zone_data.items() if "Stormveil" in n), None)
             assert stormveil is not None
-            # Player 1 backtracks to stormveil in each of the 3 races
-            assert stormveil["backtrack_count"] == 3
+            assert stormveil["backtrack_count"] == 0
 
 
 class TestZoneIndexEndpoint:
@@ -2066,7 +2068,9 @@ class TestAbandonCountsAsBack:
             assert raya["backtrack_count"] == 1
 
     async def test_zone_abandon_revisit_no_double_count(self, async_session):
-        """Abandon on a revisited zone should NOT add an extra backtrack."""
+        """Abandon on a revisited zone should NOT add a backtrack: the abandon
+        rule only credits first-visit zones, and a plain fog re-entry is not
+        a backtrack either."""
         async with async_session() as db:
             await self._make_participant(
                 db,
@@ -2075,7 +2079,7 @@ class TestAbandonCountsAsBack:
                     {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
                     {"node_id": "stormveil_c3d4", "igt_ms": 300_000, "deaths": 2},
                     {"node_id": "raya_i9j0", "igt_ms": 700_000, "deaths": 1},
-                    # Backtrack to stormveil, then abandon there
+                    # Return to stormveil via a fog gate, then abandon there
                     {"node_id": "stormveil_c3d4", "igt_ms": 1_000_000, "deaths": 0},
                 ],
                 suffix="z2",
@@ -2103,8 +2107,7 @@ class TestAbandonCountsAsBack:
 
             stormveil = next((d for n, d in zone_data.items() if "Stormveil" in n), None)
             assert stormveil is not None
-            # Only 1 backtrack (the revisit), not 2
-            assert stormveil["backtrack_count"] == 1
+            assert stormveil["backtrack_count"] == 0
 
     async def test_boss_abandon_counts_as_back(self, async_session):
         """Abandon on a boss (last entry) should set backed_last_visit=True."""
@@ -2211,3 +2214,255 @@ class TestAbandonCountsAsBack:
         godrick = next((b for b in result.bosses if b.display_name == "Godrick"), None)
         # Pure-backtrack visitor: boss should not appear in stats at all
         assert godrick is None
+
+
+class TestZoneBacktrackRule:
+    """A zone is backtracked when the player turns away from it: its entry
+    immediately precedes a type "backtrack" entry, unless the player comes
+    right back to it (death/quit-out runback) or the preceding entry is
+    itself a backtrack landing."""
+
+    GRAPH_JSON = {
+        "nodes": {
+            "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+            "stormveil_c3d4": {
+                "type": "legacy_dungeon",
+                "display_name": "Stormveil Castle",
+                "layer": 1,
+            },
+            "raya_i9j0": {
+                "type": "legacy_dungeon",
+                "display_name": "Raya Lucaria",
+                "layer": 2,
+            },
+            "cave_e5f6": {
+                "type": "mini_dungeon",
+                "display_name": "Coastal Cave",
+                "layer": 2,
+            },
+            "godrick_m1n2": {
+                "type": "major_boss",
+                "display_name": "Godrick",
+                "layer": 3,
+            },
+        },
+        "total_layers": 4,
+    }
+
+    async def _make_participant(self, db, *, zone_history, suffix):
+        """Helper: create user + seed + race + finished participant."""
+        user = User(
+            twitch_id=f"bt_{suffix}",
+            twitch_username=f"bt_{suffix}",
+            api_token=f"btt_{suffix}",
+            role=UserRole.USER,
+        )
+        org = User(
+            twitch_id=f"btorg_{suffix}",
+            twitch_username=f"btorg_{suffix}",
+            api_token=f"btorgt_{suffix}",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, org])
+        await db.flush()
+
+        seed = Seed(
+            seed_number=f"bts_{suffix}",
+            pool_name="standard",
+            graph_json=self.GRAPH_JSON,
+            total_layers=4,
+            folder_path=f"/t/bts_{suffix}",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name=f"Backtrack Race {suffix}",
+            organizer_id=org.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            mod_token=f"btmod_{suffix}",
+            status=ParticipantStatus.FINISHED,
+            igt_ms=1_000_000,
+            death_count=sum(e.get("deaths", 0) for e in zone_history),
+            zone_history=zone_history,
+        )
+        db.add(participant)
+        await db.commit()
+        return participant
+
+    async def _zone_counts(self, async_session):
+        async with async_session() as db:
+            participants = (
+                (
+                    await db.execute(
+                        select(Participant).options(
+                            selectinload(Participant.race).selectinload(Race.seed),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            seeds_by_id = {
+                p.race.seed_id: p.race.seed for p in participants if p.race and p.race.seed
+            }
+            node_display = _resolve_node_display(seeds_by_id)
+            zone_data = _aggregate_zone_stats(
+                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+            return {name: data["backtrack_count"] for name, data in zone_data.items()}
+
+    async def test_zone_before_backtrack_entry_counts(self, async_session):
+        """The player turned away from raya (warped back to stormveil, then went
+        elsewhere): raya is backtracked, the landing zone is not."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 100_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 300_000, "type": "fog"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 400_000, "type": "backtrack"},
+                    {"node_id": "godrick_m1n2", "igt_ms": 500_000, "type": "fog"},
+                ],
+                suffix="r1",
+            )
+
+        counts = await self._zone_counts(async_session)
+        assert counts["Raya Lucaria"] == 1
+        assert counts["Stormveil Castle"] == 0
+
+    async def test_runback_to_same_zone_does_not_count(self, async_session):
+        """Death/quit-out runback: the player re-enters the zone right after the
+        backtrack entry, so they did not take another path."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 100_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 300_000, "type": "fog", "deaths": 1},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 400_000, "type": "backtrack"},
+                    {"node_id": "raya_i9j0", "igt_ms": 450_000, "type": "fog"},
+                ],
+                suffix="r2",
+            )
+
+        counts = await self._zone_counts(async_session)
+        assert counts["Raya Lucaria"] == 0
+        assert counts["Stormveil Castle"] == 0
+
+    async def test_backtrack_landing_followed_by_backtrack_not_counted(self, async_session):
+        """Consecutive backtrack entries (multi-hop warp) credit only the zone
+        the player originally turned away from, not the intermediate landings."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 100_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 200_000, "type": "fog"},
+                    {"node_id": "cave_e5f6", "igt_ms": 300_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 400_000, "type": "backtrack"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 450_000, "type": "backtrack"},
+                    {"node_id": "godrick_m1n2", "igt_ms": 500_000, "type": "fog"},
+                ],
+                suffix="r3",
+            )
+
+        counts = await self._zone_counts(async_session)
+        assert counts["Coastal Cave"] == 1
+        assert counts["Raya Lucaria"] == 0
+        assert counts["Stormveil Castle"] == 0
+
+    async def test_backtrack_as_last_entry_counts(self, async_session):
+        """A backtrack with no later entry still credits the zone turned away
+        from: no return happened before the race ended."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 100_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 300_000, "type": "fog"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 400_000, "type": "backtrack"},
+                ],
+                suffix="r4",
+            )
+
+        counts = await self._zone_counts(async_session)
+        assert counts["Raya Lucaria"] == 1
+        assert counts["Stormveil Castle"] == 0
+
+    async def test_untyped_entries_are_not_backtracks(self, async_session):
+        """Entries without a type key predate backtrack detection and are
+        treated as fog traversals: they never mark the previous zone."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 100_000},
+                    {"node_id": "raya_i9j0", "igt_ms": 300_000},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 400_000},
+                ],
+                suffix="r5",
+            )
+
+        counts = await self._zone_counts(async_session)
+        assert counts["Raya Lucaria"] == 0
+        assert counts["Stormveil Castle"] == 0
+
+    async def test_multi_hop_runback_does_not_count(self, async_session):
+        """The warp chain has an intermediate landing but still ends with the
+        player back in the zone: a runback, not a path change."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 100_000, "type": "fog"},
+                    {"node_id": "cave_e5f6", "igt_ms": 200_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 300_000, "type": "fog", "deaths": 1},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 400_000, "type": "backtrack"},
+                    {"node_id": "cave_e5f6", "igt_ms": 450_000, "type": "backtrack"},
+                    {"node_id": "raya_i9j0", "igt_ms": 500_000, "type": "fog"},
+                ],
+                suffix="r6",
+            )
+
+        counts = await self._zone_counts(async_session)
+        assert counts["Raya Lucaria"] == 0
+        assert counts["Stormveil Castle"] == 0
+        assert counts["Coastal Cave"] == 0
+
+    async def test_warp_chain_landing_back_in_zone_does_not_count(self, async_session):
+        """A warp chain that lands back in the zone itself (then exits elsewhere)
+        is a return to the zone, not turning away from it."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 100_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 300_000, "type": "fog"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 400_000, "type": "backtrack"},
+                    {"node_id": "raya_i9j0", "igt_ms": 450_000, "type": "backtrack"},
+                    {"node_id": "godrick_m1n2", "igt_ms": 500_000, "type": "fog"},
+                ],
+                suffix="r7",
+            )
+
+        counts = await self._zone_counts(async_session)
+        assert counts["Raya Lucaria"] == 0
+        assert counts["Stormveil Castle"] == 0

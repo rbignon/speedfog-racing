@@ -274,9 +274,6 @@ def _aggregate_zone_stats(
         nodes: dict[str, Any] = seed.graph_json.get("nodes", {})
         race_id = participant.race_id
 
-        # Track visited node_ids per participant for backtrack detection
-        visited_nids: set[str] = set()
-
         for idx, entry in enumerate(history):
             nid = entry.get("node_id", "")
             if not nid:
@@ -294,10 +291,28 @@ def _aggregate_zone_stats(
             zone_race_ids.setdefault(nid, set()).add(race_id)
             seen_nids.add(nid)
 
-            # Backtrack: revisiting a node_id already seen by this participant
-            if nid in visited_nids:
-                zone_backtracks[nid] = zone_backtracks.get(nid, 0) + 1
-            visited_nids.add(nid)
+            # Backtrack: the player turned away from this zone to take another
+            # path. Its entry immediately precedes a type "backtrack" entry
+            # (warp landings recorded on death/teleport/quit-out), except when
+            # this entry is itself such a landing (a warp chain credits only
+            # the zone the player originally left) or when the chain ends with
+            # the player back in this zone (death runback, not a path change).
+            if (
+                entry.get("type", "fog") != "backtrack"
+                and idx + 1 < len(history)
+                and history[idx + 1].get("type") == "backtrack"
+            ):
+                # Walk the warp chain plus the first entry after it: if the
+                # player ends up back in this zone, they did not change path.
+                returned = False
+                j = idx + 1
+                while j < len(history) and history[j].get("type") == "backtrack":
+                    returned = returned or history[j].get("node_id") == nid
+                    j += 1
+                if j < len(history):
+                    returned = returned or history[j].get("node_id") == nid
+                if not returned:
+                    zone_backtracks[nid] = zone_backtracks.get(nid, 0) + 1
 
             # Time: difference between this entry's igt_ms and next entry's igt_ms
             current_igt = entry.get("igt_ms", 0)
@@ -311,8 +326,8 @@ def _aggregate_zone_stats(
                 if current_igt > 0 and final_igt > current_igt:
                     zone_times.setdefault(nid, []).append(final_igt - current_igt)
 
-        # Count abandon as backtrack for the participant's last zone, but
-        # only if it was a first visit (revisits already counted above).
+        # Count abandon as backtrack for the participant's last zone (they
+        # renounced there), but only on a first visit.
         if participant.status == ParticipantStatus.ABANDONED and history:
             last_nid = history[-1].get("node_id", "")
             if last_nid and last_nid in nodes:
