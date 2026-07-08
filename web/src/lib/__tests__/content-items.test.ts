@@ -78,4 +78,26 @@ describe("content catalog invariants", () => {
       expect(item.title.includes("**"), item.id).toBe(false);
     }
   });
+
+  it("gives every skip a zoneKey, legality, and no level/category", () => {
+    for (const item of CONTENT_ITEMS) {
+      if (item.kind === "skip") {
+        expect(item.zoneKey, item.id).toMatch(/^[a-z0-9_]+$/);
+        expect(["legal", "banned"], item.id).toContain(item.legality);
+        expect(item.level, item.id).toBeUndefined();
+        expect(item.category, item.id).toBeUndefined();
+      } else {
+        expect(item.legality, item.id).toBeUndefined();
+        expect(item.video, item.id).toBeUndefined();
+      }
+    }
+  });
+
+  it("uses valid YouTube ids on skip videos", () => {
+    for (const item of CONTENT_ITEMS) {
+      if (item.video) {
+        expect(item.video.youtubeId, item.id).toMatch(/^[A-Za-z0-9_-]{11}$/);
+      }
+    }
+  });
 });
