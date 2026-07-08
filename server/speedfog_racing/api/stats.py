@@ -190,16 +190,19 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
 
 def _resolve_node_display(
     seeds_by_id: dict[Any, Any],
-) -> dict[str, tuple[str, str]]:
-    """Build node_id -> (short_display_name, type) from the most recent seed.
+) -> dict[str, tuple[str, str, list[str]]]:
+    """Build node_id -> (short_display_name, type, zones) from the most recent seed.
 
     Node IDs are cluster IDs from SpeedFog's clusters.json. The same cluster_id
-    always refers to the same physical location, but display_names and types can
-    change across seeds if clusters.json was updated between seed generations
-    (e.g. display_name typo fixed, or a cluster reclassified from major_boss to
-    legacy_dungeon). Using the most recent seed ensures stats show current names.
+    always refers to the same physical location, but display_names, types, and
+    zone composition can change across seeds if clusters.json was updated
+    between seed generations (e.g. display_name typo fixed, or a cluster
+    reclassified from major_boss to legacy_dungeon). Using the most recent seed
+    ensures stats show current names. ``zones`` is the cluster's own fine-grained
+    zone id list (fog.txt identifiers), used for skip/tip content matching;
+    graphs that predate the field resolve to an empty list.
     """
-    node_display: dict[str, tuple[str, str]] = {}
+    node_display: dict[str, tuple[str, str, list[str]]] = {}
     node_seed_date: dict[str, Any] = {}
 
     for seed in seeds_by_id.values():
@@ -211,7 +214,7 @@ def _resolve_node_display(
                 node_seed_date[nid] = created
                 full_name = meta.get("display_name", nid)
                 short_name = full_name.rsplit(" - ", 1)[-1]
-                node_display[nid] = (short_name, meta.get("type", ""))
+                node_display[nid] = (short_name, meta.get("type", ""), meta.get("zones", []))
     return node_display
 
 
@@ -219,13 +222,16 @@ def _aggregate_zone_stats(
     participants: Sequence[Any],
     seeds_by_id: dict[Any, Any],
     node_types: set[str],
-    node_display: dict[str, tuple[str, str]],
+    node_display: dict[str, tuple[str, str, list[str]]],
 ) -> dict[str, dict[str, Any]]:
     """Aggregate zone stats per cluster id (node_id) from zone_history.
 
     Groups by node_id so that the same cluster across different seeds is counted
     together regardless of display_name changes. Filters and resolves display_name
-    and type from node_display (most recent seed).
+    and type from node_display (most recent seed). Each merged (display-name-keyed)
+    entry's "zones" is the sorted union of all its contributing node_ids' own
+    zones lists, since a merge can combine cluster variants with different
+    zone compositions (asymmetric drop connectivity).
     """
     zone_deaths: dict[str, int] = {}
     zone_visits: dict[str, int] = {}
@@ -253,7 +259,7 @@ def _aggregate_zone_stats(
             if nid not in nodes:
                 continue
             # Filter by most recent type (not the per-seed type)
-            resolved_type = node_display.get(nid, ("", ""))[1]
+            resolved_type = node_display.get(nid, ("", "", []))[1]
             if resolved_type not in node_types:
                 continue
             deaths = entry.get("deaths", 0)
@@ -284,7 +290,7 @@ def _aggregate_zone_stats(
         if participant.status == ParticipantStatus.ABANDONED and history:
             last_nid = history[-1].get("node_id", "")
             if last_nid and last_nid in nodes:
-                resolved_type = node_display.get(last_nid, ("", ""))[1]
+                resolved_type = node_display.get(last_nid, ("", "", []))[1]
                 is_first_visit = sum(1 for e in history if e.get("node_id") == last_nid) == 1
                 if resolved_type in node_types and is_first_visit:
                     zone_backtracks[last_nid] = zone_backtracks.get(last_nid, 0) + 1
@@ -299,8 +305,9 @@ def _aggregate_zone_stats(
     # let the representative flip on every process restart.
     merged: dict[str, dict[str, Any]] = {}
     for nid in sorted(seen_nids):
-        display_name = node_display.get(nid, (nid, ""))[0]
-        node_type = node_display.get(nid, ("", ""))[1]
+        display_name = node_display.get(nid, (nid, "", []))[0]
+        node_type = node_display.get(nid, ("", "", []))[1]
+        node_zones = node_display.get(nid, ("", "", []))[2]
         if display_name in merged:
             m = merged[display_name]
             m["total_deaths"] += zone_deaths[nid]
@@ -308,6 +315,7 @@ def _aggregate_zone_stats(
             m["race_ids"].update(zone_race_ids[nid])
             m["backtrack_count"] += zone_backtracks.get(nid, 0)
             m["times"].extend(zone_times.get(nid, []))
+            m["zones"].update(node_zones)
         else:
             merged[display_name] = {
                 "node_id": nid,
@@ -318,6 +326,7 @@ def _aggregate_zone_stats(
                 "race_ids": set(zone_race_ids[nid]),
                 "backtrack_count": zone_backtracks.get(nid, 0),
                 "times": list(zone_times.get(nid, [])),
+                "zones": set(node_zones),
             }
 
     return {
@@ -330,6 +339,7 @@ def _aggregate_zone_stats(
             "race_count": len(data["race_ids"]),
             "backtrack_count": data["backtrack_count"],
             "times": data["times"],
+            "zones": sorted(data["zones"]),
         }
         for name, data in merged.items()
     }
@@ -499,6 +509,7 @@ async def get_zone_index(
                 if data["race_count"]
                 else 0.0
             ),
+            zones=data["zones"],
         )
         for data in node_data.values()
     ]
@@ -524,7 +535,7 @@ async def get_zone_detail(
     node_display = _resolve_node_display(seeds_by_id)
     if node_id not in node_display:
         raise HTTPException(status_code=404, detail="Unknown zone")
-    display_name, node_type = node_display[node_id]
+    display_name, node_type, node_zones = node_display[node_id]
     if node_type not in DUNGEON_NODE_TYPES:
         raise HTTPException(status_code=404, detail="Not an explorable zone")
     node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display)
@@ -539,12 +550,15 @@ async def get_zone_detail(
             avg_time_ms=None,
             avg_deaths_per_visit=0.0,
             backtrack_rate=0.0,
+            zones=node_zones,
         )
     return ZoneDetailResponse(
         # Echo the requested node_id, not data["node_id"] (the merge's
         # representative cluster id): a caller requesting a specific
         # backtrack-merged sibling id must get that same id back, even
         # though the aggregate itself is shared across the merge group.
+        # Same for zones: node_zones (the requested id's own composition),
+        # not data["zones"] (the merge's union across all siblings).
         node_id=node_id,
         display_name=data["display_name"],
         type=data["type"],
@@ -554,6 +568,7 @@ async def get_zone_detail(
         avg_deaths_per_visit=(
             round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
         ),
+        zones=node_zones,
         backtrack_rate=(
             round(data["backtrack_count"] / data["race_count"], 2) if data["race_count"] else 0.0
         ),

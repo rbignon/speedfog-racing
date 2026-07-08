@@ -394,10 +394,21 @@ async def three_races_with_zone_history(async_session):
                 "type": "legacy_dungeon",
                 "display_name": "Stormveil Castle",
                 "layer": 1,
+                "zones": ["stormveil", "stormveil_gate"],
             },
-            "cave_e5f6": {"type": "mini_dungeon", "display_name": "Coastal Cave", "layer": 1},
+            "cave_e5f6": {
+                "type": "mini_dungeon",
+                "display_name": "Coastal Cave",
+                "layer": 1,
+                "zones": ["coastal_cave"],
+            },
             "margit_g7h8": {"type": "boss_arena", "display_name": "Margit", "layer": 2},
-            "raya_i9j0": {"type": "legacy_dungeon", "display_name": "Raya Lucaria", "layer": 3},
+            "raya_i9j0": {
+                "type": "legacy_dungeon",
+                "display_name": "Raya Lucaria",
+                "layer": 3,
+                "zones": ["raya_lucaria"],
+            },
             "final_k1l2": {"type": "final_boss", "display_name": "Loretta", "layer": 4},
         },
         "total_layers": 5,
@@ -1166,6 +1177,77 @@ class TestZoneStatsAggregation:
                 for t in data["times"]:
                     assert t > 0, f"Zone {name} has non-positive time {t}"
 
+    async def test_aggregate_zone_stats_includes_zones_union(
+        self, async_session, three_races_with_zone_history
+    ):
+        """Each merged entry's 'zones' is the sorted union of its contributors'
+        zones. No two node_ids share a display_name in this fixture, so the
+        union degenerates to each node's own zones list.
+        """
+        race_ids, user_ids = three_races_with_zone_history
+        async with async_session() as db:
+            participants = (
+                (
+                    await db.execute(
+                        select(Participant)
+                        .where(Participant.status == ParticipantStatus.FINISHED)
+                        .options(
+                            selectinload(Participant.race).selectinload(Race.seed),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            seeds_by_id = {}
+            for p in participants:
+                if p.race and p.race.seed:
+                    seeds_by_id[p.race.seed_id] = p.race.seed
+
+            node_display = _resolve_node_display(seeds_by_id)
+            zone_data = _aggregate_zone_stats(
+                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+
+            assert zone_data["Stormveil Castle"]["zones"] == ["stormveil", "stormveil_gate"]
+            assert zone_data["Coastal Cave"]["zones"] == ["coastal_cave"]
+
+    async def test_resolve_node_display_tolerates_missing_zones_key(self, async_session):
+        """A graph node without a 'zones' key resolves to an empty list, not
+        a KeyError: older/hand-authored seed graphs may not carry it.
+        """
+        graph_json = {
+            "nodes": {
+                "no_zones_key_ab12": {"type": "legacy_dungeon", "display_name": "No Zones"},
+            },
+            "total_layers": 1,
+        }
+        async with async_session() as db:
+            org = User(
+                twitch_id="nzorg",
+                twitch_username="nzorg",
+                api_token="nzorgt",
+                role=UserRole.ORGANIZER,
+            )
+            db.add(org)
+            await db.flush()
+            seed = Seed(
+                seed_number="nzseed",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=1,
+                folder_path="/t/nzseed",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.commit()
+            seed_id = seed.id
+
+        async with async_session() as db:
+            seed = (await db.execute(select(Seed).where(Seed.id == seed_id))).scalar_one()
+            node_display = _resolve_node_display({seed_id: seed})
+        assert node_display["no_zones_key_ab12"] == ("No Zones", "legacy_dungeon", [])
+
     async def test_aggregate_zone_stats_detects_backtracks(
         self, async_session, three_races_with_zone_history
     ):
@@ -1214,6 +1296,7 @@ class TestZoneIndexEndpoint:
         stormveil = next(z for z in result.zones if z.node_id == "stormveil_c3d4")
         assert stormveil.visits > 0
         assert stormveil.avg_time_ms > 0
+        assert stormveil.zones == ["stormveil", "stormveil_gate"]
 
     async def test_index_excludes_boss_arenas(self, async_session, three_races_with_zone_history):
         async with async_session() as db:
@@ -1238,6 +1321,7 @@ class TestZoneDetailEndpoint:
                 "type": "legacy_dungeon",
                 "display_name": "Unvisited Ruins",
                 "layer": 2,
+                "zones": ["unvisited_ruins"],
             },
         },
         "total_layers": 3,
@@ -1251,6 +1335,7 @@ class TestZoneDetailEndpoint:
         assert detail.visits > 0
         assert detail.avg_time_ms is not None and detail.avg_time_ms > 0
         assert 0 <= detail.backtrack_rate
+        assert detail.zones == ["stormveil", "stormveil_gate"]
 
     async def test_detail_404_for_unknown_node(self, async_session, three_races_with_zone_history):
         async with async_session() as db:
@@ -1331,6 +1416,7 @@ class TestZoneDetailEndpoint:
         assert detail.avg_time_ms is None
         assert detail.avg_deaths_per_visit == 0.0
         assert detail.backtrack_rate == 0.0
+        assert detail.zones == ["unvisited_ruins"]
 
     MERGED_CLUSTER_GRAPH = {
         "nodes": {
@@ -1339,11 +1425,13 @@ class TestZoneDetailEndpoint:
                 "type": "legacy_dungeon",
                 "display_name": "Stormveil Castle",
                 "layer": 1,
+                "zones": ["stormveil", "stormveil_gate"],
             },
             "stormveil_alt99": {
                 "type": "legacy_dungeon",
                 "display_name": "Stormveil Castle",
                 "layer": 1,
+                "zones": ["stormveil", "stormveil_rooftops"],
             },
         },
         "total_layers": 2,
@@ -1355,6 +1443,10 @@ class TestZoneDetailEndpoint:
         _aggregate_zone_stats merges them into one aggregate. Each id must
         still echo back its own requested node_id, not the merge's
         internal representative id, while sharing the same merged stats.
+
+        Their zone compositions differ (asymmetric connectivity means each
+        cluster variant reaches a different zone set): the detail response
+        must reflect each sibling's OWN zones, not the merged union.
         """
         async with async_session() as db:
             user_a = User(
@@ -1437,6 +1529,86 @@ class TestZoneDetailEndpoint:
         assert detail_a.race_count == detail_b.race_count == 1
         assert detail_a.avg_deaths_per_visit == detail_b.avg_deaths_per_visit == 1.5
         assert detail_a.avg_time_ms == detail_b.avg_time_ms == 425_000
+        # Each sibling's own composition, not the merged union.
+        assert detail_a.zones == ["stormveil", "stormveil_gate"]
+        assert detail_b.zones == ["stormveil", "stormveil_rooftops"]
+
+    async def test_index_zones_is_union_of_merged_siblings(self, async_session):
+        """The index entry for a merged display_name exposes the union of all
+        contributing siblings' zones (unlike detail, which echoes only the
+        requested sibling's own composition).
+        """
+        async with async_session() as db:
+            user_a = User(
+                twitch_id="iua", twitch_username="iua", api_token="iuat", role=UserRole.USER
+            )
+            user_b = User(
+                twitch_id="iub", twitch_username="iub", api_token="iubt", role=UserRole.USER
+            )
+            org = User(
+                twitch_id="iuorg",
+                twitch_username="iuorg",
+                api_token="iuorgt",
+                role=UserRole.ORGANIZER,
+            )
+            db.add_all([user_a, user_b, org])
+            await db.flush()
+
+            seed = Seed(
+                seed_number="iuseed",
+                pool_name="standard",
+                graph_json=self.MERGED_CLUSTER_GRAPH,
+                total_layers=2,
+                folder_path="/t/iuseed",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+
+            race = Race(
+                name="Index Union Race",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race)
+            await db.flush()
+
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user_a.id,
+                    mod_token="iumoda",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=500_000,
+                    death_count=1,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "stormveil_c3d4", "igt_ms": 100_000, "deaths": 1},
+                    ],
+                )
+            )
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user_b.id,
+                    mod_token="iumodb",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=600_000,
+                    death_count=2,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "stormveil_alt99", "igt_ms": 150_000, "deaths": 2},
+                    ],
+                )
+            )
+            await db.commit()
+
+        async with async_session() as db:
+            result = await get_zone_index(pool=None, days=3650, db=db)
+        stormveil = next(z for z in result.zones if z.display_name == "Stormveil Castle")
+        assert stormveil.zones == ["stormveil", "stormveil_gate", "stormveil_rooftops"]
 
 
 class TestZoneEntriesCarryNodeId:
@@ -1482,7 +1654,7 @@ class TestBossStatsFiltering:
             node_display = _resolve_node_display(seeds_by_id)
 
             # Verify type resolution
-            for nid, (display, ntype) in node_display.items():
+            for nid, (display, ntype, _zones) in node_display.items():
                 if "final" in nid:
                     assert ntype == "final_boss"
                 if "margit" in nid:

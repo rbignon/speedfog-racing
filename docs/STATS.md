@@ -253,13 +253,13 @@ Per participant, a `visited_nids` set tracks already-seen node_ids. Revisiting a
 
 **Endpoint:** `GET /api/stats/zones/index?pool=<optional>&days=<optional, default 90>`
 
-Every dungeon-type zone visited at least once in the window (not capped at 5, unlike the panels above; never-visited zones are absent, only the detail endpoint covers those) with its aggregate stats, sorted by `display_name`. Feeds the frontend's zone codex index page. Shares `_load_zone_stats_inputs` and `_aggregate_zone_stats` with `/zones`, so filtering and merging behave identically; the only difference is the response shape (`ZoneIndexEntry`: `node_id`, `display_name`, `type`, `visits`, `avg_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`) and that all zones are returned, not just the top 5 per category.
+Every dungeon-type zone visited at least once in the window (not capped at 5, unlike the panels above; never-visited zones are absent, only the detail endpoint covers those) with its aggregate stats, sorted by `display_name`. Feeds the frontend's zone codex index page. Shares `_load_zone_stats_inputs` and `_aggregate_zone_stats` with `/zones`, so filtering and merging behave identically; the only difference is the response shape (`ZoneIndexEntry`: `node_id`, `display_name`, `type`, `visits`, `avg_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`, `zones`) and that all zones are returned, not just the top 5 per category. `zones` is the union of the fine-grained zone ids across every cluster variant merged into that display_name, used by the frontend to match zone codex content (skips, tips) that could belong to any of the merged variants.
 
 ### Zone Codex Detail
 
 **Endpoint:** `GET /api/stats/zones/{node_id}?pool=<optional>&days=<optional, default 90>`
 
-Aggregate stats for a single zone, resolved from the most recent seed containing `node_id`. Returns 404 if `node_id` is unknown, or if its resolved type is not in `DUNGEON_NODE_TYPES` (e.g. a boss arena). If the zone is known but had no visits in the `days` window, returns zeroed stats (`visits=0`, `race_count=0`, `avg_time_ms=null`) rather than 404, since the zone still exists. Response shape: `ZoneDetailResponse` (`node_id`, `display_name`, `type`, `visits`, `race_count`, `avg_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`).
+Aggregate stats for a single zone, resolved from the most recent seed containing `node_id`. Returns 404 if `node_id` is unknown, or if its resolved type is not in `DUNGEON_NODE_TYPES` (e.g. a boss arena). If the zone is known but had no visits in the `days` window, returns zeroed stats (`visits=0`, `race_count=0`, `avg_time_ms=null`) rather than 404, since the zone still exists. Response shape: `ZoneDetailResponse` (`node_id`, `display_name`, `type`, `visits`, `race_count`, `avg_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`, `zones`). Unlike the index's `zones`, this echoes only the REQUESTED `node_id`'s own zone composition, not the merge union across its siblings: the detail sheet describes the specific cluster variant the caller asked about.
 
 ---
 

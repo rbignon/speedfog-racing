@@ -760,6 +760,7 @@ class ZoneIndexEntry(BaseModel):
     avg_time_ms: int
     avg_deaths_per_visit: float
     backtrack_rate: float
+    zones: list[str]
 
 
 class ZoneIndexResponse(BaseModel):
@@ -775,6 +776,7 @@ class ZoneDetailResponse(BaseModel):
     avg_time_ms: int | None
     avg_deaths_per_visit: float
     backtrack_rate: float
+    zones: list[str]
 
 
 class BossStatEntry(BaseModel):
