@@ -722,6 +722,7 @@ class LeaderboardResponse(BaseModel):
 
 
 class ZoneStatEntry(BaseModel):
+    node_id: str
     display_name: str
     type: str
     total_deaths: int
@@ -729,6 +730,7 @@ class ZoneStatEntry(BaseModel):
 
 
 class ZoneBacktrackEntry(BaseModel):
+    node_id: str
     display_name: str
     type: str
     backtrack_count: int
@@ -736,6 +738,7 @@ class ZoneBacktrackEntry(BaseModel):
 
 
 class ZoneTimeEntry(BaseModel):
+    node_id: str
     display_name: str
     type: str
     avg_time_ms: int
@@ -747,6 +750,31 @@ class ZoneStatsResponse(BaseModel):
     most_backtracked: list[ZoneBacktrackEntry]
     slowest: list[ZoneTimeEntry]
     fastest: list[ZoneTimeEntry]
+
+
+class ZoneIndexEntry(BaseModel):
+    node_id: str
+    display_name: str
+    type: str
+    visits: int
+    avg_time_ms: int
+    avg_deaths_per_visit: float
+    backtrack_rate: float
+
+
+class ZoneIndexResponse(BaseModel):
+    zones: list[ZoneIndexEntry]
+
+
+class ZoneDetailResponse(BaseModel):
+    node_id: str
+    display_name: str
+    type: str
+    visits: int
+    race_count: int
+    avg_time_ms: int | None
+    avg_deaths_per_visit: float
+    backtrack_rate: float
 
 
 class BossStatEntry(BaseModel):

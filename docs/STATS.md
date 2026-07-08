@@ -243,9 +243,23 @@ Time spent in a zone = `next_entry.igt_ms - current_entry.igt_ms`. For the last 
 
 All panels show top 5. Sorting uses rate metrics (per-visit or per-race) to avoid popularity bias.
 
+Each entry (`ZoneStatEntry`, `ZoneBacktrackEntry`, `ZoneTimeEntry`) carries `node_id`: the representative cluster id backing that merged display_name, letting the frontend link a panel entry to its zone codex detail page.
+
 ### Backtrack Detection
 
 Per participant, a `visited_nids` set tracks already-seen node_ids. Revisiting a node_id increments that zone's backtrack count.
+
+### Zone Codex Index
+
+**Endpoint:** `GET /api/stats/zones/index?pool=<optional>&days=<optional, default 90>`
+
+Every dungeon-type zone (not capped at 5, unlike the panels above) with its aggregate stats, sorted by `display_name`. Feeds the frontend's zone codex index page. Shares `_load_zone_stats_inputs` and `_aggregate_zone_stats` with `/zones`, so filtering and merging behave identically; the only difference is the response shape (`ZoneIndexEntry`: `node_id`, `display_name`, `type`, `visits`, `avg_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`) and that all zones are returned, not just the top 5 per category.
+
+### Zone Codex Detail
+
+**Endpoint:** `GET /api/stats/zones/{node_id}?pool=<optional>&days=<optional, default 90>`
+
+Aggregate stats for a single zone, resolved from the most recent seed containing `node_id`. Returns 404 if `node_id` is unknown, or if its resolved type is not in `DUNGEON_NODE_TYPES` (e.g. a boss arena). If the zone is known but had no visits in the `days` window, returns zeroed stats (`visits=0`, `race_count=0`, `avg_time_ms=null`) rather than 404, since the zone still exists. Response shape: `ZoneDetailResponse` (`node_id`, `display_name`, `type`, `visits`, `race_count`, `avg_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`).
 
 ---
 

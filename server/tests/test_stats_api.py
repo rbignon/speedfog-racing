@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
@@ -12,6 +13,9 @@ from speedfog_racing.api.stats import (
     DUNGEON_NODE_TYPES,
     _aggregate_zone_stats,
     _resolve_node_display,
+    get_zone_detail,
+    get_zone_index,
+    get_zone_stats,
 )
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
@@ -1195,6 +1199,259 @@ class TestZoneStatsAggregation:
             assert stormveil is not None
             # Player 1 backtracks to stormveil in each of the 3 races
             assert stormveil["backtrack_count"] == 3
+
+
+class TestZoneIndexEndpoint:
+    async def test_index_lists_dungeon_zones_sorted(
+        self, async_session, three_races_with_zone_history
+    ):
+        async with async_session() as db:
+            result = await get_zone_index(pool=None, days=3650, db=db)
+        names = [z.display_name for z in result.zones]
+        assert names == sorted(names)
+        types = {z.type for z in result.zones}
+        assert types <= {"legacy_dungeon", "mini_dungeon"}
+        stormveil = next(z for z in result.zones if z.node_id == "stormveil_c3d4")
+        assert stormveil.visits > 0
+        assert stormveil.avg_time_ms > 0
+
+    async def test_index_excludes_boss_arenas(self, async_session, three_races_with_zone_history):
+        async with async_session() as db:
+            result = await get_zone_index(pool=None, days=3650, db=db)
+        assert all(z.node_id != "margit_g7h8" for z in result.zones)
+
+
+class TestZoneDetailEndpoint:
+    """Fixture graph: stormveil_c3d4 is legacy_dungeon with visits and backtracks,
+    margit_g7h8 is boss_arena (excluded from the dungeon codex).
+    """
+
+    GRAPH_WITH_UNVISITED_DUNGEON = {
+        "nodes": {
+            "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+            "stormveil_c3d4": {
+                "type": "legacy_dungeon",
+                "display_name": "Stormveil Castle",
+                "layer": 1,
+            },
+            "unvisited_z9z9": {
+                "type": "legacy_dungeon",
+                "display_name": "Unvisited Ruins",
+                "layer": 2,
+            },
+        },
+        "total_layers": 3,
+    }
+
+    async def test_detail_returns_aggregates(self, async_session, three_races_with_zone_history):
+        async with async_session() as db:
+            detail = await get_zone_detail(node_id="stormveil_c3d4", pool=None, days=3650, db=db)
+        assert detail.node_id == "stormveil_c3d4"
+        assert detail.type == "legacy_dungeon"
+        assert detail.visits > 0
+        assert detail.avg_time_ms is not None and detail.avg_time_ms > 0
+        assert 0 <= detail.backtrack_rate
+
+    async def test_detail_404_for_unknown_node(self, async_session, three_races_with_zone_history):
+        async with async_session() as db:
+            with pytest.raises(HTTPException) as exc:
+                await get_zone_detail(node_id="nonexistent_ffff", pool=None, days=3650, db=db)
+        assert exc.value.status_code == 404
+
+    async def test_detail_404_for_boss_arena(self, async_session, three_races_with_zone_history):
+        async with async_session() as db:
+            with pytest.raises(HTTPException) as exc:
+                await get_zone_detail(node_id="margit_g7h8", pool=None, days=3650, db=db)
+        assert exc.value.status_code == 404
+
+    async def test_detail_zeroed_stats_for_zone_with_no_visits(self, async_session):
+        """A dungeon node listed in the seed graph but never visited returns
+        zeroed stats (not a 404): the zone exists, nobody has been there yet.
+        """
+        async with async_session() as db:
+            user = User(
+                twitch_id="zdu",
+                twitch_username="zdu",
+                api_token="zdut",
+                role=UserRole.USER,
+            )
+            org = User(
+                twitch_id="zdorg",
+                twitch_username="zdorg",
+                api_token="zdorgt",
+                role=UserRole.ORGANIZER,
+            )
+            db.add_all([user, org])
+            await db.flush()
+
+            seed = Seed(
+                seed_number="zdseed",
+                pool_name="standard",
+                graph_json=self.GRAPH_WITH_UNVISITED_DUNGEON,
+                total_layers=3,
+                folder_path="/t/zdseed",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+
+            race = Race(
+                name="Zero Visits Race",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race)
+            await db.flush()
+
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    mod_token="zdmod",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=500_000,
+                    death_count=1,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "stormveil_c3d4", "igt_ms": 300_000, "deaths": 1},
+                    ],
+                )
+            )
+            await db.commit()
+
+        async with async_session() as db:
+            detail = await get_zone_detail(node_id="unvisited_z9z9", pool=None, days=3650, db=db)
+        assert detail.node_id == "unvisited_z9z9"
+        assert detail.display_name == "Unvisited Ruins"
+        assert detail.type == "legacy_dungeon"
+        assert detail.visits == 0
+        assert detail.race_count == 0
+        assert detail.avg_time_ms is None
+        assert detail.avg_deaths_per_visit == 0.0
+        assert detail.backtrack_rate == 0.0
+
+    MERGED_CLUSTER_GRAPH = {
+        "nodes": {
+            "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+            "stormveil_c3d4": {
+                "type": "legacy_dungeon",
+                "display_name": "Stormveil Castle",
+                "layer": 1,
+            },
+            "stormveil_alt99": {
+                "type": "legacy_dungeon",
+                "display_name": "Stormveil Castle",
+                "layer": 1,
+            },
+        },
+        "total_layers": 2,
+    }
+
+    async def test_detail_echoes_requested_id_for_merged_cluster(self, async_session):
+        """stormveil_c3d4 and stormveil_alt99 are two distinct cluster ids that
+        share a display_name (asymmetric drop connectivity), so
+        _aggregate_zone_stats merges them into one aggregate. Each id must
+        still echo back its own requested node_id, not the merge's
+        internal representative id, while sharing the same merged stats.
+        """
+        async with async_session() as db:
+            user_a = User(
+                twitch_id="mca", twitch_username="mca", api_token="mcat", role=UserRole.USER
+            )
+            user_b = User(
+                twitch_id="mcb", twitch_username="mcb", api_token="mcbt", role=UserRole.USER
+            )
+            org = User(
+                twitch_id="mcorg",
+                twitch_username="mcorg",
+                api_token="mcorgt",
+                role=UserRole.ORGANIZER,
+            )
+            db.add_all([user_a, user_b, org])
+            await db.flush()
+
+            seed = Seed(
+                seed_number="mcseed",
+                pool_name="standard",
+                graph_json=self.MERGED_CLUSTER_GRAPH,
+                total_layers=2,
+                folder_path="/t/mcseed",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+
+            race = Race(
+                name="Merged Cluster Race",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race)
+            await db.flush()
+
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user_a.id,
+                    mod_token="mcmoda",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=500_000,
+                    death_count=1,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "stormveil_c3d4", "igt_ms": 100_000, "deaths": 1},
+                    ],
+                )
+            )
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user_b.id,
+                    mod_token="mcmodb",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=600_000,
+                    death_count=2,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "stormveil_alt99", "igt_ms": 150_000, "deaths": 2},
+                    ],
+                )
+            )
+            await db.commit()
+
+        async with async_session() as db:
+            detail_a = await get_zone_detail(node_id="stormveil_c3d4", pool=None, days=3650, db=db)
+        async with async_session() as db:
+            detail_b = await get_zone_detail(node_id="stormveil_alt99", pool=None, days=3650, db=db)
+
+        # Each response echoes the id that was actually requested.
+        assert detail_a.node_id == "stormveil_c3d4"
+        assert detail_b.node_id == "stormveil_alt99"
+        # But both resolve to the same merged aggregate under the hood.
+        assert detail_a.display_name == detail_b.display_name == "Stormveil Castle"
+        assert detail_a.visits == detail_b.visits == 2
+        assert detail_a.race_count == detail_b.race_count == 1
+        assert detail_a.avg_deaths_per_visit == detail_b.avg_deaths_per_visit == 1.5
+        assert detail_a.avg_time_ms == detail_b.avg_time_ms == 425_000
+
+
+class TestZoneEntriesCarryNodeId:
+    async def test_zone_stats_entries_have_node_id(
+        self, async_session, three_races_with_zone_history
+    ):
+        async with async_session() as db:
+            result = await get_zone_stats(pool=None, days=3650, db=db)
+        for entry in [
+            *result.deadliest,
+            *result.most_backtracked,
+            *result.slowest,
+            *result.fastest,
+        ]:
+            assert entry.node_id
 
 
 class TestBossStatsFiltering:

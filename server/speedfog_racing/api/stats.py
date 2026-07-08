@@ -2,9 +2,10 @@
 
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from statistics import mean
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -31,6 +32,9 @@ from speedfog_racing.schemas import (
     WeaponComboStat,
     WeaponStatsResponse,
     ZoneBacktrackEntry,
+    ZoneDetailResponse,
+    ZoneIndexEntry,
+    ZoneIndexResponse,
     ZoneStatEntry,
     ZoneStatsResponse,
     ZoneTimeEntry,
@@ -289,8 +293,12 @@ def _aggregate_zone_stats(
     # physical location produces different cluster_ids due to asymmetric drop
     # connectivity in the zone graph (different entry points yield different
     # reachable zone sets, so different cluster hashes).
+    # sorted() makes the representative node_id (first cluster id seen per
+    # display_name, stored below) deterministic across runs: seen_nids is a
+    # set, and Python's per-process string hash randomization would otherwise
+    # let the representative flip on every process restart.
     merged: dict[str, dict[str, Any]] = {}
-    for nid in seen_nids:
+    for nid in sorted(seen_nids):
         display_name = node_display.get(nid, (nid, ""))[0]
         node_type = node_display.get(nid, ("", ""))[1]
         if display_name in merged:
@@ -302,6 +310,7 @@ def _aggregate_zone_stats(
             m["times"].extend(zone_times.get(nid, []))
         else:
             merged[display_name] = {
+                "node_id": nid,
                 "display_name": display_name,
                 "type": node_type,
                 "total_deaths": zone_deaths[nid],
@@ -313,6 +322,7 @@ def _aggregate_zone_stats(
 
     return {
         name: {
+            "node_id": data["node_id"],
             "display_name": name,
             "type": data["type"],
             "total_deaths": data["total_deaths"],
@@ -325,17 +335,14 @@ def _aggregate_zone_stats(
     }
 
 
-@router.get("/zones", response_model=ZoneStatsResponse)
-async def get_zone_stats(
-    pool: str | None = Query(default=None),
-    days: int = Query(default=30, ge=1, le=3650),
-    db: AsyncSession = Depends(get_db),
-) -> ZoneStatsResponse:
-    """Zone analytics: deadliest dungeons and most visited nodes.
+async def _load_zone_stats_inputs(
+    pool: str | None, days: int, db: AsyncSession
+) -> tuple[Sequence[Participant], dict[Any, Any]]:
+    """Shared loader for zone stats endpoints.
 
-    ``days`` restricts the input to races started within the last N days
-    (default 30, range 1..3650). The output is capped at 5 entries per
-    category (deadliest, backtracked, slowest, fastest).
+    Returns eligible participants (FINISHED, or ABANDONED with igt_ms > 0)
+    in races started within the last ``days`` days, optionally restricted
+    to ``pool``, plus the seeds keyed by seed_id they belong to.
     """
     query = (
         select(Participant)
@@ -362,6 +369,23 @@ async def get_zone_stats(
         if p.race and p.race.seed:
             seeds_by_id[p.race.seed_id] = p.race.seed
 
+    return participants, seeds_by_id
+
+
+@router.get("/zones", response_model=ZoneStatsResponse)
+async def get_zone_stats(
+    pool: str | None = Query(default=None),
+    days: int = Query(default=30, ge=1, le=3650),
+    db: AsyncSession = Depends(get_db),
+) -> ZoneStatsResponse:
+    """Zone analytics: deadliest dungeons and most visited nodes.
+
+    ``days`` restricts the input to races started within the last N days
+    (default 30, range 1..3650). The output is capped at 5 entries per
+    category (deadliest, backtracked, slowest, fastest).
+    """
+    participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
+
     node_display = _resolve_node_display(seeds_by_id)
     node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display)
 
@@ -373,6 +397,7 @@ async def get_zone_stats(
     )[:5]
     deadliest = [
         ZoneStatEntry(
+            node_id=n["node_id"],
             display_name=n["display_name"],
             type=n["type"],
             total_deaths=n["total_deaths"],
@@ -391,6 +416,7 @@ async def get_zone_stats(
     )[:5]
     most_backtracked = [
         ZoneBacktrackEntry(
+            node_id=n["node_id"],
             display_name=n["display_name"],
             type=n["type"],
             backtrack_count=n["backtrack_count"],
@@ -409,6 +435,7 @@ async def get_zone_stats(
     )[:5]
     slowest = [
         ZoneTimeEntry(
+            node_id=n["node_id"],
             display_name=n["display_name"],
             type=n["type"],
             avg_time_ms=round(sum(n["times"]) / len(n["times"])),
@@ -424,6 +451,7 @@ async def get_zone_stats(
     )[:5]
     fastest = [
         ZoneTimeEntry(
+            node_id=n["node_id"],
             display_name=n["display_name"],
             type=n["type"],
             avg_time_ms=round(sum(n["times"]) / len(n["times"])),
@@ -437,6 +465,98 @@ async def get_zone_stats(
         most_backtracked=most_backtracked,
         slowest=slowest,
         fastest=fastest,
+    )
+
+
+@router.get("/zones/index", response_model=ZoneIndexResponse)
+async def get_zone_index(
+    pool: str | None = Query(default=None),
+    days: int = Query(default=90, ge=1, le=3650),
+    db: AsyncSession = Depends(get_db),
+) -> ZoneIndexResponse:
+    """All explorable zones with aggregate stats, for the zone codex index.
+
+    ``days`` restricts the input to races started within the last N days
+    (default 90, range 1..3650). Unlike ``/zones``, this is not capped at 5
+    entries per category: it returns every dungeon-type zone, sorted by
+    display_name, for a browsable index.
+    """
+    participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
+    node_display = _resolve_node_display(seeds_by_id)
+    node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display)
+    zones = [
+        ZoneIndexEntry(
+            node_id=data["node_id"],
+            display_name=data["display_name"],
+            type=data["type"],
+            visits=data["visits"],
+            avg_time_ms=round(mean(data["times"])) if data["times"] else 0,
+            avg_deaths_per_visit=(
+                round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
+            ),
+            backtrack_rate=(
+                round(data["backtrack_count"] / data["race_count"], 2)
+                if data["race_count"]
+                else 0.0
+            ),
+        )
+        for data in node_data.values()
+    ]
+    zones.sort(key=lambda z: z.display_name)
+    return ZoneIndexResponse(zones=zones)
+
+
+@router.get("/zones/{node_id}", response_model=ZoneDetailResponse)
+async def get_zone_detail(
+    node_id: str,
+    pool: str | None = Query(default=None),
+    days: int = Query(default=90, ge=1, le=3650),
+    db: AsyncSession = Depends(get_db),
+) -> ZoneDetailResponse:
+    """Aggregate stats for one explorable zone, for the zone codex detail sheet.
+
+    404s when ``node_id`` is unknown, or when it resolves to a node type
+    outside ``DUNGEON_NODE_TYPES`` (e.g. a boss arena). Returns zeroed stats
+    (``avg_time_ms=None``, ``visits=0``, ...) when the zone is known but has
+    no visits within the ``days`` window.
+    """
+    participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
+    node_display = _resolve_node_display(seeds_by_id)
+    if node_id not in node_display:
+        raise HTTPException(status_code=404, detail="Unknown zone")
+    display_name, node_type = node_display[node_id]
+    if node_type not in DUNGEON_NODE_TYPES:
+        raise HTTPException(status_code=404, detail="Not an explorable zone")
+    node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display)
+    data = node_data.get(display_name)
+    if data is None:
+        return ZoneDetailResponse(
+            node_id=node_id,
+            display_name=display_name,
+            type=node_type,
+            visits=0,
+            race_count=0,
+            avg_time_ms=None,
+            avg_deaths_per_visit=0.0,
+            backtrack_rate=0.0,
+        )
+    return ZoneDetailResponse(
+        # Echo the requested node_id, not data["node_id"] (the merge's
+        # representative cluster id): a caller requesting a specific
+        # backtrack-merged sibling id must get that same id back, even
+        # though the aggregate itself is shared across the merge group.
+        node_id=node_id,
+        display_name=data["display_name"],
+        type=data["type"],
+        visits=data["visits"],
+        race_count=data["race_count"],
+        avg_time_ms=round(mean(data["times"])) if data["times"] else None,
+        avg_deaths_per_visit=(
+            round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
+        ),
+        backtrack_rate=(
+            round(data["backtrack_count"] / data["race_count"], 2) if data["race_count"] else 0.0
+        ),
     )
 
 
