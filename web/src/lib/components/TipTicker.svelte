@@ -64,7 +64,12 @@
       <span class="tip-title">{current.title}</span>
       <p class="tip-text"><EmphasisText text={current.short} /></p>
     </div>
-    <a class="ticker-more" href="/game-changes">Game changes &rarr;</a>
+    <a
+      class="ticker-more"
+      href="/game-changes"
+      target="_blank"
+      rel="noopener noreferrer">Game changes</a
+    >
   </aside>
 {/if}
 
@@ -120,7 +125,7 @@
   .ticker-more {
     margin-top: auto;
     font-size: var(--font-size-xs);
-    align-self: flex-start;
+    align-self: flex-end;
   }
 
   /* Banner variant: one horizontal strip, no fill-height behavior. */
@@ -159,6 +164,7 @@
   .tip-ticker.banner .ticker-more {
     margin-top: 0;
     margin-left: auto;
+    align-self: flex-start;
     flex-shrink: 0;
   }
 </style>

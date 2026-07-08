@@ -1,6 +1,5 @@
 export type ContentKind = "tip" | "game_change" | "skip";
 export type TipLevel = "beginner" | "advanced";
-export type SkipLegality = "legal" | "banned";
 export type SkipDifficulty = "easy" | "risky" | "tech";
 
 export const GAME_CHANGE_CATEGORIES = [
@@ -38,14 +37,13 @@ export interface ContentItem {
   /** Fine-grained zone id from the seed graph's zones list (e.g. academy_rooftops); required for skips, optional zone-scoping for tips. */
   zoneId?: string;
   /** Only for kind "skip". */
-  legality?: SkipLegality;
   difficulty?: SkipDifficulty;
   video?: ContentVideo;
   /** Author credit for community-contributed videos. */
   credit?: string;
   /** Short label shown as the tip heading. */
   title: string;
-  /** One or two sentences, shown in the ticker and accordions. */
+  /** One or two sentences, shown in the ticker and accordions. Required (non-empty) for kinds "tip" and "game_change"; may be empty for "skip", whose title can carry all the information. */
   short: string;
   /** Longer prose for the Game Changes page; falls back to `short`. */
   body?: string;

@@ -9,10 +9,12 @@ export interface TickerContext {
 }
 
 /**
- * Orders catalog items for the ticker: pool-specific items are dropped unless
- * the pool matches (and then float to the top), recently seen items sink, and
- * beginner tips edge out advanced ones. Within a score tier the order is
- * random, so two players (or two visits) do not scroll the same sequence.
+ * Orders catalog items for the ticker: kind "skip" items are never eligible
+ * (skips belong to the zone codex, not the pre-race/training rotation),
+ * pool-specific items are dropped unless the pool matches (and then float to
+ * the top), recently seen items sink, and beginner tips edge out advanced
+ * ones. Within a score tier the order is random, so two players (or two
+ * visits) do not scroll the same sequence.
  */
 export function orderTickerItems(
   items: ContentItem[],
@@ -24,7 +26,8 @@ export function orderTickerItems(
   // Fresh array from filter(), safe to shuffle in place below.
   const shuffled = items.filter(
     (item) =>
-      !item.pools || (!!ctx.poolName && item.pools.includes(ctx.poolName)),
+      item.kind !== "skip" &&
+      (!item.pools || (!!ctx.poolName && item.pools.includes(ctx.poolName))),
   );
 
   const score = (item: ContentItem): number => {

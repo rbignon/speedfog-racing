@@ -86,6 +86,43 @@ describe("orderTickerItems", () => {
     }
   });
 
+  it("never rotates kind 'skip' items, even when they would otherwise match", () => {
+    const items = [
+      item("a"),
+      {
+        id: "skip1",
+        kind: "skip" as const,
+        zoneId: "stormveil",
+        title: "skip1",
+        short: "skip1",
+      },
+    ];
+    const ordered = orderTickerItems(items, {
+      poolName: null,
+      seenIds: new Set(),
+    });
+    expect(ordered.map((i) => i.id)).toEqual(["a"]);
+  });
+
+  it("excludes a skip even when its pools tag matches the current pool", () => {
+    const items = [
+      item("a"),
+      {
+        id: "skip1",
+        kind: "skip" as const,
+        zoneId: "stormveil",
+        title: "skip1",
+        short: "skip1",
+        pools: ["hardcore"],
+      },
+    ];
+    const ordered = orderTickerItems(items, {
+      poolName: "hardcore",
+      seenIds: new Set(),
+    });
+    expect(ordered.map((i) => i.id)).toEqual(["a"]);
+  });
+
   it("keeps the weighting dominant over the shuffle", () => {
     const items = [
       item("a"),

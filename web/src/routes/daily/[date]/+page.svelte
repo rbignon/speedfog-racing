@@ -65,6 +65,11 @@
     typeof window !== "undefined" ? window.innerWidth < 1600 : true,
   );
   let chatActiveTab = $state<"participants" | "public">("participants");
+  let zoneSheetTarget = $state<{
+    nodeId: string;
+    displayName: string;
+    zones: string[];
+  } | null>(null);
   let selectedParticipantIds = $state<Set<string>>(new Set());
   let highlightFocusNodeId = $state<string | null>(null);
   let dagView = $state<"map" | "replay">("map");
@@ -128,6 +133,11 @@
 
   function clearSelection() {
     selectedParticipantIds = new Set();
+  }
+
+  function openZoneCodex(nodeId: string, displayName: string, zones: string[]) {
+    zoneSheetTarget = { nodeId, displayName, zones };
+    chatCollapsed = false;
   }
 
   function handleHighlightZoneClick(nodeId: string) {
@@ -317,6 +327,12 @@
   let showChatSidebar = $derived(
     auth.isLoggedIn || publicAccess === "readable",
   );
+
+  // Drop the zone sheet target when the rail goes away, so a later
+  // remount does not reopen a stale sheet.
+  $effect(() => {
+    if (!showChatSidebar) zoneSheetTarget = null;
+  });
 
   // Only the cell matching this page's race can be live-patched (we have
   // no WS subscription for the other days). ``/`` and ``/dashboard`` skip
@@ -685,6 +701,7 @@
               {raceStatus}
               highlightIds={selectedParticipantIds}
               focusNodeId={highlightFocusNodeId}
+              onzonecodex={showChatSidebar ? openZoneCodex : undefined}
             />
           {:else}
             <RaceReplay
@@ -701,12 +718,14 @@
             {raceStatus}
             highlightIds={selectedParticipantIds}
             focusNodeId={highlightFocusNodeId}
+            onzonecodex={showChatSidebar ? openZoneCodex : undefined}
           />
         {:else if graphJson && canShowProgressiveDag}
           <MetroDagProgressive
             {graphJson}
             participants={raceStore.participants}
             myParticipantId={myWsParticipant?.id ?? ""}
+            onzonecodex={showChatSidebar ? openZoneCodex : undefined}
           />
         {:else}
           <div class="dag-placeholder">
@@ -761,6 +780,8 @@
         onSend={sendChatMessage}
         onToggle={() => (chatCollapsed = !chatCollapsed)}
         onTabChange={(tab) => (chatActiveTab = tab)}
+        zoneSheet={zoneSheetTarget}
+        onZoneSheetClose={() => (zoneSheetTarget = null)}
       />
     {/if}
   </div>

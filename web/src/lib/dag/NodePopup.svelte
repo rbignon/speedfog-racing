@@ -211,7 +211,6 @@
       {skipCount > 0
         ? `${skipCount} known skip${skipCount === 1 ? "" : "s"}`
         : "Zone codex"}
-      &rarr;
     </button>
   {/if}
 </div>
@@ -438,7 +437,7 @@
     border-left: none;
     border-right: none;
     border-bottom: none;
-    text-align: left;
+    text-align: right;
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--color-purple, #8b5cf6);

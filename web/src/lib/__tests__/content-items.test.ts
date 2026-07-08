@@ -8,9 +8,10 @@ describe("content catalog invariants", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("has non-empty title and short on every item", () => {
+  it("has non-empty title on every item, and non-empty short except for skips", () => {
     for (const item of CONTENT_ITEMS) {
       expect(item.title.trim().length, item.id).toBeGreaterThan(0);
+      if (item.kind === "skip") continue;
       expect(item.short.trim().length, item.id).toBeGreaterThan(0);
     }
   });
@@ -79,15 +80,13 @@ describe("content catalog invariants", () => {
     }
   });
 
-  it("gives every skip a zoneId, legality, and no level/category", () => {
+  it("gives every skip a zoneId and no level/category", () => {
     for (const item of CONTENT_ITEMS) {
       if (item.kind === "skip") {
         expect(item.zoneId, item.id).toMatch(/^[a-z0-9_]+$/);
-        expect(["legal", "banned"], item.id).toContain(item.legality);
         expect(item.level, item.id).toBeUndefined();
         expect(item.category, item.id).toBeUndefined();
       } else {
-        expect(item.legality, item.id).toBeUndefined();
         expect(item.video, item.id).toBeUndefined();
       }
     }

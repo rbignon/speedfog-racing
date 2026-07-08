@@ -52,6 +52,57 @@
     });
   });
 
+  type ZoneSortKey =
+    | "display_name"
+    | "skips"
+    | "avg_time_ms"
+    | "avg_deaths_per_visit"
+    | "backtrack_rate";
+  let sortKey = $state<ZoneSortKey>("display_name");
+  let sortAsc = $state(true);
+
+  function handleZoneSort(key: ZoneSortKey) {
+    if (sortKey === key) {
+      sortAsc = !sortAsc;
+    } else {
+      sortKey = key;
+      // Zone name defaults ascending (A-Z); numeric columns default
+      // descending (highest/slowest/deadliest first, the more useful read).
+      sortAsc = key === "display_name";
+    }
+  }
+
+  function zoneSortIndicator(key: ZoneSortKey): string {
+    if (sortKey !== key) return "";
+    return sortAsc ? " ▲" : " ▼";
+  }
+
+  function zoneSortAria(key: ZoneSortKey): "ascending" | "descending" | "none" {
+    if (sortKey !== key) return "none";
+    return sortAsc ? "ascending" : "descending";
+  }
+
+  // Composes on top of filteredZones (search + type/skip filters), so
+  // sorting never changes which rows are shown, only their order.
+  let sortedZones = $derived.by(() => {
+    const rows = filteredZones.map((zone) => ({
+      zone,
+      skips: skipCountForZones(zone.zones),
+    }));
+    rows.sort((a, b) => {
+      let cmp: number;
+      if (sortKey === "display_name") {
+        cmp = a.zone.display_name.localeCompare(b.zone.display_name);
+      } else if (sortKey === "skips") {
+        cmp = a.skips - b.skips;
+      } else {
+        cmp = a.zone[sortKey] - b.zone[sortKey];
+      }
+      return sortAsc ? cmp : -cmp;
+    });
+    return rows;
+  });
+
   // Deep-link contract: /zones?zone=<node_id> renders the index with the
   // drawer open on that zone. The race page and ZonesTab link here.
   let selectedNodeId = $derived(page.url.searchParams.get("zone"));
@@ -191,35 +242,99 @@
     <p class="status-text">No zones match your filters.</p>
   {:else}
     <div class="zone-table-wrap">
-      <div class="zone-table">
-        <div class="zone-table-header">
-          <span class="col-zone">Zone</span>
-          <span class="col-num">Skips</span>
-          <span class="col-num">Avg clear</span>
-          <span class="col-num">Avg deaths</span>
-          <span class="col-num">Backtrack</span>
+      <div class="zone-table" role="table">
+        <div class="zone-table-header" role="row">
+          <span
+            class="col-zone"
+            role="columnheader"
+            aria-sort={zoneSortAria("display_name")}
+          >
+            <button
+              type="button"
+              class="sort-btn"
+              onclick={() => handleZoneSort("display_name")}
+            >
+              Zone{zoneSortIndicator("display_name")}
+            </button>
+          </span>
+          <span
+            class="col-num"
+            role="columnheader"
+            aria-sort={zoneSortAria("skips")}
+          >
+            <button
+              type="button"
+              class="sort-btn"
+              onclick={() => handleZoneSort("skips")}
+            >
+              Skips{zoneSortIndicator("skips")}
+            </button>
+          </span>
+          <span
+            class="col-num"
+            role="columnheader"
+            aria-sort={zoneSortAria("avg_time_ms")}
+          >
+            <button
+              type="button"
+              class="sort-btn"
+              onclick={() => handleZoneSort("avg_time_ms")}
+            >
+              Avg clear{zoneSortIndicator("avg_time_ms")}
+            </button>
+          </span>
+          <span
+            class="col-num"
+            role="columnheader"
+            aria-sort={zoneSortAria("avg_deaths_per_visit")}
+          >
+            <button
+              type="button"
+              class="sort-btn"
+              onclick={() => handleZoneSort("avg_deaths_per_visit")}
+            >
+              Avg deaths{zoneSortIndicator("avg_deaths_per_visit")}
+            </button>
+          </span>
+          <span
+            class="col-num"
+            role="columnheader"
+            aria-sort={zoneSortAria("backtrack_rate")}
+          >
+            <button
+              type="button"
+              class="sort-btn"
+              onclick={() => handleZoneSort("backtrack_rate")}
+            >
+              Backtrack{zoneSortIndicator("backtrack_rate")}
+            </button>
+          </span>
         </div>
-        {#each filteredZones as zone (zone.node_id)}
-          {@const skips = skipCountForZones(zone.zones)}
+        {#each sortedZones as { zone, skips } (zone.node_id)}
           <a
             href="/zones?zone={zone.node_id}"
             class="zone-row"
+            role="row"
             onclick={(e) => openZone(e, zone.node_id)}
           >
-            <span class="col-zone zone-name-cell">
+            <span class="col-zone zone-name-cell" role="cell">
               <span class="zone-name">{zone.display_name}</span>
               <span class="type-badge {typeBadgeClass(zone.type)}"
                 >{typeLabel(zone.type)}</span
               >
             </span>
-            <span class="col-num">{skips > 0 ? skips : "-"}</span>
-            <span class="col-num"
+            <span class="col-num" role="cell">{skips > 0 ? skips : "-"}</span>
+            <span class="col-num" role="cell"
               >{zone.avg_time_ms === 0
                 ? "-"
                 : formatTime(zone.avg_time_ms)}</span
             >
-            <span class="col-num">{zone.avg_deaths_per_visit.toFixed(1)}</span>
-            <span class="col-num">{formatPercent(zone.backtrack_rate)}</span>
+            <span class="col-num" role="cell"
+              >{zone.avg_deaths_per_visit.toFixed(1)}</span
+            >
+            <span class="col-num" role="cell"
+              >{formatPercent(zone.backtrack_rate)}</span
+            >
           </a>
         {/each}
       </div>
@@ -376,6 +491,23 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     border-bottom: 1px solid var(--color-border);
+  }
+
+  .sort-btn {
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    cursor: pointer;
+    padding: 0;
+    transition: color var(--transition);
+    white-space: nowrap;
+  }
+
+  .sort-btn:hover {
+    color: var(--color-purple);
   }
 
   .zone-row {

@@ -145,17 +145,14 @@
             <div class="skip-header">
               <h4>{skip.title}</h4>
               <div class="badges">
-                {#if skip.legality}
-                  <span class="legality-badge legality-{skip.legality}"
-                    >{skip.legality}</span
-                  >
-                {/if}
                 {#if skip.difficulty}
                   <span class="difficulty-badge">{skip.difficulty}</span>
                 {/if}
               </div>
             </div>
-            <p class="skip-short"><EmphasisText text={skip.short} /></p>
+            {#if skip.short.trim().length > 0}
+              <p class="skip-short"><EmphasisText text={skip.short} /></p>
+            {/if}
             {#if skip.credit}
               <p class="credit">video by {skip.credit}</p>
             {/if}
@@ -349,26 +346,6 @@
     display: flex;
     gap: 0.35rem;
     flex-shrink: 0;
-  }
-
-  .legality-badge,
-  .difficulty-badge {
-    font-size: 0.65rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.1rem 0.4rem;
-    border-radius: var(--radius-sm);
-  }
-
-  .legality-legal {
-    background: rgba(16, 185, 129, 0.2);
-    color: var(--color-success);
-  }
-
-  .legality-banned {
-    background: rgba(239, 68, 68, 0.2);
-    color: var(--color-danger);
   }
 
   .difficulty-badge {
