@@ -449,7 +449,7 @@ impl RaceTracker {
             flag_reader_ok = Some(current_ok);
 
             // Resolve category page once (all event_ids share the same category)
-            let ids: Vec<u32> = self.machine.event_ids.clone();
+            let ids = &self.machine.event_ids;
             let page = self.event_flag_reader.resolve_category(ids[0]);
             let page_ref = page.as_ref();
             let reads: Vec<(u32, bool)> = ids
@@ -572,8 +572,13 @@ impl RaceTracker {
 
     /// Execute machine effects: WS sends, game-memory writes, thread spawns.
     fn execute_effects(&mut self, effects: Vec<Effect>) {
-        // Death-marker writes share one category page resolution per batch
-        // (all death flags live in the same category, as before).
+        // The category page is resolved from the first SetGameFlag and reused
+        // for every SetGameFlag in the batch: a single effects batch must only
+        // carry flags from one category, or later writes hit the wrong page.
+        // Today that invariant holds because a batch comes from either tick()
+        // (event-id clears, one category by the event_ids invariant) or a
+        // single DeathCounts message (death markers, which the seed generator
+        // allocates within one category).
         let mut flag_page = None;
         for effect in effects {
             match effect {
