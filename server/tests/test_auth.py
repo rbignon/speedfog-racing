@@ -145,6 +145,82 @@ def test_twitch_login_invalid_locale_defaults_to_en(client):
 
 
 # =============================================================================
+# redirect_url validation (open-redirect / account-takeover protection)
+# =============================================================================
+
+
+def test_safe_redirect_url_rejects_external_origin():
+    """An attacker-controlled origin falls back to the configured default so
+    the ephemeral login code can never be redirected off-site."""
+    from speedfog_racing.api.auth import _safe_redirect_url
+    from speedfog_racing.config import settings
+
+    assert _safe_redirect_url("https://evil.com/steal") == settings.oauth_redirect_url
+
+
+def test_safe_redirect_url_rejects_userinfo_confusion():
+    """A userinfo trick (real host in userinfo, attacker host after @) is rejected."""
+    from speedfog_racing.api.auth import _safe_redirect_url
+    from speedfog_racing.config import settings
+
+    assert _safe_redirect_url("http://localhost:5173@evil.com/") == settings.oauth_redirect_url
+
+
+def test_safe_redirect_url_none_returns_default():
+    from speedfog_racing.api.auth import _safe_redirect_url
+    from speedfog_racing.config import settings
+
+    assert _safe_redirect_url(None) == settings.oauth_redirect_url
+
+
+def test_safe_redirect_url_malformed_port_returns_default():
+    """A non-numeric/out-of-range port must fall back, not raise (urlparse.port
+    raises ValueError). Otherwise a crafted value 500s the public login route."""
+    from speedfog_racing.api.auth import _safe_redirect_url
+    from speedfog_racing.config import settings
+
+    assert _safe_redirect_url("http://localhost:abc/") == settings.oauth_redirect_url
+    assert _safe_redirect_url("http://x:99999999999/") == settings.oauth_redirect_url
+
+
+def test_safe_redirect_url_accepts_allowed_origin():
+    """The configured OAuth redirect origin is always permitted."""
+    from speedfog_racing.api.auth import _safe_redirect_url
+    from speedfog_racing.config import settings
+
+    allowed = settings.oauth_redirect_url
+    assert _safe_redirect_url(allowed) == allowed
+
+
+def test_twitch_login_stores_default_for_external_redirect(client):
+    """A crafted redirect_url pointing off-site is not stored in OAuth state."""
+    from speedfog_racing.api.auth import _oauth_states
+    from speedfog_racing.config import settings
+
+    _oauth_states.clear()
+    response = client.get(
+        "/api/auth/twitch?redirect_url=https://evil.com/x", follow_redirects=False
+    )
+    assert response.status_code == 302
+    assert len(_oauth_states) == 1
+    stored_url, _, _ = next(iter(_oauth_states.values()))
+    assert stored_url == settings.oauth_redirect_url
+
+
+def test_twitch_login_preserves_allowed_redirect(client):
+    """A redirect_url on an allowed origin is stored verbatim."""
+    from speedfog_racing.api.auth import _oauth_states
+    from speedfog_racing.config import settings
+
+    _oauth_states.clear()
+    allowed = settings.oauth_redirect_url
+    response = client.get(f"/api/auth/twitch?redirect_url={allowed}", follow_redirects=False)
+    assert response.status_code == 302
+    stored_url, _, _ = next(iter(_oauth_states.values()))
+    assert stored_url == allowed
+
+
+# =============================================================================
 # get_or_create_user: locale-on-login behavior
 # =============================================================================
 

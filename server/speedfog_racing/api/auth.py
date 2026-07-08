@@ -1,10 +1,12 @@
 """Authentication API routes."""
 
+import logging
 import secrets
 import time
 import uuid
 from datetime import datetime
 from typing import Annotated
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
@@ -24,12 +26,56 @@ from speedfog_racing.models import User
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.services.i18n import get_available_locales
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 # In-memory state storage for OAuth: state → (redirect_url, expiry_timestamp, browser_locale)
 _oauth_states: dict[str, tuple[str, float, str]] = {}
 
 _OAUTH_STATE_TTL = 600  # 10 minutes
+
+
+def _origin_of(url: str) -> tuple[str, str | None, int | None] | None:
+    """(scheme, host, port) for a URL, or None if it is not a usable http(s) origin.
+
+    Returns None for relative URLs (no scheme/host) and for a malformed port
+    (``urlparse().port`` raises ValueError), so callers fail closed.
+    """
+    parsed = urlparse(url)
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if not parsed.scheme or not parsed.hostname:
+        return None
+    return (parsed.scheme, parsed.hostname, port)
+
+
+def _allowed_redirect_origins() -> set[tuple[str, str | None, int | None]]:
+    """(scheme, host, port) origins the OAuth flow may redirect back to."""
+    origins = set(settings.cors_origins) | {settings.oauth_redirect_url}
+    return {origin for url in origins if (origin := _origin_of(url)) is not None}
+
+
+def _safe_redirect_url(redirect_url: str | None) -> str:
+    """Return ``redirect_url`` only if it targets an allowed origin, else the default.
+
+    The OAuth callback appends the ephemeral login code to this URL and 302s
+    the browser there. An attacker-controlled value would leak the code (and
+    thus the account's long-lived api_token) to an external site, so anything
+    off an allowed origin is replaced by the configured default. Comparison is
+    on (scheme, host, port) to defeat userinfo tricks like
+    ``http://good-host@evil.com``.
+    """
+    if not redirect_url:
+        return settings.oauth_redirect_url
+    origin = _origin_of(redirect_url)
+    if origin is not None and origin in _allowed_redirect_origins():
+        return redirect_url
+    logger.warning("Rejected OAuth redirect_url to disallowed origin: %s", redirect_url)
+    return settings.oauth_redirect_url
+
 
 # Ephemeral auth codes: code → (api_token, expiry_timestamp)
 _auth_codes: dict[str, tuple[str, float]] = {}
@@ -112,7 +158,7 @@ async def twitch_login(
     _cleanup_expired_states()
     state = secrets.token_urlsafe(32)
     _oauth_states[state] = (
-        redirect_url or settings.oauth_redirect_url,
+        _safe_redirect_url(redirect_url),
         time.monotonic() + _OAUTH_STATE_TTL,
         browser_locale,
     )

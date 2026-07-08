@@ -85,7 +85,9 @@ class RaceRoom:
         # Snapshot to avoid issues with concurrent dict modification
         snapshot = dict(self.mods)
 
-        async def _send(participant_id: uuid.UUID, conn: ModConnection) -> uuid.UUID | None:
+        async def _send(
+            participant_id: uuid.UUID, conn: ModConnection
+        ) -> tuple[uuid.UUID, ModConnection] | None:
             try:
                 await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
             except Exception:
@@ -94,13 +96,17 @@ class RaceRoom:
                     self.race_id,
                     participant_id,
                 )
-                return participant_id
+                return (participant_id, conn)
             return None
 
         results = await asyncio.gather(*(_send(pid, conn) for pid, conn in snapshot.items()))
-        for pid in results:
-            if pid is not None:
-                self.mods.pop(pid, None)
+        for failed in results:
+            if failed is not None:
+                pid, conn = failed
+                # Only evict if it is still the same connection: a reconnect
+                # during the send may have replaced it with a newer one.
+                if self.mods.get(pid) is conn:
+                    self.mods.pop(pid, None)
 
     async def send_to_mod(self, participant_id: uuid.UUID, message: str) -> bool:
         """Unicast a message to a single mod connection.
@@ -121,7 +127,10 @@ class RaceRoom:
                 self.race_id,
                 participant_id,
             )
-            self.mods.pop(participant_id, None)
+            # Only evict if it is still the same connection: a reconnect during
+            # the send may have replaced it with a newer one.
+            if self.mods.get(participant_id) is conn:
+                self.mods.pop(participant_id, None)
             return False
 
     async def broadcast_to_spectators(self, message: str) -> None:
@@ -492,6 +501,9 @@ class ConnectionManager:
             except Exception:
                 failed_mod = mod_conn.participant_id
 
+        # ``mod_conn`` is captured so eviction can confirm identity below.
+        evicted_mod = mod_conn
+
         async def _send_spectator(conn: SpectatorConnection) -> None:
             try:
                 await asyncio.wait_for(conn.websocket.send_text(payload), timeout=SEND_TIMEOUT)
@@ -503,7 +515,9 @@ class ConnectionManager:
             *(_send_spectator(c) for c in spectator_conns),
         )
 
-        if failed_mod is not None:
+        if failed_mod is not None and room.mods.get(failed_mod) is evicted_mod:
+            # Only evict if it is still the same connection: a reconnect during
+            # the send may have replaced it with a newer one.
             room.mods.pop(failed_mod, None)
         for conn in failed_spectators:
             room.spectators.pop(conn.connection_id, None)

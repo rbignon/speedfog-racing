@@ -37,7 +37,8 @@ SETUP ──→ RUNNING ──→ FINISHED
 
 - Closes all WebSocket connections first (`manager.close_room(code=1000)`).
 - Transitions status via `_transition_status()` with optimistic lock. Clears `started_at` (but NOT `seeds_released_at`, as seed packs remain downloadable).
-- Resets all participants via ORM loop: `status=REGISTERED, current_zone=None, current_layer=0, igt_ms=0, death_count=0, zone_history=None, finished_at=None`.
+- Resets all participants via ORM loop: `status=REGISTERED, current_zone=None, current_layer=0, igt_ms=0, death_count=0, zone_history=None, finished_at=None, layer_entry_igts={}, last_igt_change_at=None`. The last two are cleared so the re-run starts with clean leaderboard-gap and inactivity state (leaving them stale would keep the previous run's per-layer entry IGTs and activity timestamp).
+- When the race was **FINISHED**, its applied ELO is reverted first (`revert_elo_ratings`): the race's `EloHistory` rows are deleted and each stored delta is subtracted back from the users' ratings. This makes the voided run stop counting and clears the idempotency guard so the re-run can be rated again. Ratings are only approximately restored when later races have since built on the reverted values; `recalculate_all_stats` remains the way to fully true up drift. Trait scores and top-1 holders self-correct on the next finish (they recompute from live participant state), but one-time rewards granted during the voided run (finish-milestone badges, etc.) are **not** rolled back.
 - Mod clients detect the close and reconnect automatically.
 
 ### Optimistic Locking

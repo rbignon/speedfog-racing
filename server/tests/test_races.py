@@ -1146,6 +1146,65 @@ async def test_reset_race_from_finished(test_client, organizer, player, async_se
 
 
 @pytest.mark.asyncio
+async def test_reset_race_clears_layer_entry_igts_and_change_marker(
+    test_client, organizer, player, async_session
+):
+    """Reset must clear layer_entry_igts and last_igt_change_at too.
+
+    These feed leaderboard gap math (first-write-wins layer entry) and the
+    inactivity monitor; leaving them populated makes a re-run start with stale
+    entry IGTs and a stale activity timestamp.
+    """
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s-reset-layer",
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/reset-layer",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Layer Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.PLAYING,
+            current_layer=3,
+            igt_ms=120000,
+            layer_entry_igts={"1": 1000, "2": 50000, "3": 90000},
+            last_igt_change_at=datetime.now(UTC),
+        )
+        db.add(participant)
+        await db.commit()
+        race_id = str(race.id)
+        participant_id = participant.id
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reset",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+
+    async with async_session() as db:
+        p = await db.get(Participant, participant_id)
+        assert p.layer_entry_igts == {}
+        assert p.last_igt_change_at is None
+
+
+@pytest.mark.asyncio
 async def test_reset_race_from_setup_fails(test_client, organizer, seed):
     """Resetting a SETUP race returns 400."""
     async with test_client as client:

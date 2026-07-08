@@ -291,6 +291,37 @@ async def update_elo_ratings(
     await db.commit()
 
 
+async def revert_elo_ratings(race_id: Any, db: AsyncSession) -> None:
+    """Undo the ELO a finished race applied so it can be rated again. Caller commits.
+
+    Deletes the race's EloHistory rows and subtracts each stored delta from the
+    user's current rating (decrementing elo_races). This restores the
+    idempotency guard in ``update_elo_ratings`` so a re-run of a reset race is
+    re-ratable. Ratings are only approximately restored when later races have
+    since built on the reverted values; a full recalculation
+    (``recalculate_all_stats``) remains the way to fully true up drift.
+
+    No-op when the race has no EloHistory (running, private, or excluded races).
+    """
+    rows = (
+        (await db.execute(select(EloHistory).where(EloHistory.race_id == race_id))).scalars().all()
+    )
+    if not rows:
+        return
+
+    user_ids = [row.user_id for row in rows]
+    users_by_id = {
+        u.id: u
+        for u in (await db.execute(select(User).where(User.id.in_(user_ids)))).scalars().all()
+    }
+    for row in rows:
+        user = users_by_id.get(row.user_id)
+        if user is not None:
+            user.elo_rating -= row.delta
+            user.elo_races = max(0, user.elo_races - 1)
+        await db.delete(row)
+
+
 async def update_player_traits(race_id: Any, db: AsyncSession) -> None:
     """Recompute trait scores for all participants of a finished race."""
     race = await db.get(Race, race_id, options=[selectinload(Race.participants)])

@@ -12,13 +12,13 @@ Reference document for API endpoints and WebSocket messages.
 
 ### Authentication
 
-| Method | Endpoint             | Auth   | Description                                         |
-| ------ | -------------------- | ------ | --------------------------------------------------- |
-| GET    | `/api/auth/twitch`   | -      | Redirect to Twitch OAuth (`?redirect_url`)          |
-| GET    | `/api/auth/callback` | -      | OAuth callback, redirects with `?code=` (ephemeral) |
-| POST   | `/api/auth/exchange` | -      | Exchange auth code for API token                    |
-| GET    | `/api/auth/me`       | Bearer | Get current user info (public, no `api_token`)      |
-| POST   | `/api/auth/logout`   | Bearer | Regenerate API token (invalidates session)          |
+| Method | Endpoint             | Auth   | Description                                                                                                   |
+| ------ | -------------------- | ------ | ------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/auth/twitch`   | -      | Redirect to Twitch OAuth (`?redirect_url`, must match an allowed origin, else the configured default is used) |
+| GET    | `/api/auth/callback` | -      | OAuth callback, redirects with `?code=` (ephemeral)                                                           |
+| POST   | `/api/auth/exchange` | -      | Exchange auth code for API token                                                                              |
+| GET    | `/api/auth/me`       | Bearer | Get current user info (public, no `api_token`)                                                                |
+| POST   | `/api/auth/logout`   | Bearer | Regenerate API token (invalidates session)                                                                    |
 
 ### Races
 

@@ -1645,6 +1645,8 @@ async def reset_race(
             detail="Can only reset a running or finished race",
         )
 
+    was_finished = race.status == RaceStatus.FINISHED
+
     # Close all WebSocket connections before mutating state
     await manager.close_room(race_id, code=1000, reason="Race reset")
 
@@ -1656,6 +1658,14 @@ async def reset_race(
         started_at=None,
     )
 
+    # A finished race already applied ELO; undo it so the voided run stops
+    # counting and the re-run can be rated again (update_elo_ratings is guarded
+    # by an existing EloHistory row for the race).
+    if was_finished:
+        from speedfog_racing.services.stats_service import revert_elo_ratings
+
+        await revert_elo_ratings(race.id, db)
+
     for p in race.participants:
         p.status = ParticipantStatus.REGISTERED
         p.current_zone = None
@@ -1664,6 +1674,13 @@ async def reset_race(
         p.death_count = 0
         p.finished_at = None
         p.zone_history = None
+        # Also clear the derived progress markers: layer_entry_igts feeds
+        # leaderboard gap math (first-write-wins per layer) and
+        # last_igt_change_at drives inactivity auto-abandon. Mirrors the
+        # daily reroll reset. Empty dict, not None: layer_entry_igts is
+        # NOT NULL with a {} server_default.
+        p.layer_entry_igts = {}
+        p.last_igt_change_at = None
 
     await db.commit()
 
