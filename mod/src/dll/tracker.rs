@@ -45,11 +45,15 @@ pub(crate) struct RenderBuffers {
 impl Default for RenderBuffers {
     fn default() -> Self {
         Self {
-            buf_right: String::with_capacity(16),
-            buf_left: String::with_capacity(48),
-            buf_footer: String::with_capacity(16),
+            // String::new() does not allocate: the default value created by
+            // the per-frame mem::take is dropped unread, so giving it capacity
+            // would be 4 wasted heap allocations per frame. The persistent
+            // buffers grow to their working size on first real use.
+            buf_right: String::new(),
+            buf_left: String::new(),
+            buf_footer: String::new(),
             banner_secs: None,
-            banner_text: String::with_capacity(16),
+            banner_text: String::new(),
         }
     }
 }
