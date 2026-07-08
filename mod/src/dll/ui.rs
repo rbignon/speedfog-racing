@@ -18,7 +18,7 @@ use super::config::OverlayAnchor;
 use super::death_icon::DeathIcon;
 use super::tracker::{
     ExitRow, ExitsRenderCache, FlagReadResult, LeaderboardRowCache, RaceTracker, RenderBuffers,
-    LEADERBOARD_REFRESH_INTERVAL_MS,
+    LEADERBOARD_REFRESH_INTERVAL_MS, MAX_CONSECUTIVE_UPDATE_PANICS,
 };
 use super::websocket::ConnectionStatus;
 
@@ -77,18 +77,49 @@ impl ImguiRenderLoop for RaceTracker {
     }
 
     fn render(&mut self, ui: &mut hudhook::imgui::Ui) {
-        if self.render_panicked {
+        if self.tracking_disabled {
             build_hidden_window(ui);
             crate::core::profile::frame_mark();
             return;
         }
+
+        // Tracking runs first, isolated: a transient panic (e.g. a memory
+        // read during a weird load) skips this frame and retries; only a
+        // durably-broken loop latches everything off.
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.update(ui))) {
+            Ok(()) => self.consecutive_update_panics = 0,
+            Err(payload) => {
+                self.consecutive_update_panics += 1;
+                error!(
+                    panic = crate::panic_message(payload.as_ref()),
+                    consecutive = self.consecutive_update_panics,
+                    "Update panicked; skipping this frame"
+                );
+                if self.consecutive_update_panics >= MAX_CONSECUTIVE_UPDATE_PANICS {
+                    self.tracking_disabled = true;
+                    error!(
+                        "Update panicking persistently; tracking disabled until the game restarts"
+                    );
+                }
+                build_hidden_window(ui);
+                crate::core::profile::frame_mark();
+                return;
+            }
+        }
+
+        if self.overlay_panicked {
+            build_hidden_window(ui);
+            crate::core::profile::frame_mark();
+            return;
+        }
+
         if let Err(payload) =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.render_frame(ui)))
         {
-            self.render_panicked = true;
+            self.overlay_panicked = true;
             error!(
                 panic = crate::panic_message(payload.as_ref()),
-                "Render panicked; overlay disabled until the game restarts"
+                "Overlay draw panicked; overlay hidden until the game restarts (tracking continues)"
             );
             build_hidden_window(ui);
             crate::core::profile::frame_mark();
@@ -99,9 +130,6 @@ impl ImguiRenderLoop for RaceTracker {
 impl RaceTracker {
     fn render_frame(&mut self, ui: &hudhook::imgui::Ui) {
         profile_span!("frame");
-
-        // Per-frame update
-        self.update(ui);
 
         // Always build a window (hudhook crashes otherwise)
         if !self.show_ui {

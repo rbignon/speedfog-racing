@@ -24,6 +24,8 @@ use super::death_icon::DeathIcon;
 use super::websocket::RaceWebSocketClient;
 
 const DEBUG_REFRESH_INTERVAL: Duration = Duration::from_millis(250);
+/// Consecutive update() panics before tracking latches off (~5 s at 60 FPS).
+pub(crate) const MAX_CONSECUTIVE_UPDATE_PANICS: u32 = 300;
 pub(crate) const LEADERBOARD_REFRESH_INTERVAL_MS: u32 = 250;
 
 // =============================================================================
@@ -190,8 +192,14 @@ pub struct RaceTracker {
     pub(crate) show_ui: bool,
     pub(crate) show_debug: bool,
     pub(crate) show_leaderboard: bool,
-    /// Set when a frame panicked; rendering and updates stop for the session.
-    pub(crate) render_panicked: bool,
+    /// Hard latch: a durably-broken update loop; rendering and updates stop
+    /// for the session (set after MAX_CONSECUTIVE_UPDATE_PANICS).
+    pub(crate) tracking_disabled: bool,
+    /// Soft latch: the ImGui draw panicked; the overlay stays hidden but
+    /// update() keeps tracking the race.
+    pub(crate) overlay_panicked: bool,
+    /// Consecutive update() panics; reset on the first clean update.
+    pub(crate) consecutive_update_panics: u32,
     // One-time diagnostic log flag
     flags_diagnosed: bool,
 
@@ -316,7 +324,9 @@ impl RaceTracker {
             show_ui: true,
             show_debug: false,
             show_leaderboard: true,
-            render_panicked: false,
+            tracking_disabled: false,
+            overlay_panicked: false,
+            consecutive_update_panics: 0,
             flags_diagnosed: false,
             spawner_thread: None,
             items_spawned: Arc::new(AtomicBool::new(false)),
