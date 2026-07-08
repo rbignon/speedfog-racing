@@ -240,4 +240,186 @@ export const CONTENT_ITEMS: ContentItem[] = [
     title: "No menu input delay",
     short: "The **input delay** when opening menus is removed.",
   },
+
+  // ---------- Skips  ----------
+  {
+    id: "farum-dragon-template-lift-skip",
+    kind: "skip",
+    zoneId: "farumazula_lift",
+    title: "Dragon Temple Lift",
+    short: "Fast way to Godskin Duo gate",
+    video: {
+      youtubeId: "aKfimBgI4aI",
+    },
+  },
+  {
+    id: "academy-abducted-skip",
+    kind: "skip",
+    zoneId: "academy",
+    title: "Academy abducted",
+    short: "Easy skip to get abducted",
+    video: {
+      youtubeId: "MlN9gyDkOcM",
+    },
+  },
+  {
+    id: "unsightly-catacombs-skip",
+    kind: "skip",
+    zoneId: "altus_catacombs",
+    title: "Unsightly catacombs skip",
+    short: "Fast way to go to the lever",
+    video: {
+      youtubeId: "_qz1RvgUKM0",
+    },
+  },
+  {
+    id: "mohg-sewer-skip",
+    kind: "skip",
+    zoneId: "sewer",
+    title: "Mohg Sewer Skip",
+    short: "Skip to go to the elevator quickly",
+    video: {
+      youtubeId: "jxTcc9mZigE",
+    },
+  },
+  {
+    id: "academy-rooftops-skip",
+    kind: "skip",
+    zoneId: "academy_rooftops",
+    title: "Academy Rooftops Redwolf Skip",
+    short: "Going fast to Redwolf from Academy Rooftops",
+    video: {
+      youtubeId: "zGvn2ISu3M4",
+    },
+  },
+  {
+    id: "gaol-cave-lever-skip",
+    kind: "skip",
+    zoneId: "caelid_gaolcave",
+    title: "Gaol Cave lever skip",
+    short: "Fast access to the lever",
+    video: {
+      youtubeId: "lWW4ulJjl6c",
+    },
+  },
+  {
+    id: "darklight-skip",
+    kind: "skip",
+    zoneId: "scadualtus_catacombs",
+    title: "Darklight Catacombs skip",
+    short: "",
+    video: {
+      youtubeId: "oKFhWYJ-LNU",
+    },
+  },
+  {
+    id: "academy-front-skip",
+    kind: "skip",
+    zoneId: "academy_entrance",
+    title: "Academy Front Gate Skip",
+    short: "",
+    video: {
+      youtubeId: "to-Y_iEq5Ls",
+    },
+  },
+  {
+    id: "volcano-manor-cage-skip",
+    kind: "skip",
+    zoneId: "volcano_town",
+    title: "Volcano Manor Cage Skip",
+    short: "Cage Skip to Noble gate",
+    video: {
+      youtubeId: "LfSyv2nMo_E",
+    },
+  },
+  {
+    id: "castle-morne-skip",
+    kind: "skip",
+    zoneId: "peninsula_morne",
+    title: "Castle Morne Skips",
+    short: "Run through with skips",
+    video: {
+      youtubeId: "HQAIkDbeYDE",
+    },
+  },
+  {
+    id: "raya-tunnel-skip",
+    kind: "skip",
+    zoneId: "liurnia_tunnel",
+    title: "Raya Crystal Tunnel Skip",
+    short: "Skip to elevator",
+    video: {
+      youtubeId: "zhmEV-85ZRE",
+    },
+  },
+  {
+    id: "scorpion-catacombs-skip",
+    kind: "skip",
+    zoneId: "rauhbase_catacombs",
+    title: "Scorpion River Catacombs Skip",
+    short: "Skip the first part",
+    video: {
+      youtubeId: "Ge8Uyuc9naE",
+    },
+  },
+  {
+    id: "leyndell-skip",
+    kind: "skip",
+    zoneId: "leyndell",
+    title: "Leyndell Skip",
+    short: "3 versions of the skip, from fastest to easier",
+    video: {
+      youtubeId: "U1RWdWrnTjY",
+    },
+  },
+  {
+    id: "sage-cave-skip",
+    kind: "skip",
+    zoneId: "altus_sagescave",
+    title: "Sage's Cave Skip",
+    short: "Hard",
+    video: {
+      youtubeId: "O7bslEj-vFs",
+    },
+  },
+  {
+    id: "specimen-storehouse-skip",
+    kind: "skip",
+    zoneId: "storehouse",
+    title: "Hand skip",
+    short: "",
+    video: {
+      youtubeId: "ZoEMvNgeJQM",
+    },
+  },
+  {
+    id: "rauh-east-tree-skip",
+    kind: "skip",
+    zoneId: "rauhruins_east",
+    title: "Tree skip",
+    short: "",
+    video: {
+      youtubeId: "MFN0z5d_ahg",
+    },
+  },
+  {
+    id: "farum-bird-skip",
+    kind: "skip",
+    zoneId: "farumazula",
+    title: "Bird skip",
+    short: "",
+    video: {
+      youtubeId: "GwJm_vCvgls",
+    },
+  },
+  {
+    id: "sellia-tunnel-skip",
+    kind: "skip",
+    zoneId: "caelid_selliatunnel",
+    title: "Sellia Crystal Tunnel skip",
+    short: "",
+    video: {
+      youtubeId: "yAckrwdV7SE",
+    },
+  },
 ];
