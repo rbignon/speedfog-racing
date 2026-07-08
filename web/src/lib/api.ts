@@ -1811,13 +1811,17 @@ export async function fetchZoneIndex(): Promise<ZoneIndexResponse> {
 
 /**
  * Fetch aggregate stats for a single zone, for the zone codex detail sheet.
+ * Returns null when the zone has no data in the lookback window (e.g. a
+ * fresh cluster variant or an unknown deep-link target), which callers
+ * should render as a no-data state rather than an error.
  */
 export async function fetchZoneDetail(
   nodeId: string,
-): Promise<ZoneDetailResponse> {
+): Promise<ZoneDetailResponse | null> {
   const res = await fetch(
     `${API_BASE}/stats/zones/${encodeURIComponent(nodeId)}?days=90`,
   );
+  if (res.status === 404) return null;
   if (!res.ok) throw new Error("Failed to fetch zone detail");
   return res.json();
 }

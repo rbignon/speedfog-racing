@@ -1151,6 +1151,7 @@
             graphJson={liveSeed.graph_json}
             participants={raceStore.participants}
             myParticipantId={myWsParticipantId}
+            onzonecodex={showChatSidebar ? openZoneCodex : undefined}
           />
         {:else if liveSeed?.graph_json && (isOrganizer || forceFullDag)}
           <MetroDag graphJson={liveSeed.graph_json} />

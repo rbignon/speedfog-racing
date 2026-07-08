@@ -213,7 +213,11 @@
               >
             </span>
             <span class="col-num">{skips > 0 ? skips : "-"}</span>
-            <span class="col-num">{formatTime(zone.avg_time_ms)}</span>
+            <span class="col-num"
+              >{zone.avg_time_ms === 0
+                ? "-"
+                : formatTime(zone.avg_time_ms)}</span
+            >
             <span class="col-num">{zone.avg_deaths_per_visit.toFixed(1)}</span>
             <span class="col-num">{formatPercent(zone.backtrack_rate)}</span>
           </a>
