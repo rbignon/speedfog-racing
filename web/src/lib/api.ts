@@ -1792,12 +1792,15 @@ export async function fetchLeaderboard(): Promise<LeaderboardResponse> {
 
 /**
  * Fetch zone death/visit statistics, optionally filtered by pool.
+ * Pins days=90 (the API default is 30) so the stats page panels rank
+ * zones over the same window as the zone codex index/detail below;
+ * otherwise the two pages disagree on e.g. the most backtracked zone.
  */
 export async function fetchZoneStats(
   pool?: string,
 ): Promise<ZoneStatsResponse> {
-  const params = pool ? `?pool=${pool}` : "";
-  const res = await fetch(`${API_BASE}/stats/zones${params}`);
+  const params = pool ? `&pool=${pool}` : "";
+  const res = await fetch(`${API_BASE}/stats/zones?days=90${params}`);
   if (!res.ok) throw new Error("Failed to fetch zone stats");
   return res.json();
 }
