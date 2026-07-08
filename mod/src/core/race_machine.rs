@@ -289,6 +289,8 @@ pub struct RaceMachine {
     pub last_observed_igt: Option<u32>,
     /// Cached reads for the current frame (written by the shell each frame)
     pub frame_snapshot: FrameSnapshot,
+    /// Bumped on every zone reveal; the shell's exits render cache keys on it.
+    pub zone_version: u64,
     pub leaderboard_version: u64,
     pub last_sent_debug: Option<String>,
     pub last_received_debug: Option<String>,
@@ -329,6 +331,7 @@ impl RaceMachine {
             frozen_igt_ms: None,
             last_observed_igt: None,
             frame_snapshot: FrameSnapshot::default(),
+            zone_version: 0,
             leaderboard_version: 0,
             last_sent_debug: None,
             last_received_debug: None,
@@ -877,6 +880,7 @@ impl RaceMachine {
                     info!(name = %zone.display_name, "[RACE] Zone revealed");
                 }
                 self.race_state.current_zone = Some(zone);
+                self.zone_version = self.zone_version.wrapping_add(1);
                 self.pending_zone_received_at = None;
                 self.pre_reveal_layer = None;
             }
@@ -1593,6 +1597,7 @@ mod tests {
         let mut m = running_machine(now);
         m.handle_message(zone_update("Stormveil", None), now + ms(100));
         assert!(m.pending_zone_update.is_some());
+        assert_eq!(m.zone_version, 0, "no bump before reveal");
 
         // Still loading: not revealed.
         m.tick(
@@ -1610,6 +1615,7 @@ mod tests {
         assert_eq!(zone.display_name, "Stormveil");
         assert!(m.pending_zone_update.is_none());
         assert!(m.pending_zone_received_at.is_none());
+        assert_eq!(m.zone_version, 1, "reveal bumps the render-cache key");
     }
 
     #[test]

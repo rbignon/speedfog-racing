@@ -17,7 +17,7 @@ use crate::profile_span;
 use super::config::OverlayAnchor;
 use super::death_icon::DeathIcon;
 use super::tracker::{
-    FlagReadResult, LeaderboardRowCache, RaceTracker, RenderBuffers,
+    ExitRow, ExitsRenderCache, FlagReadResult, LeaderboardRowCache, RaceTracker, RenderBuffers,
     LEADERBOARD_REFRESH_INTERVAL_MS,
 };
 use super::websocket::ConnectionStatus;
@@ -149,7 +149,7 @@ impl RaceTracker {
                 .build(|| {
                     self.render_seed_mismatch_warning(ui);
                     self.render_player_status(ui, max_width, &mut bufs);
-                    self.render_race_ends_warning(ui, max_width);
+                    self.render_race_ends_warning(ui, max_width, &mut bufs);
                     self.render_exits(ui, max_width);
                     if !self.config.server.training && self.show_leaderboard {
                         ui.separator();
@@ -201,7 +201,12 @@ impl RaceTracker {
     /// Amber countdown shown right-aligned when a running race has less than
     /// 30 minutes remaining. Only shown while the race is RUNNING and
     /// race_ends_at is in the future.
-    fn render_race_ends_warning(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
+    fn render_race_ends_warning(
+        &self,
+        ui: &hudhook::imgui::Ui,
+        max_width: f32,
+        bufs: &mut RenderBuffers,
+    ) {
         if let Some(race_info) = self.race_info() {
             if race_info.status == RaceStatus::Running {
                 if let Some(ends_at_dt) = race_info.race_ends_at_dt {
@@ -209,13 +214,18 @@ impl RaceTracker {
                         .signed_duration_since(chrono::Utc::now())
                         .num_seconds();
                     if remaining_seconds > 0 && remaining_seconds < 1800 {
-                        let mins = remaining_seconds / 60;
-                        let secs = remaining_seconds % 60;
-                        let text = format!("{}:{:02} left", mins, secs);
-                        let text_width = ui.calc_text_size(&text)[0];
+                        // The text only changes once per second; reformat then.
+                        if bufs.banner_secs != Some(remaining_seconds) {
+                            bufs.banner_secs = Some(remaining_seconds);
+                            bufs.banner_text.clear();
+                            let mins = remaining_seconds / 60;
+                            let secs = remaining_seconds % 60;
+                            write!(bufs.banner_text, "{}:{:02} left", mins, secs).ok();
+                        }
+                        let text_width = ui.calc_text_size(&bufs.banner_text)[0];
                         let y = ui.cursor_pos()[1];
                         ui.set_cursor_pos([max_width - text_width, y]);
-                        ui.text_colored(self.cached_colors.gold, text);
+                        ui.text_colored(self.cached_colors.gold, &bufs.banner_text);
                     }
                 }
             }
@@ -437,30 +447,48 @@ impl RaceTracker {
     /// → ???                             (undiscovered)
     ///   Soldier of Godrick front        (description, dimmed)
     /// ```
-    fn render_exits(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
-        let zone = match self.current_zone_info() {
+    fn render_exits(&mut self, ui: &hudhook::imgui::Ui, max_width: f32) {
+        let zone = match self.machine.race_state.current_zone.as_ref() {
             Some(z) if !z.exits.is_empty() => z,
             _ => return,
         };
 
+        // Rebuild the pre-rendered lines only when the zone (or width) changed;
+        // rendering below is then allocation-free.
+        if self.exits_cache.version != self.machine.zone_version
+            || self.exits_cache.max_width != max_width
+        {
+            let indent = "  ";
+            let rows: Vec<ExitRow> = zone
+                .exits
+                .iter()
+                .map(|exit| ExitRow {
+                    dest: if exit.discovered {
+                        truncate_to_width(ui, &format!("\u{2192} {}", exit.to_name), max_width)
+                            .into_owned()
+                    } else {
+                        "\u{2192} ???".to_string()
+                    },
+                    discovered: exit.discovered,
+                    lines: wrap_text(ui, indent, &exit.text, max_width),
+                })
+                .collect();
+            self.exits_cache = ExitsRenderCache {
+                version: self.machine.zone_version,
+                max_width,
+                rows,
+            };
+        }
+
         let c = &self.cached_colors;
-        let success = c.success;
-        let white = c.text;
-        let indent = "  ";
-
-        for exit in &zone.exits {
-            // Line 1: destination (highlighted if discovered, "???" placeholder if not)
-            if exit.discovered {
-                let dest = format!("\u{2192} {}", exit.to_name);
-                let truncated = truncate_to_width(ui, &dest, max_width);
-                ui.text_colored(success, &truncated);
+        for row in &self.exits_cache.rows {
+            if row.discovered {
+                ui.text_colored(c.success, &row.dest);
             } else {
-                ui.text_colored(white, "\u{2192} ???");
+                ui.text_colored(c.text, &row.dest);
             }
-
-            // Lines 2+: directions to reach the fog gate (gray, word-wrapped)
-            for line in wrap_text(ui, indent, &exit.text, max_width) {
-                ui.text_disabled(&line);
+            for line in &row.lines {
+                ui.text_disabled(line);
             }
         }
     }

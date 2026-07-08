@@ -35,6 +35,9 @@ pub(crate) struct RenderBuffers {
     pub buf_right: String,
     pub buf_left: String,
     pub buf_footer: String,
+    /// Last rendered "time left" seconds + its formatted text (rebuilt 1x/s).
+    pub banner_secs: Option<i64>,
+    pub banner_text: String,
 }
 
 impl Default for RenderBuffers {
@@ -43,6 +46,8 @@ impl Default for RenderBuffers {
             buf_right: String::with_capacity(16),
             buf_left: String::with_capacity(48),
             buf_footer: String::with_capacity(16),
+            banner_secs: None,
+            banner_text: String::with_capacity(16),
         }
     }
 }
@@ -112,6 +117,23 @@ pub(crate) struct LeaderboardCache {
     pub local_igt_bucket: Option<u32>,
     pub max_width: f32,
     pub spacing: f32,
+}
+
+/// Pre-rendered exit lines for the current zone, rebuilt only when the
+/// machine's zone_version changes (reveal) or max_width changes.
+#[derive(Default)]
+pub(crate) struct ExitsRenderCache {
+    pub version: u64,
+    pub max_width: f32,
+    pub rows: Vec<ExitRow>,
+}
+
+pub(crate) struct ExitRow {
+    /// Pre-truncated destination line ("→ Name" or "→ ???").
+    pub dest: String,
+    pub discovered: bool,
+    /// Pre-wrapped direction lines.
+    pub lines: Vec<String>,
 }
 
 // =============================================================================
@@ -198,6 +220,9 @@ pub struct RaceTracker {
 
     // Cached leaderboard layout invalidated by participant/status changes.
     pub(crate) leaderboard_cache: LeaderboardCache,
+
+    // Pre-rendered exit lines, invalidated by the machine's zone_version.
+    pub(crate) exits_cache: ExitsRenderCache,
 
     // Pre-allocated render buffers (reused across frames)
     pub(crate) render_bufs: RenderBuffers,
@@ -301,6 +326,7 @@ impl RaceTracker {
             debug_info: DebugInfo::default(),
             last_debug_refresh: None,
             leaderboard_cache: LeaderboardCache::default(),
+            exits_cache: ExitsRenderCache::default(),
             render_bufs: RenderBuffers::default(),
         })
     }
