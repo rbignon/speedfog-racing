@@ -31,6 +31,7 @@
   import { isFrogTitle } from "$lib/format";
   import ObsOverlayModal from "$lib/components/ObsOverlayModal.svelte";
   import DownloadModal from "$lib/components/DownloadModal.svelte";
+  import TipTicker from "$lib/components/TipTicker.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
   import { goto } from "$app/navigation";
@@ -1086,6 +1087,12 @@
           </div>
         {/if}
 
+        {#if raceStatus === "setup" && myWsParticipantId && !dagHidden}
+          <div class="tip-rail">
+            <TipTicker poolName={initialRace.pool_name} variant="panel" />
+          </div>
+        {/if}
+
         {#if dagHidden}
           <div class="dag-placeholder">
             <p class="dag-note">{dagHiddenReason}</p>
@@ -1951,6 +1958,21 @@
 
   .dag-wrapper {
     position: relative;
+  }
+
+  .tip-rail {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 260px;
+    z-index: 5;
+  }
+
+  @media (max-width: 768px) {
+    .tip-rail {
+      display: none;
+    }
   }
 
   .go-overlay {
