@@ -71,7 +71,7 @@
       {:else}
         <div class="zone-list">
           {#each deadliest as zone}
-            <div class="zone-row">
+            <a href="/zones?zone={zone.node_id}" class="zone-row">
               <div class="zone-header">
                 <span class="zone-name">{zone.display_name}</span>
                 <span class="type-badge {typeBadgeClass(zone.type)}"
@@ -90,7 +90,7 @@
                   >{zone.avg_deaths_per_visit.toFixed(1)}</span
                 >
               </div>
-            </div>
+            </a>
           {/each}
         </div>
       {/if}
@@ -104,7 +104,7 @@
       {:else}
         <div class="zone-list">
           {#each mostBacktracked as zone}
-            <div class="zone-row">
+            <a href="/zones?zone={zone.node_id}" class="zone-row">
               <div class="zone-header">
                 <span class="zone-name">{zone.display_name}</span>
                 <span class="type-badge {typeBadgeClass(zone.type)}"
@@ -123,7 +123,7 @@
                   >{zone.avg_backtracks_per_race.toFixed(1)}x</span
                 >
               </div>
-            </div>
+            </a>
           {/each}
         </div>
       {/if}
@@ -137,7 +137,7 @@
       {:else}
         <div class="zone-list">
           {#each slowest as zone}
-            <div class="zone-row">
+            <a href="/zones?zone={zone.node_id}" class="zone-row">
               <div class="zone-header">
                 <span class="zone-name">{zone.display_name}</span>
                 <span class="type-badge {typeBadgeClass(zone.type)}"
@@ -151,7 +151,7 @@
                 ></div>
                 <span class="bar-value">{formatTime(zone.avg_time_ms)}</span>
               </div>
-            </div>
+            </a>
           {/each}
         </div>
       {/if}
@@ -165,7 +165,7 @@
       {:else}
         <div class="zone-list">
           {#each fastest as zone}
-            <div class="zone-row">
+            <a href="/zones?zone={zone.node_id}" class="zone-row">
               <div class="zone-header">
                 <span class="zone-name">{zone.display_name}</span>
                 <span class="type-badge {typeBadgeClass(zone.type)}"
@@ -179,7 +179,7 @@
                 ></div>
                 <span class="bar-value">{formatTime(zone.avg_time_ms)}</span>
               </div>
-            </div>
+            </a>
           {/each}
         </div>
       {/if}
@@ -240,6 +240,8 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
+    color: inherit;
+    text-decoration: none;
   }
 
   .zone-header {
@@ -251,6 +253,11 @@
   .zone-name {
     font-weight: 500;
     font-size: var(--font-size-base);
+    transition: color var(--transition);
+  }
+
+  .zone-row:hover .zone-name {
+    color: var(--color-purple);
   }
 
   .type-badge {

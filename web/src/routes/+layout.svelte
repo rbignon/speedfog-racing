@@ -220,6 +220,7 @@
             <a href="/about">About</a>
             <a href="/help">Help</a>
             <a href="/game-changes">Game Changes</a>
+            <a href="/zones">Zones</a>
             <a
               href="https://discord.gg/Qmw67J3mR9"
               target="_blank"
