@@ -1663,6 +1663,7 @@ export interface LeaderboardResponse {
 }
 
 export interface ZoneStatEntry {
+  node_id: string;
   display_name: string;
   type: string;
   total_deaths: number;
@@ -1670,6 +1671,7 @@ export interface ZoneStatEntry {
 }
 
 export interface ZoneBacktrackEntry {
+  node_id: string;
   display_name: string;
   type: string;
   backtrack_count: number;
@@ -1677,6 +1679,7 @@ export interface ZoneBacktrackEntry {
 }
 
 export interface ZoneTimeEntry {
+  node_id: string;
   display_name: string;
   type: string;
   avg_time_ms: number;
@@ -1688,6 +1691,31 @@ export interface ZoneStatsResponse {
   most_backtracked: ZoneBacktrackEntry[];
   slowest: ZoneTimeEntry[];
   fastest: ZoneTimeEntry[];
+}
+
+export interface ZoneIndexEntry {
+  node_id: string;
+  display_name: string;
+  type: string;
+  visits: number;
+  avg_time_ms: number;
+  avg_deaths_per_visit: number;
+  backtrack_rate: number;
+}
+
+export interface ZoneIndexResponse {
+  zones: ZoneIndexEntry[];
+}
+
+export interface ZoneDetailResponse {
+  node_id: string;
+  display_name: string;
+  type: string;
+  visits: number;
+  race_count: number;
+  avg_time_ms: number | null;
+  avg_deaths_per_visit: number;
+  backtrack_rate: number;
 }
 
 export interface WeaponComboStat {
@@ -1769,6 +1797,28 @@ export async function fetchZoneStats(
   const params = pool ? `?pool=${pool}` : "";
   const res = await fetch(`${API_BASE}/stats/zones${params}`);
   if (!res.ok) throw new Error("Failed to fetch zone stats");
+  return res.json();
+}
+
+/**
+ * Fetch every explorable zone with aggregate stats, for the zone codex index.
+ */
+export async function fetchZoneIndex(): Promise<ZoneIndexResponse> {
+  const res = await fetch(`${API_BASE}/stats/zones/index?days=90`);
+  if (!res.ok) throw new Error("Failed to fetch zone index");
+  return res.json();
+}
+
+/**
+ * Fetch aggregate stats for a single zone, for the zone codex detail sheet.
+ */
+export async function fetchZoneDetail(
+  nodeId: string,
+): Promise<ZoneDetailResponse> {
+  const res = await fetch(
+    `${API_BASE}/stats/zones/${encodeURIComponent(nodeId)}?days=90`,
+  );
+  if (!res.ok) throw new Error("Failed to fetch zone detail");
   return res.json();
 }
 
