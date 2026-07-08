@@ -253,7 +253,7 @@ Per participant, a `visited_nids` set tracks already-seen node_ids. Revisiting a
 
 **Endpoint:** `GET /api/stats/zones/index?pool=<optional>&days=<optional, default 90>`
 
-Every dungeon-type zone (not capped at 5, unlike the panels above) with its aggregate stats, sorted by `display_name`. Feeds the frontend's zone codex index page. Shares `_load_zone_stats_inputs` and `_aggregate_zone_stats` with `/zones`, so filtering and merging behave identically; the only difference is the response shape (`ZoneIndexEntry`: `node_id`, `display_name`, `type`, `visits`, `avg_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`) and that all zones are returned, not just the top 5 per category.
+Every dungeon-type zone visited at least once in the window (not capped at 5, unlike the panels above; never-visited zones are absent, only the detail endpoint covers those) with its aggregate stats, sorted by `display_name`. Feeds the frontend's zone codex index page. Shares `_load_zone_stats_inputs` and `_aggregate_zone_stats` with `/zones`, so filtering and merging behave identically; the only difference is the response shape (`ZoneIndexEntry`: `node_id`, `display_name`, `type`, `visits`, `avg_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`) and that all zones are returned, not just the top 5 per category.
 
 ### Zone Codex Detail
 
