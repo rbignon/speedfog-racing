@@ -242,13 +242,9 @@
     <p class="status-text">No zones match your filters.</p>
   {:else}
     <div class="zone-table-wrap">
-      <div class="zone-table" role="table">
-        <div class="zone-table-header" role="row">
-          <span
-            class="col-zone"
-            role="columnheader"
-            aria-sort={zoneSortAria("display_name")}
-          >
+      <div class="zone-table">
+        <div class="zone-table-header">
+          <span class="col-zone" aria-sort={zoneSortAria("display_name")}>
             <button
               type="button"
               class="sort-btn"
@@ -257,11 +253,7 @@
               Zone{zoneSortIndicator("display_name")}
             </button>
           </span>
-          <span
-            class="col-num"
-            role="columnheader"
-            aria-sort={zoneSortAria("skips")}
-          >
+          <span class="col-num" aria-sort={zoneSortAria("skips")}>
             <button
               type="button"
               class="sort-btn"
@@ -270,11 +262,7 @@
               Skips{zoneSortIndicator("skips")}
             </button>
           </span>
-          <span
-            class="col-num"
-            role="columnheader"
-            aria-sort={zoneSortAria("avg_time_ms")}
-          >
+          <span class="col-num" aria-sort={zoneSortAria("avg_time_ms")}>
             <button
               type="button"
               class="sort-btn"
@@ -285,7 +273,6 @@
           </span>
           <span
             class="col-num"
-            role="columnheader"
             aria-sort={zoneSortAria("avg_deaths_per_visit")}
           >
             <button
@@ -296,11 +283,7 @@
               Avg deaths{zoneSortIndicator("avg_deaths_per_visit")}
             </button>
           </span>
-          <span
-            class="col-num"
-            role="columnheader"
-            aria-sort={zoneSortAria("backtrack_rate")}
-          >
+          <span class="col-num" aria-sort={zoneSortAria("backtrack_rate")}>
             <button
               type="button"
               class="sort-btn"
@@ -314,27 +297,22 @@
           <a
             href="/zones?zone={zone.node_id}"
             class="zone-row"
-            role="row"
             onclick={(e) => openZone(e, zone.node_id)}
           >
-            <span class="col-zone zone-name-cell" role="cell">
+            <span class="col-zone zone-name-cell">
               <span class="zone-name">{zone.display_name}</span>
               <span class="type-badge {typeBadgeClass(zone.type)}"
                 >{typeLabel(zone.type)}</span
               >
             </span>
-            <span class="col-num" role="cell">{skips > 0 ? skips : "-"}</span>
-            <span class="col-num" role="cell"
+            <span class="col-num">{skips > 0 ? skips : "-"}</span>
+            <span class="col-num"
               >{zone.avg_time_ms === 0
                 ? "-"
                 : formatTime(zone.avg_time_ms)}</span
             >
-            <span class="col-num" role="cell"
-              >{zone.avg_deaths_per_visit.toFixed(1)}</span
-            >
-            <span class="col-num" role="cell"
-              >{formatPercent(zone.backtrack_rate)}</span
-            >
+            <span class="col-num">{zone.avg_deaths_per_visit.toFixed(1)}</span>
+            <span class="col-num">{formatPercent(zone.backtrack_rate)}</span>
           </a>
         {/each}
       </div>
