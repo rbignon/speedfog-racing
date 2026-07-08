@@ -46,6 +46,14 @@ describe("content catalog invariants", () => {
     }
   });
 
+  it("never sets pools on game_change items (the Game Changes page renders them unconditionally)", () => {
+    for (const item of CONTENT_ITEMS) {
+      if (item.kind === "game_change") {
+        expect(item.pools, item.id).toBeUndefined();
+      }
+    }
+  });
+
   it("never uses an em dash in player-facing strings", () => {
     for (const item of CONTENT_ITEMS) {
       const text = [item.title, item.short, item.body ?? ""].join(" ");

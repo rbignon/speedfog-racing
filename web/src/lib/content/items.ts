@@ -135,7 +135,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "start",
     title: "Care package",
     short:
-      "Every seed starts with a randomized care package: pre-upgraded weapons, armor, talismans, spells and tears, identical for every racer.",
+      "In most modes, every seed starts with a randomized care package: pre-upgraded weapons, armor, talismans, spells and tears, identical for every racer.",
   },
   {
     id: "starting-keys",
@@ -229,7 +229,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "economy",
     title: "No stat requirements",
     short:
-      "Stat requirements on weapons are removed: wield anything you find. Weapons found in the world are auto-upgraded to match your progression.",
+      "Stat requirements on weapons are removed: wield anything you find. In most modes, weapons found in the world are auto-upgraded to match your progression.",
   },
   {
     id: "all-recipes",

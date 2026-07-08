@@ -1,6 +1,6 @@
 import type { ContentItem } from "./types";
 
-export const SEEN_STORAGE_KEY = "speedfog:tips-seen";
+export const SEEN_STORAGE_KEY = "speedfog_tips_seen";
 const SEEN_MAX = 40;
 
 export interface TickerContext {
