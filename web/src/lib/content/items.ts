@@ -16,7 +16,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Godrick's Great Rune",
     short:
-      "**Godrick's Great Rune** raises every stat. Activate it with a **Rune Arc**, and you also recover some HP and FP every time you change zone.",
+      "**Godrick's Great Rune** raises every stat. Activate it with a Rune Arc, and you also **recover some HP and FP** every time you change zone.",
   },
   {
     id: "backtrack-freely",
@@ -69,28 +69,12 @@ export const CONTENT_ITEMS: ContentItem[] = [
       "When the overlay shows '**tier X, normally Y**', the zone was rescaled: a large gap means enemies hit much harder or softer than that zone usually does.",
   },
   {
-    id: "cross-links",
-    kind: "tip",
-    level: "advanced",
-    title: "Watch for cross-links",
-    short:
-      "Some exits connect **distant branches** of the route map. A cross-link can turn an apparent detour into a shortcut past a whole layer.",
-  },
-  {
     id: "gap-splits",
     kind: "tip",
     level: "advanced",
     title: "Gaps are split-based",
     short:
       "The leaderboard gap compares you to the leader **at the same point of the route**, not in real time. A shrinking gap means you are actually gaining.",
-  },
-  {
-    id: "flask-budget",
-    kind: "tip",
-    level: "advanced",
-    title: "Budget flasks for risks",
-    short:
-      "A risky jump that saves a minute is only worth it if you can afford the fall. Check **flasks and carried runes** before attempting it.",
   },
   {
     id: "hardcore-economy",
@@ -177,17 +161,9 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "traversal",
     title: "Return portals in arenas",
     short:
-      "Boss arenas on the route have a **return portal**, so after the kill you can go back out the way you came in.",
+      "Boss arenas on the route have a **return portal**, and are exits to the next zone.",
   },
-  {
-    id: "vanilla-warps-removed",
-    kind: "game_change",
-    category: "traversal",
-    title: "Vanilla warps removed",
-    short:
-      "One-way vanilla warps (**transporter coffins**, DLC crossings) are removed, along with a few **Stakes of Marika** that would respawn you off-route.",
-  },
-
+  //
   // ---------- Game changes: combat ----------
   {
     id: "torrent-arenas",
@@ -195,7 +171,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "combat",
     title: "Torrent in boss arenas",
     short:
-      "**Torrent** can be summoned in arenas where the base game forbids him: Fia's Champions, Astel, Ancestor Spirit and Regal Ancestor Spirit. **Mohg's arena** stays on foot.",
+      "**Torrent** can be summoned in arenas where the base game forbids him: **Fia's Champions**, **Astel**, **Ancestor Spirit** and **Regal Ancestor Spirit**.",
   },
   {
     id: "boss-arena-lock",
@@ -229,7 +205,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "economy",
     title: "No stat requirements",
     short:
-      "**Stat requirements on weapons are removed**: wield anything you find. In most modes, weapons found in the world are **auto-upgraded** to match your progression.",
+      "**Stat requirements on weapons are removed**: wield anything you find. Weapons found in the world are **auto-upgraded** to match your progression.",
   },
   {
     id: "all-recipes",
