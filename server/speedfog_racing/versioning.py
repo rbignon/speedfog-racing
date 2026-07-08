@@ -17,6 +17,12 @@ def parse_version(value: str | None) -> tuple[int, ...] | None:
 
     Returns None when the value is absent or has no leading numeric segment.
     Trailing non-numeric segments are ignored ("1.2.0-rc1" -> (1, 2)).
+
+    The web has its own comparator (web/src/lib/utils/version.ts) with one
+    deliberate difference: the release-gate comparison here treats a missing
+    segment as older ((1, 18) < (1, 18, 0)), while the web pads with zeros
+    ("1.18" == "1.18.0"). Keep any other semantic change in sync between the
+    two.
     """
     if not value:
         return None

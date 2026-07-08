@@ -66,6 +66,8 @@ REST routes (`api/`) and WebSocket handlers (`websocket/`) call into a services 
 
 Two connection types: **mod connections** (`/ws/mod/{race_id}`) for the in-game overlay sending game state (zones, event flags, IGT), and **spectator connections** (`/ws/race/{race_id}/spectate`) for the web UI receiving live updates. `websocket/manager.py` manages rooms and broadcast. See `docs/PROTOCOL.md` and `docs/WEBSOCKET_LIFECYCLE.md`.
 
+The wire protocol carries its own version (`PROTOCOL_VERSION`, identical in `server/speedfog_racing/websocket/schemas.py` and `mod/src/core/protocol.rs`), decoupled from release numbers: bump it only when the wire format changes (breaking change: major + 1; compatible addition worth signalling: minor + 1). Release versions never gate connections except the emergency `MIN_MOD_VERSION` setting. See the "Protocol Version" section of `docs/PROTOCOL.md`.
+
 ### Race lifecycle
 
 `RaceStatus`: setup -> running -> finished. `ParticipantStatus`: registered -> ready -> playing -> finished/abandoned. The organizer controls transitions. ELO is computed on finish via a hand-rolled pairwise rating with margin-of-victory, field-strength weighting, and difficulty injection (see `docs/STATS.md`).
