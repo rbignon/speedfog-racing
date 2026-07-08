@@ -35,8 +35,8 @@ export interface ContentItem {
   level?: TipLevel;
   /** Only for kind "game_change". */
   category?: GameChangeCategory;
-  /** Hash-stripped cluster id ("stormveil"); required for skips, optional zone-scoping for tips. */
-  zoneKey?: string;
+  /** Fine-grained zone id from the seed graph's zones list (e.g. academy_rooftops); required for skips, optional zone-scoping for tips. */
+  zoneId?: string;
   /** Only for kind "skip". */
   legality?: SkipLegality;
   difficulty?: SkipDifficulty;

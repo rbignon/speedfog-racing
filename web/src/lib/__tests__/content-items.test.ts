@@ -79,10 +79,10 @@ describe("content catalog invariants", () => {
     }
   });
 
-  it("gives every skip a zoneKey, legality, and no level/category", () => {
+  it("gives every skip a zoneId, legality, and no level/category", () => {
     for (const item of CONTENT_ITEMS) {
       if (item.kind === "skip") {
-        expect(item.zoneKey, item.id).toMatch(/^[a-z0-9_]+$/);
+        expect(item.zoneId, item.id).toMatch(/^[a-z0-9_]+$/);
         expect(["legal", "banned"], item.id).toContain(item.legality);
         expect(item.level, item.id).toBeUndefined();
         expect(item.category, item.id).toBeUndefined();

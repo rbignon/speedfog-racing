@@ -86,6 +86,7 @@
       displayType: node.displayType,
       tier: node.tier,
       layer: node.layer,
+      zones: node.zones,
       randomizedBosses: node.randomizedBosses,
       entrances,
       exits,

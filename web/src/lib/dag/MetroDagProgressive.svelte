@@ -50,7 +50,11 @@
     graphJson: Record<string, unknown>;
     participants: WsParticipant[];
     myParticipantId: string;
-    onzonecodex?: (nodeId: string, displayName: string) => void;
+    onzonecodex?: (
+      nodeId: string,
+      displayName: string,
+      zones: string[],
+    ) => void;
   }
 
   let { graphJson, participants, myParticipantId, onzonecodex }: Props =
@@ -247,6 +251,7 @@
       displayType: node.displayType,
       tier: node.tier,
       layer: node.layer,
+      zones: node.zones,
       randomizedBosses: node.randomizedBosses,
       entrances,
       exits,

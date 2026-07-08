@@ -144,7 +144,11 @@ describe("ChatSidebar unread badges", () => {
   });
 
   it("keeps accruing unread while the zone sheet covers the chat", async () => {
-    const zoneSheet = { nodeId: "stormveil_c3d4", displayName: "Stormveil" };
+    const zoneSheet = {
+      nodeId: "stormveil_c3d4",
+      displayName: "Stormveil",
+      zones: ["stormveil"],
+    };
     const { container, rerender } = render(ChatSidebar, {
       props: {
         ...baseProps,
@@ -186,7 +190,11 @@ describe("ChatSidebar unread badges", () => {
   });
 
   it("resets the active tab's unread when the zone sheet closes", async () => {
-    const zoneSheet = { nodeId: "stormveil_c3d4", displayName: "Stormveil" };
+    const zoneSheet = {
+      nodeId: "stormveil_c3d4",
+      displayName: "Stormveil",
+      zones: ["stormveil"],
+    };
     const { container, rerender } = render(ChatSidebar, {
       props: {
         ...baseProps,

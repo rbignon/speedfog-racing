@@ -2,34 +2,35 @@ import { CONTENT_ITEMS } from "./items";
 import type { ContentItem } from "./types";
 
 /**
- * Cluster ids carry a per-seed 4-hex suffix ("stormveil_c3d4"); the same
- * physical place can hash differently across seeds, so content keys on the
- * stripped prefix (the backend merges zone stats by display name for the
- * same reason).
+ * A cluster can be composed of several fine-grained zones (e.g. a
+ * cluster's `zones` list); content is keyed on those zone ids rather than
+ * the cluster id itself, since the same physical place can be reached by
+ * multiple cluster variants with different zone compositions (see
+ * docs/STATS.md's zone codex sections for the backend side of this).
  */
-export function zoneKeyOf(nodeId: string): string {
-  return nodeId.replace(/_[0-9a-f]{4}$/, "");
-}
-
-export function skipsForZone(
-  nodeId: string,
+export function skipsForZones(
+  zones: readonly string[],
   catalog: ContentItem[] = CONTENT_ITEMS,
 ): ContentItem[] {
-  const key = zoneKeyOf(nodeId);
-  return catalog.filter((i) => i.kind === "skip" && i.zoneKey === key);
+  return catalog.filter(
+    (i) =>
+      i.kind === "skip" && i.zoneId !== undefined && zones.includes(i.zoneId),
+  );
 }
 
-export function zoneTipsForZone(
-  nodeId: string,
+export function zoneTipsForZones(
+  zones: readonly string[],
   catalog: ContentItem[] = CONTENT_ITEMS,
 ): ContentItem[] {
-  const key = zoneKeyOf(nodeId);
-  return catalog.filter((i) => i.kind === "tip" && i.zoneKey === key);
+  return catalog.filter(
+    (i) =>
+      i.kind === "tip" && i.zoneId !== undefined && zones.includes(i.zoneId),
+  );
 }
 
-export function skipCountForZone(
-  nodeId: string,
+export function skipCountForZones(
+  zones: readonly string[],
   catalog: ContentItem[] = CONTENT_ITEMS,
 ): number {
-  return skipsForZone(nodeId, catalog).length;
+  return skipsForZones(zones, catalog).length;
 }

@@ -53,6 +53,8 @@ export interface NodePopupData {
   displayType?: string;
   tier: number;
   layer: number;
+  /** Fine-grained zone ids this cluster is composed of, for zone codex content matching. */
+  zones: string[];
   randomizedBosses?: string[];
   entrances: PopupConnection[];
   exits: PopupConnection[];

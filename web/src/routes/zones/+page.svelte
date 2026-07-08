@@ -4,7 +4,7 @@
   import { goto } from "$app/navigation";
   import { PUBLIC_BASE_URL } from "$env/static/public";
   import { fetchZoneIndex, type ZoneIndexEntry } from "$lib/api";
-  import { skipCountForZone } from "$lib/content/zones";
+  import { skipCountForZones } from "$lib/content/zones";
   import ZoneSheet from "$lib/components/ZoneSheet.svelte";
 
   let zones = $state<ZoneIndexEntry[]>([]);
@@ -45,7 +45,7 @@
         const matchesMinor = filterMinor && zone.type === "mini_dungeon";
         if (!matchesLegacy && !matchesMinor) return false;
       }
-      if (filterHasSkips && skipCountForZone(zone.node_id) === 0) {
+      if (filterHasSkips && skipCountForZones(zone.zones) === 0) {
         return false;
       }
       return true;
@@ -200,7 +200,7 @@
           <span class="col-num">Backtrack</span>
         </div>
         {#each filteredZones as zone (zone.node_id)}
-          {@const skips = skipCountForZone(zone.node_id)}
+          {@const skips = skipCountForZones(zone.zones)}
           <a
             href="/zones?zone={zone.node_id}"
             class="zone-row"
@@ -242,6 +242,7 @@
     <ZoneSheet
       nodeId={selectedNodeId}
       displayName={selectedZone?.display_name ?? null}
+      zones={selectedZone?.zones ?? null}
       onClose={closeDrawer}
     />
   </div>

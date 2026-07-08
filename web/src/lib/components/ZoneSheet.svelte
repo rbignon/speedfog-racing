@@ -2,15 +2,17 @@
   import { fetchZoneDetail, type ZoneDetailResponse } from "$lib/api";
   import EmphasisText from "$lib/components/EmphasisText.svelte";
   import VideoEmbed from "$lib/components/VideoEmbed.svelte";
-  import { skipsForZone, zoneTipsForZone } from "$lib/content/zones";
+  import { skipsForZones, zoneTipsForZones } from "$lib/content/zones";
 
   interface Props {
     nodeId: string;
     displayName?: string | null;
+    /** Exact per-seed zone composition, when opened from the race DAG popup. */
+    zones?: string[] | null;
     onClose: () => void;
   }
 
-  let { nodeId, displayName = null, onClose }: Props = $props();
+  let { nodeId, displayName = null, zones = null, onClose }: Props = $props();
 
   let detail = $state<ZoneDetailResponse | null>(null);
   let loading = $state(true);
@@ -52,8 +54,12 @@
     detail !== null && detail.visits > 0 && detail.avg_time_ms !== null,
   );
 
-  let skips = $derived(skipsForZone(nodeId));
-  let tips = $derived(zoneTipsForZone(nodeId));
+  // The prop carries the exact cluster variant the player is looking at
+  // (from the DAG popup); when opened from the zone index, fall back to
+  // the detail response's own composition once it loads.
+  let effectiveZones = $derived(zones ?? detail?.zones ?? []);
+  let skips = $derived(skipsForZones(effectiveZones));
+  let tips = $derived(zoneTipsForZones(effectiveZones));
 
   function typeBadgeClass(type: string): string {
     if (type === "legacy_dungeon") return "type-badge-legacy";

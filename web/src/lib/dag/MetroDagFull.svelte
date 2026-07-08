@@ -54,7 +54,11 @@
     maxLayers?: number;
     fullPathOpacity?: boolean;
     labelFontSize?: number;
-    onzonecodex?: (nodeId: string, displayName: string) => void;
+    onzonecodex?: (
+      nodeId: string,
+      displayName: string,
+      zones: string[],
+    ) => void;
   }
 
   let {
@@ -298,6 +302,7 @@
       displayType: node.displayType,
       tier: node.tier,
       layer: node.layer,
+      zones: node.zones,
       randomizedBosses: node.randomizedBosses,
       entrances,
       exits,
@@ -338,6 +343,7 @@
       displayType: node.displayType,
       tier: node.tier,
       layer: node.layer,
+      zones: node.zones,
       randomizedBosses: node.randomizedBosses,
       entrances,
       exits,

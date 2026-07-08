@@ -96,12 +96,14 @@
     typeof window !== "undefined" ? window.innerWidth < 1600 : true,
   );
   let chatActiveTab = $state<"participants" | "public">("participants");
-  let zoneSheetTarget = $state<{ nodeId: string; displayName: string } | null>(
-    null,
-  );
+  let zoneSheetTarget = $state<{
+    nodeId: string;
+    displayName: string;
+    zones: string[];
+  } | null>(null);
 
-  function openZoneCodex(nodeId: string, displayName: string) {
-    zoneSheetTarget = { nodeId, displayName };
+  function openZoneCodex(nodeId: string, displayName: string, zones: string[]) {
+    zoneSheetTarget = { nodeId, displayName, zones };
     chatCollapsed = false;
   }
   function handleHighlightZoneClick(nodeId: string) {

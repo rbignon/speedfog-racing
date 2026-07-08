@@ -1701,6 +1701,7 @@ export interface ZoneIndexEntry {
   avg_time_ms: number;
   avg_deaths_per_visit: number;
   backtrack_rate: number;
+  zones: string[];
 }
 
 export interface ZoneIndexResponse {
@@ -1716,6 +1717,7 @@ export interface ZoneDetailResponse {
   avg_time_ms: number | null;
   avg_deaths_per_visit: number;
   backtrack_rate: number;
+  zones: string[];
 }
 
 export interface WeaponComboStat {

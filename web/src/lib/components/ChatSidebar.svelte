@@ -22,7 +22,7 @@
     onSend: (message: string, channel: ChatTab) => void;
     onToggle: () => void;
     onTabChange: (tab: ChatTab) => void;
-    zoneSheet?: { nodeId: string; displayName: string } | null;
+    zoneSheet?: { nodeId: string; displayName: string; zones: string[] } | null;
     onZoneSheetClose?: () => void;
   }
 
@@ -189,6 +189,7 @@
           <ZoneSheet
             nodeId={zoneSheet.nodeId}
             displayName={zoneSheet.displayName}
+            zones={zoneSheet.zones}
             onClose={onZoneSheetClose}
           />
         </div>

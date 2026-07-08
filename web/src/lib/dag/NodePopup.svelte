@@ -3,14 +3,18 @@
   import { formatIgt } from "./popupData";
   import { NODE_COLORS } from "./constants";
   import WeaponsPopover from "$lib/components/WeaponsPopover.svelte";
-  import { skipCountForZone } from "$lib/content/zones";
+  import { skipCountForZones } from "$lib/content/zones";
 
   interface Props {
     data: NodePopupData;
     x: number;
     y: number;
     onclose: () => void;
-    onzonecodex?: (nodeId: string, displayName: string) => void;
+    onzonecodex?: (
+      nodeId: string,
+      displayName: string,
+      zones: string[],
+    ) => void;
   }
 
   let { data, x, y, onclose, onzonecodex }: Props = $props();
@@ -196,11 +200,11 @@
   {/if}
 
   {#if onzonecodex && (data.type === "legacy_dungeon" || data.type === "mini_dungeon")}
-    {@const skipCount = skipCountForZone(data.nodeId)}
+    {@const skipCount = skipCountForZones(data.zones)}
     <button
       class="codex-link"
       onclick={() => {
-        onzonecodex(data.nodeId, data.displayName);
+        onzonecodex(data.nodeId, data.displayName, data.zones);
         onclose();
       }}
     >
