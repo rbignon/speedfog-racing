@@ -6,6 +6,11 @@
   import PoolTabs from "$lib/components/PoolTabs.svelte";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
+  import { CONTENT_ITEMS } from "$lib/content/items";
+
+  const beginnerTips = CONTENT_ITEMS.filter(
+    (i) => i.kind === "tip" && i.level === "beginner",
+  );
 
   let openDetails = $state<Set<string>>(new Set());
 
@@ -295,6 +300,12 @@
       </div>
     {/if}
 
+    <p class="see-also">
+      Everything SpeedFog changes compared to the base game (Torrent in boss
+      arenas, opened gates, your starting kit...) is listed on the
+      <a href="/game-changes">Game Changes</a> page.
+    </p>
+
     <!-- Accordion: Tips -->
     <button
       class="accordion"
@@ -308,15 +319,9 @@
     {#if isOpen("tips")}
       <div class="panel">
         <ul>
-          <li><strong>Kalé</strong> has moved to the Roundtable Hold.</li>
-          <li>
-            <strong>Merchants</strong> from the open world are relocated inside the
-            zones. Keep an eye out, they can have useful gear.
-          </li>
-          <li>
-            After defeating <strong>Radahn</strong>, make sure to activate the
-            grace or you won't be able to progress to the next zone.
-          </li>
+          {#each beginnerTips as tip}
+            <li><strong>{tip.title}</strong>: {tip.short}</li>
+          {/each}
         </ul>
       </div>
     {/if}
@@ -1148,6 +1153,12 @@
   }
 
   /* Accordion */
+  .see-also {
+    margin-top: 1rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
   .accordion {
     display: flex;
     justify-content: space-between;
