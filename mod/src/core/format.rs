@@ -467,7 +467,7 @@ mod tests {
     #[test]
     fn test_right_text_ready_shows_status_label() {
         // Even when the race is running (non-zero layer), a ready player
-        // must keep showing ParticipantStatus::Ready instead of a misleading "1/LAYERS".
+        // must keep showing the "ready" label instead of a misleading "1/LAYERS".
         let mut buf = String::new();
         write_participant_right_text(&mut buf, ParticipantStatus::Ready, 0, 5, 0);
         assert_eq!(buf, "ready");
