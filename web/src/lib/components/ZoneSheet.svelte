@@ -77,10 +77,6 @@
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }
-
-  function formatPercent(rate: number): string {
-    return `${Math.round(rate * 100)}%`;
-  }
 </script>
 
 <div class="zone-sheet">
@@ -116,8 +112,10 @@
           <span class="value">{detail.avg_deaths_per_visit.toFixed(1)}</span>
         </div>
         <div class="stat-item">
-          <span class="label">Backtrack Rate</span>
-          <span class="value">{formatPercent(detail.backtrack_rate)}</span>
+          <span class="label">Backtracks / Race</span>
+          <!-- Avg backtracks per race, not a proportion: same "x"
+               multiplier convention as ZonesTab's panel. -->
+          <span class="value">{detail.backtrack_rate.toFixed(1)}x</span>
         </div>
         <div class="stat-item">
           <span class="label">Visits</span>

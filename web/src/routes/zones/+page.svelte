@@ -166,10 +166,6 @@
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }
-
-  function formatPercent(rate: number): string {
-    return `${Math.round(rate * 100)}%`;
-  }
 </script>
 
 <svelte:window onkeydown={handleWindowKeydown} />
@@ -312,7 +308,9 @@
                 : formatTime(zone.avg_time_ms)}</span
             >
             <span class="col-num">{zone.avg_deaths_per_visit.toFixed(1)}</span>
-            <span class="col-num">{formatPercent(zone.backtrack_rate)}</span>
+            <!-- Avg backtracks per race, not a proportion: same "x"
+                 multiplier convention as ZonesTab's panel. -->
+            <span class="col-num">{zone.backtrack_rate.toFixed(1)}x</span>
           </a>
         {/each}
       </div>
