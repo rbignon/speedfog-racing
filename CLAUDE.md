@@ -33,7 +33,7 @@ uv run alembic upgrade head       # Apply migrations
 ```bash
 cd web
 npm install                       # Install deps
-npm run dev                       # Dev server on :5173 (proxies /api and /ws to :8000)
+npm run dev                       # Dev server on :5173 (proxies /api, /ws and /health to :8000)
 npm run check                     # svelte-check + TypeScript
 npm run lint                      # Prettier + ESLint
 npm run format                    # Prettier write

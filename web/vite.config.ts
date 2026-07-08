@@ -24,6 +24,11 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // Polled by the appUpdate store; nginx proxies it in production.
+      "/health": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
       "/ws": {
         target: "ws://localhost:8000",
         ws: true,
