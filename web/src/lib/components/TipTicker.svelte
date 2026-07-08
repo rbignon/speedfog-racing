@@ -74,9 +74,9 @@
     flex-direction: column;
     gap: 0.5rem;
     height: 100%;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    background: var(--color-surface-elevated);
+    border-left: 1px solid var(--color-border);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
     padding: 0.9rem 1rem;
     overflow-y: auto;
   }
@@ -130,6 +130,9 @@
     gap: 0.8rem;
     height: auto;
     overflow: visible;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
   }
 
   .tip-ticker.banner .ticker-head {
