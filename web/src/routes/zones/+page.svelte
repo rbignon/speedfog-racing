@@ -89,7 +89,8 @@
   }
 
   function closeDrawer() {
-    goto("/zones", { noScroll: true });
+    // replaceState so Back after an explicit close does not reopen the drawer.
+    goto("/zones", { noScroll: true, replaceState: true });
   }
 
   function handleWindowKeydown(e: KeyboardEvent) {
@@ -128,6 +129,8 @@
     name="description"
     content="Every explorable zone in SpeedFog Racing, with average clear time, deaths, backtrack rate, and documented skips."
   />
+  <!-- Inert for crawlers today (the app runs with ssr=false); kept so the
+       tags are already right if SSR/prerender is ever enabled. -->
   <link rel="canonical" href="{PUBLIC_BASE_URL}/zones" />
 </svelte:head>
 
