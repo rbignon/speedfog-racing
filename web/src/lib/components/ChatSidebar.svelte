@@ -6,6 +6,7 @@
   } from "$lib/chat-sidebar-layout";
   import type { ChatMessage } from "$lib/websocket";
   import ChatPanel from "./ChatPanel.svelte";
+  import ZoneSheet from "./ZoneSheet.svelte";
 
   interface Props {
     messagesParticipants: ChatMessage[];
@@ -21,6 +22,8 @@
     onSend: (message: string, channel: ChatTab) => void;
     onToggle: () => void;
     onTabChange: (tab: ChatTab) => void;
+    zoneSheet?: { nodeId: string; displayName: string } | null;
+    onZoneSheetClose?: () => void;
   }
 
   let {
@@ -37,6 +40,8 @@
     onSend,
     onToggle,
     onTabChange,
+    zoneSheet = null,
+    onZoneSheetClose = () => {},
   }: Props = $props();
 
   let layout = $derived(
@@ -83,10 +88,13 @@
     }
   });
 
-  // Track unread for collapsed state
+  // Track unread for collapsed state. The chat is only actually "seen"
+  // when the sidebar is expanded AND the zone codex sheet isn't covering
+  // the tabs; otherwise treat it the same as collapsed so the badge keeps
+  // accruing while a different view occupies the rail.
   $effect(() => {
     const total = participantsNotifyCount + publicNotifyCount;
-    if (!collapsed) {
+    if (!collapsed && !zoneSheet) {
       lastSeenCount = total;
       unreadCount = 0;
     } else {
@@ -97,7 +105,7 @@
 
   // Track per-tab unread
   $effect(() => {
-    if (layout.effectiveTab === "participants" && !collapsed) {
+    if (layout.effectiveTab === "participants" && !collapsed && !zoneSheet) {
       lastSeenParticipants = participantsNotifyCount;
       unreadParticipants = 0;
     } else {
@@ -110,6 +118,7 @@
     if (
       layout.effectiveTab === "public" &&
       !collapsed &&
+      !zoneSheet &&
       !layout.showLockedPane
     ) {
       lastSeenPublic = publicNotifyCount;
@@ -149,92 +158,135 @@
     </button>
   {:else}
     <div class="sidebar-content">
-      <div class="chat-header">
-        {#if layout.showTabs}
-          <div class="tab-bar">
-            <button
-              class="tab"
-              class:active={layout.effectiveTab === "participants"}
-              onclick={() => onTabChange("participants")}
-            >
-              Participants
-              {#if unreadParticipants > 0 && layout.effectiveTab !== "participants"}
-                <span class="tab-badge"
-                  >{unreadParticipants > 99 ? "99+" : unreadParticipants}</span
-                >
-              {/if}
-            </button>
-            <button
-              class="tab"
-              class:active={layout.effectiveTab === "public"}
-              class:disabled={layout.publicTabDisabled}
-              disabled={layout.publicTabDisabled}
-              onclick={() => !layout.publicTabDisabled && onTabChange("public")}
-              title={layout.publicTabDisabled
-                ? (publicLockedReason ?? "Public chat is locked.")
-                : ""}
-            >
-              Spoilers
-              {#if unreadPublic > 0 && layout.effectiveTab !== "public" && !layout.publicTabDisabled}
-                <span class="tab-badge"
-                  >{unreadPublic > 99 ? "99+" : unreadPublic}</span
-                >
-              {/if}
-            </button>
-          </div>
-        {:else}
-          <span class="chat-title">Chat</span>
-        {/if}
-        <button class="collapse-btn" onclick={onToggle} title="Close chat">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <polyline points="13 6 19 12 13 18" />
-            <line x1="7" y1="12" x2="19" y2="12" />
-            <line x1="3" y1="4" x2="3" y2="20" />
-          </svg>
-        </button>
-      </div>
-      {#if layout.showTabs && !layout.showLockedPane}
-        <div class="channel-hint">
-          {#if layout.effectiveTab === "participants"}
-            Private chat between participants. Avoid sharing spoilers here.
-          {:else}
-            Open discussion, spoilers allowed. Visible to everyone.
-          {/if}
-        </div>
-      {/if}
-      <div class="chat-area">
-        {#if layout.showLockedPane}
-          <div class="locked-pane">
+      {#if zoneSheet}
+        <div class="chat-header">
+          <button class="tab back-btn" onclick={onZoneSheetClose}>
+            &larr; Back to chat
+            {#if unreadCount > 0}
+              <span class="tab-badge"
+                >{unreadCount > 99 ? "99+" : unreadCount}</span
+              >
+            {/if}
+          </button>
+          <button class="collapse-btn" onclick={onToggle} title="Close chat">
             <svg
-              class="lock-icon"
-              width="32"
-              height="32"
+              width="16"
+              height="16"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="1.6"
+              stroke-width="2"
               stroke-linecap="round"
               stroke-linejoin="round"
-              aria-hidden="true"
             >
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              <polyline points="13 6 19 12 13 18" />
+              <line x1="7" y1="12" x2="19" y2="12" />
+              <line x1="3" y1="4" x2="3" y2="20" />
             </svg>
-            <p>{publicLockedReason ?? "Public chat is locked."}</p>
+          </button>
+        </div>
+        <div class="chat-area">
+          <ZoneSheet
+            nodeId={zoneSheet.nodeId}
+            displayName={zoneSheet.displayName}
+            onClose={onZoneSheetClose}
+          />
+        </div>
+      {:else}
+        <div class="chat-header">
+          {#if layout.showTabs}
+            <div class="tab-bar">
+              <button
+                class="tab"
+                class:active={layout.effectiveTab === "participants"}
+                onclick={() => onTabChange("participants")}
+              >
+                Participants
+                {#if unreadParticipants > 0 && layout.effectiveTab !== "participants"}
+                  <span class="tab-badge"
+                    >{unreadParticipants > 99
+                      ? "99+"
+                      : unreadParticipants}</span
+                  >
+                {/if}
+              </button>
+              <button
+                class="tab"
+                class:active={layout.effectiveTab === "public"}
+                class:disabled={layout.publicTabDisabled}
+                disabled={layout.publicTabDisabled}
+                onclick={() =>
+                  !layout.publicTabDisabled && onTabChange("public")}
+                title={layout.publicTabDisabled
+                  ? (publicLockedReason ?? "Public chat is locked.")
+                  : ""}
+              >
+                Spoilers
+                {#if unreadPublic > 0 && layout.effectiveTab !== "public" && !layout.publicTabDisabled}
+                  <span class="tab-badge"
+                    >{unreadPublic > 99 ? "99+" : unreadPublic}</span
+                  >
+                {/if}
+              </button>
+            </div>
+          {:else}
+            <span class="chat-title">Chat</span>
+          {/if}
+          <button class="collapse-btn" onclick={onToggle} title="Close chat">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="13 6 19 12 13 18" />
+              <line x1="7" y1="12" x2="19" y2="12" />
+              <line x1="3" y1="4" x2="3" y2="20" />
+            </svg>
+          </button>
+        </div>
+        {#if layout.showTabs && !layout.showLockedPane}
+          <div class="channel-hint">
+            {#if layout.effectiveTab === "participants"}
+              Private chat between participants. Avoid sharing spoilers here.
+            {:else}
+              Open discussion, spoilers allowed. Visible to everyone.
+            {/if}
           </div>
-        {:else}
-          <ChatPanel messages={activeMessages} {canSend} onSend={handleSend} />
         {/if}
-      </div>
+        <div class="chat-area">
+          {#if layout.showLockedPane}
+            <div class="locked-pane">
+              <svg
+                class="lock-icon"
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <p>{publicLockedReason ?? "Public chat is locked."}</p>
+            </div>
+          {:else}
+            <ChatPanel
+              messages={activeMessages}
+              {canSend}
+              onSend={handleSend}
+            />
+          {/if}
+        </div>
+      {/if}
     </div>
   {/if}
 </aside>
@@ -359,6 +411,14 @@
   .tab.disabled {
     opacity: 0.35;
     cursor: not-allowed;
+  }
+
+  .back-btn {
+    flex: initial;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.6rem 0.75rem;
   }
 
   .tab-badge {

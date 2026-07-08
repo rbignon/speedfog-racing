@@ -54,6 +54,7 @@
     maxLayers?: number;
     fullPathOpacity?: boolean;
     labelFontSize?: number;
+    onzonecodex?: (nodeId: string, displayName: string) => void;
   }
 
   let {
@@ -69,6 +70,7 @@
     maxLayers = 5,
     fullPathOpacity = false,
     labelFontSize = LABEL_FONT_SIZE,
+    onzonecodex,
   }: Props = $props();
 
   let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
@@ -733,7 +735,13 @@
       </ZoomableSvg>
     {/if}
     {#if popupData}
-      <NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
+      <NodePopup
+        data={popupData}
+        x={popupX}
+        y={popupY}
+        onclose={closePopup}
+        {onzonecodex}
+      />
     {/if}
   </div>
 {/if}

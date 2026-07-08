@@ -50,9 +50,11 @@
     graphJson: Record<string, unknown>;
     participants: WsParticipant[];
     myParticipantId: string;
+    onzonecodex?: (nodeId: string, displayName: string) => void;
   }
 
-  let { graphJson, participants, myParticipantId }: Props = $props();
+  let { graphJson, participants, myParticipantId, onzonecodex }: Props =
+    $props();
 
   // Parse once, reuse for layout and visibility
   let graph = $derived(parseDagGraph(graphJson));
@@ -516,7 +518,13 @@
     {/if}
   </ZoomableSvg>
   {#if popupData}
-    <NodePopup data={popupData} x={popupX} y={popupY} onclose={closePopup} />
+    <NodePopup
+      data={popupData}
+      x={popupX}
+      y={popupY}
+      onclose={closePopup}
+      {onzonecodex}
+    />
   {/if}
 {/if}
 

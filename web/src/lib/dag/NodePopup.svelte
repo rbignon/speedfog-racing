@@ -3,15 +3,17 @@
   import { formatIgt } from "./popupData";
   import { NODE_COLORS } from "./constants";
   import WeaponsPopover from "$lib/components/WeaponsPopover.svelte";
+  import { skipCountForZone } from "$lib/content/zones";
 
   interface Props {
     data: NodePopupData;
     x: number;
     y: number;
     onclose: () => void;
+    onzonecodex?: (nodeId: string, displayName: string) => void;
   }
 
-  let { data, x, y, onclose }: Props = $props();
+  let { data, x, y, onclose, onzonecodex }: Props = $props();
 
   // Type label mapping
   const TYPE_LABELS: Record<string, string> = {
@@ -191,6 +193,22 @@
         {/each}
       </div>
     </div>
+  {/if}
+
+  {#if onzonecodex && (data.type === "legacy_dungeon" || data.type === "mini_dungeon")}
+    {@const skipCount = skipCountForZone(data.nodeId)}
+    <button
+      class="codex-link"
+      onclick={() => {
+        onzonecodex(data.nodeId, data.displayName);
+        onclose();
+      }}
+    >
+      {skipCount > 0
+        ? `${skipCount} known skip${skipCount === 1 ? "" : "s"}`
+        : "Zone codex"}
+      &rarr;
+    </button>
   {/if}
 </div>
 
@@ -404,5 +422,26 @@
   .visitor-duration {
     color: var(--color-text-secondary, #9ca3af);
     justify-self: end;
+  }
+
+  .codex-link {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    background: none;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    text-align: left;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-purple, #8b5cf6);
+    cursor: pointer;
+  }
+
+  .codex-link:hover {
+    color: var(--color-purple-hover, #a78bfa);
   }
 </style>

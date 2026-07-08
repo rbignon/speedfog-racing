@@ -96,6 +96,14 @@
     typeof window !== "undefined" ? window.innerWidth < 1600 : true,
   );
   let chatActiveTab = $state<"participants" | "public">("participants");
+  let zoneSheetTarget = $state<{ nodeId: string; displayName: string } | null>(
+    null,
+  );
+
+  function openZoneCodex(nodeId: string, displayName: string) {
+    zoneSheetTarget = { nodeId, displayName };
+    chatCollapsed = false;
+  }
   function handleHighlightZoneClick(nodeId: string) {
     // Reset first so re-clicking the same zone re-triggers the $effect
     highlightFocusNodeId = null;
@@ -1103,6 +1111,7 @@
               graphJson={liveSeed.graph_json}
               participants={raceStore.participants}
               myParticipantId={myWsParticipantId}
+              onzonecodex={showChatSidebar ? openZoneCodex : undefined}
             />
           {:else}
             <MetroDagFull
@@ -1110,6 +1119,7 @@
               participants={raceStore.leaderboard}
               {raceStatus}
               highlightIds={selectedParticipantIds}
+              onzonecodex={showChatSidebar ? openZoneCodex : undefined}
             />
           {/if}
         {:else if liveSeed?.graph_json && raceStatus === "finished"}
@@ -1120,6 +1130,7 @@
               {raceStatus}
               highlightIds={selectedParticipantIds}
               focusNodeId={highlightFocusNodeId}
+              onzonecodex={showChatSidebar ? openZoneCodex : undefined}
             />
           {:else}
             <RaceReplay
@@ -1432,6 +1443,8 @@
         onSend={sendChatMessage}
         onToggle={() => (chatCollapsed = !chatCollapsed)}
         onTabChange={(tab) => (chatActiveTab = tab)}
+        zoneSheet={zoneSheetTarget}
+        onZoneSheetClose={() => (zoneSheetTarget = null)}
       />
     {/if}
 
