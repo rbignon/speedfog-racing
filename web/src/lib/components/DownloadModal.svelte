@@ -1,4 +1,6 @@
 <script lang="ts">
+  import EmphasisText from "$lib/components/EmphasisText.svelte";
+
   interface Props {
     onClose: () => void;
     onDownload: () => void;
@@ -103,7 +105,7 @@
         <h3>Starter Tips</h3>
         <ul>
           {#each tips as tip}
-            <li>{tip}</li>
+            <li><EmphasisText text={tip} /></li>
           {/each}
         </ul>
       </div>

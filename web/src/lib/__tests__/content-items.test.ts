@@ -60,4 +60,22 @@ describe("content catalog invariants", () => {
       expect(text.includes("—"), item.id).toBe(false);
     }
   });
+
+  it("keeps emphasis markers balanced and non-empty in short and body", () => {
+    for (const item of CONTENT_ITEMS) {
+      for (const text of [item.short, item.body ?? ""]) {
+        const markers = text.split("**").length - 1;
+        expect(markers % 2, `${item.id}: unbalanced ** markers`).toBe(0);
+        expect(text.includes("****"), `${item.id}: empty bold span`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it("never uses emphasis markers in titles (titles are already styled)", () => {
+    for (const item of CONTENT_ITEMS) {
+      expect(item.title.includes("**"), item.id).toBe(false);
+    }
+  });
 });

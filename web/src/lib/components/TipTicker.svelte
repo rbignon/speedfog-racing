@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import EmphasisText from "$lib/components/EmphasisText.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
   import {
     loadSeenTipIds,
@@ -61,7 +62,7 @@
     </div>
     <div class="tip-content">
       <span class="tip-title">{current.title}</span>
-      <p class="tip-text">{current.short}</p>
+      <p class="tip-text"><EmphasisText text={current.short} /></p>
     </div>
     <a class="ticker-more" href="/game-changes">Game changes &rarr;</a>
   </aside>

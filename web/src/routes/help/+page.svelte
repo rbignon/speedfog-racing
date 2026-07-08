@@ -6,6 +6,7 @@
   import PoolTabs from "$lib/components/PoolTabs.svelte";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
+  import EmphasisText from "$lib/components/EmphasisText.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
 
   const beginnerTips = CONTENT_ITEMS.filter(
@@ -320,7 +321,9 @@
       <div class="panel">
         <ul>
           {#each beginnerTips as tip}
-            <li><strong>{tip.title}</strong>: {tip.short}</li>
+            <li>
+              <strong>{tip.title}</strong>: <EmphasisText text={tip.short} />
+            </li>
           {/each}
         </ul>
       </div>

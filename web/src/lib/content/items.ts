@@ -8,7 +8,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Level Vigor first",
     short:
-      "Put your first levels into Vigor. Enemy damage scales with route depth, and surviving a hit beats dealing one.",
+      "Put your first levels into **Vigor**. Enemy damage scales with route depth, and surviving a hit beats dealing one.",
   },
   {
     id: "godrick-great-rune",
@@ -16,7 +16,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Godrick's Great Rune",
     short:
-      "Godrick's Great Rune raises every stat. Activate it with a Rune Arc, and you also recover some HP and FP every time you change zone.",
+      "**Godrick's Great Rune** raises every stat. Activate it with a **Rune Arc**, and you also recover some HP and FP every time you change zone.",
   },
   {
     id: "backtrack-freely",
@@ -24,7 +24,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Backtrack without guilt",
     short:
-      "Fog gates are one-way, but you can always fast travel back to any grace. Revisiting an earlier zone to take another exit is often the fastest route.",
+      "Fog gates are one-way, but you can always **fast travel back** to any grace. Revisiting an earlier zone to take another exit is often the fastest route.",
   },
   {
     id: "radahn-grace",
@@ -32,7 +32,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "The Radahn grace",
     short:
-      "After defeating Radahn, activate the grace in his arena before leaving, or you will not be able to progress to the next zone.",
+      "After defeating **Radahn**, activate the **grace in his arena** before leaving, or you will not be able to progress to the next zone.",
   },
   {
     id: "overlay-exits",
@@ -40,7 +40,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Read the exit list",
     short:
-      "The in-game overlay lists every exit of your current zone, with its destination once discovered. Check it before committing to a route.",
+      "The in-game overlay lists **every exit** of your current zone, with its destination once discovered. Check it before committing to a route.",
   },
   {
     id: "quit-outs",
@@ -48,7 +48,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Quit-outs are allowed",
     short:
-      "Quitting to the main menu is legal. Use it to escape a bad fall or to reset a dangerous pull.",
+      "**Quitting to the main menu** is legal. Use it to escape a bad fall or to reset a dangerous pull.",
   },
   {
     id: "spend-runes-early",
@@ -56,7 +56,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Spend runes early",
     short:
-      "Levels are cheap at the start. Spend your runes right after a boss instead of carrying them into the next zone.",
+      "Levels are cheap at the start. **Spend your runes right after a boss** instead of carrying them into the next zone.",
   },
 
   // ---------- Advanced tips ----------
@@ -66,7 +66,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "advanced",
     title: "Tier vs normal tier",
     short:
-      "When the overlay shows 'tier X, normally Y', the zone was rescaled: a large gap means enemies hit much harder or softer than that zone usually does.",
+      "When the overlay shows '**tier X, normally Y**', the zone was rescaled: a large gap means enemies hit much harder or softer than that zone usually does.",
   },
   {
     id: "cross-links",
@@ -74,7 +74,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "advanced",
     title: "Watch for cross-links",
     short:
-      "Some exits connect distant branches of the route map. A cross-link can turn an apparent detour into a shortcut past a whole layer.",
+      "Some exits connect **distant branches** of the route map. A cross-link can turn an apparent detour into a shortcut past a whole layer.",
   },
   {
     id: "gap-splits",
@@ -82,7 +82,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "advanced",
     title: "Gaps are split-based",
     short:
-      "The leaderboard gap compares you to the leader at the same point of the route, not in real time. A shrinking gap means you are actually gaining.",
+      "The leaderboard gap compares you to the leader **at the same point of the route**, not in real time. A shrinking gap means you are actually gaining.",
   },
   {
     id: "flask-budget",
@@ -90,7 +90,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "advanced",
     title: "Budget flasks for risks",
     short:
-      "A risky jump that saves a minute is only worth it if you can afford the fall. Check flasks and carried runes before attempting it.",
+      "A risky jump that saves a minute is only worth it if you can afford the fall. Check **flasks and carried runes** before attempting it.",
   },
   {
     id: "hardcore-economy",
@@ -99,7 +99,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     pools: ["hardcore"],
     title: "Hardcore economy",
     short:
-      "In Hardcore, weapons are not upgraded for you. Buy smithing stones at the Roundtable shop and commit to one weapon early.",
+      "In Hardcore, weapons are **not upgraded for you**. Buy smithing stones at the Roundtable shop and commit to **one weapon** early.",
   },
 
   // ---------- Game changes: start ----------
@@ -109,8 +109,8 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "start",
     title: "Starting grace",
     short:
-      "You start at the Chapel of Anticipation with a Site of Grace added right there, already active.",
-    body: "Runs begin at the Chapel of Anticipation, where SpeedFog injects a Site of Grace that the base game does not have. It is pre-activated and usable for fast travel, and your respawn point is moved away from the Grafted Scion.",
+      "You start at the **Chapel of Anticipation** with a Site of Grace added right there, already active.",
+    body: "Runs begin at the **Chapel of Anticipation**, where SpeedFog injects a **Site of Grace** that the base game does not have. It is pre-activated and usable for fast travel, and your respawn point is moved away from the Grafted Scion.",
   },
   {
     id: "roundtable-start",
@@ -118,8 +118,8 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "start",
     title: "Roundtable Hold from the start",
     short:
-      "The Roundtable Hold is unlocked from the start, and Kale has moved there.",
-    body: "The Roundtable Hold is available from the first minute, without picking up the Wizened Finger. Kale the merchant has moved there, next to the Twin Maiden Husks shop.",
+      "The **Roundtable Hold** is unlocked from the start, and **Kale** has moved there.",
+    body: "The **Roundtable Hold** is available from the first minute, without picking up the Wizened Finger. **Kale** the merchant has moved there, next to the **Twin Maiden Husks** shop.",
   },
   {
     id: "great-runes-restored",
@@ -127,7 +127,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "start",
     title: "All Great Runes restored",
     short:
-      "You start with every Great Rune restored. Activate one with a Rune Arc to get its buff immediately.",
+      "You start with **every Great Rune restored**. Activate one with a **Rune Arc** to get its buff immediately.",
   },
   {
     id: "care-package",
@@ -135,7 +135,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "start",
     title: "Care package",
     short:
-      "In most modes, every seed starts with a randomized care package: pre-upgraded weapons, armor, talismans, spells and tears, identical for every racer.",
+      "In most modes, every seed starts with a randomized **care package**: pre-upgraded weapons, armor, talismans, spells and tears, **identical for every racer**.",
   },
   {
     id: "starting-keys",
@@ -143,7 +143,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "start",
     title: "Softlock keys granted",
     short:
-      "Key items that would cause softlocks are granted at start: whetblades, the Academy Glintstone Key, the Spirit Calling Bell, talisman pouches, the lantern and more.",
+      "**Key items** that would cause softlocks are granted at start: whetblades, the Academy Glintstone Key, the Spirit Calling Bell, talisman pouches, the lantern and more.",
   },
   {
     id: "merchants-relocated",
@@ -151,7 +151,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "start",
     title: "Merchants relocated",
     short:
-      "Open-world merchants are relocated inside zones. Keep an eye out, they can carry useful gear.",
+      "**Open-world merchants** are relocated inside zones. Keep an eye out, they can carry useful gear.",
   },
 
   // ---------- Game changes: traversal ----------
@@ -161,7 +161,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "traversal",
     title: "One-way fog gates",
     short:
-      "Fog gates only go forward and are rewired by the seed. To revisit a zone, fast travel to one of its graces.",
+      "Fog gates only go **forward** and are rewired by the seed. To revisit a zone, **fast travel** to one of its graces.",
   },
   {
     id: "opened-gates",
@@ -169,7 +169,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "traversal",
     title: "Pre-opened gates",
     short:
-      "Barred gates that would block the route are already open, including the Leyndell sewer grates and a Stormveil gate.",
+      "Barred gates that would block the route are **already open**, including the **Leyndell sewer grates** and a **Stormveil gate**.",
   },
   {
     id: "boss-return-portal",
@@ -177,7 +177,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "traversal",
     title: "Return portals in arenas",
     short:
-      "Boss arenas on the route have a return portal, so after the kill you can go back out the way you came in.",
+      "Boss arenas on the route have a **return portal**, so after the kill you can go back out the way you came in.",
   },
   {
     id: "vanilla-warps-removed",
@@ -185,7 +185,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "traversal",
     title: "Vanilla warps removed",
     short:
-      "One-way vanilla warps (transporter coffins, DLC crossings) are removed, along with a few Stakes of Marika that would respawn you off-route.",
+      "One-way vanilla warps (**transporter coffins**, DLC crossings) are removed, along with a few **Stakes of Marika** that would respawn you off-route.",
   },
 
   // ---------- Game changes: combat ----------
@@ -195,7 +195,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "combat",
     title: "Torrent in boss arenas",
     short:
-      "Torrent can be summoned in arenas where the base game forbids him: Fia's Champions, Astel, Ancestor Spirit and Regal Ancestor Spirit. Mohg's arena stays on foot.",
+      "**Torrent** can be summoned in arenas where the base game forbids him: Fia's Champions, Astel, Ancestor Spirit and Regal Ancestor Spirit. **Mohg's arena** stays on foot.",
   },
   {
     id: "boss-arena-lock",
@@ -203,7 +203,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "combat",
     title: "Arenas lock behind you",
     short:
-      "Entering a boss arena locks its exits. Once inside, the only way forward is through the boss.",
+      "Entering a boss arena **locks its exits**. Once inside, the only way forward is through the boss.",
   },
   {
     id: "tier-scaling",
@@ -211,7 +211,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "combat",
     title: "Depth-based scaling",
     short:
-      "Enemies scale with the zone's tier (its depth in the route), not with their vanilla location.",
+      "Enemies scale with the zone's **tier** (its depth in the route), not with their vanilla location.",
   },
 
   // ---------- Game changes: economy ----------
@@ -221,7 +221,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "economy",
     title: "Roundtable smithing shop",
     short:
-      "The Twin Maiden Husks sell smithing stones, and in some modes the Sentry's Torch.",
+      "The **Twin Maiden Husks** sell **smithing stones**, and in some modes the **Sentry's Torch**.",
   },
   {
     id: "no-stat-requirements",
@@ -229,7 +229,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "economy",
     title: "No stat requirements",
     short:
-      "Stat requirements on weapons are removed: wield anything you find. In most modes, weapons found in the world are auto-upgraded to match your progression.",
+      "**Stat requirements on weapons are removed**: wield anything you find. In most modes, weapons found in the world are **auto-upgraded** to match your progression.",
   },
   {
     id: "all-recipes",
@@ -237,7 +237,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "economy",
     title: "All recipes unlocked",
     short:
-      "Every crafting recipe is unlocked from the start, and crafting materials are randomized into the world.",
+      "**Every crafting recipe** is unlocked from the start, and crafting materials are randomized into the world.",
   },
 
   // ---------- Game changes: QoL ----------
@@ -247,7 +247,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "qol",
     title: "Rebirth anywhere",
     short:
-      "Rebirth (respec) is available at any Site of Grace for a Larval Tear, not just at Rennala.",
+      "**Rebirth** (respec) is available at **any Site of Grace** for a Larval Tear, not just at Rennala.",
   },
   {
     id: "fast-graces",
@@ -255,13 +255,13 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "qol",
     title: "Faster graces",
     short:
-      "Sitting at and discovering graces is much faster than in the base game.",
+      "Sitting at and discovering graces is **much faster** than in the base game.",
   },
   {
     id: "no-menu-delay",
     kind: "game_change",
     category: "qol",
     title: "No menu input delay",
-    short: "The input delay when opening menus is removed.",
+    short: "The **input delay** when opening menus is removed.",
   },
 ];

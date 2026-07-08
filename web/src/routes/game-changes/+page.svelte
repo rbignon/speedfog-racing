@@ -1,5 +1,6 @@
 <script lang="ts">
   import { PUBLIC_BASE_URL } from "$env/static/public";
+  import EmphasisText from "$lib/components/EmphasisText.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
   import {
     CATEGORY_LABELS,
@@ -43,7 +44,7 @@
       {#each section.items as item}
         <div class="change">
           <h3>{item.title}</h3>
-          <p>{item.body ?? item.short}</p>
+          <p><EmphasisText text={item.body ?? item.short} /></p>
         </div>
       {/each}
     </section>
