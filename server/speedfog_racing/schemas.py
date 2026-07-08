@@ -741,8 +741,10 @@ class ZoneTimeEntry(BaseModel):
     node_id: str
     display_name: str
     type: str
-    avg_time_ms: int
-    visits: int
+    median_time_ms: int
+    # Number of participants whose clear time feeds the median (one total
+    # per participant, not one per visit).
+    players: int
 
 
 class ZoneStatsResponse(BaseModel):
@@ -757,7 +759,7 @@ class ZoneIndexEntry(BaseModel):
     display_name: str
     type: str
     visits: int
-    avg_time_ms: int
+    median_time_ms: int
     avg_deaths_per_visit: float
     backtrack_rate: float
     zones: list[str]
@@ -773,7 +775,7 @@ class ZoneDetailResponse(BaseModel):
     type: str
     visits: int
     race_count: int
-    avg_time_ms: int | None
+    median_time_ms: int | None
     avg_deaths_per_visit: float
     backtrack_rate: float
     zones: list[str]

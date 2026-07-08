@@ -1129,7 +1129,11 @@ class TestZoneStatsAggregation:
     async def test_aggregate_zone_stats_computes_times(
         self, async_session, three_races_with_zone_history
     ):
-        """Time should be computed as difference between consecutive igt_ms entries."""
+        """Times are per-participant totals of participants who cleared the
+        zone. Player 1's stormveil revisit (400s + 400s across two visits)
+        sums to one 800s total; their cave peek ends back at stormveil (same
+        layer), so cave collects no time at all despite being visited.
+        """
         race_ids, user_ids = three_races_with_zone_history
         async with async_session() as db:
             participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
@@ -1138,11 +1142,13 @@ class TestZoneStatsAggregation:
                 participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
             )
 
-            # Each zone should have time entries with positive values
-            for name, data in zone_data.items():
-                assert data["times"], f"Zone {name} should have time entries"
-                for t in data["times"]:
-                    assert t > 0, f"Zone {name} has non-positive time {t}"
+            # 3 races x 3 players, all cleared stormveil: one total each
+            stormveil = zone_data["Stormveil Castle"]
+            assert sorted(set(stormveil["times"])) == [500_000, 550_000, 800_000]
+            assert len(stormveil["times"]) == 9
+            # Only player 1 visits cave, and their last visit backs out
+            assert zone_data["Coastal Cave"]["times"] == []
+            assert zone_data["Coastal Cave"]["visits"] > 0
 
     async def test_aggregate_zone_stats_includes_zones_union(
         self, async_session, three_races_with_zone_history
@@ -1321,7 +1327,7 @@ class TestZoneIndexEndpoint:
         assert types <= {"legacy_dungeon", "mini_dungeon"}
         stormveil = next(z for z in result.zones if z.node_id == "stormveil_c3d4")
         assert stormveil.visits > 0
-        assert stormveil.avg_time_ms > 0
+        assert stormveil.median_time_ms > 0
         assert stormveil.zones == ["stormveil", "stormveil_gate"]
 
     async def test_index_excludes_boss_arenas(self, async_session, three_races_with_zone_history):
@@ -1459,7 +1465,7 @@ class TestZoneDetailEndpoint:
         assert detail.node_id == "stormveil_c3d4"
         assert detail.type == "legacy_dungeon"
         assert detail.visits > 0
-        assert detail.avg_time_ms is not None and detail.avg_time_ms > 0
+        assert detail.median_time_ms is not None and detail.median_time_ms > 0
         assert 0 <= detail.backtrack_rate
         assert detail.zones == ["stormveil", "stormveil_gate"]
 
@@ -1539,7 +1545,7 @@ class TestZoneDetailEndpoint:
         assert detail.type == "legacy_dungeon"
         assert detail.visits == 0
         assert detail.race_count == 0
-        assert detail.avg_time_ms is None
+        assert detail.median_time_ms is None
         assert detail.avg_deaths_per_visit == 0.0
         assert detail.backtrack_rate == 0.0
         assert detail.zones == ["unvisited_ruins"]
@@ -1654,7 +1660,8 @@ class TestZoneDetailEndpoint:
         assert detail_a.visits == detail_b.visits == 2
         assert detail_a.race_count == detail_b.race_count == 1
         assert detail_a.avg_deaths_per_visit == detail_b.avg_deaths_per_visit == 1.5
-        assert detail_a.avg_time_ms == detail_b.avg_time_ms == 425_000
+        # median of two == mean of two: (400_000 + 450_000) / 2
+        assert detail_a.median_time_ms == detail_b.median_time_ms == 425_000
         # Each sibling's own composition, not the merged union.
         assert detail_a.zones == ["stormveil", "stormveil_gate"]
         assert detail_b.zones == ["stormveil", "stormveil_rooftops"]
@@ -2510,3 +2517,201 @@ class TestSeedNodesCache:
             )
         assert "Raya Lucaria" in zone_data
         assert "Stormveil Castle" not in zone_data
+
+
+class TestZoneClearTimes:
+    """Zone time stats follow tools/extract_zone_times.py's method: per
+    participant, all visit durations to a zone are summed (deaths and
+    runbacks cost their real time), and the total only counts if the
+    participant's last visit cleared the zone (left toward a higher layer,
+    or was the final entry of a FINISHED run). Endpoints report the median
+    across participants."""
+
+    GRAPH_JSON = {
+        "nodes": {
+            "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+            "stormveil_c3d4": {
+                "type": "legacy_dungeon",
+                "display_name": "Stormveil Castle",
+                "layer": 1,
+            },
+            "raya_i9j0": {
+                "type": "legacy_dungeon",
+                "display_name": "Raya Lucaria",
+                "layer": 2,
+            },
+            "godrick_m1n2": {
+                "type": "major_boss",
+                "display_name": "Godrick",
+                "layer": 3,
+            },
+        },
+        "total_layers": 4,
+    }
+
+    async def _make_participant(
+        self, db, *, zone_history, suffix, status=ParticipantStatus.FINISHED, igt_ms=1_000_000
+    ):
+        """Helper: create user + seed + race + participant."""
+        user = User(
+            twitch_id=f"ct_{suffix}",
+            twitch_username=f"ct_{suffix}",
+            api_token=f"ctt_{suffix}",
+            role=UserRole.USER,
+        )
+        org = User(
+            twitch_id=f"ctorg_{suffix}",
+            twitch_username=f"ctorg_{suffix}",
+            api_token=f"ctorgt_{suffix}",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, org])
+        await db.flush()
+
+        seed = Seed(
+            seed_number=f"cts_{suffix}",
+            pool_name="standard",
+            graph_json=self.GRAPH_JSON,
+            total_layers=4,
+            folder_path=f"/t/cts_{suffix}",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name=f"Clear Time Race {suffix}",
+            organizer_id=org.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            mod_token=f"ctmod_{suffix}",
+            status=status,
+            igt_ms=igt_ms,
+            death_count=sum(e.get("deaths", 0) for e in zone_history),
+            zone_history=zone_history,
+        )
+        db.add(participant)
+        await db.commit()
+        return participant
+
+    async def _zone_data(self, async_session):
+        async with async_session() as db:
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
+            return _aggregate_zone_stats(
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+
+    async def test_death_runback_time_summed_across_visits(self, async_session):
+        """Dying in a zone and running back does not reset the clock: both
+        visit durations sum into one total for the participant."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 60_000, "type": "fog", "deaths": 1},
+                    {"node_id": "start_a1b2", "igt_ms": 360_000, "type": "backtrack"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 400_000, "type": "fog"},
+                    {"node_id": "godrick_m1n2", "igt_ms": 580_000, "type": "fog"},
+                ],
+                igt_ms=700_000,
+                suffix="t1",
+            )
+
+        zone_data = await self._zone_data(async_session)
+        assert zone_data["Stormveil Castle"]["times"] == [480_000]
+
+    async def test_backed_zone_gets_no_time(self, async_session):
+        """A participant whose last visit leaves toward a lower layer never
+        cleared the zone: their (truncated) time must not deflate the stat."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 60_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 120_000, "type": "fog"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 180_000, "type": "fog"},
+                    {"node_id": "godrick_m1n2", "igt_ms": 400_000, "type": "fog"},
+                ],
+                igt_ms=500_000,
+                suffix="t2",
+            )
+
+        zone_data = await self._zone_data(async_session)
+        assert zone_data["Raya Lucaria"]["times"] == []
+        assert zone_data["Raya Lucaria"]["visits"] == 1
+        assert zone_data["Stormveil Castle"]["times"] == [280_000]
+
+    async def test_abandoned_last_zone_gets_no_time(self, async_session):
+        """An abandon inside a zone is not a clear; earlier zones the player
+        progressed through still count."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                status=ParticipantStatus.ABANDONED,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 60_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 120_000, "type": "fog"},
+                ],
+                igt_ms=500_000,
+                suffix="t3",
+            )
+
+        zone_data = await self._zone_data(async_session)
+        assert zone_data["Raya Lucaria"]["times"] == []
+        assert zone_data["Stormveil Castle"]["times"] == [60_000]
+
+    async def test_index_reports_median_of_participant_totals(self, async_session):
+        """Median, not mean: one slow outlier must not drag the stat."""
+        async with async_session() as db:
+            for i, seconds in enumerate((60, 120, 600)):
+                await self._make_participant(
+                    db,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "stormveil_c3d4", "igt_ms": 100_000, "type": "fog"},
+                        {
+                            "node_id": "godrick_m1n2",
+                            "igt_ms": 100_000 + seconds * 1000,
+                            "type": "fog",
+                        },
+                    ],
+                    igt_ms=200_000 + seconds * 1000,
+                    suffix=f"t4{i}",
+                )
+
+        async with async_session() as db:
+            index = await get_zone_index(pool=None, days=3650, db=db)
+        stormveil = next(z for z in index.zones if z.display_name == "Stormveil Castle")
+        assert stormveil.median_time_ms == 120_000
+
+    async def test_last_visit_followed_by_unknown_node_not_cleared(self, async_session):
+        """A last visit followed by an entry whose node_id is absent from the
+        seed graph (stale warp landing) cannot prove progression: not cleared."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 60_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 120_000, "type": "fog"},
+                    {"node_id": "stale_node_ffff", "igt_ms": 180_000, "type": "fog"},
+                ],
+                igt_ms=500_000,
+                suffix="t5",
+            )
+
+        zone_data = await self._zone_data(async_session)
+        assert zone_data["Raya Lucaria"]["times"] == []
+        assert zone_data["Stormveil Castle"]["times"] == [60_000]

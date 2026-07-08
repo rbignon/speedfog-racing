@@ -234,7 +234,7 @@ After aggregating by node_id, entries with the same FULL display_name are merged
 
 ### Time Calculation
 
-Time spent in a zone = `next_entry.igt_ms - current_entry.igt_ms`. For the last entry in zone_history, `participant.igt_ms` (final race IGT) is used as fallback.
+Clear times follow the same method as `tools/extract_zone_times.py` (which calibrates seed generator weights from the same data). Per participant, every visit's duration (`next_entry.igt_ms - current_entry.igt_ms`; `participant.igt_ms` closes the last entry) accumulates into one total per zone, so deaths and runbacks cost their real time instead of splitting into short fragments. The total only counts if the participant CLEARED the zone: their last visit left toward a higher layer (in their own seed's graph), or was the final entry of a FINISHED run. Participants who peeked and backed out, warped away, or abandoned inside the zone contribute no time at all; without this filter, truncated durations would deflate the stats precisely on the most backtracked zones. Endpoints report the MEDIAN across participant totals (`median_time_ms`), robust to the strong right skew of traversal times.
 
 ### Panels
 
@@ -242,8 +242,8 @@ Time spent in a zone = `next_entry.igt_ms - current_entry.igt_ms`. For the last 
 | ---------------- | ------------------------ | ----------------------------------- |
 | Deadliest Zones  | avg. deaths per visit    | `total_deaths / visits` DESC        |
 | Most Backtracked | avg. backtracks per race | `backtrack_count / race_count` DESC |
-| Slowest Zones    | avg. traversal time      | `mean(times)` DESC                  |
-| Fastest Zones    | avg. traversal time      | `mean(times)` ASC, min 3 visits     |
+| Slowest Zones    | median clear time        | `median(times)` DESC                |
+| Fastest Zones    | median clear time        | `median(times)` ASC, min 3 players  |
 
 All panels show top 5. Sorting uses rate metrics (per-visit or per-race) to avoid popularity bias.
 
@@ -262,13 +262,13 @@ Plain fog-gate re-entries into an already-visited zone (transit) are NOT backtra
 
 **Endpoint:** `GET /api/stats/zones/index?pool=<optional>&days=<optional, default 90>`
 
-Every dungeon-type zone visited at least once in the window (not capped at 5, unlike the panels above; never-visited zones are absent, only the detail endpoint covers those) with its aggregate stats, sorted by `display_name`. Feeds the frontend's zone codex index page. Shares `_load_zone_stats_inputs` and `_aggregate_zone_stats` with `/zones`, so filtering and merging behave identically; the only difference is the response shape (`ZoneIndexEntry`: `node_id`, `display_name`, `type`, `visits`, `avg_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`, `zones`) and that all zones are returned, not just the top 5 per category. `zones` is the union of the fine-grained zone ids across every cluster variant merged into that display_name, used by the frontend to match zone codex content (skips, tips) that could belong to any of the merged variants. `backtrack_rate` is the same metric as the panel's `avg_backtracks_per_race` (`backtrack_count / race_count`): the average number of times players turned away from the zone (see Backtrack Detection above) per race where it was visited, summed over all participants of the race, so it can exceed 1 and must be rendered as a multiplier ("1.4x"), never as a percentage. Rankings between `/zones` and this index only match when queried with the same `days` window (their API defaults differ: 30 vs 90); the web frontend pins `days=90` on both, so the stats page panels and the zone codex always agree.
+Every dungeon-type zone visited at least once in the window (not capped at 5, unlike the panels above; never-visited zones are absent, only the detail endpoint covers those) with its aggregate stats, sorted by `display_name`. Feeds the frontend's zone codex index page. Shares `_load_zone_stats_inputs` and `_aggregate_zone_stats` with `/zones`, so filtering and merging behave identically; the only difference is the response shape (`ZoneIndexEntry`: `node_id`, `display_name`, `type`, `visits`, `median_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`, `zones`) and that all zones are returned, not just the top 5 per category. `zones` is the union of the fine-grained zone ids across every cluster variant merged into that display_name, used by the frontend to match zone codex content (skips, tips) that could belong to any of the merged variants. `backtrack_rate` is the same metric as the panel's `avg_backtracks_per_race` (`backtrack_count / race_count`): the average number of times players turned away from the zone (see Backtrack Detection above) per race where it was visited, summed over all participants of the race, so it can exceed 1 and must be rendered as a multiplier ("1.4x"), never as a percentage. Rankings between `/zones` and this index only match when queried with the same `days` window (their API defaults differ: 30 vs 90); the web frontend pins `days=90` on both, so the stats page panels and the zone codex always agree.
 
 ### Zone Codex Detail
 
 **Endpoint:** `GET /api/stats/zones/{node_id}?pool=<optional>&days=<optional, default 90>`
 
-Aggregate stats for a single zone, resolved from the most recent seed containing `node_id`. Returns 404 if `node_id` is unknown, or if its resolved type is not in `DUNGEON_NODE_TYPES` (e.g. a boss arena). If the zone is known but had no visits in the `days` window, returns zeroed stats (`visits=0`, `race_count=0`, `avg_time_ms=null`) rather than 404, since the zone still exists. Response shape: `ZoneDetailResponse` (`node_id`, `display_name`, `type`, `visits`, `race_count`, `avg_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`, `zones`). Unlike the index's `zones`, this echoes only the REQUESTED `node_id`'s own zone composition, not the merge union across its siblings: the detail sheet describes the specific cluster variant the caller asked about.
+Aggregate stats for a single zone, resolved from the most recent seed containing `node_id`. Returns 404 if `node_id` is unknown, or if its resolved type is not in `DUNGEON_NODE_TYPES` (e.g. a boss arena). If the zone is known but had no visits in the `days` window, returns zeroed stats (`visits=0`, `race_count=0`, `median_time_ms=null`) rather than 404, since the zone still exists. `median_time_ms` can also be null with `visits > 0`: every visitor in the window backed out or abandoned, so no clear time exists. Response shape: `ZoneDetailResponse` (`node_id`, `display_name`, `type`, `visits`, `race_count`, `median_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`, `zones`). Unlike the index's `zones`, this echoes only the REQUESTED `node_id`'s own zone composition, not the merge union across its siblings: the detail sheet describes the specific cluster variant the caller asked about.
 
 ---
 

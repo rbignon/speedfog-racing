@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from statistics import mean
+from statistics import median
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -206,6 +206,10 @@ class NodeDisplay:
     # A tuple, not a list: NodeDisplay instances live forever in the shared
     # seed projection cache, so their contents must be structurally immutable.
     zones: tuple[str, ...]
+    # 0-indexed layer in the owning seed's graph. Meaningful per seed (the
+    # same cluster can sit at different layers across seeds), so read it from
+    # the participant's own SeedNodes, never from the merged node_display.
+    layer: int
 
 
 @dataclass(frozen=True)
@@ -238,6 +242,7 @@ def _project_seed_nodes(created_at: datetime, graph_json: dict[str, Any]) -> See
             full_name=full_name,
             type=meta.get("type", ""),
             zones=tuple(meta.get("zones", [])),
+            layer=meta.get("layer") or 0,
         )
     return SeedNodes(created_at=created_at, nodes=nodes)
 
@@ -302,6 +307,12 @@ def _aggregate_zone_stats(
         nodes = seed_nodes.nodes
         race_id = participant.race_id
 
+        # Per-participant time accumulation (mirrors tools/extract_zone_times.py):
+        # every visit's duration sums into the zone's total, and whether the
+        # total counts is decided by the outcome of the LAST visit only.
+        node_total_ms: dict[str, int] = {}
+        node_last_idx: dict[str, int] = {}
+
         for idx, entry in enumerate(history):
             nid = entry.get("node_id", "")
             if not nid:
@@ -342,17 +353,31 @@ def _aggregate_zone_stats(
                 if not returned:
                     zone_backtracks[nid] = zone_backtracks.get(nid, 0) + 1
 
-            # Time: difference between this entry's igt_ms and next entry's igt_ms
+            # Time: this visit lasts until the next entry (or the participant's
+            # final IGT for the last one) and accumulates into the zone total.
             current_igt = entry.get("igt_ms", 0)
             if idx + 1 < len(history):
-                next_igt = history[idx + 1].get("igt_ms", 0)
-                if current_igt > 0 and next_igt > current_igt:
-                    zone_times.setdefault(nid, []).append(next_igt - current_igt)
+                end_igt = history[idx + 1].get("igt_ms", 0)
             else:
-                # Last zone: use participant's final IGT as the "next" timestamp
-                final_igt = participant.igt_ms or 0
-                if current_igt > 0 and final_igt > current_igt:
-                    zone_times.setdefault(nid, []).append(final_igt - current_igt)
+                end_igt = participant.igt_ms or 0
+            if end_igt > current_igt:
+                node_total_ms[nid] = node_total_ms.get(nid, 0) + (end_igt - current_igt)
+            node_last_idx[nid] = idx
+
+        # A zone's total only counts if the participant CLEARED it: their last
+        # visit left toward a higher layer, or ended a FINISHED run. Without
+        # this filter, peeks, abandons and warp exits would deflate the time
+        # stats with truncated durations, and precisely on the most
+        # backtracked zones.
+        for nid, total_ms in node_total_ms.items():
+            last_idx = node_last_idx[nid]
+            if last_idx + 1 < len(history):
+                next_info = nodes.get(history[last_idx + 1].get("node_id", ""))
+                cleared = next_info is not None and next_info.layer > nodes[nid].layer
+            else:
+                cleared = participant.status == ParticipantStatus.FINISHED
+            if cleared:
+                zone_times.setdefault(nid, []).append(total_ms)
 
         # Count abandon as backtrack for the participant's last zone (they
         # renounced there), but only on a first visit.
@@ -526,10 +551,10 @@ async def get_zone_stats(
         for n in backtracked_nodes
     ]
 
-    # Slowest: zones with highest average traversal time
+    # Slowest: zones with highest median clear time
     slowest_nodes = sorted(
         [n for n in node_data.values() if n["times"]],
-        key=lambda n: sum(n["times"]) / len(n["times"]),
+        key=lambda n: median(n["times"]),
         reverse=True,
     )[:5]
     slowest = [
@@ -537,24 +562,24 @@ async def get_zone_stats(
             node_id=n["node_id"],
             display_name=n["short_name"],
             type=n["type"],
-            avg_time_ms=round(sum(n["times"]) / len(n["times"])),
-            visits=len(n["times"]),
+            median_time_ms=round(median(n["times"])),
+            players=len(n["times"]),
         )
         for n in slowest_nodes
     ]
 
-    # Fastest: zones with lowest average traversal time (min 3 visits to avoid outliers)
+    # Fastest: zones with lowest median clear time (min 3 players to avoid outliers)
     fastest_nodes = sorted(
         [n for n in node_data.values() if len(n["times"]) >= 3],
-        key=lambda n: sum(n["times"]) / len(n["times"]),
+        key=lambda n: median(n["times"]),
     )[:5]
     fastest = [
         ZoneTimeEntry(
             node_id=n["node_id"],
             display_name=n["short_name"],
             type=n["type"],
-            avg_time_ms=round(sum(n["times"]) / len(n["times"])),
-            visits=len(n["times"]),
+            median_time_ms=round(median(n["times"])),
+            players=len(n["times"]),
         )
         for n in fastest_nodes
     ]
@@ -590,7 +615,7 @@ async def get_zone_index(
             display_name=data["display_name"],
             type=data["type"],
             visits=data["visits"],
-            avg_time_ms=round(mean(data["times"])) if data["times"] else 0,
+            median_time_ms=round(median(data["times"])) if data["times"] else 0,
             avg_deaths_per_visit=(
                 round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
             ),
@@ -618,7 +643,7 @@ async def get_zone_detail(
 
     404s when ``node_id`` is unknown, or when it resolves to a node type
     outside ``DUNGEON_NODE_TYPES`` (e.g. a boss arena). Returns zeroed stats
-    (``avg_time_ms=None``, ``visits=0``, ...) when the zone is known but has
+    (``median_time_ms=None``, ``visits=0``, ...) when the zone is known but has
     no visits within the ``days`` window. ``display_name`` is the FULL name
     (same as the index, unlike the top-5 panels on ``/zones``).
     """
@@ -638,7 +663,7 @@ async def get_zone_detail(
             type=info.type,
             visits=0,
             race_count=0,
-            avg_time_ms=None,
+            median_time_ms=None,
             avg_deaths_per_visit=0.0,
             backtrack_rate=0.0,
             zones=list(info.zones),
@@ -655,7 +680,7 @@ async def get_zone_detail(
         type=data["type"],
         visits=data["visits"],
         race_count=data["race_count"],
-        avg_time_ms=round(mean(data["times"])) if data["times"] else None,
+        median_time_ms=round(median(data["times"])) if data["times"] else None,
         avg_deaths_per_visit=(
             round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
         ),

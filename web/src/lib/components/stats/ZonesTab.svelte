@@ -16,8 +16,10 @@
   let maxBacktracks = $derived(
     Math.max(1, ...mostBacktracked.map((z) => z.avg_backtracks_per_race)),
   );
-  let maxTime = $derived(Math.max(1, ...slowest.map((z) => z.avg_time_ms)));
-  let maxFastTime = $derived(Math.max(1, ...fastest.map((z) => z.avg_time_ms)));
+  let maxTime = $derived(Math.max(1, ...slowest.map((z) => z.median_time_ms)));
+  let maxFastTime = $derived(
+    Math.max(1, ...fastest.map((z) => z.median_time_ms)),
+  );
 
   $effect(() => {
     loadData();
@@ -131,7 +133,7 @@
 
     <div class="zone-panel">
       <h2>Slowest Zones</h2>
-      <p class="panel-subtitle">avg. traversal time</p>
+      <p class="panel-subtitle">median clear time</p>
       {#if slowest.length === 0}
         <p class="empty">No data yet.</p>
       {:else}
@@ -147,9 +149,9 @@
               <div class="bar-row">
                 <div
                   class="bar bar-time"
-                  style="width: {barWidth(zone.avg_time_ms, maxTime)}"
+                  style="width: {barWidth(zone.median_time_ms, maxTime)}"
                 ></div>
-                <span class="bar-value">{formatTime(zone.avg_time_ms)}</span>
+                <span class="bar-value">{formatTime(zone.median_time_ms)}</span>
               </div>
             </a>
           {/each}
@@ -159,7 +161,7 @@
 
     <div class="zone-panel">
       <h2>Fastest Zones</h2>
-      <p class="panel-subtitle">avg. traversal time</p>
+      <p class="panel-subtitle">median clear time</p>
       {#if fastest.length === 0}
         <p class="empty">No data yet.</p>
       {:else}
@@ -175,9 +177,9 @@
               <div class="bar-row">
                 <div
                   class="bar bar-fast"
-                  style="width: {barWidth(zone.avg_time_ms, maxFastTime)}"
+                  style="width: {barWidth(zone.median_time_ms, maxFastTime)}"
                 ></div>
-                <span class="bar-value">{formatTime(zone.avg_time_ms)}</span>
+                <span class="bar-value">{formatTime(zone.median_time_ms)}</span>
               </div>
             </a>
           {/each}

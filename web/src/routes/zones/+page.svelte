@@ -55,7 +55,7 @@
   type ZoneSortKey =
     | "display_name"
     | "skips"
-    | "avg_time_ms"
+    | "median_time_ms"
     | "avg_deaths_per_visit"
     | "backtrack_rate";
   let sortKey = $state<ZoneSortKey>("display_name");
@@ -90,6 +90,14 @@
       skips: skipCountForZones(zone.zones),
     }));
     rows.sort((a, b) => {
+      // Zones visited but never cleared have median_time_ms 0, rendered as
+      // "-": keep them last in both sort directions instead of letting the
+      // 0 sentinel top the ascending order.
+      if (sortKey === "median_time_ms") {
+        const aMissing = a.zone.median_time_ms === 0;
+        const bMissing = b.zone.median_time_ms === 0;
+        if (aMissing !== bMissing) return aMissing ? 1 : -1;
+      }
       let cmp: number;
       if (sortKey === "display_name") {
         cmp = a.zone.display_name.localeCompare(b.zone.display_name);
@@ -174,7 +182,7 @@
   <title>Zone Codex - SpeedFog Racing</title>
   <meta
     name="description"
-    content="Every explorable zone in SpeedFog Racing, with average clear time, deaths, backtrack rate, and documented skips."
+    content="Every explorable zone in SpeedFog Racing, with median clear time, deaths, backtrack rate, and documented skips."
   />
   <!-- Inert for crawlers today (the app runs with ssr=false); kept so the
        tags are already right if SSR/prerender is ever enabled. -->
@@ -258,13 +266,13 @@
               Skips{zoneSortIndicator("skips")}
             </button>
           </span>
-          <span class="col-num" aria-sort={zoneSortAria("avg_time_ms")}>
+          <span class="col-num" aria-sort={zoneSortAria("median_time_ms")}>
             <button
               type="button"
               class="sort-btn"
-              onclick={() => handleZoneSort("avg_time_ms")}
+              onclick={() => handleZoneSort("median_time_ms")}
             >
-              Avg clear{zoneSortIndicator("avg_time_ms")}
+              Median clear{zoneSortIndicator("median_time_ms")}
             </button>
           </span>
           <span
@@ -303,9 +311,9 @@
             </span>
             <span class="col-num">{skips > 0 ? skips : "-"}</span>
             <span class="col-num"
-              >{zone.avg_time_ms === 0
+              >{zone.median_time_ms === 0
                 ? "-"
-                : formatTime(zone.avg_time_ms)}</span
+                : formatTime(zone.median_time_ms)}</span
             >
             <span class="col-num">{zone.avg_deaths_per_visit.toFixed(1)}</span>
             <!-- Avg backtracks per race, not a proportion: same "x"

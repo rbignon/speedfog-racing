@@ -1682,8 +1682,8 @@ export interface ZoneTimeEntry {
   node_id: string;
   display_name: string;
   type: string;
-  avg_time_ms: number;
-  visits: number;
+  median_time_ms: number;
+  players: number;
 }
 
 export interface ZoneStatsResponse {
@@ -1698,7 +1698,7 @@ export interface ZoneIndexEntry {
   display_name: string;
   type: string;
   visits: number;
-  avg_time_ms: number;
+  median_time_ms: number;
   avg_deaths_per_visit: number;
   backtrack_rate: number;
   zones: string[];
@@ -1714,7 +1714,7 @@ export interface ZoneDetailResponse {
   type: string;
   visits: number;
   race_count: number;
-  avg_time_ms: number | null;
+  median_time_ms: number | null;
   avg_deaths_per_visit: number;
   backtrack_rate: number;
   zones: string[];

@@ -50,9 +50,10 @@
 
   let headerName = $derived(detail?.display_name ?? displayName ?? nodeId);
   let headerType = $derived(detail?.type ?? null);
-  let hasStats = $derived(
-    detail !== null && detail.visits > 0 && detail.avg_time_ms !== null,
-  );
+  // visits > 0 with median_time_ms === null is a real state: everyone who
+  // entered the zone in the window backed out or abandoned, so there is no
+  // clear time, but deaths/backtracks/visits still exist and must show.
+  let hasStats = $derived(detail !== null && detail.visits > 0);
 
   // The prop carries the exact cluster variant the player is looking at
   // (from the DAG popup); when opened from the zone index, fall back to
@@ -101,11 +102,15 @@
       <p class="status-text error-text">{error}</p>
     {:else if !hasStats}
       <p class="status-text">No recorded runs in the last 90 days</p>
-    {:else if detail && detail.avg_time_ms !== null}
+    {:else if detail}
       <div class="stats-grid">
         <div class="stat-item">
-          <span class="label">Avg. Time</span>
-          <span class="value">{formatTime(detail.avg_time_ms)}</span>
+          <span class="label">Median Time</span>
+          <span class="value"
+            >{detail.median_time_ms === null
+              ? "-"
+              : formatTime(detail.median_time_ms)}</span
+          >
         </div>
         <div class="stat-item">
           <span class="label">Avg. Deaths</span>
