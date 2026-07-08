@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
+use crate::core::protocol::ParticipantStatus;
+
 /// Convert a `HashMap<String, i32>` (JSON wire format) to `HashMap<i32, i32>`.
 /// Keys that fail to parse are silently dropped.
 pub fn parse_splits(src: HashMap<String, i32>) -> HashMap<i32, i32> {
@@ -36,18 +38,18 @@ pub fn format_time_into(buf: &mut String, ms: i32) {
 /// running so "ready" doesn't silently become `1/LAYERS`.
 pub fn write_participant_right_text(
     buf: &mut String,
-    status: &str,
+    status: ParticipantStatus,
     current_layer: i32,
     total_layers: i32,
     igt_ms: i32,
 ) {
     match status {
-        "finished" => format_time_into(buf, igt_ms),
-        "playing" => {
+        ParticipantStatus::Finished => format_time_into(buf, igt_ms),
+        ParticipantStatus::Playing => {
             let display = (current_layer + 1).min(total_layers);
             write!(buf, "{}/{}", display, total_layers).ok();
         }
-        _ => buf.push_str(status),
+        _ => buf.push_str(status.as_str()),
     }
 }
 
@@ -89,7 +91,7 @@ pub fn compute_gap(
     layer_entry_igt: Option<i32>,
     leader_splits: &HashMap<i32, i32>,
     is_leader: bool,
-    status: &str,
+    status: ParticipantStatus,
     leader_igt_ms: i32,
     leader_finished: bool,
 ) -> Option<i32> {
@@ -97,8 +99,8 @@ pub fn compute_gap(
         return None;
     }
     match status {
-        "finished" => Some(igt_ms - leader_igt_ms),
-        "playing" => {
+        ParticipantStatus::Finished => Some(igt_ms - leader_igt_ms),
+        ParticipantStatus::Playing => {
             let leader_entry = leader_splits.get(&current_layer)?;
             let player_entry = layer_entry_igt?;
             let entry_delta = player_entry - leader_entry;
@@ -214,7 +216,16 @@ mod tests {
         let splits = HashMap::from([(0, 0), (1, 30000), (2, 75000), (3, 120000)]);
         // Player entered layer 2 at 80000, leader at 75000
         // Current IGT 100000 < leader exit 120000 -> entry delta
-        let gap = compute_gap(100000, 2, Some(80000), &splits, false, "playing", 0, false);
+        let gap = compute_gap(
+            100000,
+            2,
+            Some(80000),
+            &splits,
+            false,
+            ParticipantStatus::Playing,
+            0,
+            false,
+        );
         assert_eq!(gap, Some(5000));
     }
 
@@ -225,7 +236,16 @@ mod tests {
         // Leader spent 45000 in layer (120000-75000), player spent 50000 (130000-80000)
         // Layer overshoot = 50000 - 45000 = 5000
         // gap = 5000 + 5000 = 10000
-        let gap = compute_gap(130000, 2, Some(80000), &splits, false, "playing", 0, false);
+        let gap = compute_gap(
+            130000,
+            2,
+            Some(80000),
+            &splits,
+            false,
+            ParticipantStatus::Playing,
+            0,
+            false,
+        );
         assert_eq!(gap, Some(10000));
     }
 
@@ -236,7 +256,16 @@ mod tests {
         // Leader spent 45000 in layer, player spent 55000 (125000-70000)
         // Layer overshoot = 55000 - 45000 = 10000
         // gap = -5000 + 10000 = 5000
-        let gap = compute_gap(125000, 2, Some(70000), &splits, false, "playing", 0, false);
+        let gap = compute_gap(
+            125000,
+            2,
+            Some(70000),
+            &splits,
+            false,
+            ParticipantStatus::Playing,
+            0,
+            false,
+        );
         assert_eq!(gap, Some(5000));
     }
 
@@ -244,7 +273,16 @@ mod tests {
     fn test_compute_gap_negative_ahead() {
         let splits = HashMap::from([(0, 0), (1, 30000), (2, 75000), (3, 120000)]);
         // Player entered layer 2 at 70000 (ahead of leader at 75000)
-        let gap = compute_gap(80000, 2, Some(70000), &splits, false, "playing", 0, false);
+        let gap = compute_gap(
+            80000,
+            2,
+            Some(70000),
+            &splits,
+            false,
+            ParticipantStatus::Playing,
+            0,
+            false,
+        );
         assert_eq!(gap, Some(-5000));
     }
 
@@ -252,28 +290,64 @@ mod tests {
     fn test_compute_gap_leader_on_same_layer() {
         let splits = HashMap::from([(0, 0), (1, 30000), (2, 75000)]);
         // No layer 3 split -> leader still on layer 2
-        let gap = compute_gap(90000, 2, Some(80000), &splits, false, "playing", 0, false);
+        let gap = compute_gap(
+            90000,
+            2,
+            Some(80000),
+            &splits,
+            false,
+            ParticipantStatus::Playing,
+            0,
+            false,
+        );
         assert_eq!(gap, Some(5000)); // entry delta only
     }
 
     #[test]
     fn test_compute_gap_finished() {
         let splits = HashMap::new();
-        let gap = compute_gap(150000, 3, None, &splits, false, "finished", 120000, true);
+        let gap = compute_gap(
+            150000,
+            3,
+            None,
+            &splits,
+            false,
+            ParticipantStatus::Finished,
+            120000,
+            true,
+        );
         assert_eq!(gap, Some(30000));
     }
 
     #[test]
     fn test_compute_gap_leader_none() {
         let splits = HashMap::new();
-        let gap = compute_gap(100000, 2, Some(80000), &splits, true, "playing", 0, false);
+        let gap = compute_gap(
+            100000,
+            2,
+            Some(80000),
+            &splits,
+            true,
+            ParticipantStatus::Playing,
+            0,
+            false,
+        );
         assert_eq!(gap, None);
     }
 
     #[test]
     fn test_compute_gap_ready_none() {
         let splits = HashMap::new();
-        let gap = compute_gap(0, 0, None, &splits, false, "ready", 0, false);
+        let gap = compute_gap(
+            0,
+            0,
+            None,
+            &splits,
+            false,
+            ParticipantStatus::Ready,
+            0,
+            false,
+        );
         assert_eq!(gap, None);
     }
 
@@ -290,7 +364,7 @@ mod tests {
             Some(125000),
             &splits,
             false,
-            "playing",
+            ParticipantStatus::Playing,
             150000,
             true,
         );
@@ -311,7 +385,7 @@ mod tests {
             Some(125000),
             &splits,
             false,
-            "playing",
+            ParticipantStatus::Playing,
             150000,
             true,
         );
@@ -322,7 +396,16 @@ mod tests {
     fn test_compute_gap_last_layer_leader_not_finished() {
         // Last layer (3), leader NOT finished yet -> entry delta only
         let splits = HashMap::from([(0, 0), (1, 30000), (2, 75000), (3, 120000)]);
-        let gap = compute_gap(165000, 3, Some(125000), &splits, false, "playing", 0, false);
+        let gap = compute_gap(
+            165000,
+            3,
+            Some(125000),
+            &splits,
+            false,
+            ParticipantStatus::Playing,
+            0,
+            false,
+        );
         assert_eq!(gap, Some(5000)); // entry delta only
     }
 
@@ -363,44 +446,44 @@ mod tests {
     #[test]
     fn test_right_text_finished_shows_time() {
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, "finished", 5, 5, 125_000);
+        write_participant_right_text(&mut buf, ParticipantStatus::Finished, 5, 5, 125_000);
         assert_eq!(buf, "02:05");
     }
 
     #[test]
     fn test_right_text_playing_shows_layer_progress() {
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, "playing", 0, 5, 1_000);
+        write_participant_right_text(&mut buf, ParticipantStatus::Playing, 0, 5, 1_000);
         assert_eq!(buf, "1/5");
     }
 
     #[test]
     fn test_right_text_playing_caps_at_total() {
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, "playing", 10, 5, 1_000);
+        write_participant_right_text(&mut buf, ParticipantStatus::Playing, 10, 5, 1_000);
         assert_eq!(buf, "5/5");
     }
 
     #[test]
     fn test_right_text_ready_shows_status_label() {
         // Even when the race is running (non-zero layer), a ready player
-        // must keep showing "ready" instead of a misleading "1/LAYERS".
+        // must keep showing ParticipantStatus::Ready instead of a misleading "1/LAYERS".
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, "ready", 0, 5, 0);
+        write_participant_right_text(&mut buf, ParticipantStatus::Ready, 0, 5, 0);
         assert_eq!(buf, "ready");
     }
 
     #[test]
     fn test_right_text_registered_shows_status_label() {
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, "registered", 0, 5, 0);
+        write_participant_right_text(&mut buf, ParticipantStatus::Registered, 0, 5, 0);
         assert_eq!(buf, "registered");
     }
 
     #[test]
     fn test_right_text_abandoned_shows_status_label() {
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, "abandoned", 2, 5, 45_000);
+        write_participant_right_text(&mut buf, ParticipantStatus::Abandoned, 2, 5, 45_000);
         assert_eq!(buf, "abandoned");
     }
 

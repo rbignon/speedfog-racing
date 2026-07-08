@@ -80,13 +80,65 @@ pub struct NameTemplate {
     pub gradient: Option<(String, String)>,
 }
 
+/// Race lifecycle status. Wire format: lowercase strings, identical to the
+/// previous stringly-typed field. `Unknown` preserves the additive protocol
+/// convention: a status this build doesn't know deserializes instead of
+/// failing, and is treated as "no known state matches" everywhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RaceStatus {
+    Setup,
+    Running,
+    Finished,
+    #[serde(other)]
+    Unknown,
+}
+
+impl RaceStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RaceStatus::Setup => "setup",
+            RaceStatus::Running => "running",
+            RaceStatus::Finished => "finished",
+            RaceStatus::Unknown => "unknown",
+        }
+    }
+}
+
+/// Participant lifecycle status. Same wire/forward-compat contract as
+/// [`RaceStatus`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ParticipantStatus {
+    Registered,
+    Ready,
+    Playing,
+    Finished,
+    Abandoned,
+    #[serde(other)]
+    Unknown,
+}
+
+impl ParticipantStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ParticipantStatus::Registered => "registered",
+            ParticipantStatus::Ready => "ready",
+            ParticipantStatus::Playing => "playing",
+            ParticipantStatus::Finished => "finished",
+            ParticipantStatus::Abandoned => "abandoned",
+            ParticipantStatus::Unknown => "unknown",
+        }
+    }
+}
+
 /// Participant info in leaderboard
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParticipantInfo {
     pub id: String,
     pub twitch_username: String,
     pub twitch_display_name: Option<String>,
-    pub status: String,
+    pub status: ParticipantStatus,
     pub current_zone: Option<String>,
     pub current_layer: i32,
     #[serde(default)]
@@ -112,7 +164,7 @@ pub struct ParticipantInfo {
 pub struct RaceInfo {
     pub id: String,
     pub name: String,
-    pub status: String,
+    pub status: RaceStatus,
     #[serde(default)]
     pub is_public: bool,
     #[serde(default)]
@@ -256,7 +308,7 @@ pub enum ServerMessage {
         leader_splits: Option<HashMap<String, i32>>,
     },
     /// Race status changed
-    RaceStatusChange { status: String },
+    RaceStatusChange { status: RaceStatus },
     /// Race-level info changed (race_ends_at extension, etc.) and the cached
     /// RaceInfo on the client must be replaced wholesale with this snapshot.
     RaceInfoUpdate { race: Box<RaceInfo> },
@@ -769,7 +821,7 @@ mod tests {
         match msg {
             ServerMessage::RaceInfoUpdate { race } => {
                 assert_eq!(race.race_ends_at.as_deref(), Some("2026-04-21T15:00:00Z"));
-                assert_eq!(race.status, "running");
+                assert_eq!(race.status, RaceStatus::Running);
             }
             _ => panic!("Expected RaceInfoUpdate"),
         }
@@ -1306,5 +1358,31 @@ mod tests {
         assert!(is_permanent_close(4003)); // Auth error
         assert!(is_permanent_close(4004)); // Not found
         assert!(is_permanent_close(4999)); // Any future 4xxx code
+    }
+
+    #[test]
+    fn test_status_enums_roundtrip_and_unknown() {
+        // Known values keep today's lowercase wire strings.
+        assert_eq!(
+            serde_json::to_string(&RaceStatus::Running).unwrap(),
+            "\"running\""
+        );
+        assert_eq!(
+            serde_json::from_str::<RaceStatus>("\"setup\"").unwrap(),
+            RaceStatus::Setup
+        );
+        assert_eq!(
+            serde_json::to_string(&ParticipantStatus::Abandoned).unwrap(),
+            "\"abandoned\""
+        );
+        // A status from a future server maps to Unknown instead of failing.
+        assert_eq!(
+            serde_json::from_str::<RaceStatus>("\"paused\"").unwrap(),
+            RaceStatus::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<ParticipantStatus>("\"spectating\"").unwrap(),
+            ParticipantStatus::Unknown
+        );
     }
 }

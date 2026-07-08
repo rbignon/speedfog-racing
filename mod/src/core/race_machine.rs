@@ -10,7 +10,9 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::core::protocol::{ExitInfo, ParticipantInfo, RaceInfo, SeedInfo};
+use crate::core::protocol::{
+    ExitInfo, ParticipantInfo, ParticipantStatus, RaceInfo, RaceStatus, SeedInfo,
+};
 use crate::core::types::PlayerPosition;
 
 // =============================================================================
@@ -55,7 +57,7 @@ pub enum MachineMessage {
         leader_splits: Option<HashMap<i32, i32>>,
     },
     RaceStatusChange {
-        status: String,
+        status: RaceStatus,
         /// Filled by the shell at delegation time (fresh `read_igt`), never
         /// by the WS thread. Consumed by the finish-freeze decision.
         current_igt: Option<u32>,
@@ -351,7 +353,7 @@ impl RaceMachine {
         self.race_state
             .race
             .as_ref()
-            .map(|r| r.status == "running")
+            .map(|r| r.status == RaceStatus::Running)
             .unwrap_or(false)
     }
 
@@ -359,7 +361,7 @@ impl RaceMachine {
         self.race_state
             .race
             .as_ref()
-            .map(|r| r.status == "setup")
+            .map(|r| r.status == RaceStatus::Setup)
             .unwrap_or(false)
     }
 
@@ -368,7 +370,7 @@ impl RaceMachine {
     /// to preserve the frozen IGT at finish time.
     pub fn am_i_finished(&self) -> bool {
         self.my_participant()
-            .map(|p| p.status == "finished")
+            .map(|p| p.status == ParticipantStatus::Finished)
             .unwrap_or(false)
     }
 
@@ -558,7 +560,7 @@ impl RaceMachine {
                 // Immediately reflect running status so is_race_running() gates open
                 // without waiting for the race_status_change message that follows.
                 if let Some(ref mut race) = self.race_state.race {
-                    race.status = "running".to_string();
+                    race.status = RaceStatus::Running;
                 }
                 self.bump_leaderboard_version();
             }
@@ -600,13 +602,13 @@ impl RaceMachine {
                 status,
                 current_igt,
             } => {
-                self.last_received_debug = Some(format!("race_status_change({})", status));
-                info!(status = %status, "[WS] Race status changed");
+                self.last_received_debug = Some(format!("race_status_change({})", status.as_str()));
+                info!(status = %status.as_str(), "[WS] Race status changed");
                 // If race ends and we haven't finished, freeze our current game IGT.
                 // The mod's local participant igt_ms is stale (only updated via
                 // leaderboard_update on events, not on every status_update).
                 // `current_igt` is a fresh read injected by the shell.
-                if status == "finished" && !self.am_i_finished() {
+                if status == RaceStatus::Finished && !self.am_i_finished() {
                     self.frozen_igt_ms = current_igt;
                     self.frame_snapshot.igt_ms = self.frozen_igt_ms;
                     info!(frozen_igt_ms = ?self.frozen_igt_ms, "[WS] Froze game IGT (race ended, player not finished)");
@@ -620,7 +622,7 @@ impl RaceMachine {
                 self.last_received_debug = Some(format!("race_info_update(name={})", race.name));
                 info!(
                     race_ends_at = ?race.race_ends_at,
-                    status = %race.status,
+                    status = %race.status.as_str(),
                     "[WS] Race info updated"
                 );
                 race.reparse_dates();
@@ -1671,7 +1673,7 @@ mod tests {
         // Race ends while I am still playing: IGT frozen from the shell read.
         m.handle_message(
             MachineMessage::RaceStatusChange {
-                status: "finished".to_string(),
+                status: RaceStatus::Finished,
                 current_igt: Some(4242),
             },
             now + secs(60),

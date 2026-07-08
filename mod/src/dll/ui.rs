@@ -10,6 +10,7 @@ use hudhook::imgui::{
 use hudhook::{ImguiRenderLoop, RenderContext};
 use tracing::{error, info};
 
+use crate::core::protocol::{ParticipantStatus, RaceStatus};
 use crate::core::write_participant_right_text;
 use crate::profile_span;
 
@@ -202,7 +203,7 @@ impl RaceTracker {
     /// race_ends_at is in the future.
     fn render_race_ends_warning(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
         if let Some(race_info) = self.race_info() {
-            if race_info.status == "running" {
+            if race_info.status == RaceStatus::Running {
                 if let Some(ends_at_dt) = race_info.race_ends_at_dt {
                     let remaining_seconds = ends_at_dt
                         .signed_duration_since(chrono::Utc::now())
@@ -255,17 +256,17 @@ impl RaceTracker {
         };
 
         // Right side of line 1: state banner during setup/countdown/go, IGT otherwise.
-        let status_str = self.race_info().map(|r| r.status.as_str()).unwrap_or("");
+        let race_status = self.race_info().map(|r| r.status);
         let i_abandoned = self
             .my_participant()
-            .is_some_and(|p| p.status == "abandoned");
+            .is_some_and(|p| p.status == ParticipantStatus::Abandoned);
 
-        let right_color = match status_str {
-            "setup" => {
+        let right_color = match race_status {
+            Some(RaceStatus::Setup) => {
                 buf_right.push_str("WAITING");
                 gold
             }
-            "running" => {
+            Some(RaceStatus::Running) => {
                 let countdown_secs = self.machine.race_state.countdown_end.and_then(|end| {
                     end.checked_duration_since(std::time::Instant::now())
                         .map(|remaining| remaining.as_secs() + 1)
@@ -291,7 +292,7 @@ impl RaceTracker {
                     purple
                 }
             }
-            "finished" => {
+            Some(RaceStatus::Finished) => {
                 self.write_igt(buf_right);
                 if i_abandoned {
                     c.danger_dark
@@ -337,22 +338,26 @@ impl RaceTracker {
         // Show layer progress only while actively playing or finished; otherwise
         // show the participant status so pre-launch states (registered/ready)
         // stay visible once the race leaves setup.
-        let my_status = me.map(|p| p.status.as_str()).unwrap_or("registered");
+        let my_status = me
+            .map(|p| p.status)
+            .unwrap_or(ParticipantStatus::Registered);
 
-        let right_color = if my_status == "playing" || my_status == "finished" {
+        let right_color = if my_status == ParticipantStatus::Playing
+            || my_status == ParticipantStatus::Finished
+        {
             let layer = frozen_layer
                 .or_else(|| me.map(|p| p.current_layer))
                 .unwrap_or(0);
             let display_layer = (layer + 1).min(total_layers);
             write!(buf_right, "{}/{}", display_layer, total_layers).ok();
-            if my_status == "finished" {
+            if my_status == ParticipantStatus::Finished {
                 success
             } else {
                 gold
             }
         } else {
-            buf_right.push_str(my_status);
-            if my_status == "ready" {
+            buf_right.push_str(my_status.as_str());
+            if my_status == ParticipantStatus::Ready {
                 gold
             } else {
                 c.text_disabled
@@ -487,15 +492,15 @@ impl RaceTracker {
             .unwrap_or(&p.twitch_username);
 
         let c = &self.cached_colors;
-        let base_color = match p.status.as_str() {
-            "finished" => c.success,
-            "playing" => c.text,
-            "ready" => c.gold,
+        let base_color = match p.status {
+            ParticipantStatus::Finished => c.success,
+            ParticipantStatus::Playing => c.text,
+            ParticipantStatus::Ready => c.gold,
             _ => c.text_disabled,
         };
         // Local player keeps the charter purple unless abandoned; abandoned
         // stays greyed so the row reads as inactive even when it's mine.
-        let color = if is_self && p.status != "abandoned" {
+        let color = if is_self && p.status != ParticipantStatus::Abandoned {
             c.purple
         } else {
             base_color
@@ -503,7 +508,7 @@ impl RaceTracker {
 
         // Local player gets a translucent purple fill across the row. Drawn
         // before the text so subsequent ui.text_colored calls render on top.
-        if is_self && p.status != "abandoned" {
+        if is_self && p.status != ParticipantStatus::Abandoned {
             let dl = ui.get_window_draw_list();
             let [sx, sy] = ui.cursor_screen_pos();
             let row_h = ui.text_line_height_with_spacing();
@@ -673,7 +678,7 @@ impl RaceTracker {
         let total_layers = self.seed_info().map(|s| s.total_layers).unwrap_or(0);
         let race_finished = self
             .race_info()
-            .is_some_and(|r| r.status.as_str() == "finished");
+            .is_some_and(|r| r.status == RaceStatus::Finished);
         let spacing = ui.calc_text_size(" ")[0];
         // Access fields directly (not through &self methods) so the borrow
         // checker can see they are disjoint from leaderboard_cache.
@@ -684,7 +689,9 @@ impl RaceTracker {
 
         let leader_igt_ms = participants
             .first()
-            .filter(|p| p.status == "playing" || p.status == "finished")
+            .filter(|p| {
+                p.status == ParticipantStatus::Playing || p.status == ParticipantStatus::Finished
+            })
             .map(|p| {
                 if my_id.as_deref().is_some_and(|id| id == p.id) {
                     local_igt.unwrap_or(p.igt_ms)
@@ -694,8 +701,12 @@ impl RaceTracker {
             })
             .unwrap_or(0);
         let has_leader = leader_splits.is_some_and(|s| !s.is_empty())
-            || participants.first().is_some_and(|p| p.status == "finished");
-        let leader_finished = participants.first().is_some_and(|p| p.status == "finished");
+            || participants
+                .first()
+                .is_some_and(|p| p.status == ParticipantStatus::Finished);
+        let leader_finished = participants
+            .first()
+            .is_some_and(|p| p.status == ParticipantStatus::Finished);
 
         let cache = &mut self.leaderboard_cache;
         cache.rows.clear();
@@ -706,7 +717,7 @@ impl RaceTracker {
         for (i, p) in participants.iter().enumerate() {
             let computed_gap_ms = if !has_leader {
                 None
-            } else if p.status == "finished" || race_finished {
+            } else if p.status == ParticipantStatus::Finished || race_finished {
                 p.gap_ms
             } else {
                 let igt = if my_id.as_deref().is_some_and(|id| id == p.id) {
@@ -721,7 +732,7 @@ impl RaceTracker {
                         p.layer_entry_igt,
                         splits,
                         i == 0,
-                        &p.status,
+                        p.status,
                         leader_igt_ms,
                         leader_finished,
                     )
@@ -731,7 +742,7 @@ impl RaceTracker {
             let mut row = LeaderboardRowCache::default();
             write_participant_right_text(
                 &mut row.right_text,
-                &p.status,
+                p.status,
                 p.current_layer,
                 total_layers,
                 p.igt_ms,
