@@ -220,13 +220,13 @@ DUNGEON_NODE_TYPES = {"legacy_dungeon", "mini_dungeon"}
 
 ### Display Name Resolution
 
-Node IDs are cluster IDs from SpeedFog's `clusters.json`. Since `clusters.json` can evolve between seed generations (display_name corrections, type reclassifications), the stats code resolves each node_id's display_name and type from the **most recent seed** that contains it. The area prefix is stripped with `rsplit(" - ", 1)[-1]` (e.g., "Limgrave - Stormveil Castle" becomes "Stormveil Castle").
+Node IDs are cluster IDs from SpeedFog's `clusters.json`. Since `clusters.json` can evolve between seed generations (display_name corrections, type reclassifications), the stats code resolves each node_id's display_name and type from the **most recent seed** that contains it. `_resolve_node_display` computes both a short name (area prefix stripped with `rsplit(" - ", 1)[-1]`, e.g. "Limgrave - Stormveil Castle" becomes "Stormveil Castle") and the unmodified full name: the top-5 panels (`/zones`) show the short name, while the zone codex index and detail sheet (`/zones/index`, `/zones/{node_id}`) show the full name, and merging across cluster variants (below) keys on the full name.
 
 For boss stats specifically, the name resolution uses the `boss_name` field (canonical name from ItemRandomizer's `enemy.txt`), falling back to `display_name`. This ensures consistent naming across seeds with and without boss randomization (e.g., "Sir Gideon Ofnir, the All-Knowing" instead of "Gideon"). Resolution is per-seed (not global), so if the same node has different randomized bosses across seeds, they appear as separate entries.
 
 ### Cluster Merging
 
-After aggregating by node_id, entries with the same display_name are merged. This handles the case where the same physical location produces different cluster_ids due to asymmetric drop connectivity in the zone graph (different entry points yield different reachable zone sets, producing different cluster hashes).
+After aggregating by node_id, entries with the same FULL display_name are merged (never the short one, so two unrelated locations that happen to share a last " - " segment are never conflated). This handles the case where the same physical location produces different cluster_ids due to asymmetric drop connectivity in the zone graph (different entry points yield different reachable zone sets, producing different cluster hashes).
 
 ### Time Calculation
 

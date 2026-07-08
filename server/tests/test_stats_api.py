@@ -1246,7 +1246,97 @@ class TestZoneStatsAggregation:
         async with async_session() as db:
             seed = (await db.execute(select(Seed).where(Seed.id == seed_id))).scalar_one()
             node_display = _resolve_node_display({seed_id: seed})
-        assert node_display["no_zones_key_ab12"] == ("No Zones", "legacy_dungeon", [])
+        info = node_display["no_zones_key_ab12"]
+        assert (info.short_name, info.full_name, info.type, info.zones) == (
+            "No Zones",
+            "No Zones",
+            "legacy_dungeon",
+            [],
+        )
+
+    async def test_panels_use_short_name_index_and_detail_use_full_name(self, async_session):
+        """A node whose full display_name contains an area prefix ('Ancient
+        Ruins of Rauh - East') should surface the SHORT name ('East') on the
+        top-5 panels (/stats/zones) but the FULL name everywhere else (the
+        zone codex index and detail sheet).
+        """
+        graph_json = {
+            "nodes": {
+                "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+                "rauh_x1y1": {
+                    "type": "legacy_dungeon",
+                    "display_name": "Ancient Ruins of Rauh - East",
+                    "layer": 1,
+                    "zones": ["rauh_east"],
+                },
+            },
+            "total_layers": 2,
+        }
+        async with async_session() as db:
+            user = User(
+                twitch_id="pnu", twitch_username="pnu", api_token="pnut", role=UserRole.USER
+            )
+            org = User(
+                twitch_id="pnorg",
+                twitch_username="pnorg",
+                api_token="pnorgt",
+                role=UserRole.ORGANIZER,
+            )
+            db.add_all([user, org])
+            await db.flush()
+
+            seed = Seed(
+                seed_number="pnseed",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=2,
+                folder_path="/t/pnseed",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+
+            race = Race(
+                name="Panel Naming Race",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race)
+            await db.flush()
+
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    mod_token="pnmod",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=200_000,
+                    death_count=2,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "rauh_x1y1", "igt_ms": 100_000, "deaths": 2},
+                    ],
+                )
+            )
+            await db.commit()
+
+        async with async_session() as db:
+            panels = await get_zone_stats(pool=None, days=3650, db=db)
+        async with async_session() as db:
+            index = await get_zone_index(pool=None, days=3650, db=db)
+        async with async_session() as db:
+            detail = await get_zone_detail(node_id="rauh_x1y1", pool=None, days=3650, db=db)
+
+        panel_names = {e.display_name for e in panels.deadliest}
+        assert "East" in panel_names
+        assert "Ancient Ruins of Rauh - East" not in panel_names
+
+        index_entry = next(z for z in index.zones if z.node_id == "rauh_x1y1")
+        assert index_entry.display_name == "Ancient Ruins of Rauh - East"
+
+        assert detail.display_name == "Ancient Ruins of Rauh - East"
 
     async def test_aggregate_zone_stats_detects_backtracks(
         self, async_session, three_races_with_zone_history
@@ -1302,6 +1392,106 @@ class TestZoneIndexEndpoint:
         async with async_session() as db:
             result = await get_zone_index(pool=None, days=3650, db=db)
         assert all(z.node_id != "margit_g7h8" for z in result.zones)
+
+    async def test_no_merge_when_full_names_differ_but_share_last_segment(self, async_session):
+        """Regression: two DIFFERENT physical locations whose full display_name
+        happens to end in the same area segment ('Foo Ruins - East' and 'Bar
+        Caves - East') must NOT be merged into a single index row. Merging is
+        keyed on the full display_name, not the shortened last segment.
+        """
+        graph_json = {
+            "nodes": {
+                "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+                "foo_f1f1": {
+                    "type": "legacy_dungeon",
+                    "display_name": "Foo Ruins - East",
+                    "layer": 1,
+                    "zones": ["foo_east"],
+                },
+                "bar_b2b2": {
+                    "type": "legacy_dungeon",
+                    "display_name": "Bar Caves - East",
+                    "layer": 1,
+                    "zones": ["bar_east"],
+                },
+            },
+            "total_layers": 2,
+        }
+        async with async_session() as db:
+            user_a = User(
+                twitch_id="nma", twitch_username="nma", api_token="nmat", role=UserRole.USER
+            )
+            user_b = User(
+                twitch_id="nmb", twitch_username="nmb", api_token="nmbt", role=UserRole.USER
+            )
+            org = User(
+                twitch_id="nmorg",
+                twitch_username="nmorg",
+                api_token="nmorgt",
+                role=UserRole.ORGANIZER,
+            )
+            db.add_all([user_a, user_b, org])
+            await db.flush()
+
+            seed = Seed(
+                seed_number="nmseed",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=2,
+                folder_path="/t/nmseed",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+
+            race = Race(
+                name="No False Merge Race",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race)
+            await db.flush()
+
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user_a.id,
+                    mod_token="nmmoda",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=200_000,
+                    death_count=1,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "foo_f1f1", "igt_ms": 100_000, "deaths": 1},
+                    ],
+                )
+            )
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user_b.id,
+                    mod_token="nmmodb",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=250_000,
+                    death_count=3,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "bar_b2b2", "igt_ms": 120_000, "deaths": 3},
+                    ],
+                )
+            )
+            await db.commit()
+
+        async with async_session() as db:
+            result = await get_zone_index(pool=None, days=3650, db=db)
+
+        names = {z.display_name for z in result.zones}
+        assert "Foo Ruins - East" in names
+        assert "Bar Caves - East" in names
+        matching = [z for z in result.zones if z.node_id in ("foo_f1f1", "bar_b2b2")]
+        assert len(matching) == 2
 
 
 class TestZoneDetailEndpoint:
@@ -1654,13 +1844,13 @@ class TestBossStatsFiltering:
             node_display = _resolve_node_display(seeds_by_id)
 
             # Verify type resolution
-            for nid, (display, ntype, _zones) in node_display.items():
+            for nid, info in node_display.items():
                 if "final" in nid:
-                    assert ntype == "final_boss"
+                    assert info.type == "final_boss"
                 if "margit" in nid:
                     # boss_arena should NOT be in stats.py BOSS_NODE_TYPES
-                    assert ntype == "boss_arena"
-                    assert ntype not in BOSS_NODE_TYPES
+                    assert info.type == "boss_arena"
+                    assert info.type not in BOSS_NODE_TYPES
 
     async def test_boss_stats_uses_boss_name_field(self, async_session):
         """Stats should prefer boss_name over randomized_boss and display_name."""

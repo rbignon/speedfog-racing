@@ -1,6 +1,7 @@
 """Stats API routes: leaderboard, zones, bosses, player profiles."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from statistics import mean
 from typing import Any
@@ -188,10 +189,25 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResp
     return LeaderboardResponse(players=players, community=community)
 
 
-def _resolve_node_display(
-    seeds_by_id: dict[Any, Any],
-) -> dict[str, tuple[str, str, list[str]]]:
-    """Build node_id -> (short_display_name, type, zones) from the most recent seed.
+@dataclass(frozen=True)
+class NodeDisplay:
+    """Resolved per-node naming/type/zones from the most recent seed containing it.
+
+    ``short_name`` is the last " - " segment (area prefix stripped), used by
+    the top-5 panels. ``full_name`` is the unmodified display_name, used by
+    the zone codex index/detail and as the merge key in
+    ``_aggregate_zone_stats`` (see there for why merging must use the full
+    name).
+    """
+
+    short_name: str
+    full_name: str
+    type: str
+    zones: list[str]
+
+
+def _resolve_node_display(seeds_by_id: dict[Any, Any]) -> dict[str, NodeDisplay]:
+    """Build node_id -> NodeDisplay from the most recent seed.
 
     Node IDs are cluster IDs from SpeedFog's clusters.json. The same cluster_id
     always refers to the same physical location, but display_names, types, and
@@ -202,7 +218,7 @@ def _resolve_node_display(
     zone id list (fog.txt identifiers), used for skip/tip content matching;
     graphs that predate the field resolve to an empty list.
     """
-    node_display: dict[str, tuple[str, str, list[str]]] = {}
+    node_display: dict[str, NodeDisplay] = {}
     node_seed_date: dict[str, Any] = {}
 
     for seed in seeds_by_id.values():
@@ -214,7 +230,12 @@ def _resolve_node_display(
                 node_seed_date[nid] = created
                 full_name = meta.get("display_name", nid)
                 short_name = full_name.rsplit(" - ", 1)[-1]
-                node_display[nid] = (short_name, meta.get("type", ""), meta.get("zones", []))
+                node_display[nid] = NodeDisplay(
+                    short_name=short_name,
+                    full_name=full_name,
+                    type=meta.get("type", ""),
+                    zones=meta.get("zones", []),
+                )
     return node_display
 
 
@@ -222,14 +243,19 @@ def _aggregate_zone_stats(
     participants: Sequence[Any],
     seeds_by_id: dict[Any, Any],
     node_types: set[str],
-    node_display: dict[str, tuple[str, str, list[str]]],
+    node_display: dict[str, NodeDisplay],
 ) -> dict[str, dict[str, Any]]:
     """Aggregate zone stats per cluster id (node_id) from zone_history.
 
     Groups by node_id so that the same cluster across different seeds is counted
     together regardless of display_name changes. Filters and resolves display_name
-    and type from node_display (most recent seed). Each merged (display-name-keyed)
-    entry's "zones" is the sorted union of all its contributing node_ids' own
+    and type from node_display (most recent seed). Merging (see below) is keyed
+    on the FULL display_name, not the short one: two different physical
+    locations can share a last " - " segment (e.g. "Foo Ruins - East" and
+    "Bar Caves - East"), and merging on the short name would wrongly combine
+    their stats. Each merged entry carries both "display_name" (full, used by
+    the index/detail endpoints) and "short_name" (used by the top-5 panels),
+    and its "zones" is the sorted union of all its contributing node_ids' own
     zones lists, since a merge can combine cluster variants with different
     zone compositions (asymmetric drop connectivity).
     """
@@ -259,8 +285,8 @@ def _aggregate_zone_stats(
             if nid not in nodes:
                 continue
             # Filter by most recent type (not the per-seed type)
-            resolved_type = node_display.get(nid, ("", "", []))[1]
-            if resolved_type not in node_types:
+            resolved_info = node_display.get(nid)
+            if resolved_info is None or resolved_info.type not in node_types:
                 continue
             deaths = entry.get("deaths", 0)
             zone_deaths[nid] = zone_deaths.get(nid, 0) + deaths
@@ -290,49 +316,51 @@ def _aggregate_zone_stats(
         if participant.status == ParticipantStatus.ABANDONED and history:
             last_nid = history[-1].get("node_id", "")
             if last_nid and last_nid in nodes:
-                resolved_type = node_display.get(last_nid, ("", "", []))[1]
+                last_info = node_display.get(last_nid)
                 is_first_visit = sum(1 for e in history if e.get("node_id") == last_nid) == 1
-                if resolved_type in node_types and is_first_visit:
+                if last_info is not None and last_info.type in node_types and is_first_visit:
                     zone_backtracks[last_nid] = zone_backtracks.get(last_nid, 0) + 1
 
-    # Merge clusters sharing the same display_name. This happens when the same
-    # physical location produces different cluster_ids due to asymmetric drop
-    # connectivity in the zone graph (different entry points yield different
-    # reachable zone sets, so different cluster hashes).
+    # Merge clusters sharing the same FULL display_name. This happens when the
+    # same physical location produces different cluster_ids due to asymmetric
+    # drop connectivity in the zone graph (different entry points yield
+    # different reachable zone sets, so different cluster hashes).
     # sorted() makes the representative node_id (first cluster id seen per
     # display_name, stored below) deterministic across runs: seen_nids is a
     # set, and Python's per-process string hash randomization would otherwise
     # let the representative flip on every process restart.
     merged: dict[str, dict[str, Any]] = {}
     for nid in sorted(seen_nids):
-        display_name = node_display.get(nid, (nid, "", []))[0]
-        node_type = node_display.get(nid, ("", "", []))[1]
-        node_zones = node_display.get(nid, ("", "", []))[2]
-        if display_name in merged:
-            m = merged[display_name]
+        # seen_nids only gains ids that passed the node_types filter above,
+        # which requires a node_display entry, so this lookup cannot be None.
+        info = node_display[nid]
+        if info.full_name in merged:
+            m = merged[info.full_name]
             m["total_deaths"] += zone_deaths[nid]
             m["visits"] += zone_visits[nid]
             m["race_ids"].update(zone_race_ids[nid])
             m["backtrack_count"] += zone_backtracks.get(nid, 0)
             m["times"].extend(zone_times.get(nid, []))
-            m["zones"].update(node_zones)
+            m["zones"].update(info.zones)
         else:
-            merged[display_name] = {
+            merged[info.full_name] = {
                 "node_id": nid,
-                "display_name": display_name,
-                "type": node_type,
+                "display_name": info.full_name,
+                "short_name": info.short_name,
+                "type": info.type,
                 "total_deaths": zone_deaths[nid],
                 "visits": zone_visits[nid],
                 "race_ids": set(zone_race_ids[nid]),
                 "backtrack_count": zone_backtracks.get(nid, 0),
                 "times": list(zone_times.get(nid, [])),
-                "zones": set(node_zones),
+                "zones": set(info.zones),
             }
 
     return {
         name: {
             "node_id": data["node_id"],
             "display_name": name,
+            "short_name": data["short_name"],
             "type": data["type"],
             "total_deaths": data["total_deaths"],
             "visits": data["visits"],
@@ -392,7 +420,9 @@ async def get_zone_stats(
 
     ``days`` restricts the input to races started within the last N days
     (default 30, range 1..3650). The output is capped at 5 entries per
-    category (deadliest, backtracked, slowest, fastest).
+    category (deadliest, backtracked, slowest, fastest). ``display_name`` on
+    each entry is the SHORT name (area prefix stripped); the zone codex
+    index/detail endpoints serve the full name instead.
     """
     participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
 
@@ -408,7 +438,7 @@ async def get_zone_stats(
     deadliest = [
         ZoneStatEntry(
             node_id=n["node_id"],
-            display_name=n["display_name"],
+            display_name=n["short_name"],
             type=n["type"],
             total_deaths=n["total_deaths"],
             avg_deaths_per_visit=round(n["total_deaths"] / n["visits"], 2)
@@ -427,7 +457,7 @@ async def get_zone_stats(
     most_backtracked = [
         ZoneBacktrackEntry(
             node_id=n["node_id"],
-            display_name=n["display_name"],
+            display_name=n["short_name"],
             type=n["type"],
             backtrack_count=n["backtrack_count"],
             avg_backtracks_per_race=round(n["backtrack_count"] / n["race_count"], 2)
@@ -446,7 +476,7 @@ async def get_zone_stats(
     slowest = [
         ZoneTimeEntry(
             node_id=n["node_id"],
-            display_name=n["display_name"],
+            display_name=n["short_name"],
             type=n["type"],
             avg_time_ms=round(sum(n["times"]) / len(n["times"])),
             visits=len(n["times"]),
@@ -462,7 +492,7 @@ async def get_zone_stats(
     fastest = [
         ZoneTimeEntry(
             node_id=n["node_id"],
-            display_name=n["display_name"],
+            display_name=n["short_name"],
             type=n["type"],
             avg_time_ms=round(sum(n["times"]) / len(n["times"])),
             visits=len(n["times"]),
@@ -489,7 +519,8 @@ async def get_zone_index(
     ``days`` restricts the input to races started within the last N days
     (default 90, range 1..3650). Unlike ``/zones``, this is not capped at 5
     entries per category: it returns every dungeon-type zone, sorted by
-    display_name, for a browsable index.
+    display_name, for a browsable index. ``display_name`` is the FULL name
+    (unlike the top-5 panels on ``/zones``, which use the short one).
     """
     participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
     node_display = _resolve_node_display(seeds_by_id)
@@ -529,35 +560,36 @@ async def get_zone_detail(
     404s when ``node_id`` is unknown, or when it resolves to a node type
     outside ``DUNGEON_NODE_TYPES`` (e.g. a boss arena). Returns zeroed stats
     (``avg_time_ms=None``, ``visits=0``, ...) when the zone is known but has
-    no visits within the ``days`` window.
+    no visits within the ``days`` window. ``display_name`` is the FULL name
+    (same as the index, unlike the top-5 panels on ``/zones``).
     """
     participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
     node_display = _resolve_node_display(seeds_by_id)
-    if node_id not in node_display:
+    info = node_display.get(node_id)
+    if info is None:
         raise HTTPException(status_code=404, detail="Unknown zone")
-    display_name, node_type, node_zones = node_display[node_id]
-    if node_type not in DUNGEON_NODE_TYPES:
+    if info.type not in DUNGEON_NODE_TYPES:
         raise HTTPException(status_code=404, detail="Not an explorable zone")
     node_data = _aggregate_zone_stats(participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display)
-    data = node_data.get(display_name)
+    data = node_data.get(info.full_name)
     if data is None:
         return ZoneDetailResponse(
             node_id=node_id,
-            display_name=display_name,
-            type=node_type,
+            display_name=info.full_name,
+            type=info.type,
             visits=0,
             race_count=0,
             avg_time_ms=None,
             avg_deaths_per_visit=0.0,
             backtrack_rate=0.0,
-            zones=node_zones,
+            zones=info.zones,
         )
     return ZoneDetailResponse(
         # Echo the requested node_id, not data["node_id"] (the merge's
         # representative cluster id): a caller requesting a specific
         # backtrack-merged sibling id must get that same id back, even
         # though the aggregate itself is shared across the merge group.
-        # Same for zones: node_zones (the requested id's own composition),
+        # Same for zones: info.zones (the requested id's own composition),
         # not data["zones"] (the merge's union across all siblings).
         node_id=node_id,
         display_name=data["display_name"],
@@ -568,7 +600,7 @@ async def get_zone_detail(
         avg_deaths_per_visit=(
             round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
         ),
-        zones=node_zones,
+        zones=info.zones,
         backtrack_rate=(
             round(data["backtrack_count"] / data["race_count"], 2) if data["race_count"] else 0.0
         ),
