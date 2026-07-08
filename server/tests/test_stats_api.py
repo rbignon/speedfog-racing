@@ -4,14 +4,15 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import selectinload
 
 from speedfog_racing.api.stats import (
     BOSS_NODE_TYPES,
     DUNGEON_NODE_TYPES,
     _aggregate_zone_stats,
+    _load_zone_stats_inputs,
+    _project_seed_nodes,
     _resolve_node_display,
     get_zone_detail,
     get_zone_index,
@@ -1110,27 +1111,10 @@ class TestZoneStatsAggregation:
         """Zone aggregation should sum deaths and filter by dungeon types only."""
         race_ids, user_ids = three_races_with_zone_history
         async with async_session() as db:
-            participants = (
-                (
-                    await db.execute(
-                        select(Participant)
-                        .where(Participant.status == ParticipantStatus.FINISHED)
-                        .options(
-                            selectinload(Participant.race).selectinload(Race.seed),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            seeds_by_id = {}
-            for p in participants:
-                if p.race and p.race.seed:
-                    seeds_by_id[p.race.seed_id] = p.race.seed
-
-            node_display = _resolve_node_display(seeds_by_id)
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
             zone_data = _aggregate_zone_stats(
-                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
             )
 
             # stormveil_c3d4 is legacy_dungeon, should be included
@@ -1148,27 +1132,10 @@ class TestZoneStatsAggregation:
         """Time should be computed as difference between consecutive igt_ms entries."""
         race_ids, user_ids = three_races_with_zone_history
         async with async_session() as db:
-            participants = (
-                (
-                    await db.execute(
-                        select(Participant)
-                        .where(Participant.status == ParticipantStatus.FINISHED)
-                        .options(
-                            selectinload(Participant.race).selectinload(Race.seed),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            seeds_by_id = {}
-            for p in participants:
-                if p.race and p.race.seed:
-                    seeds_by_id[p.race.seed_id] = p.race.seed
-
-            node_display = _resolve_node_display(seeds_by_id)
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
             zone_data = _aggregate_zone_stats(
-                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
             )
 
             # Each zone should have time entries with positive values
@@ -1186,27 +1153,10 @@ class TestZoneStatsAggregation:
         """
         race_ids, user_ids = three_races_with_zone_history
         async with async_session() as db:
-            participants = (
-                (
-                    await db.execute(
-                        select(Participant)
-                        .where(Participant.status == ParticipantStatus.FINISHED)
-                        .options(
-                            selectinload(Participant.race).selectinload(Race.seed),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            seeds_by_id = {}
-            for p in participants:
-                if p.race and p.race.seed:
-                    seeds_by_id[p.race.seed_id] = p.race.seed
-
-            node_display = _resolve_node_display(seeds_by_id)
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
             zone_data = _aggregate_zone_stats(
-                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
             )
 
             assert zone_data["Stormveil Castle"]["zones"] == ["stormveil", "stormveil_gate"]
@@ -1245,13 +1195,14 @@ class TestZoneStatsAggregation:
 
         async with async_session() as db:
             seed = (await db.execute(select(Seed).where(Seed.id == seed_id))).scalar_one()
-            node_display = _resolve_node_display({seed_id: seed})
+            seed_nodes = _project_seed_nodes(seed.created_at, seed.graph_json)
+            node_display = _resolve_node_display({seed_id: seed_nodes})
         info = node_display["no_zones_key_ab12"]
         assert (info.short_name, info.full_name, info.type, info.zones) == (
             "No Zones",
             "No Zones",
             "legacy_dungeon",
-            [],
+            (),
         )
 
     async def test_panels_use_short_name_index_and_detail_use_full_name(self, async_session):
@@ -1347,27 +1298,10 @@ class TestZoneStatsAggregation:
         """
         race_ids, user_ids = three_races_with_zone_history
         async with async_session() as db:
-            participants = (
-                (
-                    await db.execute(
-                        select(Participant)
-                        .where(Participant.status == ParticipantStatus.FINISHED)
-                        .options(
-                            selectinload(Participant.race).selectinload(Race.seed),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            seeds_by_id = {}
-            for p in participants:
-                if p.race and p.race.seed:
-                    seeds_by_id[p.race.seed_id] = p.race.seed
-
-            node_display = _resolve_node_display(seeds_by_id)
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
             zone_data = _aggregate_zone_stats(
-                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
             )
 
             stormveil = next((d for n, d in zone_data.items() if "Stormveil" in n), None)
@@ -1825,25 +1759,8 @@ class TestBossStatsFiltering:
         """Boss stats should only include major_boss and final_boss, not boss_arena."""
         race_ids, user_ids = three_races_with_zone_history
         async with async_session() as db:
-            participants = (
-                (
-                    await db.execute(
-                        select(Participant)
-                        .where(Participant.status == ParticipantStatus.FINISHED)
-                        .options(
-                            selectinload(Participant.race).selectinload(Race.seed),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            seeds_by_id = {}
-            for p in participants:
-                if p.race and p.race.seed:
-                    seeds_by_id[p.race.seed_id] = p.race.seed
-
-            node_display = _resolve_node_display(seeds_by_id)
+            _, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
 
             # Verify type resolution
             for nid, info in node_display.items():
@@ -2044,23 +1961,10 @@ class TestAbandonCountsAsBack:
             )
 
         async with async_session() as db:
-            participants = (
-                (
-                    await db.execute(
-                        select(Participant).options(
-                            selectinload(Participant.race).selectinload(Race.seed),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            seeds_by_id = {
-                p.race.seed_id: p.race.seed for p in participants if p.race and p.race.seed
-            }
-            node_display = _resolve_node_display(seeds_by_id)
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
             zone_data = _aggregate_zone_stats(
-                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
             )
 
             raya = next((d for n, d in zone_data.items() if "Raya" in n), None)
@@ -2086,23 +1990,10 @@ class TestAbandonCountsAsBack:
             )
 
         async with async_session() as db:
-            participants = (
-                (
-                    await db.execute(
-                        select(Participant).options(
-                            selectinload(Participant.race).selectinload(Race.seed),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            seeds_by_id = {
-                p.race.seed_id: p.race.seed for p in participants if p.race and p.race.seed
-            }
-            node_display = _resolve_node_display(seeds_by_id)
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
             zone_data = _aggregate_zone_stats(
-                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
             )
 
             stormveil = next((d for n, d in zone_data.items() if "Stormveil" in n), None)
@@ -2302,23 +2193,10 @@ class TestZoneBacktrackRule:
 
     async def _zone_counts(self, async_session):
         async with async_session() as db:
-            participants = (
-                (
-                    await db.execute(
-                        select(Participant).options(
-                            selectinload(Participant.race).selectinload(Race.seed),
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            seeds_by_id = {
-                p.race.seed_id: p.race.seed for p in participants if p.race and p.race.seed
-            }
-            node_display = _resolve_node_display(seeds_by_id)
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
             zone_data = _aggregate_zone_stats(
-                participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
             )
             return {name: data["backtrack_count"] for name, data in zone_data.items()}
 
@@ -2466,3 +2344,169 @@ class TestZoneBacktrackRule:
         counts = await self._zone_counts(async_session)
         assert counts["Raya Lucaria"] == 0
         assert counts["Stormveil Castle"] == 0
+
+
+class TestSeedNodesCache:
+    """Seed graph projections are cached in-process: a seed's graph_json is
+    immutable once consumed, so a DB-level change after first load must not
+    be re-read (that's what makes the cache invalidation-free)."""
+
+    GRAPH_JSON = {
+        "nodes": {
+            "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+            "stormveil_c3d4": {
+                "type": "legacy_dungeon",
+                "display_name": "Stormveil Castle",
+                "layer": 1,
+            },
+        },
+        "total_layers": 2,
+    }
+
+    async def test_seed_graph_read_once_and_cached(self, async_session):
+        async with async_session() as db:
+            user = User(
+                twitch_id="snc", twitch_username="snc", api_token="snct", role=UserRole.USER
+            )
+            org = User(
+                twitch_id="sncorg",
+                twitch_username="sncorg",
+                api_token="sncorgt",
+                role=UserRole.ORGANIZER,
+            )
+            db.add_all([user, org])
+            await db.flush()
+            seed = Seed(
+                seed_number="sncseed",
+                pool_name="standard",
+                graph_json=self.GRAPH_JSON,
+                total_layers=2,
+                folder_path="/t/sncseed",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+            race = Race(
+                name="Cache Race",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race)
+            await db.flush()
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    mod_token="sncmod",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=500_000,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "stormveil_c3d4", "igt_ms": 100_000, "type": "fog"},
+                    ],
+                )
+            )
+            await db.commit()
+            seed_id = seed.id
+
+        async with async_session() as db:
+            _, seed_info = await _load_zone_stats_inputs(None, 3650, db)
+            display = _resolve_node_display(seed_info)
+            assert display["stormveil_c3d4"].full_name == "Stormveil Castle"
+
+        # Mutate graph_json behind the loader's back (never happens in prod:
+        # consumed seeds are immutable). A reload would see the new name.
+        mutated = {
+            "nodes": {
+                **self.GRAPH_JSON["nodes"],
+                "stormveil_c3d4": {
+                    "type": "legacy_dungeon",
+                    "display_name": "MUTATED NAME",
+                    "layer": 1,
+                },
+            },
+            "total_layers": 2,
+        }
+        async with async_session() as db:
+            await db.execute(update(Seed).where(Seed.id == seed_id).values(graph_json=mutated))
+            await db.commit()
+
+        async with async_session() as db:
+            _, seed_info = await _load_zone_stats_inputs(None, 3650, db)
+            display = _resolve_node_display(seed_info)
+            assert display["stormveil_c3d4"].full_name == "Stormveil Castle"
+
+    async def test_pool_filter_restricts_participants(self, async_session):
+        """The pool filter only keeps participants whose race ran a seed of
+        that pool; their zones disappear from the other pool's stats."""
+        async with async_session() as db:
+            org = User(
+                twitch_id="plorg",
+                twitch_username="plorg",
+                api_token="plorgt",
+                role=UserRole.ORGANIZER,
+            )
+            db.add(org)
+            await db.flush()
+            for i, (pool_name, node_name) in enumerate(
+                [("standard", "Stormveil Castle"), ("experimental", "Raya Lucaria")]
+            ):
+                user = User(
+                    twitch_id=f"plu{i}",
+                    twitch_username=f"plu{i}",
+                    api_token=f"plut{i}",
+                    role=UserRole.USER,
+                )
+                db.add(user)
+                await db.flush()
+                nid = f"pool_node_{i}"
+                seed = Seed(
+                    seed_number=f"plseed{i}",
+                    pool_name=pool_name,
+                    graph_json={
+                        "nodes": {
+                            nid: {
+                                "type": "legacy_dungeon",
+                                "display_name": node_name,
+                                "layer": 1,
+                            },
+                        },
+                        "total_layers": 2,
+                    },
+                    total_layers=2,
+                    folder_path=f"/t/plseed{i}",
+                    status=SeedStatus.CONSUMED,
+                )
+                db.add(seed)
+                await db.flush()
+                race = Race(
+                    name=f"Pool Race {i}",
+                    organizer_id=org.id,
+                    seed_id=seed.id,
+                    status=RaceStatus.FINISHED,
+                    started_at=datetime.now(UTC),
+                )
+                db.add(race)
+                await db.flush()
+                db.add(
+                    Participant(
+                        race_id=race.id,
+                        user_id=user.id,
+                        mod_token=f"plmod{i}",
+                        status=ParticipantStatus.FINISHED,
+                        igt_ms=500_000,
+                        zone_history=[{"node_id": nid, "igt_ms": 100_000, "type": "fog"}],
+                    )
+                )
+            await db.commit()
+
+        async with async_session() as db:
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs("experimental", 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
+            zone_data = _aggregate_zone_stats(
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+        assert "Raya Lucaria" in zone_data
+        assert "Stormveil Castle" not in zone_data

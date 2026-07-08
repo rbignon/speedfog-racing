@@ -203,10 +203,46 @@ class NodeDisplay:
     short_name: str
     full_name: str
     type: str
-    zones: list[str]
+    # A tuple, not a list: NodeDisplay instances live forever in the shared
+    # seed projection cache, so their contents must be structurally immutable.
+    zones: tuple[str, ...]
 
 
-def _resolve_node_display(seeds_by_id: dict[Any, Any]) -> dict[str, NodeDisplay]:
+@dataclass(frozen=True)
+class SeedNodes:
+    """Cached projection of one seed's graph nodes.
+
+    The zone stats endpoints only need node membership and per-node display
+    metadata, a few KB out of a graph_json that can weigh hundreds of KB.
+    ``created_at`` orders seeds for most-recent display resolution.
+    """
+
+    created_at: datetime
+    nodes: dict[str, NodeDisplay]
+
+
+# Seed graphs are immutable once the seed is consumed, so projections are
+# cached in-process forever: no TTL, no invalidation. Entries are a few KB
+# each and only accumulate at the pace new seeds get raced.
+_seed_nodes_cache: dict[Any, SeedNodes] = {}
+
+
+def _project_seed_nodes(created_at: datetime, graph_json: dict[str, Any]) -> SeedNodes:
+    """Extract the SeedNodes projection from a raw graph_json."""
+    nodes: dict[str, NodeDisplay] = {}
+    for nid, meta in graph_json.get("nodes", {}).items():
+        full_name = meta.get("display_name", nid)
+        short_name = full_name.rsplit(" - ", 1)[-1]
+        nodes[nid] = NodeDisplay(
+            short_name=short_name,
+            full_name=full_name,
+            type=meta.get("type", ""),
+            zones=tuple(meta.get("zones", [])),
+        )
+    return SeedNodes(created_at=created_at, nodes=nodes)
+
+
+def _resolve_node_display(seed_nodes_by_id: dict[Any, SeedNodes]) -> dict[str, NodeDisplay]:
     """Build node_id -> NodeDisplay from the most recent seed.
 
     Node IDs are cluster IDs from SpeedFog's clusters.json. The same cluster_id
@@ -221,27 +257,19 @@ def _resolve_node_display(seeds_by_id: dict[Any, Any]) -> dict[str, NodeDisplay]
     node_display: dict[str, NodeDisplay] = {}
     node_seed_date: dict[str, Any] = {}
 
-    for seed in seeds_by_id.values():
-        created = seed.created_at
-        nodes: dict[str, Any] = seed.graph_json.get("nodes", {})
-        for nid, meta in nodes.items():
+    for seed_nodes in seed_nodes_by_id.values():
+        created = seed_nodes.created_at
+        for nid, display in seed_nodes.nodes.items():
             prev_date = node_seed_date.get(nid)
             if prev_date is None or created > prev_date:
                 node_seed_date[nid] = created
-                full_name = meta.get("display_name", nid)
-                short_name = full_name.rsplit(" - ", 1)[-1]
-                node_display[nid] = NodeDisplay(
-                    short_name=short_name,
-                    full_name=full_name,
-                    type=meta.get("type", ""),
-                    zones=meta.get("zones", []),
-                )
+                node_display[nid] = display
     return node_display
 
 
 def _aggregate_zone_stats(
     participants: Sequence[Any],
-    seeds_by_id: dict[Any, Any],
+    seed_nodes_by_id: dict[Any, SeedNodes],
     node_types: set[str],
     node_display: dict[str, NodeDisplay],
 ) -> dict[str, dict[str, Any]]:
@@ -268,10 +296,10 @@ def _aggregate_zone_stats(
 
     for participant in participants:
         history = participant.zone_history or []
-        seed = seeds_by_id.get(participant.race.seed_id) if participant.race else None
-        if seed is None:
+        seed_nodes = seed_nodes_by_id.get(participant.seed_id)
+        if seed_nodes is None:
             continue
-        nodes: dict[str, Any] = seed.graph_json.get("nodes", {})
+        nodes = seed_nodes.nodes
         race_id = participant.race_id
 
         for idx, entry in enumerate(history):
@@ -390,15 +418,25 @@ def _aggregate_zone_stats(
 
 async def _load_zone_stats_inputs(
     pool: str | None, days: int, db: AsyncSession
-) -> tuple[Sequence[Participant], dict[Any, Any]]:
+) -> tuple[Sequence[Any], dict[Any, SeedNodes]]:
     """Shared loader for zone stats endpoints.
 
-    Returns eligible participants (FINISHED, or ABANDONED with igt_ms > 0)
-    in races started within the last ``days`` days, optionally restricted
-    to ``pool``, plus the seeds keyed by seed_id they belong to.
+    Returns eligible participant rows (FINISHED, or ABANDONED with igt_ms > 0;
+    ``race_id``, ``status``, ``igt_ms``, ``zone_history``, ``seed_id``) in
+    races started within the last ``days`` days, optionally restricted to
+    ``pool``, plus the SeedNodes projections keyed by the seed_ids they raced
+    on. Narrow column selects on purpose: full ORM entities with their seeds'
+    graph_json cost >1s of hydration per request at ~3400 participants, while
+    the stats only consume these five fields plus the cached projections.
     """
     query = (
-        select(Participant)
+        select(
+            Participant.race_id,
+            Participant.status,
+            Participant.igt_ms,
+            Participant.zone_history,
+            Race.seed_id,
+        )
         .join(Race, Participant.race_id == Race.id)
         .where(
             or_(
@@ -406,23 +444,29 @@ async def _load_zone_stats_inputs(
                 (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
             )
         )
-        .options(
-            selectinload(Participant.race).selectinload(Race.seed),
-        )
     )
     cutoff = datetime.now(tz=UTC) - timedelta(days=days)
     query = query.where(Race.started_at >= cutoff)
     if pool is not None:
         query = query.join(Seed, Race.seed_id == Seed.id).where(Seed.pool_name == pool)
 
-    participants = (await db.execute(query)).scalars().all()
+    participants = (await db.execute(query)).all()
 
-    seeds_by_id: dict[Any, Any] = {}
-    for p in participants:
-        if p.race and p.race.seed:
-            seeds_by_id[p.race.seed_id] = p.race.seed
+    # Races can have a NULL seed_id; None is never cacheable and would force
+    # a pointless seed query on every request if left in the set.
+    seed_ids = {row.seed_id for row in participants if row.seed_id is not None}
+    missing = [sid for sid in seed_ids if sid not in _seed_nodes_cache]
+    if missing:
+        seed_rows = (
+            await db.execute(
+                select(Seed.id, Seed.created_at, Seed.graph_json).where(Seed.id.in_(missing))
+            )
+        ).all()
+        for sid, created_at, graph_json in seed_rows:
+            _seed_nodes_cache[sid] = _project_seed_nodes(created_at, graph_json)
 
-    return participants, seeds_by_id
+    seed_nodes_by_id = {sid: _seed_nodes_cache[sid] for sid in seed_ids if sid in _seed_nodes_cache}
+    return participants, seed_nodes_by_id
 
 
 @router.get("/zones", response_model=ZoneStatsResponse)
@@ -597,7 +641,7 @@ async def get_zone_detail(
             avg_time_ms=None,
             avg_deaths_per_visit=0.0,
             backtrack_rate=0.0,
-            zones=info.zones,
+            zones=list(info.zones),
         )
     return ZoneDetailResponse(
         # Echo the requested node_id, not data["node_id"] (the merge's
@@ -615,7 +659,7 @@ async def get_zone_detail(
         avg_deaths_per_visit=(
             round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
         ),
-        zones=info.zones,
+        zones=list(info.zones),
         backtrack_rate=(
             round(data["backtrack_count"] / data["race_count"], 2) if data["race_count"] else 0.0
         ),

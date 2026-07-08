@@ -210,6 +210,10 @@ A minimum threshold applies: the player must be in the **top 50%** (`DOMINANT_PE
 
 Aggregates `zone_history` from FINISHED participants (and ABANDONED with `igt_ms > 0`) in races started within the last `days` days (default 30). Only includes dungeon-type nodes.
 
+### Input Loading and Seed Projection Cache
+
+All three zone endpoints (`/zones`, `/zones/index`, `/zones/{node_id}`) load their inputs through `_load_zone_stats_inputs`, which selects narrow participant columns (`race_id`, `status`, `igt_ms`, `zone_history`, `seed_id`) rather than full ORM entities. Seed graphs are never loaded per request: the stats only need node membership and per-node display metadata (a few KB out of graphs weighing hundreds of KB), so each seed's `graph_json` is read once per process and reduced to a `SeedNodes` projection kept in an in-process cache keyed by seed_id. Seeds are immutable once consumed, so the cache needs no TTL or invalidation; only seeds not yet seen by the process are fetched. Before this, every request re-hydrated ~15 MB of `graph_json` through the ORM (>1.5s per request at ~3400 participants); warm requests now cost ~0.4s, dominated by `zone_history` JSON parsing.
+
 ### Node Type Filter
 
 ```python
