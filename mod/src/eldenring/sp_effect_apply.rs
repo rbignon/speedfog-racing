@@ -126,7 +126,10 @@ type ApplySpEffectFn = unsafe extern "system" fn(
 /// Resolved once per process. None means scanning failed.
 static APPLY_FN_ADDR: OnceLock<Option<usize>> = OnceLock::new();
 
-fn player_ins_offset() -> usize {
+/// WorldChrMan -> PlayerIns offset, version-dependent. Single source of
+/// truth shared with sp_effect_runner; a silent drift between two copies
+/// would break phantom skins on one path only.
+pub(crate) fn player_ins_offset() -> usize {
     use Version::*;
     match get_version() {
         V1_02_0 | V1_02_1 | V1_02_2 | V1_02_3 | V1_03_0 | V1_03_1 | V1_03_2 | V1_04_0 | V1_04_1

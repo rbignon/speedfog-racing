@@ -18,8 +18,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use libeldenring::pointers::Pointers;
-use libeldenring::prelude::base_addresses::Version;
-use libeldenring::version::get_version;
+
+use super::sp_effect_apply::player_ins_offset;
 use tracing::{info, warn};
 
 use crate::eldenring::sp_effect_apply::apply_speffect;
@@ -68,15 +68,6 @@ pub fn spawn(
             std::thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
         }
     })
-}
-
-fn player_ins_offset() -> usize {
-    use Version::*;
-    match get_version() {
-        V1_02_0 | V1_02_1 | V1_02_2 | V1_02_3 | V1_03_0 | V1_03_1 | V1_03_2 | V1_04_0 | V1_04_1
-        | V1_05_0 | V1_06_0 => 0x18468,
-        _ => 0x1E508,
-    }
 }
 
 fn read_player_ins(pointers: &Pointers) -> *mut c_void {
