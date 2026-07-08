@@ -70,6 +70,34 @@ describe("orderTickerItems", () => {
     });
     expect(ordered.map((i) => i.id)).toEqual(["beg", "adv"]);
   });
+
+  it("shuffles equal-score items with the provided rng", () => {
+    const items = [item("a"), item("b"), item("c")];
+    const ctx = { poolName: null, seenIds: new Set<string>() };
+    const withLowRng = orderTickerItems(items, ctx, () => 0);
+    const withHighRng = orderTickerItems(items, ctx, () => 0.999);
+    expect(withLowRng.map((i) => i.id)).not.toEqual(
+      withHighRng.map((i) => i.id),
+    );
+    for (const ordered of [withLowRng, withHighRng]) {
+      expect(new Set(ordered.map((i) => i.id))).toEqual(
+        new Set(["a", "b", "c"]),
+      );
+    }
+  });
+
+  it("keeps the weighting dominant over the shuffle", () => {
+    const items = [
+      item("a"),
+      item("b"),
+      item("pooled", { pools: ["hardcore"] }),
+    ];
+    const ctx = { poolName: "hardcore", seenIds: new Set<string>(["a", "b"]) };
+    for (const rng of [() => 0, () => 0.5, () => 0.999]) {
+      const ordered = orderTickerItems(items, ctx, rng);
+      expect(ordered[0].id).toBe("pooled");
+    }
+  });
 });
 
 describe("seen-recently persistence", () => {

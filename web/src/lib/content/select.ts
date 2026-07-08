@@ -11,13 +11,18 @@ export interface TickerContext {
 /**
  * Orders catalog items for the ticker: pool-specific items are dropped unless
  * the pool matches (and then float to the top), recently seen items sink, and
- * beginner tips edge out advanced ones. Ties keep catalog order.
+ * beginner tips edge out advanced ones. Within a score tier the order is
+ * random, so two players (or two visits) do not scroll the same sequence.
  */
 export function orderTickerItems(
   items: ContentItem[],
   ctx: TickerContext,
+  // Must return a value in [0, 1) like Math.random; 1 would index out of
+  // bounds in the shuffle.
+  rng: () => number = Math.random,
 ): ContentItem[] {
-  const eligible = items.filter(
+  // Fresh array from filter(), safe to shuffle in place below.
+  const shuffled = items.filter(
     (item) =>
       !item.pools || (!!ctx.poolName && item.pools.includes(ctx.poolName)),
   );
@@ -30,7 +35,15 @@ export function orderTickerItems(
     return s;
   };
 
-  return eligible
+  // Fisher-Yates first, then sort by score with ties broken by the shuffled
+  // index: equal-score items keep their shuffled order, while the weighting
+  // still dominates the shuffle.
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  return shuffled
     .map((item, index) => ({ item, index, score: score(item) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .map((entry) => entry.item);
