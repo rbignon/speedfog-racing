@@ -1133,6 +1133,8 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 
 **Spectator WebSocket authentication (M9):** Spectator connections (`/ws/race/{race_id}`) are intentionally unauthenticated by default. Race leaderboard data is public by design. Optional auth within a 2-second grace period enables role-based DAG visibility during SETUP, which prevents anonymous viewers from seeing the graph before the race starts. During `running` and `finished`, all spectators see the DAG. Clients should send `no_auth` when not logged in to skip the grace period. This is an accepted design trade-off.
 
+**Private races are unlisted, not access-controlled (M11):** `is_public=False` only hides a race from the `/api/races` feed. Its detail (`GET /api/races/{id}`) and spectator WebSocket are still reachable by anyone holding the race ID, by design (share-by-direct-link). DAG and per-runner spoiler visibility follow the same status-based rules as public races (see above), independent of `is_public`. This is an accepted trade-off; there is no members-only enforcement for private races.
+
 **CSRF (M5):** Auth tokens are stored in `localStorage` and sent via `Authorization` header, not auto-attached cookies. This makes CSRF attacks infeasible since the token is never sent automatically. If token storage changes to cookies in the future, CSRF protection must be added.
 
 **localStorage vs cookies (M10):** Tokens in `localStorage` are vulnerable to XSS but not to CSRF. The codebase has no `{@html}` usage (preventing XSS vectors), and CSP headers restrict script sources. This trade-off is accepted for the current threat model.
