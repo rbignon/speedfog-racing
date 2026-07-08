@@ -47,7 +47,6 @@
 </script>
 
 {#if current}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <aside
     class="tip-ticker"
     class:banner={variant === "banner"}
