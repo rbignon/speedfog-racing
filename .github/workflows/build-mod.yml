@@ -10,6 +10,7 @@ on:
     branches: [master]
     paths:
       - "mod/**"
+      - ".github/workflows/build-mod.yml"
   workflow_dispatch:
 
 env:
