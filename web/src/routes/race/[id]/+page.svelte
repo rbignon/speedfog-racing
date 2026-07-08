@@ -487,6 +487,12 @@
     auth.isLoggedIn || publicAccess === "readable",
   );
 
+  // Drop the zone sheet target when the rail goes away, so a later
+  // remount does not reopen a stale sheet.
+  $effect(() => {
+    if (!showChatSidebar) zoneSheetTarget = null;
+  });
+
   // Pull public chat history when local access transitions from locked
   // to readable (late-join window expired, viewer just finished). The
   // server revalidates and silently ignores if the transition is wrong.

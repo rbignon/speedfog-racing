@@ -1,7 +1,14 @@
 import { render } from "@testing-library/svelte";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import ChatSidebar from "$lib/components/ChatSidebar.svelte";
 import type { ChatMessage } from "$lib/websocket";
+
+// Sheet mode mounts ZoneSheet, whose $effect fetches zone stats; keep
+// the tests offline.
+vi.mock("$lib/api", async () => {
+  const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
+  return { ...actual, fetchZoneDetail: vi.fn(() => new Promise(() => {})) };
+});
 
 function msg(
   channel: "participants" | "public",
@@ -134,5 +141,86 @@ describe("ChatSidebar unread badges", () => {
       historyVersion: 2,
     });
     expect(container.querySelector(".unread-badge")).toBeNull();
+  });
+
+  it("keeps accruing unread while the zone sheet covers the chat", async () => {
+    const zoneSheet = { nodeId: "stormveil_c3d4", displayName: "Stormveil" };
+    const { container, rerender } = render(ChatSidebar, {
+      props: {
+        ...baseProps,
+        messagesParticipants: [],
+        messagesPublic: [],
+        collapsed: false,
+        zoneSheet,
+      },
+    });
+    expect(container.querySelector(".back-btn .tab-badge")).toBeNull();
+
+    // A user message arriving while the sheet is open must raise the
+    // sheet header's badge even though the sidebar is not collapsed.
+    await rerender({
+      ...baseProps,
+      messagesParticipants: [msg("participants", "participant", "hi")],
+      messagesPublic: [],
+      collapsed: false,
+      zoneSheet,
+    });
+    expect(
+      container.querySelector(".back-btn .tab-badge")?.textContent?.trim(),
+    ).toBe("1");
+
+    // And keep growing as more messages arrive.
+    await rerender({
+      ...baseProps,
+      messagesParticipants: [
+        msg("participants", "participant", "hi"),
+        msg("participants", "participant", "anyone?"),
+      ],
+      messagesPublic: [msg("public", "participant", "gg")],
+      collapsed: false,
+      zoneSheet,
+    });
+    expect(
+      container.querySelector(".back-btn .tab-badge")?.textContent?.trim(),
+    ).toBe("3");
+  });
+
+  it("resets the active tab's unread when the zone sheet closes", async () => {
+    const zoneSheet = { nodeId: "stormveil_c3d4", displayName: "Stormveil" };
+    const { container, rerender } = render(ChatSidebar, {
+      props: {
+        ...baseProps,
+        messagesParticipants: [],
+        messagesPublic: [],
+        collapsed: false,
+        activeTab: "participants",
+        zoneSheet,
+      },
+    });
+
+    // Messages accrue on the active tab while the sheet is open.
+    await rerender({
+      ...baseProps,
+      messagesParticipants: [msg("participants", "participant", "hi")],
+      messagesPublic: [],
+      collapsed: false,
+      activeTab: "participants",
+      zoneSheet,
+    });
+    expect(
+      container.querySelector(".back-btn .tab-badge")?.textContent?.trim(),
+    ).toBe("1");
+
+    // Back to chat: the active tab is visible again, so its unread clears
+    // and no badge remains anywhere.
+    await rerender({
+      ...baseProps,
+      messagesParticipants: [msg("participants", "participant", "hi")],
+      messagesPublic: [],
+      collapsed: false,
+      activeTab: "participants",
+      zoneSheet: null,
+    });
+    expect(container.querySelector(".tab-badge")).toBeNull();
   });
 });
