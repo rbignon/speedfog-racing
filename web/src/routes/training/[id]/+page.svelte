@@ -19,6 +19,9 @@
   import ObsOverlayModal from "$lib/components/ObsOverlayModal.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
+  import DownloadModal from "$lib/components/DownloadModal.svelte";
+  import TipTicker from "$lib/components/TipTicker.svelte";
+  import { CONTENT_ITEMS } from "$lib/content/items";
   import { formatPoolName } from "$lib/utils/format";
   import { formatIgt } from "$lib/utils/training";
   import { statusLabel } from "$lib/format";
@@ -44,8 +47,15 @@
   let showAbandonConfirm = $state(false);
   let showObsModal = $state(false);
   let showFeedback = $state(false);
+  let showDownloadModal = $state(false);
   let ghosts = $state<Ghost[]>([]);
   let dagView = $state<"map" | "replay">("map");
+
+  const starterTips = CONTENT_ITEMS.filter(
+    (i) => i.kind === "tip" && i.level === "beginner",
+  )
+    .slice(0, 4)
+    .map((i) => i.short);
 
   // Live data from WS
   let liveParticipant = $derived(trainingStore.participant);
@@ -300,7 +310,7 @@
           <button
             class="btn btn-secondary"
             disabled={downloading}
-            onclick={handleDownload}
+            onclick={() => (showDownloadModal = true)}
           >
             {downloading ? "Preparing..." : "Download Pack"}
           </button>
@@ -314,6 +324,12 @@
             Abandon
           </button>
         {/if}
+      </div>
+    {/if}
+
+    {#if status === "active" && !liveParticipant?.mod_connected}
+      <div class="tip-banner">
+        <TipTicker poolName={session.pool_name} variant="banner" />
       </div>
     {/if}
 
@@ -410,6 +426,21 @@
 
 {#if showFeedback}
   <FeedbackModal source="user_menu" onClose={() => (showFeedback = false)} />
+{/if}
+
+{#if showDownloadModal}
+  <DownloadModal
+    {downloading}
+    error={null}
+    actionLabel="Download Training Pack"
+    rules={session?.pool_config?.rules ?? null}
+    tips={starterTips}
+    onClose={() => (showDownloadModal = false)}
+    onDownload={() => {
+      showDownloadModal = false;
+      handleDownload();
+    }}
+  />
 {/if}
 
 <style>
@@ -661,6 +692,10 @@
     align-items: center;
     flex-wrap: wrap;
     margin-bottom: 1rem;
+  }
+
+  .tip-banner {
+    margin: 0.75rem 0;
   }
 
   /* Danger outline button */

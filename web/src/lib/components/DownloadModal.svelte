@@ -7,6 +7,7 @@
     actionLabel?: string;
     rules?: string | null;
     customRules?: string | null;
+    tips?: string[] | null;
   }
 
   let {
@@ -17,6 +18,7 @@
     actionLabel = "Download Race Package",
     rules = null,
     customRules = null,
+    tips = null,
   }: Props = $props();
 
   const ruleLines = $derived(
@@ -95,6 +97,17 @@
         crash corrupts your save, run <code>recovery.bat</code>.
       </p>
     </div>
+
+    {#if tips && tips.length > 0}
+      <div class="section mode-rules">
+        <h3>Starter Tips</h3>
+        <ul>
+          {#each tips as tip}
+            <li>{tip}</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
 
     <button class="download-btn" onclick={onDownload} disabled={downloading}>
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
