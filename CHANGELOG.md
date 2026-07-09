@@ -2,6 +2,42 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.18.0] - 2026-07-09
+
+### Zone Codex
+
+- New **Zone Codex**: the /zones page lists every zone raced over the last 90 days with community stats (median clear time, deaths, backtracks), searchable and sortable, and every zone opens a shareable detail sheet
+- Zones now document their known **skips**, with embedded videos
+- During a race or a daily, clicking a zone on the map can open its codex sheet directly in the chat sidebar
+- Zone clear times are now the median of full gate-to-gate times per player, deaths and runbacks included, and only count players who actually cleared the zone. The old average was deflated precisely on the most backtracked zones, where many visits ended early
+- "Most backtracked" now measures actually turning away from a zone, shown as a share of visits: transit hubs and warp landings no longer dominate the ranking
+- The Zones tab of the stats page now ranks over the same 90-day window as the codex
+
+### Tips
+
+- New **tip ticker** on the race page: rotating gameplay tips over the map while waiting for the start, prioritizing tips you haven't seen recently
+- The training download window now shows starter tips, and a tip banner keeps them rotating while you wait for your run to begin
+- New **Game Changes** page: a reference of everything SpeedFog changes compared to the vanilla game, linked from the help page
+
+### Seeds
+
+- Fix: helper enemies added by the enemy randomizer (e.g. the Godskin Duo's respawning backup) are now scaled to their boss arena's tier. They previously could inherit the surrounding map's default tier, spawning wildly under- or over-scaled
+
+### Races
+
+- Resetting a race now also reverts the ELO it applied and clears leftover timing state, so a re-run starts clean and gets rated correctly
+- Fix: a player reconnecting after a network blip could be silently cut off from live race updates
+
+### Mod
+
+- The in-game overlay now shows a notice when a newer mod version is available
+- Fix: an overlay rendering error can no longer stop race tracking
+
+### Website
+
+- The site now detects when a new version has been deployed and shows a refresh prompt
+- Fix: closed a redirect vulnerability in the Twitch login flow
+
 ## [1.17.0] - 2026-07-05
 
 ### Races
