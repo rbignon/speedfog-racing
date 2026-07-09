@@ -422,4 +422,35 @@ export const CONTENT_ITEMS: ContentItem[] = [
       youtubeId: "yAckrwdV7SE",
     },
   },
+  {
+    id: "dragon-pit-skip",
+    kind: "skip",
+    zoneId: "gravesite_dragonpit",
+    title: "Dragon's Pit skip",
+    short: "",
+    video: {
+      youtubeId: "O6iINXP1ccU",
+    },
+  },
+  {
+    id: "nokron-skip",
+    kind: "skip",
+    zoneId: "siofra_nokron",
+    title: "Skip to teleporter",
+    short:
+      "Nokron skip down to get the teleporter beside Fingerslayer Blade faster",
+    video: {
+      youtubeId: "yTWtl8rOpxY",
+    },
+  },
+  {
+    id: "shaded-castle-skip",
+    kind: "skip",
+    zoneId: "altus_shaded",
+    title: "Backwards Fast Route",
+    short: "",
+    video: {
+      youtubeId: "BkxpWreZKxY",
+    },
+  },
 ];
