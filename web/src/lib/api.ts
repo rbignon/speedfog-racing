@@ -1675,7 +1675,7 @@ export interface ZoneBacktrackEntry {
   display_name: string;
   type: string;
   backtrack_count: number;
-  avg_backtracks_per_race: number;
+  backtrack_rate: number;
 }
 
 export interface ZoneTimeEntry {

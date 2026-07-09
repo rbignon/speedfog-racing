@@ -326,7 +326,13 @@ def _aggregate_zone_stats(
                 continue
             deaths = entry.get("deaths", 0)
             zone_deaths[nid] = zone_deaths.get(nid, 0) + deaths
-            zone_visits[nid] = zone_visits.get(nid, 0) + 1
+            # A visit is an entry the player chose to make (fog gate traversal,
+            # or legacy untyped entries treated as fog). Warp landings (type
+            # "backtrack") put the player there without a decision, and can
+            # never be turn-aways, so counting them would dilute backtrack_rate
+            # on hub zones whose grace serves as a respawn anchor.
+            if entry.get("type", "fog") != "backtrack":
+                zone_visits[nid] = zone_visits.get(nid, 0) + 1
             zone_race_ids.setdefault(nid, set()).add(race_id)
             seen_nids.add(nid)
 
@@ -380,8 +386,16 @@ def _aggregate_zone_stats(
                 zone_times.setdefault(nid, []).append(total_ms)
 
         # Count abandon as backtrack for the participant's last zone (they
-        # renounced there), but only on a first visit.
-        if participant.status == ParticipantStatus.ABANDONED and history:
+        # renounced there), but only on a first visit, and never on a warp
+        # landing: a landing is not a place the player chose to be (the zone
+        # they turned away from already got its credit above), and crediting
+        # it would break the backtrack_count <= visits invariant that lets
+        # backtrack_rate be a percentage.
+        if (
+            participant.status == ParticipantStatus.ABANDONED
+            and history
+            and history[-1].get("type", "fog") != "backtrack"
+        ):
             last_nid = history[-1].get("node_id", "")
             if last_nid and last_nid in nodes:
                 last_info = node_display.get(last_nid)
@@ -405,7 +419,9 @@ def _aggregate_zone_stats(
         if info.full_name in merged:
             m = merged[info.full_name]
             m["total_deaths"] += zone_deaths[nid]
-            m["visits"] += zone_visits[nid]
+            # .get: a zone seen only through warp landings has deaths/races
+            # but no chosen visits
+            m["visits"] += zone_visits.get(nid, 0)
             m["race_ids"].update(zone_race_ids[nid])
             m["backtrack_count"] += zone_backtracks.get(nid, 0)
             m["times"].extend(zone_times.get(nid, []))
@@ -417,7 +433,7 @@ def _aggregate_zone_stats(
                 "short_name": info.short_name,
                 "type": info.type,
                 "total_deaths": zone_deaths[nid],
-                "visits": zone_visits[nid],
+                "visits": zone_visits.get(nid, 0),
                 "race_ids": set(zone_race_ids[nid]),
                 "backtrack_count": zone_backtracks.get(nid, 0),
                 "times": list(zone_times.get(nid, [])),
@@ -532,10 +548,12 @@ async def get_zone_stats(
         for n in deadliest_nodes
     ]
 
-    # Most backtracked: by avg_backtracks_per_race desc (rate metric)
+    # Most backtracked: by share of visits ending in a turn-away. Every
+    # counted backtrack is a distinct non-landing entry of the zone, so the
+    # rate is bounded to [0, 1] and visits > 0 whenever backtrack_count > 0.
     backtracked_nodes = sorted(
         [n for n in node_data.values() if n["backtrack_count"] > 0],
-        key=lambda n: n["backtrack_count"] / n["race_count"] if n["race_count"] > 0 else 0,
+        key=lambda n: n["backtrack_count"] / n["visits"],
         reverse=True,
     )[:5]
     most_backtracked = [
@@ -544,9 +562,7 @@ async def get_zone_stats(
             display_name=n["short_name"],
             type=n["type"],
             backtrack_count=n["backtrack_count"],
-            avg_backtracks_per_race=round(n["backtrack_count"] / n["race_count"], 2)
-            if n["race_count"] > 0
-            else 0.0,
+            backtrack_rate=round(n["backtrack_count"] / n["visits"], 2),
         )
         for n in backtracked_nodes
     ]
@@ -620,9 +636,7 @@ async def get_zone_index(
                 round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
             ),
             backtrack_rate=(
-                round(data["backtrack_count"] / data["race_count"], 2)
-                if data["race_count"]
-                else 0.0
+                round(data["backtrack_count"] / data["visits"], 2) if data["visits"] else 0.0
             ),
             zones=data["zones"],
         )
@@ -686,7 +700,7 @@ async def get_zone_detail(
         ),
         zones=list(info.zones),
         backtrack_rate=(
-            round(data["backtrack_count"] / data["race_count"], 2) if data["race_count"] else 0.0
+            round(data["backtrack_count"] / data["visits"], 2) if data["visits"] else 0.0
         ),
     )
 

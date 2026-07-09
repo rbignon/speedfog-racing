@@ -117,10 +117,10 @@
           <span class="value">{detail.avg_deaths_per_visit.toFixed(1)}</span>
         </div>
         <div class="stat-item">
-          <span class="label">Backtracks / Race</span>
-          <!-- Avg backtracks per race, not a proportion: same "x"
-               multiplier convention as ZonesTab's panel. -->
-          <span class="value">{detail.backtrack_rate.toFixed(1)}x</span>
+          <span class="label">Backtrack Rate</span>
+          <!-- Share of visits ending in a turn-away, bounded to [0, 1]:
+               same percentage convention as ZonesTab's panel. -->
+          <span class="value">{Math.round(detail.backtrack_rate * 100)}%</span>
         </div>
         <div class="stat-item">
           <span class="label">Visits</span>

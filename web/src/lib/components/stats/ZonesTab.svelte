@@ -14,7 +14,7 @@
     Math.max(1, ...deadliest.map((z) => z.avg_deaths_per_visit)),
   );
   let maxBacktracks = $derived(
-    Math.max(1, ...mostBacktracked.map((z) => z.avg_backtracks_per_race)),
+    Math.max(0.01, ...mostBacktracked.map((z) => z.backtrack_rate)),
   );
   let maxTime = $derived(Math.max(1, ...slowest.map((z) => z.median_time_ms)));
   let maxFastTime = $derived(
@@ -100,7 +100,7 @@
 
     <div class="zone-panel">
       <h2>Most Backtracked</h2>
-      <p class="panel-subtitle">avg. backtracks per race</p>
+      <p class="panel-subtitle">share of visits ending in a turn-away</p>
       {#if mostBacktracked.length === 0}
         <p class="empty">No data yet.</p>
       {:else}
@@ -116,13 +116,10 @@
               <div class="bar-row">
                 <div
                   class="bar bar-backtrack"
-                  style="width: {barWidth(
-                    zone.avg_backtracks_per_race,
-                    maxBacktracks,
-                  )}"
+                  style="width: {barWidth(zone.backtrack_rate, maxBacktracks)}"
                 ></div>
                 <span class="bar-value"
-                  >{zone.avg_backtracks_per_race.toFixed(1)}x</span
+                  >{Math.round(zone.backtrack_rate * 100)}%</span
                 >
               </div>
             </a>

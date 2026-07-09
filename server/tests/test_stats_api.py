@@ -2715,3 +2715,182 @@ class TestZoneClearTimes:
         zone_data = await self._zone_data(async_session)
         assert zone_data["Raya Lucaria"]["times"] == []
         assert zone_data["Stormveil Castle"]["times"] == [60_000]
+
+
+class TestBacktrackRatePerVisit:
+    """backtrack_rate is the share of visits ending in a turn-away:
+    backtrack_count / visits, where visits only count non-"backtrack"
+    entries (warp landings are not entries the player chose to make, and
+    can never be turn-aways, so they must not dilute the rate)."""
+
+    GRAPH_JSON = {
+        "nodes": {
+            "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+            "stormveil_c3d4": {
+                "type": "legacy_dungeon",
+                "display_name": "Stormveil Castle",
+                "layer": 1,
+            },
+            "raya_i9j0": {
+                "type": "legacy_dungeon",
+                "display_name": "Raya Lucaria",
+                "layer": 2,
+            },
+            "godrick_m1n2": {
+                "type": "major_boss",
+                "display_name": "Godrick",
+                "layer": 3,
+            },
+        },
+        "total_layers": 4,
+    }
+
+    async def _make_participant(self, db, *, zone_history, suffix, igt_ms=1_000_000):
+        user = User(
+            twitch_id=f"br_{suffix}",
+            twitch_username=f"br_{suffix}",
+            api_token=f"brt_{suffix}",
+            role=UserRole.USER,
+        )
+        org = User(
+            twitch_id=f"brorg_{suffix}",
+            twitch_username=f"brorg_{suffix}",
+            api_token=f"brorgt_{suffix}",
+            role=UserRole.ORGANIZER,
+        )
+        db.add_all([user, org])
+        await db.flush()
+
+        seed = Seed(
+            seed_number=f"brs_{suffix}",
+            pool_name="standard",
+            graph_json=self.GRAPH_JSON,
+            total_layers=4,
+            folder_path=f"/t/brs_{suffix}",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name=f"Backtrack Rate Race {suffix}",
+            organizer_id=org.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        participant = Participant(
+            race_id=race.id,
+            user_id=user.id,
+            mod_token=f"brmod_{suffix}",
+            status=ParticipantStatus.FINISHED,
+            igt_ms=igt_ms,
+            death_count=0,
+            zone_history=zone_history,
+        )
+        db.add(participant)
+        await db.commit()
+        return participant
+
+    async def test_warp_landings_are_not_visits(self, async_session):
+        """A death-warp landing back into stormveil is not a visit the player
+        chose: only the fog entry counts."""
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 60_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 120_000, "type": "fog"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 300_000, "type": "backtrack"},
+                    {"node_id": "raya_i9j0", "igt_ms": 350_000, "type": "fog"},
+                    {"node_id": "godrick_m1n2", "igt_ms": 500_000, "type": "fog"},
+                ],
+                suffix="v1",
+            )
+
+        async with async_session() as db:
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
+            zone_data = _aggregate_zone_stats(
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+        assert zone_data["Stormveil Castle"]["visits"] == 1
+        assert zone_data["Raya Lucaria"]["visits"] == 2
+
+    async def test_backtrack_rate_is_share_of_visits(self, async_session):
+        """One player turns away from raya, three players enter it in total
+        (two clear it): rate = 1/3, not 1 per race."""
+        async with async_session() as db:
+            # Two participants clear raya without turning away
+            for i in range(2):
+                await self._make_participant(
+                    db,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "raya_i9j0", "igt_ms": 60_000, "type": "fog"},
+                        {"node_id": "godrick_m1n2", "igt_ms": 500_000, "type": "fog"},
+                    ],
+                    suffix=f"r{i}",
+                )
+            # One participant turns away from raya
+            await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 60_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 120_000, "type": "fog"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 180_000, "type": "backtrack"},
+                    {"node_id": "godrick_m1n2", "igt_ms": 500_000, "type": "fog"},
+                ],
+                suffix="r2",
+            )
+
+        async with async_session() as db:
+            index = await get_zone_index(pool=None, days=3650, db=db)
+        raya = next(z for z in index.zones if z.display_name == "Raya Lucaria")
+        assert raya.backtrack_rate == 0.33
+
+        async with async_session() as db:
+            panels = await get_zone_stats(pool=None, days=3650, db=db)
+        raya_panel = next(e for e in panels.most_backtracked if e.display_name == "Raya Lucaria")
+        assert raya_panel.backtrack_rate == 0.33
+
+    async def test_abandon_on_first_visit_landing_adds_no_backtrack(self, async_session):
+        """An ABANDONED run ending on a warp landing into a never-visited zone
+        must not credit that zone: a landing is not a place the player
+        renounced at (the zone turned away from already got its credit), and
+        crediting it would break the backtrack_count <= visits invariant
+        (division by zero in the panel, rates above 100%)."""
+        async with async_session() as db:
+            participant = await self._make_participant(
+                db,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 60_000, "type": "fog"},
+                    {"node_id": "raya_i9j0", "igt_ms": 120_000, "type": "backtrack"},
+                ],
+                suffix="ab",
+            )
+            participant.status = ParticipantStatus.ABANDONED
+            await db.commit()
+
+        async with async_session() as db:
+            participants, seed_nodes_by_id = await _load_zone_stats_inputs(None, 3650, db)
+            node_display = _resolve_node_display(seed_nodes_by_id)
+            zone_data = _aggregate_zone_stats(
+                participants, seed_nodes_by_id, DUNGEON_NODE_TYPES, node_display
+            )
+        raya = zone_data["Raya Lucaria"]
+        assert raya["visits"] == 0
+        assert raya["backtrack_count"] == 0
+        # Stormveil was turned away from: it keeps its own credit
+        assert zone_data["Stormveil Castle"]["backtrack_count"] == 1
+
+        # The panel endpoint must survive landing-only zones
+        async with async_session() as db:
+            panels = await get_zone_stats(pool=None, days=3650, db=db)
+        assert all(0 <= e.backtrack_rate <= 1 for e in panels.most_backtracked)

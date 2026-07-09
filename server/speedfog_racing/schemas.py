@@ -734,7 +734,8 @@ class ZoneBacktrackEntry(BaseModel):
     display_name: str
     type: str
     backtrack_count: int
-    avg_backtracks_per_race: float
+    # Share of visits ending in a turn-away, bounded to [0, 1].
+    backtrack_rate: float
 
 
 class ZoneTimeEntry(BaseModel):

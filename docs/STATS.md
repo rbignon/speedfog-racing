@@ -238,12 +238,12 @@ Clear times follow the same method as `tools/extract_zone_times.py` (which calib
 
 ### Panels
 
-| Panel            | Metric                   | Sorting                             |
-| ---------------- | ------------------------ | ----------------------------------- |
-| Deadliest Zones  | avg. deaths per visit    | `total_deaths / visits` DESC        |
-| Most Backtracked | avg. backtracks per race | `backtrack_count / race_count` DESC |
-| Slowest Zones    | median clear time        | `median(times)` DESC                |
-| Fastest Zones    | median clear time        | `median(times)` ASC, min 3 players  |
+| Panel            | Metric                      | Sorting                            |
+| ---------------- | --------------------------- | ---------------------------------- |
+| Deadliest Zones  | avg. deaths per visit       | `total_deaths / visits` DESC       |
+| Most Backtracked | share of visits backtracked | `backtrack_count / visits` DESC    |
+| Slowest Zones    | median clear time           | `median(times)` DESC               |
+| Fastest Zones    | median clear time           | `median(times)` ASC, min 3 players |
 
 All panels show top 5. Sorting uses rate metrics (per-visit or per-race) to avoid popularity bias.
 
@@ -258,11 +258,15 @@ A zone is backtracked when the player turns away from it to take another path: i
 
 Plain fog-gate re-entries into an already-visited zone (transit) are NOT backtracks; the count goes to the zone being turned away from, never to a warp landing or a zone passed through. Additionally, an ABANDONED participant credits +1 backtrack to their last visited zone, but only if it was a first visit.
 
+A zone's `visits` only counts entries the player chose to make: fog-gate traversals and legacy untyped entries (treated as fog). Warp landings (`type: "backtrack"`) are excluded; they put the player there without a decision and would dilute `backtrack_rate` on hub zones whose grace serves as a respawn anchor. Since every counted backtrack is a distinct non-landing entry (the abandon rule also skips landings for this reason), `backtrack_rate = backtrack_count / visits` is the share of visits ending in a turn-away, bounded to [0, 1] and rendered as a percentage.
+
+`avg_deaths_per_visit` keeps ALL deaths in its numerator, including the few attributed to landing entries (0.4% of deaths in practice, from attribution timing around death warps), over the chosen-visits denominator. Excluding them would also discard real deaths during post-landing play, for no measurable ranking change either way.
+
 ### Zone Codex Index
 
 **Endpoint:** `GET /api/stats/zones/index?pool=<optional>&days=<optional, default 90>`
 
-Every dungeon-type zone visited at least once in the window (not capped at 5, unlike the panels above; never-visited zones are absent, only the detail endpoint covers those) with its aggregate stats, sorted by `display_name`. Feeds the frontend's zone codex index page. Shares `_load_zone_stats_inputs` and `_aggregate_zone_stats` with `/zones`, so filtering and merging behave identically; the only difference is the response shape (`ZoneIndexEntry`: `node_id`, `display_name`, `type`, `visits`, `median_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`, `zones`) and that all zones are returned, not just the top 5 per category. `zones` is the union of the fine-grained zone ids across every cluster variant merged into that display_name, used by the frontend to match zone codex content (skips, tips) that could belong to any of the merged variants. `backtrack_rate` is the same metric as the panel's `avg_backtracks_per_race` (`backtrack_count / race_count`): the average number of times players turned away from the zone (see Backtrack Detection above) per race where it was visited, summed over all participants of the race, so it can exceed 1 and must be rendered as a multiplier ("1.4x"), never as a percentage. Rankings between `/zones` and this index only match when queried with the same `days` window (their API defaults differ: 30 vs 90); the web frontend pins `days=90` on both, so the stats page panels and the zone codex always agree.
+Every dungeon-type zone seen at least once in the window, including zones seen only through warp landings, which show `visits=0` (not capped at 5, unlike the panels above; never-seen zones are absent, only the detail endpoint covers those) with its aggregate stats, sorted by `display_name`. Feeds the frontend's zone codex index page. Shares `_load_zone_stats_inputs` and `_aggregate_zone_stats` with `/zones`, so filtering and merging behave identically; the only difference is the response shape (`ZoneIndexEntry`: `node_id`, `display_name`, `type`, `visits`, `median_time_ms`, `avg_deaths_per_visit`, `backtrack_rate`, `zones`) and that all zones are returned, not just the top 5 per category. `zones` is the union of the fine-grained zone ids across every cluster variant merged into that display_name, used by the frontend to match zone codex content (skips, tips) that could belong to any of the merged variants. `backtrack_rate` is the same metric as the panel's (`backtrack_count / visits`): the share of visits ending in a turn-away (see Backtrack Detection above), bounded to [0, 1] and rendered as a percentage. Rankings between `/zones` and this index only match when queried with the same `days` window (their API defaults differ: 30 vs 90); the web frontend pins `days=90` on both, so the stats page panels and the zone codex always agree.
 
 ### Zone Codex Detail
 

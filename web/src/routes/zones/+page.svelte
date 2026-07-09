@@ -316,9 +316,10 @@
                 : formatTime(zone.median_time_ms)}</span
             >
             <span class="col-num">{zone.avg_deaths_per_visit.toFixed(1)}</span>
-            <!-- Avg backtracks per race, not a proportion: same "x"
-                 multiplier convention as ZonesTab's panel. -->
-            <span class="col-num">{zone.backtrack_rate.toFixed(1)}x</span>
+            <!-- Share of visits ending in a turn-away, bounded to [0, 1]:
+                 same percentage convention as ZonesTab's panel. -->
+            <span class="col-num">{Math.round(zone.backtrack_rate * 100)}%</span
+            >
           </a>
         {/each}
       </div>
