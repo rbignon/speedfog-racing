@@ -1,6 +1,7 @@
 export type ContentKind = "tip" | "game_change" | "skip";
 export type TipLevel = "beginner" | "advanced";
-export type SkipDifficulty = "easy" | "risky" | "tech";
+/** Skip execution difficulty, rendered as a 1-5 frog rating in the Zone Codex. */
+export type SkipDifficulty = 1 | 2 | 3 | 4 | 5;
 
 export const GAME_CHANGE_CATEGORIES = [
   "start",
@@ -36,7 +37,7 @@ export interface ContentItem {
   category?: GameChangeCategory;
   /** Fine-grained zone id from the seed graph's zones list (e.g. academy_rooftops); required for skips, optional zone-scoping for tips. */
   zoneId?: string;
-  /** Only for kind "skip". */
+  /** Only for kind "skip", where it is required. */
   difficulty?: SkipDifficulty;
   video?: ContentVideo;
   /** Author credit for community-contributed videos. */

@@ -80,13 +80,15 @@ describe("content catalog invariants", () => {
     }
   });
 
-  it("gives every skip a zoneId and no level/category", () => {
+  it("gives every skip a zoneId and a difficulty, and no level/category", () => {
     for (const item of CONTENT_ITEMS) {
       if (item.kind === "skip") {
         expect(item.zoneId, item.id).toMatch(/^[a-z0-9_]+$/);
+        expect([1, 2, 3, 4, 5], item.id).toContain(item.difficulty);
         expect(item.level, item.id).toBeUndefined();
         expect(item.category, item.id).toBeUndefined();
       } else {
+        expect(item.difficulty, item.id).toBeUndefined();
         expect(item.video, item.id).toBeUndefined();
       }
     }

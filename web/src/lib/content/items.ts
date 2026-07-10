@@ -246,6 +246,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "farum-dragon-template-lift-skip",
     kind: "skip",
     zoneId: "farumazula_lift",
+    difficulty: 2,
     title: "Dragon Temple Lift",
     short: "Fast way to Godskin Duo gate",
     video: {
@@ -256,6 +257,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "academy-abducted-skip",
     kind: "skip",
     zoneId: "academy",
+    difficulty: 1,
     title: "Academy abducted",
     short: "Easy skip to get abducted",
     video: {
@@ -266,6 +268,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "unsightly-catacombs-skip",
     kind: "skip",
     zoneId: "altus_catacombs",
+    difficulty: 2,
     title: "Unsightly catacombs skip",
     short: "Fast way to go to the lever",
     video: {
@@ -276,6 +279,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "mohg-sewer-skip",
     kind: "skip",
     zoneId: "sewer",
+    difficulty: 2,
     title: "Mohg Sewer Skip",
     short: "Skip to go to the elevator quickly",
     video: {
@@ -286,6 +290,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "academy-rooftops-skip",
     kind: "skip",
     zoneId: "academy_rooftops",
+    difficulty: 3,
     title: "Academy Rooftops Redwolf Skip",
     short: "Going fast to Redwolf from Academy Rooftops",
     video: {
@@ -296,6 +301,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "gaol-cave-lever-skip",
     kind: "skip",
     zoneId: "caelid_gaolcave",
+    difficulty: 2,
     title: "Gaol Cave lever skip",
     short: "Fast access to the lever",
     video: {
@@ -306,6 +312,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "darklight-skip",
     kind: "skip",
     zoneId: "scadualtus_catacombs",
+    difficulty: 3,
     title: "Darklight Catacombs skip",
     short: "",
     video: {
@@ -316,6 +323,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "academy-front-skip",
     kind: "skip",
     zoneId: "academy_entrance",
+    difficulty: 3,
     title: "Academy Front Gate Skip",
     short: "",
     video: {
@@ -326,6 +334,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "volcano-manor-cage-skip",
     kind: "skip",
     zoneId: "volcano_town",
+    difficulty: 3,
     title: "Volcano Manor Cage Skip",
     short: "Cage Skip to Noble gate",
     video: {
@@ -336,6 +345,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "castle-morne-skip",
     kind: "skip",
     zoneId: "peninsula_morne",
+    difficulty: 2,
     title: "Castle Morne Skips",
     short: "Run through with skips",
     video: {
@@ -346,6 +356,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "raya-tunnel-skip",
     kind: "skip",
     zoneId: "liurnia_tunnel",
+    difficulty: 2,
     title: "Raya Crystal Tunnel Skip",
     short: "Skip to elevator",
     video: {
@@ -356,6 +367,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "scorpion-catacombs-skip",
     kind: "skip",
     zoneId: "rauhbase_catacombs",
+    difficulty: 2,
     title: "Scorpion River Catacombs Skip",
     short: "Skip the first part",
     video: {
@@ -366,6 +378,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "leyndell-skip",
     kind: "skip",
     zoneId: "leyndell",
+    difficulty: 3,
     title: "Leyndell Skip",
     short: "3 versions of the skip, from fastest to easier",
     video: {
@@ -376,6 +389,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "sage-cave-skip",
     kind: "skip",
     zoneId: "altus_sagescave",
+    difficulty: 5,
     title: "Sage's Cave Skip",
     short: "Hard",
     video: {
@@ -386,6 +400,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "specimen-storehouse-skip",
     kind: "skip",
     zoneId: "storehouse",
+    difficulty: 4,
     title: "Hand skip",
     short: "",
     video: {
@@ -396,6 +411,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "rauh-east-tree-skip",
     kind: "skip",
     zoneId: "rauhruins_east",
+    difficulty: 3,
     title: "Tree skip",
     short: "",
     video: {
@@ -406,6 +422,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "farum-bird-skip",
     kind: "skip",
     zoneId: "farumazula",
+    difficulty: 4,
     title: "Bird skip",
     short: "",
     video: {
@@ -416,6 +433,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "sellia-tunnel-skip",
     kind: "skip",
     zoneId: "caelid_selliatunnel",
+    difficulty: 2,
     title: "Sellia Crystal Tunnel skip",
     short: "",
     video: {
@@ -426,6 +444,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "dragon-pit-skip",
     kind: "skip",
     zoneId: "gravesite_dragonpit",
+    difficulty: 2,
     title: "Dragon's Pit skip",
     short: "",
     video: {
@@ -436,6 +455,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "nokron-skip",
     kind: "skip",
     zoneId: "siofra_nokron",
+    difficulty: 3,
     title: "Skip to teleporter",
     short:
       "Nokron skip down to get the teleporter beside Fingerslayer Blade faster",
@@ -447,6 +467,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "shaded-castle-skip",
     kind: "skip",
     zoneId: "altus_shaded",
+    difficulty: 2,
     title: "Backwards Fast Route",
     short: "",
     video: {
