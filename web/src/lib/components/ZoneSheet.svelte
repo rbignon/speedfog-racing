@@ -155,11 +155,23 @@
           <div class="skip-card">
             <div class="skip-header">
               <h4>{skip.title}</h4>
-              <div class="badges">
-                {#if skip.difficulty}
-                  <span class="difficulty-badge">{skip.difficulty}</span>
-                {/if}
-              </div>
+              {#if skip.difficulty}
+                <span
+                  class="frog-rating"
+                  role="img"
+                  aria-label="Difficulty {skip.difficulty} out of 5"
+                >
+                  {#each { length: 5 }, i (i)}
+                    <img
+                      src="/badges/frog.svg"
+                      alt=""
+                      aria-hidden="true"
+                      class="frog-icon"
+                      class:frog-dim={i >= skip.difficulty}
+                    />
+                  {/each}
+                </span>
+              {/if}
             </div>
             {#if skip.short.trim().length > 0}
               <p class="skip-short"><EmphasisText text={skip.short} /></p>
@@ -353,15 +365,21 @@
     font-weight: 600;
   }
 
-  .badges {
+  .frog-rating {
     display: flex;
-    gap: 0.35rem;
+    align-items: center;
+    gap: 0.15rem;
     flex-shrink: 0;
   }
 
-  .difficulty-badge {
-    background: rgba(107, 114, 128, 0.2);
-    color: var(--color-text-secondary);
+  .frog-icon {
+    width: 0.95rem;
+    height: 0.95rem;
+  }
+
+  .frog-dim {
+    opacity: 0.25;
+    filter: grayscale(1);
   }
 
   .skip-short {
