@@ -761,6 +761,9 @@ class ZoneIndexEntry(BaseModel):
     type: str
     visits: int
     median_time_ms: int
+    # Fastest participant clear (min of the same cleared totals the median
+    # is computed from); 0 when nobody cleared the zone in the window.
+    fastest_time_ms: int
     avg_deaths_per_visit: float
     backtrack_rate: float
     zones: list[str]
@@ -777,6 +780,8 @@ class ZoneDetailResponse(BaseModel):
     visits: int
     race_count: int
     median_time_ms: int | None
+    # Fastest participant clear; None whenever median_time_ms is None.
+    fastest_time_ms: int | None
     avg_deaths_per_visit: float
     backtrack_rate: float
     zones: list[str]

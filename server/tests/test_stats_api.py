@@ -1466,6 +1466,8 @@ class TestZoneDetailEndpoint:
         assert detail.type == "legacy_dungeon"
         assert detail.visits > 0
         assert detail.median_time_ms is not None and detail.median_time_ms > 0
+        assert detail.fastest_time_ms is not None
+        assert 0 < detail.fastest_time_ms <= detail.median_time_ms
         assert 0 <= detail.backtrack_rate
         assert detail.zones == ["stormveil", "stormveil_gate"]
 
@@ -1546,6 +1548,7 @@ class TestZoneDetailEndpoint:
         assert detail.visits == 0
         assert detail.race_count == 0
         assert detail.median_time_ms is None
+        assert detail.fastest_time_ms is None
         assert detail.avg_deaths_per_visit == 0.0
         assert detail.backtrack_rate == 0.0
         assert detail.zones == ["unvisited_ruins"]
@@ -2695,6 +2698,7 @@ class TestZoneClearTimes:
             index = await get_zone_index(pool=None, days=3650, db=db)
         stormveil = next(z for z in index.zones if z.display_name == "Stormveil Castle")
         assert stormveil.median_time_ms == 120_000
+        assert stormveil.fastest_time_ms == 60_000
 
     async def test_last_visit_followed_by_unknown_node_not_cleared(self, async_session):
         """A last visit followed by an entry whose node_id is absent from the

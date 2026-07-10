@@ -56,6 +56,7 @@
     | "display_name"
     | "skips"
     | "median_time_ms"
+    | "fastest_time_ms"
     | "avg_deaths_per_visit"
     | "backtrack_rate";
   let sortKey = $state<ZoneSortKey>("display_name");
@@ -66,9 +67,10 @@
       sortAsc = !sortAsc;
     } else {
       sortKey = key;
-      // Zone name defaults ascending (A-Z); numeric columns default
+      // Zone name defaults ascending (A-Z) and Fastest too (quickest clears
+      // first, the direction its name implies); other numeric columns default
       // descending (highest/slowest/deadliest first, the more useful read).
-      sortAsc = key === "display_name";
+      sortAsc = key === "display_name" || key === "fastest_time_ms";
     }
   }
 
@@ -90,12 +92,12 @@
       skips: skipCountForZones(zone.zones),
     }));
     rows.sort((a, b) => {
-      // Zones visited but never cleared have median_time_ms 0, rendered as
-      // "-": keep them last in both sort directions instead of letting the
-      // 0 sentinel top the ascending order.
-      if (sortKey === "median_time_ms") {
-        const aMissing = a.zone.median_time_ms === 0;
-        const bMissing = b.zone.median_time_ms === 0;
+      // Zones visited but never cleared have median/fastest_time_ms 0,
+      // rendered as "-": keep them last in both sort directions instead of
+      // letting the 0 sentinel top the ascending order.
+      if (sortKey === "median_time_ms" || sortKey === "fastest_time_ms") {
+        const aMissing = a.zone[sortKey] === 0;
+        const bMissing = b.zone[sortKey] === 0;
         if (aMissing !== bMissing) return aMissing ? 1 : -1;
       }
       let cmp: number;
@@ -275,6 +277,15 @@
               Median clear{zoneSortIndicator("median_time_ms")}
             </button>
           </span>
+          <span class="col-num" aria-sort={zoneSortAria("fastest_time_ms")}>
+            <button
+              type="button"
+              class="sort-btn"
+              onclick={() => handleZoneSort("fastest_time_ms")}
+            >
+              Fastest{zoneSortIndicator("fastest_time_ms")}
+            </button>
+          </span>
           <span
             class="col-num"
             aria-sort={zoneSortAria("avg_deaths_per_visit")}
@@ -314,6 +325,11 @@
               >{zone.median_time_ms === 0
                 ? "-"
                 : formatTime(zone.median_time_ms)}</span
+            >
+            <span class="col-num"
+              >{zone.fastest_time_ms === 0
+                ? "-"
+                : formatTime(zone.fastest_time_ms)}</span
             >
             <span class="col-num">{zone.avg_deaths_per_visit.toFixed(1)}</span>
             <!-- Share of visits ending in a turn-away, bounded to [0, 1]:
@@ -457,13 +473,13 @@
   }
 
   .zone-table {
-    min-width: 560px;
+    min-width: 660px;
   }
 
   .zone-table-header,
   .zone-row {
     display: grid;
-    grid-template-columns: minmax(180px, 2fr) 80px 100px 100px 100px;
+    grid-template-columns: minmax(180px, 2fr) 80px 100px 100px 100px 100px;
     align-items: center;
     gap: 0.5rem;
     padding: 0.65rem 1rem;

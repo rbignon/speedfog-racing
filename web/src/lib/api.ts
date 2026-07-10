@@ -1699,6 +1699,7 @@ export interface ZoneIndexEntry {
   type: string;
   visits: number;
   median_time_ms: number;
+  fastest_time_ms: number;
   avg_deaths_per_visit: number;
   backtrack_rate: number;
   zones: string[];
@@ -1715,6 +1716,7 @@ export interface ZoneDetailResponse {
   visits: number;
   race_count: number;
   median_time_ms: number | null;
+  fastest_time_ms: number | null;
   avg_deaths_per_visit: number;
   backtrack_rate: number;
   zones: string[];

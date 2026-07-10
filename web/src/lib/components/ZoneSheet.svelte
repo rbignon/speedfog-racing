@@ -113,6 +113,14 @@
           >
         </div>
         <div class="stat-item">
+          <span class="label">Fastest Time</span>
+          <span class="value"
+            >{detail.fastest_time_ms === null
+              ? "-"
+              : formatTime(detail.fastest_time_ms)}</span
+          >
+        </div>
+        <div class="stat-item">
           <span class="label">Avg. Deaths</span>
           <span class="value">{detail.avg_deaths_per_visit.toFixed(1)}</span>
         </div>

@@ -632,6 +632,7 @@ async def get_zone_index(
             type=data["type"],
             visits=data["visits"],
             median_time_ms=round(median(data["times"])) if data["times"] else 0,
+            fastest_time_ms=min(data["times"]) if data["times"] else 0,
             avg_deaths_per_visit=(
                 round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
             ),
@@ -678,6 +679,7 @@ async def get_zone_detail(
             visits=0,
             race_count=0,
             median_time_ms=None,
+            fastest_time_ms=None,
             avg_deaths_per_visit=0.0,
             backtrack_rate=0.0,
             zones=list(info.zones),
@@ -695,6 +697,7 @@ async def get_zone_detail(
         visits=data["visits"],
         race_count=data["race_count"],
         median_time_ms=round(median(data["times"])) if data["times"] else None,
+        fastest_time_ms=min(data["times"]) if data["times"] else None,
         avg_deaths_per_visit=(
             round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
         ),
