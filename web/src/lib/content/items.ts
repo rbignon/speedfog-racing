@@ -338,7 +338,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     title: "Volcano Manor Cage Skip",
     short: "Cage Skip to Noble gate",
     video: {
-      youtubeId: "LfSyv2nMo_E",
+      youtubeId: "VPiCtAzdzv4",
     },
   },
   {
