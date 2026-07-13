@@ -58,6 +58,38 @@ export const CONTENT_ITEMS: ContentItem[] = [
     short:
       "Levels are cheap at the start. **Spend your runes right after a boss** instead of carrying them into the next zone.",
   },
+  {
+    id: "bell",
+    kind: "tip",
+    level: "beginner",
+    title: "Using the bell",
+    short:
+      "You start the game with a bell. You can use it to go back **without losing your runes**.",
+  },
+  {
+    id: "same-depth-zones",
+    kind: "tip",
+    level: "beginner",
+    title: "Same depth, same effort",
+    short:
+      "At any given **depth** of the route, parallel zones are of the **same type** and take a **similar time** to clear.",
+  },
+  {
+    id: "metro-map-second-screen",
+    kind: "tip",
+    level: "beginner",
+    title: "Metro map on a second screen",
+    short:
+      "Keep the **metro map** open on a second screen during your run: it reveals your route and follows your progress **in real time**.",
+  },
+  {
+    id: "save-recovery",
+    kind: "tip",
+    level: "beginner",
+    title: "Crashed save recovery",
+    short:
+      "If the game crashes and then **refuses to reload your save**, run **recovery.bat** from your seed pack folder and pick an earlier backup.",
+  },
 
   // ---------- Advanced tips ----------
   {
@@ -80,10 +112,54 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "hardcore-economy",
     kind: "tip",
     level: "advanced",
-    pools: ["hardcore"],
+    pools: [
+      "hardcore",
+      "training_hardcore",
+      "hardcore_boss_rush",
+      "training_hardcore_boss_rush",
+    ],
     title: "Hardcore economy",
     short:
       "In Hardcore, weapons are **not upgraded for you**. Buy smithing stones at the Roundtable shop and commit to **one weapon** early.",
+  },
+  {
+    id: "boss-rush-forward",
+    kind: "tip",
+    level: "advanced",
+    pools: [
+      "boss_rush",
+      "hardcore_boss_rush",
+      "training_boss_rush",
+      "training_hardcore_boss_rush",
+    ],
+    title: "Backtrack by going forward",
+    short:
+      "In Boss Rush, when you need to backtrack, prefer **moving forward through entry fog gates**: chaining arenas is usually faster.",
+  },
+  {
+    id: "unlockable-rewards",
+    kind: "tip",
+    level: "advanced",
+    title: "Badges and phantom skins",
+    short:
+      "Racing can unlock **badges** and **phantom skins**. Check the **Settings** page for the phantom skins you are still missing, and how to earn them.",
+  },
+  {
+    id: "zone-sheet-skips",
+    kind: "tip",
+    level: "advanced",
+    title: "Learn skips from the map",
+    short:
+      "Click any zone on the **metro map** to open its sheet and learn the **skips** available there, with videos.",
+  },
+  {
+    id: "fia-champions-fortissax",
+    kind: "tip",
+    level: "advanced",
+    zoneId: "deeproot_boss",
+    title: "Fortissax is a decoy",
+    short:
+      "In the **Fia's Champions** arena, **Fortissax** can be waiting near the entrance, but it is not the boss you need: push on to the **far end of the arena** for the real fight.",
   },
 
   // ---------- Game changes: start ----------
@@ -162,6 +238,14 @@ export const CONTENT_ITEMS: ContentItem[] = [
     title: "Return portals in arenas",
     short:
       "Boss arenas on the route have a **return portal**, and are exits to the next zone.",
+  },
+  {
+    id: "fog-bloodstains",
+    kind: "game_change",
+    category: "traversal",
+    title: "Bloodstains at fog gates",
+    short:
+      "**Bloodstains** can appear on the ground in front of a fog gate: the more racers died in the zone beyond, the **more blood** you will see.",
   },
   //
   // ---------- Game changes: combat ----------
@@ -486,7 +570,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     },
   },
   {
-    id: "shaded-castle-skip",
+    id: "quick-darklight-catacombs-skip",
     kind: "skip",
     zoneId: "scadualtus_catacombs",
     difficulty: 5,
