@@ -474,4 +474,81 @@ export const CONTENT_ITEMS: ContentItem[] = [
       youtubeId: "BkxpWreZKxY",
     },
   },
+  {
+    id: "quick-crystal-tunnel-skip",
+    kind: "skip",
+    zoneId: "caelid_selliatunnel",
+    difficulty: 4,
+    title: "Quick Crystal Tunnel Skip",
+    short: "",
+    video: {
+      youtubeId: "kydL-KGRu54",
+    },
+  },
+  {
+    id: "shaded-castle-skip",
+    kind: "skip",
+    zoneId: "scadualtus_catacombs",
+    difficulty: 5,
+    title: "Quick Darklight Catacombs Skip",
+    short: "",
+    video: {
+      youtubeId: "BkxpWreZKxY",
+    },
+  },
+  {
+    id: "rauhbase-forge-skip",
+    kind: "skip",
+    zoneId: "rauhbase_forge",
+    difficulty: 2,
+    title: "Pipe Jump Skip",
+    short: "",
+    video: {
+      youtubeId: "9GrxQdWohLc",
+    },
+  },
+  {
+    id: "nokron-hard-skip",
+    kind: "skip",
+    zoneId: "siofra_nokron",
+    difficulty: 5,
+    title: "Fingerslayer Blade Skip",
+    short: "",
+    video: {
+      youtubeId: "FxMK3S7WIbc",
+    },
+  },
+  {
+    id: "darklight-punch-skip",
+    kind: "skip",
+    zoneId: "scadualtus_catacombs",
+    difficulty: 4,
+    title: "Punch Version",
+    short: "",
+    video: {
+      youtubeId: "Dz_l05fPiPY",
+    },
+  },
+  {
+    id: "belurat-rooftop-skip",
+    kind: "skip",
+    zoneId: "belurat",
+    difficulty: 3,
+    title: "Rooftop Skip (bottom to top)",
+    short: "",
+    video: {
+      youtubeId: "trMtMagiX54",
+    },
+  },
+  {
+    id: "belurat-tree-skip",
+    kind: "skip",
+    zoneId: "belurat",
+    difficulty: 4,
+    title: "Tree Skip (bottom to top)",
+    short: "you don't have to rely on Door enemy rng",
+    video: {
+      youtubeId: "8Cif1WemQsw",
+    },
+  },
 ];
