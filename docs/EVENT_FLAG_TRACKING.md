@@ -101,13 +101,14 @@ At the `position_readable` rising edge:
 
 Separate from the loading exit event dispatch above, zone reveal has its own logic:
 
-When the server sends a `zone_update`, the mod stores it in `pending_zone_update`. Each frame, if `pending_zone_update` is set:
+When the server sends a `zone_update`, the mod stores it in `pending_zone_update`. Each frame, the machine tracks `position_readable_since` (the instant the position last became continuously readable; `None` while unreadable). If `pending_zone_update` is set:
 
-- Read the loading screen flag at `[[EventFlagMan]+0x28]+0x113` (byte, non-zero = in loading/cutscene).
-- If `Some(false)` (loading done) → move `pending_zone_update` to `current_zone` (displayed on overlay).
-- If `Some(true)` (still loading) → wait.
-- If `None` (pointer unreadable) → fall back to position readability (`read_position().is_some()`).
-- If `ZONE_REVEAL_TIMEOUT = 15s` has elapsed since the zone_update was received → reveal anyway (defensive).
+- Reveal once the position has been readable for `ZONE_REVEAL_FADE_GRACE = 1s`: move `pending_zone_update` to `current_zone` (displayed on overlay).
+- While the position is unreadable (loading screen, main menu), nothing is revealed, however long that lasts; the grace restarts at the next loading exit.
+
+`position_readable` flips true when the world is loaded (the hardware-dependent part of a loading screen); the grace constant covers the engine's fixed fade-in animation that follows (measured at ~0.9s, 2026-07-13 discovery session).
+
+Historical note: reveals used to wait on the byte at `[[EventFlagMan]+0x28]+0x113` (the CE table's "In cut-scene/loading screen") with a `ZONE_REVEAL_TIMEOUT = 15s` defensive fallback. That byte packs engine event flags 2200-2207 and its only moving bit (flag 2200) means "world clock stopped": ON during loading screens and cutscenes, but also permanently ON under the SpeedFog weather plugin's frozen clock, which stalled every reveal on the timeout (and froze the weapon reads gated on the same byte). The byte stays visible in the debug overlay for diagnostics (`read_loading_byte`).
 
 The overlay keeps showing the old zone until the reveal. A `pre_reveal_layer` snapshot freezes the X/Y counter and tier display so they don't leak the new layer before the zone name updates. Last-writer-wins: if two flags fire in rapid succession, only the last `zone_update` is shown.
 
@@ -254,14 +255,14 @@ Gaps are color-coded: green for negative (ahead), soft red for positive (behind)
 
 ## Constants Summary
 
-| Constant               | Value      | Location                | Purpose                                      |
-| ---------------------- | ---------- | ----------------------- | -------------------------------------------- |
-| Poll interval          | 100ms      | `core/race_machine.rs`  | Event flag read frequency                    |
-| `ZONE_REVEAL_TIMEOUT`  | 15s        | `core/race_machine.rs`  | Defensive timeout for zone reveal            |
-| `EVENT_FLAG_BASE`      | 1050294000 | `output.py`             | First SpeedFog event flag ID (saved, 4xxx)   |
-| Flag range             | 0-999      | category 1050294        | Zone tracking + finish + death markers       |
-| Divisor                | 1000       | game memory             | Flags per category page                      |
-| Max tree iterations    | 64         | `event_flags.rs`        | Guard against infinite tree traversal        |
-| Status update interval | 1s         | `core/race_machine.rs`  | Throttle for IGT/death broadcasts            |
-| Inactivity timeout     | 15min      | `inactivity_monitor.py` | Auto-abandon threshold (stale IGT + no-show) |
-| Inactivity poll        | 60s        | `inactivity_monitor.py` | Monitor check frequency                      |
+| Constant                 | Value      | Location                | Purpose                                      |
+| ------------------------ | ---------- | ----------------------- | -------------------------------------------- |
+| Poll interval            | 100ms      | `core/race_machine.rs`  | Event flag read frequency                    |
+| `ZONE_REVEAL_FADE_GRACE` | 1s         | `core/race_machine.rs`  | Post-loading fade before zone reveal         |
+| `EVENT_FLAG_BASE`        | 1050294000 | `output.py`             | First SpeedFog event flag ID (saved, 4xxx)   |
+| Flag range               | 0-999      | category 1050294        | Zone tracking + finish + death markers       |
+| Divisor                  | 1000       | game memory             | Flags per category page                      |
+| Max tree iterations      | 64         | `event_flags.rs`        | Guard against infinite tree traversal        |
+| Status update interval   | 1s         | `core/race_machine.rs`  | Throttle for IGT/death broadcasts            |
+| Inactivity timeout       | 15min      | `inactivity_monitor.py` | Auto-abandon threshold (stale IGT + no-show) |
+| Inactivity poll          | 60s        | `inactivity_monitor.py` | Monitor check frequency                      |

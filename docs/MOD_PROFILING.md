@@ -15,7 +15,7 @@ UI over TCP port `8086`. You can see:
 - Leaderboard rebuild cost (`render_leaderboard`, `refresh_leaderboard_cache`,
   `leaderboard_rows`).
 - Game memory reads (`read_igt`, `read_deaths`, `read_position`,
-  `is_position_readable`, `is_in_loading_screen`).
+  `is_position_readable`, `read_loading_byte`).
 - Event flag reader hot paths (`event_flag.find_category_page`,
   `event_flag.resolve_category`, `event_flag.is_flag_set_cached`, etc.).
 - A separate timeline for the WebSocket worker thread (`ws-worker`).

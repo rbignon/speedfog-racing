@@ -2,6 +2,13 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [Unreleased]
+
+### Mod
+
+- Fix: zone reveals no longer stall for 15 s on seeds using the SpeedFog **weather plugin**. The overlay detected loading screens through an engine byte (event flag 2200) that actually means "world clock stopped", which the plugin's frozen clock keeps permanently on. Reveals now wait for a fixed 1 s fade grace after the world becomes readable, and the defensive 15 s timeout is gone
+- Fix: equipped-weapon tracking, gated on the same detector, no longer freezes on those seeds
+
 ## [1.18.0] - 2026-07-09
 
 ### Zone Codex

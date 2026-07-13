@@ -154,7 +154,6 @@ pub struct FrameSnapshot {
     pub igt_ms: Option<u32>,
     pub death_count: Option<u32>,
     pub position_readable: bool,
-    pub loading_screen: Option<bool>,
 }
 
 // =============================================================================
@@ -167,7 +166,6 @@ pub struct FrameSnapshot {
 pub struct FrameNeeds {
     pub igt: bool,
     pub deaths: bool,
-    pub loading: bool,
     pub poll_flags: bool,
 }
 
@@ -269,12 +267,13 @@ pub struct RaceMachine {
     pub update_notice: Option<(String, Instant)>,
     /// Last flag reader status discriminant (for transition logging)
     pub last_flag_reader_ok: Option<bool>,
-    /// Zone update received, waiting for loading screen to end before revealing
+    /// Zone update received, waiting for the post-loading fade before revealing
     pub pending_zone_update: Option<ZoneUpdateData>,
     /// Snapshot of current_layer taken when leaderboard_update bumps the layer.
     pub pre_reveal_layer: Option<i32>,
-    /// When the pending zone update was received (for defensive timeout)
-    pub pending_zone_received_at: Option<Instant>,
+    /// Since when the position has been continuously readable (None while in
+    /// a loading screen); reveals wait for the fade grace on top of it.
+    pub position_readable_since: Option<Instant>,
     /// Whether position was readable last frame (loading screen exit detection)
     pub was_position_readable: bool,
     /// Seed mismatch: config seed_id doesn't match server seed_id
@@ -323,7 +322,7 @@ impl RaceMachine {
             last_flag_reader_ok: None,
             pending_zone_update: None,
             pre_reveal_layer: None,
-            pending_zone_received_at: None,
+            position_readable_since: None,
             was_position_readable: true,
             seed_mismatch: false,
             last_auth_error: None,
@@ -695,7 +694,6 @@ impl RaceMachine {
                     is_first_visit,
                     exits,
                 });
-                self.pending_zone_received_at = Some(now);
             }
             MachineMessage::EventFlagAck { message_id } => {
                 if let Some(event) = self.in_flight_event_flags.remove(&message_id) {
@@ -786,9 +784,12 @@ impl RaceMachine {
     }
 }
 
-/// Defensive timeout: if a zone update hasn't been revealed after this duration
-/// (e.g., loading screen flag is unreadable), reveal anyway.
-const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long the position must have been continuously readable before a
+/// pending zone update is revealed. `position_readable` flips true when the
+/// world is loaded (the hardware-dependent part of a loading screen); this
+/// constant covers the engine's fixed fade-in animation that follows
+/// (measured at ~0.9s, see the 2026-07-13 loading-byte discovery session).
+const ZONE_REVEAL_FADE_GRACE: Duration = Duration::from_secs(1);
 
 impl RaceMachine {
     /// What the shell should read from the game this frame.
@@ -799,7 +800,6 @@ impl RaceMachine {
             // and event-flag polling stay correct with UI hidden and WS down.
             igt: live || !self.event_ids.is_empty(),
             deaths: live,
-            loading: self.pending_zone_update.is_some(),
             poll_flags: !self.event_ids.is_empty()
                 && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
         }
@@ -857,33 +857,31 @@ impl RaceMachine {
 
         let position_readable = self.frame_snapshot.position_readable;
 
-        // Reveal pending zone update once the loading screen ends and the
-        // player position is readable. The loading flag may clear before the
-        // fade-in completes, so position_readable acts as an additional guard.
-        // Defensive timeout ensures the zone is always revealed eventually.
-        if self.pending_zone_update.is_some() {
-            let timed_out = self
-                .pending_zone_received_at
-                .is_some_and(|t| now.duration_since(t) >= ZONE_REVEAL_TIMEOUT);
-            let loading_done = match self.frame_snapshot.loading_screen {
-                Some(false) => true,
-                Some(true) => false,
-                // Flag unreadable: skip this check
-                None => true,
-            };
-            let should_reveal = timed_out || (loading_done && position_readable);
-            if should_reveal {
-                let zone = self.pending_zone_update.take().unwrap();
-                if timed_out {
-                    warn!(name = %zone.display_name, "[RACE] Zone revealed (timeout)");
-                } else {
-                    info!(name = %zone.display_name, "[RACE] Zone revealed");
-                }
-                self.race_state.current_zone = Some(zone);
-                self.zone_version = self.zone_version.wrapping_add(1);
-                self.pending_zone_received_at = None;
-                self.pre_reveal_layer = None;
+        // Track how long the position has been continuously readable.
+        if position_readable {
+            if self.position_readable_since.is_none() {
+                self.position_readable_since = Some(now);
             }
+        } else {
+            self.position_readable_since = None;
+        }
+
+        // Reveal pending zone update once the player has been out of the
+        // loading screen for the fade grace. The engine's own loading
+        // indicator (event flag 2200, the byte behind the old
+        // is_in_loading_screen) is unusable here: it means "world clock
+        // stopped", which the SpeedFog weather plugin's FreezeTime keeps
+        // permanently on, stalling every reveal (2026-07-13 discovery).
+        if self.pending_zone_update.is_some()
+            && self
+                .position_readable_since
+                .is_some_and(|t| now.duration_since(t) >= ZONE_REVEAL_FADE_GRACE)
+        {
+            let zone = self.pending_zone_update.take().unwrap();
+            info!(name = %zone.display_name, "[RACE] Zone revealed");
+            self.race_state.current_zone = Some(zone);
+            self.zone_version = self.zone_version.wrapping_add(1);
+            self.pre_reveal_layer = None;
         }
 
         // Flags cleared (captured) earlier in this tick: later read consumers
@@ -1294,12 +1292,11 @@ mod tests {
         m
     }
 
-    fn snap(igt: Option<u32>, pos: bool, loading: Option<bool>) -> FrameSnapshot {
+    fn snap(igt: Option<u32>, pos: bool) -> FrameSnapshot {
         FrameSnapshot {
             igt_ms: igt,
             death_count: Some(0),
             position_readable: pos,
-            loading_screen: loading,
         }
     }
 
@@ -1380,7 +1377,7 @@ mod tests {
         let t1 = now + ms(150);
         let fx = m.tick(
             tick_in(
-                snap(Some(1000), true, None),
+                snap(Some(1000), true),
                 true,
                 Some(vec![(100, true), (200, false), (900, false)]),
             ),
@@ -1397,11 +1394,11 @@ mod tests {
 
         // Loading screen (position unreadable), then exit: deferred flag sent.
         let t2 = t1 + ms(50);
-        m.tick(tick_in(snap(Some(1200), false, None), true, None), t2);
+        m.tick(tick_in(snap(Some(1200), false), true, None), t2);
         let t3 = t2 + ms(30);
         let fx = m.tick(
             tick_in(
-                snap(Some(1300), true, None),
+                snap(Some(1300), true),
                 true,
                 Some(vec![(100, false), (200, false), (900, false)]),
             ),
@@ -1416,7 +1413,7 @@ mod tests {
         let t4 = t3 + ms(150);
         let fx = m.tick(
             tick_in(
-                snap(Some(1500), true, None),
+                snap(Some(1500), true),
                 true,
                 Some(vec![(100, false), (200, false), (900, false)]),
             ),
@@ -1430,14 +1427,11 @@ mod tests {
         let now = Instant::now();
         let mut m = running_machine(now);
         // First tick marks ready_sent (SendReady fires once).
-        m.tick(
-            tick_in(snap(Some(500), true, None), true, None),
-            now + ms(10),
-        );
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
 
         let fx = m.tick(
             tick_in(
-                snap(Some(60_000), true, None),
+                snap(Some(60_000), true),
                 true,
                 Some(vec![(100, false), (200, false), (900, true)]),
             ),
@@ -1460,7 +1454,7 @@ mod tests {
         // Finish flag during countdown: buffered pending, no send.
         let fx = m.tick(
             tick_in(
-                snap(Some(1000), true, None),
+                snap(Some(1000), true),
                 true,
                 Some(vec![(100, false), (200, false), (900, true)]),
             ),
@@ -1475,7 +1469,7 @@ mod tests {
             now + secs(11),
         );
         let fx = m.tick(
-            tick_in(snap(Some(20_000), true, None), true, Some(vec![])),
+            tick_in(snap(Some(20_000), true), true, Some(vec![])),
             now + secs(12),
         );
         assert_eq!(sent_flags(&fx), vec![900]);
@@ -1485,15 +1479,12 @@ mod tests {
     fn test_park_and_replay_on_reconnect_with_requeue() {
         let now = Instant::now();
         let mut m = running_machine(now);
-        m.tick(
-            tick_in(snap(Some(500), true, None), true, None),
-            now + ms(10),
-        );
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
 
         // Defer a regular flag, then lose the connection: parked to pending.
         m.tick(
             tick_in(
-                snap(Some(1000), true, None),
+                snap(Some(1000), true),
                 true,
                 Some(vec![(100, true), (200, false), (900, false)]),
             ),
@@ -1512,7 +1503,7 @@ mod tests {
             now + ms(300),
         );
         let fx = m.tick(
-            tick_in(snap(Some(2000), true, None), true, Some(vec![])),
+            tick_in(snap(Some(2000), true), true, Some(vec![])),
             now + ms(350),
         );
         assert_eq!(sent_flags(&fx), vec![100]);
@@ -1536,7 +1527,7 @@ mod tests {
             now + ms(500),
         );
         let fx = m.tick(
-            tick_in(snap(Some(3000), true, None), true, Some(vec![])),
+            tick_in(snap(Some(3000), true), true, Some(vec![])),
             now + ms(550),
         );
         assert_eq!(sent_flags(&fx), vec![100]);
@@ -1548,15 +1539,12 @@ mod tests {
     fn test_save_reload_purges_per_save_state() {
         let now = Instant::now();
         let mut m = running_machine(now);
-        m.tick(
-            tick_in(snap(Some(500), true, None), true, None),
-            now + ms(10),
-        );
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
 
         // Capture a finish flag and defer a regular one.
         m.tick(
             tick_in(
-                snap(Some(50_000), true, None),
+                snap(Some(50_000), true),
                 true,
                 Some(vec![(100, true), (200, false), (900, false)]),
             ),
@@ -1565,10 +1553,7 @@ mod tests {
         assert!(m.flag_buffer.has_deferred());
 
         // IGT regression = save reload: per-save state cleared, no sends.
-        let fx = m.tick(
-            tick_in(snap(Some(1_000), true, None), true, None),
-            now + ms(200),
-        );
+        let fx = m.tick(tick_in(snap(Some(1_000), true), true, None), now + ms(200));
         assert!(sent_flags(&fx).is_empty());
         assert!(m.triggered_flags.is_empty());
         assert!(!m.flag_buffer.has_deferred());
@@ -1592,49 +1577,64 @@ mod tests {
     }
 
     #[test]
-    fn test_zone_reveal_waits_for_loading_end() {
+    fn test_zone_reveal_waits_for_fade_grace() {
         let now = Instant::now();
         let mut m = running_machine(now);
         m.handle_message(zone_update("Stormveil", None), now + ms(100));
         assert!(m.pending_zone_update.is_some());
         assert_eq!(m.zone_version, 0, "no bump before reveal");
 
-        // Still loading: not revealed.
+        // Still loading (position unreadable): not revealed.
+        m.tick(tick_in(snap(Some(1000), false), true, None), now + ms(200));
+        assert!(m.race_state.current_zone.is_none());
+
+        // Loading exit: position readable, but the fade grace has not
+        // elapsed yet.
         m.tick(
-            tick_in(snap(Some(1000), false, Some(true)), true, None),
-            now + ms(200),
+            tick_in(snap(Some(1200), true), true, Some(vec![])),
+            now + ms(300),
+        );
+        assert!(m.race_state.current_zone.is_none());
+        m.tick(
+            tick_in(snap(Some(2000), true), true, None),
+            now + ms(300) + ZONE_REVEAL_FADE_GRACE - ms(50),
         );
         assert!(m.race_state.current_zone.is_none());
 
-        // Loading done + position readable: revealed.
+        // Grace elapsed: revealed.
         m.tick(
-            tick_in(snap(Some(1200), true, Some(false)), true, Some(vec![])),
-            now + ms(300),
+            tick_in(snap(Some(2100), true), true, None),
+            now + ms(300) + ZONE_REVEAL_FADE_GRACE + ms(50),
         );
         let zone = m.race_state.current_zone.as_ref().expect("revealed");
         assert_eq!(zone.display_name, "Stormveil");
         assert!(m.pending_zone_update.is_none());
-        assert!(m.pending_zone_received_at.is_none());
         assert_eq!(m.zone_version, 1, "reveal bumps the render-cache key");
     }
 
     #[test]
-    fn test_zone_reveal_defensive_timeout() {
+    fn test_zone_reveal_grace_restarts_on_new_loading() {
         let now = Instant::now();
         let mut m = running_machine(now);
         m.handle_message(zone_update("Leyndell", None), now);
 
-        // 14s in, still loading: not revealed.
-        m.tick(
-            tick_in(snap(Some(1000), false, Some(true)), true, None),
-            now + secs(14),
-        );
+        // Position readable: grace arming.
+        m.tick(tick_in(snap(Some(1000), true), true, None), now + ms(100));
         assert!(m.race_state.current_zone.is_none());
 
-        // 16s in, still loading: revealed anyway (defensive timeout).
+        // A new loading screen starts before the grace elapses: the timer
+        // resets, and nothing is revealed while the position is unreadable,
+        // however long that lasts.
+        m.tick(tick_in(snap(Some(1000), false), true, None), now + ms(500));
+        m.tick(tick_in(snap(Some(1000), false), true, None), now + secs(30));
+        assert!(m.race_state.current_zone.is_none());
+
+        // Out of loading: revealed only one full grace later.
+        m.tick(tick_in(snap(Some(1000), true), true, None), now + secs(31));
+        assert!(m.race_state.current_zone.is_none());
         m.tick(
-            tick_in(snap(Some(1000), false, Some(true)), true, None),
-            now + secs(16),
+            tick_in(snap(Some(1000), true), true, None),
+            now + secs(31) + ZONE_REVEAL_FADE_GRACE + ms(50),
         );
         assert_eq!(
             m.race_state.current_zone.as_ref().unwrap().display_name,
@@ -1659,10 +1659,15 @@ mod tests {
         );
         assert_eq!(m.pre_reveal_layer, Some(1));
 
-        // Reveal clears the freeze.
+        // Arm the grace, then reveal clears the freeze.
         m.tick(
-            tick_in(snap(Some(1200), true, Some(false)), true, Some(vec![])),
+            tick_in(snap(Some(1200), true), true, Some(vec![])),
             now + ms(300),
+        );
+        assert_eq!(m.pre_reveal_layer, Some(1), "frozen until reveal");
+        m.tick(
+            tick_in(snap(Some(2000), true), true, None),
+            now + ms(300) + ZONE_REVEAL_FADE_GRACE + ms(50),
         );
         assert!(m.pre_reveal_layer.is_none());
     }
@@ -1696,16 +1701,13 @@ mod tests {
     fn test_countdown_gates_loading_exit_sends() {
         let now = Instant::now();
         let mut m = running_machine(now);
-        m.tick(
-            tick_in(snap(Some(500), true, None), true, None),
-            now + ms(10),
-        );
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
         m.handle_message(MachineMessage::RaceStart(10), now + ms(20));
 
         // Defer a flag during countdown.
         m.tick(
             tick_in(
-                snap(Some(1000), true, None),
+                snap(Some(1000), true),
                 true,
                 Some(vec![(100, true), (200, false), (900, false)]),
             ),
@@ -1714,12 +1716,9 @@ mod tests {
         assert!(m.flag_buffer.has_deferred());
 
         // Loading exit during countdown: nothing sent, deferred parked.
-        m.tick(
-            tick_in(snap(Some(1100), false, None), true, None),
-            now + ms(200),
-        );
+        m.tick(tick_in(snap(Some(1100), false), true, None), now + ms(200));
         let fx = m.tick(
-            tick_in(snap(Some(1200), true, None), true, Some(vec![])),
+            tick_in(snap(Some(1200), true), true, Some(vec![])),
             now + ms(250),
         );
         assert!(sent_flags(&fx).is_empty());
@@ -1730,10 +1729,7 @@ mod tests {
     fn test_ack_idempotence() {
         let now = Instant::now();
         let mut m = running_machine(now);
-        m.tick(
-            tick_in(snap(Some(500), true, None), true, None),
-            now + ms(10),
-        );
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
 
         // Unknown ack: no state change, no panic.
         let fx = m.handle_message(MachineMessage::EventFlagAck { message_id: 999 }, now);
@@ -1742,7 +1738,7 @@ mod tests {
         // Send a finish flag, then ack it: removed from in-flight.
         let fx = m.tick(
             tick_in(
-                snap(Some(60_000), true, None),
+                snap(Some(60_000), true),
                 true,
                 Some(vec![(100, false), (200, false), (900, true)]),
             ),
@@ -1758,10 +1754,7 @@ mod tests {
     fn test_status_update_cadence_and_gating() {
         let now = Instant::now();
         let mut m = running_machine(now);
-        m.tick(
-            tick_in(snap(Some(500), true, None), true, None),
-            now + ms(10),
-        );
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
 
         let has_status = |fx: &[Effect]| {
             fx.iter()
@@ -1769,31 +1762,19 @@ mod tests {
         };
 
         // 1.2s after birth: fires.
-        let fx = m.tick(
-            tick_in(snap(Some(5000), true, None), true, None),
-            now + ms(1200),
-        );
+        let fx = m.tick(tick_in(snap(Some(5000), true), true, None), now + ms(1200));
         assert!(has_status(&fx));
 
         // 200ms later: throttled.
-        let fx = m.tick(
-            tick_in(snap(Some(5200), true, None), true, None),
-            now + ms(1400),
-        );
+        let fx = m.tick(tick_in(snap(Some(5200), true), true, None), now + ms(1400));
         assert!(!has_status(&fx));
 
         // Another second later: fires again.
-        let fx = m.tick(
-            tick_in(snap(Some(6300), true, None), true, None),
-            now + ms(2400),
-        );
+        let fx = m.tick(tick_in(snap(Some(6300), true), true, None), now + ms(2400));
         assert!(has_status(&fx));
 
         // IGT 0 (quit-out): skipped.
-        let fx = m.tick(
-            tick_in(snap(Some(0), true, None), true, None),
-            now + ms(3600),
-        );
+        let fx = m.tick(tick_in(snap(Some(0), true), true, None), now + ms(3600));
         assert!(!has_status(&fx));
 
         // Once I am finished: skipped.
@@ -1804,10 +1785,7 @@ mod tests {
             },
             now + ms(3700),
         );
-        let fx = m.tick(
-            tick_in(snap(Some(9000), true, None), true, None),
-            now + ms(4800),
-        );
+        let fx = m.tick(tick_in(snap(Some(9000), true), true, None), now + ms(4800));
         assert!(!has_status(&fx));
     }
 

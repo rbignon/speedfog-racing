@@ -57,7 +57,7 @@ Defined on `GameState` (`mod/src/eldenring/game_state.rs`). For each hand:
 
 The function is called once per `status_update`, not per frame, so it does not need a `FrameSnapshot` slot. The chains themselves are constructed once in `GameState::new`.
 
-In the `status_update` branch in `tracker.rs`, `read_equipped_weapons` is skipped in favour of `[None, None]` when `is_in_loading_screen()` reports `Some(true)`: during loading screens ChrAsm may hold stale or in-flight values.
+In the `status_update` branch in `tracker.rs`, `read_equipped_weapons` is skipped in favour of `[None, None]` while `snapshot.position_readable` is false (loading screens, main menu): ChrAsm may hold stale or in-flight values while the player struct is being repopulated.
 
 ### Two-handing (not detected)
 

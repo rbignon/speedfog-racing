@@ -114,23 +114,17 @@ impl GameState {
         self.pointers.igt.read().map(|v| v as u32)
     }
 
-    /// Check if the game is currently in a loading screen or cutscene.
-    ///
-    /// Returns `Some(true)` if loading, `Some(false)` if gameplay, `None` if
-    /// the pointer chain is unreadable (e.g., game not fully initialized).
-    pub fn is_in_loading_screen(&self) -> Option<bool> {
-        profile_span!("is_in_loading_screen");
-        self.loading_screen_ptr.read().map(|v| v != 0)
-    }
-
-    /// Raw value of the loading-screen byte (`[[EventFlagMan]+0x28]+0x113`).
+    /// Raw value of the byte at `[[EventFlagMan]+0x28]+0x113` (the CE table's
+    /// "In cut-scene/loading screen"), exposed in the debug overlay only.
     ///
     /// The byte packs the engine-internal event flags 2200-2207 (MSB-first:
-    /// bit 7 = flag 2200; same bit order as `EventFlagReader`).
-    /// `is_in_loading_screen` tests it as a whole; this accessor exposes the
-    /// raw bits for the loading-byte transition diagnostics in tracker.rs,
-    /// used to map which bits mean "loading/fade" vs persistent engine
-    /// states (e.g. a clock frozen by the SpeedFog weather plugin).
+    /// bit 7 = flag 2200; same bit order as `EventFlagReader`). The
+    /// 2026-07-13 discovery session showed only flag 2200 ever moves, and
+    /// that it means "world clock stopped": it is ON during loading screens
+    /// and cutscenes, but also permanently ON while the SpeedFog weather
+    /// plugin freezes the clock. It is therefore NOT usable as a loading
+    /// indicator (zone reveals use the position-readable fade grace instead,
+    /// see `RaceMachine`).
     pub fn read_loading_byte(&self) -> Option<u8> {
         profile_span!("read_loading_byte");
         self.loading_screen_ptr.read()

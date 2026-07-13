@@ -233,9 +233,6 @@ pub struct RaceTracker {
     debug_info: DebugInfo,
     last_debug_refresh: Option<Instant>,
 
-    // Last observed loading byte (engine flags 2200-2207), for transition logs.
-    last_loading_byte: Option<u8>,
-
     // Cached leaderboard layout invalidated by participant/status changes.
     pub(crate) leaderboard_cache: LeaderboardCache,
 
@@ -345,7 +342,6 @@ impl RaceTracker {
             phantom_skin_name: None,
             debug_info: DebugInfo::default(),
             last_debug_refresh: None,
-            last_loading_byte: None,
             leaderboard_cache: LeaderboardCache::default(),
             exits_cache: ExitsRenderCache::default(),
             render_bufs: RenderBuffers::default(),
@@ -414,33 +410,8 @@ impl RaceTracker {
                     .then(|| self.game_state.read_deaths())
                     .flatten(),
                 position_readable: self.game_state.is_position_readable(),
-                loading_screen: if needs.loading {
-                    self.game_state.is_in_loading_screen()
-                } else {
-                    None
-                },
             }
         };
-
-        // Loading-byte diagnostics: the byte behind is_in_loading_screen packs
-        // engine flags 2200-2207; log every transition to map which bits mean
-        // "loading/fade" vs persistent engine states (e.g. the clock frozen by
-        // the SpeedFog weather plugin, which stalls zone reveals on the 15s
-        // timeout when the whole byte is treated as "loading").
-        {
-            let byte = self.game_state.read_loading_byte();
-            if byte != self.last_loading_byte {
-                let flags_set = byte.map(decode_loading_byte).unwrap_or_default();
-                info!(
-                    byte = byte.map(|b| format!("{:#010b}", b)),
-                    ?flags_set,
-                    position_readable = snapshot.position_readable,
-                    pending_zone = self.machine.pending_zone_update.is_some(),
-                    "[LOADING-BYTE] transition"
-                );
-                self.last_loading_byte = byte;
-            }
-        }
 
         // Warp capture + position: read on loading-exit frames only.
         let loading_exit = snapshot.position_readable && !self.machine.was_position_readable;
@@ -491,18 +462,16 @@ impl RaceTracker {
         }
 
         // Weapons: read only when a status_update may fire this frame.
-        // Skip the read during loading screens: ChrAsm may hold stale or
-        // in-flight values while the player struct is being repopulated.
+        // Skip the read during loading screens (position unreadable): ChrAsm
+        // may hold stale or in-flight values while the player struct is being
+        // repopulated.
         let weapons = if connected
+            && snapshot.position_readable
             && self
                 .machine
                 .wants_status_update(now, snapshot.igt_ms.unwrap_or(0))
         {
-            if self.game_state.is_in_loading_screen() == Some(true) {
-                [None, None]
-            } else {
-                self.game_state.read_equipped_weapons()
-            }
+            self.game_state.read_equipped_weapons()
         } else {
             [None, None]
         };
@@ -827,15 +796,6 @@ impl RaceTracker {
     }
 }
 
-/// Decode the loading byte into the event flag IDs it packs (2200-2207,
-/// MSB-first: bit 7 = flag 2200, same order as `EventFlagReader`).
-fn decode_loading_byte(b: u8) -> Vec<u32> {
-    (0..8u32)
-        .filter(|i| b & (1 << (7 - i)) != 0)
-        .map(|i| 2200 + i)
-        .collect()
-}
-
 // =============================================================================
 // FONT LOADING
 // =============================================================================
@@ -902,16 +862,6 @@ fn load_font_data(dll_dir: &Path, font_path: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn decode_loading_byte_is_msb_first() {
-        // Bit 7 (MSB) is flag 2200, bit 0 (LSB) is flag 2207, matching
-        // EventFlagReader's bit_index = 7 - (remainder & 7).
-        assert_eq!(decode_loading_byte(0b1000_0000), vec![2200]);
-        assert_eq!(decode_loading_byte(0b0000_0001), vec![2207]);
-        assert_eq!(decode_loading_byte(0b0101_0000), vec![2201, 2203]);
-        assert_eq!(decode_loading_byte(0), Vec::<u32>::new());
-    }
 
     #[test]
     fn load_font_data_empty_path_returns_embedded() {
