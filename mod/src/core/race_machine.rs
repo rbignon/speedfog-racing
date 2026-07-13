@@ -269,6 +269,9 @@ pub struct RaceMachine {
     pub last_flag_reader_ok: Option<bool>,
     /// Zone update received, waiting for the post-loading fade before revealing
     pub pending_zone_update: Option<ZoneUpdateData>,
+    /// When the pending zone update was received; consumed by the one-shot
+    /// stall-warn diagnostic (never forces a reveal)
+    pub pending_zone_received_at: Option<Instant>,
     /// Snapshot of current_layer taken when leaderboard_update bumps the layer.
     pub pre_reveal_layer: Option<i32>,
     /// Since when the position has been continuously readable (None while in
@@ -321,6 +324,7 @@ impl RaceMachine {
             update_notice: None,
             last_flag_reader_ok: None,
             pending_zone_update: None,
+            pending_zone_received_at: None,
             pre_reveal_layer: None,
             position_readable_since: None,
             was_position_readable: true,
@@ -694,6 +698,7 @@ impl RaceMachine {
                     is_first_visit,
                     exits,
                 });
+                self.pending_zone_received_at = Some(now);
             }
             MachineMessage::EventFlagAck { message_id } => {
                 if let Some(event) = self.in_flight_event_flags.remove(&message_id) {
@@ -791,6 +796,13 @@ impl RaceMachine {
 /// (measured at ~0.9s, see the 2026-07-13 loading-byte discovery session).
 const ZONE_REVEAL_FADE_GRACE: Duration = Duration::from_secs(1);
 
+/// Diagnostic only: how long a zone update may stay pending before a one-shot
+/// warn! is logged. The reveal itself has no timeout (a pending zone
+/// legitimately waits while the player idles in a menu), so this log is the
+/// only trace left when position readability breaks or flickers and reveals
+/// silently stop firing.
+const ZONE_REVEAL_STALL_WARN: Duration = Duration::from_secs(30);
+
 impl RaceMachine {
     /// What the shell should read from the game this frame.
     pub fn pre_tick(&self, now: Instant, show_ui: bool, connected: bool) -> FrameNeeds {
@@ -882,6 +894,20 @@ impl RaceMachine {
             self.race_state.current_zone = Some(zone);
             self.zone_version = self.zone_version.wrapping_add(1);
             self.pre_reveal_layer = None;
+            self.pending_zone_received_at = None;
+        } else if let (Some(zone), Some(received)) =
+            (&self.pending_zone_update, self.pending_zone_received_at)
+        {
+            let pending = now.duration_since(received);
+            if pending >= ZONE_REVEAL_STALL_WARN {
+                warn!(
+                    name = %zone.display_name,
+                    pending_secs = pending.as_secs(),
+                    position_readable,
+                    "[RACE] Zone reveal still pending (position readability broken or flickering, or player idling in a menu)"
+                );
+                self.pending_zone_received_at = None;
+            }
         }
 
         // Flags cleared (captured) earlier in this tick: later read consumers
@@ -1344,6 +1370,34 @@ mod tests {
         Duration::from_secs(v)
     }
 
+    /// Captures tracing output for log assertions (scoped to the test thread
+    /// via `tracing::subscriber::with_default`).
+    #[derive(Clone, Default)]
+    struct LogCapture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl LogCapture {
+        fn contents(&self) -> String {
+            String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
+        }
+    }
+
+    impl std::io::Write for LogCapture {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogCapture {
+        type Writer = LogCapture;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
     // ------------------------------------------------------------------
     // Message handling basics
     // ------------------------------------------------------------------
@@ -1640,6 +1694,89 @@ mod tests {
             m.race_state.current_zone.as_ref().unwrap().display_name,
             "Leyndell"
         );
+    }
+
+    #[test]
+    fn test_zone_reveal_instant_when_grace_already_elapsed() {
+        // Reconnect scenario (WEBSOCKET_LIFECYCLE.md): the zone_update
+        // arrives while the position has already been readable for longer
+        // than the grace, so the reveal fires on the very next tick. Pins
+        // that the grace is anchored on position readability, not on
+        // message arrival.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(1000), true), true, None), now + ms(10));
+
+        m.handle_message(zone_update("Caelid", None), now + secs(10));
+        m.tick(
+            tick_in(snap(Some(2000), true), true, None),
+            now + secs(10) + ms(20),
+        );
+        assert_eq!(
+            m.race_state.current_zone.as_ref().unwrap().display_name,
+            "Caelid"
+        );
+    }
+
+    #[test]
+    fn test_zone_reveal_stall_warns_once() {
+        let logs = LogCapture::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .with_max_level(tracing::Level::WARN)
+            .with_ansi(false)
+            .finish();
+        let warn_count = |l: &LogCapture| l.contents().matches("Zone reveal still pending").count();
+
+        tracing::subscriber::with_default(subscriber, || {
+            let now = Instant::now();
+            let mut m = running_machine(now);
+            m.handle_message(zone_update("Farum Azula", None), now);
+
+            // Position readability flickers: readable stretches shorter than
+            // the fade grace, so the reveal never fires.
+            let mut t = ms(100);
+            while t < secs(29) {
+                m.tick(tick_in(snap(Some(1000), true), true, None), now + t);
+                m.tick(
+                    tick_in(snap(Some(1000), false), true, None),
+                    now + t + ms(900),
+                );
+                t += ms(1000);
+            }
+            assert!(m.race_state.current_zone.is_none());
+            assert_eq!(warn_count(&logs), 0, "no stall warn before the threshold");
+
+            // Crossing the threshold: exactly one warn, still no reveal.
+            m.tick(tick_in(snap(Some(1000), true), true, None), now + secs(31));
+            assert_eq!(warn_count(&logs), 1, "one stall warn past the threshold");
+            m.tick(tick_in(snap(Some(1000), false), true, None), now + secs(32));
+            m.tick(tick_in(snap(Some(1000), true), true, None), now + secs(40));
+            assert_eq!(
+                warn_count(&logs),
+                1,
+                "stall warn fires once per pending zone"
+            );
+            assert!(
+                m.race_state.current_zone.is_none(),
+                "diagnostic only, no forced reveal"
+            );
+
+            // A new zone_update re-arms the warn, and last-writer-wins
+            // re-anchors the stall clock on the latest arrival.
+            m.handle_message(zone_update("Liurnia", None), now + secs(41));
+            m.tick(tick_in(snap(Some(1000), false), true, None), now + secs(42));
+            m.handle_message(zone_update("Altus", None), now + secs(50));
+            m.tick(tick_in(snap(Some(1000), true), true, None), now + secs(75));
+            assert_eq!(
+                warn_count(&logs),
+                1,
+                "stall clock re-anchored on the latest zone_update"
+            );
+            m.tick(tick_in(snap(Some(1000), false), true, None), now + secs(76));
+            m.tick(tick_in(snap(Some(1000), true), true, None), now + secs(81));
+            assert_eq!(warn_count(&logs), 2, "second pending zone warns again");
+        });
     }
 
     #[test]

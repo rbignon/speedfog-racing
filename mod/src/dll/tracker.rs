@@ -78,7 +78,7 @@ pub struct DebugInfo {
     /// Vanilla flag 6 sanity check (category 0 should always exist)
     pub vanilla_sanity: FlagReadResult,
     pub sample_reads: Vec<(u32, FlagReadResult)>,
-    /// Raw loading byte (engine flags 2200-2207 behind is_in_loading_screen)
+    /// Raw loading byte (engine flags 2200-2207, `GameState::read_loading_byte`)
     pub loading_byte: Option<u8>,
 }
 

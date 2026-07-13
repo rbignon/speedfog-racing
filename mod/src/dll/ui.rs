@@ -906,7 +906,7 @@ impl RaceTracker {
         ui.same_line();
         ui.text_colored(sanity_color, sanity_label);
 
-        // Raw loading byte (engine flags 2200-2207 behind is_in_loading_screen)
+        // Raw loading byte (engine flags 2200-2207, GameState::read_loading_byte)
         ui.text("  loading byte:");
         ui.same_line();
         match debug.loading_byte {

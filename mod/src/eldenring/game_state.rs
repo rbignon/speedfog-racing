@@ -26,7 +26,10 @@ pub struct GameState {
     pointers: Pointers,
     play_region_id_ptr: PointerChain<u32>,
     death_count_ptr: PointerChain<u32>,
-    /// [[EventFlagMan]+0x28]+0x113: non-zero during cutscenes/loading screens
+    /// [[EventFlagMan]+0x28]+0x113: packs engine event flags 2200-2207.
+    /// NOT a loading indicator: its only moving bit (flag 2200) means "world
+    /// clock stopped", permanently ON under the SpeedFog weather plugin.
+    /// Debug overlay only; see `read_loading_byte`.
     loading_screen_ptr: PointerChain<u8>,
     /// ChrAsm: equipped-weapon resolution. All chains live under
     /// `GameDataMan -> +0x8 (PlayerGameData) -> +<field offset>`.

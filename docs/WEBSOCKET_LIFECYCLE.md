@@ -158,7 +158,7 @@ On `StatusChanged(Connected)`:
 - `ready_sent = false` → `send_ready()` fires again.
 - `pending_event_flags` are drained and sent.
 - Safety-net rescan runs.
-- The game is not in a loading screen during reconnection, so any `zone_update` from the server is revealed on the next frame (no special initialization needed).
+- Any `zone_update` from the server goes through the usual reveal logic: it is revealed once the position has been continuously readable for `ZONE_REVEAL_FADE_GRACE` (see EVENT_FLAG_TRACKING.md). During an in-game reconnection that grace has typically long elapsed, so the reveal fires on the next frame; a reconnection from a menu or loading screen waits for the next loading exit plus the grace.
 
 ### Stale Seed Detection
 

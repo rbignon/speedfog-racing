@@ -105,6 +105,7 @@ When the server sends a `zone_update`, the mod stores it in `pending_zone_update
 
 - Reveal once the position has been readable for `ZONE_REVEAL_FADE_GRACE = 1s`: move `pending_zone_update` to `current_zone` (displayed on overlay).
 - While the position is unreadable (loading screen, main menu), nothing is revealed, however long that lasts; the grace restarts at the next loading exit.
+- A zone update still pending after `ZONE_REVEAL_STALL_WARN = 30s` logs a one-shot `warn!` (diagnostic only, never forces the reveal): the expected trace when position readability breaks or flickers, also emitted when the player idles that long in a menu with a pending zone.
 
 `position_readable` flips true when the world is loaded (the hardware-dependent part of a loading screen); the grace constant covers the engine's fixed fade-in animation that follows (measured at ~0.9s, 2026-07-13 discovery session).
 
@@ -259,6 +260,7 @@ Gaps are color-coded: green for negative (ahead), soft red for positive (behind)
 | ------------------------ | ---------- | ----------------------- | -------------------------------------------- |
 | Poll interval            | 100ms      | `core/race_machine.rs`  | Event flag read frequency                    |
 | `ZONE_REVEAL_FADE_GRACE` | 1s         | `core/race_machine.rs`  | Post-loading fade before zone reveal         |
+| `ZONE_REVEAL_STALL_WARN` | 30s        | `core/race_machine.rs`  | One-shot warn for stuck zone reveals         |
 | `EVENT_FLAG_BASE`        | 1050294000 | `output.py`             | First SpeedFog event flag ID (saved, 4xxx)   |
 | Flag range               | 0-999      | category 1050294        | Zone tracking + finish + death markers       |
 | Divisor                  | 1000       | game memory             | Flags per category page                      |
