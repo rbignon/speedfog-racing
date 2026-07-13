@@ -906,6 +906,17 @@ impl RaceTracker {
         ui.same_line();
         ui.text_colored(sanity_color, sanity_label);
 
+        // Raw loading byte (engine flags 2200-2207 behind is_in_loading_screen)
+        ui.text("  loading byte:");
+        ui.same_line();
+        match debug.loading_byte {
+            Some(b) => {
+                let color = if b == 0 { c.text } else { c.gold };
+                ui.text_colored(color, format!("{:#010b}", b));
+            }
+            None => ui.text_colored(c.danger, "None"),
+        }
+
         if !debug.sample_reads.is_empty() {
             for (flag_id, result) in &debug.sample_reads {
                 let (color, label) = match result {

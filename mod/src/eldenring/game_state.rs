@@ -123,6 +123,19 @@ impl GameState {
         self.loading_screen_ptr.read().map(|v| v != 0)
     }
 
+    /// Raw value of the loading-screen byte (`[[EventFlagMan]+0x28]+0x113`).
+    ///
+    /// The byte packs the engine-internal event flags 2200-2207 (MSB-first:
+    /// bit 7 = flag 2200; same bit order as `EventFlagReader`).
+    /// `is_in_loading_screen` tests it as a whole; this accessor exposes the
+    /// raw bits for the loading-byte transition diagnostics in tracker.rs,
+    /// used to map which bits mean "loading/fade" vs persistent engine
+    /// states (e.g. a clock frozen by the SpeedFog weather plugin).
+    pub fn read_loading_byte(&self) -> Option<u8> {
+        profile_span!("read_loading_byte");
+        self.loading_screen_ptr.read()
+    }
+
     /// Read the currently-equipped weapon IDs for the left and right hands.
     ///
     /// Returns `[left, right]`. Each slot is `None` when:
