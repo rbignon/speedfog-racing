@@ -420,9 +420,20 @@ export const CONTENT_ITEMS: ContentItem[] = [
     zoneId: "volcano_town",
     difficulty: 3,
     title: "Volcano Manor Cage Skip",
-    short: "Cage Skip to Noble gate",
+    short: "Arriving after abduction",
     video: {
       youtubeId: "VPiCtAzdzv4",
+    },
+  },
+  {
+    id: "volcano-manor-traversal-skip",
+    kind: "skip",
+    zoneId: "volcano_town",
+    difficulty: 4,
+    title: "Volcano Manor Double Skips",
+    short: "Coming from the manor",
+    video: {
+      youtubeId: "R-DTHE-60gI",
     },
   },
   {
