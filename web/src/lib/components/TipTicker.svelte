@@ -150,6 +150,9 @@
 
   .tip-ticker.banner .tip-content {
     min-width: 0;
+    /* Reserve two line boxes so rotating between short (1-line) and long
+       (2-line) tips doesn't shift the layout below the banner. */
+    min-height: 2lh;
   }
 
   .tip-ticker.banner .tip-title {
