@@ -19,6 +19,7 @@ run_complete_message = [
     "TARNISHED WARRIOR", # Hoarah Loux
     "HAVE NEVER KNOWN DEFEAT", # Malenia
     "NIHIL! NIHIL! NIHIL!", # Mohg
+    "BURN, FOR THE SAKE OF THE NEW LORD", # Melina
 ]
 chapel_grace = true
 sentry_torch_shop = true
