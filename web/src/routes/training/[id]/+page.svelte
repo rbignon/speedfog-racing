@@ -21,6 +21,7 @@
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import DownloadModal from "$lib/components/DownloadModal.svelte";
   import TipTicker from "$lib/components/TipTicker.svelte";
+  import ZoneSheet from "$lib/components/ZoneSheet.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
   import { formatPoolName } from "$lib/utils/format";
   import { formatIgt } from "$lib/utils/training";
@@ -50,6 +51,37 @@
   let showDownloadModal = $state(false);
   let ghosts = $state<Ghost[]>([]);
   let dagView = $state<"map" | "replay">("map");
+  let zoneSheetTarget = $state<{
+    nodeId: string;
+    displayName: string;
+    zones: string[];
+  } | null>(null);
+
+  function openZoneCodex(nodeId: string, displayName: string, zones: string[]) {
+    zoneSheetTarget = { nodeId, displayName, zones };
+  }
+
+  function closeZoneSheet() {
+    zoneSheetTarget = null;
+  }
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && zoneSheetTarget) {
+      closeZoneSheet();
+    }
+  }
+
+  // Move focus into the drawer when it opens (closed -> open transition
+  // only, so retargeting while it is already open doesn't yank focus away
+  // from ZoneSheet's own content).
+  let drawerEl: HTMLDivElement | undefined = $state();
+  let drawerWasOpen = false;
+  $effect(() => {
+    if (zoneSheetTarget && !drawerWasOpen) {
+      drawerEl?.focus();
+    }
+    drawerWasOpen = zoneSheetTarget !== null;
+  });
 
   const starterTips = CONTENT_ITEMS.filter(
     (i) => i.kind === "tip" && i.level === "beginner",
@@ -181,6 +213,8 @@
     }
   }
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <svelte:head>
   <title>
@@ -350,7 +384,11 @@
             >
           </div>
           {#if dagView === "map"}
-            <MetroDagFull {graphJson} participants={dagParticipants} />
+            <MetroDagFull
+              {graphJson}
+              participants={dagParticipants}
+              onzonecodex={openZoneCodex}
+            />
           {:else}
             <TrainingReplay
               {graphJson}
@@ -359,7 +397,11 @@
             />
           {/if}
         {:else if (status === "abandoned" || status === "cancelled") && dagParticipants.length > 0}
-          <MetroDagFull {graphJson} participants={dagParticipants} />
+          <MetroDagFull
+            {graphJson}
+            participants={dagParticipants}
+            onzonecodex={openZoneCodex}
+          />
         {:else if status === "active" && dagParticipants.length > 0}
           <div class="dag-toolbar">
             <button
@@ -379,12 +421,17 @@
           </div>
           <div class="dag-wrapper">
             {#if showFullDag}
-              <MetroDagFull {graphJson} participants={dagParticipants} />
+              <MetroDagFull
+                {graphJson}
+                participants={dagParticipants}
+                onzonecodex={openZoneCodex}
+              />
             {:else}
               <MetroDagProgressive
                 {graphJson}
                 participants={dagParticipants}
                 myParticipantId={liveParticipant?.id ?? ""}
+                onzonecodex={openZoneCodex}
               />
             {/if}
           </div>
@@ -403,6 +450,27 @@
     {/if}
   {/if}
 </main>
+
+{#if zoneSheetTarget}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="drawer-scrim" onclick={closeZoneSheet}></div>
+  <div
+    class="drawer"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Zone details"
+    tabindex="-1"
+    bind:this={drawerEl}
+  >
+    <ZoneSheet
+      nodeId={zoneSheetTarget.nodeId}
+      displayName={zoneSheetTarget.displayName}
+      zones={zoneSheetTarget.zones}
+      onClose={closeZoneSheet}
+    />
+  </div>
+{/if}
 
 {#if showAbandonConfirm}
   <ConfirmModal
@@ -714,6 +782,29 @@
     padding: 0.35rem 0.75rem;
   }
 
+  /* Zone codex drawer */
+  .drawer-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 900;
+  }
+
+  .drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    height: 100vh;
+    width: min(430px, 100%);
+    background: var(--color-surface);
+    border-left: 1px solid var(--color-border);
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+    z-index: 901;
+    overflow: hidden;
+    outline: none;
+  }
+
   @media (max-width: 640px) {
     .training-detail {
       padding: 1rem;
@@ -722,6 +813,10 @@
     .stats-bar {
       gap: 1rem;
       flex-wrap: wrap;
+    }
+
+    .drawer {
+      width: 100%;
     }
   }
 </style>
