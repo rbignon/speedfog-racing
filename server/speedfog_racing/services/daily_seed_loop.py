@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.discord import notify_daily_seed_created
 from speedfog_racing.models import (
     DailySeedSchedule,
@@ -110,8 +111,8 @@ async def create_daily_seed_if_needed(
             return None
 
         pool = await get_pool(db, schedule.pool_name)
-        if pool is None or not pool.enabled:
-            logger.error("Daily seed pool %r is missing or disabled", schedule.pool_name)
+        if pool is None:
+            logger.error("Daily seed pool %r is missing", schedule.pool_name)
             return None
 
         system_user = (
@@ -123,7 +124,7 @@ async def create_daily_seed_if_needed(
 
         start_at = daily_start_at(today)
         race = Race(
-            name=f"Daily Seed - {today.isoformat()}",
+            name=f"Daily - {today.isoformat()} - {format_pool_display_name(pool)}",
             organizer_id=system_user.id,
             daily_date=today,
             exclude_from_elo=True,

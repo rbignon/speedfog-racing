@@ -89,6 +89,7 @@ async def test_daily_tick_creates_running_daily_at_strict_0800(ds_async_session_
     await _seed_pool_and_system_user(ds_async_session_maker)
     created = await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
     assert created is not None
+    assert created.name == "Daily - 2026-04-27 - Standard"
     assert created.daily_date == date(2026, 4, 27)
     assert created.started_at == datetime(2026, 4, 27, 8, 0, tzinfo=UTC)
     assert created.seeds_released_at == created.started_at
@@ -125,7 +126,7 @@ async def test_daily_tick_skips_when_previous_daily_still_running(ds_async_sessi
         db.add(
             Race(
                 id=uuid4(),
-                name="Daily Seed - 2026-04-26",
+                name="Daily Seed - 2026-04-26 - Standard",
                 organizer_id=organizer.id,
                 status=RaceStatus.RUNNING,
                 is_public=True,
@@ -136,20 +137,6 @@ async def test_daily_tick_skips_when_previous_daily_still_running(ds_async_sessi
                 seeds_released_at=datetime(2026, 4, 26, 8, 0, tzinfo=UTC),
             )
         )
-        await db.commit()
-
-    created = await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
-    assert created is None
-
-
-@pytest.mark.asyncio
-async def test_daily_tick_skips_when_pool_is_disabled(ds_async_session_maker) -> None:
-    await _seed_pool_and_system_user(ds_async_session_maker)
-    async with ds_async_session_maker() as db:
-        from speedfog_racing.models import Pool
-
-        pool = (await db.execute(select(Pool).where(Pool.name == "standard"))).scalar_one()
-        pool.enabled = False
         await db.commit()
 
     created = await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
