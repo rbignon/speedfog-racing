@@ -44,7 +44,7 @@ def _daily_race(*, organizer: User, **overrides) -> Race:
         open_registration=True,
         private_dag=False,
         daily_date=date(2026, 4, 27),
-        exclude_from_elo=True,
+        exclude_from_stats=True,
         started_at=started,
         seeds_released_at=started,
         late_join_window_minutes=1440,
@@ -62,7 +62,7 @@ def test_race_response_includes_daily_fields() -> None:
     race = _daily_race(organizer=organizer)
     response = race_response(race, user=None)
     assert response.daily_date == date(2026, 4, 27)
-    assert response.exclude_from_elo is True
+    assert response.exclude_from_stats is True
 
 
 def test_participant_preview_includes_status_and_igt() -> None:
@@ -225,7 +225,7 @@ async def _make_daily_db(
             is_public=True,
             open_registration=True,
             daily_date=day,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             started_at=started,
             seeds_released_at=started,
             late_join_window_minutes=1440,
@@ -279,7 +279,7 @@ async def test_get_daily_today_returns_current_daily(
     body = response.json()
     assert body["id"] == str(daily.id)
     assert body["daily_date"] == today.isoformat()
-    assert body["exclude_from_elo"] is True
+    assert body["exclude_from_stats"] is True
 
 
 @pytest.mark.asyncio
@@ -369,7 +369,7 @@ async def test_joinable_races_list_excludes_daily_races(
             is_public=True,
             open_registration=True,
             daily_date=today,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             started_at=started,
             seeds_released_at=started,
             scheduled_at=started,  # forces /joinable's scheduled_at filter to pass
@@ -464,7 +464,7 @@ async def test_finished_daily_includes_daily_points_on_participants(
             is_public=True,
             open_registration=True,
             daily_date=target,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             started_at=started,
             seeds_released_at=started,
             late_join_window_minutes=1440,
@@ -524,7 +524,7 @@ async def test_running_daily_omits_daily_points(dl_test_client, dl_async_session
             is_public=True,
             open_registration=True,
             daily_date=target,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             started_at=started,
             seeds_released_at=started,
             late_join_window_minutes=1440,

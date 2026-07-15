@@ -53,7 +53,7 @@ export interface Race {
   private_dag: boolean;
   custom_rules: string | null;
   daily_date: string | null;
-  exclude_from_elo: boolean;
+  exclude_from_stats: boolean;
   participant_count: number;
   participant_previews: ParticipantPreview[];
   casters: Caster[];

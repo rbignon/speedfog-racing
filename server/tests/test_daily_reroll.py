@@ -154,7 +154,7 @@ async def _running_daily_with_progress(session_maker) -> Race:
             is_public=True,
             open_registration=True,
             daily_date=started.date(),
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             started_at=started,
             seeds_released_at=started,
             late_join_window_minutes=1440,

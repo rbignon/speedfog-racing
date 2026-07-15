@@ -98,7 +98,7 @@ async def _make_daily_db(
             is_public=True,
             open_registration=True,
             daily_date=day,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             started_at=started,
             seeds_released_at=started,
             late_join_window_minutes=1440,

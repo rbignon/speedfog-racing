@@ -86,7 +86,7 @@ async def test_returns_aggregated_ranking_for_past_week(wl_client, wl_async_sess
             organizer_id=organizer.id,
             status=RaceStatus.FINISHED,
             daily_date=monday,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             is_public=True,
             open_registration=True,
             late_join_window_minutes=1440,

@@ -169,7 +169,7 @@ async def _make_daily(
         organizer_id=organizer.id,
         status=status,
         daily_date=daily_date,
-        exclude_from_elo=True,
+        exclude_from_stats=True,
         is_public=True,
         open_registration=True,
         late_join_window_minutes=1440,

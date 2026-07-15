@@ -354,7 +354,7 @@ async def recalculate_stats(
     _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    """Clear all ELO/trait data and replay from scratch. Requires admin role."""
+    """Refresh seed difficulty scores and replay trait data. Requires admin role."""
     await recalculate_all_stats(db)
     return {"status": "ok"}
 

@@ -396,7 +396,7 @@ class RaceResponse(BaseModel):
     private_dag: bool = False
     custom_rules: str | None = None
     daily_date: date | None = None
-    exclude_from_elo: bool = False
+    exclude_from_stats: bool = False
     participant_count: int
     participant_previews: list[ParticipantPreview] = []
     seed_total_layers: int | None = None
@@ -483,7 +483,7 @@ class RaceDetailResponse(BaseModel):
     private_dag: bool = False
     custom_rules: str | None = None
     daily_date: date | None = None
-    exclude_from_elo: bool = False
+    exclude_from_stats: bool = False
     participant_count: int
     seed_number: str | None = None
     seed_total_layers: int | None

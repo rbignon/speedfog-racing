@@ -96,7 +96,7 @@ async def test_daily_tick_creates_running_daily_at_strict_0800(ds_async_session_
     assert created.status == RaceStatus.RUNNING
     assert created.late_join_window_minutes == 1440
     assert created.race_duration_minutes == 1440
-    assert created.exclude_from_elo is True
+    assert created.exclude_from_stats is True
     assert created.is_public is True
     assert created.open_registration is True
     assert created.seed_id is not None  # a seed was assigned
@@ -132,7 +132,7 @@ async def test_daily_tick_skips_when_previous_daily_still_running(ds_async_sessi
                 is_public=True,
                 open_registration=True,
                 daily_date=date(2026, 4, 26),
-                exclude_from_elo=True,
+                exclude_from_stats=True,
                 started_at=datetime(2026, 4, 26, 8, 0, tzinfo=UTC),
                 seeds_released_at=datetime(2026, 4, 26, 8, 0, tzinfo=UTC),
             )

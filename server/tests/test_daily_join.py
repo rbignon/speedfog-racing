@@ -99,7 +99,7 @@ async def _seed_running_daily(session_maker) -> tuple[Race, str]:
             is_public=True,
             open_registration=True,
             daily_date=today,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             started_at=started,
             seeds_released_at=started,
             late_join_window_minutes=1440,

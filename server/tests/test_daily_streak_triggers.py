@@ -224,7 +224,7 @@ async def test_event_flag_crossing_zone_two_triggers_update_a(
             name="Daily Seed - 2026-05-12",
             organizer_id=user.id,
             daily_date=date(2026, 5, 12),
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             status=RaceStatus.RUNNING,
         )
         db.add(race)
@@ -584,7 +584,7 @@ async def test_reroll_after_abandon_refunds_freeze(streak_async_session) -> None
             name="Daily Seed",
             organizer_id=user.id,
             daily_date=today,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             status=RaceStatus.RUNNING,
         )
         db.add(race)
@@ -669,7 +669,7 @@ async def test_reroll_rolls_back_streak_for_today_qualifiers(streak_async_sessio
             name="Daily Seed - 2026-05-12",
             organizer_id=user.id,
             daily_date=today,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             status=RaceStatus.RUNNING,
         )
         db.add(race)
@@ -734,7 +734,7 @@ async def test_reroll_rollback_is_noop_for_non_daily_race(streak_async_session) 
             name="Some race",
             organizer_id=user.id,
             daily_date=None,
-            exclude_from_elo=False,
+            exclude_from_stats=False,
             status=RaceStatus.RUNNING,
         )
         db.add(race)
@@ -788,7 +788,7 @@ async def test_broadcast_event_flag_only_runs_streak_on_qualification_crossing(
             name="Daily Seed - 2026-05-12",
             organizer_id=user.id,
             daily_date=date(2026, 5, 12),
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             status=RaceStatus.RUNNING,
         )
         db.add(race)
@@ -857,7 +857,7 @@ async def test_broadcast_zone_query_runs_streak_on_qualification_crossing(
             name="Daily Seed - 2026-05-12",
             organizer_id=user.id,
             daily_date=date(2026, 5, 12),
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             status=RaceStatus.RUNNING,
         )
         db.add(race)

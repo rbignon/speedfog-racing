@@ -428,7 +428,7 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
                 select(Race.id)
                 .where(
                     Race.status == RaceStatus.FINISHED,
-                    Race.exclude_from_elo.is_(False),
+                    Race.exclude_from_stats.is_(False),
                 )
                 .order_by(Race.started_at.asc())
             )

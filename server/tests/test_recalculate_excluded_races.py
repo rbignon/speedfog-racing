@@ -44,7 +44,7 @@ async def test_excluded_race_feeds_no_traits(async_session):
             organizer_id=org.id,
             status=RaceStatus.FINISHED,
             is_public=True,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             started_at=datetime.now(UTC),
         )
         db.add(race)

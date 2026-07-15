@@ -97,7 +97,7 @@ async def test_winners_list_for_past_week_with_finisher(
             organizer_id=organizer.id,
             status=RaceStatus.FINISHED,
             daily_date=monday,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             is_public=True,
             open_registration=True,
             late_join_window_minutes=1440,

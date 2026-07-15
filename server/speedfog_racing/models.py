@@ -273,8 +273,8 @@ class Race(Base):
     # the one race auto-created per day. Combined with the partial unique
     # index above, this enforces at most one daily per day.
     daily_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    # Skip ELO updates for this race (Daily Seeds, calibration runs, etc.).
-    exclude_from_elo: Mapped[bool] = mapped_column(
+    # Skip stats aggregations for this race (Daily Seeds, calibration runs, etc.).
+    exclude_from_stats: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
 

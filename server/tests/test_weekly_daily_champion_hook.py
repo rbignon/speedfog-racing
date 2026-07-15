@@ -116,7 +116,7 @@ async def _create_past_daily_with_winner(
             organizer_id=organizer.id,
             seed_id=seed.id,
             daily_date=daily_day,
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             status=RaceStatus.FINISHED,
             started_at=datetime.combine(daily_day, datetime.min.time(), tzinfo=UTC),
             finished_at=datetime.combine(daily_day, datetime.min.time(), tzinfo=UTC)
@@ -383,7 +383,7 @@ async def _make_daily_direct(db: AsyncSession, *, organizer: User, daily_date: d
         organizer_id=organizer.id,
         status=RaceStatus.FINISHED,
         daily_date=daily_date,
-        exclude_from_elo=True,
+        exclude_from_stats=True,
         is_public=True,
         open_registration=True,
         late_join_window_minutes=1440,

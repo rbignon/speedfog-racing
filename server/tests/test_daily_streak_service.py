@@ -179,7 +179,7 @@ async def test_evaluate_qualification_triggers_on_crossing_two(streak_async_sess
             name="Daily Seed - 2026-05-12",
             organizer_id=user.id,
             daily_date=date(2026, 5, 12),
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             status=RaceStatus.RUNNING,
         )
         db.add(race)
@@ -222,7 +222,7 @@ async def test_evaluate_qualification_is_noop_when_under_two(streak_async_sessio
             name="Daily Seed - 2026-05-12",
             organizer_id=user.id,
             daily_date=date(2026, 5, 12),
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             status=RaceStatus.RUNNING,
         )
         db.add(race)
@@ -266,7 +266,7 @@ async def test_evaluate_qualification_idempotent_for_same_day(streak_async_sessi
             name="Daily Seed - 2026-05-12",
             organizer_id=user.id,
             daily_date=date(2026, 5, 12),
-            exclude_from_elo=True,
+            exclude_from_stats=True,
             status=RaceStatus.RUNNING,
         )
         db.add(race)
@@ -307,7 +307,7 @@ async def test_evaluate_qualification_noop_for_non_daily_race(streak_async_sessi
             name="Regular race",
             organizer_id=user.id,
             daily_date=None,
-            exclude_from_elo=False,
+            exclude_from_stats=False,
             status=RaceStatus.RUNNING,
         )
         db.add(race)
