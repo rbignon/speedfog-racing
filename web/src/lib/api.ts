@@ -1637,29 +1637,24 @@ export async function downloadMySeedPack(raceId: string): Promise<void> {
 // Stats API
 // =============================================================================
 
-export interface LeaderboardPlayer {
-  twitch_username: string;
-  twitch_display_name: string | null;
-  twitch_avatar_url: string | null;
-  elo_rating: number;
-  elo_races: number;
-  trend_delta: number;
-  avg_opponent_elo: number | null;
-  equipped_badge_id?: string | null;
-  equipped_name_template_id?: string | null;
-}
-
-export interface CommunityStats {
+export interface OverviewKpis {
   total_races: number;
   active_players: number;
-  ranked_players: number;
   total_deaths: number;
   hours_raced: number;
 }
 
-export interface LeaderboardResponse {
-  players: LeaderboardPlayer[];
-  community: CommunityStats;
+export interface OverviewWeekly {
+  weeks: string[];
+  races: number[];
+  active_users: number[];
+  deaths: number[];
+  hours: number[];
+}
+
+export interface StatsOverviewResponse {
+  kpis: OverviewKpis;
+  weekly: OverviewWeekly;
 }
 
 export interface ZoneStatEntry {
@@ -1784,11 +1779,11 @@ export interface UserTraitsResponse {
 }
 
 /**
- * Fetch the ELO leaderboard and community stats.
+ * Fetch community-wide activity KPIs with 12-week trends.
  */
-export async function fetchLeaderboard(): Promise<LeaderboardResponse> {
-  const res = await fetch(`${API_BASE}/stats/leaderboard`);
-  if (!res.ok) throw new Error("Failed to fetch leaderboard");
+export async function fetchStatsOverview(): Promise<StatsOverviewResponse> {
+  const res = await fetch(`${API_BASE}/stats/overview`);
+  if (!res.ok) throw new Error("Failed to fetch stats overview");
   return res.json();
 }
 

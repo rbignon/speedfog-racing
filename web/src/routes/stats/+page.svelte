@@ -2,16 +2,16 @@
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import { SvelteSet } from "svelte/reactivity";
-  import LeaderboardTab from "$lib/components/stats/LeaderboardTab.svelte";
+  import OverviewTab from "$lib/components/stats/OverviewTab.svelte";
   import ZonesTab from "$lib/components/stats/ZonesTab.svelte";
   import BossesTab from "$lib/components/stats/BossesTab.svelte";
   import PlayersTab from "$lib/components/stats/PlayersTab.svelte";
   import WeaponsTab from "$lib/components/stats/WeaponsTab.svelte";
 
-  type TabId = "leaderboard" | "zones" | "bosses" | "players" | "weapons";
+  type TabId = "overview" | "zones" | "bosses" | "players" | "weapons";
 
   const TABS: { id: TabId; label: string }[] = [
-    { id: "leaderboard", label: "Leaderboard" },
+    { id: "overview", label: "Overview" },
     { id: "zones", label: "Zones" },
     { id: "bosses", label: "Major Bosses" },
     { id: "players", label: "Play Styles" },
@@ -21,12 +21,12 @@
   let activeTab: TabId = $derived.by(() => {
     const param = page.url.searchParams.get("tab");
     if (param && TABS.some((t) => t.id === param)) return param as TabId;
-    return "leaderboard";
+    return "overview";
   });
 
   function switchTab(tab: TabId) {
     const url = new URL(page.url);
-    if (tab === "leaderboard") {
+    if (tab === "overview") {
       url.searchParams.delete("tab");
     } else {
       url.searchParams.set("tab", tab);
@@ -35,7 +35,7 @@
   }
 
   // Track which tabs have been activated for lazy loading
-  let mountedTabs = new SvelteSet<TabId>(["leaderboard"]);
+  let mountedTabs = new SvelteSet<TabId>(["overview"]);
 
   $effect(() => {
     mountedTabs.add(activeTab);
@@ -50,8 +50,8 @@
   <div class="page-header">
     <h1>Community Stats</h1>
     <p class="subtitle">
-      Rankings, zone data, boss encounters, and player profiles across all
-      races.
+      Community activity, zone data, boss encounters, and player profiles across
+      all races.
     </p>
   </div>
 
@@ -68,9 +68,9 @@
   </div>
 
   <div class="tab-content">
-    {#if mountedTabs.has("leaderboard")}
-      <div class="tab-panel" class:tab-hidden={activeTab !== "leaderboard"}>
-        <LeaderboardTab />
+    {#if mountedTabs.has("overview")}
+      <div class="tab-panel" class:tab-hidden={activeTab !== "overview"}>
+        <OverviewTab />
       </div>
     {/if}
     {#if mountedTabs.has("zones")}
