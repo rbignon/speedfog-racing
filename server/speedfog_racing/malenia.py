@@ -16,7 +16,7 @@ from speedfog_racing.config import settings
 logger = logging.getLogger(__name__)
 
 # malenia calendar events run 2h (shorter than the 3h Discord scheduled event).
-EVENT_DURATION = timedelta(hours=2)
+EVENT_DURATION = timedelta(hours=1)
 
 # Added to every event description so calendar visitors who do not know the
 # format understand what a SpeedFog race is.

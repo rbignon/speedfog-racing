@@ -31,7 +31,7 @@ async def test_create_calendar_event_builds_payload(monkeypatch):
     assert (method, path) == ("POST", "/events")
     assert body["title"] == "Speedfog - Fog Race"
     assert body["starts_at"] == scheduled.isoformat()
-    assert body["ends_at"] == (scheduled + timedelta(hours=2)).isoformat()
+    assert body["ends_at"] == (scheduled + timedelta(hours=1)).isoformat()
     assert body["event_url"] == "https://example.test/race/abc"
     assert body["image_url"] == "https://example.test/api/og/race/abc.png"
     assert body["organizer_login"] == "runnerlogin"
