@@ -410,6 +410,10 @@ impl RaceTracker {
                     .then(|| self.game_state.read_deaths())
                     .flatten(),
                 position_readable: self.game_state.is_position_readable(),
+                loading_screen: needs
+                    .loading
+                    .then(|| self.game_state.is_world_clock_stopped())
+                    .flatten(),
             }
         };
 

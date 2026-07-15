@@ -154,6 +154,10 @@ pub struct FrameSnapshot {
     pub igt_ms: Option<u32>,
     pub death_count: Option<u32>,
     pub position_readable: bool,
+    /// Whether the engine's "world clock stopped" byte is set (`None` =
+    /// not read this frame or unreadable). Stands in for "loading screen
+    /// displayed" outside frozen-clock seeds; see the reveal logic.
+    pub loading_screen: Option<bool>,
 }
 
 // =============================================================================
@@ -166,6 +170,8 @@ pub struct FrameSnapshot {
 pub struct FrameNeeds {
     pub igt: bool,
     pub deaths: bool,
+    /// Read the loading byte (only while a zone reveal is pending).
+    pub loading: bool,
     pub poll_flags: bool,
 }
 
@@ -267,16 +273,17 @@ pub struct RaceMachine {
     pub update_notice: Option<(String, Instant)>,
     /// Last flag reader status discriminant (for transition logging)
     pub last_flag_reader_ok: Option<bool>,
-    /// Zone update received, waiting for the post-loading fade before revealing
+    /// Zone update received, waiting for the loading screen to end before
+    /// revealing
     pub pending_zone_update: Option<ZoneUpdateData>,
-    /// When the pending zone update was received; consumed by the one-shot
-    /// stall-warn diagnostic (never forces a reveal)
+    /// When the pending zone update was received; anchors the defensive
+    /// reveal timeout and the one-shot stall-warn diagnostic
     pub pending_zone_received_at: Option<Instant>,
     /// Snapshot of current_layer taken when leaderboard_update bumps the layer.
     pub pre_reveal_layer: Option<i32>,
-    /// Since when the position has been continuously readable (None while in
-    /// a loading screen); reveals wait for the fade grace on top of it.
-    pub position_readable_since: Option<Instant>,
+    /// One-shot latch for the stall-warn diagnostic, reset on each
+    /// zone_update receipt
+    pub zone_stall_warned: bool,
     /// Whether position was readable last frame (loading screen exit detection)
     pub was_position_readable: bool,
     /// Seed mismatch: config seed_id doesn't match server seed_id
@@ -326,7 +333,7 @@ impl RaceMachine {
             pending_zone_update: None,
             pending_zone_received_at: None,
             pre_reveal_layer: None,
-            position_readable_since: None,
+            zone_stall_warned: false,
             was_position_readable: true,
             seed_mismatch: false,
             last_auth_error: None,
@@ -699,6 +706,7 @@ impl RaceMachine {
                     exits,
                 });
                 self.pending_zone_received_at = Some(now);
+                self.zone_stall_warned = false;
             }
             MachineMessage::EventFlagAck { message_id } => {
                 if let Some(event) = self.in_flight_event_flags.remove(&message_id) {
@@ -789,18 +797,16 @@ impl RaceMachine {
     }
 }
 
-/// How long the position must have been continuously readable before a
-/// pending zone update is revealed. `position_readable` flips true when the
-/// world is loaded (the hardware-dependent part of a loading screen); this
-/// constant covers the engine's fixed fade-in animation that follows
-/// (measured at ~0.9s, see the 2026-07-13 loading-byte discovery session).
-const ZONE_REVEAL_FADE_GRACE: Duration = Duration::from_secs(1);
+/// Defensive timeout for the zone reveal, anchored on zone_update receipt.
+/// On frozen-clock event seeds (weather plugin FreezeTime) the loading byte
+/// never clears and the reveal falls back to this bound; loads usually last
+/// at least this long, so the degraded reveal lands near the loading exit.
+const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Diagnostic only: how long a zone update may stay pending before a one-shot
-/// warn! is logged. The reveal itself has no timeout (a pending zone
-/// legitimately waits while the player idles in a menu), so this log is the
-/// only trace left when position readability breaks or flickers and reveals
-/// silently stop firing.
+/// Diagnostic only: how long a zone update may stay pending before a
+/// one-shot warn! is logged. Both reveal paths require a readable position,
+/// so this log is the only trace left when position readability breaks or
+/// flickers and reveals silently stop firing.
 const ZONE_REVEAL_STALL_WARN: Duration = Duration::from_secs(30);
 
 impl RaceMachine {
@@ -812,6 +818,7 @@ impl RaceMachine {
             // and event-flag polling stay correct with UI hidden and WS down.
             igt: live || !self.event_ids.is_empty(),
             deaths: live,
+            loading: self.pending_zone_update.is_some(),
             poll_flags: !self.event_ids.is_empty()
                 && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
         }
@@ -869,44 +876,40 @@ impl RaceMachine {
 
         let position_readable = self.frame_snapshot.position_readable;
 
-        // Track how long the position has been continuously readable.
-        if position_readable {
-            if self.position_readable_since.is_none() {
-                self.position_readable_since = Some(now);
-            }
-        } else {
-            self.position_readable_since = None;
-        }
-
-        // Reveal pending zone update once the player has been out of the
-        // loading screen for the fade grace. The engine's own loading
-        // indicator (event flag 2200, the byte behind the old
-        // is_in_loading_screen) is unusable here: it means "world clock
-        // stopped", which the SpeedFog weather plugin's FreezeTime keeps
-        // permanently on, stalling every reveal (2026-07-13 discovery).
-        if self.pending_zone_update.is_some()
-            && self
-                .position_readable_since
-                .is_some_and(|t| now.duration_since(t) >= ZONE_REVEAL_FADE_GRACE)
-        {
-            let zone = self.pending_zone_update.take().unwrap();
-            info!(name = %zone.display_name, "[RACE] Zone revealed");
-            self.race_state.current_zone = Some(zone);
-            self.zone_version = self.zone_version.wrapping_add(1);
-            self.pre_reveal_layer = None;
-            self.pending_zone_received_at = None;
-        } else if let (Some(zone), Some(received)) =
-            (&self.pending_zone_update, self.pending_zone_received_at)
-        {
-            let pending = now.duration_since(received);
-            if pending >= ZONE_REVEAL_STALL_WARN {
+        // Reveal pending zone update once the loading screen ends (loading
+        // byte clear) and the player position is readable. The byte really
+        // means "world clock stopped" (see is_world_clock_stopped):
+        // permanently ON on frozen-clock event seeds (weather plugin
+        // FreezeTime), where the defensive timeout bounds the wait instead.
+        // Both paths require a readable position, so a reveal can never
+        // fire before the world is loaded.
+        if self.pending_zone_update.is_some() {
+            let pending_for = self.pending_zone_received_at.map(|t| now.duration_since(t));
+            let timed_out = pending_for.is_some_and(|d| d >= ZONE_REVEAL_TIMEOUT);
+            let loading_done = self.frame_snapshot.loading_screen != Some(true);
+            if position_readable && (loading_done || timed_out) {
+                let zone = self.pending_zone_update.take().unwrap();
+                if loading_done {
+                    info!(name = %zone.display_name, "[RACE] Zone revealed");
+                } else {
+                    warn!(name = %zone.display_name, "[RACE] Zone revealed (timeout, loading byte stuck)");
+                }
+                self.race_state.current_zone = Some(zone);
+                self.zone_version = self.zone_version.wrapping_add(1);
+                self.pre_reveal_layer = None;
+                self.pending_zone_received_at = None;
+                self.zone_stall_warned = false;
+            } else if !self.zone_stall_warned
+                && pending_for.is_some_and(|d| d >= ZONE_REVEAL_STALL_WARN)
+            {
+                let zone = self.pending_zone_update.as_ref().unwrap();
                 warn!(
                     name = %zone.display_name,
-                    pending_secs = pending.as_secs(),
+                    pending_secs = pending_for.unwrap().as_secs(),
                     position_readable,
                     "[RACE] Zone reveal still pending (position readability broken or flickering, or player idling in a menu)"
                 );
-                self.pending_zone_received_at = None;
+                self.zone_stall_warned = true;
             }
         }
 
@@ -1319,10 +1322,15 @@ mod tests {
     }
 
     fn snap(igt: Option<u32>, pos: bool) -> FrameSnapshot {
+        snap_load(igt, pos, Some(false))
+    }
+
+    fn snap_load(igt: Option<u32>, pos: bool, loading: Option<bool>) -> FrameSnapshot {
         FrameSnapshot {
             igt_ms: igt,
             death_count: Some(0),
             position_readable: pos,
+            loading_screen: loading,
         }
     }
 
@@ -1631,34 +1639,36 @@ mod tests {
     }
 
     #[test]
-    fn test_zone_reveal_waits_for_fade_grace() {
+    fn test_zone_reveal_waits_for_loading_end() {
         let now = Instant::now();
         let mut m = running_machine(now);
         m.handle_message(zone_update("Stormveil", None), now + ms(100));
         assert!(m.pending_zone_update.is_some());
         assert_eq!(m.zone_version, 0, "no bump before reveal");
 
-        // Still loading (position unreadable): not revealed.
-        m.tick(tick_in(snap(Some(1000), false), true, None), now + ms(200));
+        // Still loading: byte set, position unreadable.
+        m.tick(
+            tick_in(snap_load(Some(1000), false, Some(true)), true, None),
+            now + ms(200),
+        );
         assert!(m.race_state.current_zone.is_none());
 
-        // Loading exit: position readable, but the fade grace has not
-        // elapsed yet.
+        // World loaded (position readable) but the loading screen still
+        // displayed (byte set): not revealed.
         m.tick(
-            tick_in(snap(Some(1200), true), true, Some(vec![])),
+            tick_in(snap_load(Some(1200), true, Some(true)), true, Some(vec![])),
             now + ms(300),
         );
-        assert!(m.race_state.current_zone.is_none());
         m.tick(
-            tick_in(snap(Some(2000), true), true, None),
-            now + ms(300) + ZONE_REVEAL_FADE_GRACE - ms(50),
+            tick_in(snap_load(Some(2000), true, Some(true)), true, None),
+            now + secs(3),
         );
         assert!(m.race_state.current_zone.is_none());
 
-        // Grace elapsed: revealed.
+        // Byte clear: revealed on that very frame.
         m.tick(
-            tick_in(snap(Some(2100), true), true, None),
-            now + ms(300) + ZONE_REVEAL_FADE_GRACE + ms(50),
+            tick_in(snap_load(Some(2100), true, Some(false)), true, None),
+            now + secs(4),
         );
         let zone = m.race_state.current_zone.as_ref().expect("revealed");
         assert_eq!(zone.display_name, "Stormveil");
@@ -1667,28 +1677,59 @@ mod tests {
     }
 
     #[test]
-    fn test_zone_reveal_grace_restarts_on_new_loading() {
+    fn test_zone_reveal_timeout_when_byte_stuck() {
+        // Frozen-clock event seeds (weather plugin FreezeTime): the byte
+        // never clears, the defensive timeout bounds the wait.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.handle_message(zone_update("Volcano Manor", None), now);
+
+        m.tick(
+            tick_in(snap_load(Some(1000), true, Some(true)), true, None),
+            now + ms(200),
+        );
+        m.tick(
+            tick_in(snap_load(Some(2000), true, Some(true)), true, None),
+            now + ZONE_REVEAL_TIMEOUT - ms(50),
+        );
+        assert!(
+            m.race_state.current_zone.is_none(),
+            "byte stuck: no reveal before the timeout"
+        );
+
+        m.tick(
+            tick_in(snap_load(Some(3000), true, Some(true)), true, None),
+            now + ZONE_REVEAL_TIMEOUT + ms(50),
+        );
+        assert_eq!(
+            m.race_state.current_zone.as_ref().unwrap().display_name,
+            "Volcano Manor"
+        );
+    }
+
+    #[test]
+    fn test_zone_reveal_timeout_still_requires_position() {
+        // The timeout path never reveals while the world is not loaded: a
+        // long load on a frozen-clock seed reveals at loading exit, not
+        // mid-load.
         let now = Instant::now();
         let mut m = running_machine(now);
         m.handle_message(zone_update("Leyndell", None), now);
 
-        // Position readable: grace arming.
-        m.tick(tick_in(snap(Some(1000), true), true, None), now + ms(100));
-        assert!(m.race_state.current_zone.is_none());
-
-        // A new loading screen starts before the grace elapses: the timer
-        // resets, and nothing is revealed while the position is unreadable,
-        // however long that lasts.
-        m.tick(tick_in(snap(Some(1000), false), true, None), now + ms(500));
-        m.tick(tick_in(snap(Some(1000), false), true, None), now + secs(30));
-        assert!(m.race_state.current_zone.is_none());
-
-        // Out of loading: revealed only one full grace later.
-        m.tick(tick_in(snap(Some(1000), true), true, None), now + secs(31));
-        assert!(m.race_state.current_zone.is_none());
         m.tick(
-            tick_in(snap(Some(1000), true), true, None),
-            now + secs(31) + ZONE_REVEAL_FADE_GRACE + ms(50),
+            tick_in(snap_load(Some(1000), false, Some(true)), true, None),
+            now + ZONE_REVEAL_TIMEOUT + secs(3),
+        );
+        assert!(
+            m.race_state.current_zone.is_none(),
+            "position unreadable: no reveal even past the timeout"
+        );
+
+        // Position becomes readable (timeout long elapsed): reveal fires
+        // even though the byte is still stuck.
+        m.tick(
+            tick_in(snap_load(Some(2000), true, Some(true)), true, Some(vec![])),
+            now + ZONE_REVEAL_TIMEOUT + secs(4),
         );
         assert_eq!(
             m.race_state.current_zone.as_ref().unwrap().display_name,
@@ -1697,12 +1738,34 @@ mod tests {
     }
 
     #[test]
-    fn test_zone_reveal_instant_when_grace_already_elapsed() {
-        // Reconnect scenario (WEBSOCKET_LIFECYCLE.md): the zone_update
-        // arrives while the position has already been readable for longer
-        // than the grace, so the reveal fires on the very next tick. Pins
-        // that the grace is anchored on position readability, not on
-        // message arrival.
+    fn test_zone_reveal_byte_unreadable_counts_as_done() {
+        // Byte unreadable (game patch moved it, pointer chain broken):
+        // position readability alone gates the reveal, as before 1ddfe1c6.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.handle_message(zone_update("Siofra", None), now);
+
+        m.tick(
+            tick_in(snap_load(Some(1000), false, None), true, None),
+            now + ms(200),
+        );
+        assert!(m.race_state.current_zone.is_none(), "position still gates");
+
+        m.tick(
+            tick_in(snap_load(Some(2000), true, None), true, Some(vec![])),
+            now + ms(400),
+        );
+        assert_eq!(
+            m.race_state.current_zone.as_ref().unwrap().display_name,
+            "Siofra"
+        );
+    }
+
+    #[test]
+    fn test_zone_reveal_instant_on_reconnect_resend() {
+        // Reconnect scenario (WEBSOCKET_LIFECYCLE.md): the server resends
+        // the zone_update while the player stands in a loaded world (byte
+        // clear, position readable): the reveal fires on the next tick.
         let now = Instant::now();
         let mut m = running_machine(now);
         m.tick(tick_in(snap(Some(1000), true), true, None), now + ms(10));
@@ -1733,25 +1796,25 @@ mod tests {
             let mut m = running_machine(now);
             m.handle_message(zone_update("Farum Azula", None), now);
 
-            // Position readability flickers: readable stretches shorter than
-            // the fade grace, so the reveal never fires.
-            let mut t = ms(100);
-            while t < secs(29) {
-                m.tick(tick_in(snap(Some(1000), true), true, None), now + t);
-                m.tick(
-                    tick_in(snap(Some(1000), false), true, None),
-                    now + t + ms(900),
-                );
-                t += ms(1000);
-            }
+            // Position readability broken: unreadable the whole time, so
+            // neither the byte path nor the timeout path can reveal.
+            m.tick(
+                tick_in(snap_load(Some(1000), false, Some(true)), true, None),
+                now + secs(29),
+            );
             assert!(m.race_state.current_zone.is_none());
             assert_eq!(warn_count(&logs), 0, "no stall warn before the threshold");
 
             // Crossing the threshold: exactly one warn, still no reveal.
-            m.tick(tick_in(snap(Some(1000), true), true, None), now + secs(31));
+            m.tick(
+                tick_in(snap_load(Some(1000), false, Some(true)), true, None),
+                now + secs(31),
+            );
             assert_eq!(warn_count(&logs), 1, "one stall warn past the threshold");
-            m.tick(tick_in(snap(Some(1000), false), true, None), now + secs(32));
-            m.tick(tick_in(snap(Some(1000), true), true, None), now + secs(40));
+            m.tick(
+                tick_in(snap_load(Some(1000), false, Some(true)), true, None),
+                now + secs(40),
+            );
             assert_eq!(
                 warn_count(&logs),
                 1,
@@ -1759,22 +1822,26 @@ mod tests {
             );
             assert!(
                 m.race_state.current_zone.is_none(),
-                "diagnostic only, no forced reveal"
+                "diagnostic only, no reveal while position is unreadable"
             );
 
             // A new zone_update re-arms the warn, and last-writer-wins
             // re-anchors the stall clock on the latest arrival.
             m.handle_message(zone_update("Liurnia", None), now + secs(41));
-            m.tick(tick_in(snap(Some(1000), false), true, None), now + secs(42));
             m.handle_message(zone_update("Altus", None), now + secs(50));
-            m.tick(tick_in(snap(Some(1000), true), true, None), now + secs(75));
+            m.tick(
+                tick_in(snap_load(Some(1000), false, Some(true)), true, None),
+                now + secs(75),
+            );
             assert_eq!(
                 warn_count(&logs),
                 1,
                 "stall clock re-anchored on the latest zone_update"
             );
-            m.tick(tick_in(snap(Some(1000), false), true, None), now + secs(76));
-            m.tick(tick_in(snap(Some(1000), true), true, None), now + secs(81));
+            m.tick(
+                tick_in(snap_load(Some(1000), false, Some(true)), true, None),
+                now + secs(81),
+            );
             assert_eq!(warn_count(&logs), 2, "second pending zone warns again");
         });
     }
@@ -1796,15 +1863,15 @@ mod tests {
         );
         assert_eq!(m.pre_reveal_layer, Some(1));
 
-        // Arm the grace, then reveal clears the freeze.
+        // Still loading (byte set): frozen until the reveal.
         m.tick(
-            tick_in(snap(Some(1200), true), true, Some(vec![])),
+            tick_in(snap_load(Some(1200), true, Some(true)), true, Some(vec![])),
             now + ms(300),
         );
         assert_eq!(m.pre_reveal_layer, Some(1), "frozen until reveal");
         m.tick(
-            tick_in(snap(Some(2000), true), true, None),
-            now + ms(300) + ZONE_REVEAL_FADE_GRACE + ms(50),
+            tick_in(snap_load(Some(2000), true, Some(false)), true, None),
+            now + ms(400),
         );
         assert!(m.pre_reveal_layer.is_none());
     }

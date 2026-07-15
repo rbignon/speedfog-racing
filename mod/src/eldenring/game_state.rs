@@ -26,10 +26,11 @@ pub struct GameState {
     pointers: Pointers,
     play_region_id_ptr: PointerChain<u32>,
     death_count_ptr: PointerChain<u32>,
-    /// [[EventFlagMan]+0x28]+0x113: packs engine event flags 2200-2207.
-    /// NOT a loading indicator: its only moving bit (flag 2200) means "world
-    /// clock stopped", permanently ON under the SpeedFog weather plugin.
-    /// Debug overlay only; see `read_loading_byte`.
+    /// Byte packing engine event flags 2200-2207; its only moving bit (flag
+    /// 2200) means "world clock stopped". Loading proxy for zone reveals
+    /// (bounded by a defensive timeout, see `RaceMachine`): permanently ON
+    /// on seeds generated with the old FreezeTime weather plugin
+    /// (pre-2026-07-15 generator). Also shown in the debug overlay.
     loading_screen_ptr: PointerChain<u8>,
     /// ChrAsm: equipped-weapon resolution. All chains live under
     /// `GameDataMan -> +0x8 (PlayerGameData) -> +<field offset>`.
@@ -125,12 +126,23 @@ impl GameState {
     /// 2026-07-13 discovery session showed only flag 2200 ever moves, and
     /// that it means "world clock stopped": it is ON during loading screens
     /// and cutscenes, but also permanently ON while the SpeedFog weather
-    /// plugin freezes the clock. It is therefore NOT usable as a loading
-    /// indicator (zone reveals use the position-readable fade grace instead,
-    /// see `RaceMachine`).
+    /// plugin freezes the clock. Zone reveals treat it as a loading proxy
+    /// bounded by a defensive timeout (see `RaceMachine`);
+    /// `is_world_clock_stopped` is the boolean view.
     pub fn read_loading_byte(&self) -> Option<u8> {
         profile_span!("read_loading_byte");
         self.loading_screen_ptr.read()
+    }
+
+    /// Whether the engine's "world clock stopped" byte is nonzero (see
+    /// `read_loading_byte` for what the byte really is). ON during loading
+    /// screens and cutscenes; permanently ON while the SpeedFog weather
+    /// plugin freezes the clock, so callers treating it as "loading screen
+    /// displayed" must bound the wait (see the zone reveal timeout in
+    /// `RaceMachine`).
+    pub fn is_world_clock_stopped(&self) -> Option<bool> {
+        profile_span!("is_world_clock_stopped");
+        self.loading_screen_ptr.read().map(|v| v != 0)
     }
 
     /// Read the currently-equipped weapon IDs for the left and right hands.
