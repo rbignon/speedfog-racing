@@ -43,13 +43,13 @@ def test_chat_message_schema_carries_equipped_rewards():
         role="participant",
         dominant_trait=None,
         equipped_badge_id="early_adopter",
-        equipped_name_template_id="elo_crown",
+        equipped_name_template_id="daily_crown",
         message="gg",
         timestamp="2026-04-30T12:00:00+00:00",
     )
     data = msg.model_dump()
     assert data["equipped_badge_id"] == "early_adopter"
-    assert data["equipped_name_template_id"] == "elo_crown"
+    assert data["equipped_name_template_id"] == "daily_crown"
 
 
 def test_send_chat_message_schema():

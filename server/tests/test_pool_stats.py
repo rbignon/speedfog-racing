@@ -272,8 +272,9 @@ async def test_pool_stats_empty_user(test_client, async_session):
 async def test_pool_stats_excludes_daily_seeds(test_client, async_session):
     """Finished Daily Seed participations don't show up in per-mode pool stats.
 
-    Daily Seeds are a community challenge format (no ELO) and bucketing
-    them under their underlying pool would silently inflate per-mode stats.
+    Daily Seeds are a community challenge format (not a head-to-head pool
+    race) and bucketing them under their underlying pool would silently
+    inflate per-mode stats.
     """
     async with async_session() as db:
         player = User(

@@ -104,7 +104,7 @@ async def test_grant_name_template_creates_unlock_and_notification(async_session
     user = await _make_user(async_session)
     async with async_session() as db:
         svc = RewardsService(db)
-        await svc.grant_name_template(user.id, "daily_crown", reason="reached top 1")
+        await svc.grant_name_template(user.id, "daily_crown", reason="weekly daily champion")
         await db.commit()
 
     async with async_session() as db:

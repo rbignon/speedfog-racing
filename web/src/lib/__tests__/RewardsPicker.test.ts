@@ -334,8 +334,7 @@ const seedCatalogWithPhantomSkins = () => {
     {
       id: "cyan-aura",
       name: "Cyan Aura",
-      description:
-        "Granted the first time you finish the week as Daily Champion.",
+      description: "Granted the first time you win a daily seed.",
       screenshot_filename: "cyan-aura.jpg",
       sort_order: 30,
     },

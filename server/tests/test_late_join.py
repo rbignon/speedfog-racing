@@ -318,7 +318,7 @@ async def test_close_expired_races_stale_version_skipped(hc_async_session):
     Regression for the check-then-act race: hard-close filters its UPDATE
     on `version = :v` so a concurrent /finish (which bumps version) causes
     hard-close to see rowcount=0 and skip finalization, preventing duplicate
-    "race has finished" messages and double ELO recomputation.
+    "race has finished" messages and double reward grants.
     """
     from sqlalchemy import update as sa_update
 

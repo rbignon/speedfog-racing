@@ -61,12 +61,12 @@ async def test_badge_grant_round_trip(async_session):
 async def test_name_template_unlock_unique(async_session):
     user = await _make_user(async_session)
     async with async_session() as db:
-        a = NameTemplateUnlock(user_id=user.id, template_id="elo_crown")
+        a = NameTemplateUnlock(user_id=user.id, template_id="daily_crown")
         db.add(a)
         await db.commit()
 
     async with async_session() as db:
-        b = NameTemplateUnlock(user_id=user.id, template_id="elo_crown")
+        b = NameTemplateUnlock(user_id=user.id, template_id="daily_crown")
         db.add(b)
         with pytest.raises(IntegrityError):
             await db.commit()
