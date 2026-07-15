@@ -1,6 +1,6 @@
 """GET /stats/overview: community KPIs + 12-week trend series."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -60,8 +60,8 @@ async def test_overview_empty_db(async_session):
 async def test_overview_counts_public_finished_races_only(async_session):
     now = datetime.now(UTC)
     async with async_session() as db:
-        a, b, org = _user(1), _user(2), _user(99)
-        db.add_all([a, b, org])
+        a, b, c, org = _user(1), _user(2), _user(3), _user(99)
+        db.add_all([a, b, c, org])
         await db.flush()
 
         public = Race(
@@ -69,14 +69,14 @@ async def test_overview_counts_public_finished_races_only(async_session):
             organizer_id=org.id,
             status=RaceStatus.FINISHED,
             is_public=True,
-            started_at=now - timedelta(days=2),
+            started_at=now,
         )
         private = Race(
             name="priv",
             organizer_id=org.id,
             status=RaceStatus.FINISHED,
             is_public=False,
-            started_at=now - timedelta(days=2),
+            started_at=now,
         )
         db.add_all([public, private])
         await db.flush()
@@ -120,8 +120,19 @@ async def test_overview_counts_public_finished_races_only(async_session):
         )
         db.add(seed)
         await db.flush()
-        db.add(
-            TrainingSession(user_id=b.id, seed_id=seed.id, status=TrainingSessionStatus.FINISHED)
+        db.add_all(
+            [
+                TrainingSession(
+                    user_id=b.id,
+                    seed_id=seed.id,
+                    status=TrainingSessionStatus.FINISHED,
+                ),
+                TrainingSession(
+                    user_id=c.id,
+                    seed_id=seed.id,
+                    status=TrainingSessionStatus.FINISHED,
+                ),
+            ]
         )
         await db.commit()
         data = await compute_public_overview(db)
@@ -135,5 +146,5 @@ async def test_overview_counts_public_finished_races_only(async_session):
     assert sum(data["weekly"]["races"]) == 1
     assert sum(data["weekly"]["deaths"]) == 10
     assert sum(data["weekly"]["hours"]) == 1.5
-    # a played a race, b played a race and a training session: 2 distinct.
-    assert max(data["weekly"]["active_users"]) == 2
+    # c has no race participation: only the training-session path can count them.
+    assert data["weekly"]["active_users"][-1] == 3
