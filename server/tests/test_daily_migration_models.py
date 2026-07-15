@@ -52,10 +52,10 @@ async def test_system_user_can_be_inserted_with_null_api_token(mig_async_session
                 """
                 INSERT INTO users
                     (id, twitch_id, twitch_username, twitch_display_name,
-                     role, api_token, elo_rating, elo_races)
+                     role, api_token)
                 VALUES
                     (:id, 'system:daily', 'speedfog_daily', 'Daily Seed',
-                     'SYSTEM', NULL, 1500.0, 0)
+                     'SYSTEM', NULL)
                 """
             ).bindparams(id=str(uuid4()))
         )

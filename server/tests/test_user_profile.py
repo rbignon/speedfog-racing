@@ -889,14 +889,13 @@ async def test_traits_returns_progress_when_insufficient_races(test_client, asyn
 
 @pytest.mark.asyncio
 async def test_traits_unlocked_by_private_races(test_client, async_session):
-    """Traits unlock based on total finished races, including private ones (elo_races=0)."""
+    """Traits unlock based on total finished races, including private ones."""
     async with async_session() as db:
         user = User(
             twitch_id="private_racer",
             twitch_username="private_racer",
             api_token="private_racer_token",
             role=UserRole.USER,
-            elo_races=0,
         )
         db.add(user)
         await db.flush()

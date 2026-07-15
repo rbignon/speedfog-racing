@@ -13,10 +13,7 @@ from speedfog_racing.models import ChatChannel, ParticipantStatus, Race, RaceSta
 # module top would re-enter `services/__init__.py` mid-load and crash anything
 # that loads `rewards.service` first (e.g. the backfill CLI). We import lazily
 # inside the two call sites instead.
-from speedfog_racing.services.stats_service import (
-    recompute_traits_for_race_async,
-    update_elo_ratings,
-)
+from speedfog_racing.services.stats_service import recompute_traits_for_race_async
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +68,6 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
 
     logger.info("Race %s auto-finished (all participants done)", race.id)
 
-    await update_elo_ratings(race.id, db)
     from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
 
     rewards_svc = RewardsService(db)
@@ -141,7 +137,6 @@ async def finalize_race(
 
     room = manager.get_room(race.id)
 
-    await update_elo_ratings(race.id, db)
     from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
 
     rewards_svc = RewardsService(db)

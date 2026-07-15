@@ -120,8 +120,6 @@ class User(Base):
     feedback_prompted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    elo_rating: Mapped[float] = mapped_column(default=1500.0)
-    elo_races: Mapped[int] = mapped_column(default=0)
     equipped_badge_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     equipped_name_template_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     equipped_phantom_skin_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -497,20 +495,6 @@ class TrainingSession(Base):
     # Relationships
     user: Mapped["User"] = relationship()
     seed: Mapped["Seed"] = relationship()
-
-
-class EloHistory(Base):
-    __tablename__ = "elo_history"
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-    race_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("races.id"), nullable=False)
-    elo_before: Mapped[float] = mapped_column(nullable=False)
-    elo_after: Mapped[float] = mapped_column(nullable=False)
-    delta: Mapped[float] = mapped_column(nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    __table_args__ = (Index("ix_elo_history_user_created", "user_id", "created_at"),)
 
 
 class PlayerTraitScores(Base):

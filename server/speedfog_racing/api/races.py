@@ -1645,8 +1645,6 @@ async def reset_race(
             detail="Can only reset a running or finished race",
         )
 
-    was_finished = race.status == RaceStatus.FINISHED
-
     # Close all WebSocket connections before mutating state
     await manager.close_room(race_id, code=1000, reason="Race reset")
 
@@ -1657,14 +1655,6 @@ async def reset_race(
         RaceStatus.SETUP,
         started_at=None,
     )
-
-    # A finished race already applied ELO; undo it so the voided run stops
-    # counting and the re-run can be rated again (update_elo_ratings is guarded
-    # by an existing EloHistory row for the race).
-    if was_finished:
-        from speedfog_racing.services.stats_service import revert_elo_ratings
-
-        await revert_elo_ratings(race.id, db)
 
     for p in race.participants:
         p.status = ParticipantStatus.REGISTERED

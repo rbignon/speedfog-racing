@@ -1,11 +1,10 @@
-"""Stats computation: ELO ratings and behavioral traits."""
+"""Stats computation: behavioral traits."""
 
 import asyncio
 import logging
 from collections.abc import Sequence
 from difflib import SequenceMatcher
 from math import sqrt
-from statistics import median
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -14,312 +13,18 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.database import async_session_maker
 from speedfog_racing.models import (
-    EloHistory,
     Participant,
     ParticipantStatus,
     PlayerTraitScores,
     Race,
     RaceStatus,
-    Seed,
-    User,
 )
 
 logger = logging.getLogger(__name__)
 
-K_FACTOR = 32
-K_FACTOR_PROVISIONAL = 48  # Higher K for players still calibrating
-DIFFICULTY_INJECTION = 5.0  # Max ELO bonus/penalty per race from seed difficulty
-REFERENCE_ELO = 1500.0  # Baseline for field strength weighting
-STARTING_ELO = 1500.0
-PROVISIONAL_THRESHOLD = 10  # Races needed for full ELO confidence
-MIN_RACES_FOR_DISPLAY = 3
 DOMINANT_PERCENTILE_THRESHOLD = 0.5  # Must be in top 50% on at least one trait
 BOSS_NODE_TYPES = {"boss_arena", "major_boss", "final_boss"}
 MIN_RACES_FOR_TRAITS = 3
-
-
-def compute_elo_deltas(
-    players: list[dict[str, Any]],
-) -> dict[str, float]:
-    """Compute ELO rating changes for all players in a race.
-
-    Each player dict must have: user_id, elo, igt_ms, finished (bool).
-    Optional: elo_races (int) for provisional confidence weighting and adaptive K factor.
-    Players with finished=False are treated as abandoned (S=0 against finishers).
-    Returns a dict mapping user_id to delta (float).
-    """
-    n = len(players)
-    if n < 2:
-        return {p["user_id"]: 0.0 for p in players}
-
-    finisher_igts = [p["igt_ms"] for p in players if p["finished"]]
-    if finisher_igts:
-        ref_time = median(finisher_igts) * 0.3
-    else:
-        ref_time = 1.0  # Avoid division by zero; all abandoned
-
-    deltas: dict[str, float] = {p["user_id"]: 0.0 for p in players}
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            a, b = players[i], players[j]
-            ea = 1.0 / (1.0 + 10.0 ** ((b["elo"] - a["elo"]) / 400.0))
-            eb = 1.0 - ea
-
-            sa, sb = _actual_scores(a, b, ref_time)
-
-            # Established players: scale by opponent confidence so that
-            # matches against provisional players count less.
-            # Provisional players: always get full delta (bootstrapping).
-            conf_a = min(a.get("elo_races", PROVISIONAL_THRESHOLD) / PROVISIONAL_THRESHOLD, 1.0)
-            conf_b = min(b.get("elo_races", PROVISIONAL_THRESHOLD) / PROVISIONAL_THRESHOLD, 1.0)
-            a_is_established = a.get("elo_races", PROVISIONAL_THRESHOLD) >= PROVISIONAL_THRESHOLD
-            b_is_established = b.get("elo_races", PROVISIONAL_THRESHOLD) >= PROVISIONAL_THRESHOLD
-            weight_a = conf_b if a_is_established else 1.0
-            weight_b = conf_a if b_is_established else 1.0
-            k_a = K_FACTOR_PROVISIONAL if not a_is_established else K_FACTOR
-            k_b = K_FACTOR_PROVISIONAL if not b_is_established else K_FACTOR
-            deltas[a["user_id"]] += k_a * (sa - ea) * weight_a
-            deltas[b["user_id"]] += k_b * (sb - eb) * weight_b
-
-    # Normalize: established players by sum of opponent confidences
-    # (prevents dilution from provisionals), others by n-1
-    for p in players:
-        uid = p["user_id"]
-        is_established = p.get("elo_races", PROVISIONAL_THRESHOLD) >= PROVISIONAL_THRESHOLD
-        if is_established:
-            conf_sum = sum(
-                min(other.get("elo_races", PROVISIONAL_THRESHOLD) / PROVISIONAL_THRESHOLD, 1.0)
-                for other in players
-                if other["user_id"] != uid
-            )
-            if conf_sum > 0:
-                deltas[uid] /= max(conf_sum, 1.0)
-        else:
-            deltas[uid] /= n - 1
-
-    return deltas
-
-
-def apply_field_strength_weight(
-    deltas: dict[str, float],
-    player_elos: dict[str, float],
-) -> dict[str, float]:
-    """Scale ELO deltas by the average field strength.
-
-    Strong fields (avg ELO > REFERENCE_ELO) amplify gains/losses.
-    Weak fields dampen them. This accelerates rating divergence
-    once difficulty injection starts separating pool averages.
-    """
-    if not player_elos:
-        return deltas
-    avg_elo = sum(player_elos.values()) / len(player_elos)
-    weight = avg_elo / REFERENCE_ELO
-    return {uid: delta * weight for uid, delta in deltas.items()}
-
-
-def apply_difficulty_bonus(
-    deltas: dict[str, float],
-    difficulty_factor: float,
-) -> dict[str, float]:
-    """Add a uniform bonus/penalty based on seed difficulty.
-
-    This intentionally breaks zero-sum: harder seeds inject positive
-    ELO into the system, easier seeds remove it. Over time, players
-    who race on harder seeds drift upward.
-    """
-    bonus = DIFFICULTY_INJECTION * (difficulty_factor - 1.0)
-    return {uid: delta + bonus for uid, delta in deltas.items()}
-
-
-def _actual_scores(a: dict[str, Any], b: dict[str, Any], ref_time: float) -> tuple[float, float]:
-    """Compute actual scores for a pair with margin of victory."""
-    a_fin, b_fin = a["finished"], b["finished"]
-
-    if a_fin and b_fin:
-        gap = abs(a["igt_ms"] - b["igt_ms"])
-        margin = min(gap / ref_time, 1.0) if ref_time > 0 else 0.0
-        if a["igt_ms"] <= b["igt_ms"]:
-            return 0.5 + 0.5 * margin, 0.5 - 0.5 * margin
-        else:
-            return 0.5 - 0.5 * margin, 0.5 + 0.5 * margin
-    elif a_fin and not b_fin:
-        return 1.0, 0.0
-    elif not a_fin and b_fin:
-        return 0.0, 1.0
-    else:
-        return 0.5, 0.5
-
-
-async def update_elo_ratings(
-    race_id: Any,
-    db: AsyncSession,
-    *,
-    global_avg_difficulty: float | None = None,
-) -> None:
-    """Compute and persist ELO changes for a finished race. Idempotent.
-
-    Args:
-        global_avg_difficulty: Pre-computed global average seed difficulty.
-            When provided (e.g. during full recalculation), skips the DB
-            query so that all races use the same stable baseline.
-    """
-    existing = await db.execute(select(EloHistory.id).where(EloHistory.race_id == race_id).limit(1))
-    if existing.scalar_one_or_none() is not None:
-        return
-
-    race = await db.get(Race, race_id, options=[selectinload(Race.participants)])
-    if race is None:
-        return
-
-    # Races flagged exclude_from_elo (Daily Seeds, calibration runs, etc.)
-    # never affect ratings, even when they are public and finished.
-    if race.exclude_from_elo:
-        return
-
-    # Private races don't affect ELO (not verifiable by the community)
-    if not race.is_public:
-        return
-
-    players: list[dict[str, Any]] = []
-    for participant in race.participants:
-        if participant.status == ParticipantStatus.FINISHED:
-            players.append(
-                {
-                    "user_id": participant.user_id,
-                    "igt_ms": participant.igt_ms,
-                    "finished": True,
-                }
-            )
-        elif participant.status == ParticipantStatus.ABANDONED and participant.igt_ms > 0:
-            players.append(
-                {
-                    "user_id": participant.user_id,
-                    "igt_ms": participant.igt_ms,
-                    "finished": False,
-                }
-            )
-
-    if len(players) < 2:
-        return
-
-    user_ids = [p["user_id"] for p in players]
-    users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
-    users_by_id = {u.id: u for u in users_result.scalars().all()}
-
-    # Filter to players whose users still exist (defensive against deleted users)
-    players = [p for p in players if p["user_id"] in users_by_id]
-    if len(players) < 2:
-        return
-
-    for p in players:
-        user = users_by_id[p["user_id"]]
-        p["elo"] = user.elo_rating
-        p["elo_races"] = user.elo_races
-
-    deltas = compute_elo_deltas(players)
-
-    # --- Field strength weighting ---
-    player_elos = {p["user_id"]: p["elo"] for p in players}
-    deltas = apply_field_strength_weight(deltas, player_elos)
-
-    # --- Zero-sum enforcement ---
-    # The asymmetric confidence weighting (established players shielded from
-    # provisionals) and adaptive K factor create a systematic leak: when
-    # established players beat provisionals, less positive ELO is awarded
-    # than negative ELO is removed. Redistribute the excess proportionally
-    # to each player's absolute delta so that players with zero delta
-    # (fully shielded) stay unaffected.
-    total = sum(deltas.values())
-    abs_total = sum(abs(d) for d in deltas.values())
-    if abs_total > 0 and abs(total) > 1e-10:
-        for uid in deltas:
-            deltas[uid] -= total * abs(deltas[uid]) / abs_total
-
-    # --- Difficulty injection ---
-    # Average over seeds actually used in finished public races. We join
-    # through Race.seed_id rather than filtering by SeedStatus because
-    # pool rotation marks consumed seeds as DISCARDED.
-    seed = await db.get(Seed, race.seed_id) if race.seed_id else None
-    if seed and seed.difficulty_score > 0:
-        if global_avg_difficulty is not None:
-            global_avg = global_avg_difficulty
-        else:
-            avg_result = await db.execute(
-                select(func.avg(Seed.difficulty_score)).where(
-                    Seed.difficulty_score > 0,
-                    Seed.id.in_(
-                        select(Race.seed_id).where(
-                            Race.is_public.is_(True),
-                            Race.exclude_from_elo.is_(False),
-                            Race.status == RaceStatus.FINISHED,
-                            Race.seed_id.is_not(None),
-                        )
-                    ),
-                )
-            )
-            global_avg = avg_result.scalar() or seed.difficulty_score
-        difficulty_factor = seed.difficulty_score / global_avg
-        deltas = apply_difficulty_bonus(deltas, difficulty_factor)
-
-    # Winner floor: 1st place never loses ELO
-    finishers = [p for p in players if p["finished"]]
-    if finishers:
-        winner = min(finishers, key=lambda p: p["igt_ms"])
-        winner_id = winner["user_id"]
-        if deltas[winner_id] < 0:
-            deltas[winner_id] = 0.0
-
-    logger.debug("ELO update for race %s: %d players", race_id, len(players))
-
-    for p in players:
-        user = users_by_id[p["user_id"]]
-        delta = deltas[p["user_id"]]
-        elo_before = user.elo_rating
-        user.elo_rating = elo_before + delta
-        user.elo_races += 1
-        db.add(
-            EloHistory(
-                user_id=user.id,
-                race_id=race_id,
-                elo_before=elo_before,
-                elo_after=user.elo_rating,
-                delta=delta,
-            )
-        )
-
-    await db.commit()
-
-
-async def revert_elo_ratings(race_id: Any, db: AsyncSession) -> None:
-    """Undo the ELO a finished race applied so it can be rated again. Caller commits.
-
-    Deletes the race's EloHistory rows and subtracts each stored delta from the
-    user's current rating (decrementing elo_races). This restores the
-    idempotency guard in ``update_elo_ratings`` so a re-run of a reset race is
-    re-ratable. Ratings are only approximately restored when later races have
-    since built on the reverted values; a full recalculation
-    (``recalculate_all_stats``) remains the way to fully true up drift.
-
-    No-op when the race has no EloHistory (running, private, or excluded races).
-    """
-    rows = (
-        (await db.execute(select(EloHistory).where(EloHistory.race_id == race_id))).scalars().all()
-    )
-    if not rows:
-        return
-
-    user_ids = [row.user_id for row in rows]
-    users_by_id = {
-        u.id: u
-        for u in (await db.execute(select(User).where(User.id.in_(user_ids)))).scalars().all()
-    }
-    for row in rows:
-        user = users_by_id.get(row.user_id)
-        if user is not None:
-            user.elo_rating -= row.delta
-            user.elo_races = max(0, user.elo_races - 1)
-        await db.delete(row)
 
 
 async def update_player_traits(race_id: Any, db: AsyncSession) -> None:
@@ -709,18 +414,12 @@ async def resolve_dominant_traits(db: AsyncSession) -> None:
 
 
 async def recalculate_all_stats(db: AsyncSession) -> None:
-    """Clear all ELO/trait data and replay from scratch."""
+    """Refresh seed difficulty scores and replay all trait data from scratch."""
     from speedfog_racing.services.seed_difficulty import backfill_difficulty_scores
 
     await backfill_difficulty_scores(db)
 
-    await db.execute(delete(EloHistory))
     await db.execute(delete(PlayerTraitScores))
-
-    all_users = (await db.execute(select(User))).scalars().all()
-    for u in all_users:
-        u.elo_rating = STARTING_ELO
-        u.elo_races = 0
     await db.commit()
 
     race_ids = (
@@ -738,26 +437,7 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
         .all()
     )
 
-    # Pre-compute global average seed difficulty across all finished public
-    # races so every replayed race uses the same stable baseline, avoiding
-    # temporal distortion from an evolving rolling average.
-    avg_result = await db.execute(
-        select(func.avg(Seed.difficulty_score)).where(
-            Seed.difficulty_score > 0,
-            Seed.id.in_(
-                select(Race.seed_id).where(
-                    Race.is_public.is_(True),
-                    Race.exclude_from_elo.is_(False),
-                    Race.status == RaceStatus.FINISHED,
-                    Race.seed_id.is_not(None),
-                )
-            ),
-        )
-    )
-    global_avg_diff = avg_result.scalar()
-
     for race_id in race_ids:
-        await update_elo_ratings(race_id, db, global_avg_difficulty=global_avg_diff)
         await update_player_traits(race_id, db)
 
     # After all per-user raw scores are computed, resolve dominant traits
