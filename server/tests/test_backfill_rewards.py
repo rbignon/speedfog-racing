@@ -24,7 +24,6 @@ from speedfog_racing.rewards.catalog import (
     VETERAN_RACE_THRESHOLD,
 )
 from speedfog_racing.scripts.backfill_rewards import backfill_rewards
-from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
 
 
 @pytest.fixture
@@ -101,58 +100,6 @@ async def test_backfill_is_idempotent(async_session_maker):
             .all()
         )
         assert len(grants) == 1
-
-
-async def test_backfill_grants_top1_elo_to_current_holder(async_session_maker):
-    """The top ELO holder gets the transient top1_elo badge and the elo_crown template."""
-    async with async_session_maker() as db:
-        a = User(
-            twitch_id="ta",
-            twitch_username="a",
-            elo_rating=1900.0,
-            elo_races=PROVISIONAL_THRESHOLD,
-        )
-        b = User(
-            twitch_id="tb",
-            twitch_username="b",
-            elo_rating=1700.0,
-            elo_races=PROVISIONAL_THRESHOLD,
-        )
-        db.add_all([a, b])
-        await db.commit()
-        await db.refresh(a)
-        a_id = a.id
-
-    cutoff = date(2026, 4, 1)
-    await backfill_rewards(async_session_maker, cutoff=cutoff)
-
-    async with async_session_maker() as db:
-        holders = (
-            (
-                await db.execute(
-                    select(BadgeGrant.user_id).where(
-                        BadgeGrant.badge_id == "top1_elo",
-                        BadgeGrant.revoked_at.is_(None),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert holders == [a_id]
-
-        crown_unlocks = (
-            (
-                await db.execute(
-                    select(NameTemplateUnlock.user_id).where(
-                        NameTemplateUnlock.template_id == "elo_crown"
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert crown_unlocks == [a_id]
 
 
 async def test_backfill_grants_pioneer_alongside_early_adopter(async_session_maker):

@@ -124,7 +124,7 @@ async def test_admin_grant_template(test_client, admin_user, target_user):
     async with test_client as client:
         resp = await client.post(
             f"/api/admin/users/{target_user.id}/templates",
-            json={"template_id": "elo_crown"},
+            json={"template_id": "daily_crown"},
             headers=headers,
         )
         assert resp.status_code == 201
@@ -160,13 +160,13 @@ async def test_admin_revoke_template(test_client, admin_user, target_user, async
 
     async with async_session() as db:
         svc = RewardsService(db)
-        await svc.grant_name_template(target_user.id, "elo_crown")
+        await svc.grant_name_template(target_user.id, "daily_crown")
         await db.commit()
 
     headers = {"Authorization": f"Bearer {admin_user.api_token}"}
     async with test_client as client:
         resp = await client.delete(
-            f"/api/admin/users/{target_user.id}/templates/elo_crown",
+            f"/api/admin/users/{target_user.id}/templates/daily_crown",
             headers=headers,
         )
         assert resp.status_code == 204

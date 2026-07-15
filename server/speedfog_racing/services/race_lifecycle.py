@@ -75,7 +75,7 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
 
     rewards_svc = RewardsService(db)
-    await rewards_svc.refresh_top1_elo_holders(reason=f"after race {race.id}")
+    await rewards_svc.grant_race_win_rewards(race)
     for p in race.participants:
         if p.status == ParticipantStatus.FINISHED:
             await rewards_svc.check_finish_reward_milestones(p.user_id)
@@ -103,7 +103,7 @@ async def finalize_race(
     finalize_race then:
     - marks any non-terminal participant (REGISTERED, READY, PLAYING) as ABANDONED
     - posts the public chat "race has finished" message
-    - triggers ELO update and trait recomputation (background)
+    - triggers victory rewards and trait recomputation (background)
     - broadcasts leaderboard + race_state + race_status + chat
     - fires Discord notifications
 
@@ -145,7 +145,7 @@ async def finalize_race(
     from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
 
     rewards_svc = RewardsService(db)
-    await rewards_svc.refresh_top1_elo_holders(reason=f"after race {race.id}")
+    await rewards_svc.grant_race_win_rewards(race)
     for p in race.participants:
         if p.status == ParticipantStatus.FINISHED:
             await rewards_svc.check_finish_reward_milestones(p.user_id)

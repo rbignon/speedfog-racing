@@ -36,14 +36,6 @@ BADGES: dict[str, Badge] = {
         lifecycle="permanent",
         sort_order=30,
     ),
-    "top1_elo": Badge(
-        id="top1_elo",
-        name="ELO Champion",
-        description="Currently holds the highest ELO rating.",
-        icon_filename="top1_elo.svg",
-        lifecycle="transient",
-        sort_order=1,
-    ),
     "weekly_daily_champion": Badge(
         id="weekly_daily_champion",
         name="Daily Champion",
@@ -92,10 +84,10 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         ),
         sort_order=5,
     ),
-    "elo_crown": NameTemplate(
-        id="elo_crown",
-        name="ELO Crown",
-        description="Granted permanently the first time you reach top 1 ELO.",
+    "daily_crown": NameTemplate(
+        id="daily_crown",
+        name="Daily Crown",
+        description="Granted permanently the first time you top the weekly daily-seed ranking.",
         gradient=("#FFE9A8", "#C8A44E"),
         name_css=(
             "font-style: italic; font-weight: 600; text-shadow: 0 0 4px rgba(168, 139, 92, 0.28);"
@@ -106,17 +98,17 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
         ),
         sort_order=10,
     ),
-    "runebearer": NameTemplate(
-        id="runebearer",
-        name="Runebearer",
-        description="Granted permanently the first time you enter the top 5 ELO.",
-        gradient=("#B8C5D6", "#6F87A6"),
+    "dawnrunner": NameTemplate(
+        id="dawnrunner",
+        name="Dawnrunner",
+        description="Granted permanently the first time you win a daily seed.",
+        gradient=("#A8DCE9", "#4E9EC8"),
         name_css=(
-            "font-style: italic; font-weight: 600; text-shadow: 0 0 5px rgba(184, 197, 214, 0.28);"
+            "font-style: italic; font-weight: 600; text-shadow: 0 0 5px rgba(168, 220, 233, 0.28);"
         ),
         background_css=(
             "radial-gradient(ellipse 60% 100% at 25% 50%,"
-            " rgba(184, 197, 214, 0.14), transparent 70%)"
+            " rgba(78, 158, 200, 0.14), transparent 70%)"
         ),
         sort_order=20,
     ),
@@ -183,21 +175,21 @@ PHANTOM_SKINS: dict[str, PhantomSkin] = {
     "gold-aura": PhantomSkin(
         id="gold-aura",
         name="Gold Aura",
-        description="Granted the first time you reach top 1 ELO.",
+        description="Granted the first time you top the weekly daily-seed points ranking.",
         screenshot_filename="gold-aura.jpg",
         sort_order=10,
     ),
     "silver-aura": PhantomSkin(
         id="silver-aura",
         name="Silver Aura",
-        description="Granted the first time you enter the top 5 ELO.",
+        description="Granted the first time you win a public race.",
         screenshot_filename="silver-aura.jpg",
         sort_order=20,
     ),
     "cyan-aura": PhantomSkin(
         id="cyan-aura",
         name="Cyan Aura",
-        description="Granted the first time you top the weekly daily-seed points ranking.",
+        description="Granted the first time you win a daily seed.",
         screenshot_filename="cyan-aura.jpg",
         sort_order=30,
     ),

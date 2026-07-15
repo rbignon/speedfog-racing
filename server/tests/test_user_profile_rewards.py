@@ -119,8 +119,8 @@ async def test_profile_exposes_equipped_name_template_id(test_client, target_use
     page heading can apply the matching style."""
     async with async_session() as db:
         svc = RewardsService(db)
-        await svc.grant_name_template(target_user.id, "elo_crown", reason="test")
-        await svc.set_equipped_name_template(target_user.id, "elo_crown")
+        await svc.grant_name_template(target_user.id, "daily_crown", reason="test")
+        await svc.set_equipped_name_template(target_user.id, "daily_crown")
         await db.commit()
 
     async with test_client as client:
@@ -128,7 +128,7 @@ async def test_profile_exposes_equipped_name_template_id(test_client, target_use
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["equipped_name_template_id"] == "elo_crown"
+    assert data["equipped_name_template_id"] == "daily_crown"
 
 
 @pytest.mark.asyncio

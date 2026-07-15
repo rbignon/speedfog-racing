@@ -1,4 +1,4 @@
-"""Idempotent backfill: early_adopter for old accounts, current top1 ELO holder."""
+"""Idempotent backfill: early_adopter for old accounts."""
 
 from __future__ import annotations
 
@@ -61,12 +61,6 @@ async def backfill_rewards(
             await svc.grant_name_template(u.id, "archon", reason="backfill: admin role")
         await db.commit()
         logger.info("Granted archon to %d admin(s)", len(admin_users))
-
-    async with session_maker() as db:
-        svc = RewardsService(db)
-        await svc.refresh_top1_elo_holders(reason="backfill: initial top 1 sync")
-        await db.commit()
-        logger.info("Refreshed top1_elo holders")
 
     async with session_maker() as db:
         svc = RewardsService(db)

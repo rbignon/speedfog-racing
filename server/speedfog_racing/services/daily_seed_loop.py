@@ -160,6 +160,11 @@ async def create_daily_seed_if_needed(
             logger.info("Daily seed for %s was created concurrently", today)
             return None
 
+        # Yesterday's daily was hard-closed above; its winner(s) are now
+        # decided. Grants are first-time-only, so re-runs are no-ops.
+        await RewardsService(db).grant_daily_win_rewards(yesterday)
+        await db.commit()
+
         if today.weekday() == 0:  # Monday: roll up the previous week's daily wins.
             week_starting = today - timedelta(days=7)
             await RewardsService(db).refresh_weekly_daily_rewards(

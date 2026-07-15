@@ -120,7 +120,7 @@ async def test_participant_info_carries_gradient_when_equipped(async_session):
         u = User(
             twitch_id="t2",
             twitch_username="bob",
-            equipped_name_template_id="elo_crown",
+            equipped_name_template_id="daily_crown",
         )
         db.add(u)
         await db.commit()
@@ -128,9 +128,9 @@ async def test_participant_info_carries_gradient_when_equipped(async_session):
     participant = await _setup_participant(async_session, u)
 
     info = participant_to_info(participant)
-    assert info.equipped_name_template_id == "elo_crown"
+    assert info.equipped_name_template_id == "daily_crown"
     assert info.name_template is not None
-    expected_gradient = NAME_TEMPLATES["elo_crown"].gradient
+    expected_gradient = NAME_TEMPLATES["daily_crown"].gradient
     assert expected_gradient is not None
     assert info.name_template.gradient == list(expected_gradient)
     assert info.name_template.color is None

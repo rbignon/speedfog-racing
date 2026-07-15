@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import (
     BadgeGrant,
@@ -15,6 +16,8 @@ from speedfog_racing.models import (
     Participant,
     ParticipantStatus,
     PhantomSkinUnlock,
+    Race,
+    RaceStatus,
     RewardNotification,
     User,
 )
@@ -28,7 +31,6 @@ from speedfog_racing.rewards.catalog import (
     VETERAN_RACE_THRESHOLD,
 )
 from speedfog_racing.rewards.models_data import Badge, NameTemplate, PhantomSkin
-from speedfog_racing.services.stats_service import PROVISIONAL_THRESHOLD
 
 
 class UnknownRewardError(ValueError):
@@ -376,67 +378,67 @@ class RewardsService:
         )
         return result.rowcount or 0  # type: ignore[attr-defined]
 
-    async def refresh_top1_elo_holders(self, reason: str | None = None) -> None:
-        """Sync the top1_elo badge and grant ELO-rank souvenir templates.
+    async def grant_daily_win_rewards(self, day: date, reason: str | None = None) -> None:
+        """Grant the permanent daily-win rewards (cyan-aura + dawnrunner) to the
+        winner(s) of the given day's closed daily.
 
-        Filters out provisional players (elo_races < PROVISIONAL_THRESHOLD).
-
-        - top1_elo (transient badge): granted to all users tied at the highest ELO.
-          Each holder also receives the elo_crown name template (permanent, idempotent).
-        - runebearer (permanent name template): granted to every user currently in the
-          top 5 ELO. Ties at the rank-5 boundary pull all tied users in. Once granted,
-          the template stays unlocked even if the user later drops out of the top 5.
+        Winner = top ``daily_points_for_race`` score, ties included (same
+        definition as ``compute_weekly_daily_winners``). No-op when the day has
+        no FINISHED daily. Idempotent through the first-time-only grants.
         """
-        max_q = await self.session.execute(
-            select(User.elo_rating)
-            .where(User.elo_races >= PROVISIONAL_THRESHOLD)
-            .order_by(User.elo_rating.desc())
-            .limit(1)
-        )
-        top_elo = max_q.scalar_one_or_none()
-        if top_elo is None:
-            await self.sync_transient_holders("top1_elo", set(), reason=reason)
+        # Lazy import: daily_points_service imports daily_seed_loop, which
+        # imports this module (same cycle refresh_weekly_daily_rewards avoids).
+        from speedfog_racing.services.daily_points_service import daily_points_for_race
+
+        race = (
+            await self.session.execute(
+                select(Race)
+                .where(Race.daily_date == day, Race.status == RaceStatus.FINISHED)
+                .options(selectinload(Race.participants))
+            )
+        ).scalar_one_or_none()
+        if race is None:
             return
+        points = daily_points_for_race(race)
+        if not points:
+            return
+        top = max(points.values())
+        why = reason or f"won daily {day.isoformat()}"
+        for p in race.participants:
+            if points.get(p.id) == top:
+                await self.grant_phantom_skin(p.user_id, "cyan-aura", reason=why)
+                await self.grant_name_template(p.user_id, "dawnrunner", reason=why)
 
-        holder_q = await self.session.execute(
-            select(User.id).where(
-                User.elo_races >= PROVISIONAL_THRESHOLD,
-                User.elo_rating == top_elo,
-            )
-        )
-        holders: set[uuid.UUID] = {row[0] for row in holder_q.all()}
+    async def grant_race_win_rewards(self, race: Race) -> None:
+        """Grant silver-aura to the winner(s) of a finished public non-daily race.
 
-        await self.sync_transient_holders("top1_elo", holders, reason=reason)
-        for uid in holders:
-            await self.grant_name_template(uid, "elo_crown", reason="reached top 1 ELO")
-            await self.grant_phantom_skin(uid, "gold-aura", reason="reached top 1 ELO")
-
-        top5_rows = await self.session.execute(
-            select(User.elo_rating)
-            .where(User.elo_races >= PROVISIONAL_THRESHOLD)
-            .order_by(User.elo_rating.desc())
-            .limit(5)
-        )
-        elo_window = list(top5_rows.scalars().all())
-        if elo_window:
-            fifth_elo = elo_window[-1]
-            top5_q = await self.session.execute(
-                select(User.id).where(
-                    User.elo_races >= PROVISIONAL_THRESHOLD,
-                    User.elo_rating >= fifth_elo,
+        Requires ``race.participants`` to be eagerly loaded. Conditions: race is
+        public, not a daily, and at least 2 participants actually raced
+        (``igt_ms > 0``). Winner = FINISHED participant(s) with the lowest
+        ``igt_ms``. Idempotent through the first-time-only grant.
+        """
+        if not race.is_public or race.daily_date is not None:
+            return
+        racers = [p for p in race.participants if p.igt_ms > 0]
+        if len(racers) < 2:
+            return
+        finishers = [p for p in racers if p.status == ParticipantStatus.FINISHED]
+        if not finishers:
+            return
+        best = min(p.igt_ms for p in finishers)
+        for p in finishers:
+            if p.igt_ms == best:
+                await self.grant_phantom_skin(
+                    p.user_id, "silver-aura", reason=f"won race {race.id}"
                 )
-            )
-            for uid in {row[0] for row in top5_q.all()}:
-                await self.grant_name_template(uid, "runebearer", reason="entered top 5 ELO")
-                await self.grant_phantom_skin(uid, "silver-aura", reason="entered top 5 ELO")
 
     async def refresh_weekly_daily_rewards(
         self, week_starting: date, reason: str | None = None
     ) -> None:
         """Sync the two weekly daily-seed badges for the given week.
 
-        - weekly_daily_champion (transient) + cyan-aura (permanent): the user(s)
-          with the highest total points across the week's closed dailies.
+        - weekly_daily_champion (transient) + gold-aura + daily_crown (permanent):
+          the user(s) with the highest total points across the week's closed dailies.
         - weekly_daily_winner (transient): every user who ranked 1st on at least
           one closed daily that week (broader; no skin).
 
@@ -455,7 +457,8 @@ class RewardsService:
         champion_ids = {w.user.id for w in champions}
         await self.sync_transient_holders("weekly_daily_champion", champion_ids, reason=reason)
         for uid in champion_ids:
-            await self.grant_phantom_skin(uid, "cyan-aura", reason="weekly daily champion")
+            await self.grant_phantom_skin(uid, "gold-aura", reason="weekly daily champion")
+            await self.grant_name_template(uid, "daily_crown", reason="weekly daily champion")
 
         daily_winners = await compute_weekly_daily_winners(self.session, week_starting)
         await self.sync_transient_holders(

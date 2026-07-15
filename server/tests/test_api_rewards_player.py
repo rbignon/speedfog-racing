@@ -201,14 +201,14 @@ async def test_patch_equipped_allows_admin_without_grant(test_client, admin_with
             "/api/rewards/me/equipped",
             json={
                 "equipped_badge_id": "early_adopter",
-                "equipped_name_template_id": "elo_crown",
+                "equipped_name_template_id": "daily_crown",
             },
             headers=headers,
         )
         assert resp.status_code == 200
         assert resp.json() == {
             "equipped_badge_id": "early_adopter",
-            "equipped_name_template_id": "elo_crown",
+            "equipped_name_template_id": "daily_crown",
             "equipped_phantom_skin_id": None,
         }
 
