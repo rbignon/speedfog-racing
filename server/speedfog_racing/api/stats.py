@@ -1,4 +1,4 @@
-"""Stats API routes: leaderboard, zones, bosses, player profiles."""
+"""Stats API routes: overview, zones, bosses, player profiles."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -7,13 +7,12 @@ from statistics import median
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
-    EloHistory,
     Participant,
     ParticipantStatus,
     PlayerTraitScores,
@@ -25,10 +24,8 @@ from speedfog_racing.models import (
 from speedfog_racing.schemas import (
     BossStatEntry,
     BossStatsResponse,
-    CommunityStats,
-    LeaderboardPlayer,
-    LeaderboardResponse,
     PlayerProfilesResponse,
+    StatsOverviewResponse,
     TraitPlayerEntry,
     WeaponComboStat,
     WeaponStatsResponse,
@@ -50,143 +47,13 @@ DUNGEON_NODE_TYPES = {"legacy_dungeon", "mini_dungeon"}
 BOSS_NODE_TYPES = {"major_boss", "final_boss"}
 
 
-@router.get("/leaderboard", response_model=LeaderboardResponse)
-async def get_leaderboard(db: AsyncSession = Depends(get_db)) -> LeaderboardResponse:
-    """ELO leaderboard with community stats."""
-    # Fetch users with at least 3 rated races, sorted strictly by ELO rating.
-    users_result = await db.execute(
-        select(User).where(User.elo_races >= 3).order_by(User.elo_rating.desc())
-    )
-    users = users_result.scalars().all()
+@router.get("/overview", response_model=StatsOverviewResponse)
+async def get_stats_overview(db: AsyncSession = Depends(get_db)) -> StatsOverviewResponse:
+    """Community-wide activity KPIs with 12-week trends."""
+    from speedfog_racing.services.analytics_service import compute_public_overview
 
-    # Compute trend deltas (sum of last 3 EloHistory entries per user)
-    user_ids = [u.id for u in users]
-    trends: dict[Any, int] = {}
-    if user_ids:
-        # Batch fetch all recent EloHistory for qualified users in one query,
-        # then group in Python. Replaces the N+1 pattern (one query per user).
-        all_history = (
-            await db.execute(
-                select(EloHistory.user_id, EloHistory.delta)
-                .where(EloHistory.user_id.in_(user_ids))
-                .order_by(EloHistory.user_id, EloHistory.created_at.desc())
-            )
-        ).all()
-
-        # Accumulate last 3 deltas per user
-        delta_counts: dict[Any, int] = {}
-        for uid, delta in all_history:
-            count = delta_counts.get(uid, 0)
-            if count < 3:
-                trends[uid] = trends.get(uid, 0) + round(delta)
-                delta_counts[uid] = count + 1
-
-    # Compute Strength of Schedule: average ELO of opponents per user.
-    # Joins on EloHistory, so races without ELO entries (solo finishes,
-    # races that never had update_elo_ratings run) are naturally excluded.
-    sos: dict[Any, int] = {}
-    if user_ids:
-        user_races_sq = (
-            select(Participant.race_id, Participant.user_id)
-            .where(
-                Participant.user_id.in_(user_ids),
-                Participant.status.in_([ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED]),
-                Participant.igt_ms > 0,
-            )
-            .subquery()
-        )
-
-        opp_elos = (
-            await db.execute(
-                select(
-                    user_races_sq.c.user_id,
-                    func.avg(EloHistory.elo_before),
-                )
-                .join(
-                    EloHistory,
-                    (EloHistory.race_id == user_races_sq.c.race_id)
-                    & (EloHistory.user_id != user_races_sq.c.user_id),
-                )
-                .group_by(user_races_sq.c.user_id)
-            )
-        ).all()
-
-        for uid, avg_opp in opp_elos:
-            if avg_opp is not None:
-                sos[uid] = round(avg_opp)
-
-    players = []
-    for u in users:
-        players.append(
-            LeaderboardPlayer(
-                twitch_username=u.twitch_username,
-                twitch_display_name=u.twitch_display_name,
-                twitch_avatar_url=u.twitch_avatar_url,
-                elo_rating=round(u.elo_rating),
-                elo_races=u.elo_races,
-                trend_delta=trends.get(u.id, 0),
-                avg_opponent_elo=sos.get(u.id),
-                equipped_badge_id=u.equipped_badge_id,
-                equipped_name_template_id=u.equipped_name_template_id,
-            )
-        )
-
-    # Community stats (public races only).
-    # Daily Seeds (exclude_from_elo=True) are intentionally included here:
-    # community KPIs describe total racing activity, not only ELO-rated runs.
-    public_finished = (Race.status == RaceStatus.FINISHED) & (Race.is_public == True)  # noqa: E712
-
-    total_races = (
-        await db.execute(select(func.count()).select_from(Race).where(public_finished))
-    ).scalar() or 0
-
-    cutoff = datetime.now(UTC) - timedelta(days=30)
-    active_players = (
-        await db.execute(
-            select(func.count(func.distinct(Participant.user_id)))
-            .select_from(Participant)
-            .join(Race, Participant.race_id == Race.id)
-            .where(
-                public_finished,
-                Race.started_at >= cutoff,
-            )
-        )
-    ).scalar() or 0
-
-    participated_filter = or_(
-        Participant.status == ParticipantStatus.FINISHED,
-        (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
-    )
-
-    total_deaths = (
-        await db.execute(
-            select(func.sum(Participant.death_count))
-            .select_from(Participant)
-            .join(Race, Participant.race_id == Race.id)
-            .where(participated_filter, public_finished)
-        )
-    ).scalar() or 0
-
-    total_igt_ms = (
-        await db.execute(
-            select(func.sum(Participant.igt_ms))
-            .select_from(Participant)
-            .join(Race, Participant.race_id == Race.id)
-            .where(participated_filter, public_finished)
-        )
-    ).scalar() or 0
-
-    hours_raced = round(total_igt_ms / 3_600_000, 1)
-
-    community = CommunityStats(
-        total_races=total_races,
-        active_players=active_players,
-        ranked_players=len(players),
-        total_deaths=int(total_deaths),
-        hours_raced=hours_raced,
-    )
-
-    return LeaderboardResponse(players=players, community=community)
+    data = await compute_public_overview(db)
+    return StatsOverviewResponse(**data)
 
 
 @dataclass(frozen=True)
@@ -887,7 +754,6 @@ async def get_player_profiles(db: AsyncSession = Depends(get_db)) -> PlayerProfi
                 twitch_display_name=user.twitch_display_name,
                 twitch_avatar_url=user.twitch_avatar_url,
                 score=getattr(scores, trait, 0),
-                elo_rating=round(user.elo_rating),
             )
             for scores, user in trait_rows_sorted
         ]

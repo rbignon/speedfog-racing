@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
     Participant,
+    ParticipantStatus,
     Pool,
     Race,
     RaceStatus,
@@ -511,3 +512,140 @@ def _ensure_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=UTC)
     return dt.astimezone(UTC)
+
+
+async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
+    """Public /stats overview: community KPIs plus 12-week trend series.
+
+    Scope is public finished races, dailies included (community KPIs describe
+    total racing activity). The active-players series additionally counts solo
+    training as play activity, mirroring the admin ``active_users`` series.
+    """
+    now = datetime.now(UTC)
+    week_keys = _build_week_list(now, 12)
+    week_set = set(week_keys)
+    window_cutoff = now - timedelta(weeks=13)
+
+    public_finished = (Race.status == RaceStatus.FINISHED) & (Race.is_public == True)  # noqa: E712
+    participated = or_(
+        Participant.status == ParticipantStatus.FINISHED,
+        (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+    )
+
+    # --- KPIs (same definitions as the former /stats/leaderboard block) ---
+    total_races = (
+        await db.execute(select(func.count()).select_from(Race).where(public_finished))
+    ).scalar() or 0
+
+    cutoff_30d = now - timedelta(days=30)
+    active_players = (
+        await db.execute(
+            select(func.count(func.distinct(Participant.user_id)))
+            .select_from(Participant)
+            .join(Race, Participant.race_id == Race.id)
+            .where(public_finished, Race.started_at >= cutoff_30d)
+        )
+    ).scalar() or 0
+
+    total_deaths = (
+        await db.execute(
+            select(func.sum(Participant.death_count))
+            .select_from(Participant)
+            .join(Race, Participant.race_id == Race.id)
+            .where(participated, public_finished)
+        )
+    ).scalar() or 0
+
+    total_igt_ms = (
+        await db.execute(
+            select(func.sum(Participant.igt_ms))
+            .select_from(Participant)
+            .join(Race, Participant.race_id == Race.id)
+            .where(participated, public_finished)
+        )
+    ).scalar() or 0
+
+    # --- Weekly series (12 ISO weeks, oldest first) ---
+    week_races: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
+    week_deaths: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
+    week_igt_ms: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
+    week_active: dict[tuple[int, int], set[uuid.UUID]] = {k: set() for k in week_keys}
+
+    race_rows = (
+        await db.execute(
+            select(Race.started_at).where(public_finished, Race.started_at >= window_cutoff)
+        )
+    ).all()
+    for (started_at,) in race_rows:
+        if started_at is None:
+            continue
+        wk = _iso_week_key(_ensure_utc(started_at))
+        if wk in week_set:
+            week_races[wk] += 1
+
+    part_rows = (
+        await db.execute(
+            select(
+                Race.started_at,
+                func.sum(Participant.death_count),
+                func.sum(Participant.igt_ms),
+            )
+            .select_from(Participant)
+            .join(Race, Participant.race_id == Race.id)
+            .where(participated, public_finished, Race.started_at >= window_cutoff)
+            .group_by(Race.id, Race.started_at)
+        )
+    ).all()
+    for started_at, deaths, igt_ms in part_rows:
+        if started_at is None:
+            continue
+        wk = _iso_week_key(_ensure_utc(started_at))
+        if wk in week_set:
+            week_deaths[wk] += int(deaths or 0)
+            week_igt_ms[wk] += int(igt_ms or 0)
+
+    # Active players: qualified race participation or a training session,
+    # same predicates as compute_analytics' active_users series.
+    play_rows = (
+        await db.execute(
+            select(Participant.user_id, Race.started_at)
+            .join(Race, Race.id == Participant.race_id)
+            .where(Race.started_at >= window_cutoff, qualifies_for_streak_sql())
+        )
+    ).all()
+    for user_id, started_at in play_rows:
+        if user_id is None or started_at is None:
+            continue
+        wk = _iso_week_key(_ensure_utc(started_at))
+        if wk in week_set:
+            week_active[wk].add(user_id)
+
+    solo_rows = (
+        await db.execute(
+            select(TrainingSession.user_id, TrainingSession.created_at).where(
+                TrainingSession.created_at >= window_cutoff
+            )
+        )
+    ).all()
+    for user_id, created_at in solo_rows:
+        if user_id is None or created_at is None:
+            continue
+        wk = _iso_week_key(_ensure_utc(created_at))
+        if wk in week_set:
+            week_active[wk].add(user_id)
+
+    return {
+        "kpis": {
+            "total_races": total_races,
+            "active_players": active_players,
+            "total_deaths": int(total_deaths),
+            "hours_raced": round(total_igt_ms / 3_600_000, 1),
+        },
+        "weekly": {
+            "weeks": [f"W{wk[1]}" for wk in week_keys],
+            "races": [week_races[wk] for wk in week_keys],
+            "active_users": [len(week_active[wk]) for wk in week_keys],
+            "deaths": [week_deaths[wk] for wk in week_keys],
+            "hours": [round(week_igt_ms[wk] / 3_600_000, 1) for wk in week_keys],
+        },
+    }

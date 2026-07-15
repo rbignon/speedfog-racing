@@ -422,7 +422,6 @@ async def three_races_with_zone_history(async_session):
                 twitch_username=f"zhp{i}",
                 api_token=f"zht{i}",
                 role=UserRole.USER,
-                elo_races=3,
             )
             for i in range(3)
         ]
@@ -991,8 +990,8 @@ class TestUpdatePlayerTraits:
             assert scores.dominant_trait is None
 
     async def test_get_player_profiles_includes_private_only_finishers(self, async_session):
-        """get_player_profiles surfaces users whose finishes are all private
-        (elo_races=0). The endpoint gates on dominant_trait, not public-race count."""
+        """get_player_profiles surfaces users whose finishes are all private.
+        The endpoint gates on dominant_trait, not public-race count."""
         from speedfog_racing.api.stats import get_player_profiles
 
         async with async_session() as db:
@@ -1001,14 +1000,12 @@ class TestUpdatePlayerTraits:
                 twitch_username="priv_player",
                 api_token="privtok",
                 role=UserRole.USER,
-                elo_races=0,
             )
             no_dominant = User(
                 twitch_id="nod",
                 twitch_username="no_dominant",
                 api_token="nodtok",
                 role=UserRole.USER,
-                elo_races=10,
             )
             db.add_all([private_user, no_dominant])
             await db.flush()

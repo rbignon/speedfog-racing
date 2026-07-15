@@ -696,29 +696,24 @@ class GhostResponse(BaseModel):
 # --- Stats ---
 
 
-class LeaderboardPlayer(BaseModel):
-    twitch_username: str
-    twitch_display_name: str | None
-    twitch_avatar_url: str | None
-    elo_rating: int
-    elo_races: int
-    trend_delta: int
-    avg_opponent_elo: int | None = None
-    equipped_badge_id: str | None = None
-    equipped_name_template_id: str | None = None
-
-
-class CommunityStats(BaseModel):
+class OverviewKpis(BaseModel):
     total_races: int
     active_players: int
-    ranked_players: int
     total_deaths: int
     hours_raced: float
 
 
-class LeaderboardResponse(BaseModel):
-    players: list[LeaderboardPlayer]
-    community: CommunityStats
+class OverviewWeekly(BaseModel):
+    weeks: list[str]
+    races: list[int]
+    active_users: list[int]
+    deaths: list[int]
+    hours: list[float]
+
+
+class StatsOverviewResponse(BaseModel):
+    kpis: OverviewKpis
+    weekly: OverviewWeekly
 
 
 class ZoneStatEntry(BaseModel):
@@ -806,7 +801,6 @@ class TraitPlayerEntry(BaseModel):
     twitch_display_name: str | None
     twitch_avatar_url: str | None
     score: int
-    elo_rating: int
 
 
 class PlayerProfilesResponse(BaseModel):
@@ -829,9 +823,6 @@ class UserTraitsResponse(BaseModel):
     scores: TraitScoresDetail | None
     finished_races: int
     races_required: int
-    elo_rating: int
-    elo_rank: int | None
-    elo_trend_delta: int
 
 
 # =============================================================================

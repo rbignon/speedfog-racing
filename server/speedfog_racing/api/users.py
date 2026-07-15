@@ -21,7 +21,6 @@ from speedfog_racing.database import get_db
 from speedfog_racing.models import (
     BadgeGrant,
     Caster,
-    EloHistory,
     Participant,
     ParticipantStatus,
     PlayerTraitScores,
@@ -572,7 +571,7 @@ async def get_user_traits(
     username: str,
     db: AsyncSession = Depends(get_db),
 ) -> UserTraitsResponse:
-    """Get ELO and trait data for a user."""
+    """Get trait data for a user."""
     user = (
         await db.execute(select(User).where(User.twitch_username == username))
     ).scalar_one_or_none()
@@ -589,33 +588,6 @@ async def get_user_traits(
             )
         )
     ).scalar() or 0
-
-    # ELO rank (only for non-provisional: 3+ races participated)
-    elo_rank = None
-    if user.elo_races >= 3:
-        rank_count = (
-            await db.execute(
-                select(func.count())
-                .select_from(User)
-                .where(User.elo_races >= 3, User.elo_rating > user.elo_rating)
-            )
-        ).scalar() or 0
-        elo_rank = rank_count + 1
-
-    # Trend: sum of last 3 deltas
-    recent_deltas = (
-        (
-            await db.execute(
-                select(EloHistory.delta)
-                .where(EloHistory.user_id == user.id)
-                .order_by(EloHistory.created_at.desc())
-                .limit(3)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    trend_delta = round(sum(recent_deltas))
 
     scores_detail = None
     dominant_trait = None
@@ -651,7 +623,4 @@ async def get_user_traits(
         scores=scores_detail,
         finished_races=finished_races,
         races_required=MIN_RACES_FOR_TRAITS,
-        elo_rating=round(user.elo_rating),
-        elo_rank=elo_rank,
-        elo_trend_delta=trend_delta,
     )
