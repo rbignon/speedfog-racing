@@ -36,9 +36,9 @@ const seedCatalog = () => {
         sort_order: 0,
       },
       {
-        id: "elo_crown",
-        name: "ELO Crown",
-        description: "Top 3 ELO holders.",
+        id: "daily_crown",
+        name: "Daily Crown",
+        description: "Top the weekly daily-seed ranking.",
         color: null,
         gradient: ["#FFE9A8", "#C8A44E"],
         name_css: null,
@@ -85,8 +85,8 @@ const baseInventory: MyInventoryDto = {
       sort_order: 0,
     },
     {
-      id: "elo_crown",
-      name: "ELO Crown",
+      id: "daily_crown",
+      name: "Daily Crown",
       color: null,
       gradient: ["#FFE9A8", "#C8A44E"],
       name_css: null,
@@ -96,7 +96,7 @@ const baseInventory: MyInventoryDto = {
   ],
   unlocked_phantom_skins: [],
   equipped_badge_id: "early_adopter",
-  equipped_name_template_id: "elo_crown",
+  equipped_name_template_id: "daily_crown",
   equipped_phantom_skin_id: null,
 };
 
@@ -111,7 +111,7 @@ describe("RewardsPicker", () => {
       props: {
         inventory: baseInventory,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: "early_adopter",
       },
     });
@@ -127,7 +127,7 @@ describe("RewardsPicker", () => {
       props: {
         inventory: baseInventory,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: null,
       },
     });
@@ -141,7 +141,7 @@ describe("RewardsPicker", () => {
       props: {
         inventory: baseInventory,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: "contributor",
       },
     });
@@ -162,7 +162,7 @@ describe("RewardsPicker", () => {
       },
     });
     const rows = container.querySelectorAll(".template-row");
-    // equipped_name_template_id = "elo_crown" (index 1).
+    // equipped_name_template_id = "daily_crown" (index 1).
     expect(rows[0].textContent).not.toContain("Active");
     expect(rows[1].textContent).toContain("Active");
   });
@@ -187,7 +187,7 @@ describe("RewardsPicker", () => {
       props: {
         inventory: baseInventory,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: "early_adopter",
       },
     });
@@ -204,7 +204,7 @@ describe("RewardsPicker", () => {
       props: {
         inventory: baseInventory,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: "early_adopter",
       },
     });
@@ -236,7 +236,7 @@ describe("RewardsPicker", () => {
     seedCatalog();
     const { container } = render(RewardsPicker, {
       props: {
-        // Server says equipped is elo_crown / early_adopter, but selection is default / null.
+        // Server says equipped is daily_crown / early_adopter, but selection is default / null.
         inventory: baseInventory,
         user: baseUser,
         selectedTemplateId: "default",
@@ -278,7 +278,7 @@ describe("RewardsPicker", () => {
       props: {
         inventory: baseInventory,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: null,
       },
     });
@@ -319,14 +319,15 @@ const seedCatalogWithPhantomSkins = () => {
     {
       id: "gold-aura",
       name: "Gold Aura",
-      description: "Granted the first time you reach top 1 ELO.",
+      description:
+        "Granted the first time you top the weekly daily-seed points ranking.",
       screenshot_filename: "gold-aura.jpg",
       sort_order: 10,
     },
     {
       id: "silver-aura",
       name: "Silver Aura",
-      description: "Granted the first time you enter the top 5 ELO.",
+      description: "Granted the first time you win a public race.",
       screenshot_filename: "silver-aura.jpg",
       sort_order: 20,
     },
@@ -394,7 +395,7 @@ describe("RewardsPicker phantom skins section", () => {
       props: {
         inventory: inv,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: null,
         selectedSkinId: null,
       },
@@ -424,7 +425,7 @@ describe("RewardsPicker phantom skins section", () => {
       props: {
         inventory: inv,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: null,
         selectedSkinId: null,
       },
@@ -434,7 +435,7 @@ describe("RewardsPicker phantom skins section", () => {
     );
     expect(goldTile?.classList.contains("locked")).toBe(true);
     expect(goldTile?.textContent).toContain(
-      "Granted the first time you reach top 1 ELO.",
+      "Granted the first time you top the weekly daily-seed points ranking.",
     );
   });
 
@@ -457,7 +458,7 @@ describe("RewardsPicker phantom skins section", () => {
       props: {
         inventory: inv,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: null,
         selectedSkinId: null,
       },
@@ -489,7 +490,7 @@ describe("RewardsPicker phantom skins section", () => {
       props: {
         inventory: inv,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: null,
         selectedSkinId: "gold-aura",
       },
@@ -521,7 +522,7 @@ describe("RewardsPicker phantom skins section", () => {
       props: {
         inventory: inv,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: null,
         selectedSkinId: "gold-aura",
       },
@@ -546,7 +547,7 @@ describe("RewardsPicker phantom skins section", () => {
       props: {
         inventory: inv,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: null,
         selectedSkinId: null,
       },
@@ -576,7 +577,7 @@ describe("RewardsPicker phantom skins section", () => {
       props: {
         inventory: inv,
         user: baseUser,
-        selectedTemplateId: "elo_crown",
+        selectedTemplateId: "daily_crown",
         selectedBadgeId: null,
         selectedSkinId: null,
       },

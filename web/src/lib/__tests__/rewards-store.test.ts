@@ -79,8 +79,8 @@ describe("rewards catalog store", () => {
           sort_order: 0,
         },
         {
-          id: "elo_crown",
-          name: "ELO Crown",
+          id: "daily_crown",
+          name: "Daily Crown",
           color: null,
           gradient: ["#FFE9A8", "#C8A44E"],
           name_css: null,
@@ -92,7 +92,7 @@ describe("rewards catalog store", () => {
     };
     expect(rewards.lookupTemplate(null)?.id).toBe("default");
     expect(rewards.lookupTemplate(undefined)?.id).toBe("default");
-    expect(rewards.lookupTemplate("elo_crown")?.id).toBe("elo_crown");
+    expect(rewards.lookupTemplate("daily_crown")?.id).toBe("daily_crown");
     expect(rewards.lookupTemplate("nope")).toBeNull();
   });
 });
@@ -106,7 +106,7 @@ describe("rewards.lookupPhantomSkin", () => {
         {
           id: "gold-aura",
           name: "Gold Aura",
-          description: "Top 1 ELO",
+          description: "Top the weekly daily-seed ranking",
           screenshot_filename: "gold-aura.jpg",
           sort_order: 10,
         },

@@ -12,8 +12,8 @@ function seedCatalog() {
     badges: [],
     name_templates: [
       {
-        id: "elo_crown",
-        name: "ELO Crown",
+        id: "daily_crown",
+        name: "Daily Crown",
         color: null,
         gradient: ["#FFE9A8", "#C8A44E"],
         name_css: null,
@@ -134,7 +134,10 @@ describe("WeekLeaderboard", () => {
   it("tints other players' rows with their template background, but not the viewer's own", () => {
     seedCatalog();
     const data = fakeResponse({
-      entries: [entry("other", 1, "elo_crown"), entry("me", 2, "elo_crown")],
+      entries: [
+        entry("other", 1, "daily_crown"),
+        entry("me", 2, "daily_crown"),
+      ],
     });
     const { container } = render(WeekLeaderboard, {
       data,

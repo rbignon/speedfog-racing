@@ -217,28 +217,6 @@
           </p>
         </div>
       </div>
-      {#if traits}
-        <a
-          href="/stats?tab=leaderboard"
-          class="elo-block"
-          title="View leaderboard"
-        >
-          {#if traits.elo_rank}
-            <span class="elo-rank">#{traits.elo_rank}</span>
-          {/if}
-          <span class="elo-value">{traits.elo_rating}</span>
-          <span class="elo-label">ELO</span>
-          {#if traits.elo_trend_delta !== 0}
-            <span
-              class="elo-trend"
-              class:elo-trend-up={traits.elo_trend_delta > 0}
-              class:elo-trend-down={traits.elo_trend_delta < 0}
-            >
-              {traits.elo_trend_delta > 0 ? "+" : ""}{traits.elo_trend_delta}
-            </span>
-          {/if}
-        </a>
-      {/if}
     </div>
 
     <UserStatsCards {profile} streakDisplay="best" />
@@ -426,55 +404,6 @@
     align-items: center;
     gap: 1.25rem;
     min-width: 0;
-  }
-
-  .elo-block {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.1rem;
-    flex-shrink: 0;
-    text-decoration: none;
-    color: inherit;
-    transition: opacity var(--transition);
-  }
-
-  .elo-block:hover {
-    opacity: 0.8;
-  }
-
-  .elo-rank {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .elo-value {
-    font-size: var(--font-size-2xl);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-  }
-
-  .elo-label {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .elo-trend {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .elo-trend-up {
-    color: #10b981;
-  }
-
-  .elo-trend-down {
-    color: #ef4444;
   }
 
   .profile-avatar {

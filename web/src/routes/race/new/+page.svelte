@@ -261,10 +261,10 @@
           <p class="hint">
             {#if isPublic}
               Announced on Discord and listed on the homepage so players can
-              find and join. Counts towards rankings.
+              find and join.
             {:else}
-              Hidden from the homepage and excluded from rankings. Players can
-              still join via direct link or invite.
+              Hidden from the homepage. Players can still join via direct link
+              or invite.
             {/if}
           </p>
         </div>

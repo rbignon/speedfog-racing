@@ -26,8 +26,8 @@ const seedCatalog = () => {
         sort_order: 0,
       },
       {
-        id: "elo_crown",
-        name: "ELO Crown",
+        id: "daily_crown",
+        name: "Daily Crown",
         color: null,
         gradient: ["#FFE9A8", "#C8A44E"],
         name_css: "font-family: Georgia, serif; font-style: italic;",
@@ -64,7 +64,7 @@ describe("ChatPanel rewards integration", () => {
     seedCatalog();
     const { container } = render(ChatPanel, {
       props: {
-        messages: [message({ equipped_name_template_id: "elo_crown" })],
+        messages: [message({ equipped_name_template_id: "daily_crown" })],
         canSend: false,
         onSend: () => {},
       },

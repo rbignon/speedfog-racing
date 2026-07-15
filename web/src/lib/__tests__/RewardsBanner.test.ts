@@ -51,7 +51,7 @@ describe("RewardsBanner", () => {
           {
             id: "1",
             kind: "badge_revoked",
-            reward_id: "top1_elo",
+            reward_id: "legacy_badge",
             created_at: "2026-04-30T10:00:00Z",
           },
         ],
@@ -103,7 +103,7 @@ describe("RewardsBanner", () => {
           {
             id: "2",
             kind: "badge_revoked",
-            reward_id: "top1_elo",
+            reward_id: "legacy_badge",
             created_at: "2026-04-30T10:01:00Z",
           },
         ],

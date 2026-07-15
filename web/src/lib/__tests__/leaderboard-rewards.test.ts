@@ -25,8 +25,8 @@ const seedCatalog = () => {
         sort_order: 0,
       },
       {
-        id: "elo_crown",
-        name: "ELO Crown",
+        id: "daily_crown",
+        name: "Daily Crown",
         color: null,
         gradient: ["#FFE9A8", "#C8A44E"],
         name_css: "font-family: Georgia, serif; font-style: italic;",
@@ -66,12 +66,12 @@ describe("Leaderboard rewards integration", () => {
     rewards.catalog = null;
   });
 
-  it("applies template background to a participant with elo_crown equipped", () => {
+  it("applies template background to a participant with daily_crown equipped", () => {
     seedCatalog();
     const { container } = render(Leaderboard, {
       props: {
         participants: [
-          makeParticipant({ equipped_name_template_id: "elo_crown" }),
+          makeParticipant({ equipped_name_template_id: "daily_crown" }),
         ],
         mode: "running",
       },
@@ -94,12 +94,12 @@ describe("Leaderboard rewards integration", () => {
     expect(style).not.toContain("linear-gradient");
   });
 
-  it("applies gradient name style to a participant with elo_crown equipped", () => {
+  it("applies gradient name style to a participant with daily_crown equipped", () => {
     seedCatalog();
     const { container } = render(Leaderboard, {
       props: {
         participants: [
-          makeParticipant({ equipped_name_template_id: "elo_crown" }),
+          makeParticipant({ equipped_name_template_id: "daily_crown" }),
         ],
         mode: "running",
       },

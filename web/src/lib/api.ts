@@ -1750,7 +1750,6 @@ export interface TraitPlayerEntry {
   twitch_display_name: string | null;
   twitch_avatar_url: string | null;
   score: number;
-  elo_rating: number;
 }
 
 export interface PlayerProfilesResponse {
@@ -1773,9 +1772,6 @@ export interface UserTraitsResponse {
   scores: TraitScoresDetail | null;
   finished_races: number;
   races_required: number;
-  elo_rating: number;
-  elo_rank: number | null;
-  elo_trend_delta: number;
 }
 
 /**
@@ -1858,7 +1854,7 @@ export async function fetchWeaponStats(): Promise<WeaponStatsResponse> {
 }
 
 /**
- * Fetch a user's trait scores and ELO details.
+ * Fetch a user's trait scores.
  */
 export async function fetchUserTraits(
   username: string,

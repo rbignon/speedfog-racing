@@ -25,8 +25,8 @@ const seedCatalog = () => {
         sort_order: 0,
       },
       {
-        id: "elo_crown",
-        name: "ELO Crown",
+        id: "daily_crown",
+        name: "Daily Crown",
         color: null,
         gradient: ["#FFE9A8", "#C8A44E"],
         name_css: "font-family: Georgia, serif; font-style: italic;",
@@ -85,7 +85,7 @@ describe("UserLink", () => {
           twitch_username: "bob",
           twitch_display_name: "Bob",
           twitch_avatar_url: null,
-          equipped_name_template_id: "elo_crown",
+          equipped_name_template_id: "daily_crown",
         },
       },
     });
@@ -106,7 +106,7 @@ describe("UserLink", () => {
           twitch_username: "erin",
           twitch_display_name: "Erin",
           twitch_avatar_url: null,
-          equipped_name_template_id: "elo_crown",
+          equipped_name_template_id: "daily_crown",
         },
       },
     });
