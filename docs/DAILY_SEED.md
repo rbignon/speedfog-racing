@@ -1,6 +1,6 @@
 # Daily Seed
 
-A "Daily Seed" is a single race created automatically every day at 08:00 UTC, open for 24 hours, that anyone can play and compare with other players. It does not affect ELO, has its own dedicated landing page, and reuses the regular Race entity (one Race per UTC calendar day).
+A "Daily Seed" is a single race created automatically every day at 08:00 UTC, open for 24 hours, that anyone can play and compare with other players. It is excluded from stats aggregations, has its own dedicated landing page, and reuses the regular Race entity (one Race per UTC calendar day).
 
 ## Overview
 
@@ -19,7 +19,7 @@ Daily creation loop (every 60s)
   daily_seed_schedule[today.weekday()] -> pool_name
         │
         ▼
-  INSERT Race (organizer = system:daily, daily_date, exclude_from_elo,
+  INSERT Race (organizer = system:daily, daily_date, exclude_from_stats,
                status=RUNNING, started_at = 08:00 UTC, late_join = duration = 1440)
         │
         ▼
@@ -34,17 +34,17 @@ The race lives in the regular `races` table, plays through the regular state mac
 
 ### Race columns
 
-| Column             | Type                    | Notes                                                                                                    |
-| ------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------- |
-| `daily_date`       | `date`, nullable        | Canonical UTC rotation date. NULL on regular races. A race is a Daily Seed iff `daily_date IS NOT NULL`. |
-| `exclude_from_elo` | `bool`, default `false` | Generic "skip ELO and ELO-rated stats" flag. Read by `update_elo_ratings` and stat aggregation queries.  |
+| Column               | Type                    | Notes                                                                                                    |
+| -------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| `daily_date`         | `date`, nullable        | Canonical UTC rotation date. NULL on regular races. A race is a Daily Seed iff `daily_date IS NOT NULL`. |
+| `exclude_from_stats` | `bool`, default `false` | Generic "skip stats aggregations" flag. Read by `recalculate_all_stats` and stat aggregation queries.    |
 
 Two indexes back the column:
 
 - `uq_races_daily_date`: partial UNIQUE index `WHERE daily_date IS NOT NULL`. Hard guarantee that two Daily Seeds cannot share a rotation date. Backed by `IntegrityError` handling in the creation loop for concurrent ticks.
 - `ix_races_daily_date`: regular index, used by lookups (`/api/daily/{date}`, `/api/daily/recent`, exclusion filters in regular race listings).
 
-Both `daily_date` and `exclude_from_elo` are exposed on `RaceResponse` and `RaceDetailResponse`, so the frontend branches on them without a separate flag.
+Both `daily_date` and `exclude_from_stats` are exposed on `RaceResponse` and `RaceDetailResponse`, so the frontend branches on them without a separate flag.
 
 ### `daily_seed_schedule` table
 
@@ -88,7 +88,7 @@ The dashboard summary and `RaceCard` use these fields to render finishers count 
 
 A single Alembic migration (`ba25d0d70148_add_daily_seed_support`):
 
-1. Adds `daily_date` (nullable) and `exclude_from_elo` (NOT NULL DEFAULT false) on `races`.
+1. Adds `daily_date` (nullable) and `exclude_from_stats` (NOT NULL DEFAULT false) on `races`.
 2. Creates `uq_races_daily_date` (partial unique) and `ix_races_daily_date`.
 3. Relaxes `users.api_token` to nullable.
 4. Adds the `SYSTEM` value to the PostgreSQL `userrole` enum inside an `autocommit_block()` (`ALTER TYPE ... ADD VALUE` cannot run inside a transaction).
@@ -125,7 +125,7 @@ Each tick (`create_daily_seed_if_needed`) does:
    ```
    organizer_id              = system_user.id
    daily_date                = today
-   exclude_from_elo          = True
+   exclude_from_stats        = True
    is_public                 = True
    open_registration         = True
    max_participants          = None
@@ -192,8 +192,8 @@ Route resolution is unambiguous: `today` and `recent` are literal segments, `{da
 Endpoints whose audience is "regular races" filter Daily Seeds out explicitly:
 
 - `GET /api/races` and the joinable subquery: `WHERE Race.daily_date IS NULL`.
-- `services/stats_service.py` ELO aggregates: `Race.exclude_from_elo.is_(False)` on every join.
-- `services/analytics_service.py` admin dashboard: race-side volume aggregates filter with `Race.daily_date.is_(None)` so KPIs, weekly trends, heatmaps, pool usage and top organizers reflect community-organized racing only. The one exception is the "Active players per week" series, which measures distinct active people rather than race volume and so counts daily participations too (see [ELO and Analytics Skip](#elo-and-analytics-skip)).
+- `services/stats_service.py` `recalculate_all_stats`: `Race.exclude_from_stats.is_(False)` when selecting which finished races to replay for trait recomputation.
+- `services/analytics_service.py` admin dashboard: race-side volume aggregates filter with `Race.daily_date.is_(None)` so KPIs, weekly trends, heatmaps, pool usage and top organizers reflect community-organized racing only. The one exception is the "Active players per week" series, which measures distinct active people rather than race volume and so counts daily participations too (see [Stats and Analytics Skip](#stats-and-analytics-skip)).
 
 The Daily nav indicator on the frontend uses `GET /api/daily/today` rather than `GET /api/races/joinable`, which assumes scheduled races and would not yield the right answer.
 
@@ -218,15 +218,13 @@ Race version bumps via the existing optimistic-lock UPDATE; `reroll_seed_for_rac
 
 ---
 
-## ELO and Analytics Skip
+## Stats and Analytics Skip
 
-`update_elo_ratings` (in `services/stats_service.py`) early-returns when `race.exclude_from_elo` is true. The check is inside the function rather than only at the call site, because the admin "replay ELO history" tool calls the same function. No `EloHistory` rows are written for excluded races, and no rating shifts are applied.
+`exclude_from_stats` short-circuits stats aggregations. `recalculate_all_stats` (in `services/stats_service.py`) filters `Race.exclude_from_stats.is_(False)` when selecting which finished races to replay for trait recomputation, so a flagged race's finish never re-triggers a full recompute pass.
 
-ELO-rated aggregations elsewhere in `stats_service` (leaderboards, user stats) join through `Race.exclude_from_elo.is_(False)` so excluded races never appear in the ranked surfaces.
+The flag is generic: any future race type that should be skipped by stats aggregations can opt in by setting `exclude_from_stats = True` without further wiring.
 
-The flag is generic: any future race type that should not affect ELO can opt in by setting `exclude_from_elo = True` without further wiring.
-
-Admin analytics (`services/analytics_service.py`) excludes Daily Seeds from race-side aggregates by filtering on `Race.daily_date.is_(None)` rather than using `exclude_from_elo`. The Stats tab measures community racing activity; system-organized dailies would inflate counts and skew per-race averages. Training-side aggregates are unaffected because training sessions have no daily concept.
+Admin analytics (`services/analytics_service.py`) excludes Daily Seeds from race-side aggregates by filtering on `Race.daily_date.is_(None)` rather than using `exclude_from_stats`. The Stats tab measures community racing activity; system-organized dailies would inflate counts and skew per-race averages. Training-side aggregates are unaffected because training sessions have no daily concept.
 
 Daily participation is surfaced on the same dashboard through two dedicated surfaces: the `Daily Participants` KPI (cumulative all-time) and a `daily` series in the "Races, Daily & Solo per Week" chart. Both count qualified participations only (`len(zone_history) >= 2`, the same predicate as `qualifies_for_streak`), across all daily races regardless of `Race.status` or `Participant.status`. A still-running daily contributes its already-qualified runners immediately; participants who joined but never crossed the qualification threshold are not counted.
 
@@ -459,5 +457,5 @@ Computation is on demand, no schema change: the helpers in `services/daily_point
 
 - [RACE_LIFECYCLE.md](RACE_LIFECYCLE.md) for the underlying race / participant state machines (Daily Seeds reuse them as-is).
 - [SEED_PIPELINE.md](SEED_PIPELINE.md) for seed assignment and reroll mechanics.
-- [STATS.md](STATS.md) for the ELO computation that `exclude_from_elo` short-circuits.
+- [STATS.md](STATS.md) for the stats recalculation that `exclude_from_stats` short-circuits.
 - [PROTOCOL.md](PROTOCOL.md) for the REST and WebSocket payload reference.

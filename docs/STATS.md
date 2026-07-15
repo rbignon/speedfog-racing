@@ -1,102 +1,34 @@
 # Stats System
 
-ELO ratings, behavioral traits, and zone/boss analytics.
+Behavioral traits, community overview, and zone/boss analytics.
 
 ---
 
-## ELO Ratings
-
-### Algorithm
-
-Pairwise ELO with margin-of-victory scoring. After each finished race, every pair of eligible participants is compared.
-
-**Constants:**
-
-- `K_FACTOR = 32` (established players, >= 10 rated races)
-- `K_FACTOR_PROVISIONAL = 48` (provisional players, < 10 rated races)
-- `STARTING_ELO = 1500.0`
-- Minimum 3 rated races to appear on leaderboard
-
-**Eligible participants:** FINISHED, or ABANDONED with `igt_ms > 0` (started playing but quit). Requires at least 2 eligible participants per race.
-
-**Pairwise scoring:**
-
-For each pair (A, B):
-
-1. Expected score: `ea = 1 / (1 + 10^((elo_B - elo_A) / 400))`
-2. Actual score depends on outcome:
-   - Both finished: `0.5 +/- 0.5 * margin`, where `margin = min(|igt_A - igt_B| / ref_time, 1.0)` and `ref_time = median(finisher_igts) * 0.3`
-   - One finished, one abandoned: `(1.0, 0.0)`
-   - Both abandoned: `(0.5, 0.5)` (draw)
-3. Delta: `K * (actual - expected)`, weighted and normalized per player (see below). K is 48 for provisional players (< 10 races) and 32 for established players, so new players' ratings converge faster.
-
-**Provisional confidence (`PROVISIONAL_THRESHOLD = 10`):**
-
-Players with fewer than 10 rated races have a provisional rating. The confidence of a player's rating is `min(elo_races / 10, 1.0)`.
-
-- **Established players** (>= 10 races): pairwise delta is scaled by the opponent's confidence. Matches against provisional opponents contribute less (or nothing). Normalization divides by the sum of opponent confidences (not n-1), so provisional opponents don't dilute established matchups in large races.
-- **Provisional players** (< 10 races): always receive full pairwise delta regardless of opponent confidence, enabling bootstrapping. Normalization divides by n-1.
-
-This is asymmetric by design: an established player beating two provisionals gets ~0 delta, but the provisionals' ratings still converge based on the race result.
-
-**Winner floor:**
-
-After all adjustments (field strength, difficulty injection), the race winner's delta is clamped to `max(delta, 0)`. The 1st place finisher never loses ELO. This is a second intentional zero-sum break (alongside difficulty injection).
-
-**Seed difficulty scoring:**
+## Seed Difficulty Scoring
 
 Each seed receives an intrinsic difficulty score at ingestion time, computed from its graph structure:
 
 - `score = sum(type_weight * tier^1.3)` over all non-start nodes
 - Type weights: `legacy_dungeon=1.0`, `mini_dungeon=0.7`, `boss_arena=1.5`, `major_boss=2.0`, `final_boss=2.5`
-- Stored as `difficulty_score` on the Seed model
+- Stored as `difficulty_score` on the Seed model (see `services/seed_difficulty.py`)
 
-**Field strength weighting (post-pairwise):**
+---
 
-After pairwise deltas are computed, they are scaled by the average field ELO:
+## Community Overview
 
-```
-weight = avg_field_elo / 1500.0
-adjusted_delta = pairwise_delta * weight
-```
+`GET /api/stats/overview` powers the default tab of `/stats`. Public finished races only, Daily Seeds included (the KPIs describe total racing activity).
 
-Races among strong players (avg ELO > 1500) amplify gains/losses. Races among weaker players dampen them.
+**KPIs:** `total_races`, `active_players` (distinct participants over the last 30 days; the UI label does not mention the window), `total_deaths` and `hours_raced` (summed over FINISHED participants and ABANDONED participants with `igt_ms > 0`).
 
-**Difficulty injection (post-pairwise):**
+**Weekly series** (last 12 ISO weeks, oldest first, labels `W{iso_week}` like the admin analytics): `races`, `deaths`, `hours` bucket public finished races by `started_at`; `active_users` counts distinct users per week with a qualified race participation (`zone_history` length >= 2) or a created training session, mirroring the admin `active_users` series.
 
-A uniform bonus/penalty is added to all participants based on the race seed's difficulty relative to the global average of consumed seeds (training pool seeds are excluded):
-
-```
-difficulty_factor = seed.difficulty_score / avg(consumed_seeds.difficulty_score)
-bonus = 5.0 * (difficulty_factor - 1.0)
-final_delta = field_weighted_delta + bonus
-```
-
-This intentionally breaks zero-sum: harder seeds inject positive ELO into the system. Over time, players who consistently race on harder seeds drift upward, while players on easier seeds drift downward, even if the two groups never cross paths.
-
-**Strength of Schedule (SoS):**
-
-Available in the API as `avg_opponent_elo` on `LeaderboardPlayer`: the average `elo_before` of all opponents across all rated races for a player. Not displayed in the frontend (replaced by confidence badge).
-
-**Idempotency:** `update_elo_ratings` checks for existing `EloHistory` entries for the race before computing. No double-counting on replay.
-
-### Leaderboard
-
-- Users with `elo_races >= 3`, sorted by confidence-adjusted rating: `elo_rating - 100 / sqrt(elo_races)` DESC
-- Players with fewer races get a larger uncertainty penalty, preventing low-confidence ratings from outranking established players
-- Confidence badge next to ELO value: green (15+ races, >= 75%), orange (8-14 races, 40-74%), gray (3-7 races, < 40%). Threshold: 20 races = 100% confidence
-- Trend delta: sum of last 3 `EloHistory.delta` per user (batch query, not N+1)
-- Community stats: total finished races, 30-day active players, total deaths, total hours
-
-### Data Model
-
-`EloHistory` stores one entry per participant per race: `elo_before`, `elo_after`, `delta`, `race_id`. Indexed on `(user_id, created_at)`.
+Computed by `compute_public_overview` in `services/analytics_service.py`.
 
 ---
 
 ## Behavioral Traits
 
-Seven traits scored 0-100 per player. Computed across all finished races (public and private), recomputed after each race finishes. Unlike ELO, traits do not require races to be public: they describe how a player races relative to opponents, not their global rating.
+Seven traits scored 0-100 per player. Computed across all finished races (public and private), recomputed after each race finishes. Unlike the community overview, traits do not require races to be public: they describe how a player races relative to opponents, not a global ranking.
 
 ### Requirements
 
@@ -308,7 +240,7 @@ Sorted by `avg_deaths DESC`. Boss name resolution uses `boss_name` (per-seed), w
 
 ## Recalculation
 
-`recalculate_all_stats` (admin endpoint) clears all ELO and trait data, resets all users to 1500 ELO, then replays all finished races in chronological order (`started_at ASC`). This ensures consistency after formula changes or bug fixes.
+`recalculate_all_stats` (admin endpoint) refreshes seed difficulty scores, clears all trait data, then replays all finished races in chronological order (`started_at ASC`) to rebuild trait scores. Races with `exclude_from_stats` set are skipped. This ensures consistency after formula changes or bug fixes.
 
 ---
 

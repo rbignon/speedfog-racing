@@ -5,7 +5,7 @@ Source-agnostic cosmetic recognition for SpeedFog Racing players. Two reward typ
 - **Badges**: small icons displayed next to a player's name in leaderboards, chat, and profile cards.
 - **Name templates**: visual customization of the player's name (color or gradient) and, in selected containers, of the surrounding row or card background.
 
-Rewards are decoupled from any specific source: a badge can be granted by an admin, attributed automatically by an in-process detector (top 1 ELO holder, weekly daily champion), or filled in by a backfill script. Rewards are purely cosmetic, never tradable, and never affect gameplay or matchmaking.
+Rewards are decoupled from any specific source: a badge can be granted by an admin, attributed automatically by an in-process detector (race winner, weekly daily champion), or filled in by a backfill script. Rewards are purely cosmetic, never tradable, and never affect gameplay or matchmaking.
 
 The original design rationale lives in [`docs/specs/2026-04-30-rewards-system-design.md`](specs/2026-04-30-rewards-system-design.md). This document is the operational reference: what the system does today, how it is wired, and what the visual artifacts should look like.
 
@@ -24,7 +24,6 @@ The catalog is static Python configuration in [`server/speedfog_racing/rewards/c
 | `early_adopter`         | Early Adopter  | permanent | Backfill: accounts created before `2026-04-01`.                                                                                                                                                            |
 | `veteran`               | Veteran        | permanent | Auto: granted to users with at least `VETERAN_RACE_THRESHOLD` (currently `25`) finished race participations across all races. Checked after each race finish; the threshold lives in `rewards/catalog.py`. |
 | `contributor`           | Contributor    | permanent | Admin grant only.                                                                                                                                                                                          |
-| `top1_elo`              | ELO Champion   | transient | Auto: holder(s) of the highest ELO with `elo_races >= PROVISIONAL_THRESHOLD`.                                                                                                                              |
 | `weekly_daily_champion` | Daily Champion | transient | Auto: highest total weekly points over the previous Mon-Sun week (see Daily Seed `Weekly Points`).                                                                                                         |
 | `weekly_daily_winner`   | Daily Winner   | transient | Auto: ranked 1st on at least one daily seed of the previous Mon-Sun week (ties included). Broader, lower tier than the points champion. Synced in the same Monday rollup.                                  |
 | `frog`                  | Frog           | permanent | Auto: granted on a user's first FINISHED race participation (daily seeds count, solo training sessions do not). Checked after each race finish, same hook as `veteran`. The playful "Speedfrog" mascot.    |
@@ -34,19 +33,19 @@ Lifecycle:
 - **Permanent**: granted once, kept forever (admin can revoke as a mistake-correction escape hatch).
 - **Transient**: holder set is recomputed from an external condition; revoked when the player no longer meets it.
 
-Ties are allowed: when the qualifying condition selects multiple players (e.g. several users tied at the highest ELO), all of them hold the badge simultaneously.
+Ties are allowed: when the qualifying condition selects multiple players (e.g. several users tied for the most weekly daily-seed points), all of them hold the badge simultaneously.
 
 #### Name templates
 
-| id           | description                          | unlock                                                           |
-| ------------ | ------------------------------------ | ---------------------------------------------------------------- |
-| `default`    | Solid white name                     | Always unlocked, never revocable                                 |
-| `archon`     | Violet mono gradient (admin marker)  | Granted to platform administrators                               |
-| `elo_crown`  | Gold gradient + warm gold backdrop   | Granted permanently the first time a player reaches top 1 ELO    |
-| `runebearer` | Silver gradient (top 5 ELO souvenir) | Granted permanently the first time a player enters the top 5 ELO |
-| `pioneer`    | Serif italic on parchment backdrop   | Granted to accounts created before the rewards system launched   |
-| `weathered`  | Bronze gradient (veteran tenure)     | Granted alongside the `veteran` badge, same threshold            |
-| `speedfrog`  | Green gradient (Speedfrog mascot)    | Granted on the player's first finished race (Speedfog -> frog)   |
+| id            | description                         | unlock                                                                         |
+| ------------- | ----------------------------------- | ------------------------------------------------------------------------------ |
+| `default`     | Solid white name                    | Always unlocked, never revocable                                               |
+| `archon`      | Violet mono gradient (admin marker) | Granted to platform administrators                                             |
+| `daily_crown` | Gold gradient + warm gold backdrop  | Granted permanently the first time a player tops the weekly daily-seed ranking |
+| `dawnrunner`  | Cyan gradient                       | Granted permanently the first time a player wins a daily seed                  |
+| `pioneer`     | Serif italic on parchment backdrop  | Granted to accounts created before the rewards system launched                 |
+| `weathered`   | Bronze gradient (veteran tenure)    | Granted alongside the `veteran` badge, same threshold                          |
+| `speedfrog`   | Green gradient (Speedfrog mascot)   | Granted on the player's first finished race (Speedfog -> frog)                 |
 
 Name templates are **always permanent**. Once unlocked, they remain unlocked even if the player no longer meets the original condition (the gold-on-the-name memento outlasts the dynamic badge).
 
@@ -55,9 +54,9 @@ Name templates are **always permanent**. Once unlocked, they remain unlocked eve
 | id             | name         | unlock                                                                                                                         | obtainable                        |
 | -------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
 | `none`         | None         | Always unlocked, never revocable.                                                                                              | yes                               |
-| `gold-aura`    | Gold Aura    | Granted permanently the first time a player reaches top 1 ELO.                                                                 | yes                               |
-| `silver-aura`  | Silver Aura  | Granted permanently the first time a player enters the top 5 ELO.                                                              | yes                               |
-| `cyan-aura`    | Cyan Aura    | Granted permanently the first time a player tops the weekly daily-seed points ranking.                                         | yes                               |
+| `gold-aura`    | Gold Aura    | Granted permanently the first time a player tops the weekly daily-seed points ranking.                                         | yes                               |
+| `silver-aura`  | Silver Aura  | Granted permanently the first time a player wins a public non-daily race with at least 2 racing participants.                  | yes                               |
+| `cyan-aura`    | Cyan Aura    | Granted permanently the first time a player wins a daily seed (ties included).                                                 | yes                               |
 | `molten-aura`  | Molten Aura  | Granted permanently the first time a player's best daily streak reaches `DAILY_STREAK_REWARD_THRESHOLD` (currently `14`) days. | yes                               |
 | `emerald-aura` | Emerald Aura | Granted to accounts created before the rewards system launched.                                                                | **no** (cutoff `2026-04-01` past) |
 | `crimson-aura` | Crimson Aura | Granted alongside the `veteran` badge, same threshold.                                                                         | yes                               |
@@ -72,7 +71,7 @@ Phantom skins are **always permanent**: once unlocked, they stay unlocked. The m
 - A player has at most **one badge equipped**. Slot can be empty.
 - A player has exactly **one name template active**. Defaults to `default` (solid white) if nothing is set, or if the equipped one is revoked.
 - A player has at most **one phantom skin equipped**. Slot can be empty (resolves to `none` and the mod applies no SpEffect).
-- When a transient badge is revoked from a player who had it equipped, the equip slot is auto-cleared. The corresponding `elo_crown` / `runebearer` souvenir name template stays unlocked.
+- When a transient badge is revoked from a player who had it equipped, the equip slot is auto-cleared. The corresponding souvenir name template (`daily_crown` / `dawnrunner`) stays unlocked.
 
 ### Notifications
 
@@ -169,8 +168,9 @@ server/speedfog_racing/
 - `grant_permanent_badge(user_id, badge_id, granted_by=None, reason=None)`: idempotent. Raises `LifecycleMismatchError` on transient ids, `UnknownRewardError` on unknown ones. Emits `badge_granted` notification only on actual creation.
 - `grant_name_template(user_id, template_id, granted_by=None, reason=None)`: idempotent. `default` is always unlocked and is silently skipped. Emits `name_template_unlocked` only on actual creation.
 - `sync_transient_holders(badge_id, new_holder_ids: set[UUID], reason=None) -> SyncResult`: atomic diff against current holders. Auto-clears `equipped_badge_id` on revoked users. Emits `badge_granted` / `badge_revoked` notifications.
-- `refresh_top1_elo_holders(reason=None)`: queries the top ELO from `users` (filtered by `elo_races >= PROVISIONAL_THRESHOLD`), syncs `top1_elo`, then idempotently grants `elo_crown` to each holder.
-- `refresh_weekly_daily_rewards(week_starting: date, reason=None)`: over `[week_starting, week_starting + 7d)`, syncs `weekly_daily_champion` to the top total-points scorer(s) (and grants them `cyan-aura`), and syncs `weekly_daily_winner` to everyone who ranked 1st on at least one daily that week.
+- `grant_race_win_rewards(race)`: grants the permanent `silver-aura` phantom skin to the winner(s) of a finished public non-daily race with at least 2 racing participants (`igt_ms > 0`). Winner = FINISHED participant(s) with the lowest `igt_ms`. Idempotent through the first-time-only grant; requires `race.participants` eagerly loaded.
+- `grant_daily_win_rewards(day: date, reason=None)`: grants the permanent `cyan-aura` phantom skin and `dawnrunner` name template to the winner(s) of the given day's closed daily (top `daily_points_for_race` score, ties included). No-op when the day has no FINISHED daily.
+- `refresh_weekly_daily_rewards(week_starting: date, reason=None)`: over `[week_starting, week_starting + 7d)`, syncs `weekly_daily_champion` to the top total-points scorer(s) (and grants them `gold-aura` + `daily_crown`), and syncs `weekly_daily_winner` to everyone who ranked 1st on at least one daily that week.
 - `check_finish_reward_milestones(user_id)`: counts the user's `Participant` rows with `status=FINISHED` and grants finished-race milestone rewards idempotently. At the first finish it grants `frog` (badge) and `speedfrog` (name template); at `VETERAN_RACE_THRESHOLD` (defined in `rewards/catalog.py`) it additionally grants `veteran` (badge), `weathered` (name template), and `crimson-aura` (phantom skin).
 - `set_equipped_badge(user_id, badge_id: str | None)`: validates ownership, updates `users.equipped_badge_id`. Raises `NotOwnedError` if the user does not currently hold the badge.
 - `set_equipped_name_template(user_id, template_id: str | None)`: validates ownership (`default` is always allowed), updates `users.equipped_name_template_id`.
@@ -184,18 +184,14 @@ server/speedfog_racing/
 
 ### Integration points
 
-- **Top 1 ELO** (`services/race_lifecycle.py`): after each `update_elo_ratings(...)` call, invoke `refresh_top1_elo_holders()`. This also handles the `runebearer` (top 5) unlock when a player enters the top 5 (see [Top 5 ELO unlock](#top-5-elo-unlock) below).
-- **Finished-race milestones** (`services/race_lifecycle.py`): in the same hook (after `refresh_top1_elo_holders`), iterate every participant who just transitioned to FINISHED and call `check_finish_reward_milestones(user_id)`. The service counts `Participant` rows with `status=FINISHED` for that user across all races (daily seeds included, solo training sessions excluded since they create no `Participant` row). The first finish grants the `frog` badge + `speedfrog` template; once the count reaches `VETERAN_RACE_THRESHOLD` the `veteran` badge + `weathered` template + `crimson-aura` skin are granted. All grants are idempotent, so calling on every race finish is safe.
-- **Weekly daily rewards** (`services/daily_seed_loop.py`): when generating a daily seed for a Monday, call `refresh_weekly_daily_rewards(week_starting=monday-7d)`. It syncs two transient badges over the prior week's closed dailies: `weekly_daily_champion` to the user(s) with the maximum `total_points` (ties allowed; also granted `cyan-aura`), and `weekly_daily_winner` to everyone who ranked 1st on at least one daily (the day-winner set, `compute_weekly_daily_winners`). Past weeks before the rollout are not backfilled.
-- **Phantom skins**: extend the existing detectors in place. `refresh_top1_elo_holders` grants `gold-aura` (top 1) and `silver-aura` (top 5) idempotently alongside `elo_crown` and `runebearer`. `refresh_weekly_daily_rewards` grants the **permanent** `cyan-aura` souvenir to current champion(s) (the underlying transient badge stays as-is). `check_finish_reward_milestones` grants `crimson-aura` alongside the `weathered` template. `emerald-aura` is backfill-only (no live detector). `violet-aura` has no automatic detector and is granted exclusively via the admin endpoint.
+- **Race win** (`services/race_lifecycle.py`, both finalization paths: `check_race_auto_finish` and `finalize_race`): once the race transitions to FINISHED, `grant_race_win_rewards(race)` grants the permanent `silver-aura` phantom skin to the winner(s) of a finished public non-daily race with at least 2 racing participants (`igt_ms > 0`).
+- **Daily win** (`services/daily_seed_loop.py`): at each 08:00 UTC creation tick, after yesterday's daily has been hard-closed, `grant_daily_win_rewards(yesterday)` grants the permanent `cyan-aura` phantom skin and `dawnrunner` name template to the winner(s) of yesterday's closed daily, ties included.
+- **Weekly champion** (`services/daily_seed_loop.py`, unchanged Monday rollup): when generating a daily seed for a Monday, call `refresh_weekly_daily_rewards(week_starting=monday-7d)`. It syncs two transient badges over the prior week's closed dailies: `weekly_daily_champion` to the user(s) with the maximum `total_points` (ties allowed; also granted `gold-aura` + `daily_crown`), and `weekly_daily_winner` to everyone who ranked 1st on at least one daily (the day-winner set, `compute_weekly_daily_winners`). Past weeks before the rollout are not backfilled.
+- **Finished-race milestones** (`services/race_lifecycle.py`): in the same hook (after `grant_race_win_rewards`), iterate every participant who just transitioned to FINISHED and call `check_finish_reward_milestones(user_id)`. The service counts `Participant` rows with `status=FINISHED` for that user across all races (daily seeds included, solo training sessions excluded since they create no `Participant` row). The first finish grants the `frog` badge + `speedfrog` template; once the count reaches `VETERAN_RACE_THRESHOLD` the `veteran` badge + `weathered` template + `crimson-aura` skin are granted. All grants are idempotent, so calling on every race finish is safe.
 - **Daily streak souvenir** (`websocket/race/mod.py`): inside `_apply_daily_streak`, after `apply_qualification_to_user` persists a streak increment, call `RewardsService.check_daily_streak_eligibility(user_id)`. The service reads `users.daily_best_streak` (so the same predicate covers live grants and backfill) and grants `molten-aura` once it reaches `DAILY_STREAK_REWARD_THRESHOLD`.
-- **Account deletion**: any `delete_user` flow must call `refresh_top1_elo_holders()` and `refresh_weekly_daily_rewards(current_week_start)` after the deletion to reseat the holder sets.
+- **Account deletion**: any `delete_user` flow must call `refresh_weekly_daily_rewards(current_week_start)` after the deletion to reseat the weekly champion holder set.
 
-#### Top 5 ELO unlock
-
-`runebearer` is a permanent souvenir for any player who has entered the top 5 ELO at least once. The detection runs at the bottom of `refresh_top1_elo_holders`: after computing the top-1 holders, the helper fetches the top 5 settled players (`elo_races >= PROVISIONAL_THRESHOLD`, ordered by `elo_rating DESC`) and idempotently calls `grant_name_template(user_id, "runebearer")` for each. Ties at the rank-5 boundary pull all tied users in.
-
-The two unlocks (`elo_crown` and `runebearer`) are independent: a player who reaches top 1 directly receives both; a player who only ever floats around #3-#5 keeps `runebearer` for life.
+`emerald-aura` is backfill-only (no live detector). `violet-aura` has no automatic detector and is granted exclusively via the admin endpoint.
 
 ### REST endpoints
 
@@ -227,7 +223,7 @@ DELETE /api/admin/users/{user_id}/skins/{skin_id}
 ```rust
 pub struct NameTemplate {
     pub color: Option<String>,                  // "#E8E6E1"
-    pub gradient: Option<(String, String)>,     // ("#FFE9A8","#C8A44E") — the elo_crown template
+    pub gradient: Option<(String, String)>,     // ("#FFE9A8","#C8A44E"), the daily_crown template
 }
 
 pub struct ParticipantInfo {
@@ -257,7 +253,7 @@ Status colors (yellow/white/green/grey for ready/playing/finished/abandoned) rem
 
 ### Username and row rendering
 
-`UserLink.svelte` is the default rendering component for player names. Containers that need a custom row layout (race `Leaderboard.svelte`, `LeaderboardOverlay.svelte`, `ParticipantCard.svelte`, `RewardsTemplatePicker.svelte`, `stats/LeaderboardTab.svelte`, `ChatPanel.svelte`, `user/[username]/+page.svelte`) inline the same template-resolution logic rather than wrapping `UserLink`. The duplication is intentional (matches the project's inline-over-helpers convention); when changing the rendering rule, update all consumers.
+`UserLink.svelte` is the default rendering component for player names. Containers that need a custom row layout (race `Leaderboard.svelte`, `LeaderboardOverlay.svelte`, `ParticipantCard.svelte`, `RewardsPicker.svelte`, `ChatPanel.svelte`, `user/[username]/+page.svelte`) inline the same template-resolution logic rather than wrapping `UserLink`. The duplication is intentional (matches the project's inline-over-helpers convention); when changing the rendering rule, update all consumers.
 
 UserLink:
 
@@ -266,27 +262,17 @@ UserLink:
 
 The `background_css` is applied at the **container** level, not in `UserLink`. The visibility model follows the Discord parallel: the name `color`/`gradient` is the "role color" (always visible everywhere it makes sense), the `background_css` is the "profile banner" (visible in showcase contexts, conditional in dense lists).
 
-| Container                                    | Apply `background_css`?                                           |
-| -------------------------------------------- | ----------------------------------------------------------------- |
-| `ParticipantCard.svelte`                     | always-on (showcase card)                                         |
-| `Leaderboard.svelte` row (race)              | always-on (short list, 2-8 rows; race context tolerates richness) |
-| `LeaderboardOverlay.svelte` (OBS overlay)    | always-on (consistent with the race view)                         |
-| `stats/LeaderboardTab.svelte` row (`/stats`) | always-on for **rows 1-3** (podium); **hover-only** for rows 4+   |
-| `ChatPanel.svelte` messages                  | never (illegible behind chat text)                                |
-| `UserLink` in nav, links, breadcrumbs        | never (color/gradient only)                                       |
-| Profile gallery preview                      | always-on (full template preview)                                 |
+| Container                                                | Apply `background_css`?                                                        |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `ParticipantCard.svelte`                                 | always-on (showcase card)                                                      |
+| `Leaderboard.svelte` row (race)                          | always-on (short list, 2-8 rows; race context tolerates richness)              |
+| `LeaderboardOverlay.svelte` (OBS overlay)                | always-on (consistent with the race view)                                      |
+| `WeekLeaderboard.svelte` row (`/daily/[date]` week view) | always-on (short list; the viewer's own row keeps the `.me` highlight instead) |
+| `ChatPanel.svelte` messages                              | never (illegible behind chat text)                                             |
+| `UserLink` in nav, links, breadcrumbs                    | never (color/gradient only)                                                    |
+| Profile gallery preview                                  | always-on (full template preview)                                              |
 
 `ChatPanel.svelte` does not use `UserLink` (the chat row needs role/trait badges and a custom layout), so the name template `color`/`gradient` and the equipped badge icon are inlined in the message header. The chat carries `equipped_badge_id` and `equipped_name_template_id` in `ChatBroadcastMessage` so the frontend can render without a separate lookup.
-
-#### `/stats` podium + hover behavior
-
-The split between always-on (top 3) and hover-only (rows 4+) is implemented at the row level:
-
-- Rows 1-3 receive the row's `style="background: <background_css>"` unconditionally.
-- Rows 4+ render `background: transparent` by default and switch to the template's `background_css` on `:hover` (and on `:focus-within` for keyboard nav).
-- The transition uses the charter's `--transition: 0.2s ease`, applied to `background` only, so a hovered row reveals its background without jarring the eye on a long scroll.
-
-Rationale: a /stats leaderboard can carry 50-100 rows; stacking translucent backdrops on every row would drown the numeric data (rank, ELO, runs) that the page exists to expose. Keeping the podium always-on preserves the "gold appears as punctuation" charter principle (top of the list = enriched), while hover-on-the-rest converts the background into a discovery affordance similar to a Discord profile banner.
 
 Readability is owned by the catalog: each template is hand-tuned to contrast adequately with the leaderboard's status colors. No runtime contrast check.
 
@@ -326,13 +312,11 @@ When the user has a phantom skin equipped (other than `none`), the profile avata
 
 1. Grant `early_adopter` badge, `pioneer` template, and `emerald-aura` phantom skin to every user with `created_at < 2026-04-01`.
 2. Grant `archon` template to every user with `role == admin`. Future admin promotions are not auto-granted: an operator manually issues the template via `POST /api/admin/users/{id}/templates`. This is intentional, the case is rare.
-3. Run `refresh_top1_elo_holders()` to grant the current top 1 ELO badge, the `elo_crown` template (top 1), and the `runebearer` template (top 5).
-4. Grant `veteran` badge, `weathered` template, and `crimson-aura` phantom skin to every user whose count of FINISHED participations is at least `VETERAN_RACE_THRESHOLD`.
-5. Grant `frog` badge and `speedfrog` template to every user with at least one FINISHED participation.
-6. Grant `molten-aura` phantom skin to every user whose `daily_best_streak` is at least `DAILY_STREAK_REWARD_THRESHOLD`.
-7. Skip historical weekly daily champions (the badge is transient; backfilling past weeks would conflict with the "current holder" semantics).
+3. Grant `veteran` badge, `weathered` template, and `crimson-aura` phantom skin to every user whose count of FINISHED participations is at least `VETERAN_RACE_THRESHOLD`.
+4. Grant `frog` badge and `speedfrog` template to every user with at least one FINISHED participation.
+5. Grant `molten-aura` phantom skin to every user whose `daily_best_streak` is at least `DAILY_STREAK_REWARD_THRESHOLD`.
 
-8. `cyan-aura` is **not** retroactively granted to past weekly Daily Champions; the next live `refresh_weekly_daily_rewards` rollup grants it to the current week's champion(s).
+The victory rewards are forward-only: no backfill step grants `silver-aura` (race win), `cyan-aura` + `dawnrunner` (daily win), or `gold-aura` + `daily_crown` + `weekly_daily_champion` (weekly champion) retroactively. The next live win or rollup after rollout seeds each player's holder state; historical wins are not replayed.
 
 Each grant emits a `RewardNotification`, so each affected user sees their consolidated banner on their next visit.
 
@@ -392,12 +376,11 @@ Mapping today:
 | `early_adopter`         | `#E8E6E1`                             | Origin / "first light", neutral but not invisible                                             |
 | `veteran`               | `#9CA3AF`                             | Endurance, weathered steel                                                                    |
 | `contributor`           | `#A78BFA` (head) + `#5B21B6` (handle) | Craft / authorship, ties to charter purple. Bicolor: see exception above                      |
-| `top1_elo`              | `#C8A44E`                             | Champion = the only true gold use in the badge set                                            |
-| `weekly_daily_champion` | `#DDB95F`                             | Time-bound gold derivative, subordinate to `top1_elo`                                         |
+| `weekly_daily_champion` | `#DDB95F`                             | Time-bound gold derivative, the warmest tone in the current badge set                         |
 | `weekly_daily_winner`   | `#DDB95F`                             | Same daily/time-bound amber as the champion; distinguished by shape, not color (see concepts) |
 | `frog`                  | `#3E9E5C` (body) + `#15391F` (eyes)   | Frog green. Intentional mascot exception, see note below                                      |
 
-The `top1_elo` icon is the **only** badge using `#C8A44E`. This keeps the charter's "gold appears sparingly as punctuation" principle intact: the top ELO holder is the one place where gold marks a person, just as it marks the #1 leaderboard rank elsewhere.
+No badge currently uses `#C8A44E`: the "Champion / top tier" slot in the palette above is reserved for a future prestige badge but has no live mapping today.
 
 **`frog` is a deliberate exception** to the restricted palette and the "clean Elden Ring nod, not a literal asset" theme. It is a playful brand mascot (Speedfog -> frog), not a prestige or lore marker, so it uses frog green (outside the gold/steel/purple/amber/off-white set) and a literal frog silhouette. Its two fills stay within the same color family (a darker green for the eyes), so the bicolor rule is respected. It is the only mascot-tier badge; new prestige badges must stay within the restricted palette.
 
@@ -412,7 +395,6 @@ Each entry below describes the iconographic intent. Implementation files in `web
 | `early_adopter`         | Shooting star: 5-point star at upper-right with a trail of 3 decreasing diamond particles toward lower-left                                                                                            |
 | `veteran`               | Three stacked chevrons (military rank stripes pointing up), evokes "rank earned through service"                                                                                                       |
 | `contributor`           | Tilted war hammer: trapezoidal head with a small triangular pick on one side, thick handle, rotated -25°. The only bicolor badge: head in `#A78BFA`, handle in darker `#5B21B6` for tool-relief depth. |
-| `top1_elo`              | 3-fleuron crown, symmetrical, with a thin horizontal moulding cutout across the base band                                                                                                              |
 | `weekly_daily_champion` | Bold sun disk (centered circle, r=5.5) with 7 thick triangular rays reaching toward the edge (one per day of the week). Sized to out-weight the lower-tier winner medal.                               |
 | `weekly_daily_winner`   | Prize ribbon: a small medallion disk (r=4) with two thin ribbon tails fanning below it (a single-win motif). Kept lighter than the champion's sun so the higher tier reads as the stronger icon.       |
 | `frog`                  | Front-facing frog: wide rounded body, two raised eye bumps on top with dark pupils, a small smile arc. Placeholder flat SVG; may be swapped for a legible in-game frog cutout (PNG) at the same id.    |
@@ -466,7 +448,7 @@ System fonts only. No web font loading (avoids network cost, FOIT/FOUT, and thir
 - **Prefer warm radial highlights** behind the name over flat horizontal gradients across the full row. A `radial-gradient(ellipse 60% 100% at 25% 50%, ...)` reads as "the name glows", whereas a 90deg gradient flattens the row visually.
 - **Two-stop gradients only**, no rainbows. The template's identity should be readable as one color family.
 - **Don't combine too many cues**. A template that stacks gradient text + heavy shadow + alternate font + dense backdrop reads as visual noise. Pick one or two strong signals; keep the rest discreet.
-- **Hierarchy by tier**. A higher-tier template should have a _qualitatively_ different signal from a lower one (different font family, not just a slightly different color). This keeps the recognition gradient legible: a quick glance should distinguish `elo_crown` from `runebearer` without reading the pseudonym.
+- **Hierarchy by tier**. A higher-tier template should have a _qualitatively_ different signal from a lower one (different font family, not just a slightly different color). This keeps the recognition gradient legible: a quick glance should distinguish `daily_crown` from `dawnrunner` without reading the pseudonym.
 
 #### Italic + gradient WebKit gotcha
 
@@ -474,16 +456,16 @@ When a template combines `gradient` (rendered via `background-clip: text` + `col
 
 ### Name template catalog
 
-| id           | text gradient                          | name_css                                                                                                                                                              | background_css                                                                             | rationale                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default`    | Solid `#E8E6E1` (charter primary text) | none                                                                                                                                                                  | none                                                                                       | Charter primary text. Always available, never revocable.                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `elo_crown`  | `("#FFE9A8", "#C8A44E")`               | `font-style: italic; font-weight: 600; text-shadow: 0 0 4px rgba(168, 139, 92, 0.28);`                                                                                | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(200, 164, 78, 0.18), transparent 70%)`  | Champion souvenir. Inter italic semi-bold + warm gold gradient + bronze halo produces a "tarnished gold" effect, very ER-flavored (the player is a Tarnished). Shares Inter italic with `runebearer` so the two ELO templates read as one family.                                                                                                                                                                                                                |
-| `runebearer` | `("#B8C5D6", "#6F87A6")`               | `font-style: italic; font-weight: 600; text-shadow: 0 0 5px rgba(184, 197, 214, 0.28);`                                                                               | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(184, 197, 214, 0.14), transparent 70%)` | Top 5 ELO souvenir. Same Inter italic semi-bold family as `elo_crown`, in silver instead of gold: the pair reads as the same tier axis (current ELO rank) at two intensities. Both stops sit fully in the silver-blue family (no off-white start) so the pseudo reads "silver" end-to-end, including in the in-game mod overlay where italic and shadow are not applied.                                                                                         |
-| `pioneer`    | _(none, default text color)_           | `font-family: Georgia, "Times New Roman", Times, serif; font-style: italic; font-weight: 600; letter-spacing: 0.02em; text-shadow: 0 0 6px rgba(200, 164, 78, 0.35);` | `radial-gradient(ellipse 50% 80% at 25% 50%, rgba(232, 220, 196, 0.12), transparent 60%)`  | Early adopter souvenir. **Intentionally no gradient**: in the in-game mod overlay (which only reads `color`/`gradient`) the pseudo keeps its status color, so the marker is web-only and never overrides active race signals. On the web, Georgia italic semi-bold + gold halo on a parchment backdrop reads as "veteran scroll". Backdrop is the most discreet of the catalog (alpha `0.12`, smaller ellipse) since this is a broad-tier souvenir worn by many. |
-| `weathered`  | `("#D4A574", "#A06A35")`               | `font-weight: 500; letter-spacing: 0.02em; text-shadow: 0 0 4px rgba(160, 106, 53, 0.28);`                                                                            | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(160, 106, 53, 0.14), transparent 70%)`  | Veteran tenure souvenir. Warm bronze gradient + Inter medium (no italic, no serif, no font swap) reads as "patinated / battle-worn" without competing with the ELO templates' italic+semi-bold axis or the lore templates' serif axis. The lighter weight keeps it as a discreet souvenir rather than a prestige marker, and the warm bronze hue is fully disjoint from `runebearer`'s cool silver to avoid any cross-reading at a glance.                       |
-| `archon`     | `("#C4B5FD", "#7C3AED")`               | `font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace; font-weight: 600; text-shadow: 0 0 6px rgba(124, 58, 237, 0.35);`                   | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(124, 58, 237, 0.18), transparent 70%)`  | Administrator marker. Mono semi-bold in charter purple; the only template using the mono font slot. Visually unambiguous at a glance and disjoint from the serif italic "champion" axis (`elo_crown`), so the two top-tier signals do not compete.                                                                                                                                                                                                               |
+| id            | text gradient                          | name_css                                                                                                                                                              | background_css                                                                            | rationale                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default`     | Solid `#E8E6E1` (charter primary text) | none                                                                                                                                                                  | none                                                                                      | Charter primary text. Always available, never revocable.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `daily_crown` | `("#FFE9A8", "#C8A44E")`               | `font-style: italic; font-weight: 600; text-shadow: 0 0 4px rgba(168, 139, 92, 0.28);`                                                                                | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(200, 164, 78, 0.18), transparent 70%)` | Weekly champion souvenir. Inter italic semi-bold + warm gold gradient + bronze halo produces a "tarnished gold" effect, very ER-flavored (the player is a Tarnished). Shares Inter italic with `dawnrunner` so the pair reads as one family: the daily-victory axis, gold for the week.                                                                                                                                                                          |
+| `dawnrunner`  | `("#A8DCE9", "#4E9EC8")`               | `font-style: italic; font-weight: 600; text-shadow: 0 0 5px rgba(168, 220, 233, 0.28);`                                                                               | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(78, 158, 200, 0.14), transparent 70%)` | Daily win souvenir. Same Inter italic semi-bold family as `daily_crown`, in cyan instead of gold: the pair reads as the daily-victory axis at two scopes, gold for topping the week, cyan for winning a single day. Both stops sit fully in the cyan-blue family (no off-white start) so the pseudo reads "cyan" end-to-end, including in the in-game mod overlay where italic and shadow are not applied.                                                       |
+| `pioneer`     | _(none, default text color)_           | `font-family: Georgia, "Times New Roman", Times, serif; font-style: italic; font-weight: 600; letter-spacing: 0.02em; text-shadow: 0 0 6px rgba(200, 164, 78, 0.35);` | `radial-gradient(ellipse 50% 80% at 25% 50%, rgba(232, 220, 196, 0.12), transparent 60%)` | Early adopter souvenir. **Intentionally no gradient**: in the in-game mod overlay (which only reads `color`/`gradient`) the pseudo keeps its status color, so the marker is web-only and never overrides active race signals. On the web, Georgia italic semi-bold + gold halo on a parchment backdrop reads as "veteran scroll". Backdrop is the most discreet of the catalog (alpha `0.12`, smaller ellipse) since this is a broad-tier souvenir worn by many. |
+| `weathered`   | `("#D4A574", "#A06A35")`               | `font-weight: 500; letter-spacing: 0.02em; text-shadow: 0 0 4px rgba(160, 106, 53, 0.28);`                                                                            | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(160, 106, 53, 0.14), transparent 70%)` | Veteran tenure souvenir. Warm bronze gradient + Inter medium (no italic, no serif, no font swap) reads as "patinated / battle-worn" without competing with the daily-victory templates' italic+semi-bold axis or the lore templates' serif axis. The lighter weight keeps it as a discreet souvenir rather than a prestige marker, and the warm bronze hue is fully disjoint from `dawnrunner`'s cool cyan to avoid any cross-reading at a glance.               |
+| `archon`      | `("#C4B5FD", "#7C3AED")`               | `font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace; font-weight: 600; text-shadow: 0 0 6px rgba(124, 58, 237, 0.35);`                   | `radial-gradient(ellipse 60% 100% at 25% 50%, rgba(124, 58, 237, 0.18), transparent 70%)` | Administrator marker. Mono semi-bold in charter purple; the only template using the mono font slot. Visually unambiguous at a glance and disjoint from the serif italic "champion" axis (`daily_crown`), so the two top-tier signals do not compete.                                                                                                                                                                                                             |
 
-**Note on color tuning**: silver-blue templates need stronger pigmentation than warmer-tone templates. The default text color `#E8E6E1` is itself a warm off-white; any template gradient with stops near that value will read as plain default text in renderers without backdrop support (the in-game mod). Templates in distant color families (gold, crimson, emerald) tolerate a brighter / more washed-out start stop because the hue itself differentiates from default. Templates in cool greys, off-whites, or pale tones must pick stops that are _fully saturated_ in their family.
+**Note on color tuning**: cool-toned templates (e.g. `dawnrunner`'s cyan-blue) need stronger pigmentation than warmer-tone templates. The default text color `#E8E6E1` is itself a warm off-white; any template gradient with stops near that value will read as plain default text in renderers without backdrop support (the in-game mod). Templates in distant color families (gold, crimson, emerald) tolerate a brighter / more washed-out start stop because the hue itself differentiates from default. Templates in cool greys, off-whites, or pale tones must pick stops that are _fully saturated_ in their family.
 
 ### Adding a new reward (checklist)
 
@@ -510,7 +492,7 @@ When a template combines `gradient` (rendered via `background-clip: text` + `col
   - `dismiss_notifications`: bulk update, idempotent, returns count.
 - `api/test_rewards.py`: GET inventory, PATCH equipped (success and failure paths), GET/POST notifications, GET catalog (no admin-only fields leaked).
 - `api/test_admin_rewards.py`: admin endpoints gated by `require_admin`; admin grant emits notification, admin revoke does not.
-- Integration: a finished race triggers `top1_elo` resync against a mocked ELO state; `daily_seed_loop` rollup at a Monday boundary.
+- Integration: a finished public race triggers `grant_race_win_rewards` (silver-aura to the winner); a closed daily triggers `grant_daily_win_rewards` (cyan-aura + dawnrunner, ties included); the Monday `daily_seed_loop` rollup triggers `refresh_weekly_daily_rewards` (weekly_daily_champion + gold-aura + daily_crown to the week's top scorer(s)).
 
 ### Frontend (Vitest)
 
