@@ -50,11 +50,11 @@ async def test_overview_empty_db(async_session):
         "total_deaths": 0,
         "hours_raced": 0.0,
     }
-    assert len(data["weekly"]["weeks"]) == 12
-    assert data["weekly"]["races"] == [0] * 12
-    assert data["weekly"]["active_users"] == [0] * 12
-    assert data["weekly"]["deaths"] == [0] * 12
-    assert data["weekly"]["hours"] == [0.0] * 12
+    assert len(data["weekly"]["weeks"]) == 20
+    assert data["weekly"]["races"] == [0] * 20
+    assert data["weekly"]["active_users"] == [0] * 20
+    assert data["weekly"]["deaths"] == [0] * 20
+    assert data["weekly"]["hours"] == [0.0] * 20
 
 
 async def test_overview_counts_public_finished_races_only(async_session):

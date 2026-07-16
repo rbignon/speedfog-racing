@@ -658,7 +658,7 @@ async def compute_public_heatmap(
 
     Counts public non-daily race participations (weighted by participant
     count, at the race's started_at) plus training sessions (at created_at)
-    over the last 12 ISO weeks. Dailies are excluded like the admin heatmap:
+    over the last 20 ISO weeks. Dailies are excluded like the admin heatmap:
     their started_at is the synthetic 08:00 UTC rotation time.
 
     Each event's UTC timestamp is converted to ``tz_name`` before bucketing,
@@ -674,8 +674,8 @@ async def compute_public_heatmap(
         resolved = "UTC"
 
     now_utc = now or datetime.now(UTC)
-    week_set = set(_build_week_list(now_utc, 12))
-    window_cutoff = now_utc - timedelta(weeks=13)
+    week_set = set(_build_week_list(now_utc, 20))
+    window_cutoff = now_utc - timedelta(weeks=21)
 
     grid = [[0] * 7 for _ in range(12)]
 
