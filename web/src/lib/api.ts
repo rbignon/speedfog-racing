@@ -1783,6 +1783,24 @@ export async function fetchStatsOverview(): Promise<StatsOverviewResponse> {
   return res.json();
 }
 
+export interface HeatmapResponse {
+  timezone: string;
+  grid: number[][];
+}
+
+/**
+ * Fetch the community activity heatmap, bucketed in the given timezone.
+ */
+export async function fetchActivityHeatmap(
+  tz: string,
+): Promise<HeatmapResponse> {
+  const res = await fetch(
+    `${API_BASE}/stats/heatmap?tz=${encodeURIComponent(tz)}`,
+  );
+  if (!res.ok) throw new Error("Failed to fetch activity heatmap");
+  return res.json();
+}
+
 /**
  * Fetch zone death/visit statistics, optionally filtered by pool.
  * Pins days=90 (the API default is 30) so the stats page panels rank
