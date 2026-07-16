@@ -522,9 +522,9 @@ async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
     training as play activity, mirroring the admin ``active_users`` series.
     """
     now = datetime.now(UTC)
-    week_keys = _build_week_list(now, 12)
+    week_keys = _build_week_list(now, 20)
     week_set = set(week_keys)
-    window_cutoff = now - timedelta(weeks=13)
+    window_cutoff = now - timedelta(weeks=21)
 
     public_finished = (Race.status == RaceStatus.FINISHED) & (Race.is_public == True)  # noqa: E712
     participated = or_(
