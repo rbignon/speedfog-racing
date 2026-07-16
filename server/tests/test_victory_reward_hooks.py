@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import selectinload
 
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
@@ -15,10 +16,13 @@ from speedfog_racing.models import (
     PhantomSkinUnlock,
     Race,
     RaceStatus,
+    Seed,
+    SeedStatus,
     User,
     UserRole,
 )
 from speedfog_racing.rewards.service import RewardsService
+from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 
 
 @pytest.fixture
@@ -179,3 +183,67 @@ async def test_daily_win_noop_when_no_finished_daily(async_session):
         await svc.grant_daily_win_rewards(date(2026, 7, 14))
         await db.commit()
         assert await _skin_holders(db, "cyan-aura") == set()
+
+
+async def test_check_race_auto_finish_grants_silver_aura_to_winner(async_session):
+    """End-to-end through the real finalization seam: check_race_auto_finish
+    (not grant_race_win_rewards directly) must trigger the silver-aura grant
+    when a public non-daily race auto-finishes."""
+    async with async_session() as db:
+        winner, loser, org = _user(1), _user(2), _user(99)
+        db.add_all([winner, loser, org])
+        await db.flush()
+
+        seed = Seed(
+            seed_number="s1",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/s1",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Test Race",
+            organizer_id=org.id,
+            seed_id=seed.id,
+            is_public=True,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        db.add_all(
+            [
+                Participant(
+                    race_id=race.id,
+                    user_id=winner.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=1000,
+                    finished_at=datetime.now(UTC),
+                ),
+                Participant(
+                    race_id=race.id,
+                    user_id=loser.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=2000,
+                    finished_at=datetime.now(UTC),
+                ),
+            ]
+        )
+        await db.commit()
+
+        loaded_race = (
+            await db.execute(
+                select(Race).where(Race.id == race.id).options(selectinload(Race.participants))
+            )
+        ).scalar_one()
+        ok = await check_race_auto_finish(db, loaded_race)
+        assert ok is True
+
+    async with async_session() as db:
+        assert await _skin_holders(db, "silver-aura") == {winner.id}
+        assert loser.id not in await _skin_holders(db, "silver-aura")
