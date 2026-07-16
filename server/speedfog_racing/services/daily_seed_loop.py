@@ -165,6 +165,8 @@ async def create_daily_seed_if_needed(
         # window rather than just yesterday self-heals days where creation
         # failed and this rollover code never ran; grants are
         # first-time-only, so already-rewarded dailies are no-ops.
+        # A daily older than the window (creation failing 7+ consecutive days)
+        # is permanently missed; acceptable for an abnormal, error-logged state.
         rewards_svc = RewardsService(db)
         for offset in range(1, DAILY_WIN_REWARD_LOOKBACK_DAYS + 1):
             await rewards_svc.grant_daily_win_rewards(today - timedelta(days=offset))
