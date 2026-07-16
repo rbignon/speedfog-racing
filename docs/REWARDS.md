@@ -7,7 +7,7 @@ Source-agnostic cosmetic recognition for SpeedFog Racing players. Two reward typ
 
 Rewards are decoupled from any specific source: a badge can be granted by an admin, attributed automatically by an in-process detector (race winner, weekly daily champion), or filled in by a backfill script. Rewards are purely cosmetic, never tradable, and never affect gameplay or matchmaking.
 
-The original design rationale lives in [`docs/specs/2026-04-30-rewards-system-design.md`](specs/2026-04-30-rewards-system-design.md). This document is the operational reference: what the system does today, how it is wired, and what the visual artifacts should look like.
+This document is the operational reference: what the system does today, how it is wired, and what the visual artifacts should look like.
 
 ---
 

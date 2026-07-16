@@ -868,8 +868,6 @@ Readability follows the matrix below. Race role (organizer, admin, caster) does 
 
 When a participant finishes or abandons mid-race the server flips the connection's cached status so subsequent broadcasts pass the filter. Past public messages are pulled by the client via [`request_chat_history`](#request_chat_history) once it detects the local transition. Late-join window unlocks for a connected spectator are also driven by the client: it ticks its own clock against the deadline and sends `request_chat_history` when the window closes.
 
-See `docs/specs/2026-04-28-public-chat-lock-design.md` for the full rationale.
-
 ### System Messages
 
 The server broadcasts system notifications for the following events:
@@ -1158,8 +1156,6 @@ The `ready` and `pong` messages are not gated; they are valid in any state.
 Zone tracking uses EMEVD event flags. The mod monitors a list of event flag IDs (received via `auth_ok`) and reports transitions via `event_flag` messages. The server resolves flag IDs to DAG nodes using the seed's `event_map`.
 
 **Per-connection flags:** Each connection in `graph.json` has a unique `flag_id`. The `event_map` is many-to-one: multiple flags can map to the same node (e.g., when a shared entrance merge has 3 branches entering the same cluster). The mod receives all flag IDs as an opaque list; the server performs the flag → node resolution. This ensures the mod detects each fog gate traversal independently, even when the destination cluster was previously visited via a different branch.
-
-See `docs/specs/emevd-zone-tracking.md` for the full specification.
 
 ### Runtime Item Spawning
 
