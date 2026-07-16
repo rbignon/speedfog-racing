@@ -1,24 +1,12 @@
 <script lang="ts">
   import { fetchStatsOverview, type StatsOverviewResponse } from "$lib/api";
-  import { Chart, registerables } from "chart.js";
-  Chart.register(...registerables);
 
   let data = $state<StatsOverviewResponse | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
 
-  let racesCanvas = $state<HTMLCanvasElement | null>(null);
-  let playersCanvas = $state<HTMLCanvasElement | null>(null);
-  let deathsCanvas = $state<HTMLCanvasElement | null>(null);
-  let hoursCanvas = $state<HTMLCanvasElement | null>(null);
-  let charts: Chart[] = [];
-
   $effect(() => {
     loadData();
-    return () => {
-      charts.forEach((c) => c.destroy());
-      charts = [];
-    };
   });
 
   async function loadData() {
@@ -33,70 +21,62 @@
     }
   }
 
-  $effect(() => {
-    if (
-      !data ||
-      !racesCanvas ||
-      !playersCanvas ||
-      !deathsCanvas ||
-      !hoursCanvas
-    )
-      return;
-    renderCharts($state.snapshot(data));
-  });
-
-  function miniBar(
-    canvas: HTMLCanvasElement,
-    labels: string[],
-    values: number[],
-    rgb: string,
-  ) {
-    charts.push(
-      new Chart(canvas, {
-        type: "bar",
-        data: {
-          labels,
-          datasets: [
-            {
-              data: values,
-              backgroundColor: `rgba(${rgb},0.6)`,
-              borderColor: `rgb(${rgb})`,
-              borderWidth: 1,
-            },
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: {
-              grid: { display: false },
-              ticks: { color: "#888", font: { size: 9 } },
-            },
-            y: {
-              beginAtZero: true,
-              grid: { color: "rgba(255,255,255,0.06)" },
-              ticks: { color: "#888", font: { size: 9 }, maxTicksLimit: 4 },
-            },
-          },
-        },
-      }),
-    );
-  }
-
-  function renderCharts(d: StatsOverviewResponse) {
-    charts.forEach((c) => c.destroy());
-    charts = [];
-    miniBar(racesCanvas!, d.weekly.weeks, d.weekly.races, "200,164,78");
-    miniBar(playersCanvas!, d.weekly.weeks, d.weekly.active_users, "34,197,94");
-    miniBar(deathsCanvas!, d.weekly.weeks, d.weekly.deaths, "239,68,68");
-    miniBar(hoursCanvas!, d.weekly.weeks, d.weekly.hours, "139,92,246");
-  }
-
   function formatHours(h: number): string {
     if (h > 0 && h < 1) return "<1";
     return Math.round(h).toLocaleString();
+  }
+
+  type Tile = {
+    key: string;
+    label: string;
+    value: string;
+    series: number[];
+    accent: string;
+    accentSoft: string;
+  };
+
+  const tiles = $derived<Tile[]>(
+    data
+      ? [
+          {
+            key: "races",
+            label: "Total races",
+            value: data.kpis.total_races.toLocaleString(),
+            series: data.weekly.races,
+            accent: "var(--color-gold)",
+            accentSoft: "rgba(200, 164, 78, 0.32)",
+          },
+          {
+            key: "players",
+            label: "Active players",
+            value: data.kpis.active_players.toLocaleString(),
+            series: data.weekly.active_users,
+            accent: "#22c55e",
+            accentSoft: "rgba(34, 197, 94, 0.36)",
+          },
+          {
+            key: "deaths",
+            label: "Total deaths",
+            value: data.kpis.total_deaths.toLocaleString(),
+            series: data.weekly.deaths,
+            accent: "#ef4444",
+            accentSoft: "rgba(239, 68, 68, 0.36)",
+          },
+          {
+            key: "hours",
+            label: "Hours raced",
+            value: formatHours(data.kpis.hours_raced),
+            series: data.weekly.hours,
+            accent: "var(--color-purple)",
+            accentSoft: "rgba(139, 92, 246, 0.36)",
+          },
+        ]
+      : [],
+  );
+
+  function barHeight(value: number, max: number): string {
+    if (max === 0) return "2%";
+    return `${Math.max(2, Math.round((value / max) * 100))}%`;
   }
 </script>
 
@@ -105,27 +85,23 @@
 {:else if error}
   <p class="error-text">{error}</p>
 {:else if data}
-  <div class="kpi-grid">
-    <div class="kpi-tile">
-      <span class="kpi-label">Total races</span>
-      <span class="kpi-value">{data.kpis.total_races.toLocaleString()}</span>
-      <div class="kpi-chart"><canvas bind:this={racesCanvas}></canvas></div>
-    </div>
-    <div class="kpi-tile">
-      <span class="kpi-label">Active players</span>
-      <span class="kpi-value">{data.kpis.active_players.toLocaleString()}</span>
-      <div class="kpi-chart"><canvas bind:this={playersCanvas}></canvas></div>
-    </div>
-    <div class="kpi-tile">
-      <span class="kpi-label">Total deaths</span>
-      <span class="kpi-value">{data.kpis.total_deaths.toLocaleString()}</span>
-      <div class="kpi-chart"><canvas bind:this={deathsCanvas}></canvas></div>
-    </div>
-    <div class="kpi-tile">
-      <span class="kpi-label">Hours raced</span>
-      <span class="kpi-value">{formatHours(data.kpis.hours_raced)}</span>
-      <div class="kpi-chart"><canvas bind:this={hoursCanvas}></canvas></div>
-    </div>
+  <div class="cards">
+    {#each tiles as tile (tile.key)}
+      {@const max = Math.max(1, ...tile.series)}
+      <article
+        class="card"
+        style:--accent={tile.accent}
+        style:--accent-soft={tile.accentSoft}
+      >
+        <span class="value">{tile.value}</span>
+        <span class="label">{tile.label}</span>
+        <div class="spark" aria-hidden="true">
+          {#each tile.series as v, i (i)}
+            <span class="bar" style:height={barHeight(v, max)}></span>
+          {/each}
+        </div>
+      </article>
+    {/each}
   </div>
 {/if}
 
@@ -141,45 +117,59 @@
     color: var(--color-danger);
   }
 
-  .kpi-grid {
+  .cards {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1rem;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.85rem;
   }
 
-  .kpi-tile {
+  .card {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.35rem;
+    padding: 1.1rem 1.15rem 1rem;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    padding: 1rem 1.25rem;
+    overflow: hidden;
   }
 
-  .kpi-label {
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .kpi-value {
+  .value {
     font-size: var(--font-size-2xl);
     font-weight: 700;
+    line-height: 1;
     font-variant-numeric: tabular-nums;
-    color: var(--color-text);
+    color: var(--accent);
+    letter-spacing: -0.02em;
   }
 
-  .kpi-chart {
-    position: relative;
-    height: 90px;
-    margin-top: 0.5rem;
+  .label {
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+    color: var(--color-text-secondary);
+    font-weight: 600;
+  }
+
+  .spark {
+    margin-top: 0.55rem;
+    height: 32px;
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+  }
+
+  .bar {
+    flex: 1;
+    background: var(--accent-soft);
+    border-radius: 1px;
+    min-height: 2px;
   }
 
   @media (max-width: 640px) {
-    .kpi-grid {
-      grid-template-columns: 1fr;
+    .cards {
+      grid-template-columns: repeat(2, 1fr);
     }
   }
 </style>
