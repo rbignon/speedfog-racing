@@ -4,8 +4,8 @@
  * The server is authoritative; this helper only drives the local UI
  * (locked pane, locked-reason copy, transition detection that fires
  * the `request_chat_history` pull). Keep in lockstep with
- * `server/speedfog_racing/services/chat_access.py` and the spec at
- * `docs/specs/2026-04-28-public-chat-lock-design.md` (matrix lines 60 to 75).
+ * `server/speedfog_racing/services/chat_access.py` and the public-channel
+ * access matrix in the "Chat System" section of `docs/PROTOCOL.md`.
  */
 
 import type { ParticipantStatus, RaceStatus } from "$lib/api";

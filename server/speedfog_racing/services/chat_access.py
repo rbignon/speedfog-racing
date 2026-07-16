@@ -1,8 +1,8 @@
 """Chat channel access rules.
 
 Single source of truth for who can read or write each chat channel of a
-race. The full matrix lives in
-``docs/specs/2026-04-28-public-chat-lock-design.md``.
+race. The full matrix lives in the "Public channel" section of
+``docs/PROTOCOL.md`` (Chat System).
 
 The helpers come in two shapes:
 

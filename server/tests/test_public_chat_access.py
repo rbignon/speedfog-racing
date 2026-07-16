@@ -2,8 +2,8 @@
 
 Verifies that ``RaceRoom.broadcast_chat_public`` and
 ``broadcast_chat_participants`` deliver only to connections that pass
-the chat_access helpers, across the matrix from
-``docs/specs/2026-04-28-public-chat-lock-design.md``.
+the chat_access helpers, across the matrix documented in the "Chat
+System" section of ``docs/PROTOCOL.md``.
 
 The chat_access helpers themselves are unit-tested in
 ``test_chat_access.py``; here we focus on the wiring inside

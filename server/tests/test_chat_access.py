@@ -1,8 +1,8 @@
 """Unit tests for ``services.chat_access``.
 
-Covers the matrix from
-``docs/specs/2026-04-28-public-chat-lock-design.md`` for both reads and
-writes, plus the ``race_role`` resolution and the small predicates.
+Covers the public-channel matrix documented in the "Chat System" section
+of ``docs/PROTOCOL.md`` for both reads and writes, plus the
+``race_role`` resolution and the small predicates.
 """
 
 from datetime import UTC, datetime, timedelta

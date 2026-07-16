@@ -2,7 +2,7 @@
 
 Used by daily-race leaderboard broadcasts to render finished and
 concurrent ghosts as if they were racing in parallel with the viewer.
-See docs/specs/2026-05-06-daily-replay-leaderboard-design.md.
+See the "In-mod replay leaderboard" section of ``docs/DAILY_SEED.md``.
 """
 
 from __future__ import annotations

@@ -4,11 +4,11 @@
  * Pure logic kept out of the component so the rules can be unit-tested
  * directly. The component renders whatever this helper returns.
  *
- * Mirrors the access matrix from
- * `docs/specs/2026-04-28-public-chat-lock-design.md`. The frontend is
- * not authoritative on access; the server enforces the same matrix and
- * silently drops sends or history loads that violate it. This helper
- * only chooses what to display.
+ * Mirrors the public-channel access matrix in the "Chat System" section
+ * of `docs/PROTOCOL.md`. The frontend is not authoritative on access;
+ * the server enforces the same matrix and silently drops sends or
+ * history loads that violate it. This helper only chooses what to
+ * display.
  */
 
 export type PublicAccess = "locked" | "readable";

@@ -1,6 +1,6 @@
 """Integration tests for the per-mod projected leaderboard on daily races.
 
-Spec: docs/specs/2026-04-27-daily-seed-design.md (replay leaderboard).
+See the "In-mod replay leaderboard" section of docs/DAILY_SEED.md.
 
 The unit-level coverage on ``ConnectionManager.broadcast_leaderboard`` lives in
 ``tests/test_websocket.py`` (see the three ``test_broadcast_leaderboard_*``
