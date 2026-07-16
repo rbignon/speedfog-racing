@@ -364,6 +364,44 @@ async def test_gold_aura_persists_when_next_week_has_different_champion(
         assert user_b.id in unlocked_user_ids
 
 
+async def test_lookback_window_self_heals_missed_grant_day(
+    ds_async_session_maker,
+) -> None:
+    """A daily-win grant that was missed (creation failed on the days in
+    between, so grant_daily_win_rewards never ran for them) is still picked
+    up once creation succeeds again, because the grant sweeps a lookback
+    window instead of only checking yesterday."""
+    await _seed_pool_and_system_user(ds_async_session_maker)
+    winner = await _make_user(ds_async_session_maker, "uw_lb", "winner_lb")
+    other = await _make_user(ds_async_session_maker, "uo_lb", "other_lb")
+
+    # Thursday 2026-04-30: today-3 = Monday 2026-04-27 has a finished daily
+    # with a qualified winner; today-1 and today-2 have no dailies at all,
+    # simulating creation failures on those days.
+    await _create_past_daily_with_winner(
+        ds_async_session_maker, daily_day=date(2026, 4, 27), winner=winner, other=other
+    )
+
+    tick_time = datetime(2026, 4, 30, 8, 3, tzinfo=UTC)
+    created = await create_daily_seed_if_needed(ds_async_session_maker, now=tick_time)
+    assert created is not None
+    assert created.daily_date == date(2026, 4, 30)
+
+    async with ds_async_session_maker() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(PhantomSkinUnlock.user_id).where(
+                        PhantomSkinUnlock.skin_id == "cyan-aura",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert winner.id in set(rows)
+
+
 # ---------------------------------------------------------------------------
 # Direct unit tests for refresh_weekly_daily_rewards (points-based)
 # ---------------------------------------------------------------------------

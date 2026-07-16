@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL = 60  # seconds
 SYSTEM_TWITCH_ID = "system:daily"
 DAILY_ROTATION_HOUR = 8  # UTC
+DAILY_WIN_REWARD_LOOKBACK_DAYS = 7
 
 
 def daily_date_for(now: datetime) -> date:
@@ -160,9 +161,13 @@ async def create_daily_seed_if_needed(
             logger.info("Daily seed for %s was created concurrently", today)
             return None
 
-        # Yesterday's daily was hard-closed above; its winner(s) are now
-        # decided. Grants are first-time-only, so re-runs are no-ops.
-        await RewardsService(db).grant_daily_win_rewards(yesterday)
+        # Grant victory rewards for recently closed dailies. Sweeping a
+        # window rather than just yesterday self-heals days where creation
+        # failed and this rollover code never ran; grants are
+        # first-time-only, so already-rewarded dailies are no-ops.
+        rewards_svc = RewardsService(db)
+        for offset in range(1, DAILY_WIN_REWARD_LOOKBACK_DAYS + 1):
+            await rewards_svc.grant_daily_win_rewards(today - timedelta(days=offset))
         await db.commit()
 
         if today.weekday() == 0:  # Monday: roll up the previous week's daily wins.
