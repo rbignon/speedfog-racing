@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def _hour_to_bucket(hour: int) -> int:
-    """Map an hour (0-23, UTC) to a heatmap row index (0-11).
+    """Map an hour (0-23) to a heatmap row index (0-11).
 
     Buckets cover the full 24h day in 2-hour slices:
       row 0: 00-01   row 4: 08-09   row 8:  16-17
@@ -515,7 +515,7 @@ def _ensure_utc(dt: datetime) -> datetime:
 
 
 async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
-    """Public /stats overview: community KPIs plus 12-week trend series.
+    """Public /stats overview: community KPIs plus 20-week trend series.
 
     Scope is public finished races, dailies included (community KPIs describe
     total racing activity). The active-players series additionally counts solo
@@ -565,7 +565,7 @@ async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
         )
     ).scalar() or 0
 
-    # --- Weekly series (12 ISO weeks, oldest first) ---
+    # --- Weekly series (20 ISO weeks, oldest first) ---
     week_races: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
     week_deaths: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
     week_igt_ms: dict[tuple[int, int], int] = {k: 0 for k in week_keys}

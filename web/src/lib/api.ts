@@ -1775,7 +1775,7 @@ export interface UserTraitsResponse {
 }
 
 /**
- * Fetch community-wide activity KPIs with 12-week trends.
+ * Fetch community-wide activity KPIs with 20-week trends.
  */
 export async function fetchStatsOverview(): Promise<StatsOverviewResponse> {
   const res = await fetch(`${API_BASE}/stats/overview`);

@@ -50,7 +50,7 @@ BOSS_NODE_TYPES = {"major_boss", "final_boss"}
 
 @router.get("/overview", response_model=StatsOverviewResponse)
 async def get_stats_overview(db: AsyncSession = Depends(get_db)) -> StatsOverviewResponse:
-    """Community-wide activity KPIs with 12-week trends."""
+    """Community-wide activity KPIs with 20-week trends."""
     from speedfog_racing.services.analytics_service import compute_public_overview
 
     data = await compute_public_overview(db)
