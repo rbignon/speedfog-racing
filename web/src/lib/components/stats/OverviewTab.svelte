@@ -96,7 +96,7 @@
 
   function formatHours(h: number): string {
     if (h > 0 && h < 1) return "<1";
-    return h.toFixed(0);
+    return Math.round(h).toLocaleString();
   }
 </script>
 
