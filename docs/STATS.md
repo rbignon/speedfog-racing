@@ -24,6 +24,8 @@ Each seed receives an intrinsic difficulty score at ingestion time, computed fro
 
 Computed by `compute_public_overview` in `services/analytics_service.py`.
 
+**Activity heatmap:** `GET /api/stats/heatmap?tz=<IANA name>` returns `{timezone, grid}` where `grid` is 12 rows (2-hour buckets from 00-02) by 7 columns (Monday first). Scope: public non-daily races weighted by participant count at `started_at` (dailies are excluded: their `started_at` is the synthetic 08:00 UTC rotation time) plus training sessions at `created_at`, over the last 12 ISO weeks. Bucketing converts each event to the requested timezone server-side, so windows spanning a DST change stay correct; an invalid or missing `tz` falls back to UTC. Computed by `compute_public_heatmap` in `services/analytics_service.py`.
+
 ---
 
 ## Behavioral Traits

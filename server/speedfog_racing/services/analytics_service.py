@@ -649,3 +649,68 @@ async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
             "hours": [round(week_igt_ms[wk] / 3_600_000, 1) for wk in week_keys],
         },
     }
+
+
+async def compute_public_heatmap(
+    db: AsyncSession, tz_name: str | None, *, now: datetime | None = None
+) -> dict[str, Any]:
+    """Public activity heatmap: 12 rows (2-hour buckets) x 7 columns (Mon-Sun).
+
+    Counts public non-daily race participations (weighted by participant
+    count, at the race's started_at) plus training sessions (at created_at)
+    over the last 12 ISO weeks. Dailies are excluded like the admin heatmap:
+    their started_at is the synthetic 08:00 UTC rotation time.
+
+    Each event's UTC timestamp is converted to ``tz_name`` before bucketing,
+    so a window spanning a DST change buckets every event at its true local
+    hour (the reason this is server-side rather than a client grid rotation).
+    Invalid or missing tz falls back to UTC. ``now`` is injectable for tests.
+    """
+    try:
+        tz = ZoneInfo(tz_name) if tz_name else UTC
+        resolved = tz_name if tz_name else "UTC"
+    except Exception:
+        tz = UTC
+        resolved = "UTC"
+
+    now_utc = now or datetime.now(UTC)
+    week_set = set(_build_week_list(now_utc, 12))
+    window_cutoff = now_utc - timedelta(weeks=13)
+
+    grid = [[0] * 7 for _ in range(12)]
+
+    def add(dt_utc: datetime, weight: int) -> None:
+        if _iso_week_key(dt_utc) not in week_set:
+            return
+        local = dt_utc.astimezone(tz)
+        grid[_hour_to_bucket(local.hour)][local.weekday()] += weight
+
+    race_rows = (
+        await db.execute(
+            select(Race.started_at, func.count(Participant.id))
+            .join(Participant, Participant.race_id == Race.id)
+            .where(
+                Race.is_public == True,  # noqa: E712
+                Race.daily_date.is_(None),
+                Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]),
+                Race.started_at >= window_cutoff,
+            )
+            .group_by(Race.id, Race.started_at)
+        )
+    ).all()
+    for started_at, participant_count in race_rows:
+        if started_at is None:
+            continue
+        add(_ensure_utc(started_at), int(participant_count))
+
+    solo_rows = (
+        await db.execute(
+            select(TrainingSession.created_at).where(TrainingSession.created_at >= window_cutoff)
+        )
+    ).all()
+    for (created_at,) in solo_rows:
+        if created_at is None:
+            continue
+        add(_ensure_utc(created_at), 1)
+
+    return {"timezone": resolved, "grid": grid}

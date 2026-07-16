@@ -24,6 +24,7 @@ from speedfog_racing.models import (
 from speedfog_racing.schemas import (
     BossStatEntry,
     BossStatsResponse,
+    HeatmapResponse,
     PlayerProfilesResponse,
     StatsOverviewResponse,
     TraitPlayerEntry,
@@ -54,6 +55,18 @@ async def get_stats_overview(db: AsyncSession = Depends(get_db)) -> StatsOvervie
 
     data = await compute_public_overview(db)
     return StatsOverviewResponse(**data)
+
+
+@router.get("/heatmap", response_model=HeatmapResponse)
+async def get_stats_heatmap(
+    tz: str | None = Query(default=None, max_length=50),
+    db: AsyncSession = Depends(get_db),
+) -> HeatmapResponse:
+    """Community activity heatmap, bucketed in the requested timezone."""
+    from speedfog_racing.services.analytics_service import compute_public_heatmap
+
+    data = await compute_public_heatmap(db, tz)
+    return HeatmapResponse(**data)
 
 
 @dataclass(frozen=True)

@@ -716,6 +716,11 @@ class StatsOverviewResponse(BaseModel):
     weekly: OverviewWeekly
 
 
+class HeatmapResponse(BaseModel):
+    timezone: str
+    grid: list[list[int]]
+
+
 class ZoneStatEntry(BaseModel):
     node_id: str
     display_name: str
