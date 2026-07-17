@@ -150,7 +150,7 @@ Aggregates `zone_history` from FINISHED participants (and ABANDONED with `igt_ms
 
 ### Input Loading and Seed Projection Cache
 
-All three zone endpoints (`/zones`, `/zones/index`, `/zones/{node_id}`) load their inputs through `_load_zone_stats_inputs`, which selects narrow participant columns (`race_id`, `status`, `igt_ms`, `zone_history`, `seed_id`) rather than full ORM entities. Seed graphs are never loaded per request: the stats only need node membership and per-node display metadata (a few KB out of graphs weighing hundreds of KB), so each seed's `graph_json` is read once per process and reduced to a `SeedNodes` projection kept in an in-process cache keyed by seed_id. Seeds are immutable once consumed, so the cache needs no TTL or invalidation; only seeds not yet seen by the process are fetched. Before this, every request re-hydrated ~15 MB of `graph_json` through the ORM (>1.5s per request at ~3400 participants); warm requests now cost ~0.4s, dominated by `zone_history` JSON parsing.
+The three zone endpoints (`/zones`, `/zones/index`, `/zones/{node_id}`) and `/bosses` load their inputs through `_load_zone_stats_inputs`, which selects narrow participant columns (`race_id`, `status`, `igt_ms`, `zone_history`, `seed_id`) rather than full ORM entities. Seed graphs are never loaded per request: the stats only need node membership and per-node display metadata (a few KB out of graphs weighing hundreds of KB), so each seed's `graph_json` is read once per process and reduced to a `SeedNodes` projection kept in an in-process cache keyed by seed_id. Seeds are immutable once consumed, so the cache needs no TTL or invalidation; only seeds not yet seen by the process are fetched. Before this, every request re-hydrated ~15 MB of `graph_json` through the ORM (>1.5s per request at ~3400 participants); warm requests now cost ~0.4s, dominated by `zone_history` JSON parsing.
 
 ### Node Type Filter
 
@@ -164,7 +164,7 @@ DUNGEON_NODE_TYPES = {"legacy_dungeon", "mini_dungeon"}
 
 Node IDs are cluster IDs from SpeedFog's `clusters.json`. Since `clusters.json` can evolve between seed generations (display_name corrections, type reclassifications), the stats code resolves each node_id's display_name and type from the **most recent seed** that contains it. `_resolve_node_display` computes both a short name (area prefix stripped with `rsplit(" - ", 1)[-1]`, e.g. "Limgrave - Stormveil Castle" becomes "Stormveil Castle") and the unmodified full name: the top-5 panels (`/zones`) show the short name, while the zone codex index and detail sheet (`/zones/index`, `/zones/{node_id}`) show the full name, and merging across cluster variants (below) keys on the full name.
 
-For boss stats specifically, the name resolution uses the `boss_name` field (canonical name from ItemRandomizer's `enemy.txt`), falling back to `display_name`. This ensures consistent naming across seeds with and without boss randomization (e.g., "Sir Gideon Ofnir, the All-Knowing" instead of "Gideon"). Resolution is per-seed (not global), so if the same node has different randomized bosses across seeds, they appear as separate entries.
+For boss stats specifically, the name resolution uses the `boss_name` field (canonical name from ItemRandomizer's `enemy.txt`), falling back to `display_name`; the resolved short label is precomputed on the seed projection as `NodeDisplay.boss_name`. This ensures consistent naming across seeds with and without boss randomization (e.g., "Sir Gideon Ofnir, the All-Knowing" instead of "Gideon"). Resolution is per-seed (not global), so if the same node has different randomized bosses across seeds, they appear as separate entries.
 
 ### Cluster Merging
 
@@ -216,7 +216,9 @@ Aggregate stats for a single zone, resolved from the most recent seed containing
 
 ## Boss Stats
 
-**Endpoint:** `GET /api/stats/bosses?pool=<optional>`
+**Endpoint:** `GET /api/stats/bosses?pool=<optional>&days=<optional, default 90>`
+
+Aggregates boss encounters from races started within the last `days` days (default 90; the web frontend pins `days=90`, matching the zones window it uses).
 
 ### Node Type Filter
 

@@ -1,6 +1,6 @@
 """Integration tests for stats service and API."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -1534,7 +1534,7 @@ class TestBossStatsFiltering:
         from speedfog_racing.api.stats import get_boss_stats
 
         async with async_session() as db:
-            result = await get_boss_stats(pool=None, db=db)
+            result = await get_boss_stats(pool=None, days=3650, db=db)
 
         boss_names = {b.display_name for b in result.bosses}
 
@@ -1545,6 +1545,78 @@ class TestBossStatsFiltering:
         # These should NOT appear
         assert "Godskin Noble Boss" not in boss_names
         assert "Gideon" not in boss_names
+
+
+class TestBossStatsWindow:
+    async def test_races_outside_days_window_are_excluded(self, async_session):
+        graph_json = {
+            "nodes": {
+                "start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0},
+                "boss_w1w2": {
+                    "type": "major_boss",
+                    "display_name": "Old Arena",
+                    "boss_name": "Ancient Hero",
+                    "layer": 1,
+                },
+            },
+            "total_layers": 2,
+        }
+        async with async_session() as db:
+            user = User(
+                twitch_id="bw1", twitch_username="bwplayer", api_token="bwt1", role=UserRole.USER
+            )
+            org = User(
+                twitch_id="bworg",
+                twitch_username="bworg",
+                api_token="bwtorg",
+                role=UserRole.ORGANIZER,
+            )
+            db.add_all([user, org])
+            await db.flush()
+            seed = Seed(
+                seed_number="bw_seed",
+                pool_name="standard",
+                graph_json=graph_json,
+                total_layers=2,
+                folder_path="/t/bw_seed",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+            race = Race(
+                name="Old Race",
+                organizer_id=org.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC) - timedelta(days=200),
+            )
+            db.add(race)
+            await db.flush()
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    mod_token="bwmod",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=600_000,
+                    death_count=4,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "boss_w1w2", "igt_ms": 100_000, "deaths": 4},
+                    ],
+                )
+            )
+            await db.commit()
+
+        from speedfog_racing.api.stats import get_boss_stats
+
+        async with async_session() as db:
+            windowed = await get_boss_stats(pool=None, days=90, db=db)
+        assert windowed.bosses == []
+
+        async with async_session() as db:
+            all_time = await get_boss_stats(pool=None, days=365, db=db)
+        assert {b.display_name for b in all_time.bosses} == {"Ancient Hero"}
 
 
 class TestAbandonCountsAsBack:
@@ -1694,7 +1766,7 @@ class TestAbandonCountsAsBack:
         from speedfog_racing.api.stats import get_boss_stats
 
         async with async_session() as db:
-            result = await get_boss_stats(pool=None, db=db)
+            result = await get_boss_stats(pool=None, days=3650, db=db)
 
         godrick = next((b for b in result.bosses if b.display_name == "Godrick"), None)
         assert godrick is not None
@@ -1719,7 +1791,7 @@ class TestAbandonCountsAsBack:
         from speedfog_racing.api.stats import get_boss_stats
 
         async with async_session() as db:
-            result = await get_boss_stats(pool=None, db=db)
+            result = await get_boss_stats(pool=None, days=3650, db=db)
 
         godrick = next((b for b in result.bosses if b.display_name == "Godrick"), None)
         assert godrick is not None
@@ -1747,7 +1819,7 @@ class TestAbandonCountsAsBack:
         from speedfog_racing.api.stats import get_boss_stats
 
         async with async_session() as db:
-            result = await get_boss_stats(pool=None, db=db)
+            result = await get_boss_stats(pool=None, days=3650, db=db)
 
         godrick = next((b for b in result.bosses if b.display_name == "Godrick"), None)
         assert godrick is not None
@@ -1777,7 +1849,7 @@ class TestAbandonCountsAsBack:
         from speedfog_racing.api.stats import get_boss_stats
 
         async with async_session() as db:
-            result = await get_boss_stats(pool=None, db=db)
+            result = await get_boss_stats(pool=None, days=3650, db=db)
 
         godrick = next((b for b in result.bosses if b.display_name == "Godrick"), None)
         # Pure-backtrack visitor: boss should not appear in stats at all

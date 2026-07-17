@@ -13,7 +13,6 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from speedfog_racing.database import async_session_maker, get_db
 from speedfog_racing.models import (
@@ -107,6 +106,12 @@ class NodeDisplay:
     # same cluster can sit at different layers across seeds), so read it from
     # the participant's own SeedNodes, never from the merged node_display.
     layer: int
+    # Short boss label for the boss stats page: the node's boss_name
+    # (canonical name from ItemRandomizer's enemy.txt) when present, else the
+    # display_name, with the area prefix pre-stripped. Bosses are randomized
+    # per seed, so like ``layer`` this must be read from the participant's
+    # own SeedNodes, never from the merged node_display.
+    boss_name: str
 
 
 @dataclass(frozen=True)
@@ -200,6 +205,7 @@ def _project_seed_nodes(created_at: datetime, graph_json: dict[str, Any]) -> See
             type=meta.get("type", ""),
             zones=tuple(meta.get("zones", [])),
             layer=meta.get("layer") or 0,
+            boss_name=(meta.get("boss_name") or full_name).rsplit(" - ", 1)[-1],
         )
     return SeedNodes(created_at=created_at, nodes=nodes)
 
@@ -686,39 +692,23 @@ async def get_zone_detail(
 @router.get("/bosses", response_model=BossStatsResponse)
 async def get_boss_stats(
     pool: str | None = Query(default=None),
+    days: int = Query(default=90, ge=1, le=3650),
     db: AsyncSession = Depends(get_db),
 ) -> BossStatsResponse:
-    """Boss encounter stats."""
+    """Boss encounter stats over races started within the last ``days`` days.
+
+    Shares ``_load_zone_stats_inputs`` with the zone endpoints (narrow
+    participant columns, cached seed projections). Names and types are
+    resolved from each participant's own seed (bosses are randomized per
+    seed), unlike the zone endpoints' most-recent-seed resolution.
+    """
 
     async def _compute(db: AsyncSession) -> BossStatsResponse:
-        query = (
-            select(Participant)
-            .where(
-                or_(
-                    Participant.status == ParticipantStatus.FINISHED,
-                    (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
-                )
-            )
-            .options(
-                selectinload(Participant.race).selectinload(Race.seed),
-            )
-        )
-        if pool is not None:
-            query = (
-                query.join(Race, Participant.race_id == Race.id)
-                .join(Seed, Race.seed_id == Seed.id)
-                .where(Seed.pool_name == pool)
-            )
-
-        participants = (await db.execute(query)).scalars().all()
-
-        seeds_by_id: dict[Any, Any] = {}
-        for p in participants:
-            if p.race and p.race.seed:
-                seeds_by_id[p.race.seed_id] = p.race.seed
+        participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
 
         # Per participant, collect boss encounter data.
-        # Resolve display name per-seed (boss_name > randomized_boss > display_name).
+        # Boss names are resolved per-seed via NodeDisplay.boss_name (the
+        # node's boss_name when present, else its display_name, pre-stripped).
         # back_ratio: on a player's LAST visit to a boss, did they backtrack?
         # avg_deaths / max_deaths: deaths are summed per participant across fight visits,
         # so a player who fights a boss in 50+40 deaths over two visits is counted once
@@ -732,10 +722,10 @@ async def get_boss_stats(
 
         for participant in participants:
             history = participant.zone_history or []
-            seed = seeds_by_id.get(participant.race.seed_id) if participant.race else None
-            if seed is None:
+            seed_nodes = seeds_by_id.get(participant.seed_id)
+            if seed_nodes is None:
                 continue
-            nodes: dict[str, Any] = seed.graph_json.get("nodes", {})
+            nodes = seed_nodes.nodes
 
             # Collect all visits per boss node_id for this participant
             visits_by_nid: dict[str, list[tuple[int, dict[str, Any]]]] = {}
@@ -743,7 +733,7 @@ async def get_boss_stats(
                 nid = entry.get("node_id", "")
                 if not nid or nid not in nodes:
                     continue
-                if nodes[nid].get("type", "") not in BOSS_NODE_TYPES:
+                if nodes[nid].type not in BOSS_NODE_TYPES:
                     continue
                 visits_by_nid.setdefault(nid, []).append((idx, entry))
 
@@ -797,11 +787,8 @@ async def get_boss_stats(
                 )
 
                 # Resolve boss name from this participant's seed
-                node_meta = nodes[nid]
-                boss_name = (
-                    node_meta.get("boss_name") or node_meta.get("display_name", nid)
-                ).rsplit(" - ", 1)[-1]
-                node_type = node_meta.get("type", "major_boss")
+                boss_name = nodes[nid].boss_name
+                node_type = nodes[nid].type
 
                 player_deaths.setdefault(boss_name, []).append(sum(fight_deaths))
                 merged_backed.setdefault(boss_name, []).append(backed_last_visit)
@@ -838,7 +825,7 @@ async def get_boss_stats(
 
         return BossStatsResponse(bosses=boss_entries)
 
-    return await _cached(f"bosses:{pool}", _compute, db)
+    return await _cached(f"bosses:{pool}:{days}", _compute, db)
 
 
 @router.get("/players", response_model=PlayerProfilesResponse)

@@ -1849,8 +1849,8 @@ export async function fetchZoneDetail(
 export async function fetchBossStats(
   pool?: string,
 ): Promise<BossStatsResponse> {
-  const params = pool ? `?pool=${pool}` : "";
-  const res = await fetch(`${API_BASE}/stats/bosses${params}`);
+  const params = pool ? `&pool=${pool}` : "";
+  const res = await fetch(`${API_BASE}/stats/bosses?days=90${params}`);
   if (!res.ok) throw new Error("Failed to fetch boss stats");
   return res.json();
 }
