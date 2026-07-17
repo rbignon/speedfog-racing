@@ -519,11 +519,12 @@ def _ensure_utc(dt: datetime) -> datetime:
 
 
 async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
-    """Public /stats overview: community KPIs plus 20-week trend series.
+    """Public /stats overview: community KPIs plus weekly trend series.
 
     Scope is public finished races, dailies included (community KPIs describe
     total racing activity). The active-players series additionally counts solo
     training as play activity, mirroring the admin ``active_users`` series.
+    Computed over PUBLIC_STATS_WEEKS ISO weeks.
     """
     now = datetime.now(UTC)
     week_keys = _build_week_list(now, PUBLIC_STATS_WEEKS)
@@ -569,7 +570,7 @@ async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
         )
     ).scalar() or 0
 
-    # --- Weekly series (20 ISO weeks, oldest first) ---
+    # --- Weekly series (PUBLIC_STATS_WEEKS ISO weeks, oldest first) ---
     week_races: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
     week_deaths: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
     week_igt_ms: dict[tuple[int, int], int] = {k: 0 for k in week_keys}
@@ -732,6 +733,7 @@ async def compute_public_heatmap(
             select(Participant.finished_at)
             .join(Race, Race.id == Participant.race_id)
             .where(
+                Race.is_public.is_(True),
                 Race.daily_date.is_not(None),
                 Participant.status == ParticipantStatus.FINISHED,
                 Participant.finished_at.is_not(None),

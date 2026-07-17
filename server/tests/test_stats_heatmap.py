@@ -147,8 +147,23 @@ async def test_scope_weighting_and_exclusions(async_session):
         ).scalar_one()
         daily_participant_b.status = ParticipantStatus.ABANDONED
         daily_participant_b.finished_at = datetime(2026, 7, 13, 20, 0, tzinfo=UTC)
-        # Private race: excluded entirely.
+        # Private non-daily race: excluded entirely.
         await _race_with_participants(db, org, [a], started_at=started, is_public=False)
+        # Private daily race: should be excluded entirely (the public filter test).
+        # c gets finished_at at the same moment as daily a (same pattern as above).
+        # Use a different date (2026-07-14) to avoid unique constraint on daily_date.
+        private_daily_date = datetime(2026, 7, 14, tzinfo=UTC).date()
+        private_daily_race = await _race_with_participants(
+            db, org, [c], started_at=started, is_public=False, daily_date=private_daily_date
+        )
+        private_daily_participant_c = (
+            await db.execute(
+                select(Participant).where(
+                    Participant.race_id == private_daily_race.id, Participant.user_id == c.id
+                )
+            )
+        ).scalar_one()
+        private_daily_participant_c.finished_at = datetime(2026, 7, 13, 19, 0, tzinfo=UTC)
         # Training session: +1. Explicit created_at (server_default would use
         # the real clock, outside the injected window in future runs).
         seed = Seed(
@@ -173,7 +188,8 @@ async def test_scope_weighting_and_exclusions(async_session):
         data = await compute_public_heatmap(db, None, now=NOW)
 
     assert data["grid"][5][0] == 4  # 10-12 bucket, Monday: 3 racers + 1 solo
-    assert data["grid"][9][0] == 1  # 18-20 bucket, Monday: the daily finish
+    # 18-20 bucket, Monday: only public daily's a should count, not c's private daily
+    assert data["grid"][9][0] == 1
     assert data["grid"][10][0] == 0  # 20-22 bucket: b's ABANDONED finish doesn't count
     assert sum(v for row in data["grid"] for v in row) == 5
 

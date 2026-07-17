@@ -53,7 +53,7 @@ BOSS_NODE_TYPES = {"major_boss", "final_boss"}
 
 @router.get("/overview", response_model=StatsOverviewResponse)
 async def get_stats_overview(db: AsyncSession = Depends(get_db)) -> StatsOverviewResponse:
-    """Community-wide activity KPIs with 20-week trends."""
+    """Community-wide activity KPIs with weekly trends (PUBLIC_STATS_WEEKS ISO weeks)."""
     from speedfog_racing.services.analytics_service import compute_public_overview
 
     async def _compute() -> StatsOverviewResponse:
@@ -77,7 +77,7 @@ async def get_stats_heatmap(
         resolved = "UTC"
 
     async def _compute() -> HeatmapResponse:
-        data = await compute_public_heatmap(db, tz)
+        data = await compute_public_heatmap(db, resolved)
         return HeatmapResponse(**data)
 
     return await _cached(f"heatmap:{resolved}", _compute)
@@ -135,6 +135,9 @@ T = TypeVar("T")
 # because the key space is small in practice (a handful of pool names, a
 # capped ``days`` range on real UI calls, a finite zone-codex ``node_id``
 # set); it is not a hard cap against an adversarial client varying ``days``.
+# ``_stats_cache_locks`` shares the same unbounded-growth tradeoff: it
+# accumulates one lock per key ever seen, but is acceptable given the same
+# bounded key space rationale.
 STATS_CACHE_TTL = 60.0
 
 _stats_cache: dict[str, tuple[float, Any]] = {}
