@@ -10,6 +10,7 @@ tests pass sentinels in its place.
 import asyncio
 
 import pytest
+from fastapi import HTTPException
 
 from speedfog_racing.api import stats as stats_module
 from speedfog_racing.api.stats import _cached
@@ -181,4 +182,32 @@ async def test_failed_refresh_keeps_stale_value(monkeypatch):
     again = await _cached("swr3", compute, None)
     assert again == "v1"
     await stats_module._refresh_tasks["swr3"]
+    assert calls == 3
+
+
+async def test_refresh_raising_http_exception_evicts_entry(monkeypatch):
+    fake_now = 1000.0
+    monkeypatch.setattr(stats_module, "monotonic", lambda: fake_now)
+    monkeypatch.setattr(stats_module, "async_session_maker", lambda: FakeSessionCtx())
+
+    calls = 0
+
+    async def compute(db) -> str:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise HTTPException(status_code=404, detail="gone")
+        return "v1"
+
+    await _cached("swr4", compute, None)
+    fake_now += stats_module.STATS_CACHE_TTL + 1
+
+    stale = await _cached("swr4", compute, None)
+    assert stale == "v1"
+    await stats_module._refresh_tasks["swr4"]
+
+    # The 404 evicted the entry: the next request takes the cold path and
+    # surfaces the error instead of being served the stale value forever.
+    with pytest.raises(HTTPException):
+        await _cached("swr4", compute, None)
     assert calls == 3

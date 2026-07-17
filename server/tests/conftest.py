@@ -98,6 +98,11 @@ def _clear_stats_cache():
 
     _stats_cache.clear()
     _stats_cache_locks.clear()
+    # Cancel before clearing: a test that triggered a stale hit without
+    # awaiting the refresh would otherwise leak a pending task into the
+    # closing event loop ("Task was destroyed but it is pending").
+    for task in _refresh_tasks.values():
+        task.cancel()
     _refresh_tasks.clear()
     yield
 

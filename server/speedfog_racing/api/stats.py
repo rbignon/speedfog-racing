@@ -140,8 +140,11 @@ T = TypeVar("T")
 # instead of stampeding the aggregation; once a key holds a value, requests
 # past its TTL are served the stale value immediately while a background task
 # (at most one per key) recomputes it, so nobody ever waits on a refresh.
-# Entries are never evicted (only overwritten), so the dict's size is bounded
-# by the number of distinct keys ever requested, not by time. Like
+# Entries are only evicted when a refresh raises HTTPException (the data
+# legitimately no longer resolves, e.g. a zone-detail node aged out of its
+# window; serving the stale value forever would mask the 404), so the dict's
+# size is bounded by the number of distinct keys ever requested, not by time.
+# Like
 # ``_seed_nodes_cache`` above, this is fine because the key space is small in
 # practice (a handful of pool names, a capped ``days`` range on real UI
 # calls, a finite zone-codex ``node_id`` set); it is not a hard cap against
@@ -185,6 +188,14 @@ def _schedule_refresh(key: str, compute: Callable[[AsyncSession], Awaitable[T]])
             async with async_session_maker() as db:
                 value = await compute(db)
             _stats_cache[key] = (monotonic() + STATS_CACHE_TTL, value)
+        except HTTPException as exc:
+            # The data legitimately no longer resolves (e.g. a zone-detail
+            # node aged out of the days window): evict so the next request
+            # takes the cold path and surfaces the error to the client
+            # instead of being served the stale value forever. The per-key
+            # lock keeps the resulting recompute single-flight.
+            _stats_cache.pop(key, None)
+            logger.info("Evicted stats cache key %r: refresh raised %s", key, exc)
         except Exception:
             logger.exception("Background stats refresh failed for %r, keeping stale value", key)
         finally:

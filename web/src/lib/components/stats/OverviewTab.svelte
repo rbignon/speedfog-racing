@@ -280,8 +280,9 @@
     }
   }
 
-  /* Skeletons match their real counterpart's box (font-size x line-height 1)
-     so the layout doesn't shift when values land. */
+  /* Skeletons approximate their real counterpart's box (exact for .value,
+     which has line-height 1; a few px short for the teaser lines) so the
+     layout barely shifts when values land. */
   .skeleton-value {
     height: var(--font-size-2xl);
     width: 4.5rem;
