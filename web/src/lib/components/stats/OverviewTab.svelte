@@ -96,7 +96,7 @@
         .sort((a, b) => b.total_ticks - a.total_ticks)[0];
       items.push({
         key: "weapons",
-        label: "Top weapon combo",
+        label: "Top weapon",
         value: formatCombo(top.ids, getWeaponName),
         sub: `${formatIgt(top.total_ticks * 1000)} played`,
         href: "/stats?tab=weapons",
