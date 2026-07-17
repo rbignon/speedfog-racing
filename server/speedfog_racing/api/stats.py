@@ -877,8 +877,11 @@ async def get_weapon_stats(
     """Top weapon combos by total ticks across recent public finished races."""
 
     async def _compute(db: AsyncSession) -> WeaponStatsResponse:
+        # Narrow column select on purpose (same rationale as
+        # _load_zone_stats_inputs): the aggregation only reads these three
+        # fields, and full ORM entities cost hydration per request.
         query = (
-            select(Participant)
+            select(Participant.race_id, Participant.user_id, Participant.zone_history)
             .join(Race, Participant.race_id == Race.id)
             .where(
                 or_(
@@ -894,7 +897,7 @@ async def get_weapon_stats(
         if pool is not None:
             query = query.join(Seed, Race.seed_id == Seed.id).where(Seed.pool_name == pool)
 
-        participants = (await db.execute(query)).scalars().all()
+        participants = (await db.execute(query)).all()
 
         totals: dict[tuple[int, ...], int] = {}
         races: dict[tuple[int, ...], set[Any]] = {}
