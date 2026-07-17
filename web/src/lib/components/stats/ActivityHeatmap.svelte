@@ -64,7 +64,10 @@
       <div class="heatmap-legend-bar"></div>
       <span>{max}</span>
     </div>
-    <p class="heatmap-caption">Times shown in {data.timezone}</p>
+    <p class="heatmap-caption">
+      Races, dailies, and solo sessions over the last {data.weeks} weeks. Times shown
+      in {data.timezone}.
+    </p>
   </section>
 {/if}
 

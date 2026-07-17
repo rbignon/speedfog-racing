@@ -1786,6 +1786,7 @@ export async function fetchStatsOverview(): Promise<StatsOverviewResponse> {
 export interface HeatmapResponse {
   timezone: string;
   grid: number[][];
+  weeks: number;
 }
 
 /**
