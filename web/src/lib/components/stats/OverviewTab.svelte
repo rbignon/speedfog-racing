@@ -331,6 +331,9 @@
   }
 
   .teaser-sub {
+    /* Grid rows stretch cards to equal height; pin the sub-stat to the
+       bottom so all four align even when a value wraps to two lines. */
+    margin-top: auto;
     font-size: var(--font-size-xs);
     color: var(--color-text-disabled);
   }
