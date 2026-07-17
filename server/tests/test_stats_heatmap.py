@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
@@ -45,7 +46,7 @@ def _user(i: int) -> User:
 
 
 async def _race_with_participants(
-    db, organizer, users, *, started_at, is_public=True, daily_date=None
+    db, organizer, users, *, started_at, is_public=True, daily_date=None, finished_at=None
 ) -> Race:
     race = Race(
         name="R",
@@ -65,6 +66,7 @@ async def _race_with_participants(
                 user_id=u.id,
                 status=ParticipantStatus.FINISHED,
                 igt_ms=1000,
+                finished_at=finished_at,
             )
         )
     return race
@@ -120,10 +122,31 @@ async def test_scope_weighting_and_exclusions(async_session):
         await db.flush()
         # Public non-daily race with 3 participants: +3.
         await _race_with_participants(db, org, [a, b, c], started_at=started)
-        # Daily race: excluded entirely.
-        await _race_with_participants(
+        # Daily race: the race-level started_at (synthetic 08:00 UTC rotation
+        # time) stays excluded entirely, but a's real finish moment counts.
+        daily_race = await _race_with_participants(
             db, org, [a, b], started_at=started, daily_date=started.date()
         )
+        daily_participant_a = (
+            await db.execute(
+                select(Participant).where(
+                    Participant.race_id == daily_race.id, Participant.user_id == a.id
+                )
+            )
+        ).scalar_one()
+        daily_participant_a.finished_at = datetime(2026, 7, 13, 19, 0, tzinfo=UTC)
+        # b is ABANDONED but has a finished_at set (should never happen via the
+        # app's own code paths, which only set finished_at alongside the
+        # FINISHED transition; exercises the defensive status filter anyway).
+        daily_participant_b = (
+            await db.execute(
+                select(Participant).where(
+                    Participant.race_id == daily_race.id, Participant.user_id == b.id
+                )
+            )
+        ).scalar_one()
+        daily_participant_b.status = ParticipantStatus.ABANDONED
+        daily_participant_b.finished_at = datetime(2026, 7, 13, 20, 0, tzinfo=UTC)
         # Private race: excluded entirely.
         await _race_with_participants(db, org, [a], started_at=started, is_public=False)
         # Training session: +1. Explicit created_at (server_default would use
@@ -150,7 +173,9 @@ async def test_scope_weighting_and_exclusions(async_session):
         data = await compute_public_heatmap(db, None, now=NOW)
 
     assert data["grid"][5][0] == 4  # 10-12 bucket, Monday: 3 racers + 1 solo
-    assert sum(v for row in data["grid"] for v in row) == 4
+    assert data["grid"][9][0] == 1  # 18-20 bucket, Monday: the daily finish
+    assert data["grid"][10][0] == 0  # 20-22 bucket: b's ABANDONED finish doesn't count
+    assert sum(v for row in data["grid"] for v in row) == 5
 
 
 async def test_invalid_timezone_falls_back_to_utc(async_session):
@@ -159,3 +184,4 @@ async def test_invalid_timezone_falls_back_to_utc(async_session):
     assert data["timezone"] == "UTC"
     assert len(data["grid"]) == 12
     assert all(len(row) == 7 for row in data["grid"])
+    assert data["weeks"] == 20

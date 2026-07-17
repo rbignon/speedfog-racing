@@ -719,6 +719,7 @@ class StatsOverviewResponse(BaseModel):
 class HeatmapResponse(BaseModel):
     timezone: str
     grid: list[list[int]]
+    weeks: int
 
 
 class ZoneStatEntry(BaseModel):

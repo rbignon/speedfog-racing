@@ -26,6 +26,10 @@ from speedfog_racing.services.daily_streak_service import qualifies_for_streak_s
 
 logger = logging.getLogger(__name__)
 
+# Window (in ISO weeks) of the public /stats overview and heatmap. The admin
+# analytics dashboard keeps its own separate 12/26-week windows.
+PUBLIC_STATS_WEEKS = 20
+
 
 def _hour_to_bucket(hour: int) -> int:
     """Map an hour (0-23) to a heatmap row index (0-11).
@@ -522,9 +526,9 @@ async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
     training as play activity, mirroring the admin ``active_users`` series.
     """
     now = datetime.now(UTC)
-    week_keys = _build_week_list(now, 20)
+    week_keys = _build_week_list(now, PUBLIC_STATS_WEEKS)
     week_set = set(week_keys)
-    window_cutoff = now - timedelta(weeks=21)
+    window_cutoff = now - timedelta(weeks=PUBLIC_STATS_WEEKS + 1)
 
     public_finished = (Race.status == RaceStatus.FINISHED) & (Race.is_public == True)  # noqa: E712
     participated = or_(
@@ -657,9 +661,13 @@ async def compute_public_heatmap(
     """Public activity heatmap: 12 rows (2-hour buckets) x 7 columns (Mon-Sun).
 
     Counts public non-daily race participations (weighted by participant
-    count, at the race's started_at) plus training sessions (at created_at)
-    over the last 20 ISO weeks. Dailies are excluded like the admin heatmap:
-    their started_at is the synthetic 08:00 UTC rotation time.
+    count, at the race's started_at), training sessions (at created_at), and
+    finished daily participations (at the participant's real finished_at)
+    over the last ``PUBLIC_STATS_WEEKS`` ISO weeks. Daily races are excluded
+    at the race level like the admin heatmap: started_at is the synthetic
+    08:00 UTC rotation time. Their participants still count, but at their
+    own finish moment instead; abandoned daily runs without a finish time
+    stay uncounted.
 
     Each event's UTC timestamp is converted to ``tz_name`` before bucketing,
     so a window spanning a DST change buckets every event at its true local
@@ -674,8 +682,8 @@ async def compute_public_heatmap(
         resolved = "UTC"
 
     now_utc = now or datetime.now(UTC)
-    week_set = set(_build_week_list(now_utc, 20))
-    window_cutoff = now_utc - timedelta(weeks=21)
+    week_set = set(_build_week_list(now_utc, PUBLIC_STATS_WEEKS))
+    window_cutoff = now_utc - timedelta(weeks=PUBLIC_STATS_WEEKS + 1)
 
     grid = [[0] * 7 for _ in range(12)]
 
@@ -713,4 +721,25 @@ async def compute_public_heatmap(
             continue
         add(_ensure_utc(created_at), 1)
 
-    return {"timezone": resolved, "grid": grid}
+    # Daily participations at the participant's real finish moment: the
+    # race-level started_at is the synthetic 08:00 UTC rotation time, but
+    # finished_at reflects when the person actually played. Abandoned runs
+    # without a finish time stay uncounted. The status filter is
+    # defense-in-depth (finished_at is only ever set alongside the FINISHED
+    # transition today) rather than a currently-reachable branch.
+    daily_rows = (
+        await db.execute(
+            select(Participant.finished_at)
+            .join(Race, Race.id == Participant.race_id)
+            .where(
+                Race.daily_date.is_not(None),
+                Participant.status == ParticipantStatus.FINISHED,
+                Participant.finished_at.is_not(None),
+                Participant.finished_at >= window_cutoff,
+            )
+        )
+    ).all()
+    for (finished_at,) in daily_rows:
+        add(_ensure_utc(finished_at), 1)
+
+    return {"timezone": resolved, "grid": grid, "weeks": PUBLIC_STATS_WEEKS}
