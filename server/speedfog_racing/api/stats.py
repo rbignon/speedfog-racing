@@ -1,6 +1,7 @@
 """Stats API routes: overview, zones, bosses, player profiles."""
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -14,7 +15,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.database import get_db
+from speedfog_racing.database import async_session_maker, get_db
 from speedfog_racing.models import (
     Participant,
     ParticipantStatus,
@@ -42,6 +43,8 @@ from speedfog_racing.schemas import (
     ZoneTimeEntry,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 DUNGEON_NODE_TYPES = {"legacy_dungeon", "mini_dungeon"}
@@ -56,11 +59,11 @@ async def get_stats_overview(db: AsyncSession = Depends(get_db)) -> StatsOvervie
     """Community-wide activity KPIs with weekly trends (PUBLIC_STATS_WEEKS ISO weeks)."""
     from speedfog_racing.services.analytics_service import compute_public_overview
 
-    async def _compute() -> StatsOverviewResponse:
+    async def _compute(db: AsyncSession) -> StatsOverviewResponse:
         data = await compute_public_overview(db)
         return StatsOverviewResponse(**data)
 
-    return await _cached("overview", _compute)
+    return await _cached("overview", _compute, db)
 
 
 @router.get("/heatmap", response_model=HeatmapResponse)
@@ -76,11 +79,11 @@ async def get_stats_heatmap(
     except Exception:
         resolved = "UTC"
 
-    async def _compute() -> HeatmapResponse:
+    async def _compute(db: AsyncSession) -> HeatmapResponse:
         data = await compute_public_heatmap(db, resolved)
         return HeatmapResponse(**data)
 
-    return await _cached(f"heatmap:{resolved}", _compute)
+    return await _cached(f"heatmap:{resolved}", _compute, db)
 
 
 @dataclass(frozen=True)
@@ -126,36 +129,63 @@ _seed_nodes_cache: dict[Any, SeedNodes] = {}
 
 T = TypeVar("T")
 
-# In-process TTL cache for the public aggregation endpoints. Values are the
-# response models themselves (a few KB each); single-flight per key so
-# concurrent cold hits compute once instead of stampeding a 4s aggregation.
-# Entries are never evicted early (only overwritten on next access past their
-# TTL), so the dict's size is bounded by the number of distinct keys ever
-# requested, not by time. Like ``_seed_nodes_cache`` above, this is fine
-# because the key space is small in practice (a handful of pool names, a
-# capped ``days`` range on real UI calls, a finite zone-codex ``node_id``
-# set); it is not a hard cap against an adversarial client varying ``days``.
-# ``_stats_cache_locks`` shares the same unbounded-growth tradeoff: it
-# accumulates one lock per key ever seen, but is acceptable given the same
-# bounded key space rationale.
+# In-process stale-while-revalidate TTL cache for the public aggregation
+# endpoints. Values are the response models themselves (a few KB each).
+# Cold misses are single-flight per key so concurrent first hits compute once
+# instead of stampeding the aggregation; once a key holds a value, requests
+# past its TTL are served the stale value immediately while a background task
+# (at most one per key) recomputes it, so nobody ever waits on a refresh.
+# Entries are never evicted (only overwritten), so the dict's size is bounded
+# by the number of distinct keys ever requested, not by time. Like
+# ``_seed_nodes_cache`` above, this is fine because the key space is small in
+# practice (a handful of pool names, a capped ``days`` range on real UI
+# calls, a finite zone-codex ``node_id`` set); it is not a hard cap against
+# an adversarial client varying ``days``. ``_stats_cache_locks`` shares the
+# same unbounded-growth tradeoff: it accumulates one lock per key ever seen,
+# but is acceptable given the same bounded key space rationale.
 STATS_CACHE_TTL = 60.0
 
 _stats_cache: dict[str, tuple[float, Any]] = {}
 _stats_cache_locks: dict[str, asyncio.Lock] = {}
+# Strong references to in-flight background refreshes, at most one per key;
+# doubles as the "already refreshing" guard (single-threaded event loop, no
+# await between the membership check and the insert).
+_refresh_tasks: dict[str, asyncio.Task[None]] = {}
 
 
-async def _cached(key: str, compute: Callable[[], Awaitable[T]]) -> T:
+async def _cached(key: str, compute: Callable[[AsyncSession], Awaitable[T]], db: AsyncSession) -> T:
     hit = _stats_cache.get(key)
-    if hit is not None and hit[0] > monotonic():
+    if hit is not None:
+        if hit[0] <= monotonic():
+            _schedule_refresh(key, compute)
         return cast(T, hit[1])
     lock = _stats_cache_locks.setdefault(key, asyncio.Lock())
     async with lock:
         hit = _stats_cache.get(key)
         if hit is not None and hit[0] > monotonic():
             return cast(T, hit[1])
-        value = await compute()
+        value = await compute(db)
         _stats_cache[key] = (monotonic() + STATS_CACHE_TTL, value)
         return value
+
+
+def _schedule_refresh(key: str, compute: Callable[[AsyncSession], Awaitable[T]]) -> None:
+    if key in _refresh_tasks:
+        return
+
+    async def _refresh() -> None:
+        try:
+            # The refresh outlives the request that triggered it, and the
+            # request's session closes with the request, so open a fresh one.
+            async with async_session_maker() as db:
+                value = await compute(db)
+            _stats_cache[key] = (monotonic() + STATS_CACHE_TTL, value)
+        except Exception:
+            logger.exception("Background stats refresh failed for %r, keeping stale value", key)
+        finally:
+            _refresh_tasks.pop(key, None)
+
+    _refresh_tasks[key] = asyncio.create_task(_refresh())
 
 
 def _project_seed_nodes(created_at: datetime, graph_json: dict[str, Any]) -> SeedNodes:
@@ -452,7 +482,7 @@ async def get_zone_stats(
     index/detail endpoints serve the full name instead.
     """
 
-    async def _compute() -> ZoneStatsResponse:
+    async def _compute(db: AsyncSession) -> ZoneStatsResponse:
         participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
 
         node_display = _resolve_node_display(seeds_by_id)
@@ -538,7 +568,7 @@ async def get_zone_stats(
             fastest=fastest,
         )
 
-    return await _cached(f"zones:{pool}:{days}", _compute)
+    return await _cached(f"zones:{pool}:{days}", _compute, db)
 
 
 @router.get("/zones/index", response_model=ZoneIndexResponse)
@@ -556,7 +586,7 @@ async def get_zone_index(
     (unlike the top-5 panels on ``/zones``, which use the short one).
     """
 
-    async def _compute() -> ZoneIndexResponse:
+    async def _compute(db: AsyncSession) -> ZoneIndexResponse:
         participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
         node_display = _resolve_node_display(seeds_by_id)
         node_data = _aggregate_zone_stats(
@@ -583,7 +613,7 @@ async def get_zone_index(
         zones.sort(key=lambda z: z.display_name)
         return ZoneIndexResponse(zones=zones)
 
-    return await _cached(f"zones_index:{pool}:{days}", _compute)
+    return await _cached(f"zones_index:{pool}:{days}", _compute, db)
 
 
 @router.get("/zones/{node_id}", response_model=ZoneDetailResponse)
@@ -602,7 +632,7 @@ async def get_zone_detail(
     (same as the index, unlike the top-5 panels on ``/zones``).
     """
 
-    async def _compute() -> ZoneDetailResponse:
+    async def _compute(db: AsyncSession) -> ZoneDetailResponse:
         participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
         node_display = _resolve_node_display(seeds_by_id)
         info = node_display.get(node_id)
@@ -650,7 +680,7 @@ async def get_zone_detail(
             ),
         )
 
-    return await _cached(f"zone:{node_id}:{pool}:{days}", _compute)
+    return await _cached(f"zone:{node_id}:{pool}:{days}", _compute, db)
 
 
 @router.get("/bosses", response_model=BossStatsResponse)
@@ -660,7 +690,7 @@ async def get_boss_stats(
 ) -> BossStatsResponse:
     """Boss encounter stats."""
 
-    async def _compute() -> BossStatsResponse:
+    async def _compute(db: AsyncSession) -> BossStatsResponse:
         query = (
             select(Participant)
             .where(
@@ -808,14 +838,14 @@ async def get_boss_stats(
 
         return BossStatsResponse(bosses=boss_entries)
 
-    return await _cached(f"bosses:{pool}", _compute)
+    return await _cached(f"bosses:{pool}", _compute, db)
 
 
 @router.get("/players", response_model=PlayerProfilesResponse)
 async def get_player_profiles(db: AsyncSession = Depends(get_db)) -> PlayerProfilesResponse:
     """Player profiles grouped by dominant trait, top 10 per trait."""
 
-    async def _compute() -> PlayerProfilesResponse:
+    async def _compute(db: AsyncSession) -> PlayerProfilesResponse:
         rows_result = await db.execute(
             select(PlayerTraitScores, User)
             .join(User, PlayerTraitScores.user_id == User.id)
@@ -848,7 +878,7 @@ async def get_player_profiles(db: AsyncSession = Depends(get_db)) -> PlayerProfi
 
         return PlayerProfilesResponse(profiles=profiles)
 
-    return await _cached("players", _compute)
+    return await _cached("players", _compute, db)
 
 
 @router.get("/weapons", response_model=WeaponStatsResponse)
@@ -859,7 +889,7 @@ async def get_weapon_stats(
 ) -> WeaponStatsResponse:
     """Top weapon combos by total ticks across recent public finished races."""
 
-    async def _compute() -> WeaponStatsResponse:
+    async def _compute(db: AsyncSession) -> WeaponStatsResponse:
         query = (
             select(Participant)
             .join(Race, Participant.race_id == Race.id)
@@ -937,4 +967,4 @@ async def get_weapon_stats(
             )
         return WeaponStatsResponse(combos=combos_out)
 
-    return await _cached(f"weapons:{pool}:{days}", _compute)
+    return await _cached(f"weapons:{pool}:{days}", _compute, db)

@@ -28,7 +28,7 @@ Computed by `compute_public_overview` in `services/analytics_service.py`. The wi
 
 Below the KPI cards, the tab shows four teaser cards (deadliest boss, deadliest zone, top weapon combo, most common play style) that reuse the sibling tabs' endpoints client-side and link to the matching tab, plus the activity heatmap.
 
-The public aggregation endpoints (`overview`, `heatmap`, `zones`, `zones/index`, `zones/{node_id}`, `bosses`, `weapons`, `players`) sit behind a 60-second, single-flight, in-process TTL cache in `api/stats.py`: concurrent cold hits for the same cache key compute once instead of each paying the full aggregation cost, and error responses are never cached.
+The public aggregation endpoints (`overview`, `heatmap`, `zones`, `zones/index`, `zones/{node_id}`, `bosses`, `weapons`, `players`) sit behind a 60-second, stale-while-revalidate, in-process TTL cache in `api/stats.py`. Cold hits (first computation of a key since process start) are single-flight: concurrent requests compute once instead of each paying the full aggregation cost, and error responses are never cached. Once a key holds a value, requests past its TTL are served the stale value immediately while a background task (at most one per key, with its own DB session) recomputes it, so no request ever waits on a refresh; a failed refresh keeps the stale value and is retried on the next hit past the TTL.
 
 ---
 

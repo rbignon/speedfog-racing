@@ -94,10 +94,11 @@ def _reset_rate_limiter():
 @pytest.fixture(autouse=True)
 def _clear_stats_cache():
     """Clear the public stats TTL cache between tests to avoid cross-test pollution."""
-    from speedfog_racing.api.stats import _stats_cache, _stats_cache_locks
+    from speedfog_racing.api.stats import _refresh_tasks, _stats_cache, _stats_cache_locks
 
     _stats_cache.clear()
     _stats_cache_locks.clear()
+    _refresh_tasks.clear()
     yield
 
 
