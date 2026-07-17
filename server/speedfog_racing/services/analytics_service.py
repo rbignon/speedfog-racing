@@ -661,11 +661,11 @@ async def compute_public_heatmap(
 ) -> dict[str, Any]:
     """Public activity heatmap: 12 rows (2-hour buckets) x 7 columns (Mon-Sun).
 
-    Counts public non-daily race participations (weighted by participant
-    count, at the race's started_at), training sessions (at created_at), and
-    finished daily participations (at the participant's real finished_at)
-    over the last ``PUBLIC_STATS_WEEKS`` ISO weeks. Daily races are excluded
-    at the race level like the admin heatmap: started_at is the synthetic
+    Counts all race participations (public and private; anonymous aggregate),
+    weighted by participant count at the race's started_at, training sessions
+    (at created_at), and finished daily participations (at the participant's
+    real finished_at) over the last ``PUBLIC_STATS_WEEKS`` ISO weeks. Daily
+    races are excluded at the race level: started_at is the synthetic
     08:00 UTC rotation time. Their participants still count, but at their
     own finish moment instead; abandoned daily runs without a finish time
     stay uncounted.
@@ -699,7 +699,6 @@ async def compute_public_heatmap(
             select(Race.started_at, func.count(Participant.id))
             .join(Participant, Participant.race_id == Race.id)
             .where(
-                Race.is_public == True,  # noqa: E712
                 Race.daily_date.is_(None),
                 Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]),
                 Race.started_at >= window_cutoff,
@@ -733,7 +732,6 @@ async def compute_public_heatmap(
             select(Participant.finished_at)
             .join(Race, Race.id == Participant.race_id)
             .where(
-                Race.is_public.is_(True),
                 Race.daily_date.is_not(None),
                 Participant.status == ParticipantStatus.FINISHED,
                 Participant.finished_at.is_not(None),

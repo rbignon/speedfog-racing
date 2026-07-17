@@ -114,7 +114,7 @@ async def test_dst_boundary_buckets_at_true_local_hour(async_session):
     assert data["grid"][7][2] == 1  # 14:00 CEST -> 14-16 bucket, Wednesday
 
 
-async def test_scope_weighting_and_exclusions(async_session):
+async def test_scope_weighting_and_daily_start_exclusion(async_session):
     started = datetime(2026, 7, 13, 10, 0, tzinfo=UTC)  # Monday 10:00 UTC
     async with async_session() as db:
         a, b, c, org = _user(1), _user(2), _user(3), _user(99)
@@ -147,9 +147,9 @@ async def test_scope_weighting_and_exclusions(async_session):
         ).scalar_one()
         daily_participant_b.status = ParticipantStatus.ABANDONED
         daily_participant_b.finished_at = datetime(2026, 7, 13, 20, 0, tzinfo=UTC)
-        # Private non-daily race: excluded entirely.
+        # Private non-daily race: now included (anonymous aggregate), +1.
         await _race_with_participants(db, org, [a], started_at=started, is_public=False)
-        # Private daily race: should be excluded entirely (the public filter test).
+        # Private daily race: now included (anonymous aggregate) at participant finish.
         # c gets finished_at at the same moment as daily a (same pattern as above).
         # Use a different date (2026-07-14) to avoid unique constraint on daily_date.
         private_daily_date = datetime(2026, 7, 14, tzinfo=UTC).date()
@@ -187,11 +187,13 @@ async def test_scope_weighting_and_exclusions(async_session):
         await db.commit()
         data = await compute_public_heatmap(db, None, now=NOW)
 
-    assert data["grid"][5][0] == 4  # 10-12 bucket, Monday: 3 racers + 1 solo
-    # 18-20 bucket, Monday: only public daily's a should count, not c's private daily
-    assert data["grid"][9][0] == 1
-    assert data["grid"][10][0] == 0  # 20-22 bucket: b's ABANDONED finish doesn't count
-    assert sum(v for row in data["grid"] for v in row) == 5
+    # 10-12 bucket, Monday: 3 public racers + 1 private racer + 1 solo
+    assert data["grid"][5][0] == 5
+    # 18-20 bucket, Monday: public daily's a + private daily's c
+    assert data["grid"][9][0] == 2
+    # 20-22 bucket: b's ABANDONED finish doesn't count
+    assert data["grid"][10][0] == 0
+    assert sum(v for row in data["grid"] for v in row) == 7
 
 
 async def test_invalid_timezone_falls_back_to_utc(async_session):
