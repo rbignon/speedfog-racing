@@ -494,6 +494,16 @@ def translate_zone_update(zone_update: dict[str, Any], locale: str) -> dict[str,
                 to_name = ex.get("to_name")
                 if isinstance(to_name, str):
                     ex["to_name"] = _translate_name(to_name, data)
+            # Discovered boss destination: swap the zone name for the actual
+            # boss name(s). Translated entry by entry before joining, because
+            # boss names may themselves contain ", " ("Mohg, Lord of Blood").
+            to_bosses = ex.pop("to_bosses", None)
+            if isinstance(to_bosses, list):
+                labels = [
+                    _translate_name(b, data) if data else b for b in to_bosses if isinstance(b, str)
+                ]
+                if labels:
+                    ex["to_name"] = ", ".join(labels)
             # Translate sub-zone annotation and merge into text
             from_zone = ex.pop("from_zone", None)
             if isinstance(from_zone, str):

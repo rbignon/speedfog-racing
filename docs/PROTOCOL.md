@@ -459,25 +459,25 @@ Unicast to the originating mod after an `event_flag` is processed, after `zone_q
     },
     {
       "text": "Stranded Graveyard first door",
-      "to_name": "Ruin-Strewn Precipice",
+      "to_name": "Magma Wyrm Makar",
       "discovered": true
     }
   ]
 }
 ```
 
-| Field                | Type     | Description                                                                    |
-| -------------------- | -------- | ------------------------------------------------------------------------------ |
-| `node_id`            | `string` | DAG node ID                                                                    |
-| `display_name`       | `string` | Human-readable zone name (localized)                                           |
-| `tier`               | `int?`   | Node tier in the current graph layout (null for start node)                    |
-| `original_tier`      | `int?`   | Original tier before graph rebalancing (null if same as `tier` or unknown)     |
-| `layer`              | `int?`   | 0-indexed layer of this zone in the graph (used by mod to detect backtracking) |
-| `is_first_visit`     | `bool`   | Whether this is the player's first visit to this zone (false on reconnect)     |
-| `exits`              | `list`   | Fog gates leaving this zone                                                    |
-| `exits[].text`       | `string` | Fog gate label text (may include `[Zone Name]` annotation after i18n)          |
-| `exits[].to_name`    | `string` | Display name of the destination zone                                           |
-| `exits[].discovered` | `bool`   | Whether the destination has been visited (in zone_history)                     |
+| Field                | Type     | Description                                                                                                                          |
+| -------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `node_id`            | `string` | DAG node ID                                                                                                                          |
+| `display_name`       | `string` | Human-readable zone name (localized)                                                                                                 |
+| `tier`               | `int?`   | Node tier in the current graph layout (null for start node)                                                                          |
+| `original_tier`      | `int?`   | Original tier before graph rebalancing (null if same as `tier` or unknown)                                                           |
+| `layer`              | `int?`   | 0-indexed layer of this zone in the graph (used by mod to detect backtracking)                                                       |
+| `is_first_visit`     | `bool`   | Whether this is the player's first visit to this zone (false on reconnect)                                                           |
+| `exits`              | `list`   | Fog gates leaving this zone                                                                                                          |
+| `exits[].text`       | `string` | Fog gate label text (may include `[Zone Name]` annotation after i18n)                                                                |
+| `exits[].to_name`    | `string` | Destination zone display name; the actual boss name(s), ", "-joined, once the destination is discovered and hosts a boss (localized) |
+| `exits[].discovered` | `bool`   | Whether the destination has been visited (in zone_history)                                                                           |
 
 #### `event_flag_ack`
 

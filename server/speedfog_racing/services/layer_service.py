@@ -97,11 +97,28 @@ def compute_zone_update(
             from_zone_label = full_name.rsplit(" - ", 1)[-1]
         to_node = nodes.get(to_id, {}) if isinstance(to_id, str) else {}
         to_name = to_node.get("display_name", to_id) if isinstance(to_node, dict) else str(to_id)
+        discovered = isinstance(to_id, str) and to_id in discovered_ids
         ex: dict[str, Any] = {
             "text": text,
             "to_name": to_name,
-            "discovered": isinstance(to_id, str) and to_id in discovered_ids,
+            "discovered": discovered,
         }
+        if discovered and isinstance(to_node, dict):
+            # Actual boss(es) behind this gate, one entry per arena phase.
+            # Consumed by translate_zone_update(), which translates each
+            # name and replaces ``to_name`` with the ", "-joined result.
+            randomized = to_node.get("randomized_bosses")
+            bosses = (
+                [b for b in randomized if isinstance(b, str) and b]
+                if isinstance(randomized, list)
+                else []
+            )
+            if not bosses:
+                boss_name = to_node.get("boss_name")
+                if isinstance(boss_name, str) and boss_name:
+                    bosses = [boss_name]
+            if bosses:
+                ex["to_bosses"] = bosses
         if from_zone_label:
             ex["from_zone"] = from_zone_label
         exits.append(ex)

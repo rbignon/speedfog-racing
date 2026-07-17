@@ -391,7 +391,12 @@ class ZoneHistoryMessage(BaseModel):
 
 
 class ExitInfo(BaseModel):
-    """Exit info for zone_update message."""
+    """Exit info for zone_update message.
+
+    ``to_name`` carries the destination zone's display name, except when
+    the destination has been discovered and hosts a boss: it then carries
+    the actual boss name(s), ", "-joined (one per arena phase).
+    """
 
     text: str
     to_name: str

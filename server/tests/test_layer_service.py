@@ -384,3 +384,125 @@ def test_compute_zone_update_first_visit():
     )
     assert result is not None
     assert result["is_first_visit"] is True
+
+
+# =============================================================================
+# compute_zone_update: to_bosses (boss names for discovered destinations)
+# =============================================================================
+
+GRAPH_WITH_BOSSES = {
+    "nodes": {
+        "hub_1234": {
+            "display_name": "Hub Zone",
+            "tier": 2,
+            "layer": 1,
+            "exits": [
+                {"text": "Gideon front", "fog_id": 1, "to": "gideon_5678"},
+                {"text": "Maliketh front", "fog_id": 2, "to": "maliketh_9abc"},
+                {"text": "Catacombs entrance", "fog_id": 3, "to": "catacombs_def0"},
+                {"text": "Vanilla boss front", "fog_id": 4, "to": "vanilla_1111"},
+                {"text": "Empty boss front", "fog_id": 5, "to": "empty_2222"},
+                {"text": "Empty list front", "fog_id": 6, "to": "emptylist_3333"},
+            ],
+        },
+        "gideon_5678": {
+            "display_name": "Ashen Leyndell - Gideon",
+            "boss_name": "Mimic Tear",
+            "randomized_bosses": ["Mimic Tear"],
+            "exits": [],
+        },
+        "maliketh_9abc": {
+            "display_name": "Maliketh the Black Blade",
+            "boss_name": "Metyr, Mother of Fingers",
+            "randomized_bosses": ["Red Wolf of Radagon", "Metyr, Mother of Fingers"],
+            "exits": [],
+        },
+        "catacombs_def0": {
+            "display_name": "Road's End Catacombs",
+            "exits": [],
+        },
+        "vanilla_1111": {
+            "display_name": "Leyndell - Godfrey",
+            "boss_name": "Godfrey, First Elden Lord",
+            "randomized_bosses": None,
+            "exits": [],
+        },
+        "empty_2222": {
+            "display_name": "Empty Arena",
+            "boss_name": "",
+            "exits": [],
+        },
+        "emptylist_3333": {
+            "display_name": "Siofra - Ancestor Spirit",
+            "boss_name": "Ancestor Spirit",
+            "randomized_bosses": [],
+            "exits": [],
+        },
+    }
+}
+
+FULL_BOSS_HISTORY = [
+    {"node_id": "hub_1234", "igt_ms": 0},
+    {"node_id": "gideon_5678", "igt_ms": 1000},
+    {"node_id": "maliketh_9abc", "igt_ms": 2000},
+    {"node_id": "catacombs_def0", "igt_ms": 3000},
+    {"node_id": "vanilla_1111", "igt_ms": 4000},
+    {"node_id": "empty_2222", "igt_ms": 5000},
+    {"node_id": "emptylist_3333", "igt_ms": 6000},
+]
+
+
+def test_to_bosses_discovered_randomized():
+    """Discovered exit to a randomized boss node carries randomized_bosses."""
+    result = compute_zone_update("hub_1234", GRAPH_WITH_BOSSES, zone_history=FULL_BOSS_HISTORY)
+    assert result is not None
+    assert result["exits"][0]["to_bosses"] == ["Mimic Tear"]
+    # to_name keeps the zone name; translate_zone_update() does the swap
+    assert result["exits"][0]["to_name"] == "Ashen Leyndell - Gideon"
+
+
+def test_to_bosses_multi_phase():
+    """Multi-phase arenas keep one entry per phase."""
+    result = compute_zone_update("hub_1234", GRAPH_WITH_BOSSES, zone_history=FULL_BOSS_HISTORY)
+    assert result is not None
+    assert result["exits"][1]["to_bosses"] == [
+        "Red Wolf of Radagon",
+        "Metyr, Mother of Fingers",
+    ]
+
+
+def test_to_bosses_falls_back_to_boss_name():
+    """Null randomized_bosses (non-randomized seed) falls back to boss_name."""
+    result = compute_zone_update("hub_1234", GRAPH_WITH_BOSSES, zone_history=FULL_BOSS_HISTORY)
+    assert result is not None
+    assert result["exits"][3]["to_bosses"] == ["Godfrey, First Elden Lord"]
+
+
+def test_to_bosses_empty_randomized_list_falls_back_to_boss_name():
+    """Empty randomized_bosses list (distinct from null) falls back to boss_name."""
+    result = compute_zone_update("hub_1234", GRAPH_WITH_BOSSES, zone_history=FULL_BOSS_HISTORY)
+    assert result is not None
+    assert result["exits"][5]["to_bosses"] == ["Ancestor Spirit"]
+
+
+def test_to_bosses_absent_for_non_boss_node():
+    """Nodes without boss data get no to_bosses key."""
+    result = compute_zone_update("hub_1234", GRAPH_WITH_BOSSES, zone_history=FULL_BOSS_HISTORY)
+    assert result is not None
+    assert "to_bosses" not in result["exits"][2]
+
+
+def test_to_bosses_empty_boss_name_treated_as_absent():
+    """Empty-string boss_name does not produce a to_bosses key."""
+    result = compute_zone_update("hub_1234", GRAPH_WITH_BOSSES, zone_history=FULL_BOSS_HISTORY)
+    assert result is not None
+    assert "to_bosses" not in result["exits"][4]
+
+
+def test_to_bosses_absent_when_undiscovered():
+    """Undiscovered boss destinations keep the plain zone name (no to_bosses)."""
+    history = [{"node_id": "hub_1234", "igt_ms": 0}]
+    result = compute_zone_update("hub_1234", GRAPH_WITH_BOSSES, zone_history=history)
+    assert result is not None
+    for ex in result["exits"]:
+        assert "to_bosses" not in ex

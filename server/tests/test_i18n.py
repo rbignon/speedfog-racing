@@ -507,6 +507,42 @@ class TestTranslateZoneUpdate:
         assert msg["display_name"] == "Limgrave"
         assert msg["exits"][0]["text"] == "Limgrave entrance"
 
+    def test_to_bosses_english_join(self) -> None:
+        """to_bosses replaces to_name (joined) and is popped, English locale."""
+        msg = {
+            "type": "zone_update",
+            "display_name": "Test",
+            "exits": [
+                {
+                    "text": "Maliketh front",
+                    "to_name": "Maliketh the Black Blade",
+                    "discovered": True,
+                    "to_bosses": ["Red Wolf of Radagon", "Metyr, Mother of Fingers"],
+                },
+            ],
+        }
+        result = translate_zone_update(msg, "en")
+        assert result["exits"][0]["to_name"] == "Red Wolf of Radagon, Metyr, Mother of Fingers"
+        assert "to_bosses" not in result["exits"][0]
+
+    def test_to_bosses_translated_per_phase(self, fr_data: TranslationData) -> None:
+        """Each phase translates through the bosses table before joining."""
+        msg = {
+            "type": "zone_update",
+            "display_name": "Test",
+            "exits": [
+                {
+                    "text": "boss front",
+                    "to_name": "Some Zone",
+                    "discovered": True,
+                    "to_bosses": ["Fire Giant", "Unknown Boss XYZ"],
+                },
+            ],
+        }
+        result = translate_zone_update(msg, "fr")
+        assert result["exits"][0]["to_name"] == "le Géant de feu, Unknown Boss XYZ"
+        assert "to_bosses" not in result["exits"][0]
+
 
 # ---------------------------------------------------------------------------
 # get_available_locales
