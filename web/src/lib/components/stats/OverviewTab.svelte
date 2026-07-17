@@ -16,7 +16,6 @@
   import ActivityHeatmap from "$lib/components/stats/ActivityHeatmap.svelte";
 
   let data = $state<StatsOverviewResponse | null>(null);
-  let loading = $state(true);
   let error = $state<string | null>(null);
 
   $effect(() => {
@@ -25,26 +24,13 @@
   });
 
   async function loadData() {
-    loading = true;
     error = null;
     try {
       data = await fetchStatsOverview();
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to load overview.";
-    } finally {
-      loading = false;
     }
   }
-
-  type Teaser = {
-    key: string;
-    label: string;
-    value: string;
-    sub: string;
-    href: string;
-  };
-
-  let teasers = $state<Teaser[]>([]);
 
   // Labels mirror the TRAITS list in PlayersTab.svelte.
   const TRAIT_LABELS: Record<string, string> = {
@@ -57,70 +43,93 @@
     rage_quitter: "Rage Quitter",
   };
 
-  async function loadTeasers() {
-    const [bosses, zones, weapons, players] = await Promise.allSettled([
-      fetchBossStats(),
-      fetchZoneStats(),
-      (async () => {
-        await loadCatalogue();
-        return fetchWeaponStats();
-      })(),
-      fetchPlayerProfiles(),
-    ]);
-    const items: Teaser[] = [];
-    if (bosses.status === "fulfilled" && bosses.value.bosses.length > 0) {
-      const top = bosses.value.bosses
-        .slice()
-        .sort((a, b) => b.avg_deaths - a.avg_deaths)[0];
-      items.push({
-        key: "bosses",
-        label: "Deadliest boss",
-        value: top.display_name,
-        sub: `${top.avg_deaths.toFixed(1)} avg deaths`,
-        href: "/stats?tab=bosses",
+  // The four teaser slots render immediately as skeletons and each fills (or
+  // hides, on failure/empty data) when its own fetch resolves, so a slow
+  // sibling endpoint never holds the others back.
+  type TeaserSlot = { value: string; sub: string } | "loading" | "hidden";
+  const TEASER_DEFS = [
+    { key: "bosses", label: "Deadliest boss", href: "/stats?tab=bosses" },
+    { key: "zones", label: "Deadliest zone", href: "/stats?tab=zones" },
+    { key: "weapons", label: "Top weapon", href: "/stats?tab=weapons" },
+    {
+      key: "players",
+      label: "Most common play style",
+      href: "/stats?tab=players",
+    },
+  ] as const;
+  let teaserSlots = $state<Record<string, TeaserSlot>>({
+    bosses: "loading",
+    zones: "loading",
+    weapons: "loading",
+    players: "loading",
+  });
+
+  function loadTeasers() {
+    fetchBossStats()
+      .then((res) => {
+        const top = res.bosses
+          .slice()
+          .sort((a, b) => b.avg_deaths - a.avg_deaths)[0];
+        teaserSlots.bosses = top
+          ? {
+              value: top.display_name,
+              sub: `${top.avg_deaths.toFixed(1)} avg deaths`,
+            }
+          : "hidden";
+      })
+      .catch(() => {
+        teaserSlots.bosses = "hidden";
       });
-    }
-    if (zones.status === "fulfilled" && zones.value.deadliest.length > 0) {
-      const top = zones.value.deadliest[0];
-      items.push({
-        key: "zones",
-        label: "Deadliest zone",
-        value: top.display_name,
-        sub: `${top.avg_deaths_per_visit.toFixed(1)} avg deaths / visit`,
-        href: "/stats?tab=zones",
+    fetchZoneStats()
+      .then((res) => {
+        const top = res.deadliest[0];
+        teaserSlots.zones = top
+          ? {
+              value: top.display_name,
+              sub: `${top.avg_deaths_per_visit.toFixed(1)} avg deaths / visit`,
+            }
+          : "hidden";
+      })
+      .catch(() => {
+        teaserSlots.zones = "hidden";
       });
-    }
-    if (weapons.status === "fulfilled" && weapons.value.combos.length > 0) {
-      const top = weapons.value.combos
-        .slice()
-        .sort((a, b) => b.total_ticks - a.total_ticks)[0];
-      items.push({
-        key: "weapons",
-        label: "Top weapon",
-        value: formatCombo(top.ids, getWeaponName),
-        sub: `${formatIgt(top.total_ticks * 1000)} played`,
-        href: "/stats?tab=weapons",
+    (async () => {
+      await loadCatalogue();
+      return fetchWeaponStats();
+    })()
+      .then((res) => {
+        const top = res.combos
+          .slice()
+          .sort((a, b) => b.total_ticks - a.total_ticks)[0];
+        teaserSlots.weapons = top
+          ? {
+              value: formatCombo(top.ids, getWeaponName),
+              sub: `${formatIgt(top.total_ticks * 1000)} played`,
+            }
+          : "hidden";
+      })
+      .catch(() => {
+        teaserSlots.weapons = "hidden";
       });
-    }
-    if (players.status === "fulfilled") {
-      let best: { label: string; count: number } | null = null;
-      for (const [key, list] of Object.entries(players.value.profiles)) {
-        const label = TRAIT_LABELS[key];
-        if (!label || list.length === 0) continue;
-        if (!best || list.length > best.count)
-          best = { label, count: list.length };
-      }
-      if (best) {
-        items.push({
-          key: "players",
-          label: "Most common play style",
-          value: best.label,
-          sub: `${best.count} player${best.count === 1 ? "" : "s"}`,
-          href: "/stats?tab=players",
-        });
-      }
-    }
-    teasers = items;
+    fetchPlayerProfiles()
+      .then((res) => {
+        let best: { label: string; count: number } | null = null;
+        for (const [key, list] of Object.entries(res.profiles)) {
+          const label = TRAIT_LABELS[key];
+          if (!label || list.length === 0) continue;
+          if (!best || list.length > best.count)
+            best = { label, count: list.length };
+        }
+        teaserSlots.players = best
+          ? {
+              value: best.label,
+              sub: `${best.count} player${best.count === 1 ? "" : "s"}`,
+            }
+          : "hidden";
+      })
+      .catch(() => {
+        teaserSlots.players = "hidden";
+      });
   }
 
   function formatHours(h: number): string {
@@ -128,52 +137,59 @@
     return Math.round(h).toLocaleString();
   }
 
-  type Tile = {
-    key: string;
-    label: string;
-    value: string;
-    series: number[];
-    accent: string;
-    accentSoft: string;
-  };
+  // Labels and accents are static, so the four cards render immediately with
+  // skeleton values and fill in when the overview endpoint responds.
+  const TILE_DEFS = [
+    {
+      key: "races",
+      label: "Total races",
+      accent: "var(--color-gold)",
+      accentSoft: "rgba(200, 164, 78, 0.32)",
+    },
+    {
+      key: "players",
+      label: "Active players",
+      accent: "#22c55e",
+      accentSoft: "rgba(34, 197, 94, 0.36)",
+    },
+    {
+      key: "deaths",
+      label: "Total deaths",
+      accent: "#ef4444",
+      accentSoft: "rgba(239, 68, 68, 0.36)",
+    },
+    {
+      key: "hours",
+      label: "Hours raced",
+      accent: "var(--color-purple)",
+      accentSoft: "rgba(139, 92, 246, 0.36)",
+    },
+  ] as const;
 
-  const tiles = $derived<Tile[]>(
+  const tileData = $derived<Record<
+    string,
+    { value: string; series: number[] }
+  > | null>(
     data
-      ? [
-          {
-            key: "races",
-            label: "Total races",
+      ? {
+          races: {
             value: data.kpis.total_races.toLocaleString(),
             series: data.weekly.races,
-            accent: "var(--color-gold)",
-            accentSoft: "rgba(200, 164, 78, 0.32)",
           },
-          {
-            key: "players",
-            label: "Active players",
+          players: {
             value: data.kpis.active_players.toLocaleString(),
             series: data.weekly.active_users,
-            accent: "#22c55e",
-            accentSoft: "rgba(34, 197, 94, 0.36)",
           },
-          {
-            key: "deaths",
-            label: "Total deaths",
+          deaths: {
             value: data.kpis.total_deaths.toLocaleString(),
             series: data.weekly.deaths,
-            accent: "#ef4444",
-            accentSoft: "rgba(239, 68, 68, 0.36)",
           },
-          {
-            key: "hours",
-            label: "Hours raced",
+          hours: {
             value: formatHours(data.kpis.hours_raced),
             series: data.weekly.hours,
-            accent: "var(--color-purple)",
-            accentSoft: "rgba(139, 92, 246, 0.36)",
           },
-        ]
-      : [],
+        }
+      : null,
   );
 
   function barHeight(value: number, max: number): string {
@@ -182,55 +198,104 @@
   }
 </script>
 
-{#if loading}
-  <p class="loading-text">Loading overview...</p>
-{:else if error}
+{#if error}
   <p class="error-text">{error}</p>
-{:else if data}
+{:else}
   <div class="cards">
-    {#each tiles as tile (tile.key)}
-      {@const max = Math.max(1, ...tile.series)}
+    {#each TILE_DEFS as def (def.key)}
+      {@const td = tileData?.[def.key]}
       <article
         class="card"
-        style:--accent={tile.accent}
-        style:--accent-soft={tile.accentSoft}
+        style:--accent={def.accent}
+        style:--accent-soft={def.accentSoft}
       >
-        <span class="value">{tile.value}</span>
-        <span class="label">{tile.label}</span>
-        <div class="spark" aria-hidden="true">
-          {#each tile.series as v, i (i)}
-            <span class="bar" style:height={barHeight(v, max)}></span>
-          {/each}
-        </div>
+        {#if td}
+          {@const max = Math.max(1, ...td.series)}
+          <span class="value">{td.value}</span>
+          <span class="label">{def.label}</span>
+          <div class="spark" aria-hidden="true">
+            {#each td.series as v, i (i)}
+              <span class="bar" style:height={barHeight(v, max)}></span>
+            {/each}
+          </div>
+        {:else}
+          <span class="skeleton skeleton-value" aria-hidden="true"></span>
+          <span class="label">{def.label}</span>
+          <div class="spark" aria-hidden="true"></div>
+        {/if}
       </article>
     {/each}
   </div>
-  {#if teasers.length > 0}
-    <div class="teasers">
-      {#each teasers as t (t.key)}
-        <a class="teaser" href={t.href} data-sveltekit-noscroll>
-          <span class="teaser-label">{t.label}</span>
-          <span class="teaser-value">{t.value}</span>
-          <span class="teaser-sub">{t.sub}</span>
+{/if}
+{#if TEASER_DEFS.some((d) => teaserSlots[d.key] !== "hidden")}
+  <div class="teasers">
+    {#each TEASER_DEFS as def (def.key)}
+      {@const slot = teaserSlots[def.key]}
+      {#if slot !== "hidden"}
+        <a class="teaser" href={def.href} data-sveltekit-noscroll>
+          <span class="teaser-label">{def.label}</span>
+          {#if slot === "loading"}
+            <span class="skeleton skeleton-line" aria-hidden="true"></span>
+            <span class="skeleton skeleton-sub" aria-hidden="true"></span>
+          {:else}
+            <span class="teaser-value">{slot.value}</span>
+            <span class="teaser-sub">{slot.sub}</span>
+          {/if}
         </a>
-      {/each}
-    </div>
-  {/if}
-  <div class="heatmap-slot">
-    <ActivityHeatmap />
+      {/if}
+    {/each}
   </div>
 {/if}
+<div class="heatmap-slot">
+  <ActivityHeatmap />
+</div>
 
 <style>
-  .loading-text,
   .error-text {
-    color: var(--color-text-disabled);
+    color: var(--color-danger);
     font-style: italic;
     padding: 2rem 0;
   }
 
-  .error-text {
-    color: var(--color-danger);
+  .skeleton {
+    background: var(--color-border);
+    border-radius: 4px;
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  /* Skeletons match their real counterpart's box (font-size x line-height 1)
+     so the layout doesn't shift when values land. */
+  .skeleton-value {
+    height: var(--font-size-2xl);
+    width: 4.5rem;
+  }
+
+  .skeleton-line {
+    height: var(--font-size-lg);
+    width: 70%;
+  }
+
+  .skeleton-sub {
+    height: var(--font-size-xs);
+    width: 45%;
+    margin-top: auto;
   }
 
   .cards {
