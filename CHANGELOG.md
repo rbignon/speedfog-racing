@@ -2,12 +2,35 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
-## [Unreleased]
+## [1.19.0] - 2026-07-17
+
+### Stats
+
+- The **ELO rating system has been removed**, along with the rankings leaderboard and the rating block on profiles
+- The [stats page](https://speedfog.racing/stats) now opens on an **Overview** tab with community stats
+
+### Rewards
+
+- Victory rewards are no longer tied to ELO: the **Gold Aura** and the **Daily Crown** name style now reward your first weekly daily-seed championship, the **Silver Aura** your first public race win, and the **Cyan Aura** and the **Dawnrunner** name style your first daily-seed win
+
+### Zone Codex
+
+- Every skip now carries a **difficulty rating**, from one to five frogs
+- New skips documented across the codex
+- Zones now show their **fastest clear time** next to the median, and the zone index gains a sortable Fastest column
+- The zone codex drawer is now also available on **training session** pages
+
+### Seeds
+
+- Fix: **quitting out** could respawn you at your last Site of Grace instead of where you stood. Position saving now works everywhere.
+- A boss can no longer be placed in **its own vanilla arena**
+- Burning the Erdtree is no longer an exit of the Fire Giant arena
+- Placidusax is now more likely to be picked as the **final boss**
+- Seed names now include the name of the mode
 
 ### Mod
 
-- Fix: zone reveals no longer stall for 15 s on seeds using the SpeedFog **weather plugin**. The overlay detected loading screens through an engine byte (event flag 2200) that actually means "world clock stopped", which the plugin's frozen clock keeps permanently on. Reveals now wait for a fixed 1 s fade grace after the world becomes readable, and the defensive 15 s timeout is gone
-- Fix: equipped-weapon tracking, gated on the same detector, no longer freezes on those seeds
+- Exits leading to an already-discovered zone now show the **name of the boss** waiting behind the fog gate (when there is one) instead of the zone name
 
 ## [1.18.0] - 2026-07-09
 
