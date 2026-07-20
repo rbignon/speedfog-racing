@@ -486,8 +486,27 @@
   function sendChatMessage(
     message: string,
     channel: "participants" | "public",
+    replyTo?: string,
   ) {
-    raceStore.send({ type: "chat", channel, message });
+    raceStore.send({
+      type: "chat",
+      channel,
+      message,
+      reply_to: replyTo ?? null,
+    });
+  }
+
+  function sendChatReaction(
+    messageId: string,
+    emoji: string,
+    channel: "participants" | "public",
+  ) {
+    raceStore.send({
+      type: "chat_reaction",
+      channel,
+      message_id: messageId,
+      emoji,
+    });
   }
 </script>
 
@@ -777,7 +796,9 @@
         {publicLockedReason}
         activeTab={effectiveActiveTab}
         historyVersion={raceStore.chatHistoryVersion}
+        currentUsername={auth.user?.twitch_username ?? null}
         onSend={sendChatMessage}
+        onReact={sendChatReaction}
         onToggle={() => (chatCollapsed = !chatCollapsed)}
         onTabChange={(tab) => (chatActiveTab = tab)}
         zoneSheet={zoneSheetTarget}

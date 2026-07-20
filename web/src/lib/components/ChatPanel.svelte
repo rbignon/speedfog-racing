@@ -5,10 +5,18 @@
   interface Props {
     messages: ChatMessage[];
     canSend: boolean;
-    onSend: (message: string) => void;
+    currentUsername?: string | null;
+    onSend: (message: string, replyTo?: string) => void;
+    onReact?: (messageId: string, emoji: string) => void;
   }
 
-  let { messages, canSend, onSend }: Props = $props();
+  let {
+    messages,
+    canSend,
+    currentUsername = null,
+    onSend,
+    onReact = () => {},
+  }: Props = $props();
 
   function templateFor(msg: ChatMessage) {
     const id = msg.equipped_name_template_id;
@@ -61,8 +69,27 @@
     },
   };
 
+  const REACTION_EMOJIS: { code: string; glyph: string }[] = [
+    { code: "thumbs_up", glyph: "\u{1F44D}" },
+    { code: "thumbs_down", glyph: "\u{1F44E}" },
+    { code: "laugh", glyph: "\u{1F602}" },
+    { code: "cry", glyph: "\u{1F622}" },
+  ];
+  const EMOJI_GLYPHS: Record<string, string> = Object.fromEntries(
+    REACTION_EMOJIS.map((e) => [e.code, e.glyph]),
+  );
+
   let inputValue = $state("");
+  let replyTarget = $state<ChatMessage | null>(null);
   let listEl = $state<HTMLElement | null>(null);
+
+  function scrollToMessage(id: string) {
+    const el = listEl?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("flash");
+    setTimeout(() => el.classList.remove("flash"), 1500);
+  }
 
   $effect(() => {
     // Trigger scroll when messages change
@@ -85,21 +112,27 @@
     });
   }
 
-  function handleSubmit(e: SubmitEvent) {
-    e.preventDefault();
+  function submitInput() {
     const text = inputValue.trim();
     if (!text) return;
-    onSend(text);
+    onSend(text, replyTarget?.id ?? undefined);
     inputValue = "";
+    replyTarget = null;
+  }
+
+  function handleSubmit(e: SubmitEvent) {
+    e.preventDefault();
+    submitInput();
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      replyTarget = null;
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      const text = inputValue.trim();
-      if (!text) return;
-      onSend(text);
-      inputValue = "";
+      submitInput();
     }
   }
 </script>
@@ -109,7 +142,7 @@
     {#if messages.length === 0}
       <p class="empty">No messages yet</p>
     {:else}
-      {#each messages as msg, i (msg.timestamp + msg.username + i)}
+      {#each messages as msg, i (msg.id ?? msg.timestamp + msg.username + i)}
         {#if msg.role === "system"}
           <div class="system-message">
             <span class="system-text">{msg.message}</span>
@@ -117,7 +150,26 @@
           </div>
         {:else}
           {@const badge = rewards.lookupBadge(msg.equipped_badge_id)}
-          <div class="message">
+          {@const msgId = msg.id ?? null}
+          <div class="message" data-msg-id={msgId}>
+            {#if canSend && msgId}
+              <div class="msg-actions">
+                {#each REACTION_EMOJIS as e (e.code)}
+                  <button
+                    type="button"
+                    class="action-btn"
+                    title={e.code.replace("_", " ")}
+                    onclick={() => onReact(msgId, e.code)}>{e.glyph}</button
+                  >
+                {/each}
+                <button
+                  type="button"
+                  class="action-btn action-reply"
+                  title="Reply"
+                  onclick={() => (replyTarget = msg)}>&#8617;</button
+                >
+              </div>
+            {/if}
             <div class="message-header">
               {#if msg.avatar_url}
                 <img src={msg.avatar_url} alt="" class="avatar" />
@@ -158,12 +210,55 @@
                 <span class="timestamp">{formatTime(msg.timestamp)}</span>
               </div>
             </div>
+            {#if msg.reply_to}
+              {@const quote = msg.reply_to}
+              <button
+                type="button"
+                class="reply-quote"
+                onclick={() => scrollToMessage(quote.id)}
+              >
+                <span class="reply-author"
+                  >{quote.display_name ?? quote.username}</span
+                >
+                <span class="reply-snippet">{quote.snippet}</span>
+              </button>
+            {/if}
             <p class="message-text">{msg.message}</p>
+            {#if msg.reactions?.length}
+              <div class="reaction-row">
+                {#each msg.reactions as r (r.emoji)}
+                  <button
+                    type="button"
+                    class="reaction-pill"
+                    class:mine={currentUsername !== null &&
+                      r.usernames.includes(currentUsername)}
+                    title={r.usernames.join(", ")}
+                    disabled={!canSend || !msgId}
+                    onclick={() => msgId && onReact(msgId, r.emoji)}
+                    >{EMOJI_GLYPHS[r.emoji] ?? r.emoji}
+                    {r.usernames.length}</button
+                  >
+                {/each}
+              </div>
+            {/if}
           </div>
         {/if}
       {/each}
     {/if}
   </div>
+  {#if canSend && replyTarget}
+    <div class="reply-bar">
+      <span class="reply-bar-text"
+        >Replying to {replyTarget.display_name ?? replyTarget.username}</span
+      >
+      <button
+        type="button"
+        class="reply-cancel"
+        title="Cancel reply"
+        onclick={() => (replyTarget = null)}>&#10005;</button
+      >
+    </div>
+  {/if}
   {#if canSend}
     <form class="input-row" onsubmit={handleSubmit}>
       <input
@@ -224,6 +319,152 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+    position: relative;
+  }
+
+  .msg-actions {
+    position: absolute;
+    top: -0.4rem;
+    right: 0.25rem;
+    display: flex;
+    gap: 0.1rem;
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.1rem;
+    z-index: 1;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition);
+  }
+
+  /* display:none would drop these buttons from the tab order entirely, so
+     keep them laid out and gate visibility with opacity instead: hidden by
+     default, revealed on hover, and reachable (and revealed) via keyboard
+     focus. */
+  .message:hover .msg-actions,
+  .message:focus-within .msg-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0.15rem 0.25rem;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .action-btn:hover {
+    background: var(--color-border);
+  }
+
+  .reply-quote {
+    display: flex;
+    gap: 0.35rem;
+    align-items: baseline;
+    margin-left: calc(24px + 0.5rem);
+    padding: 0.1rem 0.4rem;
+    background: none;
+    border: none;
+    border-left: 2px solid var(--color-border);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    text-align: left;
+    min-width: 0;
+  }
+
+  .reply-quote:hover {
+    color: var(--color-text);
+  }
+
+  .reply-author {
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .reply-snippet {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .reaction-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding-left: calc(24px + 0.5rem);
+  }
+
+  .reaction-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+    font-size: var(--font-size-xs);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: border-color var(--transition);
+  }
+
+  .reaction-pill:hover:not(:disabled) {
+    border-color: var(--color-purple);
+  }
+
+  .reaction-pill:disabled {
+    cursor: default;
+  }
+
+  .reaction-pill.mine {
+    border-color: var(--color-purple);
+    background: rgba(139, 92, 246, 0.12);
+  }
+
+  .reply-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.3rem 0.75rem;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-surface-elevated);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+  }
+
+  .reply-cancel {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    padding: 0.1rem 0.25rem;
+  }
+
+  .reply-cancel:hover {
+    color: var(--color-text);
+  }
+
+  :global(.message.flash) {
+    animation: chat-flash 1.5s ease-out;
+  }
+
+  @keyframes chat-flash {
+    0% {
+      background: rgba(139, 92, 246, 0.25);
+    }
+    100% {
+      background: transparent;
+    }
   }
 
   .message-header {

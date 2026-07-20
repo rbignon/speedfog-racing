@@ -12,6 +12,7 @@
     messagesParticipants: ChatMessage[];
     messagesPublic: ChatMessage[];
     canSend: boolean;
+    currentUsername: string | null;
     collapsed: boolean;
     participantsAccess: boolean;
     publicAccess: PublicAccess;
@@ -19,7 +20,8 @@
     showPublicOnly?: boolean;
     activeTab: ChatTab;
     historyVersion: number;
-    onSend: (message: string, channel: ChatTab) => void;
+    onSend: (message: string, channel: ChatTab, replyTo?: string) => void;
+    onReact: (messageId: string, emoji: string, channel: ChatTab) => void;
     onToggle: () => void;
     onTabChange: (tab: ChatTab) => void;
     zoneSheet?: { nodeId: string; displayName: string; zones: string[] } | null;
@@ -30,6 +32,7 @@
     messagesParticipants,
     messagesPublic,
     canSend,
+    currentUsername,
     collapsed,
     participantsAccess,
     publicAccess,
@@ -38,6 +41,7 @@
     activeTab,
     historyVersion,
     onSend,
+    onReact,
     onToggle,
     onTabChange,
     zoneSheet = null,
@@ -129,8 +133,12 @@
     }
   });
 
-  function handleSend(message: string) {
-    onSend(message, layout.effectiveTab);
+  function handleSend(message: string, replyTo?: string) {
+    onSend(message, layout.effectiveTab, replyTo);
+  }
+
+  function handleReact(messageId: string, emoji: string) {
+    onReact(messageId, emoji, layout.effectiveTab);
   }
 </script>
 
@@ -283,7 +291,9 @@
             <ChatPanel
               messages={activeMessages}
               {canSend}
+              {currentUsername}
               onSend={handleSend}
+              onReact={handleReact}
             />
           {/if}
         </div>
