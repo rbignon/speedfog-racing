@@ -292,6 +292,8 @@
               messages={activeMessages}
               {canSend}
               {currentUsername}
+              channel={layout.effectiveTab}
+              {historyVersion}
               onSend={handleSend}
               onReact={handleReact}
             />

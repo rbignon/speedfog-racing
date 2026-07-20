@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import type { ChatMessage } from "$lib/websocket";
   import { rewards } from "$lib/stores/rewards.svelte";
 
@@ -6,6 +7,8 @@
     messages: ChatMessage[];
     canSend: boolean;
     currentUsername?: string | null;
+    channel?: string;
+    historyVersion?: number;
     onSend: (message: string, replyTo?: string) => void;
     onReact?: (messageId: string, emoji: string) => void;
   }
@@ -14,6 +17,8 @@
     messages,
     canSend,
     currentUsername = null,
+    channel = "participants",
+    historyVersion = 0,
     onSend,
     onReact = () => {},
   }: Props = $props();
@@ -91,17 +96,61 @@
     setTimeout(() => el.classList.remove("flash"), 1500);
   }
 
+  // Stick to the bottom only while the viewer is already there; otherwise
+  // accumulate a "new messages" count for the jump pill. System messages
+  // are ambient and never counted (same rule as the unread badges).
+  let atBottom = $state(true);
+  let pendingCount = $state(0);
+  let prevNotifyCount = 0; // not reactive: last non-system count seen
+
+  function notifyCountOf(list: ChatMessage[]): number {
+    return list.reduce((n, m) => (m.role === "system" ? n : n + 1), 0);
+  }
+
+  function scrollToBottom() {
+    // Use requestAnimationFrame so the new DOM node is painted first
+    requestAnimationFrame(() => {
+      if (listEl) {
+        listEl.scrollTop = listEl.scrollHeight;
+      }
+    });
+  }
+
+  function jumpToLatest() {
+    atBottom = true;
+    pendingCount = 0;
+    scrollToBottom();
+  }
+
+  function handleScroll() {
+    if (!listEl) return;
+    atBottom =
+      listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 40;
+    if (atBottom) pendingCount = 0;
+  }
+
   $effect(() => {
-    // Trigger scroll when messages change
-    void messages.length;
-    if (listEl) {
-      // Use requestAnimationFrame so the new DOM node is painted first
-      requestAnimationFrame(() => {
-        if (listEl) {
-          listEl.scrollTop = listEl.scrollHeight;
-        }
-      });
+    const notifyCount = notifyCountOf(messages);
+    const added = notifyCount - prevNotifyCount;
+    prevNotifyCount = notifyCount;
+    void messages.length; // system messages also grow the list
+    if (atBottom) {
+      scrollToBottom();
+    } else if (added > 0) {
+      pendingCount += added;
     }
+  });
+
+  // History (re)loads and tab switches always reset to the bottom.
+  // untrack: reading messages here must not make this effect re-run on
+  // every new message, or it would defeat the anchor above.
+  $effect(() => {
+    void channel;
+    void historyVersion;
+    atBottom = true;
+    pendingCount = 0;
+    prevNotifyCount = untrack(() => notifyCountOf(messages));
+    scrollToBottom();
   });
 
   function formatTime(timestamp: string): string {
@@ -138,112 +187,119 @@
 </script>
 
 <div class="chat-panel">
-  <div class="message-list" bind:this={listEl}>
-    {#if messages.length === 0}
-      <p class="empty">No messages yet</p>
-    {:else}
-      {#each messages as msg, i (msg.id ?? msg.timestamp + msg.username + i)}
-        {#if msg.role === "system"}
-          <div class="system-message">
-            <span class="system-text">{msg.message}</span>
-            <span class="timestamp">{formatTime(msg.timestamp)}</span>
-          </div>
-        {:else}
-          {@const badge = rewards.lookupBadge(msg.equipped_badge_id)}
-          {@const msgId = msg.id ?? null}
-          <div class="message" data-msg-id={msgId}>
-            {#if canSend && msgId}
-              <div class="msg-actions">
-                {#each REACTION_EMOJIS as e (e.code)}
+  <div class="list-wrap">
+    <div class="message-list" bind:this={listEl} onscroll={handleScroll}>
+      {#if messages.length === 0}
+        <p class="empty">No messages yet</p>
+      {:else}
+        {#each messages as msg, i (msg.id ?? msg.timestamp + msg.username + i)}
+          {#if msg.role === "system"}
+            <div class="system-message">
+              <span class="system-text">{msg.message}</span>
+              <span class="timestamp">{formatTime(msg.timestamp)}</span>
+            </div>
+          {:else}
+            {@const badge = rewards.lookupBadge(msg.equipped_badge_id)}
+            {@const msgId = msg.id ?? null}
+            <div class="message" data-msg-id={msgId}>
+              {#if canSend && msgId}
+                <div class="msg-actions">
+                  {#each REACTION_EMOJIS as e (e.code)}
+                    <button
+                      type="button"
+                      class="action-btn"
+                      title={e.code.replace("_", " ")}
+                      onclick={() => onReact(msgId, e.code)}>{e.glyph}</button
+                    >
+                  {/each}
                   <button
                     type="button"
-                    class="action-btn"
-                    title={e.code.replace("_", " ")}
-                    onclick={() => onReact(msgId, e.code)}>{e.glyph}</button
+                    class="action-btn action-reply"
+                    title="Reply"
+                    onclick={() => (replyTarget = msg)}>&#8617;</button
                   >
-                {/each}
+                </div>
+              {/if}
+              <div class="message-header">
+                {#if msg.avatar_url}
+                  <img src={msg.avatar_url} alt="" class="avatar" />
+                {:else}
+                  <div class="avatar-placeholder"></div>
+                {/if}
+                <div class="meta">
+                  <a
+                    href="/user/{msg.username}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="display-name"
+                    style={nameStyleFor(msg)}
+                    >{msg.display_name ?? msg.username}</a
+                  >
+                  {#if badge}
+                    <img
+                      src="/badges/{badge.icon_filename}"
+                      alt={badge.name}
+                      title={badge.name}
+                      class="reward-badge"
+                    />
+                  {/if}
+                  {#if msg.role === "organizer"}
+                    <span class="badge badge-organizer">ORG</span>
+                  {:else if msg.role === "caster"}
+                    <span class="badge badge-caster">CAST</span>
+                  {/if}
+                  {#if msg.dominant_trait && TRAIT_META[msg.dominant_trait]}
+                    {@const trait = TRAIT_META[msg.dominant_trait]}
+                    <span
+                      class="badge badge-trait"
+                      style="background: {trait.color}20; color: {trait.color}"
+                      title={trait.label}
+                      aria-label={trait.label}>{trait.icon}</span
+                    >
+                  {/if}
+                  <span class="timestamp">{formatTime(msg.timestamp)}</span>
+                </div>
+              </div>
+              {#if msg.reply_to}
+                {@const quote = msg.reply_to}
                 <button
                   type="button"
-                  class="action-btn action-reply"
-                  title="Reply"
-                  onclick={() => (replyTarget = msg)}>&#8617;</button
+                  class="reply-quote"
+                  onclick={() => scrollToMessage(quote.id)}
                 >
-              </div>
-            {/if}
-            <div class="message-header">
-              {#if msg.avatar_url}
-                <img src={msg.avatar_url} alt="" class="avatar" />
-              {:else}
-                <div class="avatar-placeholder"></div>
+                  <span class="reply-author"
+                    >{quote.display_name ?? quote.username}</span
+                  >
+                  <span class="reply-snippet">{quote.snippet}</span>
+                </button>
               {/if}
-              <div class="meta">
-                <a
-                  href="/user/{msg.username}"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="display-name"
-                  style={nameStyleFor(msg)}
-                  >{msg.display_name ?? msg.username}</a
-                >
-                {#if badge}
-                  <img
-                    src="/badges/{badge.icon_filename}"
-                    alt={badge.name}
-                    title={badge.name}
-                    class="reward-badge"
-                  />
-                {/if}
-                {#if msg.role === "organizer"}
-                  <span class="badge badge-organizer">ORG</span>
-                {:else if msg.role === "caster"}
-                  <span class="badge badge-caster">CAST</span>
-                {/if}
-                {#if msg.dominant_trait && TRAIT_META[msg.dominant_trait]}
-                  {@const trait = TRAIT_META[msg.dominant_trait]}
-                  <span
-                    class="badge badge-trait"
-                    style="background: {trait.color}20; color: {trait.color}"
-                    title={trait.label}
-                    aria-label={trait.label}>{trait.icon}</span
-                  >
-                {/if}
-                <span class="timestamp">{formatTime(msg.timestamp)}</span>
-              </div>
+              <p class="message-text">{msg.message}</p>
+              {#if msg.reactions?.length}
+                <div class="reaction-row">
+                  {#each msg.reactions as r (r.emoji)}
+                    <button
+                      type="button"
+                      class="reaction-pill"
+                      class:mine={currentUsername !== null &&
+                        r.usernames.includes(currentUsername)}
+                      title={r.usernames.join(", ")}
+                      disabled={!canSend || !msgId}
+                      onclick={() => msgId && onReact(msgId, r.emoji)}
+                      >{EMOJI_GLYPHS[r.emoji] ?? r.emoji}
+                      {r.usernames.length}</button
+                    >
+                  {/each}
+                </div>
+              {/if}
             </div>
-            {#if msg.reply_to}
-              {@const quote = msg.reply_to}
-              <button
-                type="button"
-                class="reply-quote"
-                onclick={() => scrollToMessage(quote.id)}
-              >
-                <span class="reply-author"
-                  >{quote.display_name ?? quote.username}</span
-                >
-                <span class="reply-snippet">{quote.snippet}</span>
-              </button>
-            {/if}
-            <p class="message-text">{msg.message}</p>
-            {#if msg.reactions?.length}
-              <div class="reaction-row">
-                {#each msg.reactions as r (r.emoji)}
-                  <button
-                    type="button"
-                    class="reaction-pill"
-                    class:mine={currentUsername !== null &&
-                      r.usernames.includes(currentUsername)}
-                    title={r.usernames.join(", ")}
-                    disabled={!canSend || !msgId}
-                    onclick={() => msgId && onReact(msgId, r.emoji)}
-                    >{EMOJI_GLYPHS[r.emoji] ?? r.emoji}
-                    {r.usernames.length}</button
-                  >
-                {/each}
-              </div>
-            {/if}
-          </div>
-        {/if}
-      {/each}
+          {/if}
+        {/each}
+      {/if}
+    </div>
+    {#if pendingCount > 0 && !atBottom}
+      <button type="button" class="new-messages-pill" onclick={jumpToLatest}>
+        &darr; {pendingCount} new {pendingCount === 1 ? "message" : "messages"}
+      </button>
     {/if}
   </div>
   {#if canSend && replyTarget}
@@ -284,6 +340,14 @@
     min-height: 0;
   }
 
+  .list-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
   .message-list {
     flex: 1;
     overflow-y: auto;
@@ -292,6 +356,28 @@
     gap: 0.75rem;
     padding: 0.75rem;
     min-height: 0;
+  }
+
+  .new-messages-pill {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-purple);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    font-family: var(--font-family);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    white-space: nowrap;
+  }
+
+  .new-messages-pill:hover {
+    background: var(--color-purple-hover);
   }
 
   .empty {
