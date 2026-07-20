@@ -3627,14 +3627,17 @@ class TestModVersionHandshake:
     """Auth-time protocol/version compatibility (see docs/PROTOCOL.md)."""
 
     def test_auth_without_version_fields_accepted(self, integration_client, race_with_participants):
-        # Pre-versioning mods omit both fields: assumed protocol 1.0, no notice.
+        # Pre-versioning mods omit both fields: assumed protocol 1.0, which is
+        # an older minor than the server's, so auth succeeds with a notice.
+        from speedfog_racing import __version__
+
         race_id = race_with_participants["race_id"]
         players = race_with_participants["players"]
         with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
             mod = ModTestClient(ws, players[0]["mod_token"])
             response = mod.auth()
             assert response["type"] == "auth_ok"
-            assert response.get("latest_mod_version") is None
+            assert response["latest_mod_version"] == __version__
 
     def test_auth_incompatible_protocol_rejected(self, integration_client, race_with_participants):
         race_id = race_with_participants["race_id"]

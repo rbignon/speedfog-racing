@@ -885,7 +885,10 @@ def test_training_mod_version_stored_on_connection(training_ws_client, training_
         )
         auth_ok = ws.receive_json()
         assert auth_ok["type"] == "auth_ok"
-        assert auth_ok.get("latest_mod_version") is None
+        # protocol "1.0" is an older minor than the server's, so it gets a notice.
+        from speedfog_racing import __version__
+
+        assert auth_ok["latest_mod_version"] == __version__
 
         # auth_ok is sent before connect_mod registers the connection, so the
         # server thread may still be registering when we get here; poll briefly.

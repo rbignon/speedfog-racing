@@ -106,3 +106,53 @@ def test_chat_history_message_schema():
     assert data["channel"] == "participants"
     assert len(data["messages"]) == 1
     assert data["messages"][0]["username"] == "user1"
+
+
+def test_chat_reaction_message_rejects_unknown_emoji():
+    """The emoji code is a closed set; anything else is a validation error."""
+    from pydantic import ValidationError
+
+    from speedfog_racing.websocket.schemas import ChatReactionMessage
+
+    with pytest.raises(ValidationError):
+        ChatReactionMessage(
+            channel="public",
+            message_id="7c9c54d1-93f8-4f1b-9df5-8a4c4a1f0b1e",
+            emoji="heart",
+        )
+
+
+def test_chat_reaction_message_rejects_invalid_channel():
+    from pydantic import ValidationError
+
+    from speedfog_racing.websocket.schemas import ChatReactionMessage
+
+    with pytest.raises(ValidationError):
+        ChatReactionMessage(
+            channel="spoiler",
+            message_id="7c9c54d1-93f8-4f1b-9df5-8a4c4a1f0b1e",
+            emoji="laugh",
+        )
+
+
+def test_send_chat_message_rejects_malformed_reply_to():
+    """reply_to must parse as a UUID when present."""
+    from pydantic import ValidationError
+
+    from speedfog_racing.websocket.schemas import SendChatMessage
+
+    with pytest.raises(ValidationError):
+        SendChatMessage(channel="public", message="hi", reply_to="not-a-uuid")
+
+
+def test_reaction_emojis_match_validation_pattern():
+    """The pattern on ChatReactionMessage.emoji accepts exactly REACTION_EMOJIS."""
+    from speedfog_racing.websocket.schemas import REACTION_EMOJIS, ChatReactionMessage
+
+    for code in REACTION_EMOJIS:
+        msg = ChatReactionMessage(
+            channel="public",
+            message_id="7c9c54d1-93f8-4f1b-9df5-8a4c4a1f0b1e",
+            emoji=code,
+        )
+        assert msg.emoji == code

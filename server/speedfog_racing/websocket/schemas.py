@@ -17,7 +17,7 @@ from speedfog_racing.models import compute_late_join_deadlines
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.0"
+PROTOCOL_VERSION = "1.1"
 
 # --- Client -> Server Messages (Mod) ---
 
@@ -439,6 +439,12 @@ class PingMessage(BaseModel):
 
 # --- Client -> Server Messages (Chat) ---
 
+# Reaction emoji codes, in the fixed order aggregates are returned in.
+REACTION_EMOJIS = ("thumbs_up", "thumbs_down", "laugh", "cry")
+
+# Max characters of the original message carried in a reply context.
+REPLY_SNIPPET_LENGTH = 120
+
 
 class SendChatMessage(BaseModel):
     """Chat message from authenticated spectator/caster."""
@@ -446,6 +452,9 @@ class SendChatMessage(BaseModel):
     type: Literal["chat"] = "chat"
     channel: str = Field(pattern=r"^(participants|public)$")
     message: str = Field(max_length=500)
+    # UUID of the message being answered, or None. A stale or
+    # cross-channel reference drops the reply link, never the message.
+    reply_to: uuid.UUID | None = None
 
 
 class RequestChatHistoryMessage(BaseModel):
@@ -462,13 +471,54 @@ class RequestChatHistoryMessage(BaseModel):
     channel: str = Field(pattern=r"^(participants|public)$")
 
 
+class ChatReactionMessage(BaseModel):
+    """Toggle the sender's reaction on a chat message.
+
+    Adds the (message, user, emoji) reaction if absent, removes it if
+    present. Requires authentication; channel access follows the same
+    rules as posting.
+    """
+
+    type: Literal["chat_reaction"] = "chat_reaction"
+    channel: str = Field(pattern=r"^(participants|public)$")
+    message_id: uuid.UUID
+    emoji: str = Field(pattern=r"^(thumbs_up|thumbs_down|laugh|cry)$")
+
+
 # --- Server -> Client Messages (Chat) ---
+
+
+class ChatReplyContext(BaseModel):
+    """Denormalized context of the message being answered.
+
+    Carried inline so a reply renders even when the original message is
+    older than the history window sent to new viewers.
+    """
+
+    id: str
+    username: str
+    display_name: str | None
+    snippet: str
+
+
+class ChatReactionAggregate(BaseModel):
+    """One emoji's reactions on a message.
+
+    The count is derived client-side from ``len(usernames)``; usernames
+    also drive the "who reacted" tooltip and own-reaction highlight.
+    """
+
+    emoji: str
+    usernames: list[str]
 
 
 class ChatBroadcastMessage(BaseModel):
     """Chat message broadcast to room."""
 
     type: Literal["chat_message"] = "chat_message"
+    # DB UUID of the persisted message. None only for non-persisted
+    # system broadcasts (system_chat_message without an id).
+    id: str | None = None
     channel: str  # "participants" | "public"
     username: str
     display_name: str | None
@@ -479,6 +529,9 @@ class ChatBroadcastMessage(BaseModel):
     equipped_name_template_id: str | None = None
     message: str
     timestamp: str  # ISO format from server
+    reply_to: ChatReplyContext | None = None
+    # Populated in chat_history; live broadcasts start with no reactions.
+    reactions: list[ChatReactionAggregate] = Field(default_factory=list)
 
 
 class ChatHistoryMessage(BaseModel):
@@ -489,9 +542,24 @@ class ChatHistoryMessage(BaseModel):
     messages: list[ChatBroadcastMessage]
 
 
-def system_chat_message(channel: str, message: str) -> str:
-    """Build a system chat message JSON string for broadcasting (not persisted)."""
+class ChatReactionUpdateMessage(BaseModel):
+    """Full aggregated reaction state of one message after a toggle."""
+
+    type: Literal["chat_reaction_update"] = "chat_reaction_update"
+    channel: str  # "participants" | "public"
+    message_id: str
+    reactions: list[ChatReactionAggregate]
+
+
+def system_chat_message(channel: str, message: str, message_id: str | None = None) -> str:
+    """Build a system chat message JSON string for broadcasting.
+
+    ``message_id`` is the persisted row's id when the caller stored the
+    message (``persist_system_chat``); None for fire-and-forget
+    broadcasts that skip the database.
+    """
     return ChatBroadcastMessage(
+        id=message_id,
         channel=channel,
         username="",
         display_name=None,
@@ -534,4 +602,8 @@ async def persist_system_chat(
     db.add(db_msg)
     await db.flush()
 
-    return system_chat_message(channel if isinstance(channel, str) else channel.value, message)
+    return system_chat_message(
+        channel if isinstance(channel, str) else channel.value,
+        message,
+        message_id=str(db_msg.id),
+    )
