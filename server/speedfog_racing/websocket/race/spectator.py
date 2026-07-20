@@ -44,8 +44,10 @@ from speedfog_racing.websocket.race.manager import (
     sort_leaderboard,
 )
 from speedfog_racing.websocket.schemas import (
+    REPLY_SNIPPET_LENGTH,
     ChatBroadcastMessage,
     ChatHistoryMessage,
+    ChatReplyContext,
     ParticipantInfo,
     PendingInviteInfo,
     RaceInfoUpdateMessage,
@@ -137,6 +139,25 @@ async def load_chat_history(
             if user is not None and traits is not None
         }
 
+        # Reply contexts: fetch the referenced originals by id (they may be
+        # older than the history window). The inner join on User skips
+        # system originals; a missing original simply omits the quote.
+        reply_ids = {m.reply_to_id for m, _, _ in rows if m.reply_to_id is not None}
+        reply_ctx_by_id: dict[uuid.UUID, ChatReplyContext] = {}
+        if reply_ids:
+            reply_rows = await db.execute(
+                select(ChatMessageModel, User)
+                .join(User, ChatMessageModel.user_id == User.id)
+                .where(ChatMessageModel.id.in_(reply_ids))
+            )
+            for original, author in reply_rows.all():
+                reply_ctx_by_id[original.id] = ChatReplyContext(
+                    id=str(original.id),
+                    username=author.twitch_username,
+                    display_name=author.twitch_display_name,
+                    snippet=original.message[:REPLY_SNIPPET_LENGTH],
+                )
+
     def _resolve_role(user: User) -> str:
         return race_role(race, user) or "spectator"
 
@@ -146,6 +167,7 @@ async def load_chat_history(
             # System message (no user)
             messages.append(
                 ChatBroadcastMessage(
+                    id=str(chat_msg.id),
                     channel=channel.value,
                     username="",
                     display_name=None,
@@ -159,6 +181,7 @@ async def load_chat_history(
         else:
             messages.append(
                 ChatBroadcastMessage(
+                    id=str(chat_msg.id),
                     channel=channel.value,
                     username=user.twitch_username,
                     display_name=user.twitch_display_name,
@@ -169,6 +192,11 @@ async def load_chat_history(
                     equipped_name_template_id=user.equipped_name_template_id,
                     message=chat_msg.message,
                     timestamp=chat_msg.created_at.isoformat(),
+                    reply_to=(
+                        reply_ctx_by_id.get(chat_msg.reply_to_id)
+                        if chat_msg.reply_to_id is not None
+                        else None
+                    ),
                 )
             )
 
@@ -307,19 +335,6 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
         if channel == "participants" and not can_read_participants_chat(role=self._conn.role):
             return
 
-        broadcast = ChatBroadcastMessage(
-            channel=channel,
-            username=self._chat_info["username"],  # type: ignore[arg-type]
-            display_name=self._chat_info["display_name"],
-            avatar_url=self._chat_info["avatar_url"],
-            role=self._chat_info["role"],  # type: ignore[arg-type]
-            dominant_trait=self._chat_info["dominant_trait"],
-            equipped_badge_id=self._chat_info["equipped_badge_id"],
-            equipped_name_template_id=self._chat_info["equipped_name_template_id"],
-            message=chat_msg.message,
-            timestamp=datetime.now(UTC).isoformat(),
-        )
-
         # For the public channel we need a fresh race row to evaluate the
         # late-join deadline; load it in the same session that persists
         # the message so the handler does a single DB round trip.
@@ -337,15 +352,64 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
                     now=now,
                 ):
                     return
-            db.add(
-                ChatMessageModel(
-                    race_id=self.entity_id,
-                    channel=ChatChannel(channel),
-                    user_id=self._conn.user_id,
-                    message=chat_msg.message,
-                )
+
+            # Resolve the reply target in the same race and channel. A stale
+            # or cross-channel reference drops the reply link, never the
+            # typed message. The inner join on User also excludes system
+            # messages (user_id NULL) as reply targets.
+            reply_ctx: ChatReplyContext | None = None
+            reply_to_id: uuid.UUID | None = None
+            if chat_msg.reply_to is not None:
+                row = (
+                    await db.execute(
+                        select(ChatMessageModel, User)
+                        .join(User, ChatMessageModel.user_id == User.id)
+                        .where(
+                            ChatMessageModel.id == chat_msg.reply_to,
+                            ChatMessageModel.race_id == self.entity_id,
+                            ChatMessageModel.channel == ChatChannel(channel),
+                        )
+                    )
+                ).first()
+                if row is not None:
+                    original, author = row
+                    reply_to_id = original.id
+                    reply_ctx = ChatReplyContext(
+                        id=str(original.id),
+                        username=author.twitch_username,
+                        display_name=author.twitch_display_name,
+                        snippet=original.message[:REPLY_SNIPPET_LENGTH],
+                    )
+
+            db_msg = ChatMessageModel(
+                race_id=self.entity_id,
+                channel=ChatChannel(channel),
+                user_id=self._conn.user_id,
+                message=chat_msg.message,
+                reply_to_id=reply_to_id,
             )
+            db.add(db_msg)
+            # Flush assigns the Python-side id and created_at defaults so
+            # the broadcast can carry them.
+            await db.flush()
+            message_id = str(db_msg.id)
+            timestamp = db_msg.created_at.isoformat()
             await db.commit()
+
+        broadcast = ChatBroadcastMessage(
+            id=message_id,
+            channel=channel,
+            username=self._chat_info["username"],  # type: ignore[arg-type]
+            display_name=self._chat_info["display_name"],
+            avatar_url=self._chat_info["avatar_url"],
+            role=self._chat_info["role"],  # type: ignore[arg-type]
+            dominant_trait=self._chat_info["dominant_trait"],
+            equipped_badge_id=self._chat_info["equipped_badge_id"],
+            equipped_name_template_id=self._chat_info["equipped_name_template_id"],
+            message=chat_msg.message,
+            timestamp=timestamp,
+            reply_to=reply_ctx,
+        )
 
         msg_json = broadcast.model_dump_json()
         if channel == "participants":
