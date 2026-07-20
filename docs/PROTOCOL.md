@@ -106,7 +106,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.0**. It is defined in
+release numbers. Current: **1.1**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -115,6 +115,11 @@ Bump rules:
 - Breaking change to the wire protocol: major + 1 (minor resets to 0).
 - Backward-compatible addition worth signalling: minor + 1 (optional).
 - No wire change: unchanged.
+
+Version history:
+
+- **1.1** - chat reactions and replies (spectator connection only): `chat_reaction` / `chat_reaction_update` messages; `id`, `reply_to`, `reactions` fields on `chat_message`. No mod-side change.
+- **1.0** - initial versioned protocol.
 
 At auth, the mod sends `protocol_version`; a different major (either
 direction) is rejected with `auth_error` and close code 4003. A mod that
@@ -605,14 +610,16 @@ Send a chat message to a channel. Requires authentication. Rate-limited to 500 c
 {
   "type": "chat",
   "channel": "participants",
-  "message": "glhf"
+  "message": "glhf",
+  "reply_to": null
 }
 ```
 
-| Field     | Type     | Description                       |
-| --------- | -------- | --------------------------------- |
-| `channel` | `string` | `"participants"` or `"public"`    |
-| `message` | `string` | Message text (max 500 characters) |
+| Field      | Type      | Description                                                                                                                                                              |
+| ---------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `channel`  | `string`  | `"participants"` or `"public"`                                                                                                                                           |
+| `message`  | `string`  | Message text (max 500 characters)                                                                                                                                        |
+| `reply_to` | `string?` | UUID of the message being answered, or `null`. A stale, cross-channel, or system-message reference silently drops the reply link; the message itself is still delivered. |
 
 See [Chat System](#chat-system) for channel access rules. Sends that violate the matrix are silently dropped by the server.
 
@@ -632,6 +639,25 @@ Ask the server to (re)send chat history for a channel. The frontend emits this w
 | `channel` | `string` | `"participants"` or `"public"` |
 
 For the `public` channel the server also refreshes the connection's cached participant status from the database before evaluating access, so a participant who finished mid-race no longer needs to reconnect to see the unlock.
+
+#### `chat_reaction`
+
+Toggle the sender's reaction on a chat message: adds it if absent, removes it if present. Requires authentication. Channel access follows the same rules as posting (see [Chat System](#chat-system)); violations and unknown `message_id`s are silently dropped. The server answers with a `chat_reaction_update` broadcast to every connection that can read the channel.
+
+```json
+{
+  "type": "chat_reaction",
+  "channel": "public",
+  "message_id": "7c9c54d1-93f8-4f1b-9df5-8a4c4a1f0b1e",
+  "emoji": "laugh"
+}
+```
+
+| Field        | Type     | Description                                           |
+| ------------ | -------- | ----------------------------------------------------- |
+| `channel`    | `string` | `"participants"` or `"public"`                        |
+| `message_id` | `string` | UUID of the message (from `chat_message.id`)          |
+| `emoji`      | `string` | `"thumbs_up"`, `"thumbs_down"`, `"laugh"`, or `"cry"` |
 
 ### Server → Client
 
@@ -783,27 +809,37 @@ A chat message broadcast to the connections that have read access to the channel
 ```json
 {
   "type": "chat_message",
+  "id": "7c9c54d1-93f8-4f1b-9df5-8a4c4a1f0b1e",
   "channel": "public",
   "username": "player1",
   "display_name": "Player1",
   "avatar_url": "https://...",
   "role": "participant",
   "dominant_trait": "rusher",
+  "equipped_badge_id": null,
+  "equipped_name_template_id": null,
   "message": "gg",
-  "timestamp": "2026-02-19T14:30:00Z"
+  "timestamp": "2026-02-19T14:30:00Z",
+  "reply_to": null,
+  "reactions": []
 }
 ```
 
-| Field            | Type      | Description                                                                         |
-| ---------------- | --------- | ----------------------------------------------------------------------------------- |
-| `channel`        | `string`  | `"participants"` or `"public"`                                                      |
-| `username`       | `string`  | Twitch username (empty string for system messages)                                  |
-| `display_name`   | `string?` | Twitch display name (`null` for system messages)                                    |
-| `avatar_url`     | `string?` | Twitch avatar URL (`null` for system messages)                                      |
-| `role`           | `string`  | `"organizer"`, `"admin"`, `"caster"`, `"participant"`, `"spectator"`, or `"system"` |
-| `dominant_trait` | `string?` | Player's dominant trait (e.g., `"rusher"`, `"explorer"`), `null` if none            |
-| `message`        | `string`  | Message text                                                                        |
-| `timestamp`      | `string`  | ISO 8601 timestamp                                                                  |
+| Field                       | Type      | Description                                                                                                                                                                                                                                                              |
+| --------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                        | `string?` | DB UUID of the persisted message. `null` only for non-persisted system broadcasts.                                                                                                                                                                                       |
+| `channel`                   | `string`  | `"participants"` or `"public"`                                                                                                                                                                                                                                           |
+| `username`                  | `string`  | Twitch username (empty string for system messages)                                                                                                                                                                                                                       |
+| `display_name`              | `string?` | Twitch display name (`null` for system messages)                                                                                                                                                                                                                         |
+| `avatar_url`                | `string?` | Twitch avatar URL (`null` for system messages)                                                                                                                                                                                                                           |
+| `role`                      | `string`  | `"organizer"`, `"admin"`, `"caster"`, `"participant"`, `"spectator"`, or `"system"`                                                                                                                                                                                      |
+| `dominant_trait`            | `string?` | Player's dominant trait (e.g., `"rusher"`, `"explorer"`), `null` if none                                                                                                                                                                                                 |
+| `equipped_badge_id`         | `string?` | Logical id of the badge the user has equipped, `null` when none                                                                                                                                                                                                          |
+| `equipped_name_template_id` | `string?` | Logical id of the sender's equipped name template, `null` or `"default"` for the default style                                                                                                                                                                           |
+| `message`                   | `string`  | Message text                                                                                                                                                                                                                                                             |
+| `timestamp`                 | `string`  | ISO 8601 timestamp                                                                                                                                                                                                                                                       |
+| `reply_to`                  | `object?` | Context of the message being answered: `{id, username, display_name, snippet}`. The snippet is the first 120 characters of the original, denormalized so replies render even when the original is older than the history window. `null` when the message is not a reply. |
+| `reactions`                 | `list`    | Aggregated reactions, `[{emoji, usernames}]`, in fixed emoji order. Populated in `chat_history`; live broadcasts start empty. Counts derive from `usernames` length.                                                                                                     |
 
 **System messages** (`role: "system"`): Notifications generated by the server for lifecycle events (race start/finish, player finish/abandon, seed reroll/release, join/leave, etc.). They are persisted to the database and replayed in `chat_history` on reconnect. Some events broadcast only to the public channel (e.g. player finish/abandon), others to both channels (race start/finish). The frontend treats them as ambient context: they are excluded from the chat sidebar's unread badge so only real user messages raise a notification.
 
@@ -831,6 +867,25 @@ Sent on connection for each accessible channel. Contains all persisted messages 
 | `channel`  | `string` | `"participants"` or `"public"`  |
 | `messages` | `list`   | Array of `chat_message` objects |
 
+#### `chat_reaction_update`
+
+Full aggregated reaction state of one message, broadcast after a `chat_reaction` toggle to every connection with read access to the channel (same filter as `chat_message`). Reactions are not chat messages: the frontend applies them to the referenced message and they never raise the unread badge.
+
+```json
+{
+  "type": "chat_reaction_update",
+  "channel": "public",
+  "message_id": "7c9c54d1-93f8-4f1b-9df5-8a4c4a1f0b1e",
+  "reactions": [{ "emoji": "laugh", "usernames": ["alice", "bob"] }]
+}
+```
+
+| Field        | Type     | Description                                    |
+| ------------ | -------- | ---------------------------------------------- |
+| `channel`    | `string` | `"participants"` or `"public"`                 |
+| `message_id` | `string` | UUID of the reacted message                    |
+| `reactions`  | `list`   | `[{emoji, usernames}]`, empty when none remain |
+
 #### `ping`
 
 Heartbeat ping. Sent every 30 seconds.
@@ -853,7 +908,7 @@ Readable and writable by authenticated viewers with a race role: participant, or
 
 ### Public channel
 
-Readability follows the matrix below. Race role (organizer, admin, caster) does NOT unlock public chat by itself: privileged users follow the same rules as authenticated spectators. Writability adds two requirements on top of readability: the viewer must be authenticated and must not be an active participant.
+Readability follows the matrix below. Race role (organizer, admin, caster) does NOT unlock public chat by itself: privileged users follow the same rules as authenticated spectators. Writability adds two requirements on top of readability: the viewer must be authenticated and must not be an active participant. Reacting to a message follows the write rules of its channel.
 
 | Race state                  | Viewer                         | Public chat |
 | --------------------------- | ------------------------------ | ----------- |
@@ -1163,26 +1218,27 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 
 ### Broadcasting Strategy
 
-| Event                          | Mods                                                                     | Spectators                                                           |
-| ------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| Mod connects/disconnects       | `leaderboard_update`                                                     | `leaderboard_update`                                                 |
-| `ready`                        | `leaderboard_update`                                                     | `leaderboard_update`                                                 |
-| `status_update` (periodic)     | `player_update`                                                          | `player_update`                                                      |
-| `status_update` (READY→PLAY)   | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (spawn)                        |
-| `status_update` (death delta)  | `player_update` + `death_counts`                                         | `player_update` + `zone_history` (deaths update)                     |
-| `event_flag` (new node)        | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (fog)                          |
-| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                                | `player_update` + `zone_history` (fog)                               |
-| `event_flag` (finish)          | `leaderboard_update`                                                     | `race_state` + status change + `chat_message` (system)               |
-| `zone_query` (same zone)       | `zone_update` (unicast) + `player_update`                                | `player_update`                                                      |
-| `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update`        | `leaderboard_update` or `player_update` + `zone_history` (backtrack) |
-| Race starts                    | `race_start` + `zone_update` + `race_status_change` + `race_info_update` | `race_state` + `race_status_change` + `race_info_update`             |
-| Race finishes                  | `race_status_change`                                                     | `race_state` + `race_status_change`                                  |
-| Seeds released                 | (none)                                                                   | `race_state`                                                         |
-| `PATCH /races` (field changes) | `race_info_update`                                                       | `race_info_update`                                                   |
-| Spectator connects/disconnects | (none)                                                                   | `spectator_count` + `chat_history`                                   |
-| Player abandons                | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system)                       |
-| Player auto-abandoned          | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system)                       |
-| Chat message sent              | (none)                                                                   | `chat_message` (filtered per [Chat System](#chat-system) matrix)     |
+| Event                          | Mods                                                                     | Spectators                                                               |
+| ------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Mod connects/disconnects       | `leaderboard_update`                                                     | `leaderboard_update`                                                     |
+| `ready`                        | `leaderboard_update`                                                     | `leaderboard_update`                                                     |
+| `status_update` (periodic)     | `player_update`                                                          | `player_update`                                                          |
+| `status_update` (READY→PLAY)   | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (spawn)                            |
+| `status_update` (death delta)  | `player_update` + `death_counts`                                         | `player_update` + `zone_history` (deaths update)                         |
+| `event_flag` (new node)        | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (fog)                              |
+| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                                | `player_update` + `zone_history` (fog)                                   |
+| `event_flag` (finish)          | `leaderboard_update`                                                     | `race_state` + status change + `chat_message` (system)                   |
+| `zone_query` (same zone)       | `zone_update` (unicast) + `player_update`                                | `player_update`                                                          |
+| `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update`        | `leaderboard_update` or `player_update` + `zone_history` (backtrack)     |
+| Race starts                    | `race_start` + `zone_update` + `race_status_change` + `race_info_update` | `race_state` + `race_status_change` + `race_info_update`                 |
+| Race finishes                  | `race_status_change`                                                     | `race_state` + `race_status_change`                                      |
+| Seeds released                 | (none)                                                                   | `race_state`                                                             |
+| `PATCH /races` (field changes) | `race_info_update`                                                       | `race_info_update`                                                       |
+| Spectator connects/disconnects | (none)                                                                   | `spectator_count` + `chat_history`                                       |
+| Player abandons                | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system)                           |
+| Player auto-abandoned          | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system)                           |
+| Chat message sent              | (none)                                                                   | `chat_message` (filtered per [Chat System](#chat-system) matrix)         |
+| Chat reaction toggled          | (none)                                                                   | `chat_reaction_update` (filtered per [Chat System](#chat-system) matrix) |
 
 Note: `zone_history` snapshots are emitted only to spectators (mods don't consume `zone_history`). `leaderboard_update` and `player_update` carry `zone_history: null` in every broadcast; the full history is only seeded via `race_state` on connect, plus these snapshot messages. See [zone_history updates](#zone_history-updates).
 
