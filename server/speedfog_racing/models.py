@@ -534,6 +534,14 @@ class ChatMessage(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     message: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Message being answered. SET NULL (not CASCADE) so deleting a user,
+    # which cascades away their messages, never blocks on replies that
+    # point at them.
+    reply_to_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("chat_messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Python-side default so each row gets a distinct microsecond stamp at
     # INSERT time. ``server_default=func.now()`` (Postgres ``now()``,
     # SQLite ``CURRENT_TIMESTAMP``) returns the transaction start time, so
@@ -549,6 +557,30 @@ class ChatMessage(Base):
 
     race: Mapped["Race"] = relationship()
     user: Mapped["User | None"] = relationship()
+
+
+class ChatMessageReaction(Base):
+    """A single user's emoji reaction on a chat message.
+
+    The composite primary key enforces one reaction per (message, user,
+    emoji); toggling is an insert or delete of this row. ``emoji`` stores
+    one of the fixed reaction codes (see ``REACTION_EMOJIS`` in
+    ``websocket/schemas.py``), not the glyph.
+    """
+
+    __tablename__ = "chat_message_reactions"
+
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("chat_messages.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    emoji: Mapped[str] = mapped_column(String(16), primary_key=True)
 
 
 def compute_late_join_deadlines(race: Race) -> tuple[datetime | None, datetime | None]:
