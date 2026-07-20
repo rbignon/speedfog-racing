@@ -100,5 +100,8 @@ def evaluate_mod_compat(
                 )
             )
 
-    same_release = parse_version(client_release) == parse_version(server_release)
+    client_release_version = parse_version(client_release)
+    same_release = client_release_version is not None and client_release_version == parse_version(
+        server_release
+    )
     return ModCompat(update_available=c_minor < s_minor and not same_release)

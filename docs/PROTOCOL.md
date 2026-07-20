@@ -125,7 +125,8 @@ At auth, the mod sends `protocol_version`; a different major (either
 direction) is rejected with `auth_error` and close code 4003. A mod that
 omits the field is assumed to speak protocol 1.0. Same major with an older
 minor is accepted and gets `latest_mod_version` in `auth_ok` (soft update
-notice). The `MIN_MOD_VERSION` server setting can additionally reject old
+notice, suppressed when the mod's release version already matches the
+server's). The `MIN_MOD_VERSION` server setting can additionally reject old
 _release_ versions for non-protocol emergencies.
 
 ---
