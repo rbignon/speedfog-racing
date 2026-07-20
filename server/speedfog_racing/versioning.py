@@ -47,6 +47,7 @@ def evaluate_mod_compat(
     client_release: str | None,
     *,
     server_protocol: str,
+    server_release: str,
     min_release: str | None,
 ) -> ModCompat:
     """Decide what to do with a connecting mod.
@@ -56,6 +57,13 @@ def evaluate_mod_compat(
     protocol major (either direction) means the wire formats are
     incompatible and the connection must be rejected. The release-based
     `min_release` gate exists for non-protocol emergencies only.
+
+    The protocol minor can lag the release version across a deploy that
+    only bumps `PROTOCOL_VERSION` (e.g. both sides still on release
+    1.19.0): `update_available` is suppressed whenever the client's
+    reported release exactly matches `server_release`, since there is
+    nothing to update to. A client that omits its release version never
+    matches, since pre-versioning builds are by definition old.
     """
     server = parse_version(server_protocol)
     if server is None:
@@ -92,4 +100,5 @@ def evaluate_mod_compat(
                 )
             )
 
-    return ModCompat(update_available=c_minor < s_minor)
+    same_release = parse_version(client_release) == parse_version(server_release)
+    return ModCompat(update_available=c_minor < s_minor and not same_release)

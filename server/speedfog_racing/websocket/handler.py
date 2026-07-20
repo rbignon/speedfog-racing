@@ -18,6 +18,7 @@ import sentry_sdk
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from speedfog_racing import __version__
 from speedfog_racing.config import settings
 from speedfog_racing.services.grace_service import load_graces_mapping, resolve_zone_query
 from speedfog_racing.services.i18n import translate_zone_update
@@ -453,6 +454,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             self.mod_protocol_version,
             self.mod_version,
             server_protocol=PROTOCOL_VERSION,
+            server_release=__version__,
             min_release=settings.min_mod_version,
         )
         if compat.reject_reason is not None:

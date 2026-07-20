@@ -3679,6 +3679,29 @@ class TestModVersionHandshake:
             assert response["type"] == "auth_ok"
             assert response["latest_mod_version"] == __version__
 
+    def test_auth_same_release_suppresses_update_notice(
+        self, integration_client, race_with_participants
+    ):
+        # Protocol minor can lag a release-only deploy (both sides still on
+        # __version__); the mod isn't actually behind, so no notice.
+        from speedfog_racing import __version__
+
+        race_id = race_with_participants["race_id"]
+        players = race_with_participants["players"]
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            mod = ModTestClient(ws, players[0]["mod_token"])
+            ws.send_json(
+                {
+                    "type": "auth",
+                    "mod_token": players[0]["mod_token"],
+                    "protocol_version": "1.0",
+                    "mod_version": __version__,
+                }
+            )
+            response = mod.receive()
+            assert response["type"] == "auth_ok"
+            assert response.get("latest_mod_version") is None
+
     def test_auth_min_mod_version_gate(
         self, monkeypatch, integration_client, race_with_participants
     ):

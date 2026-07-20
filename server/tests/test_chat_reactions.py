@@ -43,8 +43,10 @@ def session_maker(async_engine):
     return async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def _seed_message(session_maker) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
-    """Insert organizer + race + one public message.
+async def _seed_message(
+    session_maker, channel: ChatChannel = ChatChannel.PUBLIC
+) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+    """Insert organizer + race + one message on the given channel.
 
     Returns ``(race_id, user_id, message_id)``.
     """
@@ -68,7 +70,7 @@ async def _seed_message(session_maker) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]
         await db.flush()
         msg = ChatMessage(
             race_id=race.id,
-            channel=ChatChannel.PUBLIC,
+            channel=channel,
             user_id=organizer.id,
             message="gg",
         )
@@ -164,6 +166,31 @@ async def test_reaction_anonymous_ignored(session_maker):
         manager.rooms.pop(race_id, None)
 
     assert _sent_reaction_updates(listener) == []
+
+
+@pytest.mark.asyncio
+async def test_reaction_rejected_without_race_role_on_participants(session_maker):
+    """Authenticated but no race role: participants channel is locked, reaction ignored."""
+    race_id, user_id, message_id = await _seed_message(
+        session_maker, channel=ChatChannel.PARTICIPANTS
+    )
+    handler, listener = _reaction_handler(session_maker, race_id, user_id)
+    handler._conn.role = None
+    try:
+        await handler._handle_chat_reaction(
+            {
+                "type": "chat_reaction",
+                "channel": "participants",
+                "message_id": str(message_id),
+                "emoji": "laugh",
+            }
+        )
+    finally:
+        manager.rooms.pop(race_id, None)
+
+    assert _sent_reaction_updates(listener) == []
+    async with session_maker() as db:
+        assert (await db.execute(select(ChatMessageReaction))).scalars().all() == []
 
 
 @pytest.mark.asyncio

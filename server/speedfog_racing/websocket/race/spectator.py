@@ -379,8 +379,8 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
             return
 
         # For the public channel we need a fresh race row to evaluate the
-        # late-join deadline; load it in the same session that persists
-        # the message so the handler does a single DB round trip.
+        # late-join deadline; it's loaded once in the same session that
+        # persists the message and reused for the broadcast filter.
         race: Race | None = None
         async with self.session_maker() as db:
             if channel == "public":
