@@ -115,9 +115,23 @@ export interface ZoneHistoryMessage {
   history: ZoneHistoryEntry[];
 }
 
+export interface ChatReplyContext {
+  id: string;
+  username: string;
+  display_name: string | null;
+  snippet: string;
+}
+
+export interface ChatReactionAggregate {
+  emoji: string; // "thumbs_up" | "thumbs_down" | "laugh" | "cry"
+  usernames: string[];
+}
+
 export interface ChatMessage {
   type: "chat_message";
   channel: "participants" | "public";
+  // DB UUID; null/absent only for non-persisted system broadcasts.
+  id?: string | null;
   username: string;
   display_name: string | null;
   avatar_url: string | null;
@@ -127,12 +141,23 @@ export interface ChatMessage {
   equipped_name_template_id?: string | null;
   message: string;
   timestamp: string;
+  reply_to?: ChatReplyContext | null;
+  // Aggregated reactions in fixed emoji order; populated in chat_history,
+  // then kept fresh by chat_reaction_update.
+  reactions?: ChatReactionAggregate[];
 }
 
 export interface ChatHistoryMessage {
   type: "chat_history";
   channel: "participants" | "public";
   messages: ChatMessage[];
+}
+
+export interface ChatReactionUpdateMessage {
+  type: "chat_reaction_update";
+  channel: "participants" | "public";
+  message_id: string;
+  reactions: ChatReactionAggregate[];
 }
 
 export interface DailyStreakUpdateMessage {
@@ -158,6 +183,7 @@ export type ServerMessage =
   | ZoneHistoryMessage
   | ChatMessage
   | ChatHistoryMessage
+  | ChatReactionUpdateMessage
   | DailyStreakUpdateMessage;
 
 const VALID_SERVER_MESSAGE_TYPES = new Set([
@@ -170,6 +196,7 @@ const VALID_SERVER_MESSAGE_TYPES = new Set([
   "zone_history",
   "chat_message",
   "chat_history",
+  "chat_reaction_update",
   "daily_streak_update",
 ]);
 
@@ -197,6 +224,7 @@ export interface RaceWebSocketOptions {
   onZoneHistory?: (msg: ZoneHistoryMessage) => void;
   onChatMessage?: (msg: ChatMessage) => void;
   onChatHistory?: (msg: ChatHistoryMessage) => void;
+  onChatReactionUpdate?: (msg: ChatReactionUpdateMessage) => void;
   onDailyStreakUpdate?: (msg: DailyStreakUpdateMessage) => void;
   onConnect?: () => void;
   onDisconnect?: (code?: number, reason?: string) => void;
@@ -374,6 +402,9 @@ export class RaceWebSocket {
         break;
       case "chat_history":
         this.options.onChatHistory?.(msg);
+        break;
+      case "chat_reaction_update":
+        this.options.onChatReactionUpdate?.(msg);
         break;
       case "daily_streak_update":
         this.options.onDailyStreakUpdate?.(msg);

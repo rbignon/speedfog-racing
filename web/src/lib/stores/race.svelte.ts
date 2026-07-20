@@ -6,6 +6,7 @@ import {
   createRaceWebSocket,
   type RaceWebSocket,
   type ChatMessage,
+  type ChatReactionUpdateMessage,
   type DailyStreakUpdateMessage,
   type WsParticipant,
   type WsPendingInvite,
@@ -29,6 +30,20 @@ export function preserveDailyPoints<T extends { daily_points?: number | null }>(
   if (incoming.daily_points != null) return incoming;
   if (previous == null) return incoming;
   return { ...incoming, daily_points: previous };
+}
+
+/**
+ * Replace the reactions of the message a chat_reaction_update targets.
+ * Svelte 5 $state arrays are deeply reactive, so mutating the found
+ * message is enough. Unknown ids (message outside the loaded history
+ * window) are ignored.
+ */
+export function applyChatReactionUpdate(
+  messages: ChatMessage[],
+  update: ChatReactionUpdateMessage,
+): void {
+  const target = messages.find((m) => m.id === update.message_id);
+  if (target) target.reactions = update.reactions;
 }
 
 class RaceStore {
@@ -254,6 +269,15 @@ class RaceStore {
             this.chatMessagesPublic = [...msg.messages];
           }
           this.chatHistoryVersion++;
+        },
+
+        onChatReactionUpdate: (msg) => {
+          applyChatReactionUpdate(
+            msg.channel === "participants"
+              ? this.chatMessagesParticipants
+              : this.chatMessagesPublic,
+            msg,
+          );
         },
 
         onDailyStreakUpdate: (msg) => {
