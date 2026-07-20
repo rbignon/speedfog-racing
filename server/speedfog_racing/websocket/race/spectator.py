@@ -4,11 +4,13 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -17,6 +19,7 @@ from speedfog_racing.config import settings
 from speedfog_racing.models import (
     Caster,
     ChatChannel,
+    ChatMessageReaction,
     Invite,
     Participant,
     PlayerTraitScores,
@@ -44,9 +47,13 @@ from speedfog_racing.websocket.race.manager import (
     sort_leaderboard,
 )
 from speedfog_racing.websocket.schemas import (
+    REACTION_EMOJIS,
     REPLY_SNIPPET_LENGTH,
     ChatBroadcastMessage,
     ChatHistoryMessage,
+    ChatReactionAggregate,
+    ChatReactionMessage,
+    ChatReactionUpdateMessage,
     ChatReplyContext,
     ParticipantInfo,
     PendingInviteInfo,
@@ -158,6 +165,8 @@ async def load_chat_history(
                     snippet=original.message[:REPLY_SNIPPET_LENGTH],
                 )
 
+        reactions_by_msg = await load_reaction_aggregates(db, [m.id for m, _, _ in rows])
+
     def _resolve_role(user: User) -> str:
         return race_role(race, user) or "spectator"
 
@@ -176,6 +185,7 @@ async def load_chat_history(
                     dominant_trait=None,
                     message=chat_msg.message,
                     timestamp=chat_msg.created_at.isoformat(),
+                    reactions=reactions_by_msg.get(chat_msg.id, []),
                 )
             )
         else:
@@ -197,10 +207,42 @@ async def load_chat_history(
                         if chat_msg.reply_to_id is not None
                         else None
                     ),
+                    reactions=reactions_by_msg.get(chat_msg.id, []),
                 )
             )
 
     return ChatHistoryMessage(channel=channel.value, messages=messages)
+
+
+async def load_reaction_aggregates(
+    db: AsyncSession,
+    message_ids: Sequence[uuid.UUID],
+) -> dict[uuid.UUID, list[ChatReactionAggregate]]:
+    """Aggregate reactions for the given messages.
+
+    Returns, per message id, one aggregate per emoji that has at least
+    one reaction, in REACTION_EMOJIS order so clients render the pills
+    stably. Usernames are alphabetical for deterministic payloads.
+    """
+    if not message_ids:
+        return {}
+    result = await db.execute(
+        select(ChatMessageReaction.message_id, ChatMessageReaction.emoji, User.twitch_username)
+        .join(User, ChatMessageReaction.user_id == User.id)
+        .where(ChatMessageReaction.message_id.in_(message_ids))
+        .order_by(User.twitch_username)
+    )
+    per_message: dict[uuid.UUID, dict[str, list[str]]] = {}
+    for message_id, emoji, username in result.all():
+        per_message.setdefault(message_id, {}).setdefault(emoji, []).append(username)
+    return {
+        message_id: [
+            ChatReactionAggregate(emoji=emoji, usernames=by_emoji[emoji])
+            for emoji in REACTION_EMOJIS
+            if emoji in by_emoji
+        ]
+        for message_id, by_emoji in per_message.items()
+    }
 
 
 class RaceSpectatorHandler(BaseSpectatorHandler):
@@ -218,6 +260,7 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
         self._conn = SpectatorConnection(websocket=websocket, locale=self.locale)
         self._chat_info: dict[str, str | None] | None = None
         self._message_handlers["chat"] = self._handle_chat
+        self._message_handlers["chat_reaction"] = self._handle_chat_reaction
         self._message_handlers["request_chat_history"] = self._handle_request_chat_history
 
     async def _auth_and_setup(self) -> bool:
@@ -412,6 +455,93 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
         )
 
         msg_json = broadcast.model_dump_json()
+        if channel == "participants":
+            await room.broadcast_chat_participants(msg_json)
+        else:
+            assert race is not None  # validated above
+            await room.broadcast_chat_public(msg_json, race)
+
+    async def _handle_chat_reaction(self, msg: dict[str, Any]) -> None:
+        """Toggle a reaction and broadcast the message's aggregated state.
+
+        Permission mirrors posting: authenticated, and the channel's
+        write gate (participants role check / public write check).
+        Invalid payloads and unknown targets are silently ignored, like
+        every other chat message.
+        """
+        if self._conn.user_id is None:
+            return
+
+        try:
+            reaction = ChatReactionMessage.model_validate(msg)
+        except Exception:
+            return
+
+        channel = reaction.channel
+        room = manager.get_room(self.entity_id)  # type: ignore[arg-type]
+        if room is None:
+            return
+
+        if channel == "participants" and not can_read_participants_chat(role=self._conn.role):
+            return
+
+        race: Race | None = None
+        async with self.session_maker() as db:
+            if channel == "public":
+                race = await db.get(Race, self.entity_id)
+                if race is None:
+                    return
+                if not can_write_public_chat(
+                    race,
+                    user_id=self._conn.user_id,
+                    role=self._conn.role,
+                    participant_status=self._conn.participant_status,
+                    now=datetime.now(UTC),
+                ):
+                    return
+
+            target = (
+                await db.execute(
+                    select(ChatMessageModel).where(
+                        ChatMessageModel.id == reaction.message_id,
+                        ChatMessageModel.race_id == self.entity_id,
+                        ChatMessageModel.channel == ChatChannel(channel),
+                    )
+                )
+            ).scalar_one_or_none()
+            if target is None:
+                return
+
+            existing = await db.get(
+                ChatMessageReaction,
+                (reaction.message_id, self._conn.user_id, reaction.emoji),
+            )
+            if existing is not None:
+                await db.delete(existing)
+            else:
+                db.add(
+                    ChatMessageReaction(
+                        message_id=reaction.message_id,
+                        user_id=self._conn.user_id,
+                        emoji=reaction.emoji,
+                    )
+                )
+            try:
+                await db.flush()
+            except IntegrityError:
+                # Concurrent duplicate toggle (two tabs): the other write
+                # won and already broadcast; treat as a no-op.
+                await db.rollback()
+                return
+            aggregates = await load_reaction_aggregates(db, [reaction.message_id])
+            await db.commit()
+
+        update = ChatReactionUpdateMessage(
+            channel=channel,
+            message_id=str(reaction.message_id),
+            reactions=aggregates.get(reaction.message_id, []),
+        )
+        msg_json = update.model_dump_json()
         if channel == "participants":
             await room.broadcast_chat_participants(msg_json)
         else:
