@@ -403,6 +403,24 @@ CREATE TABLE daily_streak_freezes (
 
 One row per freeze-protected day. Written by the close-day evaluator and by the backfill. Read by `/api/daily/week` to mark `freeze_protected` cells.
 
+### Extended protection (vacations)
+
+`daily_freeze_count` cannot be raised past 2: `ck_users_daily_freeze_count_range` rejects the write. To cover a longer planned absence, pre-insert ledger rows instead. `apply_close_day_for_all_users` filters its candidates with `NOT EXISTS` on `daily_streak_freezes` for the evaluated date, so a pre-existing row makes the 08:00 tick skip the user entirely: no freeze consumed, `daily_current_streak` and `daily_freeze_count` both untouched. `daily_last_qualifying_date` stays pinned at the pre-absence date, so `apply_qualification` resumes at `current_streak + 1` on the first qualifying day after the return.
+
+The range must start at `daily_last_qualifying_date + 1` and end the day before the user plays again. It is the last qualifying date that matters, not the travel dates: a day already missed before departure still needs a row, and any uncovered date inside the span runs the normal close-day branch and eats a freeze or breaks the streak.
+
+```sql
+INSERT INTO daily_streak_freezes (user_id, daily_date)
+SELECT '<user_id>'::uuid, d::date
+FROM generate_series('<first_day>'::date, '<last_day>'::date, '1 day') AS d
+ON CONFLICT DO NOTHING;
+```
+
+Two caveats:
+
+- **Display.** `cellStrip` short-circuits on `freeze_protected` ahead of its `today` branch, so every covered day renders the `❄️ Freeze` strip and suppresses the `PLAY NOW` / `KEEP STREAK` call to action on that cell. Do not cover a day the user may still play. The marking is viewer-scoped (`freeze_dates` is filtered on the viewer's own `user_id`), so nobody else sees those cells as frozen.
+- **Reroll after the return.** `_persist_state` deletes _all_ of a user's `daily_streak_freezes` rows before re-emitting the ones its own walk derived, with no date filter. The absence is safe while it lasts, since `rollback_streak_for_reroll` only picks up users present in `race.participants`. But once the user plays again, a reroll of a daily they participated in routes them through `backfill_user`, which wipes the pre-inserted rows and re-walks the whole history treating each uncovered absence day as a miss. That reroll handler is the only production caller of `backfill_user`. Re-run the insert if it happens.
+
 ### Streak rules
 
 - Qualification is derived (never persisted as a flag): `len(zone_history) >= 2` on the participant row.
