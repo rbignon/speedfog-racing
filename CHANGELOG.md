@@ -2,6 +2,26 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.20.0] - 2026-07-21
+
+### Chat
+
+- You can now **react** to chat messages with 👍, 👎, 😂 or 😢
+- You can now **reply** to a specific message: the reply shows a quote of the original message
+- Reading older messages is no longer interrupted: the chat stops auto-scrolling while you are scrolled up and shows a **New messages** pill to jump back down
+
+### Seeds
+
+- **Enir-Ilim joins the zone pool**, cut in two by a brand-new fog gate at the top of the stairs before the Spiral Rise
+- A run can contain either the lower half of the climb (**Enir-Ilim**) or the full climb (**Enir-Ilim Spiral Rise**), the latter playable in **both directions**, ascending or descending
+- The Leda ambush and everything past it are sealed off behind a fog gate and never part of a run
+- To make the climb raceable, the thorns blocking the Outer Wall entrance are removed and the door at the Spiral Rise is open
+- Renamed two zones for clarity: Rennala's now displays **Rennala, Queen of the Full Moon**, and the eastern Rauh ruins **Ruins of Rauh**
+
+### Mod
+
+- The in-game overlay no longer shows a **mod update notice**: the mod is bundled with every seed pack, so there is never anything to update separately
+
 ## [1.19.0] - 2026-07-17
 
 ### Stats
