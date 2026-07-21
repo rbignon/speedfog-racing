@@ -87,6 +87,14 @@
   let inputValue = $state("");
   let replyTarget = $state<ChatMessage | null>(null);
   let listEl = $state<HTMLElement | null>(null);
+  let inputEl = $state<HTMLInputElement | null>(null);
+
+  function startReply(msg: ChatMessage) {
+    replyTarget = msg;
+    // The input is always rendered when the reply button is (both gated
+    // by canSend), so it can take focus immediately.
+    inputEl?.focus();
+  }
 
   function scrollToMessage(id: string) {
     const el = listEl?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
@@ -216,7 +224,7 @@
                     type="button"
                     class="action-btn action-reply"
                     title="Reply"
-                    onclick={() => (replyTarget = msg)}>&#8617;</button
+                    onclick={() => startReply(msg)}>&#8617;</button
                   >
                 </div>
               {/if}
@@ -322,6 +330,7 @@
         class="chat-input"
         placeholder="Send a message..."
         maxlength={500}
+        bind:this={inputEl}
         bind:value={inputValue}
         onkeydown={handleKeydown}
       />

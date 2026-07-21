@@ -73,6 +73,7 @@ describe("ChatPanel reactions and replies", () => {
     );
     const input =
       container.querySelector<HTMLInputElement>("input.chat-input")!;
+    expect(document.activeElement).toBe(input);
     await fireEvent.input(input, { target: { value: "answering" } });
     await fireEvent.submit(container.querySelector("form.input-row")!);
     expect(onSend).toHaveBeenCalledWith("answering", "m1");
