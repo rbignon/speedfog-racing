@@ -12,7 +12,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing import __version__
 from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.discord import send_training_live_notification
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
@@ -189,7 +188,6 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
             ),
             participants=[build_training_participant_info(session)],
             phantom_skin=phantom_skin,
-            latest_mod_version=__version__ if self.update_available else None,
         )
         await self.websocket.send_text(message.model_dump_json())
 

@@ -251,9 +251,6 @@ class AuthOkMessage(BaseModel):
     seed: SeedInfo
     participants: list[ParticipantInfo]
     phantom_skin: str | None = None
-    # Server release version, present only when a newer compatible mod build
-    # exists (protocol minor ahead of the client's). Old mods ignore it.
-    latest_mod_version: str | None = None
 
 
 class AuthErrorMessage(BaseModel):

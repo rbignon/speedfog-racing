@@ -39,7 +39,6 @@ class ModCompat:
     """Outcome of the auth-time compatibility decision."""
 
     reject_reason: str | None = None
-    update_available: bool = False
 
 
 def evaluate_mod_compat(
@@ -47,7 +46,6 @@ def evaluate_mod_compat(
     client_release: str | None,
     *,
     server_protocol: str,
-    server_release: str,
     min_release: str | None,
 ) -> ModCompat:
     """Decide what to do with a connecting mod.
@@ -58,18 +56,16 @@ def evaluate_mod_compat(
     incompatible and the connection must be rejected. The release-based
     `min_release` gate exists for non-protocol emergencies only.
 
-    The protocol minor can lag the release version across a deploy that
-    only bumps `PROTOCOL_VERSION` (e.g. both sides still on release
-    1.19.0): `update_available` is suppressed whenever the client's
-    reported release exactly matches `server_release`, since there is
-    nothing to update to. A client that omits its release version never
-    matches, since pre-versioning builds are by definition old.
+    A same-major, older-minor client is accepted silently. Mods are
+    distributed inside seed packs, so a player has no "update the mod"
+    action to take; prompting them would be noise. The minor lag stays
+    available as compatibility metadata (logged at auth, usable for
+    capability gating), it just never reaches the player.
     """
     server = parse_version(server_protocol)
     if server is None:
         raise ValueError(f"Invalid server protocol version: {server_protocol!r}")
     s_major = server[0]
-    s_minor = server[1] if len(server) > 1 else 0
     client = parse_version(client_protocol) or (1, 0)
     c_major = client[0]
     c_minor = client[1] if len(client) > 1 else 0
@@ -100,8 +96,4 @@ def evaluate_mod_compat(
                 )
             )
 
-    client_release_version = parse_version(client_release)
-    same_release = client_release_version is not None and client_release_version == parse_version(
-        server_release
-    )
-    return ModCompat(update_available=c_minor < s_minor and not same_release)
+    return ModCompat()

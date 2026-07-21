@@ -124,10 +124,13 @@ Version history:
 At auth, the mod sends `protocol_version`; a different major (either
 direction) is rejected with `auth_error` and close code 4003. A mod that
 omits the field is assumed to speak protocol 1.0. Same major with an older
-minor is accepted and gets `latest_mod_version` in `auth_ok` (soft update
-notice, suppressed when the mod's release version already matches the
-server's). The `MIN_MOD_VERSION` server setting can additionally reject old
-_release_ versions for non-protocol emergencies.
+minor is accepted silently: minor lag is compatibility metadata (logged at
+auth, available for capability gating), never a user-facing prompt, because
+mods are distributed inside seed packs and players have no "update the mod"
+action to take. Only a breaking change (major bump) warrants a player-visible
+message, and that is the rejection above. The `MIN_MOD_VERSION` server
+setting can additionally reject old _release_ versions for non-protocol
+emergencies.
 
 ---
 
@@ -330,7 +333,7 @@ Authentication successful. Contains initial race state.
 
 `items_spawned_flag`: (int, optional) Event flag ID for runtime item spawn prevention. When present, the mod checks this flag before spawning items, and sets it after. Persists in save file (saved flag range). `null` if not provided by graph.json (backward compat: mod skips flag check).
 
-`latest_mod_version`: (string, optional) server release version, present only when a newer compatible mod build exists (server protocol minor ahead of the client's). The mod shows it as a transient update notice. Absent (or `null`) otherwise; old mods ignore it.
+`latest_mod_version`: (string, optional) no longer sent. The server used it as a soft update notice on protocol-minor lag; that concept does not fit the seed-pack distribution model (see [Protocol Version](#protocol-version)), so the server omits it unconditionally. The field name stays reserved because deployed mod builds still render a notice when it is present.
 
 **Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`. `started_at` is the effective gameplay start: on race launch the server sets it to `now + countdown_seconds` so the countdown window doesn't eat into the configured duration. `race_ends_at` is `null` until the race transitions to `running` (it is computed from `started_at + race_duration_minutes`); when the race starts, the server pushes a [`race_info_update`](#race_info_update) so mods that authed in `setup` pick up the now-populated value.
 
