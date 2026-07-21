@@ -590,15 +590,15 @@
     },
     "20012954": {
       "grace_name": "Spiral Rise",
-      "zone": "Enir-Ilim",
+      "zone": "Enir-Ilim Spiral Rise",
       "map_id": null,
-      "zone_id": "enirilim"
+      "zone_id": "enirilim_upper"
     },
     "20012955": {
       "grace_name": "Cleansing Chamber Anteroom",
-      "zone": "Enir-Ilim",
+      "zone": "Enir-Ilim Spiral Rise",
       "map_id": null,
-      "zone_id": "enirilim"
+      "zone_id": "enirilim_upper"
     },
     "20012956": {
       "grace_name": "Divine Gate Front Staircase",
