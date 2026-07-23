@@ -2416,19 +2416,19 @@
       "grace_name": "Moorth Highway, South",
       "zone": "West Scadu Altus",
       "map_id": "m60_49_43_00",
-      "zone_id": "scadualtus"
+      "zone_id": "reprimand"
     },
     "2049432951": {
       "grace_name": "Fort of Reprimand",
       "zone": "West Scadu Altus",
       "map_id": "m60_49_43_00",
-      "zone_id": "scadualtus"
+      "zone_id": "reprimand"
     },
     "2049432952": {
       "grace_name": "Behind the Fort of Reprimand",
       "zone": "West Scadu Altus",
       "map_id": "m60_49_43_00",
-      "zone_id": "scadualtus"
+      "zone_id": "reprimand"
     },
     "2049442950": {
       "grace_name": "Moorth Ruins",
