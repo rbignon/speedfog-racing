@@ -160,11 +160,8 @@ pub struct FrameSnapshot {
     /// not read this frame or unreadable). Stands in for "loading screen
     /// displayed" outside frozen-clock seeds; see the reveal logic.
     pub loading_screen: Option<bool>,
-    /// `return_title_requested` bit (`None` = not sampled this frame or
-    /// signal unavailable). Sampled at the 10 Hz quit-out cadence.
-    pub quit_out_bit: Option<bool>,
-    /// Title-screen probe (MapItemMan null), sampled only in fallback mode
-    /// (`None` = not sampled this frame).
+    /// Title-screen probe (MapItemMan null), sampled at the 10 Hz quit-out
+    /// cadence (`None` = not sampled this frame).
     pub at_main_menu: Option<bool>,
 }
 
@@ -203,9 +200,6 @@ pub struct TickInput {
     pub weapons: [Option<i32>; 2],
     /// Whether the flag reader diagnosed OK (None = flags not read).
     pub flag_reader_ok: Option<bool>,
-    /// Whether the primary quit-out signal resolved (AOB scan succeeded).
-    /// False switches the machine to title-screen fallback detection.
-    pub quitout_signal_available: bool,
 }
 
 /// Side effects for the shell to execute, in order.
@@ -307,14 +301,12 @@ pub struct RaceMachine {
     pub was_position_readable: bool,
     /// Quit-out observed; consumed (penalty + zone tag) at the next loading exit.
     pub pending_quit_out: bool,
-    /// Previous sample of the return-title bit (rising-edge arming).
-    pub prev_quit_out_bit: bool,
     /// Has been in-world since race start (or boot, before the first race
-    /// start). Guards the fallback against the boot-time title screen, and
-    /// is cleared on `RaceStart` so it re-latches on the first in-world
-    /// frame instead of letting a stale `true` re-arm the fallback while the
-    /// player is still sitting on the title screen the race-start clear was
-    /// meant to forgive.
+    /// start). Guards both quit-out arming signals against the boot-time
+    /// title screen and pre-start save juggling; cleared on `RaceStart` so
+    /// it re-latches on the first in-world frame instead of letting a stale
+    /// `true` re-arm the latch while the player is still sitting on the
+    /// title screen the race-start clear was meant to forgive.
     pub has_been_in_world: bool,
     /// Last time the quit-out signals were sampled (10 Hz cadence).
     pub last_quitout_poll: Instant,
@@ -368,7 +360,6 @@ impl RaceMachine {
             zone_stall_warned: false,
             was_position_readable: true,
             pending_quit_out: false,
-            prev_quit_out_bit: false,
             has_been_in_world: false,
             last_quitout_poll: now,
             seed_mismatch: false,
@@ -623,11 +614,14 @@ impl RaceMachine {
                 }
                 // A quit-out requested before the start is not a race quit-out.
                 self.pending_quit_out = false;
-                // Without this, the fallback arming condition below (position
-                // unreadable + has_been_in_world + at_main_menu + latch
-                // clear) re-fires on the very next 10 Hz sample while the
-                // player still sits on the title screen, re-arming the latch
-                // this clear just removed.
+                // Without this, the title-screen arming condition (position
+                // unreadable + has_been_in_world + at_main_menu) re-fires on
+                // the very next 10 Hz sample while the player still sits on
+                // the title screen, re-arming the latch this clear just
+                // removed. It also keeps the IGT-regression signal from
+                // arming on the first in-race load after a pre-start quit-out
+                // (the reloaded save's IGT sits below the last pre-start
+                // observation).
                 self.has_been_in_world = false;
                 self.bump_leaderboard_version();
             }
@@ -928,32 +922,48 @@ impl RaceMachine {
                 self.flag_buffer.clear_deferred();
                 self.flag_buffer.clear_pending();
             }
+            // Quit-out corroborant: any strict IGT regression observed around
+            // an unload means a save was loaded from the menu. Death and fast
+            // travel reload the world, not the save; GameDataMan persists in
+            // memory and the IGT stays monotonic. Only a menu load repopulates
+            // it from disk, where the value lags the last in-memory reading by
+            // the post-flush fade time (live-measured above 1s). Catches a
+            // title-screen passage the 10 Hz probe below might have missed.
+            let unload_context =
+                !self.frame_snapshot.position_readable || !self.was_position_readable;
+            if self.has_been_in_world
+                && !self.pending_quit_out
+                && unload_context
+                && self
+                    .last_observed_igt
+                    .is_some_and(|prev| current_igt < prev)
+            {
+                info!(
+                    prev_igt_ms = self.last_observed_igt,
+                    new_igt_ms = current_igt,
+                    "[RACE] Quit-out detected (IGT regression)"
+                );
+                self.pending_quit_out = true;
+            }
             self.last_observed_igt = Some(current_igt);
         }
 
-        // Quit-out detection. Primary: the game's return-to-title request
-        // bit (rising edge). Fallback (bit unavailable): the title screen
-        // observed after having been in-world, which no death or fast-travel
-        // load passes through.
-        if self.frame_snapshot.quit_out_bit.is_some() || self.frame_snapshot.at_main_menu.is_some()
-        {
+        // Quit-out detection, primary signal: the title screen (MapItemMan
+        // null) observed after having been in-world. No death or fast-travel
+        // load passes through the title screen. The return-to-title Lua bit
+        // (CSLuaEventProxy, still shown in the debug overlay) is NOT used:
+        // live testing showed it only fires on scripted returns such as
+        // endings, never on a menu "Quit game".
+        if self.frame_snapshot.at_main_menu.is_some() {
             self.last_quitout_poll = now;
-        }
-        if let Some(bit) = self.frame_snapshot.quit_out_bit {
-            if bit && !self.prev_quit_out_bit && !self.pending_quit_out {
-                info!("[RACE] Quit-out requested (return-to-title bit)");
-                self.pending_quit_out = true;
-            }
-            self.prev_quit_out_bit = bit;
         }
         if self.frame_snapshot.position_readable {
             self.has_been_in_world = true;
-        } else if !input.quitout_signal_available
-            && self.has_been_in_world
+        } else if self.has_been_in_world
             && !self.pending_quit_out
             && self.frame_snapshot.at_main_menu == Some(true)
         {
-            info!("[RACE] Quit-out inferred (title screen, fallback)");
+            info!("[RACE] Quit-out detected (title screen)");
             self.pending_quit_out = true;
         }
 
@@ -1468,7 +1478,6 @@ mod tests {
             flag_reads: reads,
             weapons: [None, None],
             flag_reader_ok: None,
-            quitout_signal_available: true,
         }
     }
 
@@ -1532,86 +1541,132 @@ mod tests {
     // Quit-out detection latch
     // ------------------------------------------------------------------
 
-    /// Snapshot with quit-out sampling fields set.
-    fn snap_quit(pos: bool, bit: Option<bool>, menu: Option<bool>) -> FrameSnapshot {
+    /// Snapshot with the title-screen probe set (fixed 1000ms IGT).
+    fn snap_quit(pos: bool, menu: Option<bool>) -> FrameSnapshot {
+        snap_quit_igt(Some(1000), pos, menu)
+    }
+
+    /// Snapshot with the title-screen probe and an explicit IGT (for the
+    /// regression-arming tests).
+    fn snap_quit_igt(igt: Option<u32>, pos: bool, menu: Option<bool>) -> FrameSnapshot {
         FrameSnapshot {
-            quit_out_bit: bit,
             at_main_menu: menu,
-            ..snap(Some(1000), pos)
+            ..snap(igt, pos)
         }
     }
 
     #[test]
-    fn quit_out_bit_rising_edge_arms_latch_once() {
-        let now = Instant::now();
-        let mut m = running_machine(now);
-        m.tick(tick_in(snap_quit(true, Some(false), None), true, None), now);
-        assert!(!m.pending_quit_out);
-
-        m.tick(tick_in(snap_quit(true, Some(true), None), true, None), now);
-        assert!(m.pending_quit_out);
-
-        // Stuck bit: no re-arm after a manual clear (loading exit clears it
-        // in the consumption task).
-        m.pending_quit_out = false;
-        m.tick(tick_in(snap_quit(false, Some(true), None), true, None), now);
-        assert!(!m.pending_quit_out);
-
-        // Bit cleared then set again: re-arms.
-        m.tick(
-            tick_in(snap_quit(false, Some(false), None), true, None),
-            now,
-        );
-        m.tick(tick_in(snap_quit(false, Some(true), None), true, None), now);
-        assert!(m.pending_quit_out);
-    }
-
-    #[test]
-    fn fallback_title_screen_arms_only_after_world_and_without_signal() {
+    fn title_screen_arms_only_after_world() {
         let now = Instant::now();
         let mut m = running_machine(now);
 
         // Boot: title screen seen before ever being in-world must NOT arm.
-        let mut input = tick_in(snap_quit(false, None, Some(true)), true, None);
-        input.quitout_signal_available = false;
         m.was_position_readable = false;
-        m.tick(input, now);
+        m.tick(tick_in(snap_quit(false, Some(true)), true, None), now);
         assert!(!m.pending_quit_out);
 
         // Enter the world, then title screen: arms.
-        let mut input = tick_in(snap_quit(true, None, None), true, None);
-        input.quitout_signal_available = false;
-        m.tick(input, now);
-        let mut input = tick_in(snap_quit(false, None, Some(true)), true, None);
-        input.quitout_signal_available = false;
-        m.tick(input, now);
+        m.tick(tick_in(snap_quit(true, None), true, None), now);
+        m.tick(tick_in(snap_quit(false, Some(true)), true, None), now);
         assert!(m.pending_quit_out);
-    }
 
-    #[test]
-    fn fallback_ignored_when_primary_signal_available() {
-        let now = Instant::now();
-        let mut m = running_machine(now);
-        m.tick(tick_in(snap_quit(true, Some(false), None), true, None), now);
-
-        // Title screen observed but the bit is readable and false: a menu
-        // state the bit did not confirm (should not happen live; the bit is
-        // authoritative when available).
-        let input = tick_in(snap_quit(false, Some(false), Some(true)), true, None);
-        m.tick(input, now);
-        assert!(!m.pending_quit_out);
+        // Title screen held across further samples: still a single latch,
+        // neither cleared nor re-toggled.
+        m.tick(tick_in(snap_quit(false, Some(true)), true, None), now);
+        assert!(m.pending_quit_out);
     }
 
     #[test]
     fn death_reload_without_title_screen_does_not_arm() {
         let now = Instant::now();
         let mut m = running_machine(now);
-        m.tick(tick_in(snap_quit(true, None, None), true, None), now);
+        m.tick(tick_in(snap_quit(true, None), true, None), now);
 
-        // Death load: position unreadable, MapItemMan stays non-null.
-        let mut input = tick_in(snap_quit(false, None, Some(false)), true, None);
-        input.quitout_signal_available = false;
-        m.tick(input, now);
+        // Death load: position unreadable, MapItemMan stays non-null and the
+        // IGT keeps its in-memory value (world reload, not save load).
+        m.tick(tick_in(snap_quit(false, Some(false)), true, None), now);
+        assert!(!m.pending_quit_out);
+    }
+
+    #[test]
+    fn igt_regression_around_unload_arms_latch() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(
+            tick_in(snap_quit_igt(Some(10_000), true, None), true, None),
+            now,
+        );
+
+        // Menu passage missed by the 10 Hz title-screen probe: the reloaded
+        // save's IGT sits below the last in-world observation (the on-disk
+        // save lags the in-memory IGT by the post-flush fade).
+        m.tick(tick_in(snap_quit_igt(None, false, None), true, None), now);
+        m.tick(
+            tick_in(snap_quit_igt(Some(8_500), false, None), true, None),
+            now,
+        );
+        assert!(m.pending_quit_out);
+
+        // Full consumption at loading exit: penalty + tagged query.
+        let mut input = tick_in(snap_quit_igt(Some(8_500), true, None), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: Some(6100),
+        });
+        let fx = m.tick(input, now);
+        assert_eq!(penalty_ms(&fx), Some(2000));
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(true));
+    }
+
+    #[test]
+    fn igt_regression_on_loading_exit_frame_arms_and_consumes_same_tick() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(
+            tick_in(snap_quit_igt(Some(10_000), true, None), true, None),
+            now,
+        );
+        m.tick(tick_in(snap_quit_igt(None, false, None), true, None), now);
+
+        // The regressed IGT first becomes readable on the loading-exit frame
+        // itself: arming must precede consumption within the same tick.
+        let mut input = tick_in(snap_quit_igt(Some(8_500), true, None), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: Some(6100),
+        });
+        let fx = m.tick(input, now);
+        assert_eq!(penalty_ms(&fx), Some(2000));
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(true));
+        assert!(!m.pending_quit_out, "latch consumed in the same tick");
+    }
+
+    #[test]
+    fn igt_regression_in_world_does_not_arm() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        // Stable in-world frames: monotonic IGT, then a frozen-clock frame
+        // (equal value). Neither is a strict regression around an unload.
+        m.tick(
+            tick_in(snap_quit_igt(Some(5_000), true, None), true, None),
+            now,
+        );
+        m.tick(
+            tick_in(snap_quit_igt(Some(6_000), true, None), true, None),
+            now,
+        );
+        m.tick(
+            tick_in(snap_quit_igt(Some(6_000), true, None), true, None),
+            now,
+        );
         assert!(!m.pending_quit_out);
     }
 
@@ -2254,13 +2309,12 @@ mod tests {
         })
     }
 
-    /// Full quit-out cycle: in-world -> bit -> unload -> reload.
+    /// Full quit-out cycle: in-world -> title screen -> reload.
     /// Returns the loading-exit effects.
     fn quit_out_cycle(m: &mut RaceMachine, now: Instant) -> Vec<Effect> {
-        m.tick(tick_in(snap_quit(true, Some(false), None), true, None), now);
-        m.tick(tick_in(snap_quit(true, Some(true), None), true, None), now);
-        m.tick(tick_in(snap_quit(false, Some(true), None), true, None), now);
-        let mut input = tick_in(snap_quit(true, Some(false), None), true, None);
+        m.tick(tick_in(snap_quit(true, None), true, None), now);
+        m.tick(tick_in(snap_quit(false, Some(true)), true, None), now);
+        let mut input = tick_in(snap_quit(true, None), true, None);
         input.position = Some(PlayerPosition {
             map_id: 0x0A000000,
             map_id_str: "m10_00_00_00".to_string(),
@@ -2467,14 +2521,22 @@ mod tests {
         let mut m = RaceMachine::new(1, String::new(), false, now);
         m.handle_message(auth_ok("setup", &[100, 200, 900], Some(900)), now);
 
-        // Player quits to menu while waiting in setup for the race to start:
-        // arms the latch (rising edge of the return-to-title bit).
-        m.tick(tick_in(snap_quit(true, Some(false), None), true, None), now);
-        m.tick(tick_in(snap_quit(true, Some(true), None), true, None), now);
+        // Player quits to the title screen while waiting in setup for the
+        // race to start: arms the latch.
+        m.tick(tick_in(snap_quit(true, None), true, None), now);
+        m.tick(tick_in(snap_quit(false, Some(true)), true, None), now);
         assert!(m.pending_quit_out);
 
         m.handle_message(MachineMessage::RaceStart(3), now);
         assert!(!m.pending_quit_out, "race start clears the pre-race latch");
+
+        // Still sitting on the title screen: the very next sample must NOT
+        // re-arm the latch the race start just cleared.
+        m.tick(tick_in(snap_quit(false, Some(true)), true, None), now);
+        assert!(
+            !m.pending_quit_out,
+            "title screen must not re-arm right after race start"
+        );
 
         // Reload once running, past the countdown: must NOT be treated as a
         // quit-out, since the armed latch predates the race.
@@ -2496,42 +2558,31 @@ mod tests {
     }
 
     #[test]
-    fn fallback_latch_does_not_rearm_after_race_start() {
+    fn pre_start_igt_regression_does_not_penalize_first_load() {
+        // Player loads their save during setup, quits to menu (probe misses
+        // the title screen), waits for the start, then loads in after the
+        // countdown: the reloaded save's IGT regresses vs the pre-start
+        // observation but must not arm the latch.
         let now = Instant::now();
         let mut m = RaceMachine::new(1, String::new(), false, now);
         m.handle_message(auth_ok("setup", &[100, 200, 900], Some(900)), now);
 
-        // In-world once, fallback mode (no return-to-title bit signal):
-        // sets has_been_in_world.
-        let mut input = tick_in(snap_quit(true, None, None), true, None);
-        input.quitout_signal_available = false;
-        m.tick(input, now);
-
-        // Title screen observed, fallback mode: arms the latch.
-        let mut input = tick_in(snap_quit(false, None, Some(true)), true, None);
-        input.quitout_signal_available = false;
-        m.tick(input, now);
-        assert!(m.pending_quit_out);
+        m.tick(
+            tick_in(snap_quit_igt(Some(50_000), true, None), true, None),
+            now,
+        );
+        m.tick(tick_in(snap_quit_igt(None, false, None), true, None), now);
 
         m.handle_message(MachineMessage::RaceStart(3), now);
-        assert!(!m.pending_quit_out, "race start clears the pre-race latch");
 
-        // Still sitting on the title screen: the very next fallback sample
-        // must NOT re-arm the latch the race start just cleared.
-        let mut input = tick_in(snap_quit(false, None, Some(true)), true, None);
-        input.quitout_signal_available = false;
-        m.tick(input, now);
-        assert!(
-            !m.pending_quit_out,
-            "fallback must not re-arm right after race start"
-        );
-
-        // Reload once running, past the countdown: must NOT be treated as a
-        // quit-out.
+        // Reload once running, past the countdown, with a regressed IGT.
         let after_countdown = now + secs(4);
-        m.tick(tick_in(snap(Some(1000), true), true, None), after_countdown);
-        m.tick(tick_in(snap(None, false), true, None), after_countdown);
-        let mut input = tick_in(snap(Some(1000), true), true, None);
+        m.tick(
+            tick_in(snap_quit_igt(Some(48_000), false, None), true, None),
+            after_countdown,
+        );
+        assert!(!m.pending_quit_out, "pre-start regression must not arm");
+        let mut input = tick_in(snap_quit_igt(Some(48_000), true, None), true, None);
         input.position = Some(PlayerPosition {
             map_id: 0x0A000000,
             map_id_str: "m10_00_00_00".to_string(),

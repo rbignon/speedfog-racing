@@ -917,15 +917,16 @@ impl RaceTracker {
             None => ui.text_colored(c.danger, "None"),
         }
 
-        // Quit-out primary signal (return-title bit); None = AOB fallback.
-        ui.text("  quit-out bit:");
+        // Return-to-title Lua bit (debug telemetry only; not the quit-out
+        // detector). None = AOB unresolved or pointer chain null.
+        ui.text("  return-title bit:");
         ui.same_line();
         match debug.quit_out_bit {
             Some(b) => {
                 let color = if b { c.gold } else { c.text };
                 ui.text_colored(color, if b { "true" } else { "false" });
             }
-            None => ui.text_colored(c.danger, "fallback"),
+            None => ui.text_colored(c.text, "n/a"),
         }
 
         if !debug.sample_reads.is_empty() {
