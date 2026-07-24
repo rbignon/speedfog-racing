@@ -95,6 +95,7 @@ class ZoneQueryInput:
     play_region_id: int | None
     igt_ms: int | None
     message_id: int | None
+    quit_out: bool
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +265,8 @@ def parse_zone_query_input(msg: dict[str, Any]) -> ZoneQueryInput | None:
     raw_message_id = msg.get("message_id")
     message_id = raw_message_id if isinstance(raw_message_id, int) else None
 
+    quit_out = msg.get("quit_out") is True
+
     return ZoneQueryInput(
         grace_entity_id=grace_entity_id,
         map_id=map_id_str,
@@ -271,6 +274,7 @@ def parse_zone_query_input(msg: dict[str, Any]) -> ZoneQueryInput | None:
         play_region_id=play_region_id,
         igt_ms=igt_ms,
         message_id=message_id,
+        quit_out=quit_out,
     )
 
 
@@ -842,54 +846,66 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     await self._send_zone_query_ack(message_id)
                 return
 
-            result = resolve_zone_query(
-                graph_json,
-                get_graces_mapping(),
-                grace_entity_id=zq.grace_entity_id,
-                map_id=zq.map_id,
-                position=zq.position,
-                play_region_id=zq.play_region_id,
-                zone_history=entity.zone_history,
-            )
-            node_id = result.node_id
-            if node_id is None:
-                logger.debug(
-                    "zone_query: unresolved (grace=%s, map=%s) for %s",
+            if zq.quit_out and entity.current_zone:
+                # Quit-out reload: the player reloads exactly where they were,
+                # so the zone cannot have changed. Skip the heuristics.
+                node_id = entity.current_zone
+                logger.info(
+                    "zone_query: quit-out detected, resuming node_id=%s for %s",
+                    node_id,
+                    self.entity_id,
+                )
+            else:
+                result = resolve_zone_query(
+                    graph_json,
+                    get_graces_mapping(),
+                    grace_entity_id=zq.grace_entity_id,
+                    map_id=zq.map_id,
+                    position=zq.position,
+                    play_region_id=zq.play_region_id,
+                    zone_history=entity.zone_history,
+                    trust_position=zq.quit_out,
+                )
+                node_id = result.node_id
+                if node_id is None:
+                    logger.debug(
+                        "zone_query: unresolved (grace=%s, map=%s) for %s",
+                        zq.grace_entity_id,
+                        zq.map_id,
+                        self.entity_id,
+                    )
+                    if message_id is not None:
+                        await self._send_zone_query_ack(message_id)
+                    return
+
+                logger.info(
+                    "zone_query: node_id=%s strategy=%s candidates=%s grace=%s map_id=%s entity=%s",
+                    node_id,
+                    result.strategy,
+                    ",".join(result.candidates) if result.candidates else "-",
                     zq.grace_entity_id,
                     zq.map_id,
                     self.entity_id,
                 )
-                if message_id is not None:
-                    await self._send_zone_query_ack(message_id)
-                return
 
-            logger.info(
-                "zone_query: node_id=%s strategy=%s candidates=%s grace=%s map_id=%s entity=%s",
-                node_id,
-                result.strategy,
-                ",".join(result.candidates) if result.candidates else "-",
-                zq.grace_entity_id,
-                zq.map_id,
-                self.entity_id,
-            )
-
-            # Fast travel (Strategy 1 grace lookup) bypasses the history filter,
-            # so it can resolve to a node that has never been traversed via fog.
-            # That is normally impossible in fog rando (unreachable graces are
-            # not in the menu) and points at a grace mapping bug or an
-            # unexpected warp, so warn for observability. parse_zone_query_input
-            # has already replaced a 0 grace_entity_id with None.
-            if zq.grace_entity_id is not None and not any(
-                entry.get("node_id") == node_id for entry in entity.zone_history or []
-            ):
-                logger.warning(
-                    "zone_query resolved to unvisited node via grace: "
-                    "node=%s grace_entity_id=%s entity=%s message_id=%s",
-                    node_id,
-                    zq.grace_entity_id,
-                    self.entity_id,
-                    message_id,
-                )
+                # Fast travel (Strategy 1 grace lookup) bypasses the history
+                # filter, so it can resolve to a node that has never been
+                # traversed via fog. That is normally impossible in fog rando
+                # (unreachable graces are not in the menu) and points at a
+                # grace mapping bug or an unexpected warp, so warn for
+                # observability. parse_zone_query_input has already replaced
+                # a 0 grace_entity_id with None.
+                if zq.grace_entity_id is not None and not any(
+                    entry.get("node_id") == node_id for entry in entity.zone_history or []
+                ):
+                    logger.warning(
+                        "zone_query resolved to unvisited node via grace: "
+                        "node=%s grace_entity_id=%s entity=%s message_id=%s",
+                        node_id,
+                        zq.grace_entity_id,
+                        self.entity_id,
+                        message_id,
+                    )
 
             # Record backtrack entry when the player moved to a different node
             # (death/teleport/quit-out, no event flag fired)

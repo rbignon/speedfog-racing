@@ -1783,6 +1783,21 @@ class TestParseZoneQueryInput:
         assert zq is not None
         assert zq.igt_ms is None
 
+    def test_parse_zone_query_quit_out_flag(self):
+        """quit_out: true is parsed; anything else (absent, wrong type) is False."""
+        msg = {"type": "zone_query", "map_id": "m10_00_00_00", "quit_out": True}
+        zq = parse_zone_query_input(msg)
+        assert zq is not None
+        assert zq.quit_out is True
+
+    def test_parse_zone_query_quit_out_absent_or_invalid(self):
+        """Old mods omit quit_out; junk values must not crash validation."""
+        for payload in ({}, {"quit_out": "yes"}, {"quit_out": 1}):
+            msg = {"type": "zone_query", "map_id": "m10_00_00_00", **payload}
+            zq = parse_zone_query_input(msg)
+            assert zq is not None
+            assert zq.quit_out is False
+
 
 class TestPhantomSkinResolution:
     """Test resolve_phantom_skin_for_auth_ok helper."""
