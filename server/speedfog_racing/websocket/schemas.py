@@ -18,7 +18,7 @@ from speedfog_racing.models import compute_late_join_deadlines
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.1"
+PROTOCOL_VERSION = "1.2"
 
 # --- Client -> Server Messages (Mod) ---
 

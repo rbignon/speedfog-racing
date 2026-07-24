@@ -106,7 +106,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.1**. It is defined in
+release numbers. Current: **1.2**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -118,6 +118,7 @@ Bump rules:
 
 Version history:
 
+- **1.2** - quit-out penalty and tracking: `quit_out` boolean field on `zone_query` (optional, omitted when false); `quit_out_penalty_ms` integer field on `race` (default 2000, 0 disables). The mod applies the penalty to the in-game timer on each detected quit-out during a running race.
 - **1.1** - chat reactions and replies (spectator connection only): `chat_reaction` / `chat_reaction_update` messages; `id`, `reply_to`, `reactions` fields on `chat_message`. No mod-side change.
 - **1.0** - initial versioned protocol.
 
@@ -235,17 +236,19 @@ Sent at loading screen exit when no event_flag was detected (death, respawn, fas
   "grace_entity_id": 10002950,
   "map_id": "m10_00_00_00",
   "position": [100.0, 50.0, 200.0],
-  "play_region_id": 12345
+  "play_region_id": 12345,
+  "quit_out": true
 }
 ```
 
-| Field             | Type                        | Description                                                  |
-| ----------------- | --------------------------- | ------------------------------------------------------------ |
-| `igt_ms`          | `integer`                   | In-game time in milliseconds at the moment of the query      |
-| `grace_entity_id` | `integer \| null`           | Grace entity ID captured by the warp hook during fast travel |
-| `map_id`          | `string \| null`            | Map ID string (e.g. `m10_00_00_00`) for map-based fallback   |
-| `position`        | `[number, number, number]?` | Player position `[x, y, z]` (reserved for future use)        |
-| `play_region_id`  | `integer \| null`           | Play region ID (reserved for future use)                     |
+| Field             | Type                        | Description                                                                                                                                                                            |
+| ----------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `igt_ms`          | `integer`                   | In-game time in milliseconds at the moment of the query                                                                                                                                |
+| `grace_entity_id` | `integer \| null`           | Grace entity ID captured by the warp hook during fast travel                                                                                                                           |
+| `map_id`          | `string \| null`            | Map ID string (e.g. `m10_00_00_00`) for map-based fallback                                                                                                                             |
+| `position`        | `[number, number, number]?` | Player position `[x, y, z]` (reserved for future use)                                                                                                                                  |
+| `play_region_id`  | `integer \| null`           | Play region ID (reserved for future use)                                                                                                                                               |
+| `quit_out`        | `boolean?`                  | Optional, omitted when false; marks a post-quit-out reload so the server resumes the participant's current zone (log strategy `quit_out`) instead of running the resolution heuristics |
 
 **Response:** The server sends a `zone_update` (unicast) if the query resolves to a node in the current seed's graph. No response if unresolvable or ambiguous.
 
@@ -335,7 +338,7 @@ Authentication successful. Contains initial race state.
 
 `latest_mod_version`: (string, optional) no longer sent. The server used it as a soft update notice on protocol-minor lag; that concept does not fit the seed-pack distribution model (see [Protocol Version](#protocol-version)), so the server omits it unconditionally. The field name stays reserved because deployed mod builds still render a notice when it is present.
 
-**Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`. `started_at` is the effective gameplay start: on race launch the server sets it to `now + countdown_seconds` so the countdown window doesn't eat into the configured duration. `race_ends_at` is `null` until the race transitions to `running` (it is computed from `started_at + race_duration_minutes`); when the race starts, the server pushes a [`race_info_update`](#race_info_update) so mods that authed in `setup` pick up the now-populated value.
+**Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`. `started_at` is the effective gameplay start: on race launch the server sets it to `now + countdown_seconds` so the countdown window doesn't eat into the configured duration. `race_ends_at` is `null` until the race transitions to `running` (it is computed from `started_at + race_duration_minutes`); when the race starts, the server pushes a [`race_info_update`](#race_info_update) so mods that authed in `setup` pick up the now-populated value. The `race` object also includes `quit_out_penalty_ms` (integer milliseconds, default 2000, 0 disables); the mod applies this penalty to the in-game timer at the reload after each detected quit-out during a running race, with an overlay banner, never in training.
 
 #### `auth_error`
 
