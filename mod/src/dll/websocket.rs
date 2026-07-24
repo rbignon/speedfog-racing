@@ -548,6 +548,7 @@ fn message_loop(
                     position,
                     play_region_id,
                     message_id,
+                    quit_out: false,
                 };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket

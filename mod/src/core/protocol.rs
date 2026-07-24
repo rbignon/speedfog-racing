@@ -60,6 +60,10 @@ pub enum ClientMessage {
         position: Option<[f32; 3]>,
         #[serde(skip_serializing_if = "Option::is_none")]
         play_region_id: Option<u32>,
+        /// True when this query follows a detected quit-out (reload in
+        /// place): the server resumes the current zone instead of guessing.
+        #[serde(default, skip_serializing_if = "is_false")]
+        quit_out: bool,
     },
     /// Heartbeat response
     Pong,
@@ -190,6 +194,10 @@ pub struct RaceInfo {
     /// by comparing it against the configured pack's seed id.
     #[serde(default)]
     pub seed_id: Option<String>,
+    /// IGT penalty (ms) the mod applies per detected quit-out; 0 disables.
+    /// Defaults so a server predating the field keeps the feature active.
+    #[serde(default = "default_quit_out_penalty_ms")]
+    pub quit_out_penalty_ms: u32,
     /// Pre-parsed `race_ends_at` filled by [`RaceInfo::reparse_dates`] after
     /// receipt so the per-frame countdown UI doesn't reparse the string.
     /// Not part of the wire format.
@@ -226,6 +234,14 @@ pub struct SpawnItem {
 
 fn default_qty() -> u32 {
     1
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+fn default_quit_out_penalty_ms() -> u32 {
+    2000
 }
 
 /// Mod-side directives for a phantom skin.
@@ -870,6 +886,7 @@ mod tests {
             map_id: None,
             position: None,
             play_region_id: None,
+            quit_out: false,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"zone_query""#));
@@ -888,6 +905,7 @@ mod tests {
             map_id: Some("m10_00_00_00".into()),
             position: Some([100.0, 50.0, 200.0]),
             play_region_id: Some(12345),
+            quit_out: false,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"zone_query""#));
@@ -895,6 +913,43 @@ mod tests {
         assert!(json.contains(r#""message_id":99"#));
         assert!(json.contains(r#""map_id":"m10_00_00_00""#));
         assert!(!json.contains("grace_entity_id"));
+    }
+
+    #[test]
+    fn test_client_zone_query_quit_out_serialization() {
+        let mut msg = ClientMessage::ZoneQuery {
+            igt_ms: 1000,
+            message_id: 7,
+            grace_entity_id: None,
+            map_id: Some("m10_00_00_00".to_string()),
+            position: Some([1.0, 2.0, 3.0]),
+            play_region_id: None,
+            quit_out: true,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""quit_out":true"#));
+
+        // False is omitted from the wire (old servers never see the field).
+        if let ClientMessage::ZoneQuery { quit_out, .. } = &mut msg {
+            *quit_out = false;
+        }
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(!json.contains("quit_out"));
+    }
+
+    #[test]
+    fn test_race_info_old_server_defaults_quit_out_penalty() {
+        // Wire-contract pin: a server that predates the field yields the
+        // mod-side default of 2000 ms.
+        let race: RaceInfo =
+            serde_json::from_str(r#"{"id":"r1","name":"x","status":"running"}"#).unwrap();
+        assert_eq!(race.quit_out_penalty_ms, 2000);
+
+        let race: RaceInfo = serde_json::from_str(
+            r#"{"id":"r1","name":"x","status":"running","quit_out_penalty_ms":0}"#,
+        )
+        .unwrap();
+        assert_eq!(race.quit_out_penalty_ms, 0);
     }
 
     #[test]
