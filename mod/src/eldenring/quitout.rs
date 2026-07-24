@@ -57,6 +57,7 @@ static STATIC_ADDR: OnceLock<Option<usize>> = OnceLock::new();
 
 fn resolve_static() -> Option<usize> {
     *STATIC_ADDR.get_or_init(|| {
+        profile_span!("quitout_aob_scan");
         let (base, size) = match module_base_and_size() {
             Some(v) => v,
             None => {
