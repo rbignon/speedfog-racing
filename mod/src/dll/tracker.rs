@@ -80,6 +80,9 @@ pub struct DebugInfo {
     pub sample_reads: Vec<(u32, FlagReadResult)>,
     /// Raw loading byte (engine flags 2200-2207, `GameState::read_loading_byte`)
     pub loading_byte: Option<u8>,
+    /// Quit-out primary signal: Some(bit) when the AOB resolved, None when
+    /// running on the title-screen fallback.
+    pub quit_out_bit: Option<bool>,
 }
 
 impl Default for DebugInfo {
@@ -92,6 +95,7 @@ impl Default for DebugInfo {
             vanilla_sanity: FlagReadResult::Unreadable,
             sample_reads: Vec::new(),
             loading_byte: None,
+            quit_out_bit: None,
         }
     }
 }
@@ -401,6 +405,8 @@ impl RaceTracker {
         let connected = self.ws_client.is_connected();
         let needs = self.machine.pre_tick(now, self.show_ui, connected);
 
+        let quitout_available = crate::eldenring::quitout::is_available();
+
         let snapshot = {
             profile_span!("frame_snapshot");
             FrameSnapshot {
@@ -414,6 +420,12 @@ impl RaceTracker {
                     .loading
                     .then(|| self.game_state.is_world_clock_stopped())
                     .flatten(),
+                quit_out_bit: needs
+                    .quitout
+                    .then(crate::eldenring::quitout::read_return_title_requested)
+                    .flatten(),
+                at_main_menu: (needs.quitout && !quitout_available)
+                    .then(|| self.game_state.is_at_main_menu()),
             }
         };
 
@@ -488,6 +500,7 @@ impl RaceTracker {
             flag_reads,
             weapons,
             flag_reader_ok,
+            quitout_signal_available: quitout_available,
         };
         let effects = self.machine.tick(input, now);
         self.execute_effects(effects);
@@ -607,6 +620,7 @@ impl RaceTracker {
                     map_id,
                     position,
                     play_region_id,
+                    quit_out,
                 } => {
                     self.ws_client.send_zone_query(
                         igt_ms,
@@ -614,6 +628,7 @@ impl RaceTracker {
                         map_id,
                         position,
                         play_region_id,
+                        quit_out,
                         message_id,
                     );
                 }
@@ -625,6 +640,14 @@ impl RaceTracker {
                     self.event_flag_reader
                         .set_flag_cached(flag_id, value, page_ref);
                 }
+                Effect::ApplyIgtPenalty { ms } => match self.game_state.add_igt_penalty(ms) {
+                    Some(new_igt) => {
+                        info!(ms, new_igt, "[RACE] Quit-out IGT penalty applied");
+                    }
+                    None => {
+                        warn!(ms, "[RACE] Quit-out penalty skipped: IGT unwritable");
+                    }
+                },
                 Effect::ClearWarpCapture => {
                     crate::eldenring::warp_hook::clear_captured_grace_entity_id();
                 }
@@ -795,6 +818,7 @@ impl RaceTracker {
             vanilla_sanity,
             sample_reads,
             loading_byte: self.game_state.read_loading_byte(),
+            quit_out_bit: crate::eldenring::quitout::read_return_title_requested(),
         };
         self.last_debug_refresh = Some(Instant::now());
     }

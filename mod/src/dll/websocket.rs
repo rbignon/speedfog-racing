@@ -45,6 +45,7 @@ pub enum OutgoingMessage {
         position: Option<[f32; 3]>,
         play_region_id: Option<u32>,
         message_id: u64,
+        quit_out: bool,
     },
     Shutdown,
 }
@@ -174,6 +175,7 @@ impl RaceWebSocketClient {
         map_id: Option<String>,
         position: Option<[f32; 3]>,
         play_region_id: Option<u32>,
+        quit_out: bool,
         message_id: u64,
     ) {
         if let Some(tx) = &self.tx {
@@ -184,6 +186,7 @@ impl RaceWebSocketClient {
                 position,
                 play_region_id,
                 message_id,
+                quit_out,
             }) {
                 warn!("[WS] Failed to queue zone_query: {}", e);
             }
@@ -306,6 +309,7 @@ fn websocket_thread(
                             position,
                             play_region_id,
                             message_id,
+                            quit_out,
                         } => {
                             let _ = incoming_tx.send(MachineMessage::RequeueZoneQuery {
                                 igt_ms,
@@ -314,6 +318,7 @@ fn websocket_thread(
                                 position,
                                 play_region_id,
                                 message_id,
+                                quit_out,
                             });
                         }
                         _ => {}
@@ -534,6 +539,7 @@ fn message_loop(
                 position,
                 play_region_id,
                 message_id,
+                quit_out,
             }) => {
                 info!(
                     ?grace_entity_id,
@@ -548,7 +554,7 @@ fn message_loop(
                     position,
                     play_region_id,
                     message_id,
-                    quit_out: false,
+                    quit_out,
                 };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket

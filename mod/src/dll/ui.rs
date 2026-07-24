@@ -917,6 +917,17 @@ impl RaceTracker {
             None => ui.text_colored(c.danger, "None"),
         }
 
+        // Quit-out primary signal (return-title bit); None = AOB fallback.
+        ui.text("  quit-out bit:");
+        ui.same_line();
+        match debug.quit_out_bit {
+            Some(b) => {
+                let color = if b { c.gold } else { c.text };
+                ui.text_colored(color, if b { "true" } else { "false" });
+            }
+            None => ui.text_colored(c.danger, "fallback"),
+        }
+
         if !debug.sample_reads.is_empty() {
             for (flag_id, result) in &debug.sample_reads {
                 let (color, label) = match result {
