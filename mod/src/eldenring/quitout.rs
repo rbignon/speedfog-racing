@@ -66,6 +66,9 @@ fn resolve_static() -> Option<usize> {
         };
         match scan_pattern(base, size, CS_LUA_EVENT_MAN_PATTERN) {
             Some(match_addr) => {
+                // SAFETY: match_addr..match_addr+pattern_len is inside the scanned
+                // module image (scan_pattern's Some contract); disp32 at +3 is not
+                // 4-aligned, hence read_unaligned.
                 let disp = unsafe { ((match_addr + DISP32_OFFSET) as *const i32).read_unaligned() };
                 let addr = rip_relative_target(match_addr, disp, CMP_RIP_IMM8_LEN);
                 info!(
@@ -117,8 +120,9 @@ mod tests {
 
     #[test]
     fn pattern_matches_cmp_rip_prefix() {
-        // 17 bytes; starts with the cmp qword [rip+disp32], 0 opcode.
-        assert_eq!(CS_LUA_EVENT_MAN_PATTERN.len(), 17);
+        // 18 bytes (cmp 8 + mov rdi,rcx 3 + jz rel32 6 + 1); starts with the
+        // cmp qword [rip+disp32], 0 opcode.
+        assert_eq!(CS_LUA_EVENT_MAN_PATTERN.len(), 18);
         assert_eq!(CS_LUA_EVENT_MAN_PATTERN[0], Some(0x48));
         assert_eq!(CS_LUA_EVENT_MAN_PATTERN[1], Some(0x83));
         assert_eq!(CS_LUA_EVENT_MAN_PATTERN[2], Some(0x3D));
