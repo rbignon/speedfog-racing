@@ -210,20 +210,6 @@ impl GameState {
         self.igt_write_ptr.write(new)?;
         Some(new)
     }
-
-    /// Whether MapItemMan is null: true on the title screen (and during
-    /// boot, before the first load). In-game loading screens (death, fast
-    /// travel) keep it non-null, which is what makes it a quit-out
-    /// discriminator for the fallback path.
-    pub fn is_at_main_menu(&self) -> bool {
-        profile_span!("is_at_main_menu");
-        let loc = self.pointers.base_addresses.map_item_man;
-        if loc == 0 {
-            return false;
-        }
-        // SAFETY: loc is a static in eldenring.exe's mapped image.
-        unsafe { (loc as *const usize).read() == 0 }
-    }
 }
 
 impl Default for GameState {

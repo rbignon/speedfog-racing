@@ -426,7 +426,6 @@ impl RaceTracker {
                     .loading
                     .then(|| self.game_state.is_world_clock_stopped())
                     .flatten(),
-                at_main_menu: needs.quitout.then(|| self.game_state.is_at_main_menu()),
             }
         };
 

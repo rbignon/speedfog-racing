@@ -1,10 +1,10 @@
-//! Quit-out request detection.
+//! Return-to-title bit reader, debug-overlay telemetry only.
 //!
-//! Reads the game's `return_title_requested` flag: bit 11 of
-//! `CSLuaEventProxy.control_flags`, set by the game's `RegistReturnTitle`
-//! when the player confirms "Quit to Title". This is the primary quit-out
-//! signal; when the AOB scan fails (game patch), callers fall back to the
-//! title-screen proxy (`GameState::is_at_main_menu`).
+//! Reads the `return_title_requested` flag: bit 11 of
+//! `CSLuaEventProxy.control_flags`, set by `RegistReturnTitle`. Live testing
+//! showed it only fires on scripted returns to title (endings, arena), never
+//! on the pause menu "Quit game", so quit-out detection instead relies on
+//! the IGT regression a menu save-load produces (see `RaceMachine::tick`).
 //!
 //! ### Pattern source
 //!
