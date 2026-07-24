@@ -398,6 +398,57 @@ def test_resolve_zone_query_death_ignores_position():
     assert result.strategy == "map+recent"
 
 
+def test_resolve_zone_query_trust_position_without_grace():
+    """Quit-out reload: trust_position lifts the no-grace position ban.
+
+    After a quit-out the player reloads exactly where they were, so the
+    position is reliable (unlike a post-death respawn point).
+    """
+    graph = {
+        "nodes": {
+            "leyndell_1259": {
+                "display_name": "Leyndell",
+                "zones": ["leyndell"],
+                "layer": 5,
+            },
+            "leyndell_sanctuary_d3e5": {
+                "display_name": "Erdtree Sanctuary",
+                "zones": ["leyndell_sanctuary"],
+                "layer": 8,
+            },
+        }
+    }
+    mapping = load_graces_mapping()
+    history = [
+        {"node_id": "leyndell_1259", "igt_ms": 120000},
+        {"node_id": "leyndell_sanctuary_d3e5", "igt_ms": 300000},
+    ]
+
+    # Without trust_position: no grace means position is ignored, most
+    # recently visited candidate wins (existing behavior).
+    result = resolve_zone_query(
+        graph,
+        mapping,
+        map_id="m11_00_00_00",
+        position=(0.0, -50.0, 0.0),
+        zone_history=history,
+    )
+    assert result.strategy == "map+recent"
+    assert result.node_id == "leyndell_sanctuary_d3e5"
+
+    # With trust_position: the main-city position (low Y) narrows to leyndell.
+    result = resolve_zone_query(
+        graph,
+        mapping,
+        map_id="m11_00_00_00",
+        position=(0.0, -50.0, 0.0),
+        zone_history=history,
+        trust_position=True,
+    )
+    assert result.node_id == "leyndell_1259"
+    assert result.strategy == "map+position"
+
+
 def test_resolve_zone_query_single_match_unexplored():
     """Single graph node match should NOT resolve if player hasn't explored it.
 

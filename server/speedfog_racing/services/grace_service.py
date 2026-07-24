@@ -97,6 +97,7 @@ def resolve_zone_query(
     position: tuple[float, float, float] | None = None,
     play_region_id: int | None = None,  # reserved for future disambiguation
     zone_history: list[dict[str, Any]] | None = None,
+    trust_position: bool = False,
 ) -> ZoneQueryResult:
     """Resolve a zone query to a graph node_id.
 
@@ -104,10 +105,12 @@ def resolve_zone_query(
     1. Grace lookup (grace_entity_id → zone_id → node)
     2. Map-based lookup (map_id → fog.txt zone mapping → filter graph nodes)
        a. Get candidate zone_ids from fog.txt (complete map→zone mapping)
-       b. If position available, use submaps.txt to narrow to one zone_id
+       b. If position trusted (grace present or trust_position),
+          use submaps.txt to narrow to one zone_id
        c. Find graph nodes whose zones intersect candidates
        d. If still ambiguous, narrow by zone_history (visited nodes only)
-       e. If still ambiguous and no grace (death/remembrance), pick most recently visited
+       e. If still ambiguous and no grace (death/remembrance),
+          pick most recently visited
     3. None (ambiguous or no data)
     """
     # Strategy 1: grace lookup (highest confidence)
@@ -121,11 +124,12 @@ def resolve_zone_query(
         zone_ids_for_map = get_zones_for_map(map_id)
         position_narrowed = False
 
-        # Use position to narrow candidates, but only for fast travel (grace
-        # present). On death/respawn (no grace_entity_id), position is the
+        # Use position to narrow candidates for fast travel (grace present)
+        # or when the caller vouches for it (quit-out reload: the player
+        # reloads in place). On death/respawn (neither), position is the
         # respawn point, not where the player was fighting, so the "most
         # recently visited" heuristic below is more reliable.
-        if position is not None and zone_ids_for_map and grace_entity_id:
+        if position is not None and zone_ids_for_map and (grace_entity_id or trust_position):
             resolved = resolve_zone_by_position(map_id, *position)
             if resolved and resolved in zone_ids_for_map:
                 zone_ids_for_map = {resolved}
