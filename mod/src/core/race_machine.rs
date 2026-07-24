@@ -158,6 +158,12 @@ pub struct FrameSnapshot {
     /// not read this frame or unreadable). Stands in for "loading screen
     /// displayed" outside frozen-clock seeds; see the reveal logic.
     pub loading_screen: Option<bool>,
+    /// `return_title_requested` bit (`None` = not sampled this frame or
+    /// signal unavailable). Sampled at the 10 Hz quit-out cadence.
+    pub quit_out_bit: Option<bool>,
+    /// Title-screen probe (MapItemMan null), sampled only in fallback mode
+    /// (`None` = not sampled this frame).
+    pub at_main_menu: Option<bool>,
 }
 
 // =============================================================================
@@ -173,6 +179,8 @@ pub struct FrameNeeds {
     /// Read the loading byte (only while a zone reveal is pending).
     pub loading: bool,
     pub poll_flags: bool,
+    /// Sample the quit-out signals this frame (10 Hz cadence).
+    pub quitout: bool,
 }
 
 /// Inputs to one tick, gathered by the shell.
@@ -193,6 +201,9 @@ pub struct TickInput {
     pub weapons: [Option<i32>; 2],
     /// Whether the flag reader diagnosed OK (None = flags not read).
     pub flag_reader_ok: Option<bool>,
+    /// Whether the primary quit-out signal resolved (AOB scan succeeded).
+    /// False switches the machine to title-screen fallback detection.
+    pub quitout_signal_available: bool,
 }
 
 /// Side effects for the shell to execute, in order.
@@ -286,6 +297,15 @@ pub struct RaceMachine {
     pub zone_stall_warned: bool,
     /// Whether position was readable last frame (loading screen exit detection)
     pub was_position_readable: bool,
+    /// Quit-out observed; consumed (penalty + zone tag) at the next loading exit.
+    pub pending_quit_out: bool,
+    /// Previous sample of the return-title bit (rising-edge arming).
+    pub prev_quit_out_bit: bool,
+    /// The player has been in-world this session (guards the fallback
+    /// against the boot-time title screen).
+    pub has_been_in_world: bool,
+    /// Last time the quit-out signals were sampled (10 Hz cadence).
+    pub last_quitout_poll: Instant,
     /// Seed mismatch: config seed_id doesn't match server seed_id
     pub seed_mismatch: bool,
     /// Last auth error message from server (see dll handler ordering guarantee)
@@ -335,6 +355,10 @@ impl RaceMachine {
             pre_reveal_layer: None,
             zone_stall_warned: false,
             was_position_readable: true,
+            pending_quit_out: false,
+            prev_quit_out_bit: false,
+            has_been_in_world: false,
+            last_quitout_poll: now,
             seed_mismatch: false,
             last_auth_error: None,
             permanent_error: None,
@@ -821,6 +845,7 @@ impl RaceMachine {
             loading: self.pending_zone_update.is_some(),
             poll_flags: !self.event_ids.is_empty()
                 && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
+            quitout: now.duration_since(self.last_quitout_poll) >= Duration::from_millis(100),
         }
     }
 
@@ -872,6 +897,32 @@ impl RaceMachine {
                 self.flag_buffer.clear_pending();
             }
             self.last_observed_igt = Some(current_igt);
+        }
+
+        // Quit-out detection. Primary: the game's return-to-title request
+        // bit (rising edge). Fallback (bit unavailable): the title screen
+        // observed after having been in-world, which no death or fast-travel
+        // load passes through.
+        if self.frame_snapshot.quit_out_bit.is_some() || self.frame_snapshot.at_main_menu.is_some()
+        {
+            self.last_quitout_poll = now;
+        }
+        if let Some(bit) = self.frame_snapshot.quit_out_bit {
+            if bit && !self.prev_quit_out_bit && !self.pending_quit_out {
+                info!("[RACE] Quit-out requested (return-to-title bit)");
+                self.pending_quit_out = true;
+            }
+            self.prev_quit_out_bit = bit;
+        }
+        if self.frame_snapshot.position_readable {
+            self.has_been_in_world = true;
+        } else if !input.quitout_signal_available
+            && self.has_been_in_world
+            && !self.pending_quit_out
+            && self.frame_snapshot.at_main_menu == Some(true)
+        {
+            info!("[RACE] Quit-out inferred (title screen, fallback)");
+            self.pending_quit_out = true;
         }
 
         let position_readable = self.frame_snapshot.position_readable;
@@ -1331,6 +1382,7 @@ mod tests {
             death_count: Some(0),
             position_readable: pos,
             loading_screen: loading,
+            ..FrameSnapshot::default()
         }
     }
 
@@ -1347,6 +1399,7 @@ mod tests {
             flag_reads: reads,
             weapons: [None, None],
             flag_reader_ok: None,
+            quitout_signal_available: true,
         }
     }
 
@@ -1404,6 +1457,93 @@ mod tests {
         fn make_writer(&'a self) -> Self::Writer {
             self.clone()
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Quit-out detection latch
+    // ------------------------------------------------------------------
+
+    /// Snapshot with quit-out sampling fields set.
+    fn snap_quit(pos: bool, bit: Option<bool>, menu: Option<bool>) -> FrameSnapshot {
+        FrameSnapshot {
+            quit_out_bit: bit,
+            at_main_menu: menu,
+            ..snap(Some(1000), pos)
+        }
+    }
+
+    #[test]
+    fn quit_out_bit_rising_edge_arms_latch_once() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap_quit(true, Some(false), None), true, None), now);
+        assert!(!m.pending_quit_out);
+
+        m.tick(tick_in(snap_quit(true, Some(true), None), true, None), now);
+        assert!(m.pending_quit_out);
+
+        // Stuck bit: no re-arm after a manual clear (loading exit clears it
+        // in the consumption task).
+        m.pending_quit_out = false;
+        m.tick(tick_in(snap_quit(false, Some(true), None), true, None), now);
+        assert!(!m.pending_quit_out);
+
+        // Bit cleared then set again: re-arms.
+        m.tick(
+            tick_in(snap_quit(false, Some(false), None), true, None),
+            now,
+        );
+        m.tick(tick_in(snap_quit(false, Some(true), None), true, None), now);
+        assert!(m.pending_quit_out);
+    }
+
+    #[test]
+    fn fallback_title_screen_arms_only_after_world_and_without_signal() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+
+        // Boot: title screen seen before ever being in-world must NOT arm.
+        let mut input = tick_in(snap_quit(false, None, Some(true)), true, None);
+        input.quitout_signal_available = false;
+        m.was_position_readable = false;
+        m.tick(input, now);
+        assert!(!m.pending_quit_out);
+
+        // Enter the world, then title screen: arms.
+        let mut input = tick_in(snap_quit(true, None, None), true, None);
+        input.quitout_signal_available = false;
+        m.tick(input, now);
+        let mut input = tick_in(snap_quit(false, None, Some(true)), true, None);
+        input.quitout_signal_available = false;
+        m.tick(input, now);
+        assert!(m.pending_quit_out);
+    }
+
+    #[test]
+    fn fallback_ignored_when_primary_signal_available() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap_quit(true, Some(false), None), true, None), now);
+
+        // Title screen observed but the bit is readable and false: a menu
+        // state the bit did not confirm (should not happen live; the bit is
+        // authoritative when available).
+        let input = tick_in(snap_quit(false, Some(false), Some(true)), true, None);
+        m.tick(input, now);
+        assert!(!m.pending_quit_out);
+    }
+
+    #[test]
+    fn death_reload_without_title_screen_does_not_arm() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap_quit(true, None, None), true, None), now);
+
+        // Death load: position unreadable, MapItemMan stays non-null.
+        let mut input = tick_in(snap_quit(false, None, Some(false)), true, None);
+        input.quitout_signal_available = false;
+        m.tick(input, now);
+        assert!(!m.pending_quit_out);
     }
 
     // ------------------------------------------------------------------
