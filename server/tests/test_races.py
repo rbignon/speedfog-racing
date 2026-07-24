@@ -3270,10 +3270,12 @@ async def test_build_race_info_includes_custom_rules(async_session, organizer):
 
 
 @pytest.mark.asyncio
-async def test_build_race_info_includes_quit_out_penalty(async_session, organizer):
+async def test_build_race_info_includes_quit_out_penalty(async_session, organizer, monkeypatch):
     """build_race_info forwards the configured quit-out penalty to clients."""
+    from speedfog_racing.config import settings
     from speedfog_racing.websocket.schemas import build_race_info
 
+    monkeypatch.setattr(settings, "quit_out_penalty_ms", 5000)
     async with async_session() as db:
         race = Race(
             name="Penalty Race",
@@ -3284,4 +3286,4 @@ async def test_build_race_info_includes_quit_out_penalty(async_session, organize
         await db.commit()
         await db.refresh(race)
         info = build_race_info(race)
-        assert info.quit_out_penalty_ms == 2000
+        assert info.quit_out_penalty_ms == 5000
