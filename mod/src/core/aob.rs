@@ -25,6 +25,14 @@ pub fn find_first(haystack: &[u8], pattern: &[PatternByte]) -> Option<usize> {
     (0..=last).find(|&i| matches_at(haystack, i, pattern))
 }
 
+/// Target address of a RIP-relative operand: the displacement is relative to
+/// the address of the NEXT instruction (`instruction_addr + instruction_len`).
+pub fn rip_relative_target(instruction_addr: usize, disp32: i32, instruction_len: usize) -> usize {
+    instruction_addr
+        .wrapping_add(instruction_len)
+        .wrapping_add(disp32 as isize as usize)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -44,5 +52,13 @@ mod tests {
     #[test]
     fn find_first_none_for_empty_pattern() {
         assert_eq!(find_first(&[0u8; 4], &[]), None);
+    }
+
+    #[test]
+    fn rip_relative_target_resolves_forward_and_backward() {
+        // cmp qword ptr [rip+disp32], 0 is 8 bytes; target = end of
+        // instruction + displacement.
+        assert_eq!(rip_relative_target(0x1000, 0xD0, 8), 0x10D8);
+        assert_eq!(rip_relative_target(0x1000, -0x10, 8), 0xFF8);
     }
 }

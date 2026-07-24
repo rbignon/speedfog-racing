@@ -13,7 +13,7 @@ use crate::core::constants::{
     CHRASM_SECONDARY_LEFT_WEP_OFFSET, CHRASM_SECONDARY_RIGHT_WEP_OFFSET,
     CHRASM_TERTIARY_LEFT_WEP_OFFSET, CHRASM_TERTIARY_RIGHT_WEP_OFFSET, CHRASM_WEP_SLOT_LEFT_OFFSET,
     CHRASM_WEP_SLOT_RIGHT_OFFSET, FIELD_AREA_PLAY_REGION_ID_OFFSET, GAMEDATAMAN_DEATH_COUNT_OFFSET,
-    GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET, INVALID_MAP_ID, UNARMED_WEAPON_ID,
+    GAMEDATAMAN_IGT_OFFSET, GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET, INVALID_MAP_ID, UNARMED_WEAPON_ID,
 };
 use crate::core::map_utils::format_map_id;
 use crate::core::types::PlayerPosition;
@@ -37,12 +37,16 @@ pub struct GameState {
     wep_slot_left_ptr: PointerChain<i32>,
     wep_slot_right_ptr: PointerChain<i32>,
     weapon_slot_ptrs: [[PointerChain<i32>; 3]; 2],
+    /// 4-byte IGT chain for penalty writes. libeldenring's `pointers.igt` is
+    /// typed `usize`; writing through it would clobber GameDataMan+0xA4.
+    igt_write_ptr: PointerChain<u32>,
 }
 
 impl GameState {
     /// Create a new GameState reader
     pub fn new() -> Self {
         let pointers = Pointers::new();
+        let game_data_man = pointers.base_addresses.game_data_man;
 
         // Create pointer chain for PlayRegionId (FieldArea + 0xE4)
         let play_region_id_ptr = PointerChain::<u32>::new(&[
@@ -56,6 +60,10 @@ impl GameState {
             GAMEDATAMAN_DEATH_COUNT_OFFSET,
         ]);
 
+        // Create pointer chain for IGT penalty writes (GameDataMan + 0xA0).
+        // 4-byte u32, distinct from libeldenring's `pointers.igt` (usize).
+        let igt_write_ptr = PointerChain::<u32>::new(&[game_data_man, GAMEDATAMAN_IGT_OFFSET]);
+
         // Create pointer chain for loading screen flag
         // CE table: "In cut-scene/loading screen" at [[EventFlagMan]+0x28]+0x113
         let loading_screen_ptr = PointerChain::<u8>::new(&[
@@ -64,7 +72,6 @@ impl GameState {
             0x113,
         ]);
 
-        let game_data_man = pointers.base_addresses.game_data_man;
         let chrasm_chain = |offset: usize| -> PointerChain<i32> {
             PointerChain::<i32>::new(&[game_data_man, GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET, offset])
         };
@@ -93,6 +100,7 @@ impl GameState {
             wep_slot_left_ptr,
             wep_slot_right_ptr,
             weapon_slot_ptrs,
+            igt_write_ptr,
         }
     }
 
@@ -189,6 +197,32 @@ impl GameState {
             None => return false,
         };
         map_id != INVALID_MAP_ID && !(coords[0] == 0.0 && coords[1] == 0.0 && coords[2] == 0.0)
+    }
+
+    /// Add `ms` to the in-game timer (quit-out penalty). Returns the new
+    /// value, or None when the IGT is unreadable or unwritable (main menu,
+    /// loading). 4-byte u32 read-modify-write; the game's own per-frame IGT
+    /// accumulation resumes from the written value.
+    pub fn add_igt_penalty(&self, ms: u32) -> Option<u32> {
+        profile_span!("add_igt_penalty");
+        let current = self.igt_write_ptr.read()?;
+        let new = current.saturating_add(ms);
+        self.igt_write_ptr.write(new)?;
+        Some(new)
+    }
+
+    /// Whether MapItemMan is null: true on the title screen (and during
+    /// boot, before the first load). In-game loading screens (death, fast
+    /// travel) keep it non-null, which is what makes it a quit-out
+    /// discriminator for the fallback path.
+    pub fn is_at_main_menu(&self) -> bool {
+        profile_span!("is_at_main_menu");
+        let loc = self.pointers.base_addresses.map_item_man;
+        if loc == 0 {
+            return false;
+        }
+        // SAFETY: loc is a static in eldenring.exe's mapped image.
+        unsafe { (loc as *const usize).read() == 0 }
     }
 }
 

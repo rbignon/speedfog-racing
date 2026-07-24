@@ -9,6 +9,7 @@
 mod event_flags;
 mod game_state;
 pub mod item_spawner;
+pub mod quitout;
 mod scan;
 pub mod sp_effect_apply;
 pub mod sp_effect_runner;

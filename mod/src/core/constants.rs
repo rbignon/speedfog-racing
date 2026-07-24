@@ -15,6 +15,9 @@ pub const INVALID_MAP_ID: u32 = 0xFFFFFFFF;
 /// Offset of death_count in GameDataMan structure
 pub const GAMEDATAMAN_DEATH_COUNT_OFFSET: usize = 0x94;
 
+/// GameDataMan + 0xA0: in-game time, u32 milliseconds (the save-select IGT).
+pub const GAMEDATAMAN_IGT_OFFSET: usize = 0xA0;
+
 /// PlayerGameData pointer offset within GameDataMan. The ChrAsm sub-structure
 /// (currently equipped items) lives under this pointer.
 pub const GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET: usize = 0x8;
