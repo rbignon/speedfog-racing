@@ -95,6 +95,7 @@ pub enum MachineMessage {
         position: Option<[f32; 3]>,
         play_region_id: Option<u32>,
         message_id: u64,
+        quit_out: bool,
     },
     ZoneQueryAck {
         message_id: u64,
@@ -133,6 +134,7 @@ pub struct BufferedZoneQuery {
     pub map_id: Option<String>,
     pub position: Option<[f32; 3]>,
     pub play_region_id: Option<u32>,
+    pub quit_out: bool,
 }
 
 /// Current race state from server
@@ -227,12 +229,18 @@ pub enum Effect {
         map_id: Option<String>,
         position: Option<[f32; 3]>,
         play_region_id: Option<u32>,
+        quit_out: bool,
     },
     /// Write a flag value into game memory (the shell resolves the category
     /// first and skips the write when unresolvable, as today).
     SetGameFlag {
         flag_id: u32,
         value: bool,
+    },
+    /// Add a quit-out penalty to the in-game timer (4-byte u32 write; see
+    /// `GameState::add_igt_penalty`).
+    ApplyIgtPenalty {
+        ms: u32,
     },
     /// Clear the warp hook's captured grace entity id.
     ClearWarpCapture,
@@ -392,6 +400,16 @@ impl RaceMachine {
             .as_ref()
             .map(|r| r.status == RaceStatus::Running)
             .unwrap_or(false)
+    }
+
+    /// Configured quit-out penalty, 0 when no race is known (nothing to
+    /// penalize outside a race anyway).
+    fn quit_out_penalty_ms(&self) -> u32 {
+        self.race_state
+            .race
+            .as_ref()
+            .map(|r| r.quit_out_penalty_ms)
+            .unwrap_or(0)
     }
 
     pub fn is_race_setup(&self) -> bool {
@@ -599,6 +617,8 @@ impl RaceMachine {
                 if let Some(ref mut race) = self.race_state.race {
                     race.status = RaceStatus::Running;
                 }
+                // A quit-out requested before the start is not a race quit-out.
+                self.pending_quit_out = false;
                 self.bump_leaderboard_version();
             }
             MachineMessage::LeaderboardUpdate {
@@ -762,6 +782,7 @@ impl RaceMachine {
                 position,
                 play_region_id,
                 message_id,
+                quit_out,
             } => {
                 self.in_flight_zone_queries
                     .entry(message_id)
@@ -771,6 +792,7 @@ impl RaceMachine {
                         map_id,
                         position,
                         play_region_id,
+                        quit_out,
                     });
                 info!(message_id, "[WS] Re-queued drained zone query");
             }
@@ -968,9 +990,39 @@ impl RaceMachine {
         // must treat them as unset, mirroring the pre-machine behavior where
         // each stage re-read memory after the previous stage's clears.
         let mut cleared: HashSet<u32> = HashSet::new();
+        // Set when the quit-out penalty below pulls `last_status_update`
+        // into the past: without this, the generic periodic check further
+        // down (same tick, same `now`) would immediately see the gate open
+        // and consume the pull-forward itself, so the *next* tick (the one
+        // actually meant to benefit) would see no elapsed time and skip.
+        let mut quit_out_status_pulled_forward = false;
 
         // Loading screen exit: send deferred event_flags (certain) or zone_query (probabilistic)
         if position_readable && !self.was_position_readable {
+            let quit_out = std::mem::take(&mut self.pending_quit_out);
+            if quit_out
+                && !self.training
+                && self.is_race_running()
+                && !self.am_i_finished()
+                && !self.is_countdown_active(now)
+            {
+                let penalty_ms = self.quit_out_penalty_ms();
+                if penalty_ms > 0 {
+                    effects.push(Effect::ApplyIgtPenalty { ms: penalty_ms });
+                    self.set_status(
+                        format!("Quit-out: +{:.0}s", penalty_ms as f32 / 1000.0),
+                        now,
+                    );
+                    // Pull the next periodic status_update forward so the
+                    // leaderboard reflects the bumped IGT immediately.
+                    self.last_status_update = now
+                        .checked_sub(Duration::from_secs(2))
+                        .unwrap_or(self.last_status_update);
+                    quit_out_status_pulled_forward = true;
+                    info!(penalty_ms, "[RACE] Quit-out penalty applied");
+                }
+            }
+
             // Force one immediate flag scan to catch flags set during loading
             // (e.g. Erdtree burn, Maliketh warp) that the 10Hz poll couldn't read
             // because is_flag_set() returns None while position is unreadable.
@@ -1043,6 +1095,7 @@ impl RaceMachine {
                             map_id.clone(),
                             position,
                             play_region_id,
+                            quit_out,
                         ));
                         self.last_sent_debug = Some(format!(
                             "zone_query(grace={:?}, map={:?})",
@@ -1203,7 +1256,7 @@ impl RaceMachine {
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
         // Stop once finished since IGT is frozen at finish time.
-        if self.wants_status_update(now, igt_ms) {
+        if !quit_out_status_pulled_forward && self.wants_status_update(now, igt_ms) {
             effects.push(Effect::SendStatusUpdate {
                 igt_ms,
                 death_count: deaths,
@@ -1236,6 +1289,7 @@ impl RaceMachine {
         map_id: Option<String>,
         position: Option<[f32; 3]>,
         play_region_id: Option<u32>,
+        quit_out: bool,
     ) -> Effect {
         let message_id = self.next_event_message_id;
         self.next_event_message_id = self.next_event_message_id.wrapping_add(1);
@@ -1247,6 +1301,7 @@ impl RaceMachine {
                 map_id: map_id.clone(),
                 position,
                 play_region_id,
+                quit_out,
             },
         );
         Effect::SendZoneQuery {
@@ -1256,6 +1311,7 @@ impl RaceMachine {
             map_id,
             position,
             play_region_id,
+            quit_out,
         }
     }
 
@@ -1305,6 +1361,7 @@ impl RaceMachine {
                     map_id: zq.map_id.clone(),
                     position: zq.position,
                     play_region_id: zq.play_region_id,
+                    quit_out: zq.quit_out,
                 });
                 info!(message_id, "[RACE] Replaying in-flight zone query");
             }
@@ -2165,5 +2222,241 @@ mod tests {
             value: false
         }));
         assert_eq!(m.race_state.death_counts.get("zone_a"), Some(&4));
+    }
+
+    // ------------------------------------------------------------------
+    // Quit-out consumption (penalty + tagged zone query)
+    // ------------------------------------------------------------------
+
+    fn sent_zone_query_quit_out(effects: &[Effect]) -> Option<bool> {
+        effects.iter().find_map(|e| match e {
+            Effect::SendZoneQuery { quit_out, .. } => Some(*quit_out),
+            _ => None,
+        })
+    }
+
+    fn penalty_ms(effects: &[Effect]) -> Option<u32> {
+        effects.iter().find_map(|e| match e {
+            Effect::ApplyIgtPenalty { ms } => Some(*ms),
+            _ => None,
+        })
+    }
+
+    /// Full quit-out cycle: in-world -> bit -> unload -> reload.
+    /// Returns the loading-exit effects.
+    fn quit_out_cycle(m: &mut RaceMachine, now: Instant) -> Vec<Effect> {
+        m.tick(tick_in(snap_quit(true, Some(false), None), true, None), now);
+        m.tick(tick_in(snap_quit(true, Some(true), None), true, None), now);
+        m.tick(tick_in(snap_quit(false, Some(true), None), true, None), now);
+        let mut input = tick_in(snap_quit(true, Some(false), None), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: Some(6100),
+        });
+        m.tick(input, now)
+    }
+
+    #[test]
+    fn quit_out_cycle_applies_penalty_banner_and_tagged_query() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        let fx = quit_out_cycle(&mut m, now);
+
+        assert_eq!(penalty_ms(&fx), Some(2000));
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(true));
+        assert_eq!(m.get_status(now), Some("Quit-out: +2s"));
+        assert!(!m.pending_quit_out, "latch consumed");
+    }
+
+    #[test]
+    fn quit_out_penalty_pulls_status_update_forward() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        quit_out_cycle(&mut m, now);
+
+        // Immediately after the reload tick, a status_update fires without
+        // waiting for the periodic 1s gate.
+        let fx = m.tick(tick_in(snap(Some(5000), true), true, None), now + ms(50));
+        assert!(fx
+            .iter()
+            .any(|e| matches!(e, Effect::SendStatusUpdate { .. })));
+    }
+
+    #[test]
+    fn quit_out_custom_and_zero_penalty() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        let mut race: RaceInfo = serde_json::from_str(
+            r#"{"id":"r1","name":"x","status":"running","quit_out_penalty_ms":5000}"#,
+        )
+        .unwrap();
+        race.reparse_dates();
+        m.handle_message(
+            MachineMessage::AuthOk {
+                participant_id: "p1".to_string(),
+                race,
+                seed: test_seed(&[100], Some(900), "{}"),
+                participants: vec![test_participant("p1", "playing", 1)],
+                phantom_skin: None,
+                latest_mod_version: None,
+            },
+            now,
+        );
+        let fx = quit_out_cycle(&mut m, now);
+        assert_eq!(penalty_ms(&fx), Some(5000));
+        assert_eq!(m.get_status(now), Some("Quit-out: +5s"));
+
+        // penalty 0: no penalty effect, no banner, query still tagged.
+        let mut m0 = RaceMachine::new(1, String::new(), false, now);
+        let mut race0: RaceInfo = serde_json::from_str(
+            r#"{"id":"r1","name":"x","status":"running","quit_out_penalty_ms":0}"#,
+        )
+        .unwrap();
+        race0.reparse_dates();
+        m0.handle_message(
+            MachineMessage::AuthOk {
+                participant_id: "p1".to_string(),
+                race: race0,
+                seed: test_seed(&[100], Some(900), "{}"),
+                participants: vec![test_participant("p1", "playing", 1)],
+                phantom_skin: None,
+                latest_mod_version: None,
+            },
+            now,
+        );
+        let fx = quit_out_cycle(&mut m0, now);
+        assert_eq!(penalty_ms(&fx), None);
+        assert_eq!(m0.get_status(now), None);
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(true));
+    }
+
+    #[test]
+    fn no_penalty_when_not_running_finished_or_training() {
+        let now = Instant::now();
+
+        // Race in setup.
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100], Some(900)), now);
+        let fx = quit_out_cycle(&mut m, now);
+        assert_eq!(penalty_ms(&fx), None);
+        assert_eq!(sent_zone_query_quit_out(&fx), None, "setup: no query sent");
+
+        // Finished participant.
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(
+            MachineMessage::AuthOk {
+                participant_id: "p1".to_string(),
+                race: test_race("running"),
+                seed: test_seed(&[100], Some(900), "{}"),
+                participants: vec![test_participant("p1", "finished", 1)],
+                phantom_skin: None,
+                latest_mod_version: None,
+            },
+            now,
+        );
+        let fx = quit_out_cycle(&mut m, now);
+        assert_eq!(penalty_ms(&fx), None);
+
+        // Training session: zone tag yes, penalty no.
+        let mut m = RaceMachine::new(1, String::new(), true, now);
+        m.handle_message(auth_ok("running", &[100], Some(900)), now);
+        let fx = quit_out_cycle(&mut m, now);
+        assert_eq!(penalty_ms(&fx), None);
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(true));
+    }
+
+    #[test]
+    fn two_quit_out_cycles_pay_twice() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        let fx1 = quit_out_cycle(&mut m, now);
+        let fx2 = quit_out_cycle(&mut m, now + secs(10));
+        assert_eq!(penalty_ms(&fx1), Some(2000));
+        assert_eq!(penalty_ms(&fx2), Some(2000));
+    }
+
+    #[test]
+    fn plain_reload_sends_untagged_query_and_no_penalty() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        // Death-style cycle: no bit, no title screen.
+        m.tick(tick_in(snap(Some(1000), true), true, None), now);
+        m.tick(tick_in(snap(None, false), true, None), now);
+        let mut input = tick_in(snap(Some(1000), true), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: None,
+        });
+        let fx = m.tick(input, now);
+        assert_eq!(penalty_ms(&fx), None);
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(false));
+    }
+
+    #[test]
+    fn replayed_zone_query_preserves_quit_out() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        let fx = quit_out_cycle(&mut m, now);
+        let message_id = fx
+            .iter()
+            .find_map(|e| match e {
+                Effect::SendZoneQuery { message_id, .. } => Some(*message_id),
+                _ => None,
+            })
+            .unwrap();
+
+        // Not ACKed: still in flight; a replay must keep the tag.
+        let mut effects = Vec::new();
+        m.replay_in_flight_zone_queries(&mut effects);
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::SendZoneQuery { message_id: id, quit_out: true, .. } if *id == message_id
+        )));
+    }
+
+    // ------------------------------------------------------------------
+    // Quit-out latch armed before race start
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn quit_out_armed_before_race_start_does_not_penalize_first_load() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100, 200, 900], Some(900)), now);
+
+        // Player quits to menu while waiting in setup for the race to start:
+        // arms the latch (rising edge of the return-to-title bit).
+        m.tick(tick_in(snap_quit(true, Some(false), None), true, None), now);
+        m.tick(tick_in(snap_quit(true, Some(true), None), true, None), now);
+        assert!(m.pending_quit_out);
+
+        m.handle_message(MachineMessage::RaceStart(3), now);
+        assert!(!m.pending_quit_out, "race start clears the pre-race latch");
+
+        // Reload once running, past the countdown: must NOT be treated as a
+        // quit-out, since the armed latch predates the race.
+        let after_countdown = now + secs(4);
+        m.tick(tick_in(snap(Some(1000), true), true, None), after_countdown);
+        m.tick(tick_in(snap(None, false), true, None), after_countdown);
+        let mut input = tick_in(snap(Some(1000), true), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: None,
+        });
+        let fx = m.tick(input, after_countdown);
+        assert_eq!(penalty_ms(&fx), None);
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(false));
     }
 }
