@@ -55,6 +55,7 @@
   type ZoneSortKey =
     | "display_name"
     | "skips"
+    | "visits"
     | "median_time_ms"
     | "fastest_time_ms"
     | "avg_deaths_per_visit"
@@ -184,7 +185,7 @@
   <title>Zone Codex - SpeedFog Racing</title>
   <meta
     name="description"
-    content="Every explorable zone in SpeedFog Racing, with median clear time, deaths, backtrack rate, and documented skips."
+    content="Every explorable zone in SpeedFog Racing, with visit counts, median clear time, deaths, backtrack rate, and documented skips."
   />
   <!-- Inert for crawlers today (the app runs with ssr=false); kept so the
        tags are already right if SSR/prerender is ever enabled. -->
@@ -268,6 +269,15 @@
               Skips{zoneSortIndicator("skips")}
             </button>
           </span>
+          <span class="col-num" aria-sort={zoneSortAria("visits")}>
+            <button
+              type="button"
+              class="sort-btn"
+              onclick={() => handleZoneSort("visits")}
+            >
+              Visits{zoneSortIndicator("visits")}
+            </button>
+          </span>
           <span class="col-num" aria-sort={zoneSortAria("median_time_ms")}>
             <button
               type="button"
@@ -321,6 +331,10 @@
               >
             </span>
             <span class="col-num">{skips > 0 ? skips : "-"}</span>
+            <!-- Raw count, 0 included: visits=0 is a real value (zone only
+                 reached through warp landings), not a no-data sentinel like
+                 median/fastest 0. -->
+            <span class="col-num">{zone.visits}</span>
             <span class="col-num"
               >{zone.median_time_ms === 0
                 ? "-"
@@ -473,13 +487,13 @@
   }
 
   .zone-table {
-    min-width: 660px;
+    min-width: 740px;
   }
 
   .zone-table-header,
   .zone-row {
     display: grid;
-    grid-template-columns: minmax(180px, 2fr) 80px 100px 100px 100px 100px;
+    grid-template-columns: minmax(180px, 2fr) 80px 80px 120px 100px 100px 100px;
     align-items: center;
     gap: 0.5rem;
     padding: 0.65rem 1rem;
