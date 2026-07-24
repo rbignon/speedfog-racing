@@ -1418,6 +1418,220 @@ def test_training_zone_query_same_zone_does_not_backtrack(training_ws_client, as
     asyncio.run(_check_no_backtrack())
 
 
+def test_training_zone_query_quit_out_resumes_current_zone(training_ws_client, async_session):
+    """A quit_out zone_query short-circuits straight to current_zone: no
+    resolver heuristics, and no duplicate zone_history entry."""
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 3,
+        "total_nodes": 2,
+        "total_paths": 1,
+        "start_node": "chapel_start",
+        "final_boss": "godrick_boss",
+        "event_map": {"1040292800": "godrick_node"},
+        "finish_event": 1040292899,
+        "nodes": {
+            "chapel_start": {
+                "type": "start",
+                "layer": 0,
+                "tier": 1,
+                "display_name": "Chapel of Anticipation",
+                "zones": ["chapel_start"],
+            },
+            "godrick_node": {
+                "layer": 1,
+                "tier": 5,
+                "display_name": "Godrick the Grafted",
+                "zones": ["stormveil_godrick"],
+            },
+        },
+        "edges": [{"from": "chapel_start", "to": "godrick_node"}],
+    }
+
+    async def _setup():
+        async with async_session() as db:
+            user = User(
+                twitch_id="qo_train_user",
+                twitch_username="qo_trainer",
+                api_token=generate_token(),
+                role=UserRole.USER,
+            )
+            seed = Seed(
+                seed_number="qo_train_001",
+                pool_name="training_standard",
+                graph_json=graph_json,
+                total_layers=3,
+                folder_path="/tmp/qo_seed.zip",
+                status=SeedStatus.AVAILABLE,
+            )
+            db.add_all([user, seed])
+            await db.commit()
+            await db.refresh(user)
+            await db.refresh(seed)
+            ts = TrainingSession(user_id=user.id, seed_id=seed.id)
+            db.add(ts)
+            await db.commit()
+            await db.refresh(ts)
+            return str(ts.id), ts.mod_token
+
+    sid, token = asyncio.run(_setup())
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        ws.receive_json()  # leaderboard_update
+
+        # Reach godrick_node via event_flag: current_zone=godrick_node,
+        # zone_history has 2 entries (spawn + fog).
+        ws.send_json({"type": "event_flag", "flag_id": 1040292800, "igt_ms": 5000})
+        ws.receive_json()  # leaderboard_update
+        zu1 = ws.receive_json()  # zone_update
+        assert zu1["node_id"] == "godrick_node"
+
+        # Quit-out reload: map_id is deliberately ambiguous/unrelated so a
+        # correct answer proves the short-circuit (not the resolver)
+        # produced it.
+        ws.send_json(
+            {
+                "type": "zone_query",
+                "quit_out": True,
+                "map_id": "m99_99_99_99",
+            }
+        )
+        zu2 = ws.receive_json()
+        assert zu2["type"] == "zone_update"
+        assert zu2["node_id"] == "godrick_node"
+
+        time.sleep(0.1)
+
+    async def _check():
+        async with async_session() as db:
+            result = await db.execute(
+                select(TrainingSession).where(TrainingSession.id == uuid.UUID(sid))
+            )
+            s = result.scalar_one()
+            # No duplicate history entry: the quit-out resumed the same
+            # zone, so no backtrack was recorded.
+            assert len(s.zone_history) == 2
+            assert s.current_zone == "godrick_node"
+
+    asyncio.run(_check())
+
+
+def test_training_zone_query_quit_out_stale_zone_falls_through_to_resolver(
+    training_ws_client, async_session
+):
+    """A quit_out zone_query whose current_zone no longer exists in the graph
+    (e.g. after a seed reroll) must fall through to the resolver instead of
+    silently dropping the reply."""
+    graph_json = {
+        "version": "4.0",
+        "total_layers": 3,
+        "total_nodes": 2,
+        "total_paths": 1,
+        "start_node": "chapel_start",
+        "final_boss": "godrick_boss",
+        "event_map": {"1040292800": "godrick_node"},
+        "finish_event": 1040292899,
+        "nodes": {
+            "chapel_start": {
+                "type": "start",
+                "layer": 0,
+                "tier": 1,
+                "display_name": "Chapel of Anticipation",
+                "zones": ["chapel_start"],
+            },
+            "godrick_node": {
+                "layer": 1,
+                "tier": 5,
+                "display_name": "Godrick the Grafted",
+                "zones": ["stormveil_godrick"],
+            },
+        },
+        "edges": [{"from": "chapel_start", "to": "godrick_node"}],
+    }
+
+    async def _setup():
+        async with async_session() as db:
+            user = User(
+                twitch_id="stale_train_user",
+                twitch_username="stale_trainer",
+                api_token=generate_token(),
+                role=UserRole.USER,
+            )
+            seed = Seed(
+                seed_number="stale_train_001",
+                pool_name="training_standard",
+                graph_json=graph_json,
+                total_layers=3,
+                folder_path="/tmp/stale_seed.zip",
+                status=SeedStatus.AVAILABLE,
+            )
+            db.add_all([user, seed])
+            await db.commit()
+            await db.refresh(user)
+            await db.refresh(seed)
+            ts = TrainingSession(user_id=user.id, seed_id=seed.id)
+            db.add(ts)
+            await db.commit()
+            await db.refresh(ts)
+            return str(ts.id), ts.mod_token
+
+    sid, token = asyncio.run(_setup())
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        ws.receive_json()  # leaderboard_update
+
+        ws.send_json({"type": "event_flag", "flag_id": 1040292800, "igt_ms": 5000})
+        ws.receive_json()  # leaderboard_update
+        ws.receive_json()  # zone_update
+
+        time.sleep(0.1)
+
+    # Simulate a seed reroll edge case: current_zone points at a node that
+    # no longer exists in the graph. zone_history still ends on the valid
+    # godrick_node, so reconnect's own zone_update resend is unaffected.
+    async def _corrupt():
+        async with async_session() as db:
+            result = await db.execute(
+                select(TrainingSession).where(TrainingSession.id == uuid.UUID(sid))
+            )
+            s = result.scalar_one()
+            s.current_zone = "removed_node"
+            await db.commit()
+
+    asyncio.run(_corrupt())
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+        ws.receive_json()  # zone_update (resent from zone_history, unaffected)
+
+        # Quit-out with a valid grace so the resolver (not the stale
+        # current_zone) must answer.
+        ws.send_json(
+            {
+                "type": "zone_query",
+                "quit_out": True,
+                "grace_entity_id": 10002950,
+            }
+        )
+        zu = ws.receive_json()
+        assert zu["type"] == "zone_update"
+        assert zu["node_id"] == "godrick_node"
+
+        time.sleep(0.1)
+
+
 def test_training_event_flag_revisit_appends_to_zone_history(
     training_ws_client, training_session_data, async_session
 ):

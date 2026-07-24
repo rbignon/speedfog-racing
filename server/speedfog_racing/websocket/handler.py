@@ -846,9 +846,16 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     await self._send_zone_query_ack(message_id)
                 return
 
-            if zq.quit_out and entity.current_zone:
+            if (
+                zq.quit_out
+                and entity.current_zone
+                and entity.current_zone in graph_json.get("nodes", {})
+            ):
                 # Quit-out reload: the player reloads exactly where they were,
                 # so the zone cannot have changed. Skip the heuristics.
+                # `current_zone` must still exist in the (possibly rerolled)
+                # graph; otherwise fall through to the resolver, which trusts
+                # the reported position for a quit-out (trust_position below).
                 node_id = entity.current_zone
                 logger.info(
                     "zone_query: quit-out detected, resuming node_id=%s for %s",
