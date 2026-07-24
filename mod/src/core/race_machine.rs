@@ -309,8 +309,12 @@ pub struct RaceMachine {
     pub pending_quit_out: bool,
     /// Previous sample of the return-title bit (rising-edge arming).
     pub prev_quit_out_bit: bool,
-    /// The player has been in-world this session (guards the fallback
-    /// against the boot-time title screen).
+    /// Has been in-world since race start (or boot, before the first race
+    /// start). Guards the fallback against the boot-time title screen, and
+    /// is cleared on `RaceStart` so it re-latches on the first in-world
+    /// frame instead of letting a stale `true` re-arm the fallback while the
+    /// player is still sitting on the title screen the race-start clear was
+    /// meant to forgive.
     pub has_been_in_world: bool,
     /// Last time the quit-out signals were sampled (10 Hz cadence).
     pub last_quitout_poll: Instant,
@@ -619,6 +623,12 @@ impl RaceMachine {
                 }
                 // A quit-out requested before the start is not a race quit-out.
                 self.pending_quit_out = false;
+                // Without this, the fallback arming condition below (position
+                // unreadable + has_been_in_world + at_main_menu + latch
+                // clear) re-fires on the very next 10 Hz sample while the
+                // player still sits on the title screen, re-arming the latch
+                // this clear just removed.
+                self.has_been_in_world = false;
                 self.bump_leaderboard_version();
             }
             MachineMessage::LeaderboardUpdate {
@@ -1009,10 +1019,12 @@ impl RaceMachine {
                 let penalty_ms = self.quit_out_penalty_ms();
                 if penalty_ms > 0 {
                     effects.push(Effect::ApplyIgtPenalty { ms: penalty_ms });
-                    self.set_status(
-                        format!("Quit-out: +{:.0}s", penalty_ms as f32 / 1000.0),
-                        now,
-                    );
+                    let banner = if penalty_ms % 1000 == 0 {
+                        format!("Quit-out: +{}s", penalty_ms / 1000)
+                    } else {
+                        format!("Quit-out: +{:.1}s", penalty_ms as f32 / 1000.0)
+                    };
+                    self.set_status(banner, now);
                     // Pull the next periodic status_update forward so the
                     // leaderboard reflects the bumped IGT immediately.
                     self.last_status_update = now
@@ -2332,6 +2344,29 @@ mod tests {
         assert_eq!(penalty_ms(&fx), None);
         assert_eq!(m0.get_status(now), None);
         assert_eq!(sent_zone_query_quit_out(&fx), Some(true));
+
+        // Non-round-thousand penalty: banner keeps the decimal instead of
+        // truncating to "+0s"/"+1s".
+        let mut m1 = RaceMachine::new(1, String::new(), false, now);
+        let mut race1: RaceInfo = serde_json::from_str(
+            r#"{"id":"r1","name":"x","status":"running","quit_out_penalty_ms":1500}"#,
+        )
+        .unwrap();
+        race1.reparse_dates();
+        m1.handle_message(
+            MachineMessage::AuthOk {
+                participant_id: "p1".to_string(),
+                race: race1,
+                seed: test_seed(&[100], Some(900), "{}"),
+                participants: vec![test_participant("p1", "playing", 1)],
+                phantom_skin: None,
+                latest_mod_version: None,
+            },
+            now,
+        );
+        let fx = quit_out_cycle(&mut m1, now);
+        assert_eq!(penalty_ms(&fx), Some(1500));
+        assert_eq!(m1.get_status(now), Some("Quit-out: +1.5s"));
     }
 
     #[test]
@@ -2443,6 +2478,56 @@ mod tests {
 
         // Reload once running, past the countdown: must NOT be treated as a
         // quit-out, since the armed latch predates the race.
+        let after_countdown = now + secs(4);
+        m.tick(tick_in(snap(Some(1000), true), true, None), after_countdown);
+        m.tick(tick_in(snap(None, false), true, None), after_countdown);
+        let mut input = tick_in(snap(Some(1000), true), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: None,
+        });
+        let fx = m.tick(input, after_countdown);
+        assert_eq!(penalty_ms(&fx), None);
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(false));
+    }
+
+    #[test]
+    fn fallback_latch_does_not_rearm_after_race_start() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100, 200, 900], Some(900)), now);
+
+        // In-world once, fallback mode (no return-to-title bit signal):
+        // sets has_been_in_world.
+        let mut input = tick_in(snap_quit(true, None, None), true, None);
+        input.quitout_signal_available = false;
+        m.tick(input, now);
+
+        // Title screen observed, fallback mode: arms the latch.
+        let mut input = tick_in(snap_quit(false, None, Some(true)), true, None);
+        input.quitout_signal_available = false;
+        m.tick(input, now);
+        assert!(m.pending_quit_out);
+
+        m.handle_message(MachineMessage::RaceStart(3), now);
+        assert!(!m.pending_quit_out, "race start clears the pre-race latch");
+
+        // Still sitting on the title screen: the very next fallback sample
+        // must NOT re-arm the latch the race start just cleared.
+        let mut input = tick_in(snap_quit(false, None, Some(true)), true, None);
+        input.quitout_signal_available = false;
+        m.tick(input, now);
+        assert!(
+            !m.pending_quit_out,
+            "fallback must not re-arm right after race start"
+        );
+
+        // Reload once running, past the countdown: must NOT be treated as a
+        // quit-out.
         let after_countdown = now + secs(4);
         m.tick(tick_in(snap(Some(1000), true), true, None), after_countdown);
         m.tick(tick_in(snap(None, false), true, None), after_countdown);
