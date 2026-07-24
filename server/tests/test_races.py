@@ -3267,3 +3267,21 @@ async def test_build_race_info_includes_custom_rules(async_session, organizer):
         await db.refresh(race)
         info = build_race_info(race)
         assert info.custom_rules == "Stream required"
+
+
+@pytest.mark.asyncio
+async def test_build_race_info_includes_quit_out_penalty(async_session, organizer):
+    """build_race_info forwards the configured quit-out penalty to clients."""
+    from speedfog_racing.websocket.schemas import build_race_info
+
+    async with async_session() as db:
+        race = Race(
+            name="Penalty Race",
+            organizer_id=organizer.id,
+            status=RaceStatus.SETUP,
+        )
+        db.add(race)
+        await db.commit()
+        await db.refresh(race)
+        info = build_race_info(race)
+        assert info.quit_out_penalty_ms == 2000

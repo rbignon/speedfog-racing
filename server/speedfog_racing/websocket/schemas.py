@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 from pydantic import BaseModel, Field
 
+from speedfog_racing.config import settings
 from speedfog_racing.models import compute_late_join_deadlines
 
 # Wire-protocol version, independent from release numbers. Bump rules:
@@ -181,6 +182,8 @@ class RaceInfo(BaseModel):
     # Current seed FK, so a connected mod can detect that its loaded seed pack
     # went stale after a reroll (it compares this against its config seed_id).
     seed_id: str | None = None
+    # IGT penalty (ms) the mod applies per detected quit-out; 0 disables.
+    quit_out_penalty_ms: int = 2000
     # Web-only: organizer race rules shown in the download popup / race page.
     # The mod ignores this field (no deny_unknown_fields), so it is safe for
     # older mod builds.
@@ -215,6 +218,7 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
         private_dag=race.private_dag,
         countdown_seconds=countdown_seconds,
         seed_id=str(race.seed_id) if race.seed_id else None,
+        quit_out_penalty_ms=settings.quit_out_penalty_ms,
         custom_rules=race.custom_rules,
     )
 

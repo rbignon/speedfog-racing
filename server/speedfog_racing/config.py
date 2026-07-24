@@ -50,6 +50,8 @@ class Settings(BaseSettings):
 
     # Race
     countdown_seconds: int = 10
+    # IGT penalty (ms) a connected mod applies per detected quit-out; 0 disables.
+    quit_out_penalty_ms: int = 2000
     # Reject mods whose release version is older than this (emergency gate for
     # non-protocol issues, e.g. a crashing build). None disables the gate.
     min_mod_version: str | None = None
