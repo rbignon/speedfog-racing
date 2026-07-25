@@ -646,4 +646,15 @@ export const CONTENT_ITEMS: ContentItem[] = [
       youtubeId: "8Cif1WemQsw",
     },
   },
+  {
+    id: "caria-backwards",
+    kind: "skip",
+    zoneId: "liurnia_manor",
+    difficulty: 1,
+    title: "Backwards Route",
+    short: "",
+    video: {
+      youtubeId: "BPZkjRXO57g",
+    },
+  },
 ];
