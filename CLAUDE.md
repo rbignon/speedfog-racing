@@ -99,7 +99,7 @@ Rust DLL entry point in `lib.rs`. `dll/` has the main loop (`mod.rs`), ImGui ove
 
 - **Python**: ruff (line-length 100, rules E/F/I/UP), mypy strict, async/await for all I/O
 - **Frontend**: Prettier + ESLint, strict TypeScript, Svelte 5 runes (`$state`, `$derived`)
-- **Rust**: Edition 2021, toolchain pinned by `mod/rust-toolchain.toml` (builds with rustc 1.97.x fail to apply SpEffects; see the comment there before bumping), MSVC only for builds
+- **Rust**: Edition 2021, stable toolchain, MSVC only for builds
 
 ## Testing Notes
 
