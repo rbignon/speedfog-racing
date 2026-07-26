@@ -59,6 +59,12 @@
   }
 </script>
 
+<div class="tab-header">
+  <a href="/zones" class="see-all-link"
+    >Zone codex <span aria-hidden="true">&rarr;</span></a
+  >
+</div>
+
 {#if loading}
   <p class="loading-text">Loading zone stats...</p>
 {:else if error}
@@ -187,6 +193,23 @@
 {/if}
 
 <style>
+  .tab-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.75rem;
+  }
+
+  .see-all-link {
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    font-size: var(--font-size-sm);
+    transition: color 0.15s ease;
+  }
+
+  .see-all-link:hover {
+    color: var(--color-purple);
+  }
+
   .loading-text,
   .error-text {
     color: var(--color-text-disabled);
