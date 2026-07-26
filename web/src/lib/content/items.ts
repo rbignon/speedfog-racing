@@ -572,7 +572,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "quick-crystal-tunnel-skip",
     kind: "skip",
-    zoneId: "caelid_selliatunnel",
+    zoneId: "liurnia_tunnel",
     difficulty: 4,
     title: "Quick Crystal Tunnel Skip",
     short: "",
