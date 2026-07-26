@@ -38,3 +38,18 @@ pub(crate) fn scan_pattern(base: usize, size: usize, pattern: &[Option<u8>]) -> 
     let mem = unsafe { std::slice::from_raw_parts(base as *const u8, size) };
     crate::core::aob::find_first(mem, pattern).map(|i| base + i)
 }
+
+/// Address of the only match of `pattern` in `[base, base+size)`; `None` if
+/// the pattern is absent or ambiguous (matches more than once).
+pub(crate) fn scan_pattern_unique(
+    base: usize,
+    size: usize,
+    pattern: &[Option<u8>],
+) -> Option<usize> {
+    if size == 0 {
+        return None;
+    }
+    // SAFETY: the module was mapped by the OS; base..base+size is readable.
+    let mem = unsafe { std::slice::from_raw_parts(base as *const u8, size) };
+    crate::core::aob::find_unique(mem, pattern).map(|i| base + i)
+}

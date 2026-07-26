@@ -8,21 +8,35 @@
 //!
 //! The mod runs *inside* eldenring.exe (DLL injection), so we can call game
 //! functions directly. ER doesn't expose a stable export for SpEffect
-//! application, so we locate the function via an AOB pattern scan over the
-//! main module's executable section, cache the resolved address, then call
-//! it with the documented Microsoft x64 calling convention.
+//! application, so we locate the ChrIns-level apply wrapper via an AOB
+//! pattern scan over the main module's executable section, cache the
+//! resolved address, then call it with the documented Microsoft x64 calling
+//! convention.
+//!
+//! ### Why the ChrIns wrapper and not the lower-level function
+//!
+//! The lower-level `ChrIns_ApplySpEffect` (SpEffectCtrl-based, the AOB the
+//! Hexinton CE table hooks) takes SEVEN arguments: its prologue reads a byte
+//! at caller-`[rsp+0x30]` (7th argument) and forwards it to an inner call
+//! whose boolean result gates the whole application. A 5-argument foreign
+//! signature leaves that slot uninitialized, so the game reads whatever
+//! local variable the compiler happened to place there; a stack-layout
+//! change between rustc 1.96 and 1.97 silently flipped that byte and broke
+//! phantom skins while still logging success. The wrapper takes all its
+//! arguments in registers, so no stack slot can leak.
 //!
 //! ### Pattern source
 //!
-//! AOB taken from the publicly distributed Cheat Engine table
-//! `eldenring_all-in-one_Hexinton-v5.0_ce7.5.ct` (script `ApplyEffectAOBFecth`).
-//! Confirmed to apply phantom-skin SpEffect IDs (1450700-1450705) by manual
-//! validation in CE prior to integration.
+//! AOB taken from The Grand Archives CE table (`ER_TGA_v1.17.0.CT`, script
+//! `SpEffect_code`, function `SpEffect.addForSelf`), which calls the wrapper
+//! as `(ChrIns*, effect_id, 1)`. The pattern matches inside the wrapper;
+//! the entry point is `match - 0x1D`, mirroring the TGA script's
+//! `AOBScanModuleUnique(...) - 0x1D`.
 
 use std::ffi::c_void;
 use std::sync::OnceLock;
 
-use super::scan::{module_base_and_size, scan_pattern};
+use super::scan::{module_base_and_size, scan_pattern_unique};
 use libeldenring::pointers::Pointers;
 use libeldenring::prelude::base_addresses::Version;
 use libeldenring::version::get_version;
@@ -32,96 +46,43 @@ const PLAYER_INS_OFFSET_NEW: usize = 0x1E508; // V1_07_0+
 const PLAYER_INS_OFFSET_OLD: usize = 0x18468; // V1_02 .. V1_06
 const SP_EFFECT_CTRL_OFFSET: usize = 0x178;
 
-/// AOB pattern for the SpEffect-application function.
+/// AOB pattern for the ChrIns-level SpEffect apply wrapper.
 ///
-/// `Some(byte)` = exact match; `None` = wildcard (0x?? in the CE script).
-/// 70 bytes total. Matches the prologue of `ChrIns_ApplySpEffect`.
+/// `Some(byte)` = exact match; `None` = wildcard (0x?? in the TGA script).
+/// 19 bytes total, matching a movaps/lea/movaps/movzx sequence inside the
+/// wrapper body (`0F 28 0D .. | .. 8D .. | 0F 29 .. | 0F B6 D8`).
 const APPLY_SP_EFFECT_PATTERN: &[Option<u8>] = &[
-    Some(0x48),
-    Some(0x89),
-    Some(0x6C),
-    Some(0x24),
-    Some(0x10),
-    Some(0x48),
-    Some(0x89),
-    Some(0x74),
-    Some(0x24),
-    Some(0x18),
-    Some(0x57),
-    Some(0x41),
-    Some(0x56),
-    Some(0x41),
-    Some(0x57),
-    Some(0x48),
-    Some(0x83),
-    Some(0xEC),
-    Some(0x60),
+    Some(0x0F),
+    Some(0x28),
+    Some(0x0D),
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some(0x8D),
+    None,
+    None,
+    Some(0x0F),
+    Some(0x29),
+    None,
+    None,
+    None,
     Some(0x0F),
     Some(0xB6),
-    Some(0x84),
-    Some(0x24),
-    Some(0xB0),
-    Some(0x00),
-    Some(0x00),
-    Some(0x00),
-    Some(0x49),
-    Some(0x8B),
-    Some(0xF1),
-    Some(0x88),
-    Some(0x44),
-    Some(0x24),
-    Some(0x20),
-    Some(0x4D),
-    Some(0x8B),
-    Some(0xF0),
-    Some(0x8B),
-    Some(0xEA),
-    Some(0x4C),
-    Some(0x8B),
-    Some(0xF9),
-    Some(0xE8),
-    None,
-    None,
-    None,
-    None,
-    Some(0x84),
-    Some(0xC0),
-    Some(0x0F),
-    Some(0x84),
-    None,
-    None,
-    None,
-    None,
-    Some(0x48),
-    Some(0x83),
-    Some(0xCF),
-    Some(0xFF),
-    Some(0x48),
-    Some(0x89),
-    Some(0x9C),
-    Some(0x24),
-    Some(0x80),
-    Some(0x00),
-    Some(0x00),
-    Some(0x00),
-    Some(0x48),
-    Some(0x8B),
-    Some(0xDF),
+    Some(0xD8),
 ];
 
-/// MS x64 calling convention:
-/// - RCX = SpEffectCtrl (PlayerIns + 0x178)
+/// Distance from the AOB match back to the wrapper's entry point.
+const WRAPPER_ENTRY_OFFSET: usize = 0x1D;
+
+/// MS x64 calling convention, registers only:
+/// - RCX = ChrIns* (the character receiving the effect; here PlayerIns)
 /// - EDX = effect_id
-/// - R8  = PlayerIns (emitter)
-/// - R9  = PlayerIns
-/// - [rsp+0x20] = 1.0f (multiplier)
-type ApplySpEffectFn = unsafe extern "system" fn(
-    sp_effect_ctrl: *mut c_void,
-    effect_id: u32,
-    chr_ins_a: *mut c_void,
-    chr_ins_b: *mut c_void,
-    multiplier: f32,
-);
+/// - R8D = flag; the TGA `addForSelf` script always passes 1
+///
+/// No stack arguments: see the module docs for why that matters.
+type ApplySpEffectFn = unsafe extern "system" fn(chr_ins: *mut c_void, effect_id: u32, flag: u32);
 
 /// Resolved once per process. None means scanning failed.
 static APPLY_FN_ADDR: OnceLock<Option<usize>> = OnceLock::new();
@@ -138,7 +99,7 @@ pub(crate) fn player_ins_offset() -> usize {
     }
 }
 
-/// Resolve the apply-function address (idempotent, cached after first success).
+/// Resolve the wrapper's entry address (idempotent, cached after first success).
 fn resolve_apply_fn() -> Option<usize> {
     *APPLY_FN_ADDR.get_or_init(|| {
         let (base, size) = match module_base_and_size() {
@@ -148,16 +109,20 @@ fn resolve_apply_fn() -> Option<usize> {
                 return None;
             }
         };
-        match scan_pattern(base, size, APPLY_SP_EFFECT_PATTERN) {
+        // Unique-match scan: the pattern anchors mid-body, so a false match
+        // would resolve to an arbitrary address that we then execute. The
+        // TGA script asserts uniqueness the same way (AOBScanModuleUnique).
+        match scan_pattern_unique(base, size, APPLY_SP_EFFECT_PATTERN) {
             Some(addr) => {
+                let entry = addr - WRAPPER_ENTRY_OFFSET;
                 info!(
-                    addr = format!("0x{addr:X}"),
+                    addr = format!("0x{entry:X}"),
                     "Resolved ApplySpEffect function"
                 );
-                Some(addr)
+                Some(entry)
             }
             None => {
-                warn!("ApplySpEffect AOB pattern not found in eldenring.exe");
+                warn!("ApplySpEffect AOB pattern not found (or ambiguous) in eldenring.exe");
                 None
             }
         }
@@ -201,6 +166,8 @@ pub fn apply_speffect(effect_id: u32) -> bool {
         return false;
     }
 
+    // The wrapper resolves SpEffectCtrl itself; this read is only a
+    // readiness guard so we don't call into a half-initialized player.
     let sp_effect_ctrl_field = (player_ins as usize) + SP_EFFECT_CTRL_OFFSET;
     let sp_effect_ctrl = unsafe { (sp_effect_ctrl_field as *const *mut c_void).read() };
     if sp_effect_ctrl.is_null() {
@@ -208,15 +175,14 @@ pub fn apply_speffect(effect_id: u32) -> bool {
         return false;
     }
 
-    // SAFETY: we've located the function via AOB and verified its prologue
-    // matches CE's known-good signature. We pass a non-null SpEffectCtrl and
-    // a non-null PlayerIns; the multiplier 1.0 is what every CE script uses.
-    // The function may mutate the player's SpEffect linked list. If the
-    // pattern ever shifts (game patch breaks the AOB), `resolve_apply_fn`
-    // returns None and we never reach this call.
+    // SAFETY: we've located the wrapper via AOB and call it with the same
+    // register-only arguments as the TGA script (ChrIns, effect_id, 1). The
+    // function may mutate the player's SpEffect linked list. If the pattern
+    // ever shifts (game patch breaks the AOB), `resolve_apply_fn` returns
+    // None and we never reach this call.
     let apply: ApplySpEffectFn = unsafe { std::mem::transmute(func_addr) };
     unsafe {
-        apply(sp_effect_ctrl, effect_id, player_ins, player_ins, 1.0);
+        apply(player_ins, effect_id, 1);
     }
     debug!(effect_id, "Applied SpEffect");
     true
@@ -228,17 +194,22 @@ mod tests {
 
     #[test]
     fn pattern_has_expected_length() {
-        // Sanity check: 70 bytes, matching the CE script's AOB.
-        assert_eq!(APPLY_SP_EFFECT_PATTERN.len(), 70);
+        // Sanity check: 19 bytes, matching the TGA script's AOB.
+        assert_eq!(APPLY_SP_EFFECT_PATTERN.len(), 19);
     }
 
     #[test]
-    fn pattern_first_byte_is_function_prologue() {
-        // The function prologue starts with `48 89 6C 24 10`
-        // (mov [rsp+0x10], rbp). Sanity-check we kept the byte order.
-        assert_eq!(APPLY_SP_EFFECT_PATTERN[0], Some(0x48));
-        assert_eq!(APPLY_SP_EFFECT_PATTERN[1], Some(0x89));
-        assert_eq!(APPLY_SP_EFFECT_PATTERN[2], Some(0x6C));
+    fn pattern_anchors_are_exact_bytes() {
+        // The pattern starts with `0F 28 0D` (movaps xmm1, [rip+..]) and
+        // ends with the tail of `41 0F B6 D8` (movzx ebx, r8b on current
+        // builds; the REX prefix is wildcarded). Sanity-check we kept the
+        // byte order when transcribing from the CE script.
+        assert_eq!(APPLY_SP_EFFECT_PATTERN[0], Some(0x0F));
+        assert_eq!(APPLY_SP_EFFECT_PATTERN[1], Some(0x28));
+        assert_eq!(APPLY_SP_EFFECT_PATTERN[2], Some(0x0D));
+        assert_eq!(APPLY_SP_EFFECT_PATTERN[16], Some(0x0F));
+        assert_eq!(APPLY_SP_EFFECT_PATTERN[17], Some(0xB6));
+        assert_eq!(APPLY_SP_EFFECT_PATTERN[18], Some(0xD8));
     }
 
     // No test for player_ins_offset(): it calls libeldenring::version::get_version()
