@@ -2,6 +2,26 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.21.0] - 2026-07-26
+
+### Quit-outs
+
+- **Quitting out now costs time**: the mod adds a **2-second penalty** to your IGT
+- The map and leaderboard no longer risk re-detecting the wrong zone from your reload position after a quit-out
+- Fix: quitting out right after killing a boss could respawn you at the **arena entrance** instead of where you stood when it died (for example in the **Starscourge Radahn's arena**)
+
+### Seeds
+
+- **Fort of Reprimand joins the zone pool**, carved out of Scadu Altus behind brand-new fog gates
+- The **Invisible Black Knife Assassin** is excluded from the boss pool
+- Fix: seed generation could fail when **Placidusax or Metyr** was the final boss
+- Fix: the phantom skin wasn't applied ingame
+
+### Zone Codex
+
+- New **map icon in the navbar**
+- New skips: **Backwards Route** through Caria Manor and the Quick Crystal Tunnel Skip
+
 ## [1.20.0] - 2026-07-21
 
 ### Chat
