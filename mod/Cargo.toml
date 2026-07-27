@@ -91,6 +91,10 @@ features = [
 [dev-dependencies]
 # For tests
 
+[build-dependencies]
+# Build timestamp embedded in the startup log (same version as the runtime dep)
+chrono = "0.4"
+
 [profile.release]
 strip = "symbols"
 lto = true

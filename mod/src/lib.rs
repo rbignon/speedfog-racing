@@ -90,7 +90,13 @@ fn init_logging(hmodule: HINSTANCE) {
 #[cfg(target_os = "windows")]
 fn start_mod(hmodule: HINSTANCE) {
     init_logging(hmodule);
-    info!("SpeedFog Racing mod starting...");
+    info!(
+        version = env!("CARGO_PKG_VERSION"),
+        built = env!("SPEEDFOG_BUILD_TIMESTAMP"),
+        commit = env!("SPEEDFOG_GIT_COMMIT"),
+        rustc = env!("SPEEDFOG_RUSTC_VERSION"),
+        "SpeedFog Racing mod starting..."
+    );
 
     let tracker = match RaceTracker::new(hmodule) {
         Some(t) => t,
@@ -137,4 +143,15 @@ pub unsafe extern "system" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut c
         });
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn build_timestamp_is_rfc3339() {
+        // Pins the build.rs contract: the embedded timestamp must stay
+        // machine-parseable so log tooling can compare it across artifacts.
+        chrono::DateTime::parse_from_rfc3339(env!("SPEEDFOG_BUILD_TIMESTAMP"))
+            .expect("SPEEDFOG_BUILD_TIMESTAMP must be RFC 3339");
+    }
 }
