@@ -176,6 +176,7 @@ impl RaceTracker {
                 .flags(flags)
                 .build(|| {
                     self.render_seed_mismatch_warning(ui);
+                    self.render_wrong_save_warning(ui);
                     self.render_player_status(ui, max_width, &mut bufs);
                     self.render_race_ends_warning(ui, max_width, &mut bufs);
                     self.render_exits(ui, max_width);
@@ -223,6 +224,17 @@ impl RaceTracker {
             let danger = self.cached_colors.danger;
             ui.text_colored(danger, "SEED OUTDATED");
             ui.text_colored(danger, "Re-download your seed pack");
+        }
+    }
+
+    /// Danger banner shown while the machine detected a wrong save file
+    /// (impossible IGT forward jump). Cleared automatically when the race
+    /// save is reloaded.
+    fn render_wrong_save_warning(&self, ui: &hudhook::imgui::Ui) {
+        if self.machine.wrong_save {
+            let danger = self.cached_colors.danger;
+            ui.text_colored(danger, "WRONG SAVE LOADED");
+            ui.text_colored(danger, "Reload your race save");
         }
     }
 
