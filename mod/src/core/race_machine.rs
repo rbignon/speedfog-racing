@@ -301,6 +301,14 @@ pub struct RaceMachine {
     /// juggling; cleared on `RaceStart` so a quit-out from before the start
     /// cannot leak a penalty into the first in-race load.
     pub has_been_in_world: bool,
+    /// Wrong save loaded (impossible IGT forward jump across an unload):
+    /// freeze all race interaction (sends, flag reads/writes, penalty) and
+    /// show the persistent banner until the race save returns.
+    pub wrong_save: bool,
+    /// Last IGT observed on the believed-good save and when: the recovery
+    /// baseline while `wrong_save` is set.
+    pub last_good_igt: Option<u32>,
+    pub last_good_at: Option<Instant>,
     /// Seed mismatch: config seed_id doesn't match server seed_id
     pub seed_mismatch: bool,
     /// Last auth error message from server (see dll handler ordering guarantee)
@@ -352,6 +360,9 @@ impl RaceMachine {
             was_position_readable: true,
             pending_quit_out: false,
             has_been_in_world: false,
+            wrong_save: false,
+            last_good_igt: None,
+            last_good_at: None,
             seed_mismatch: false,
             last_auth_error: None,
             permanent_error: None,
@@ -844,6 +855,14 @@ const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(5);
 /// the per-save flush in flag_buffer, same threshold, covers it).
 const QUIT_OUT_MAX_REGRESSION_MS: u32 = 60_000;
 
+/// A same-save reload always comes back BELOW the last observation (the
+/// on-disk save lags); a forward jump across an unload beyond this slack
+/// means another, further-along save file.
+const WRONG_SAVE_FORWARD_SLACK_MS: u32 = 10_000;
+/// Recovery window slack: the race save is back when a reload lands in
+/// `[last_good - QUIT_OUT_MAX_REGRESSION_MS, last_good + elapsed + this]`.
+const WRONG_SAVE_RECOVERY_SLACK_MS: u32 = 10_000;
+
 /// Diagnostic only: how long a zone update may stay pending before a
 /// one-shot warn! is logged. Both reveal paths require a readable position,
 /// so this log is the only trace left when position readability breaks or
@@ -860,7 +879,8 @@ impl RaceMachine {
             igt: live || !self.event_ids.is_empty(),
             deaths: live,
             loading: self.pending_zone_update.is_some(),
-            poll_flags: !self.event_ids.is_empty()
+            poll_flags: !self.wrong_save
+                && !self.event_ids.is_empty()
                 && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
         }
     }
@@ -873,7 +893,7 @@ impl RaceMachine {
         position_readable: bool,
         connected: bool,
     ) -> bool {
-        if self.event_ids.is_empty() {
+        if self.wrong_save || self.event_ids.is_empty() {
             return false;
         }
         needs.poll_flags
@@ -885,6 +905,7 @@ impl RaceMachine {
     pub fn wants_status_update(&self, now: Instant, igt_ms: u32) -> bool {
         now.duration_since(self.last_status_update) >= Duration::from_secs(1)
             && igt_ms > 0
+            && !self.wrong_save
             && self.is_race_running()
             && !self.am_i_finished()
             && !self.is_countdown_active(now)
@@ -897,48 +918,89 @@ impl RaceMachine {
         let mut effects = Vec::new();
         self.frame_snapshot = input.snapshot;
 
-        // Save reload detection: an IGT regression means the player loaded a
-        // different save. Reset per-save event-flag state so a pre-set
-        // finish_event from a stale save doesn't block the fresh save's real
-        // finish (see EVENT_FLAG_TRACKING.md).
         if let Some(current_igt) = self.frame_snapshot.igt_ms {
-            if crate::core::flag_buffer::detect_save_reload(self.last_observed_igt, current_igt) {
-                info!(
-                    prev_igt_ms = self.last_observed_igt,
-                    new_igt_ms = current_igt,
-                    "[RACE] Save reload detected, clearing per-save event-flag state"
-                );
-                self.triggered_flags.clear();
-                self.flag_buffer.clear_deferred();
-                self.flag_buffer.clear_pending();
-            }
-            // Quit-out detection: an IGT regression within QUIT_OUT_MAX_REGRESSION_MS
-            // observed around an unload means a save was loaded from the menu. Death,
-            // fast travel and fog traversals reload the world, not the save;
-            // GameDataMan persists in memory and the IGT stays monotonic.
-            // Only a menu load repopulates it from disk, where the value lags
-            // the last in-memory reading by the post-flush fade time
-            // (live-measured above 1s). Map-scoped probes (MapItemMan null)
-            // proved unusable here: they also trip on cross-map fog loads.
-            // The return-to-title Lua bit (debug overlay) never fires on menu
-            // quit-outs, only on scripted returns such as endings.
-            // Rollbacks beyond QUIT_OUT_MAX_REGRESSION_MS are backup restores or
-            // another save: no penalty (the per-save flush in flag_buffer covers them).
             let unload_context =
                 !self.frame_snapshot.position_readable || !self.was_position_readable;
-            if self.has_been_in_world
-                && !self.pending_quit_out
-                && unload_context
-                && self.last_observed_igt.is_some_and(|prev| {
-                    current_igt < prev && prev - current_igt < QUIT_OUT_MAX_REGRESSION_MS
-                })
-            {
-                info!(
-                    prev_igt_ms = self.last_observed_igt,
-                    new_igt_ms = current_igt,
-                    "[RACE] Quit-out detected (IGT regression)"
-                );
-                self.pending_quit_out = true;
+            if self.wrong_save {
+                // Recovery only: a reload landing back inside the plausible
+                // window of the last good observation means the race save
+                // is back. Observations from the wrong save are otherwise
+                // meaningless: no flush, no arming, no reference updates.
+                let elapsed_ms = self
+                    .last_good_at
+                    .map(|t| now.duration_since(t).as_millis() as u64)
+                    .unwrap_or(0);
+                let good = self.last_good_igt.unwrap_or(0);
+                let low = good.saturating_sub(QUIT_OUT_MAX_REGRESSION_MS);
+                let high = (good as u64) + elapsed_ms + WRONG_SAVE_RECOVERY_SLACK_MS as u64;
+                if unload_context && current_igt >= low && (current_igt as u64) <= high {
+                    info!(igt_ms = current_igt, "[RACE] Race save is back, resuming");
+                    self.wrong_save = false;
+                    self.last_good_igt = Some(current_igt);
+                    self.last_good_at = Some(now);
+                }
+            } else {
+                // Save reload detection: an IGT regression means the player loaded a
+                // different save. Reset per-save event-flag state so a pre-set
+                // finish_event from a stale save doesn't block the fresh save's real
+                // finish (see EVENT_FLAG_TRACKING.md).
+                if crate::core::flag_buffer::detect_save_reload(self.last_observed_igt, current_igt)
+                {
+                    info!(
+                        prev_igt_ms = self.last_observed_igt,
+                        new_igt_ms = current_igt,
+                        "[RACE] Save reload detected, clearing per-save event-flag state"
+                    );
+                    self.triggered_flags.clear();
+                    self.flag_buffer.clear_deferred();
+                    self.flag_buffer.clear_pending();
+                }
+                // A forward IGT jump across an unload beyond WRONG_SAVE_FORWARD_SLACK_MS
+                // means a different, further-along save was loaded (not the race save):
+                // freeze race interaction until the race save returns.
+                let forward_jump = self.has_been_in_world
+                    && unload_context
+                    && self.last_good_igt.is_some_and(|good| {
+                        current_igt > good.saturating_add(WRONG_SAVE_FORWARD_SLACK_MS)
+                    });
+                if forward_jump {
+                    warn!(
+                        last_good_igt = self.last_good_igt,
+                        new_igt_ms = current_igt,
+                        "[RACE] Wrong save loaded (impossible IGT jump), freezing race interaction"
+                    );
+                    self.wrong_save = true;
+                    self.pending_quit_out = false;
+                } else {
+                    // Quit-out detection: an IGT regression within QUIT_OUT_MAX_REGRESSION_MS
+                    // observed around an unload means a save was loaded from the menu. Death,
+                    // fast travel and fog traversals reload the world, not the save;
+                    // GameDataMan persists in memory and the IGT stays monotonic.
+                    // Only a menu load repopulates it from disk, where the value lags
+                    // the last in-memory reading by the post-flush fade time
+                    // (live-measured above 1s). Map-scoped probes (MapItemMan null)
+                    // proved unusable here: they also trip on cross-map fog loads.
+                    // The return-to-title Lua bit (debug overlay) never fires on menu
+                    // quit-outs, only on scripted returns such as endings.
+                    // Rollbacks beyond QUIT_OUT_MAX_REGRESSION_MS are backup restores or
+                    // another save: no penalty (the per-save flush in flag_buffer covers them).
+                    if self.has_been_in_world
+                        && !self.pending_quit_out
+                        && unload_context
+                        && self.last_observed_igt.is_some_and(|prev| {
+                            current_igt < prev && prev - current_igt < QUIT_OUT_MAX_REGRESSION_MS
+                        })
+                    {
+                        info!(
+                            prev_igt_ms = self.last_observed_igt,
+                            new_igt_ms = current_igt,
+                            "[RACE] Quit-out detected (IGT regression)"
+                        );
+                        self.pending_quit_out = true;
+                    }
+                    self.last_good_igt = Some(current_igt);
+                    self.last_good_at = Some(now);
+                }
             }
             self.last_observed_igt = Some(current_igt);
         }
@@ -1070,6 +1132,7 @@ impl RaceMachine {
                 && self.is_race_running()
                 && !self.am_i_finished()
                 && !self.is_countdown_active(now)
+                && !self.wrong_save
             {
                 if self.flag_buffer.has_deferred() {
                     // Fog gate traversal: send deferred flags now that loading is done
@@ -1258,7 +1321,10 @@ impl RaceMachine {
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
         // Stop once finished since IGT is frozen at finish time.
-        if !quit_out_status_pulled_forward && self.wants_status_update(now, igt_ms) {
+        if !quit_out_status_pulled_forward
+            && !self.wrong_save
+            && self.wants_status_update(now, igt_ms)
+        {
             effects.push(Effect::SendStatusUpdate {
                 igt_ms,
                 death_count: deaths,
@@ -1638,6 +1704,134 @@ mod tests {
             sent_zone_query_quit_out(&fx),
             None,
             "fog exit sends event flags, not a zone query"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Wrong-save freeze
+    // ------------------------------------------------------------------
+
+    /// In-world at 10_000ms, then a reload that lands at `reload_igt`.
+    fn reload_to(m: &mut RaceMachine, reload_igt: u32, now: Instant) {
+        m.tick(tick_in(snap(Some(10_000), true), true, None), now);
+        m.tick(tick_in(snap(None, false), true, None), now);
+        m.tick(tick_in(snap(Some(reload_igt), false), true, None), now);
+    }
+
+    #[test]
+    fn forward_jump_across_unload_freezes() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        reload_to(&mut m, 7_200_000, now);
+        assert!(m.wrong_save);
+        assert!(!m.pending_quit_out, "no penalty into a foreign save");
+
+        // Frozen: a loading exit produces no sends and no game writes.
+        let mut input = tick_in(snap(Some(7_200_500), true), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: None,
+        });
+        let fx = m.tick(input, now);
+        assert!(fx.is_empty(), "frozen machine emits nothing, got {fx:?}");
+
+        // Frozen: no periodic status updates either.
+        let fx = m.tick(
+            tick_in(snap(Some(7_205_000), true), true, None),
+            now + secs(5),
+        );
+        assert!(fx
+            .iter()
+            .all(|e| !matches!(e, Effect::SendStatusUpdate { .. })));
+        assert!(!m.wants_status_update(now + secs(5), 7_205_000));
+        assert!(!m.wants_flag_reads(FrameNeeds::default(), true, true));
+    }
+
+    #[test]
+    fn same_save_reload_does_not_freeze() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        reload_to(&mut m, 8_500, now); // ordinary quit-out
+        assert!(!m.wrong_save);
+        assert!(m.pending_quit_out);
+    }
+
+    #[test]
+    fn wrong_save_recovers_when_race_save_returns() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        reload_to(&mut m, 7_200_000, now);
+        assert!(m.wrong_save);
+
+        // Player keeps playing the wrong save: still frozen.
+        m.tick(
+            tick_in(snap(Some(7_260_000), true), true, None),
+            now + secs(60),
+        );
+        assert!(m.wrong_save);
+
+        // Reload back into the race save: inside the plausible window of
+        // the last good observation (10_000 + elapsed + slack).
+        m.tick(tick_in(snap(None, false), true, None), now + secs(90));
+        m.tick(
+            tick_in(snap(Some(9_000), false), true, None),
+            now + secs(90),
+        );
+        assert!(!m.wrong_save, "race save back, freeze lifted");
+        assert!(
+            !m.pending_quit_out,
+            "the corrective reload is a forward jump from the wrong save, not a quit-out"
+        );
+
+        // Life resumes: a loading exit sends again.
+        let mut input = tick_in(snap(Some(9_100), true), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: None,
+        });
+        let fx = m.tick(input, now + secs(90));
+        assert!(fx.iter().any(|e| matches!(e, Effect::SendZoneQuery { .. })));
+    }
+
+    #[test]
+    fn wrong_save_reload_does_not_flush_buffers() {
+        // Buffers parked before the wrong-save reload must survive the
+        // freeze AND the recovery reload (both would previously flush).
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(10_000), true), false, None), now);
+        let later = now + ms(150);
+        m.tick(
+            tick_in(snap(Some(10_100), true), false, Some(vec![(100, true)])),
+            later,
+        );
+        m.tick(tick_in(snap(Some(10_200), false), false, None), later);
+        let mut input = tick_in(snap(Some(10_300), true), false, None);
+        input.flag_reads = Some(vec![]);
+        m.tick(input, later);
+        assert!(m.flag_buffer.has_pending());
+
+        // Wrong save loaded, then the race save comes back.
+        m.tick(tick_in(snap(None, false), false, None), later);
+        m.tick(tick_in(snap(Some(7_200_000), false), false, None), later);
+        assert!(m.wrong_save);
+        m.tick(tick_in(snap(None, false), false, None), later + secs(30));
+        m.tick(
+            tick_in(snap(Some(10_300), false), false, None),
+            later + secs(30),
+        );
+        assert!(!m.wrong_save);
+        assert!(
+            m.flag_buffer.has_pending(),
+            "parked traversal survives the whole wrong-save episode"
         );
     }
 
