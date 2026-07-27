@@ -134,6 +134,8 @@ def is_igt_plausible(
     delta = igt_ms - stored_igt_ms
     if delta <= 0 or last_change_at is None:
         return True
+    if last_change_at.tzinfo is None:
+        last_change_at = last_change_at.replace(tzinfo=UTC)
     wall_ms = (now - last_change_at).total_seconds() * 1000
     return delta <= wall_ms + WRONG_SAVE_FORWARD_SLACK_MS
 
