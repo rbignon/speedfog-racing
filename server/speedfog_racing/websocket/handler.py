@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Generic, Protocol, TypeVar
 
 import sentry_sdk
@@ -43,6 +44,11 @@ SEND_TIMEOUT = 5.0  # seconds before a send is considered failed
 MOD_AUTH_TIMEOUT = 5.0  # seconds to wait for auth message
 MAX_FRESH_IGT_MS = 60_000  # 60s: fresh save reaches first load screen at ~3-5s, with margin
 MAX_IGT_MS = 2_147_483_647  # PostgreSQL int4 column max (~24.85 days)
+# Forward slack for the wrong-save guard: a reported IGT may exceed the
+# recorded one by at most the elapsed wall-clock time plus this margin
+# (in-game time can never advance faster than real time). See the
+# wrong-save guard spec.
+WRONG_SAVE_FORWARD_SLACK_MS = 60_000
 MAX_DEATH_COUNT = 10_000
 MAX_ZONE_HISTORY = 1000  # 1000 event flags allocated per seed
 MSG_RATE_WINDOW = 10.0  # sliding window in seconds
@@ -109,6 +115,27 @@ def clamp_igt(value: object) -> int | None:
         logger.warning("igt_ms out of range: %s", value)
         return None
     return value
+
+
+def is_igt_plausible(
+    stored_igt_ms: int,
+    last_change_at: datetime | None,
+    igt_ms: int,
+    now: datetime,
+) -> bool:
+    """True when a reported IGT is physically possible for the tracked save.
+
+    Regressions are always plausible: backup restores legitimately roll
+    the save back (see the SpeedFog save-backup system). A forward jump is
+    plausible only when it does not outrun wall-clock time since the last
+    accepted report. ``last_change_at`` None disables the forward check
+    (no reference available, e.g. training sessions).
+    """
+    delta = igt_ms - stored_igt_ms
+    if delta <= 0 or last_change_at is None:
+        return True
+    wall_ms = (now - last_change_at).total_seconds() * 1000
+    return delta <= wall_ms + WRONG_SAVE_FORWARD_SLACK_MS
 
 
 def clamp_death_count(value: object) -> int | None:
@@ -1058,6 +1085,17 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
     def _on_first_init(self, entity: T, start_node: str) -> None:
         """Hook called on first zone initialization. Override for READY->PLAYING (race)."""
+
+    def _wall_reference(self, entity: T) -> datetime | None:
+        """Wall-clock timestamp of the last accepted IGT report, for the
+        forward-plausibility check. None disables the check (training has
+        no such column; solo sessions have no leaderboard to protect)."""
+        return None
+
+    def _igt_plausible(self, entity: T, igt_ms: int) -> bool:
+        return is_igt_plausible(
+            entity.igt_ms, self._wall_reference(entity), igt_ms, datetime.now(UTC)
+        )
 
 
 # ---------------------------------------------------------------------------

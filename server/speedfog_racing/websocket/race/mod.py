@@ -489,6 +489,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         entity.status = ParticipantStatus.PLAYING
         _set_layer(entity, 0, 0)
 
+    def _wall_reference(self, entity: Participant) -> datetime | None:
+        return entity.last_igt_change_at
+
     # ------------------------------------------------------------------
     # Finish event (called AFTER DB session closed by base class)
     # ------------------------------------------------------------------
