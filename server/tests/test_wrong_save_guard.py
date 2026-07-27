@@ -72,8 +72,10 @@ def test_on_igt_change_clamps_non_decreasing():
     assert p.igt_ms == 3_600_000  # clamped
     assert p.last_igt_change_at is not None  # replay counts as activity
 
+    p.last_igt_change_at = None
     handler._on_igt_change(p, 3_700_000)
     assert p.igt_ms == 3_700_000  # normal advance
+    assert p.last_igt_change_at is not None  # ordinary advance bumps too
 
 
 def test_on_igt_change_equal_report_does_not_bump_timestamp():
