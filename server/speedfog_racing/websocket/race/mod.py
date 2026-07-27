@@ -760,7 +760,9 @@ async def handle_finished(
         participant.status = ParticipantStatus.FINISHED
         finished_igt = clamp_igt(msg.get("igt_ms"))
         if finished_igt is not None:
-            participant.igt_ms = finished_igt
+            # Finish cannot undercut the recorded IGT: post-restore replays
+            # and legacy clients report stale values.
+            participant.igt_ms = max(participant.igt_ms, finished_igt)
         participant.finished_at = datetime.now(UTC)
 
         # Bump current_layer to total_layers so progress displays N/N

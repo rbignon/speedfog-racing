@@ -1461,6 +1461,59 @@ async def test_mod_finish_auto_finish_chat_order(organizer, player, async_sessio
         assert messages.index(per_player[0]) < messages.index(race_finished[0])
 
 
+@pytest.mark.asyncio
+async def test_handle_finished_clamps_igt_to_recorded_value(organizer, player, async_session):
+    """A finish report lower than the recorded IGT (post-restore replay or
+    legacy client) must not undercut the participant's recorded IGT.
+    """
+    from unittest.mock import MagicMock
+
+    from speedfog_racing.websocket.race.mod import handle_finished
+
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_finish_clamp",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/finish_clamp",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Finish Clamp Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        p = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.PLAYING,
+            current_layer=4,
+            igt_ms=300000,
+        )
+        db.add(p)
+        await db.commit()
+        participant_id = p.id
+
+    # Reported igt (1ms) is far lower than the recorded 300000ms: this
+    # mimics a legacy client or a post-restore replay finish.
+    await handle_finished(MagicMock(), async_session, participant_id, {"igt_ms": 1})
+
+    async with async_session() as db:
+        result = await db.execute(select(Participant).where(Participant.id == participant_id))
+        refreshed = result.scalar_one()
+        assert refreshed.igt_ms == 300000
+        assert refreshed.status == ParticipantStatus.FINISHED
+
+
 # =============================================================================
 # Race Delete Tests
 # =============================================================================
