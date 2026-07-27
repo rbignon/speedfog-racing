@@ -12,10 +12,14 @@
 //! event-flag state (the buffers above plus `triggered_flags`) when the player
 //! loads a different save mid-session.
 
-/// Minimum IGT regression (ms) treated as a save reload. Elden Ring's IGT is
-/// monotonic within a save, so any meaningful decrease means the player loaded
-/// a different save. The margin absorbs read jitter without missing the
-/// stale-save -> fresh-save transition (which goes from minutes to ~0).
+/// Minimum IGT regression (ms) treated as a save-state rollback (another
+/// save, or a backup restore of this one). Ordinary quit-outs regress by
+/// only the post-flush fade (1-2s, live-measured) and must keep the
+/// buffers: a pending flag was already cleared from game memory, flushing
+/// it here would lose the traversal for good. Kept equal to
+/// race_machine's QUIT_OUT_MAX_REGRESSION_MS: below the value a reload is
+/// a quit-out (penalty, buffers kept), at or above it a rollback (flush,
+/// no penalty).
 pub const SAVE_RELOAD_IGT_DROP_MS: u32 = 60_000;
 
 /// Returns true when `current` is a meaningful regression from `prev`,

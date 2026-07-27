@@ -838,10 +838,10 @@ impl RaceMachine {
 /// at least this long, so the degraded reveal lands near the loading exit.
 const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Reload classification bound: a same-save quit-out regresses the IGT by
-/// only the post-flush fade; a bigger rollback is a backup restore or
-/// another save and takes no penalty (backup restores are legitimate and
-/// take no penalty, the per-save flush in flag_buffer covers them).
+/// Reload classification bound: below this regression a reload is a
+/// same-save quit-out (post-flush fade, 1-2s live-measured) and arms the
+/// penalty; at or above it, a backup restore or another save (no penalty;
+/// the per-save flush in flag_buffer, same threshold, covers it).
 const QUIT_OUT_MAX_REGRESSION_MS: u32 = 60_000;
 
 /// Diagnostic only: how long a zone update may stay pending before a
@@ -930,7 +930,7 @@ impl RaceMachine {
                 && !self.pending_quit_out
                 && unload_context
                 && self.last_observed_igt.is_some_and(|prev| {
-                    current_igt < prev && prev - current_igt <= QUIT_OUT_MAX_REGRESSION_MS
+                    current_igt < prev && prev - current_igt < QUIT_OUT_MAX_REGRESSION_MS
                 })
             {
                 info!(
@@ -2431,14 +2431,45 @@ mod tests {
 
     #[test]
     fn large_regression_is_restore_not_quit_out() {
-        // A backup restore rolls the IGT back by minutes: per-save flush
-        // fires (state legitimately went back) but no penalty is armed.
+        // A backup restore rolls the IGT back by minutes: no penalty is
+        // armed (the flush path is covered by the boundary and purge tests).
         let now = Instant::now();
         let mut m = running_machine(now);
         m.tick(tick_in(snap(Some(600_000), true), true, None), now);
         m.tick(tick_in(snap(None, false), true, None), now);
         m.tick(tick_in(snap(Some(500_000), false), true, None), now);
         assert!(!m.pending_quit_out, "restore must not arm the penalty");
+    }
+
+    #[test]
+    fn boundary_regression_is_rollback_not_quit_out() {
+        // Regression of exactly QUIT_OUT_MAX_REGRESSION_MS: rollback
+        // semantics win. The per-save flush fires (pending cleared) and
+        // no penalty is armed; flush and penalty are mutually exclusive.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(100_000), true), true, None), now);
+        let later = now + ms(150);
+        m.tick(
+            tick_in(snap(Some(100_100), true), false, Some(vec![(100, true)])),
+            later,
+        );
+        m.tick(tick_in(snap(Some(100_200), false), false, None), later);
+        let mut input = tick_in(snap(Some(100_300), true), false, None);
+        input.flag_reads = Some(vec![]);
+        m.tick(input, later);
+        assert!(m.flag_buffer.has_pending());
+
+        m.tick(tick_in(snap(None, false), false, None), later);
+        m.tick(
+            tick_in(snap(Some(100_300 - 60_000), false), false, None),
+            later,
+        );
+        assert!(!m.pending_quit_out, "boundary regression must not arm");
+        assert!(
+            !m.flag_buffer.has_pending(),
+            "boundary regression flushes per-save state"
+        );
     }
 
     #[test]
