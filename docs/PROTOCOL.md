@@ -227,7 +227,7 @@ Sent when the mod detects an event flag transition (0 → 1). The server resolve
 
 #### `zone_query`
 
-Sent at loading screen exit when no event_flag was detected (death, respawn, fast travel, quit-out). All fields are optional. The server tries grace lookup first, then falls back to map_id-based resolution. When `igt_ms` is present, the query is rejected if the reported IGT is implausible (outruns wall-clock time by more than 60 seconds, wrong save detected). Rejected queries are ACKed so the mod stops replaying them, but nothing is recorded.
+Sent at loading screen exit when no event_flag was detected (death, respawn, fast travel, quit-out). All fields are optional. The server tries grace lookup first, then falls back to map_id-based resolution. When `igt_ms` is present, the query is rejected if the reported IGT is implausible (outruns wall-clock time by more than 60 seconds, wrong save detected). Rejected queries are ACKed (if `message_id` is present) so the mod stops replaying them, but nothing is recorded.
 
 ```json
 {
@@ -1211,7 +1211,7 @@ The `ready` and `pong` messages are not gated; they are valid in any state.
 
 **Participant status gating:** Beyond race status, `event_flag` and `zone_query` require `participant.status == PLAYING`. Messages from READY, REGISTERED, FINISHED, or ABANDONED participants are silently dropped.
 
-**Fresh save validation:** On the READY to PLAYING transition (first `status_update`), the server checks `igt_ms <= 15000`. If the IGT is too high (player loaded a pre-existing save), the server sends an `error` message and the participant stays in READY. The mod displays the error on the overlay via `set_status()`. Self-healing: starting a New Game resets IGT. Training mode applies the same check on first `zone_history` initialization.
+**Fresh save validation:** On the READY to PLAYING transition (first `status_update`), the server checks `igt_ms <= 60000`. If the IGT is too high (player loaded a pre-existing save), the server sends an `error` message and the participant stays in READY. The mod displays the error on the overlay via `set_status()`. Self-healing: starting a New Game resets IGT. Training mode applies the same check on first `zone_history` initialization.
 
 ### Zone Tracking
 
