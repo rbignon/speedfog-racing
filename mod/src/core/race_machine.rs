@@ -838,6 +838,12 @@ impl RaceMachine {
 /// at least this long, so the degraded reveal lands near the loading exit.
 const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Reload classification bound: a same-save quit-out regresses the IGT by
+/// only the post-flush fade; a bigger rollback is a backup restore or
+/// another save and takes no penalty (backup restores are legitimate and
+/// take no penalty, the per-save flush in flag_buffer covers them).
+const QUIT_OUT_MAX_REGRESSION_MS: u32 = 60_000;
+
 /// Diagnostic only: how long a zone update may stay pending before a
 /// one-shot warn! is logged. Both reveal paths require a readable position,
 /// so this log is the only trace left when position readability breaks or
@@ -906,9 +912,9 @@ impl RaceMachine {
                 self.flag_buffer.clear_deferred();
                 self.flag_buffer.clear_pending();
             }
-            // Quit-out detection: any strict IGT regression observed around
-            // an unload means a save was loaded from the menu. Death, fast
-            // travel and fog traversals reload the world, not the save;
+            // Quit-out detection: an IGT regression within QUIT_OUT_MAX_REGRESSION_MS
+            // observed around an unload means a save was loaded from the menu. Death,
+            // fast travel and fog traversals reload the world, not the save;
             // GameDataMan persists in memory and the IGT stays monotonic.
             // Only a menu load repopulates it from disk, where the value lags
             // the last in-memory reading by the post-flush fade time
@@ -916,14 +922,16 @@ impl RaceMachine {
             // proved unusable here: they also trip on cross-map fog loads.
             // The return-to-title Lua bit (debug overlay) never fires on menu
             // quit-outs, only on scripted returns such as endings.
+            // Rollbacks beyond QUIT_OUT_MAX_REGRESSION_MS are backup restores or
+            // another save: no penalty (the per-save flush in flag_buffer covers them).
             let unload_context =
                 !self.frame_snapshot.position_readable || !self.was_position_readable;
             if self.has_been_in_world
                 && !self.pending_quit_out
                 && unload_context
-                && self
-                    .last_observed_igt
-                    .is_some_and(|prev| current_igt < prev)
+                && self.last_observed_igt.is_some_and(|prev| {
+                    current_igt < prev && prev - current_igt <= QUIT_OUT_MAX_REGRESSION_MS
+                })
             {
                 info!(
                     prev_igt_ms = self.last_observed_igt,
@@ -1833,7 +1841,7 @@ mod tests {
         // Capture a finish flag and defer a regular one.
         m.tick(
             tick_in(
-                snap(Some(50_000), true),
+                snap(Some(100_000), true),
                 true,
                 Some(vec![(100, true), (200, false), (900, false)]),
             ),
@@ -2419,6 +2427,51 @@ mod tests {
         let fx = quit_out_cycle(&mut m, now);
         assert_eq!(penalty_ms(&fx), None);
         assert_eq!(sent_zone_query_quit_out(&fx), Some(true));
+    }
+
+    #[test]
+    fn large_regression_is_restore_not_quit_out() {
+        // A backup restore rolls the IGT back by minutes: per-save flush
+        // fires (state legitimately went back) but no penalty is armed.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(600_000), true), true, None), now);
+        m.tick(tick_in(snap(None, false), true, None), now);
+        m.tick(tick_in(snap(Some(500_000), false), true, None), now);
+        assert!(!m.pending_quit_out, "restore must not arm the penalty");
+    }
+
+    #[test]
+    fn pending_flags_survive_ordinary_quit_out() {
+        // Disconnected -> fog traversal parked as pending -> quit-out:
+        // the small regression must NOT flush the pending buffer anymore.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(10_000), true), true, None), now);
+
+        // Traversal while disconnected: flag captured then parked.
+        let later = now + ms(150);
+        m.tick(
+            tick_in(snap(Some(10_100), true), false, Some(vec![(100, true)])),
+            later,
+        );
+        m.tick(tick_in(snap(Some(10_200), false), false, None), later);
+        let mut input = tick_in(snap(Some(10_300), true), false, None);
+        input.flag_reads = Some(vec![]);
+        m.tick(input, later);
+        assert!(
+            m.flag_buffer.has_pending(),
+            "traversal parked while offline"
+        );
+
+        // Quit-out (2s regression) while still disconnected.
+        m.tick(tick_in(snap(None, false), false, None), later);
+        m.tick(tick_in(snap(Some(8_300), false), false, None), later);
+        assert!(
+            m.flag_buffer.has_pending(),
+            "quit-out must not discard the parked traversal"
+        );
+        assert!(m.pending_quit_out, "still a quit-out (penalty armed)");
     }
 
     #[test]

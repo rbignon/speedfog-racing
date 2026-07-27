@@ -16,7 +16,7 @@
 /// monotonic within a save, so any meaningful decrease means the player loaded
 /// a different save. The margin absorbs read jitter without missing the
 /// stale-save -> fresh-save transition (which goes from minutes to ~0).
-pub const SAVE_RELOAD_IGT_DROP_MS: u32 = 1_000;
+pub const SAVE_RELOAD_IGT_DROP_MS: u32 = 60_000;
 
 /// Returns true when `current` is a meaningful regression from `prev`,
 /// indicating the player loaded a different save since the last observation.
@@ -51,6 +51,10 @@ impl FlagBuffer {
 
     pub fn has_deferred(&self) -> bool {
         !self.deferred.is_empty()
+    }
+
+    pub fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
     }
 
     pub fn drain_deferred(&mut self) -> std::vec::Drain<'_, (u32, u32)> {
@@ -102,8 +106,8 @@ mod tests {
     #[test]
     fn detect_save_reload_ignores_jitter_below_threshold() {
         // A reading slightly lower than the previous (jitter, not a real reload).
-        assert!(!detect_save_reload(Some(5_000), 4_500));
-        assert!(!detect_save_reload(Some(5_000), 4_001));
+        assert!(!detect_save_reload(Some(65_000), 64_500));
+        assert!(!detect_save_reload(Some(65_000), 5_001));
     }
 
     #[test]
@@ -111,8 +115,12 @@ mod tests {
         // Player loads a stale save (IGT ~141 min) then starts a fresh game (IGT 0).
         assert!(detect_save_reload(Some(8_491_593), 0));
         assert!(detect_save_reload(Some(60_000), 0));
+        // Small regression (2s) below threshold: not a reload.
+        assert!(!detect_save_reload(Some(65_000), 63_000));
         // Boundary: drop of exactly SAVE_RELOAD_IGT_DROP_MS counts as a reload.
-        assert!(detect_save_reload(Some(5_000), 4_000));
+        assert!(detect_save_reload(Some(65_000), 5_000));
+        // Large regression above threshold: a reload.
+        assert!(detect_save_reload(Some(65_000), 4_000));
     }
 
     #[test]
