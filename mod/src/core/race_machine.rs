@@ -1835,6 +1835,56 @@ mod tests {
         );
     }
 
+    #[test]
+    fn wrong_save_recovery_requires_elapsed_real_time() {
+        // The recovery window is `[last_good - QUIT_OUT_MAX_REGRESSION_MS,
+        // last_good + elapsed_wall + WRONG_SAVE_RECOVERY_SLACK_MS]`: an IGT
+        // just past the fixed slack must wait for enough real time to pass
+        // before it becomes plausible again.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        reload_to(&mut m, 200_000, now);
+        assert!(m.wrong_save);
+
+        // 25_000 is beyond the fixed window (10_000 + 10_000 slack) right
+        // after the freeze: not enough elapsed time to explain it yet.
+        m.tick(tick_in(snap(None, false), true, None), now);
+        m.tick(tick_in(snap(Some(25_000), false), true, None), now);
+        assert!(m.wrong_save, "not enough elapsed time to explain this IGT");
+
+        // After 60s of real time the same IGT is plausible again: the
+        // elapsed term widens the window and the freeze lifts.
+        m.tick(tick_in(snap(None, false), true, None), now + secs(60));
+        m.tick(
+            tick_in(snap(Some(25_000), false), true, None),
+            now + secs(60),
+        );
+        assert!(
+            !m.wrong_save,
+            "elapsed real time makes 25_000 plausible now"
+        );
+    }
+
+    #[test]
+    fn forward_jump_at_exact_slack_boundary_does_not_freeze() {
+        // Exactly WRONG_SAVE_FORWARD_SLACK_MS forward of the last good IGT:
+        // the strict `>` in forward_jump means this is ordinary progress,
+        // not a wrong save.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(10_000), true), true, None), now);
+        m.tick(tick_in(snap(None, false), true, None), now);
+        m.tick(
+            tick_in(
+                snap(Some(10_000 + WRONG_SAVE_FORWARD_SLACK_MS), false),
+                true,
+                None,
+            ),
+            now,
+        );
+        assert!(!m.wrong_save, "exact boundary is not a forward jump");
+    }
+
     // ------------------------------------------------------------------
     // Message handling basics
     // ------------------------------------------------------------------
