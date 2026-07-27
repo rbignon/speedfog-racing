@@ -619,6 +619,13 @@ impl RaceMachine {
                 // first in-race load after a pre-start quit-out (the reloaded
                 // save's IGT sits below the last pre-start observation).
                 self.has_been_in_world = false;
+                // A wrong-save freeze from before the start is stale: the
+                // race begins with a clean slate and fresh references, so a
+                // pre-start mistake cannot leave the machine frozen forever
+                // (the race save's IGT may sit far below the stale baseline).
+                self.wrong_save = false;
+                self.last_good_igt = None;
+                self.last_good_at = None;
                 self.bump_leaderboard_version();
             }
             MachineMessage::LeaderboardUpdate {
@@ -1883,6 +1890,44 @@ mod tests {
             now,
         );
         assert!(!m.wrong_save, "exact boundary is not a forward jump");
+    }
+
+    #[test]
+    fn race_start_clears_pre_start_wrong_save_freeze() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100, 200, 900], Some(900)), now);
+
+        // Wrong 2h save loaded by mistake during setup: freezes.
+        m.tick(tick_in(snap(Some(10_000), true), true, None), now);
+        m.tick(tick_in(snap(None, false), true, None), now);
+        m.tick(tick_in(snap(Some(7_200_000), false), true, None), now);
+        assert!(m.wrong_save);
+
+        m.handle_message(MachineMessage::RaceStart(3), now);
+        assert!(!m.wrong_save, "race start clears a stale pre-start freeze");
+
+        // Fresh race save (IGT near 0), past the countdown: normal life,
+        // no freeze, no penalty, sends work.
+        let after_countdown = now + secs(4);
+        m.tick(
+            tick_in(snap(Some(1_000), true), true, None),
+            after_countdown,
+        );
+        m.tick(tick_in(snap(None, false), true, None), after_countdown);
+        let mut input = tick_in(snap(Some(1_000), true), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: None,
+        });
+        let fx = m.tick(input, after_countdown);
+        assert!(!m.wrong_save);
+        assert_eq!(penalty_ms(&fx), None);
+        assert!(fx.iter().any(|e| matches!(e, Effect::SendZoneQuery { .. })));
     }
 
     // ------------------------------------------------------------------
