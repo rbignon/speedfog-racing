@@ -7,10 +7,12 @@ last accepted report (in-game time cannot advance faster than real time).
 
 from datetime import UTC, datetime, timedelta
 
+from speedfog_racing.models import Participant
 from speedfog_racing.websocket.handler import (
     WRONG_SAVE_FORWARD_SLACK_MS,
     is_igt_plausible,
 )
+from speedfog_racing.websocket.race.mod import RaceModHandler
 
 NOW = datetime(2026, 7, 25, 12, 0, 0, tzinfo=UTC)
 
@@ -53,3 +55,30 @@ def test_naive_wall_reference_is_normalized() -> None:
     naive_ref = (NOW - timedelta(seconds=10)).replace(tzinfo=None)
     assert not is_igt_plausible(600_000, naive_ref, 600_000 + 7_200_000, NOW)
     assert is_igt_plausible(600_000, naive_ref, 599_000, NOW)
+
+
+def _bare_participant(igt_ms: int) -> Participant:
+    p = Participant(igt_ms=igt_ms, death_count=0)
+    p.last_igt_change_at = None
+    return p
+
+
+def test_on_igt_change_clamps_non_decreasing():
+    """A lower report (post-restore replay) keeps the recorded IGT but
+    still bumps the activity timestamp."""
+    handler = RaceModHandler.__new__(RaceModHandler)  # no ws needed
+    p = _bare_participant(3_600_000)
+    handler._on_igt_change(p, 3_000_000)
+    assert p.igt_ms == 3_600_000  # clamped
+    assert p.last_igt_change_at is not None  # replay counts as activity
+
+    handler._on_igt_change(p, 3_700_000)
+    assert p.igt_ms == 3_700_000  # normal advance
+
+
+def test_on_igt_change_equal_report_does_not_bump_timestamp():
+    """A frozen IGT (menu, frozen clock) is not activity."""
+    handler = RaceModHandler.__new__(RaceModHandler)
+    p = _bare_participant(500_000)
+    handler._on_igt_change(p, 500_000)
+    assert p.last_igt_change_at is None

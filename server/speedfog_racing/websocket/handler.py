@@ -631,6 +631,17 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 await self._send_error("Wrong save loaded, please reload your race save")
                 return
 
+            # Large rollback: backup restore (or another save); accepted by
+            # design. Logs about once per second until the replay catches
+            # up, which doubles as the trace of the whole replay window.
+            if igt_ms_val + 60_000 <= entity.igt_ms:
+                logger.info(
+                    "IGT rollback accepted (backup restore?): %s reported=%d recorded=%d",
+                    self.entity_id,
+                    igt_ms_val,
+                    entity.igt_ms,
+                )
+
             self._on_igt_change(entity, igt_ms_val)
 
             # Record start node on first status_update.
@@ -1120,8 +1131,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
     # Virtual methods (with defaults, overridable by subclasses)
     # ------------------------------------------------------------------
     def _on_igt_change(self, entity: T, igt_ms: int) -> None:
-        """Update entity IGT. Override to also set last_igt_change_at (race)."""
-        entity.igt_ms = igt_ms
+        """Update entity IGT, non-decreasing: after a backup restore the
+        player replays the lost segment with a lower live IGT and the
+        recorded value holds (no time refund). Override to also track
+        last_igt_change_at (race)."""
+        entity.igt_ms = max(entity.igt_ms, igt_ms)
 
     def _on_zone_entered(
         self, entity: T, node_id: str, graph_json: dict[str, Any], igt: int
