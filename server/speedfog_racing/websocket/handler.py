@@ -616,6 +616,21 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 await self._send_error("Please start a New Game")
                 return
 
+            # Wrong-save guard: an IGT that outruns wall-clock time cannot
+            # come from the tracked save. Record nothing; the error is
+            # re-sent on every rejected update, so the mod's banner stays
+            # effectively continuous. Recovery is stateless: the next
+            # plausible report is simply accepted.
+            if not self._igt_plausible(entity, igt_ms_val):
+                logger.warning(
+                    "Rejected implausible IGT (wrong save?): %s reported=%d recorded=%d",
+                    self.entity_id,
+                    igt_ms_val,
+                    entity.igt_ms,
+                )
+                await self._send_error("Wrong save loaded, please reload your race save")
+                return
+
             self._on_igt_change(entity, igt_ms_val)
 
             # Record start node on first status_update.
@@ -714,6 +729,22 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
             seed_graph = self._get_graph_json(entity)
             if not seed_graph:
+                if message_id is not None:
+                    await self._send_event_flag_ack(message_id)
+                return
+
+            # Wrong-save guard: a traversal made on the wrong save is
+            # meaningless for the race. Ack (stop the mod's replays) but
+            # record nothing.
+            if not self._igt_plausible(entity, igt):
+                logger.warning(
+                    "Ignored event_flag on implausible IGT (wrong save?): "
+                    "%s flag_id=%d igt_ms=%d recorded=%d",
+                    self.entity_id,
+                    flag_id,
+                    igt,
+                    entity.igt_ms,
+                )
                 if message_id is not None:
                     await self._send_event_flag_ack(message_id)
                 return
@@ -871,6 +902,18 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
             graph_json = self._get_graph_json(entity)
             if not graph_json:
+                if message_id is not None:
+                    await self._send_zone_query_ack(message_id)
+                return
+
+            # Wrong-save guard (igt_ms is optional on zone_query: no IGT,
+            # no judgment).
+            if zq.igt_ms is not None and not self._igt_plausible(entity, zq.igt_ms):
+                logger.warning(
+                    "Ignored zone_query on implausible IGT (wrong save?): %s igt_ms=%d",
+                    self.entity_id,
+                    zq.igt_ms,
+                )
                 if message_id is not None:
                     await self._send_zone_query_ack(message_id)
                 return

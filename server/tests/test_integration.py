@@ -511,7 +511,10 @@ def test_complete_race_flow(integration_client, race_with_participants):
         assert mod1.auth()["type"] == "auth_ok"
         mod1.send_status_update(igt_ms=1000, death_count=0)
         mod1.receive_until_type("leaderboard_update")  # READY->PLAYING
-        mod1.send_event_flag(9000001, igt_ms=15000)
+        # igt_ms=25000 (not 15000): keeps the later finish jump (to 80000,
+        # see below) within the wrong-save guard's forward-plausibility
+        # slack, since these reconnects happen near-instantly in test time.
+        mod1.send_event_flag(9000001, igt_ms=25000)
         lb = mod1.receive_until_type("leaderboard_update")
         p1 = next(p for p in lb["participants"] if p["twitch_username"] == "player1")
         assert p1["current_layer"] == 2
@@ -1312,6 +1315,136 @@ def test_event_flag_ignored_when_participant_not_playing(
     assert history is not None
     assert len(history) == 1  # Only spawn entry, no fog entry
     assert history[0]["type"] == "spawn"
+
+
+# =============================================================================
+# Scenario 3d: Wrong-Save Guard (Implausible Forward IGT Jump)
+# =============================================================================
+
+
+def test_wrong_save_forward_jump_frozen_then_recovers(
+    integration_client, race_with_participants, integration_db
+):
+    """A status_update whose IGT outruns wall-clock is rejected with an
+    error and records nothing; a plausible IGT resumes recording."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Ready player 0 before starting
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # Baseline: accepted, transitions READY->PLAYING and records
+        # last_igt_change_at (the wall reference for the guard below).
+        mod0.send_status_update(igt_ms=10_000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+
+        # Impossible jump: +2h of IGT within the same wall-clock second.
+        mod0.send_status_update(igt_ms=7_210_000, death_count=0)
+        err = mod0.receive()
+        assert err["type"] == "error"
+        assert err["message"] == "Wrong save loaded, please reload your race save"
+
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.igt_ms, p.zone_history
+
+    igt_ms, history = asyncio.run(check_db())
+    assert igt_ms == 10_000  # Nothing recorded from the rejected update
+    assert history is not None
+    assert len(history) == 1  # Only the baseline spawn entry
+
+    # Recovery is stateless: a plausible report is accepted again.
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=11_000, death_count=0)
+        mod0.receive_until_type("player_update")
+
+    igt_ms, _ = asyncio.run(check_db())
+    assert igt_ms == 11_000
+
+
+def test_wrong_save_event_flag_and_zone_query_acked_not_recorded(
+    integration_client, race_with_participants, integration_db
+):
+    """Implausible event_flag/zone_query are acked (no replay loop) but
+    leave zone_history and current_zone untouched."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+
+        # Baseline: accepted, transitions READY->PLAYING.
+        mod0.send_status_update(igt_ms=10_000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+
+        # Implausible event_flag (flag 9000000 is a real fog flag from the
+        # test seed's event_map, resolving to node_a): acked, not recorded.
+        mod0.send_event_flag(9000000, igt_ms=7_210_000, message_id=42)
+        ack = mod0.receive_until_type("event_flag_ack")
+        assert ack["message_id"] == 42
+
+        # Implausible zone_query: acked, not recorded.
+        mod0.send_zone_query(map_id="m10_00_00_00", message_id=43, igt_ms=7_210_000)
+        ack = mod0.receive_until_type("zone_query_ack")
+        assert ack["message_id"] == 43
+
+    async def check_db():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_id),
+                    Participant.user_id == players[0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history, p.current_zone
+
+    history, current_zone = asyncio.run(check_db())
+    assert history is not None
+    assert len(history) == 1  # Only the baseline spawn entry
+    assert current_zone == "start_node"
 
 
 # =============================================================================
