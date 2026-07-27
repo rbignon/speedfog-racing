@@ -185,7 +185,7 @@ Player is in-game and ready to race. Transitions status from `registered` → `r
 
 #### `status_update`
 
-Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` if race is running. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)).
+Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` if race is running. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)) or if the reported IGT outruns wall-clock time since the last accepted report by more than 60 seconds (wrong save detected). When rejected as a wrong save, the error message is "Wrong save loaded, please reload your race save", and this error is re-sent on every rejected update so the mod's banner remains effectively continuous. Recovery is stateless: the next plausible report is simply accepted. Nothing is recorded from a rejected update.
 
 ```json
 {
@@ -200,7 +200,7 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 
 #### `event_flag`
 
-Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)).
+Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished. Rejected if race is not running (see [Race State Gating](#race-state-gating)) or if the reported IGT is implausible (outruns wall-clock time by more than 60 seconds, wrong save detected). Rejected events are ACKed (if `message_id` is present) so the mod stops replaying them, but nothing is recorded.
 
 `message_id` is optional for backward compatibility. Newer mods attach a monotonically increasing client-local ID so the server can acknowledge persistence and deduplicate replayed `event_flag` messages after reconnect.
 
@@ -208,7 +208,7 @@ Sent when the mod detects an event flag transition (0 → 1). The server resolve
 
 **Timing:** Regular event flags (fog gate traversals) are detected immediately by polling but deferred until loading screen exit. This ensures spectators see progress updates in sync with the player's arrival, and prevents zone name spoilers during loading screens. The `finish_event` (boss kill) is an exception: it is sent immediately since boss kills don't trigger a loading screen.
 
-**Acknowledgement:** On new protocol versions, the server sends `event_flag_ack` after the `event_flag` has been committed. The mod keeps the flag in an in-flight set until this ACK arrives. If the connection drops first, the mod replays the unacknowledged `event_flag` on reconnect. The server stores `message_id` in `zone_history` entries of type `"fog"` and treats replays with the same `message_id` as idempotent (ACK again, no second append). The server also ACKs messages that it deduplicates or rejects on its own (shared-entrance counterpart, unknown flag, history cap reached): without that ACK the mod would keep the message in-flight and replay it after a reconnect, and the dedup check against `history[-1]` would no longer match once the player has progressed, causing a stale duplicate with the original (older) `igt_ms` to be appended.
+**Acknowledgement:** On new protocol versions, the server sends `event_flag_ack` after the `event_flag` has been committed. The mod keeps the flag in an in-flight set until this ACK arrives. If the connection drops first, the mod replays the unacknowledged `event_flag` on reconnect. The server stores `message_id` in `zone_history` entries of type `"fog"` and treats replays with the same `message_id` as idempotent (ACK again, no second append). The server also ACKs messages that it deduplicates or rejects on its own (shared-entrance counterpart, unknown flag, history cap reached, or wrong save): without that ACK the mod would keep the message in-flight and replay it after a reconnect, and the dedup check against `history[-1]` would no longer match once the player has progressed, causing a stale duplicate with the original (older) `igt_ms` to be appended.
 
 ```json
 {
@@ -227,7 +227,7 @@ Sent when the mod detects an event flag transition (0 → 1). The server resolve
 
 #### `zone_query`
 
-Sent at loading screen exit when no event_flag was detected (death, respawn, fast travel, quit-out). All fields are optional. The server tries grace lookup first, then falls back to map_id-based resolution.
+Sent at loading screen exit when no event_flag was detected (death, respawn, fast travel, quit-out). All fields are optional. The server tries grace lookup first, then falls back to map_id-based resolution. When `igt_ms` is present, the query is rejected if the reported IGT is implausible (outruns wall-clock time by more than 60 seconds, wrong save detected). Rejected queries are ACKed so the mod stops replaying them, but nothing is recorded.
 
 ```json
 {
@@ -353,7 +353,7 @@ Authentication failed. Connection is closed with code 4003.
 
 #### `error`
 
-Generic error during the message loop (not auth phase). Sent when a gameplay message is rejected. Examples: race not running, stale save detected (IGT too high on first `status_update`).
+Generic error during the message loop (not auth phase). Sent when a gameplay message is rejected. Examples: race not running, wrong save detected (IGT outruns wall-clock time by more than 60 seconds).
 
 ```json
 {
@@ -365,7 +365,7 @@ Generic error during the message loop (not auth phase). Sent when a gameplay mes
 ```json
 {
   "type": "error",
-  "message": "Please start a New Game to race"
+  "message": "Wrong save loaded, please reload your race save"
 }
 ```
 
