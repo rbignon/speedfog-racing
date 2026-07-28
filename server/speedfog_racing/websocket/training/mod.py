@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.api.helpers import format_pool_display_name
+from speedfog_racing.config import settings
 from speedfog_racing.discord import send_training_live_notification
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.layer_service import (
@@ -174,6 +175,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                 name=format_pool_display_name(seed.pool) if seed else "Solo",
                 status="running",
                 started_at=session.created_at.isoformat() if session.created_at else None,
+                quit_out_penalty_ms=settings.quit_out_penalty_ms,
             ),
             seed=SeedInfo(
                 seed_id=str(seed.id) if seed else None,

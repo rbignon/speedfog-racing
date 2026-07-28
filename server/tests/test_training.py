@@ -867,6 +867,23 @@ def test_training_mod_websocket_auth(training_ws_client, training_session_data):
         assert start["type"] == "race_start"
 
 
+def test_training_auth_ok_forwards_quit_out_penalty(
+    training_ws_client, training_session_data, monkeypatch
+):
+    """Training auth_ok carries the configured quit-out penalty, not the schema default."""
+    from speedfog_racing.config import settings
+
+    monkeypatch.setattr(settings, "quit_out_penalty_ms", 5000)
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        auth_ok = ws.receive_json()
+        assert auth_ok["type"] == "auth_ok"
+        assert auth_ok["race"]["quit_out_penalty_ms"] == 5000
+
+
 def test_training_mod_version_stored_on_connection(training_ws_client, training_session_data):
     """The mod version sent at auth is kept on the training connection."""
     from speedfog_racing.websocket.training.manager import training_manager

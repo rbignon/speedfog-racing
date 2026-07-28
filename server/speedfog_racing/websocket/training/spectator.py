@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.auth import get_user_by_token
+from speedfog_racing.config import settings
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.i18n import translate_graph_json
 from speedfog_racing.websocket.handler import BaseSpectatorHandler
@@ -141,6 +142,7 @@ async def _send_initial_state(
             if session.status == TrainingSessionStatus.ACTIVE
             else session.status.value,
             started_at=session.created_at.isoformat() if session.created_at else None,
+            quit_out_penalty_ms=settings.quit_out_penalty_ms,
         ),
         seed=SeedInfo(
             total_layers=seed.total_layers if seed else 0,
