@@ -118,7 +118,7 @@ Bump rules:
 
 Version history:
 
-- **1.2** - quit-out penalty and tracking: `quit_out` boolean field on `zone_query` (optional, omitted when false); `quit_out_penalty_ms` integer field on `race` (default 2000, 0 disables). The mod applies the penalty to the in-game timer on each detected quit-out during a running race.
+- **1.2** - quit-out penalty and tracking: `quit_out` boolean field on `zone_query` (optional, omitted when false); `quit_out_penalty_ms` integer field on `race` (default 2000, 0 disables). See the [`auth_ok`](#auth_ok) note for when the mod applies the penalty.
 - **1.1** - chat reactions and replies (spectator connection only): `chat_reaction` / `chat_reaction_update` messages; `id`, `reply_to`, `reactions` fields on `chat_message`. No mod-side change.
 - **1.0** - initial versioned protocol.
 
@@ -338,7 +338,7 @@ Authentication successful. Contains initial race state.
 
 `latest_mod_version`: (string, optional) no longer sent. The server used it as a soft update notice on protocol-minor lag; that concept does not fit the seed-pack distribution model (see [Protocol Version](#protocol-version)), so the server omits it unconditionally. The field name stays reserved because deployed mod builds still render a notice when it is present.
 
-**Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`. `started_at` is the effective gameplay start: on race launch the server sets it to `now + countdown_seconds` so the countdown window doesn't eat into the configured duration. `race_ends_at` is `null` until the race transitions to `running` (it is computed from `started_at + race_duration_minutes`); when the race starts, the server pushes a [`race_info_update`](#race_info_update) so mods that authed in `setup` pick up the now-populated value. The `race` object also includes `quit_out_penalty_ms` (integer milliseconds, default 2000, 0 disables); the mod applies this penalty to the in-game timer at the reload after each detected quit-out during a running race, with an overlay banner, never in training.
+**Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`. `started_at` is the effective gameplay start: on race launch the server sets it to `now + countdown_seconds` so the countdown window doesn't eat into the configured duration. `race_ends_at` is `null` until the race transitions to `running` (it is computed from `started_at + race_duration_minutes`); when the race starts, the server pushes a [`race_info_update`](#race_info_update) so mods that authed in `setup` pick up the now-populated value. The `race` object also includes `quit_out_penalty_ms` (integer milliseconds, default 2000, 0 disables); the mod applies this penalty to the in-game timer at the reload after each detected quit-out during a running race or training session, with an overlay banner.
 
 #### `auth_error`
 
