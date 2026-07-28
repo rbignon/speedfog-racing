@@ -1070,7 +1070,6 @@ impl RaceMachine {
         if position_readable && !self.was_position_readable {
             let quit_out = std::mem::take(&mut self.pending_quit_out);
             if quit_out
-                && !self.training
                 && self.is_race_running()
                 && !self.am_i_finished()
                 && !self.is_countdown_active(now)
@@ -2684,7 +2683,7 @@ mod tests {
     }
 
     #[test]
-    fn no_penalty_when_not_running_finished_or_training() {
+    fn no_penalty_when_not_running_or_finished() {
         let now = Instant::now();
 
         // Race in setup.
@@ -2709,13 +2708,17 @@ mod tests {
         );
         let fx = quit_out_cycle(&mut m, now);
         assert_eq!(penalty_ms(&fx), None);
+    }
 
-        // Training session: zone tag yes, penalty no.
+    #[test]
+    fn training_quit_out_applies_penalty() {
+        let now = Instant::now();
         let mut m = RaceMachine::new(1, String::new(), true, now);
         m.handle_message(auth_ok("running", &[100], Some(900)), now);
         let fx = quit_out_cycle(&mut m, now);
-        assert_eq!(penalty_ms(&fx), None);
+        assert_eq!(penalty_ms(&fx), Some(2000));
         assert_eq!(sent_zone_query_quit_out(&fx), Some(true));
+        assert_eq!(m.get_status(now), Some("Quit-out: +2s"));
     }
 
     #[test]
