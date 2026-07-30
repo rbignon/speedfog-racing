@@ -925,7 +925,13 @@ impl RaceMachine {
         let mut effects = Vec::new();
         self.frame_snapshot = input.snapshot;
 
-        if let Some(current_igt) = self.frame_snapshot.igt_ms {
+        // GameDataMan's play_time reads 0 transiently while a menu reload
+        // repopulates it (live-observed 2026-07-30); the status-update path
+        // already treats 0 as "not in game". A real racing save's IGT is
+        // never 0 when readable, so zero readings carry no information for
+        // reload classification: skip them entirely (no flush, no arming,
+        // no reference updates, no freeze recovery).
+        if let Some(current_igt) = self.frame_snapshot.igt_ms.filter(|&v| v > 0) {
             let unload_context =
                 !self.frame_snapshot.position_readable || !self.was_position_readable;
             if self.wrong_save {
@@ -1097,7 +1103,14 @@ impl RaceMachine {
             // (e.g. Erdtree burn, Maliketh warp) that the 10Hz poll couldn't read
             // because is_flag_set() returns None while position is unreadable.
             if !self.event_ids.is_empty() {
-                let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
+                // Fall back to the last good IGT when the frame read is the
+                // transient 0 of a repopulating reload.
+                let igt_ms = self
+                    .frame_snapshot
+                    .igt_ms
+                    .filter(|&v| v > 0)
+                    .or(self.last_good_igt)
+                    .unwrap_or(0);
                 if let Some(ref reads) = input.flag_reads {
                     for &(flag_id, is_set) in reads {
                         if !is_set {
@@ -1152,8 +1165,14 @@ impl RaceMachine {
                         info!(flag_id, "[RACE] Deferred event flag sent at loading exit");
                     }
                 } else {
-                    // No fog gate (death/respawn/quit-out/fast-travel)
-                    let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
+                    // No fog gate (death/respawn/quit-out/fast-travel).
+                    // Same transient-0 fallback as the flag scan above.
+                    let igt_ms = self
+                        .frame_snapshot
+                        .igt_ms
+                        .filter(|&v| v > 0)
+                        .or(self.last_good_igt)
+                        .unwrap_or(0);
                     let grace_opt = input.warp_capture;
                     let map_id = input.position.as_ref().map(|p| p.map_id_str.clone());
                     let position = input.position.as_ref().map(|p| [p.x, p.y, p.z]);
@@ -2926,5 +2945,84 @@ mod tests {
         let fx = m.tick(input, after_countdown);
         assert_eq!(penalty_ms(&fx), None);
         assert_eq!(sent_zone_query_quit_out(&fx), Some(false));
+    }
+
+    // ------------------------------------------------------------------
+    // Transient zero IGT reads (menu/reload repopulation window)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn transient_zero_igt_during_reload_is_ignored() {
+        // Live log 2026-07-30: GameDataMan's play_time reads 0 transiently
+        // while a menu reload repopulates it. Treated as a real observation
+        // it misread an ordinary quit-out as a 67s rollback (no penalty),
+        // poisoned last_good_igt to 0, and made the real post-reload value
+        // look like an impossible forward jump (false wrong-save freeze).
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(67_444), true), true, None), now);
+        m.tick(tick_in(snap(Some(0), false), true, None), now);
+        m.tick(tick_in(snap(Some(66_852), false), true, None), now);
+        assert!(!m.wrong_save, "transient 0 must not poison the reference");
+        assert!(
+            m.pending_quit_out,
+            "the real 592ms regression is a quit-out"
+        );
+
+        let mut input = tick_in(snap(Some(66_900), true), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: None,
+        });
+        let fx = m.tick(input, now);
+        assert_eq!(penalty_ms(&fx), Some(2000));
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(true));
+    }
+
+    #[test]
+    fn transient_zero_igt_does_not_flush_buffers() {
+        // Same transient while disconnected with a parked traversal: the 0
+        // previously read as a 67s rollback and discarded the pending flag.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(67_000), true), false, None), now);
+        let later = now + ms(150);
+        m.tick(
+            tick_in(snap(Some(67_100), true), false, Some(vec![(100, true)])),
+            later,
+        );
+        m.tick(tick_in(snap(Some(67_200), false), false, None), later);
+        let mut input = tick_in(snap(Some(67_300), true), false, None);
+        input.flag_reads = Some(vec![]);
+        m.tick(input, later);
+        assert!(m.flag_buffer.has_pending());
+
+        m.tick(tick_in(snap(Some(0), false), false, None), later);
+        m.tick(tick_in(snap(Some(66_500), false), false, None), later);
+        assert!(
+            m.flag_buffer.has_pending(),
+            "transient 0 must not flush the parked traversal"
+        );
+        assert!(m.pending_quit_out, "the real regression still arms");
+    }
+
+    #[test]
+    fn transient_zero_igt_does_not_recover_a_freeze() {
+        // With a small last_good the recovery window's low bound saturates
+        // to 0: a transient 0 during a reload must not read as "race save
+        // is back".
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(10_000), true), true, None), now);
+        m.tick(tick_in(snap(None, false), true, None), now);
+        m.tick(tick_in(snap(Some(7_200_000), false), true, None), now);
+        assert!(m.wrong_save);
+
+        m.tick(tick_in(snap(Some(0), false), true, None), now);
+        assert!(m.wrong_save, "transient 0 must not clear the freeze");
     }
 }
