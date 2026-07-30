@@ -657,4 +657,26 @@ export const CONTENT_ITEMS: ContentItem[] = [
       youtubeId: "BPZkjRXO57g",
     },
   },
+  {
+    id: "ruined-forge-skip",
+    kind: "skip",
+    zoneId: "gravesite_forge",
+    difficulty: 1,
+    title: "Starfall Past skip",
+    short: "Skip pulling the lever twice",
+    video: {
+      youtubeId: "LwSUepF1cAE",
+    },
+  },
+  {
+    id: "gaius-to-entrance-skip",
+    kind: "skip",
+    zoneId: "storehouse_back",
+    difficulty: 1,
+    title: "From Gaius gate dropping down to Shadow Keep entrance",
+    short: "",
+    video: {
+      youtubeId: "qhByf8BHb6I",
+    },
+  },
 ];
