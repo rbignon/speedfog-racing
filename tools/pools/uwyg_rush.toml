@@ -27,6 +27,7 @@ exclude_zones = ["volcano_rykard"]
 
 [item_randomizer]
 auto_equip = true
+item_preset_path = "data/uwyg_item_preset.yaml"
 
 [starting_items]
 talisman_pouches = 1
