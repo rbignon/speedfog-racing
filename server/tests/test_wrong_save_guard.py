@@ -94,33 +94,3 @@ def test_error_message_carries_optional_code():
     assert plain.code is None
     coded = ErrorMessage(message="Wrong save loaded", code="wrong_save")
     assert '"code":"wrong_save"' in coded.model_dump_json()
-
-
-def test_error_codes_pinned():
-    """Each condition error carries its correct code."""
-    from speedfog_racing.websocket.schemas import ErrorMessage
-
-    # Fresh save required
-    err = ErrorMessage(message="Please start a New Game", code="fresh_save_required")
-    assert err.code == "fresh_save_required"
-    assert '"code":"fresh_save_required"' in err.model_dump_json()
-
-    # Wrong save
-    err = ErrorMessage(message="Wrong save loaded, please reload your race save", code="wrong_save")
-    assert err.code == "wrong_save"
-    assert '"code":"wrong_save"' in err.model_dump_json()
-
-    # Race not running
-    err = ErrorMessage(message="Race not running", code="race_not_running")
-    assert err.code == "race_not_running"
-    assert '"code":"race_not_running"' in err.model_dump_json()
-
-    # Countdown in progress
-    err = ErrorMessage(message="Race countdown in progress", code="countdown")
-    assert err.code == "countdown"
-    assert '"code":"countdown"' in err.model_dump_json()
-
-    # Session inactive
-    err = ErrorMessage(message="Solo session not active", code="session_inactive")
-    assert err.code == "session_inactive"
-    assert '"code":"session_inactive"' in err.model_dump_json()

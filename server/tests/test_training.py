@@ -1948,6 +1948,50 @@ def test_training_stale_save_self_heals(training_ws_client, training_session_dat
         assert resp["participants"][0]["zone_history"] is None
 
 
+def test_training_status_update_rejected_when_session_inactive(
+    training_ws_client, training_session_data, async_session
+):
+    """status_update rejected when training session is inactive with code session_inactive."""
+    import asyncio
+    import uuid as _uuid
+
+    from sqlalchemy import select
+
+    from speedfog_racing.models import TrainingSession, TrainingSessionStatus
+
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+
+    # Keep connection open to avoid auth re-checking session status
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+
+        # Initialize with a status_update
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        ws.receive_json()  # leaderboard_update
+
+        # Now mark the session as finished in the DB while keeping connection open
+        async def finish_session():
+            async with async_session() as session:
+                result = await session.execute(
+                    select(TrainingSession).where(TrainingSession.id == _uuid.UUID(str(sid)))
+                )
+                ts = result.scalar_one()
+                ts.status = TrainingSessionStatus.FINISHED
+                await session.commit()
+
+        asyncio.run(finish_session())
+
+        # Send status_update while session is now inactive (should be rejected)
+        ws.send_json({"type": "status_update", "igt_ms": 5000, "death_count": 0})
+        resp = ws.receive_json()
+        assert resp["type"] == "error"
+        assert "not active" in resp["message"].lower()
+        assert resp["code"] == "session_inactive"
+
+
 def test_training_resumed_session_not_blocked(
     training_ws_client, training_session_data, async_session
 ):

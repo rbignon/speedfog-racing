@@ -2603,6 +2603,42 @@ def test_finished_rejected_when_race_not_running(integration_client, race_with_p
         assert resp["code"] == "race_not_running"
 
 
+def test_event_flag_rejected_during_countdown(
+    integration_client, race_with_participants, monkeypatch
+):
+    """event_flag rejected during countdown with code countdown."""
+    from speedfog_racing.config import settings
+
+    # Extend countdown to 60 seconds to ensure we have time to send the event_flag
+    monkeypatch.setattr(settings, "countdown_seconds", 60)
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    # Start the race (sets started_at to now + countdown_seconds, creating countdown window)
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    # Connect immediately while countdown is active
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        assert mod.auth()["type"] == "auth_ok"
+
+        # Send event_flag during countdown (should be rejected with error)
+        # message_id causes an ack to be sent first, then the error
+        mod.send_event_flag(flag_id=9000000, igt_ms=1000, message_id=1)
+        resp = mod.receive()  # ack
+        assert resp["type"] == "event_flag_ack"
+        resp = mod.receive()  # error
+        assert resp["type"] == "error"
+        assert "countdown" in resp["message"].lower()
+        assert resp["code"] == "countdown"
+
+
 # =============================================================================
 # Scenario: Zone Query (Fast Travel)
 # =============================================================================
