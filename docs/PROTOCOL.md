@@ -106,7 +106,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.2**. It is defined in
+release numbers. Current: **1.3**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -118,6 +118,7 @@ Bump rules:
 
 Version history:
 
+- **1.3** - error codes and TTL display semantics: `code` field on `error` messages (optional, absent on legacy errors); five codes with display categories (blocking: `wrong_save`, `fresh_save_required`; waiting: `race_not_running`, `countdown`, `session_inactive`). Server re-sends the error on every rejected message while the condition holds (~1s); mod displays coded conditions for 3 seconds after receipt. Close codes expanded with `4008` (rate limit), `1000` for race reset vs, `4001` for race deleted.
 - **1.2** - quit-out penalty and tracking: `quit_out` boolean field on `zone_query` (optional, omitted when false); `quit_out_penalty_ms` integer field on `race` (default 2000, 0 disables). See the [`auth_ok`](#auth_ok) note for when the mod applies the penalty.
 - **1.1** - chat reactions and replies (spectator connection only): `chat_reaction` / `chat_reaction_update` messages; `id`, `reply_to`, `reactions` fields on `chat_message`. No mod-side change.
 - **1.0** - initial versioned protocol.
@@ -353,21 +354,40 @@ Authentication failed. Connection is closed with code 4003.
 
 #### `error`
 
-Generic error during the message loop (not auth phase). Sent when a gameplay message is rejected. Examples: race not running, wrong save detected (IGT outruns wall-clock time by more than 60 seconds).
+Generic error during the message loop (not auth phase). Sent when a gameplay message is rejected. Examples: race not running, wrong save detected (IGT outruns wall-clock time by more than 60 seconds). The server re-sends the error on every rejected message while the condition holds (approximately once per second), so the mod's error display remains effective without requiring explicit ACK or state tracking.
 
 ```json
 {
   "type": "error",
-  "message": "Race not running"
+  "message": "Race not running",
+  "code": "race_not_running"
 }
 ```
 
 ```json
 {
   "type": "error",
-  "message": "Wrong save loaded, please reload your race save"
+  "message": "Wrong save loaded, please reload your race save",
+  "code": "wrong_save"
 }
 ```
+
+| Field     | Type             | Description                                                                                             |
+| --------- | ---------------- | ------------------------------------------------------------------------------------------------------- |
+| `message` | `string`         | Human-readable error description                                                                        |
+| `code`    | `string \| null` | Optional machine-readable error code (see table below). `null` for legacy errors or unknown conditions. |
+
+**Error codes and display semantics:**
+
+| Code                  | Category | Meaning                                                              | Mod Display                                                              |
+| --------------------- | -------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `wrong_save`          | Blocking | Player loaded a save with IGT too high (likely a prior-run save)     | Persistent red banner: "Wrong save loaded, please reload your race save" |
+| `fresh_save_required` | Blocking | Training mode requires a fresh save (first spawn, high IGT detected) | Persistent red banner: "Fresh save required for training"                |
+| `race_not_running`    | Waiting  | Race has not started or has finished                                 | Calm amber line: "Race not running"                                      |
+| `countdown`           | Waiting  | Race is in countdown phase (event flags not yet accepted)            | Calm amber line: "Countdown in progress"                                 |
+| `session_inactive`    | Waiting  | Training session is paused or not yet started                        | Calm amber line: "Session inactive"                                      |
+
+**Display logic:** The mod caches the most recent error receipt timestamp and displays the corresponding coded condition if that timestamp is younger than 3 seconds. This 3-second window allows errors to persist visibly as the server re-sends them every ~1 second, but drop automatically after resolution without requiring a separate clear message. Unknown or absent codes fall back to legacy behavior: a transient display that clears on the next successful message. Old mod builds ignore the `code` field entirely.
 
 #### `race_start`
 
@@ -1181,13 +1201,20 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 
 ### WebSocket Close Codes
 
-| Code   | Reason                                                | Endpoints                     |
-| ------ | ----------------------------------------------------- | ----------------------------- |
-| `1000` | Normal closure (room shutdown, race reset)            | All                           |
-| `4000` | Replaced by a new connection (same participant)       | Mod, Training                 |
-| `4001` | Auth timeout (no message received within deadline)    | Mod, Training, Training Spec  |
-| `4003` | Auth error (invalid JSON/message, auth fail, version) | Mod, Training, Training Spec  |
-| `4004` | Resource not found (race or session doesn't exist)    | Spectator, Training Spectator |
+| Code   | Reason                                                    | Endpoints                     |
+| ------ | --------------------------------------------------------- | ----------------------------- |
+| `1000` | Normal closure: room shutdown or race reset               | All                           |
+| `4000` | Replaced by a new connection (same participant)           | Mod, Training                 |
+| `4001` | Auth timeout (no message within deadline) or race deleted | Mod, Training, Training Spec  |
+| `4003` | Auth error (invalid JSON/message, auth fail, version)     | Mod, Training, Training Spec  |
+| `4004` | Resource not found (race or session doesn't exist)        | Spectator, Training Spectator |
+| `4008` | Rate limit exceeded (mod message loop)                    | Mod, Training                 |
+
+**Close code notes:**
+
+- `1000` (race reset): non-permanent; mods reconnect silently and resume where they left off.
+- `4001` (race deleted): permanent; organizer deleted the race mid-session. No reconnect.
+- `4008` (rate limit): mod sending messages too frequently; apply backoff and reconnect.
 
 ### Security Notes
 
