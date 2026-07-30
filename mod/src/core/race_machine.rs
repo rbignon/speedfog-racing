@@ -3156,6 +3156,11 @@ mod tests {
         );
         // Not a transient status: the coded path bypasses set_status.
         assert_eq!(m.get_status(now), None);
+        assert_eq!(
+            m.get_waiting_line(now),
+            None,
+            "a blocking condition must not double-render as the waiting line"
+        );
         // Fresh again after a re-send, gone 3s after the last one.
         m.handle_message(
             coded_error("Wrong save loaded", "wrong_save"),
