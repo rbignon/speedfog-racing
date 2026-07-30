@@ -26,8 +26,10 @@ from speedfog_racing.services.layer_service import compute_zone_update, get_star
 from speedfog_racing.services.weapons import bump_combo, filter_equipped
 from speedfog_racing.versioning import evaluate_mod_compat
 from speedfog_racing.websocket.schemas import (
+    CONDITION_MESSAGES,
     PROTOCOL_VERSION,
     AuthErrorMessage,
+    ErrorCode,
     ErrorMessage,
     EventFlagAckMessage,
     PingMessage,
@@ -522,6 +524,10 @@ class BaseModHandler(BaseHandler, Generic[T]):
         except Exception:
             pass
 
+    async def _send_condition(self, code: ErrorCode) -> None:
+        """Send a coded condition error with its canonical message."""
+        await self._send_error(CONDITION_MESSAGES[code], code=code)
+
     async def _send_error(self, message: str, code: str | None = None) -> None:
         """Send a generic error message to the mod."""
         try:
@@ -618,7 +624,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     self.entity_id,
                     igt_ms_val,
                 )
-                await self._send_error("Please start a New Game", code="fresh_save_required")
+                await self._send_condition(ErrorCode.FRESH_SAVE_REQUIRED)
                 return
 
             # Wrong-save guard: an IGT that outruns wall-clock time cannot
@@ -633,9 +639,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     igt_ms_val,
                     entity.igt_ms,
                 )
-                await self._send_error(
-                    "Wrong save loaded, please reload your race save", code="wrong_save"
-                )
+                await self._send_condition(ErrorCode.WRONG_SAVE)
                 return
 
             # Large rollback: backup restore (or another save); accepted by

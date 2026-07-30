@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, date, datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
@@ -262,6 +263,28 @@ class AuthErrorMessage(BaseModel):
 
     type: Literal["auth_error"] = "auth_error"
     message: str
+
+
+class ErrorCode(StrEnum):
+    """Machine-readable condition codes carried on ``error`` messages."""
+
+    WRONG_SAVE = "wrong_save"
+    FRESH_SAVE_REQUIRED = "fresh_save_required"
+    RACE_NOT_RUNNING = "race_not_running"
+    COUNTDOWN = "countdown"
+    SESSION_INACTIVE = "session_inactive"
+
+
+# Canonical message per coded condition. The mod renders this text verbatim,
+# classified by the code, so the pairing is a wire contract: change it here,
+# nowhere else (see docs/PROTOCOL.md).
+CONDITION_MESSAGES: dict[ErrorCode, str] = {
+    ErrorCode.WRONG_SAVE: "Wrong save loaded, please reload your race save",
+    ErrorCode.FRESH_SAVE_REQUIRED: "Please start a New Game",
+    ErrorCode.RACE_NOT_RUNNING: "Race not running",
+    ErrorCode.COUNTDOWN: "Race countdown in progress",
+    ErrorCode.SESSION_INACTIVE: "Solo session not active",
+}
 
 
 class ErrorMessage(BaseModel):

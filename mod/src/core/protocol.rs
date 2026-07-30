@@ -73,6 +73,33 @@ pub enum ClientMessage {
 // SERVER -> CLIENT MESSAGES
 // =============================================================================
 
+/// Machine-readable condition codes on the server `error` message.
+/// Same additive convention as [`RaceStatus`]: a code this build doesn't
+/// know deserializes as `Unknown` instead of failing, and is treated as
+/// "no known condition" (legacy transient display) by the machine.
+///
+/// `WrongSave` is the server's own detection, independent of the mod's
+/// local IGT-derived freeze heuristic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConditionKind {
+    WrongSave,
+    FreshSaveRequired,
+    RaceNotRunning,
+    Countdown,
+    SessionInactive,
+    #[serde(other)]
+    Unknown,
+}
+
+impl ConditionKind {
+    /// Display category: blocking conditions take the red top banner,
+    /// the rest the amber waiting line.
+    pub fn is_blocking(&self) -> bool {
+        matches!(self, Self::WrongSave | Self::FreshSaveRequired)
+    }
+}
+
 /// Visual customization payload for the participant's username on the in-game
 /// leaderboard. Only color/gradient is delivered to the mod; backgrounds are
 /// web-only.
@@ -356,11 +383,12 @@ pub enum ServerMessage {
     /// Heartbeat ping
     Ping,
     /// Generic error from server (e.g., race not running). `code` is the
-    /// machine-readable condition tag (None on plain errors and old servers).
+    /// machine-readable condition tag (None on plain errors and old servers;
+    /// codes this build doesn't know deserialize as `Unknown`).
     Error {
         message: String,
         #[serde(default)]
-        code: Option<String>,
+        code: Option<ConditionKind>,
     },
     /// Daily-streak update, unicast by the server to a user's connections
     /// after a daily run. The in-game mod has no use for it; it is modeled
@@ -746,7 +774,21 @@ mod tests {
         let msg: ServerMessage = serde_json::from_str(json).unwrap();
         match msg {
             ServerMessage::Error { code, .. } => {
-                assert_eq!(code.as_deref(), Some("wrong_save"));
+                assert_eq!(code, Some(ConditionKind::WrongSave));
+            }
+            _ => panic!("Expected Error"),
+        }
+    }
+
+    #[test]
+    fn test_server_error_unknown_code_degrades_to_unknown() {
+        // Wire pin: a code this build does not know must deserialize (not
+        // fail) and classify as Unknown, i.e. the legacy transient path.
+        let json = r#"{"type": "error", "message": "?", "code": "flux_capacitor"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::Error { code, .. } => {
+                assert_eq!(code, Some(ConditionKind::Unknown));
             }
             _ => panic!("Expected Error"),
         }

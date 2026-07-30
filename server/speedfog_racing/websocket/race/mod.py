@@ -45,8 +45,10 @@ from speedfog_racing.websocket.race.manager import (
 )
 from speedfog_racing.websocket.race.spectator import broadcast_race_state_update
 from speedfog_racing.websocket.schemas import (
+    CONDITION_MESSAGES,
     AuthOkMessage,
     DeathCountsMessage,
+    ErrorCode,
     ErrorMessage,
     ParticipantInfo,
     RaceStartMessage,
@@ -407,7 +409,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 entity.race_id,
                 entity.race.status.value,
             )
-            await self._send_error("Race not running", code="race_not_running")
+            await self._send_condition(ErrorCode.RACE_NOT_RUNNING)
             return False
 
         if entity.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
@@ -432,7 +434,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             )
             if message_id is not None:
                 await self._send_event_flag_ack(message_id)
-            await self._send_error("Race not running", code="race_not_running")
+            await self._send_condition(ErrorCode.RACE_NOT_RUNNING)
             return False
 
         if _is_countdown_active(entity.race):
@@ -442,7 +444,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             )
             if message_id is not None:
                 await self._send_event_flag_ack(message_id)
-            await self._send_error("Race countdown in progress", code="countdown")
+            await self._send_condition(ErrorCode.COUNTDOWN)
             return False
 
         if entity.status != ParticipantStatus.PLAYING:
@@ -750,7 +752,8 @@ async def handle_finished(
                 await asyncio.wait_for(
                     websocket.send_text(
                         ErrorMessage(
-                            message="Race not running", code="race_not_running"
+                            message=CONDITION_MESSAGES[ErrorCode.RACE_NOT_RUNNING],
+                            code=ErrorCode.RACE_NOT_RUNNING,
                         ).model_dump_json()
                     ),
                     timeout=SEND_TIMEOUT,

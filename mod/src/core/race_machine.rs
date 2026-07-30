@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::core::protocol::{
-    ExitInfo, ParticipantInfo, ParticipantStatus, RaceInfo, RaceStatus, SeedInfo,
+    ConditionKind, ExitInfo, ParticipantInfo, ParticipantStatus, RaceInfo, RaceStatus, SeedInfo,
 };
 use crate::core::types::PlayerPosition;
 
@@ -102,7 +102,7 @@ pub enum MachineMessage {
     },
     Error {
         message: String,
-        code: Option<String>,
+        code: Option<ConditionKind>,
     },
     /// Server rejected permanently (4xxx close code or auth failure). Stop reconnecting.
     PermanentError(String),
@@ -122,36 +122,6 @@ pub struct ZoneUpdateData {
     #[allow(dead_code)] // Kept for future use (e.g., spectator UI)
     pub is_first_visit: bool,
     pub exits: Vec<ExitInfo>,
-}
-
-/// Machine-readable server condition codes (the `code` field on `error`).
-///
-/// `WrongSave` here is the server's own detection, independent of
-/// `RaceMachine::wrong_save` (the local IGT-derived freeze heuristic).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConditionKind {
-    WrongSave,
-    FreshSaveRequired,
-    RaceNotRunning,
-    Countdown,
-    SessionInactive,
-}
-
-impl ConditionKind {
-    fn parse(code: &str) -> Option<Self> {
-        match code {
-            "wrong_save" => Some(Self::WrongSave),
-            "fresh_save_required" => Some(Self::FreshSaveRequired),
-            "race_not_running" => Some(Self::RaceNotRunning),
-            "countdown" => Some(Self::Countdown),
-            "session_inactive" => Some(Self::SessionInactive),
-            _ => None,
-        }
-    }
-
-    fn is_blocking(&self) -> bool {
-        matches!(self, Self::WrongSave | Self::FreshSaveRequired)
-    }
 }
 
 /// A coded server condition, displayed while fresh (the server re-sends
@@ -930,7 +900,7 @@ impl RaceMachine {
             MachineMessage::Error { message, code } => {
                 self.last_received_debug = Some(format!("error({})", message));
                 warn!(error = %message, code = ?code, "[WS] Error");
-                match code.as_deref().and_then(ConditionKind::parse) {
+                match code.filter(|k| *k != ConditionKind::Unknown) {
                     Some(kind) => {
                         self.server_condition = Some(ServerCondition {
                             kind,
@@ -3137,10 +3107,10 @@ mod tests {
     // Server conditions (coded errors) and the waiting line
     // ------------------------------------------------------------------
 
-    fn coded_error(message: &str, code: &str) -> MachineMessage {
+    fn coded_error(message: &str, kind: ConditionKind) -> MachineMessage {
         MachineMessage::Error {
             message: message.to_string(),
-            code: Some(code.to_string()),
+            code: Some(kind),
         }
     }
 
@@ -3148,7 +3118,10 @@ mod tests {
     fn blocking_condition_displays_then_expires() {
         let now = Instant::now();
         let mut m = running_machine(now);
-        m.handle_message(coded_error("Wrong save loaded", "wrong_save"), now);
+        m.handle_message(
+            coded_error("Wrong save loaded", ConditionKind::WrongSave),
+            now,
+        );
 
         assert_eq!(
             m.get_blocking_condition(now).map(|c| c.message.as_str()),
@@ -3163,7 +3136,7 @@ mod tests {
         );
         // Fresh again after a re-send, gone 3s after the last one.
         m.handle_message(
-            coded_error("Wrong save loaded", "wrong_save"),
+            coded_error("Wrong save loaded", ConditionKind::WrongSave),
             now + secs(2),
         );
         assert!(m.get_blocking_condition(now + secs(4)).is_some());
@@ -3174,7 +3147,10 @@ mod tests {
     fn waiting_condition_is_not_blocking() {
         let now = Instant::now();
         let mut m = running_machine(now);
-        m.handle_message(coded_error("Race not running", "race_not_running"), now);
+        m.handle_message(
+            coded_error("Race not running", ConditionKind::RaceNotRunning),
+            now,
+        );
         assert!(m.get_blocking_condition(now).is_none());
         assert_eq!(m.get_waiting_line(now), Some("Race not running"));
         assert_eq!(m.get_waiting_line(now + secs(4)), None);
@@ -3184,7 +3160,10 @@ mod tests {
     fn unknown_code_falls_back_to_transient_status() {
         let now = Instant::now();
         let mut m = running_machine(now);
-        m.handle_message(coded_error("Some future thing", "flux_capacitor"), now);
+        m.handle_message(
+            coded_error("Some future thing", ConditionKind::Unknown),
+            now,
+        );
         assert!(m.get_blocking_condition(now).is_none());
         assert_eq!(m.get_status(now), Some("Some future thing"));
     }
@@ -3208,14 +3187,14 @@ mod tests {
         m.handle_message(MachineMessage::RaceStart(10), now);
         assert!(m.is_countdown_active(now + secs(1)));
         m.handle_message(
-            coded_error("Race countdown in progress", "countdown"),
+            coded_error("Race countdown in progress", ConditionKind::Countdown),
             now + secs(1),
         );
         assert_eq!(m.get_waiting_line(now + secs(1)), None);
         // After the countdown, a fresh countdown condition would display
         // (desync case), pinned via a re-send past the countdown end.
         m.handle_message(
-            coded_error("Race countdown in progress", "countdown"),
+            coded_error("Race countdown in progress", ConditionKind::Countdown),
             now + secs(11),
         );
         assert_eq!(
