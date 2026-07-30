@@ -1132,6 +1132,7 @@ def test_stale_save_rejected_on_status_update(
         resp = mod0.receive()
         assert resp["type"] == "error"
         assert "New Game" in resp["message"]
+        assert resp["code"] == "fresh_save_required"
 
     # Verify participant is still READY (not transitioned to PLAYING)
     async def check_db():
@@ -2599,6 +2600,7 @@ def test_finished_rejected_when_race_not_running(integration_client, race_with_p
         resp = mod.receive()
         assert resp["type"] == "error"
         assert "not running" in resp["message"].lower()
+        assert resp["code"] == "race_not_running"
 
 
 # =============================================================================

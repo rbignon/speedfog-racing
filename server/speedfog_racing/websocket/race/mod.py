@@ -748,7 +748,11 @@ async def handle_finished(
             )
             try:
                 await asyncio.wait_for(
-                    websocket.send_text(ErrorMessage(message="Race not running").model_dump_json()),
+                    websocket.send_text(
+                        ErrorMessage(
+                            message="Race not running", code="race_not_running"
+                        ).model_dump_json()
+                    ),
                     timeout=SEND_TIMEOUT,
                 )
             except Exception:
