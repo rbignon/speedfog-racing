@@ -118,7 +118,7 @@ Bump rules:
 
 Version history:
 
-- **1.3** - error codes and TTL display semantics: `code` field on `error` messages (optional, absent on legacy errors); five codes with display categories (blocking: `wrong_save`, `fresh_save_required`; waiting: `race_not_running`, `countdown`, `session_inactive`). Server re-sends the error on every rejected message while the condition holds (~1s); mod displays coded conditions for 3 seconds after receipt. Close codes expanded with `4008` (rate limit), `1000` for race reset vs, `4001` for race deleted.
+- **1.3** - error codes and TTL display semantics: `code` field on `error` messages (optional, absent on legacy errors); five codes with display categories (blocking: `wrong_save`, `fresh_save_required`; waiting: `race_not_running`, `countdown`, `session_inactive`). Server re-sends the error on every rejected message while the condition holds (~1s); mod displays coded conditions for 3 seconds after receipt. Close codes expanded with `4008` (rate limit), `1000` (race reset, non-permanent), `4001` (race deleted, permanent).
 - **1.2** - quit-out penalty and tracking: `quit_out` boolean field on `zone_query` (optional, omitted when false); `quit_out_penalty_ms` integer field on `race` (default 2000, 0 disables). See the [`auth_ok`](#auth_ok) note for when the mod applies the penalty.
 - **1.1** - chat reactions and replies (spectator connection only): `chat_reaction` / `chat_reaction_update` messages; `id`, `reply_to`, `reactions` fields on `chat_message`. No mod-side change.
 - **1.0** - initial versioned protocol.
@@ -379,15 +379,15 @@ Generic error during the message loop (not auth phase). Sent when a gameplay mes
 
 **Error codes and display semantics:**
 
-| Code                  | Category | Meaning                                                              | Mod Display                                                              |
-| --------------------- | -------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `wrong_save`          | Blocking | Player loaded a save with IGT too high (likely a prior-run save)     | Persistent red banner: "Wrong save loaded, please reload your race save" |
-| `fresh_save_required` | Blocking | Training mode requires a fresh save (first spawn, high IGT detected) | Persistent red banner: "Fresh save required for training"                |
-| `race_not_running`    | Waiting  | Race has not started or has finished                                 | Calm amber line: "Race not running"                                      |
-| `countdown`           | Waiting  | Race is in countdown phase (event flags not yet accepted)            | Calm amber line: "Countdown in progress"                                 |
-| `session_inactive`    | Waiting  | Training session is paused or not yet started                        | Calm amber line: "Session inactive"                                      |
+| Code                  | Category | Meaning                                                                             | Server Message (rendered by mod as persistent coded condition) |
+| --------------------- | -------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `wrong_save`          | Blocking | Player loaded a save with IGT too high (likely a prior-run save)                    | "Wrong save loaded, please reload your race save"              |
+| `fresh_save_required` | Blocking | First status_update of a race or training session with a non-fresh save (IGT > 60s) | "Please start a New Game"                                      |
+| `race_not_running`    | Waiting  | Race has not started or has finished                                                | "Race not running"                                             |
+| `countdown`           | Waiting  | Race is in countdown phase (event flags not yet accepted)                           | "Race countdown in progress"                                   |
+| `session_inactive`    | Waiting  | Training session is paused or not yet started                                       | "Solo session not active"                                      |
 
-**Display logic:** The mod caches the most recent error receipt timestamp and displays the corresponding coded condition if that timestamp is younger than 3 seconds. This 3-second window allows errors to persist visibly as the server re-sends them every ~1 second, but drop automatically after resolution without requiring a separate clear message. Unknown or absent codes fall back to legacy behavior: a transient display that clears on the next successful message. Old mod builds ignore the `code` field entirely.
+**Display logic:** The mod caches the most recent error receipt timestamp and renders the coded condition with a persistent red banner (blocking codes) or calm amber line (waiting codes) if the timestamp is younger than 3 seconds. This 3-second window allows errors to persist visibly as the server re-sends them every ~1 second, but drop automatically after resolution without requiring a separate clear message. Unknown or absent codes fall back to legacy behavior: a transient display that clears on the next successful message. Old mod builds ignore the `code` field entirely.
 
 #### `race_start`
 
@@ -1201,20 +1201,20 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 
 ### WebSocket Close Codes
 
-| Code   | Reason                                                    | Endpoints                     |
-| ------ | --------------------------------------------------------- | ----------------------------- |
-| `1000` | Normal closure: room shutdown or race reset               | All                           |
-| `4000` | Replaced by a new connection (same participant)           | Mod, Training                 |
-| `4001` | Auth timeout (no message within deadline) or race deleted | Mod, Training, Training Spec  |
-| `4003` | Auth error (invalid JSON/message, auth fail, version)     | Mod, Training, Training Spec  |
-| `4004` | Resource not found (race or session doesn't exist)        | Spectator, Training Spectator |
-| `4008` | Rate limit exceeded (mod message loop)                    | Mod, Training                 |
+| Code   | Reason                                                    | Endpoints                                    |
+| ------ | --------------------------------------------------------- | -------------------------------------------- |
+| `1000` | Normal closure: room shutdown or race reset               | All                                          |
+| `4000` | Replaced by a new connection (same participant)           | Mod, Training                                |
+| `4001` | Auth timeout (no message within deadline) or race deleted | Mod, Training, Training Spec                 |
+| `4003` | Auth error (invalid JSON/message, auth fail, version)     | Mod, Training, Training Spec                 |
+| `4004` | Resource not found (race or session doesn't exist)        | Spectator, Training Spectator                |
+| `4008` | Rate limit exceeded (message loop)                        | Mod, Training, Spectator, Training Spectator |
 
 **Close code notes:**
 
 - `1000` (race reset): non-permanent; mods reconnect silently and resume where they left off.
 - `4001` (race deleted): permanent; organizer deleted the race mid-session. No reconnect.
-- `4008` (rate limit): mod sending messages too frequently; apply backoff and reconnect.
+- `4008` (rate limit): mod or spectator sending messages too frequently; treated as permanent (code >= 4000), no reconnect.
 
 ### Security Notes
 
