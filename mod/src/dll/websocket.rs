@@ -114,7 +114,10 @@ impl RaceWebSocketClient {
                     crate::panic_message(panic_info.as_ref())
                 );
                 error!("{}", msg);
-                let _ = incoming_tx.send(MachineMessage::Error(msg));
+                let _ = incoming_tx.send(MachineMessage::Error {
+                    message: msg,
+                    code: None,
+                });
                 let _ = incoming_tx.send(MachineMessage::StatusChanged(ConnectionStatus::Error));
             }
         });
@@ -365,7 +368,10 @@ fn websocket_thread(
                 }
 
                 error!(error = %e, attempts = consecutive_failures, "[WS] Connection failed");
-                let _ = incoming_tx.send(MachineMessage::Error(e.clone()));
+                let _ = incoming_tx.send(MachineMessage::Error {
+                    message: e.clone(),
+                    code: None,
+                });
                 let _ = incoming_tx.send(MachineMessage::StatusChanged(ConnectionStatus::Error));
             }
         }
@@ -661,8 +667,11 @@ fn message_loop(
                         ServerMessage::DeathCounts { counts } => {
                             let _ = incoming_tx.send(MachineMessage::DeathCounts(counts));
                         }
-                        ServerMessage::Error { message } => {
-                            if incoming_tx.send(MachineMessage::Error(message)).is_err() {
+                        ServerMessage::Error { message, code } => {
+                            if incoming_tx
+                                .send(MachineMessage::Error { message, code })
+                                .is_err()
+                            {
                                 warn!("[WS] Incoming channel full/closed: error dropped");
                             }
                         }

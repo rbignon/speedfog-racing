@@ -100,7 +100,10 @@ pub enum MachineMessage {
     ZoneQueryAck {
         message_id: u64,
     },
-    Error(String),
+    Error {
+        message: String,
+        code: Option<String>,
+    },
     /// Server rejected permanently (4xxx close code or auth failure). Stop reconnecting.
     PermanentError(String),
 }
@@ -850,10 +853,10 @@ impl RaceMachine {
                     }
                 }
             }
-            MachineMessage::Error(e) => {
-                self.last_received_debug = Some(format!("error({})", e));
-                warn!(error = %e, "[WS] Error");
-                self.set_status(e, now);
+            MachineMessage::Error { message, code: _ } => {
+                self.last_received_debug = Some(format!("error({})", message));
+                warn!(error = %message, "[WS] Error");
+                self.set_status(message, now);
             }
             MachineMessage::PermanentError(msg) => {
                 self.last_received_debug = Some(format!("permanent_error({})", msg));

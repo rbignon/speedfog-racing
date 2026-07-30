@@ -355,8 +355,13 @@ pub enum ServerMessage {
     DeathCounts { counts: HashMap<String, u32> },
     /// Heartbeat ping
     Ping,
-    /// Generic error from server (e.g., race not running)
-    Error { message: String },
+    /// Generic error from server (e.g., race not running). `code` is the
+    /// machine-readable condition tag (None on plain errors and old servers).
+    Error {
+        message: String,
+        #[serde(default)]
+        code: Option<String>,
+    },
     /// Daily-streak update, unicast by the server to a user's connections
     /// after a daily run. The in-game mod has no use for it; it is modeled
     /// here only so the message deserializes cleanly and is dropped by the
@@ -723,11 +728,25 @@ mod tests {
 
     #[test]
     fn test_server_error_deserialize() {
+        // Old server: no code field (wire contract pin).
         let json = r#"{"type": "error", "message": "Race not running"}"#;
         let msg: ServerMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ServerMessage::Error { message } => {
+            ServerMessage::Error { message, code } => {
                 assert_eq!(message, "Race not running");
+                assert_eq!(code, None);
+            }
+            _ => panic!("Expected Error"),
+        }
+    }
+
+    #[test]
+    fn test_server_error_deserialize_with_code() {
+        let json = r#"{"type": "error", "message": "Wrong save loaded", "code": "wrong_save"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::Error { code, .. } => {
+                assert_eq!(code.as_deref(), Some("wrong_save"));
             }
             _ => panic!("Expected Error"),
         }
