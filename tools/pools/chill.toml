@@ -16,7 +16,7 @@ major_bosses = 9
 
 [structure]
 layers_count = 30
-final_tier = 10
+final_tier = 14
 tier_curve = "power"
 tier_curve_exponent = 1.5
 first_layer_type = "legacy_dungeon"
