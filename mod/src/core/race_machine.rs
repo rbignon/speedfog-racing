@@ -124,6 +124,45 @@ pub struct ZoneUpdateData {
     pub exits: Vec<ExitInfo>,
 }
 
+/// Machine-readable server condition codes (the `code` field on `error`).
+///
+/// `WrongSave` here is the server's own detection, independent of
+/// `RaceMachine::wrong_save` (the local IGT-derived freeze heuristic).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConditionKind {
+    WrongSave,
+    FreshSaveRequired,
+    RaceNotRunning,
+    Countdown,
+    SessionInactive,
+}
+
+impl ConditionKind {
+    fn parse(code: &str) -> Option<Self> {
+        match code {
+            "wrong_save" => Some(Self::WrongSave),
+            "fresh_save_required" => Some(Self::FreshSaveRequired),
+            "race_not_running" => Some(Self::RaceNotRunning),
+            "countdown" => Some(Self::Countdown),
+            "session_inactive" => Some(Self::SessionInactive),
+            _ => None,
+        }
+    }
+
+    fn is_blocking(&self) -> bool {
+        matches!(self, Self::WrongSave | Self::FreshSaveRequired)
+    }
+}
+
+/// A coded server condition, displayed while fresh (the server re-sends
+/// it on every rejected message, ~1/s, while the condition holds).
+#[derive(Debug, Clone)]
+pub struct ServerCondition {
+    pub kind: ConditionKind,
+    pub message: String,
+    pub last_seen: Instant,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct BufferedEventFlag {
     pub flag_id: u32,
@@ -306,7 +345,10 @@ pub struct RaceMachine {
     pub has_been_in_world: bool,
     /// Wrong save loaded (impossible IGT forward jump across an unload):
     /// freeze all race interaction (sends, flag reads/writes, penalty) and
-    /// show the persistent banner until the race save returns.
+    /// show the persistent banner until the race save returns. This is a
+    /// local, IGT-derived heuristic, independent of the server-pushed
+    /// `ConditionKind::WrongSave` condition below (same real-world cause,
+    /// different detection path).
     pub wrong_save: bool,
     /// Last IGT observed on the believed-good save and when: the recovery
     /// baseline while `wrong_save` is set.
@@ -318,6 +360,9 @@ pub struct RaceMachine {
     pub last_auth_error: Option<String>,
     /// Permanent error from server (persistent red banner, no auto-dismiss)
     pub permanent_error: Option<String>,
+    /// Most recent coded server condition (see `ConditionKind`), displayed
+    /// while fresh via `get_blocking_condition`/`get_waiting_line`.
+    pub server_condition: Option<ServerCondition>,
     /// IGT frozen when the race ends before the local player finishes
     pub frozen_igt_ms: Option<u32>,
     /// Last observed IGT, used to detect save reloads. Unlike
@@ -372,6 +417,7 @@ impl RaceMachine {
             seed_mismatch: false,
             last_auth_error: None,
             permanent_error: None,
+            server_condition: None,
             frozen_igt_ms: None,
             last_observed_igt: None,
             frame_snapshot: FrameSnapshot::default(),
@@ -459,6 +505,30 @@ impl RaceMachine {
         })
     }
 
+    /// Coded blocking condition (red top banner) while fresh.
+    pub fn get_blocking_condition(&self, now: Instant) -> Option<&ServerCondition> {
+        self.server_condition
+            .as_ref()
+            .filter(|c| c.kind.is_blocking())
+            .filter(|c| now.duration_since(c.last_seen) < SERVER_CONDITION_TTL)
+    }
+
+    /// Calm amber waiting line: locally derived when the machine knows
+    /// the race has not started, otherwise a fresh waiting condition from
+    /// the server. The countdown code stays hidden while the local
+    /// countdown UI is active.
+    pub fn get_waiting_line(&self, now: Instant) -> Option<&str> {
+        if self.is_race_setup() {
+            return Some("Race has not started yet");
+        }
+        self.server_condition
+            .as_ref()
+            .filter(|c| !c.kind.is_blocking())
+            .filter(|c| now.duration_since(c.last_seen) < SERVER_CONDITION_TTL)
+            .filter(|c| c.kind != ConditionKind::Countdown || !self.is_countdown_active(now))
+            .map(|c| c.message.as_str())
+    }
+
     /// Get the update-available notice if still within its 10s display window.
     pub fn get_update_notice(&self, now: Instant) -> Option<&str> {
         self.update_notice.as_ref().and_then(|(msg, time)| {
@@ -507,11 +577,15 @@ impl RaceMachine {
                         self.set_status("Reconnecting to server...".to_string(), now);
                     }
                     ConnectionStatus::Error => {
-                        let msg = self
-                            .last_auth_error
-                            .take()
-                            .unwrap_or_else(|| "Server maintenance".to_string());
-                        self.set_status(msg, now);
+                        // The permanent red banner already shows this
+                        // failure; no gold flash on top of it.
+                        if self.permanent_error.is_none() {
+                            let msg = self
+                                .last_auth_error
+                                .take()
+                                .unwrap_or_else(|| "Server maintenance".to_string());
+                            self.set_status(msg, now);
+                        }
                     }
                     ConnectionStatus::Disconnected => {
                         self.set_status("Disconnected".to_string(), now);
@@ -853,10 +927,19 @@ impl RaceMachine {
                     }
                 }
             }
-            MachineMessage::Error { message, code: _ } => {
+            MachineMessage::Error { message, code } => {
                 self.last_received_debug = Some(format!("error({})", message));
-                warn!(error = %message, "[WS] Error");
-                self.set_status(message, now);
+                warn!(error = %message, code = ?code, "[WS] Error");
+                match code.as_deref().and_then(ConditionKind::parse) {
+                    Some(kind) => {
+                        self.server_condition = Some(ServerCondition {
+                            kind,
+                            message,
+                            last_seen: now,
+                        });
+                    }
+                    None => self.set_status(message, now),
+                }
             }
             MachineMessage::PermanentError(msg) => {
                 self.last_received_debug = Some(format!("permanent_error({})", msg));
@@ -887,6 +970,11 @@ const WRONG_SAVE_RECOVERY_SLACK_MS: u32 = 10_000;
 /// so this log is the only trace left when position readability breaks or
 /// flickers and reveals silently stop firing.
 const ZONE_REVEAL_STALL_WARN: Duration = Duration::from_secs(30);
+
+/// A server condition displays while its last receipt is younger than
+/// this; the server re-sends ~1/s while the condition holds, so display
+/// drops by itself shortly after resolution.
+const SERVER_CONDITION_TTL: Duration = Duration::from_secs(3);
 
 impl RaceMachine {
     /// What the shell should read from the game this frame.
@@ -1216,12 +1304,6 @@ impl RaceMachine {
                 if input.warp_capture.is_some() {
                     effects.push(Effect::ClearWarpCapture);
                 }
-            }
-
-            // Remind the player when they load a save (or start a new game)
-            // before the race has begun. Auto-dismisses after 3s.
-            if self.is_race_setup() {
-                self.set_status("Race hasn't started yet".to_string(), now);
             }
         }
         self.was_position_readable = position_readable;
@@ -3049,5 +3131,121 @@ mod tests {
 
         m.tick(tick_in(snap(Some(0), false), true, None), now);
         assert!(m.wrong_save, "transient 0 must not clear the freeze");
+    }
+
+    // ------------------------------------------------------------------
+    // Server conditions (coded errors) and the waiting line
+    // ------------------------------------------------------------------
+
+    fn coded_error(message: &str, code: &str) -> MachineMessage {
+        MachineMessage::Error {
+            message: message.to_string(),
+            code: Some(code.to_string()),
+        }
+    }
+
+    #[test]
+    fn blocking_condition_displays_then_expires() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.handle_message(coded_error("Wrong save loaded", "wrong_save"), now);
+
+        assert_eq!(
+            m.get_blocking_condition(now).map(|c| c.message.as_str()),
+            Some("Wrong save loaded")
+        );
+        // Not a transient status: the coded path bypasses set_status.
+        assert_eq!(m.get_status(now), None);
+        // Fresh again after a re-send, gone 3s after the last one.
+        m.handle_message(
+            coded_error("Wrong save loaded", "wrong_save"),
+            now + secs(2),
+        );
+        assert!(m.get_blocking_condition(now + secs(4)).is_some());
+        assert!(m.get_blocking_condition(now + secs(6)).is_none());
+    }
+
+    #[test]
+    fn waiting_condition_is_not_blocking() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.handle_message(coded_error("Race not running", "race_not_running"), now);
+        assert!(m.get_blocking_condition(now).is_none());
+        assert_eq!(m.get_waiting_line(now), Some("Race not running"));
+        assert_eq!(m.get_waiting_line(now + secs(4)), None);
+    }
+
+    #[test]
+    fn unknown_code_falls_back_to_transient_status() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.handle_message(coded_error("Some future thing", "flux_capacitor"), now);
+        assert!(m.get_blocking_condition(now).is_none());
+        assert_eq!(m.get_status(now), Some("Some future thing"));
+    }
+
+    #[test]
+    fn waiting_line_derived_from_setup_even_offline() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100], Some(900)), now);
+        // No server condition, disconnected: local derivation.
+        assert_eq!(m.get_waiting_line(now), Some("Race has not started yet"));
+        m.handle_message(MachineMessage::RaceStart(0), now);
+        assert_eq!(m.get_waiting_line(now + secs(1)), None);
+    }
+
+    #[test]
+    fn countdown_code_suppressed_while_local_countdown_active() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100], Some(900)), now);
+        m.handle_message(MachineMessage::RaceStart(10), now);
+        assert!(m.is_countdown_active(now + secs(1)));
+        m.handle_message(
+            coded_error("Race countdown in progress", "countdown"),
+            now + secs(1),
+        );
+        assert_eq!(m.get_waiting_line(now + secs(1)), None);
+        // After the countdown, a fresh countdown condition would display
+        // (desync case), pinned via a re-send past the countdown end.
+        m.handle_message(
+            coded_error("Race countdown in progress", "countdown"),
+            now + secs(11),
+        );
+        assert_eq!(
+            m.get_waiting_line(now + secs(11)),
+            Some("Race countdown in progress")
+        );
+    }
+
+    #[test]
+    fn auth_error_flash_suppressed_when_permanent_error_shown() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(
+            MachineMessage::PermanentError("Invalid mod token or race".to_string()),
+            now,
+        );
+        m.handle_message(MachineMessage::StatusChanged(ConnectionStatus::Error), now);
+        assert_eq!(
+            m.get_status(now),
+            None,
+            "no gold flash under the red banner"
+        );
+    }
+
+    #[test]
+    fn setup_save_load_no_longer_flashes_transient_status() {
+        // The old 3s "Race hasn't started yet" flash is replaced by the
+        // persistent derived waiting line.
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100], Some(900)), now);
+        m.tick(tick_in(snap(Some(1_000), true), true, None), now);
+        m.tick(tick_in(snap(None, false), true, None), now);
+        m.tick(tick_in(snap(Some(1_000), true), true, None), now);
+        assert_eq!(m.get_status(now), None);
+        assert_eq!(m.get_waiting_line(now), Some("Race has not started yet"));
     }
 }
