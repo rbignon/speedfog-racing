@@ -16,10 +16,9 @@
 /// save, or a backup restore of this one). Ordinary quit-outs regress by
 /// only the post-flush fade (1-2s, live-measured) and must keep the
 /// buffers: a pending flag was already cleared from game memory, flushing
-/// it here would lose the traversal for good. Kept equal to
-/// race_machine's QUIT_OUT_MAX_REGRESSION_MS: below the value a reload is
-/// a quit-out (penalty, buffers kept), at or above it a rollback (flush,
-/// no penalty).
+/// it here would lose the traversal for good. This same bound classifies
+/// reloads in race_machine: below it a reload is a quit-out (penalty,
+/// buffers kept), at or above it a rollback (flush, no penalty).
 pub const SAVE_RELOAD_IGT_DROP_MS: u32 = 60_000;
 
 /// Returns true when `current` is a meaningful regression from `prev`,

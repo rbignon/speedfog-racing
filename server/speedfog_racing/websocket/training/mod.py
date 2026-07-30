@@ -309,9 +309,8 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                 return
             session.status = TrainingSessionStatus.FINISHED
             session.finished_at = datetime.now(UTC)
-            # Finish cannot undercut the recorded IGT: post-restore replays
-            # and legacy clients report stale values.
-            session.igt_ms = max(session.igt_ms, igt)
+            # session.igt_ms already holds the clamped value: the base
+            # _on_igt_change ran on this same report before this hook.
             await db.commit()
 
         # Broadcast finish to spectators

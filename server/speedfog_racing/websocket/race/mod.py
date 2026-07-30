@@ -476,10 +476,10 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
     def _on_igt_change(self, entity: Participant, igt_ms: int) -> None:
         # Bump on any CHANGED report, including clamped ones: a
         # post-restore replay is activity the inactivity monitor must see.
+        # The bump must be evaluated before the base clamp mutates igt_ms.
         if igt_ms != entity.igt_ms:
             entity.last_igt_change_at = datetime.now(UTC)
-        if igt_ms > entity.igt_ms:
-            entity.igt_ms = igt_ms
+        super()._on_igt_change(entity, igt_ms)
 
     def _on_zone_entered(
         self, entity: Participant, node_id: str, graph_json: dict[str, Any], igt: int
@@ -505,13 +505,14 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         message_id: int | None,
     ) -> None:
         assert self._participant_id is not None
+        # handle_finished owns the non-decreasing finish clamp (it also
+        # covers the legacy finished-message caller), so the raw value is
+        # passed through.
         await handle_finished(
             self.websocket,
             self.session_maker,
             self._participant_id,
-            # Clamp-consistent: a finish during a post-restore replay must
-            # not undercut the recorded IGT.
-            {"igt_ms": max(igt, entity.igt_ms)},
+            {"igt_ms": igt},
         )
 
     # ------------------------------------------------------------------

@@ -46,9 +46,12 @@ MAX_FRESH_IGT_MS = 60_000  # 60s: fresh save reaches first load screen at ~3-5s,
 MAX_IGT_MS = 2_147_483_647  # PostgreSQL int4 column max (~24.85 days)
 # Forward slack for the wrong-save guard: a reported IGT may exceed the
 # recorded one by at most the elapsed wall-clock time plus this margin
-# (in-game time can never advance faster than real time). See the
-# wrong-save guard spec.
+# (in-game time can never advance faster than real time).
 WRONG_SAVE_FORWARD_SLACK_MS = 60_000
+# Rollback size logged as a probable backup restore. Mirrors the mod's
+# reload-classification bound (SAVE_RELOAD_IGT_DROP_MS): smaller
+# regressions are ordinary quit-outs, not worth a trace.
+IGT_ROLLBACK_LOG_MS = 60_000
 MAX_DEATH_COUNT = 10_000
 MAX_ZONE_HISTORY = 1000  # 1000 event flags allocated per seed
 MSG_RATE_WINDOW = 10.0  # sliding window in seconds
@@ -634,7 +637,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             # Large rollback: backup restore (or another save); accepted by
             # design. Logs about once per second until the replay catches
             # up, which doubles as the trace of the whole replay window.
-            if igt_ms_val + 60_000 <= entity.igt_ms:
+            if igt_ms_val + IGT_ROLLBACK_LOG_MS <= entity.igt_ms:
                 logger.info(
                     "IGT rollback accepted (backup restore?): %s reported=%d recorded=%d",
                     self.entity_id,

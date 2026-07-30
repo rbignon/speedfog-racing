@@ -253,7 +253,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-use crate::core::flag_buffer::FlagBuffer;
+use crate::core::flag_buffer::{FlagBuffer, SAVE_RELOAD_IGT_DROP_MS};
 
 /// Pure race state machine. Owns every piece of plain-data race state and
 /// makes every decision; performs no IO. Fields are `pub` so the Windows
@@ -317,7 +317,10 @@ pub struct RaceMachine {
     pub permanent_error: Option<String>,
     /// IGT frozen when the race ends before the local player finishes
     pub frozen_igt_ms: Option<u32>,
-    /// Last observed IGT, used to detect save reloads
+    /// Last observed IGT, used to detect save reloads. Unlike
+    /// `last_good_igt` it keeps updating through wrong-save episodes and
+    /// survives `RaceStart`, so the per-save flush still catches a stale
+    /// setup-phase save on the first in-race observation.
     pub last_observed_igt: Option<u32>,
     /// Cached reads for the current frame (written by the shell each frame)
     pub frame_snapshot: FrameSnapshot,
@@ -400,6 +403,18 @@ impl RaceMachine {
 
     /// Configured quit-out penalty, 0 when no race is known (nothing to
     /// penalize outside a race anyway).
+    /// IGT for outgoing wire values: the frame value, falling back to the
+    /// last good observation when the frame read is the transient 0 of a
+    /// repopulating menu reload. Status updates deliberately do NOT use
+    /// this: there, 0 means "not in game, skip the send".
+    fn effective_igt_ms(&self) -> u32 {
+        self.frame_snapshot
+            .igt_ms
+            .filter(|&v| v > 0)
+            .or(self.last_good_igt)
+            .unwrap_or(0)
+    }
+
     fn quit_out_penalty_ms(&self) -> u32 {
         self.race_state
             .race
@@ -856,18 +871,12 @@ impl RaceMachine {
 /// at least this long, so the degraded reveal lands near the loading exit.
 const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Reload classification bound: below this regression a reload is a
-/// same-save quit-out (post-flush fade, 1-2s live-measured) and arms the
-/// penalty; at or above it, a backup restore or another save (no penalty;
-/// the per-save flush in flag_buffer, same threshold, covers it).
-const QUIT_OUT_MAX_REGRESSION_MS: u32 = 60_000;
-
 /// A same-save reload always comes back BELOW the last observation (the
 /// on-disk save lags); a forward jump across an unload beyond this slack
 /// means another, further-along save file.
 const WRONG_SAVE_FORWARD_SLACK_MS: u32 = 10_000;
 /// Recovery window slack: the race save is back when a reload lands in
-/// `[last_good - QUIT_OUT_MAX_REGRESSION_MS, last_good + elapsed + this]`.
+/// `[last_good - SAVE_RELOAD_IGT_DROP_MS, last_good + elapsed + this]`.
 const WRONG_SAVE_RECOVERY_SLACK_MS: u32 = 10_000;
 
 /// Diagnostic only: how long a zone update may stay pending before a
@@ -944,7 +953,7 @@ impl RaceMachine {
                     .map(|t| now.duration_since(t).as_millis() as u64)
                     .unwrap_or(0);
                 let good = self.last_good_igt.unwrap_or(0);
-                let low = good.saturating_sub(QUIT_OUT_MAX_REGRESSION_MS);
+                let low = good.saturating_sub(SAVE_RELOAD_IGT_DROP_MS);
                 let high = (good as u64) + elapsed_ms + WRONG_SAVE_RECOVERY_SLACK_MS as u64;
                 if unload_context && current_igt >= low && (current_igt as u64) <= high {
                     info!(igt_ms = current_igt, "[RACE] Race save is back, resuming");
@@ -985,7 +994,7 @@ impl RaceMachine {
                     self.wrong_save = true;
                     self.pending_quit_out = false;
                 } else {
-                    // Quit-out detection: an IGT regression within QUIT_OUT_MAX_REGRESSION_MS
+                    // Quit-out detection: an IGT regression within SAVE_RELOAD_IGT_DROP_MS
                     // observed around an unload means a save was loaded from the menu. Death,
                     // fast travel and fog traversals reload the world, not the save;
                     // GameDataMan persists in memory and the IGT stays monotonic.
@@ -995,13 +1004,13 @@ impl RaceMachine {
                     // proved unusable here: they also trip on cross-map fog loads.
                     // The return-to-title Lua bit (debug overlay) never fires on menu
                     // quit-outs, only on scripted returns such as endings.
-                    // Rollbacks beyond QUIT_OUT_MAX_REGRESSION_MS are backup restores or
+                    // Rollbacks beyond SAVE_RELOAD_IGT_DROP_MS are backup restores or
                     // another save: no penalty (the per-save flush in flag_buffer covers them).
                     if self.has_been_in_world
                         && !self.pending_quit_out
                         && unload_context
                         && self.last_observed_igt.is_some_and(|prev| {
-                            current_igt < prev && prev - current_igt < QUIT_OUT_MAX_REGRESSION_MS
+                            current_igt < prev && prev - current_igt < SAVE_RELOAD_IGT_DROP_MS
                         })
                     {
                         info!(
@@ -1102,15 +1111,9 @@ impl RaceMachine {
             // Force one immediate flag scan to catch flags set during loading
             // (e.g. Erdtree burn, Maliketh warp) that the 10Hz poll couldn't read
             // because is_flag_set() returns None while position is unreadable.
-            if !self.event_ids.is_empty() {
-                // Fall back to the last good IGT when the frame read is the
-                // transient 0 of a repopulating reload.
-                let igt_ms = self
-                    .frame_snapshot
-                    .igt_ms
-                    .filter(|&v| v > 0)
-                    .or(self.last_good_igt)
-                    .unwrap_or(0);
+            // Skipped while frozen: no flag writes into a foreign save.
+            if !self.event_ids.is_empty() && !self.wrong_save {
+                let igt_ms = self.effective_igt_ms();
                 if let Some(ref reads) = input.flag_reads {
                     for &(flag_id, is_set) in reads {
                         if !is_set {
@@ -1165,14 +1168,8 @@ impl RaceMachine {
                         info!(flag_id, "[RACE] Deferred event flag sent at loading exit");
                     }
                 } else {
-                    // No fog gate (death/respawn/quit-out/fast-travel).
-                    // Same transient-0 fallback as the flag scan above.
-                    let igt_ms = self
-                        .frame_snapshot
-                        .igt_ms
-                        .filter(|&v| v > 0)
-                        .or(self.last_good_igt)
-                        .unwrap_or(0);
+                    // No fog gate (death/respawn/quit-out/fast-travel)
+                    let igt_ms = self.effective_igt_ms();
                     let grace_opt = input.warp_capture;
                     let map_id = input.position.as_ref().map(|p| p.map_id_str.clone());
                     let position = input.position.as_ref().map(|p| [p.x, p.y, p.z]);
@@ -1237,11 +1234,11 @@ impl RaceMachine {
         if let Some(ok) = input.flag_reader_ok {
             self.last_flag_reader_ok = Some(ok);
         }
-        if poll_due {
+        if poll_due && !self.wrong_save {
             if let Some(ref reads) = input.flag_reads {
                 self.last_flag_poll = now;
 
-                let igt_ms = self.frame_snapshot.igt_ms.unwrap_or(0);
+                let igt_ms = self.effective_igt_ms();
                 for &(flag_id, is_set) in reads {
                     if !is_set || cleared.contains(&flag_id) {
                         continue;
@@ -1862,7 +1859,7 @@ mod tests {
 
     #[test]
     fn wrong_save_recovery_requires_elapsed_real_time() {
-        // The recovery window is `[last_good - QUIT_OUT_MAX_REGRESSION_MS,
+        // The recovery window is `[last_good - SAVE_RELOAD_IGT_DROP_MS,
         // last_good + elapsed_wall + WRONG_SAVE_RECOVERY_SLACK_MS]`: an IGT
         // just past the fixed slack must wait for enough real time to pass
         // before it becomes plausible again.
@@ -2754,7 +2751,7 @@ mod tests {
 
     #[test]
     fn boundary_regression_is_rollback_not_quit_out() {
-        // Regression of exactly QUIT_OUT_MAX_REGRESSION_MS: rollback
+        // Regression of exactly SAVE_RELOAD_IGT_DROP_MS: rollback
         // semantics win. The per-save flush fires (pending cleared) and
         // no penalty is armed; flush and penalty are mutually exclusive.
         let now = Instant::now();
@@ -3008,6 +3005,31 @@ mod tests {
             "transient 0 must not flush the parked traversal"
         );
         assert!(m.pending_quit_out, "the real regression still arms");
+    }
+
+    #[test]
+    fn frozen_machine_ignores_injected_flag_reads() {
+        // The shell withholds flag reads while frozen (wants_flag_reads),
+        // but the pure machine must also defend its own invariant: flag
+        // reads injected during a freeze produce no game writes and no
+        // sends.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(10_000), true), true, None), now);
+        m.tick(tick_in(snap(None, false), true, None), now);
+        m.tick(tick_in(snap(Some(7_200_000), false), true, None), now);
+        assert!(m.wrong_save);
+
+        let later = now + ms(150);
+        let fx = m.tick(
+            tick_in(snap(Some(7_200_100), true), true, Some(vec![(100, true)])),
+            later,
+        );
+        assert!(
+            fx.is_empty(),
+            "frozen machine must ignore injected flag reads, got {fx:?}"
+        );
+        assert!(!m.flag_buffer.has_deferred());
     }
 
     #[test]
