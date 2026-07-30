@@ -48,7 +48,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Quit-outs are allowed",
     short:
-      "**Quitting to the main menu** is legal. Use it to escape a bad fall or to reset a dangerous pull.",
+      "**Quitting to the main menu** is legal. Use it to escape a bad fall or to reset a dangerous pull, but each quit-out adds a **2-second penalty** to your in-game time.",
   },
   {
     id: "spend-runes-early",
