@@ -1360,6 +1360,7 @@ def test_wrong_save_forward_jump_frozen_then_recovers(
         err = mod0.receive()
         assert err["type"] == "error"
         assert err["message"] == "Wrong save loaded, please reload your race save"
+        assert err["code"] == "wrong_save"
 
     async def check_db():
         async with integration_db() as db:

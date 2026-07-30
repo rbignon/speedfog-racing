@@ -522,11 +522,13 @@ class BaseModHandler(BaseHandler, Generic[T]):
         except Exception:
             pass
 
-    async def _send_error(self, message: str) -> None:
+    async def _send_error(self, message: str, code: str | None = None) -> None:
         """Send a generic error message to the mod."""
         try:
             await asyncio.wait_for(
-                self.websocket.send_text(ErrorMessage(message=message).model_dump_json()),
+                self.websocket.send_text(
+                    ErrorMessage(message=message, code=code).model_dump_json()
+                ),
                 timeout=SEND_TIMEOUT,
             )
         except Exception:
@@ -616,7 +618,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     self.entity_id,
                     igt_ms_val,
                 )
-                await self._send_error("Please start a New Game")
+                await self._send_error("Please start a New Game", code="fresh_save_required")
                 return
 
             # Wrong-save guard: an IGT that outruns wall-clock time cannot
@@ -631,7 +633,9 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     igt_ms_val,
                     entity.igt_ms,
                 )
-                await self._send_error("Wrong save loaded, please reload your race save")
+                await self._send_error(
+                    "Wrong save loaded, please reload your race save", code="wrong_save"
+                )
                 return
 
             # Large rollback: backup restore (or another save); accepted by

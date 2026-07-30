@@ -407,7 +407,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 entity.race_id,
                 entity.race.status.value,
             )
-            await self._send_error("Race not running")
+            await self._send_error("Race not running", code="race_not_running")
             return False
 
         if entity.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
@@ -432,7 +432,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             )
             if message_id is not None:
                 await self._send_event_flag_ack(message_id)
-            await self._send_error("Race not running")
+            await self._send_error("Race not running", code="race_not_running")
             return False
 
         if _is_countdown_active(entity.race):
@@ -442,7 +442,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             )
             if message_id is not None:
                 await self._send_event_flag_ack(message_id)
-            await self._send_error("Race countdown in progress")
+            await self._send_error("Race countdown in progress", code="countdown")
             return False
 
         if entity.status != ParticipantStatus.PLAYING:

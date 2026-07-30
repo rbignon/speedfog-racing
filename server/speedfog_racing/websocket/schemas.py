@@ -269,6 +269,9 @@ class ErrorMessage(BaseModel):
 
     type: Literal["error"] = "error"
     message: str
+    # Machine-readable condition code (see docs/PROTOCOL.md): lets the mod
+    # render blocking/waiting conditions distinctly. None = plain error.
+    code: str | None = None
 
 
 class DeathCountsMessage(BaseModel):

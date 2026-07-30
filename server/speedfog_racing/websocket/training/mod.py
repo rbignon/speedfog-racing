@@ -266,7 +266,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
     # ------------------------------------------------------------------
     async def _validate_for_status_update(self, entity: TrainingSession) -> bool:
         if entity.status != TrainingSessionStatus.ACTIVE:
-            await self._send_error("Solo session not active")
+            await self._send_error("Solo session not active", code="session_inactive")
             return False
         return True
 
@@ -278,7 +278,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                 # ACK replayed event flags so the mod clears its in-flight set
                 await self._send_event_flag_ack(message_id)
             else:
-                await self._send_error("Solo session not active")
+                await self._send_error("Solo session not active", code="session_inactive")
             return False
         return True
 

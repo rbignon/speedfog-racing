@@ -84,3 +84,13 @@ def test_on_igt_change_equal_report_does_not_bump_timestamp():
     p = _bare_participant(500_000)
     handler._on_igt_change(p, 500_000)
     assert p.last_igt_change_at is None
+
+
+def test_error_message_carries_optional_code():
+    """Wire contract: code serializes when set, defaults to None."""
+    from speedfog_racing.websocket.schemas import ErrorMessage
+
+    plain = ErrorMessage(message="Race not running")
+    assert plain.code is None
+    coded = ErrorMessage(message="Wrong save loaded", code="wrong_save")
+    assert '"code":"wrong_save"' in coded.model_dump_json()
