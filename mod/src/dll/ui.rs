@@ -177,6 +177,8 @@ impl RaceTracker {
                 .build(|| {
                     self.render_seed_mismatch_warning(ui);
                     self.render_wrong_save_warning(ui);
+                    self.render_server_blocking_warning(ui);
+                    self.render_waiting_line(ui);
                     self.render_player_status(ui, max_width, &mut bufs);
                     self.render_race_ends_warning(ui, max_width, &mut bufs);
                     self.render_exits(ui, max_width);
@@ -235,6 +237,24 @@ impl RaceTracker {
             let danger = self.cached_colors.danger;
             ui.text_colored(danger, "WRONG SAVE LOADED");
             ui.text_colored(danger, "Reload your race save");
+        }
+    }
+
+    /// Danger banner for a fresh coded blocking condition from the server
+    /// (wrong save detected server-side, fresh save required). Drops by
+    /// itself ~3s after the server stops re-sending it.
+    fn render_server_blocking_warning(&self, ui: &hudhook::imgui::Ui) {
+        if let Some(message) = self.get_blocking_condition_message() {
+            let danger = self.cached_colors.danger;
+            ui.text_colored(danger, message);
+        }
+    }
+
+    /// Calm amber waiting line (race not started, countdown desync,
+    /// inactive solo session).
+    fn render_waiting_line(&self, ui: &hudhook::imgui::Ui) {
+        if let Some(message) = self.get_waiting_line_message() {
+            ui.text_colored(self.cached_colors.gold, message);
         }
     }
 

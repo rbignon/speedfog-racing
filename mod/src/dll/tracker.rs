@@ -780,6 +780,18 @@ impl RaceTracker {
         self.machine.get_update_notice(Instant::now())
     }
 
+    /// Get the coded blocking condition message from the server, if still fresh.
+    pub fn get_blocking_condition_message(&self) -> Option<&str> {
+        self.machine
+            .get_blocking_condition(Instant::now())
+            .map(|condition| condition.message.as_str())
+    }
+
+    /// Get the calm waiting-line message, if any.
+    pub fn get_waiting_line_message(&self) -> Option<&str> {
+        self.machine.get_waiting_line(Instant::now())
+    }
+
     pub fn debug_info(&self) -> &DebugInfo {
         &self.debug_info
     }
