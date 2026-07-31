@@ -489,7 +489,14 @@ impl RaceMachine {
     /// countdown UI is active.
     pub fn get_waiting_line(&self, now: Instant) -> Option<&str> {
         if self.is_race_setup() {
-            return Some("Race has not started yet");
+            // Only while actually in the world: the reminder is about the
+            // loaded game, so it must not cover the title screen or
+            // loading screens (the same readable-position signal the
+            // loading-exit path keys on).
+            return self
+                .frame_snapshot
+                .position_readable
+                .then_some("Race has not started yet");
         }
         self.server_condition
             .as_ref()
@@ -3173,10 +3180,27 @@ mod tests {
         let now = Instant::now();
         let mut m = RaceMachine::new(1, String::new(), false, now);
         m.handle_message(auth_ok("setup", &[100], Some(900)), now);
-        // No server condition, disconnected: local derivation.
+        // In world, no server condition, disconnected: local derivation.
+        m.tick(tick_in(snap(Some(1_000), true), false, None), now);
         assert_eq!(m.get_waiting_line(now), Some("Race has not started yet"));
         m.handle_message(MachineMessage::RaceStart(0), now);
         assert_eq!(m.get_waiting_line(now + secs(1)), None);
+    }
+
+    #[test]
+    fn waiting_line_hidden_outside_the_world() {
+        // Regression (live 2026-07-31): the derived setup line rendered at
+        // the title screen, before any save was loaded. It must only show
+        // while the player is actually in the world.
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100], Some(900)), now);
+        assert_eq!(m.get_waiting_line(now), None, "title screen: no line");
+        m.tick(tick_in(snap(Some(1_000), true), true, None), now);
+        assert_eq!(m.get_waiting_line(now), Some("Race has not started yet"));
+        // Back out of the world (quit to menu): the line hides again.
+        m.tick(tick_in(snap(None, false), true, None), now);
+        assert_eq!(m.get_waiting_line(now), None, "menu: no line");
     }
 
     #[test]
