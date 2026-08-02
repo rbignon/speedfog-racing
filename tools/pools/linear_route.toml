@@ -4,7 +4,7 @@ extends = "standard"
 
 [display]
 name = "Linear Route"
-sort_order = 10
+sort_order = 70
 description = "Linear run with no branching, every player follows the same path"
 
 [structure]

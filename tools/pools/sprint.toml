@@ -4,7 +4,7 @@ extends = "_base"
 
 [display]
 name = "Sprint"
-sort_order = 2
+sort_order = 20
 estimated_duration = "~30min"
 description = "Fast-paced race with minimal exploration"
 

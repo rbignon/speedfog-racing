@@ -4,7 +4,7 @@ extends = "boss_rush"
 
 [display]
 name = "UWYG Boss Rush"
-sort_order = 9
+sort_order = 90
 description = "\"Use What You Get\" linear boss rush"
 rules = """
 Don't change your equipment (weapons, armor, crystal tears, talismans)

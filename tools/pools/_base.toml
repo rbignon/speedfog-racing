@@ -67,7 +67,6 @@ difficulty = 50
 enabled = true
 remove_requirements = true
 auto_upgrade_weapons = true
-auto_upgrade_dropped = true
 reduce_upgrade_cost = true
 dlc = true
 item_preset = true

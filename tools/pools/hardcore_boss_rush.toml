@@ -4,7 +4,7 @@ extends = "hardcore"
 
 [display]
 name = "Hard Boss Rush"
-sort_order = 8
+sort_order = 81
 description = "Punishing race with nothing but bosses"
 
 [requirements]
@@ -18,3 +18,4 @@ major_bosses = 12
 first_layer_type = ""
 max_parallel_paths = 3
 layers_count = 35
+final_tier = 32

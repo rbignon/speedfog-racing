@@ -4,7 +4,7 @@ extends = "standard"
 
 [display]
 name = "Boss Rush"
-sort_order = 7
+sort_order = 60
 description = "Nothing but bosses the whole run"
 
 [requirements]
