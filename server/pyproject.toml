@@ -1,6 +1,6 @@
 [project]
 name = "speedfog-racing"
-version = "1.21.0"
+version = "1.22.0"
 description = "Competitive racing platform for SpeedFog"
 requires-python = ">=3.11"
 dependencies = [

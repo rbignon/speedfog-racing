@@ -2,6 +2,24 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.22.0] - 2026-08-01
+
+### Saves
+
+- **Wrong-save protection**: loading a save further along than your race save (a previous run's save, another character) now freezes your progress and shows a persistent warning banner instead of corrupting your timer
+
+### Seeds
+
+- Fix: **Radagon and the Elden Beast ignored enemy scaling**. Whatever the mode's final tier, they kept their vanilla stats and rune reward. They now scale with the final tier like every other boss
+- Fix: **enemy scaling above tier 21 now actually applies**. The fog randomizer silently capped tiers 22-34 down to tier 21 stats. The endgame of **Hardcore, Hard Boss Rush, Expedition, and Boss Rush** now hits as hard as intended
+- **Expedition**'s final tier lowered from 28 to 25 to compensate
+- **Hardcore mode** now starts with **7 Golden Seeds and 4 Sacred Tears** (up from 3 and 2)
+- New **Hardcore Boss Shuffle** mode
+- The **Hard Boss Rush**'s final tier climbs from 28 to 32
+- **Chill**'s final tier raised from 10 to 14
+- **UWYG modes now use a dedicated item pool** with a much wider weapon selection dropping from bosses, while the other modes go back to the curated selection
+- **Auto-upgrade equipped items**. It is now not necessary to drop weapons on the floor anymore.
+
 ## [1.21.0] - 2026-07-26
 
 ### Quit-outs
