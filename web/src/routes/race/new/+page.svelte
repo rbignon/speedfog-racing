@@ -22,6 +22,7 @@
   let autoEndEnabled = $state(false);
   let lateJoinWindowMinutes = $state(10);
   let raceDurationMinutes = $state(120);
+  let deathless = $state(false);
   let privateDag = $state(false);
   let customRules = $state("");
   let showAdvanced = $state(false);
@@ -51,6 +52,7 @@
   let advancedCount = $derived(
     (autoEndEnabled ? 1 : 0) +
       (lateJoinEnabled ? 0 : 1) +
+      (deathless ? 1 : 0) +
       (privateDag ? 1 : 0) +
       (customRules.trim() ? 1 : 0),
   );
@@ -111,6 +113,7 @@
         autoEndEnabled ? raceDurationMinutes : null,
         privateDag,
         customRules.trim() || null,
+        deathless,
       );
       goto(`/race/${race.id}`);
     } catch (e) {
@@ -327,7 +330,7 @@
             {#if advancedCount > 0}
               {advancedCount} set
             {:else}
-              late joiners · auto-end · private map · custom rules
+              late joiners · auto-end · deathless · private map · custom rules
             {/if}
           </span>
         </button>
@@ -384,6 +387,21 @@
               <p class="hint">
                 Useful for time-boxed community races. The organizer can still
                 finalize earlier.
+              </p>
+            </div>
+
+            <div class="form-group">
+              <span>Deathless</span>
+              <label class="radio-label">
+                <input
+                  type="checkbox"
+                  bind:checked={deathless}
+                  disabled={creating}
+                />
+                Eliminate players on their first death
+              </label>
+              <p class="hint">
+                A player who dies is automatically marked as abandoned.
               </p>
             </div>
 

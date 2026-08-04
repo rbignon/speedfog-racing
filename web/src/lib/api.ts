@@ -51,6 +51,7 @@ export interface Race {
   registration_closes_at: string | null;
   race_ends_at: string | null;
   private_dag: boolean;
+  deathless: boolean;
   custom_rules: string | null;
   daily_date: string | null;
   exclude_from_stats: boolean;
@@ -537,6 +538,7 @@ export async function createRace(
   raceDurationMinutes: number | null = null,
   privateDag: boolean = false,
   customRules: string | null = null,
+  deathless: boolean = false,
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races`, {
     method: "POST",
@@ -557,6 +559,7 @@ export async function createRace(
       race_duration_minutes: raceDurationMinutes,
       private_dag: privateDag,
       custom_rules: customRules,
+      deathless,
     }),
   });
   return handleResponse<Race>(response);
@@ -575,6 +578,7 @@ export async function updateRace(
     late_join_window_minutes?: number | null;
     race_duration_minutes?: number | null;
     private_dag?: boolean;
+    deathless?: boolean;
     custom_rules?: string | null;
   },
 ): Promise<Race> {
