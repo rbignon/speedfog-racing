@@ -1373,6 +1373,7 @@ impl RaceMachine {
                     && !self.deathless_banner_shown
                     && self.is_deathless()
                     && self.is_race_running()
+                    && !self.is_countdown_active(now)
                     && !self.am_i_finished()
                     && !self.am_i_abandoned()
                     && !self.wrong_save
@@ -3303,6 +3304,31 @@ mod tests {
         assert!(m.deathless_banner_shown);
         m.handle_message(MachineMessage::RaceStart(0), now + secs(2));
         assert!(!m.deathless_banner_shown);
+    }
+
+    #[test]
+    fn deathless_banner_gated_during_countdown() {
+        let now = Instant::now();
+        let mut m = deathless_running_machine(now);
+        m.handle_message(MachineMessage::RaceStart(10), now);
+
+        m.tick(tick_in(snap_deaths(Some(1000), 0), true, None), now);
+        assert_eq!(m.get_status(now), None, "baseline tick must not banner");
+
+        // Countdown death: still on the pre-race save, must not banner and
+        // must not burn the one-shot latch.
+        let t1 = now + secs(1);
+        m.tick(tick_in(snap_deaths(Some(1000), 1), true, None), t1);
+        assert_eq!(m.get_status(t1), None, "countdown death must not banner");
+        assert!(
+            !m.deathless_banner_shown,
+            "countdown death must not consume the latch"
+        );
+
+        // Countdown over: the next death is a real in-race death.
+        let t2 = now + secs(11);
+        m.tick(tick_in(snap_deaths(Some(2000), 2), true, None), t2);
+        assert_eq!(m.get_status(t2), Some("You died. Race over."));
     }
 
     // ------------------------------------------------------------------
