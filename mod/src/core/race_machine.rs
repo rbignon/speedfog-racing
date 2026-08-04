@@ -324,6 +324,13 @@ pub struct RaceMachine {
     /// baseline while `wrong_save` is set.
     pub last_good_igt: Option<u32>,
     pub last_good_at: Option<Instant>,
+    /// Death count last observed on the frame snapshot: the baseline for
+    /// the deathless death edge. `None` until the first readable frame, so
+    /// a mid-race (re)start records a baseline instead of a false death.
+    pub last_seen_death_count: Option<u32>,
+    /// One-shot latch for the deathless "You died" banner; reset on
+    /// `RaceStart`.
+    pub deathless_banner_shown: bool,
     /// Seed mismatch: config seed_id doesn't match server seed_id
     pub seed_mismatch: bool,
     /// Last auth error message from server (see dll handler ordering guarantee)
@@ -384,6 +391,8 @@ impl RaceMachine {
             wrong_save: false,
             last_good_igt: None,
             last_good_at: None,
+            last_seen_death_count: None,
+            deathless_banner_shown: false,
             seed_mismatch: false,
             last_auth_error: None,
             permanent_error: None,
@@ -442,6 +451,14 @@ impl RaceMachine {
             .unwrap_or(0)
     }
 
+    fn is_deathless(&self) -> bool {
+        self.race_state
+            .race
+            .as_ref()
+            .map(|r| r.deathless)
+            .unwrap_or(false)
+    }
+
     pub fn is_race_setup(&self) -> bool {
         self.race_state
             .race
@@ -456,6 +473,13 @@ impl RaceMachine {
     pub fn am_i_finished(&self) -> bool {
         self.my_participant()
             .map(|p| p.status == ParticipantStatus::Finished)
+            .unwrap_or(false)
+    }
+
+    /// Check if the local player has abandoned; mirrors `am_i_finished`.
+    pub fn am_i_abandoned(&self) -> bool {
+        self.my_participant()
+            .map(|p| p.status == ParticipantStatus::Abandoned)
             .unwrap_or(false)
     }
 
@@ -684,6 +708,7 @@ impl RaceMachine {
                 }
                 // A quit-out requested before the start is not a race quit-out.
                 self.pending_quit_out = false;
+                self.deathless_banner_shown = false;
                 // Without this, the IGT-regression arming would fire on the
                 // first in-race load after a pre-start quit-out (the reloaded
                 // save's IGT sits below the last pre-start observation).
@@ -1338,6 +1363,28 @@ impl RaceMachine {
             }
         }
 
+        // Deathless: a strict local death-count increase while racing fires
+        // the one-shot "You died" banner. Elimination itself is server-side
+        // (the periodic status_update carries the count); this is instant
+        // local feedback only, so it also works while disconnected.
+        if let Some(deaths) = self.frame_snapshot.death_count {
+            if let Some(prev) = self.last_seen_death_count {
+                if deaths > prev
+                    && !self.deathless_banner_shown
+                    && self.is_deathless()
+                    && self.is_race_running()
+                    && !self.am_i_finished()
+                    && !self.am_i_abandoned()
+                    && !self.wrong_save
+                {
+                    self.deathless_banner_shown = true;
+                    self.set_status("You died. Race over.".to_string(), now);
+                    info!(deaths, "[RACE] Deathless death detected");
+                }
+            }
+            self.last_seen_death_count = Some(deaths);
+        }
+
         // Everything below needs a live connection (ready, replays, status updates).
         if !input.connected {
             return effects;
@@ -1579,6 +1626,44 @@ mod tests {
         let mut m = RaceMachine::new(1, String::new(), false, now);
         m.handle_message(auth_ok("running", &[100, 200, 900], Some(900)), now);
         m
+    }
+
+    /// Machine authed into a running DEATHLESS race, same shape as
+    /// `running_machine` otherwise.
+    fn deathless_running_machine(now: Instant) -> RaceMachine {
+        deathless_machine("running", now)
+    }
+
+    fn deathless_machine(status: &str, now: Instant) -> RaceMachine {
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        let mut race: RaceInfo = serde_json::from_str(&format!(
+            r#"{{"id":"r1","name":"x","status":"{}","deathless":true}}"#,
+            status
+        ))
+        .unwrap();
+        race.reparse_dates();
+        m.handle_message(
+            MachineMessage::AuthOk {
+                participant_id: "p1".to_string(),
+                race,
+                seed: test_seed(&[100, 200, 900], Some(900), "{}"),
+                participants: vec![test_participant("p1", "playing", 1)],
+                phantom_skin: None,
+                latest_mod_version: None,
+            },
+            now,
+        );
+        m
+    }
+
+    fn snap_deaths(igt: Option<u32>, deaths: u32) -> FrameSnapshot {
+        FrameSnapshot {
+            igt_ms: igt,
+            death_count: Some(deaths),
+            position_readable: true,
+            loading_screen: Some(false),
+            ..FrameSnapshot::default()
+        }
     }
 
     fn snap(igt: Option<u32>, pos: bool) -> FrameSnapshot {
@@ -3108,6 +3193,116 @@ mod tests {
 
         m.tick(tick_in(snap(Some(0), false), true, None), now);
         assert!(m.wrong_save, "transient 0 must not clear the freeze");
+    }
+
+    // ------------------------------------------------------------------
+    // Deathless death banner
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn deathless_death_fires_banner_once() {
+        let now = Instant::now();
+        let mut m = deathless_running_machine(now);
+        m.tick(tick_in(snap_deaths(Some(1000), 0), true, None), now);
+        assert_eq!(m.get_status(now), None, "baseline tick must not banner");
+
+        let t1 = now + secs(1);
+        m.tick(tick_in(snap_deaths(Some(2000), 1), true, None), t1);
+        assert_eq!(m.get_status(t1), Some("You died. Race over."));
+
+        // Second death after the banner expired: latched, no new banner.
+        let t2 = t1 + secs(10);
+        m.tick(tick_in(snap_deaths(Some(3000), 2), true, None), t2);
+        assert_eq!(m.get_status(t2), None);
+    }
+
+    #[test]
+    fn deathless_banner_skipped_outside_conditions() {
+        let now = Instant::now();
+
+        // Not a deathless race.
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap_deaths(Some(1000), 0), true, None), now);
+        m.tick(
+            tick_in(snap_deaths(Some(2000), 1), true, None),
+            now + secs(1),
+        );
+        assert_eq!(m.get_status(now + secs(1)), None);
+
+        // Deathless but race still in setup.
+        let mut m = deathless_machine("setup", now);
+        m.tick(tick_in(snap_deaths(Some(1000), 0), true, None), now);
+        m.tick(
+            tick_in(snap_deaths(Some(2000), 1), true, None),
+            now + secs(1),
+        );
+        assert_eq!(m.get_status(now + secs(1)), None);
+
+        // Wrong-save guard active: frozen, no banner.
+        let mut m = deathless_running_machine(now);
+        m.tick(tick_in(snap_deaths(Some(1000), 0), true, None), now);
+        m.wrong_save = true;
+        m.tick(
+            tick_in(snap_deaths(Some(2000), 1), true, None),
+            now + secs(1),
+        );
+        assert_eq!(m.get_status(now + secs(1)), None);
+    }
+
+    #[test]
+    fn deathless_banner_skipped_when_already_finished() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        let mut race: RaceInfo =
+            serde_json::from_str(r#"{"id":"r1","name":"x","status":"running","deathless":true}"#)
+                .unwrap();
+        race.reparse_dates();
+        m.handle_message(
+            MachineMessage::AuthOk {
+                participant_id: "p1".to_string(),
+                race,
+                seed: test_seed(&[100, 200, 900], Some(900), "{}"),
+                participants: vec![test_participant("p1", "finished", 3)],
+                phantom_skin: None,
+                latest_mod_version: None,
+            },
+            now,
+        );
+        m.tick(tick_in(snap_deaths(Some(1000), 0), true, None), now);
+        m.tick(
+            tick_in(snap_deaths(Some(2000), 1), true, None),
+            now + secs(1),
+        );
+        assert_eq!(m.get_status(now + secs(1)), None);
+    }
+
+    #[test]
+    fn deathless_first_observation_is_baseline_not_death() {
+        let now = Instant::now();
+        let mut m = deathless_running_machine(now);
+        // Mid-race mod restart: counter already at 5. Must not banner.
+        m.tick(tick_in(snap_deaths(Some(1000), 5), true, None), now);
+        assert_eq!(m.get_status(now), None);
+        // The NEXT increase is a real death.
+        m.tick(
+            tick_in(snap_deaths(Some(2000), 6), true, None),
+            now + secs(1),
+        );
+        assert_eq!(m.get_status(now + secs(1)), Some("You died. Race over."));
+    }
+
+    #[test]
+    fn race_start_resets_deathless_latch() {
+        let now = Instant::now();
+        let mut m = deathless_running_machine(now);
+        m.tick(tick_in(snap_deaths(Some(1000), 0), true, None), now);
+        m.tick(
+            tick_in(snap_deaths(Some(2000), 1), true, None),
+            now + secs(1),
+        );
+        assert!(m.deathless_banner_shown);
+        m.handle_message(MachineMessage::RaceStart(0), now + secs(2));
+        assert!(!m.deathless_banner_shown);
     }
 
     // ------------------------------------------------------------------
