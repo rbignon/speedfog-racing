@@ -530,6 +530,11 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
     ) -> None:
         assert self._participant_id is not None
 
+        if death_delta > 0 and entity.race.deathless and entity.status == ParticipantStatus.PLAYING:
+            # Eliminate BEFORE the uncommon-path reload below so the
+            # subsequent broadcasts already carry the ABANDONED status.
+            await handle_deathless_death(self.session_maker, self._participant_id)
+
         if not became_active and death_delta <= 0:
             await asyncio.gather(
                 manager.broadcast_player_update(
@@ -723,6 +728,82 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         """Handle explicit finished message from mod."""
         assert self._participant_id is not None
         await handle_finished(self.websocket, self.session_maker, self._participant_id, msg)
+
+
+async def handle_deathless_death(
+    session_maker: async_sessionmaker[AsyncSession],
+    participant_id: uuid.UUID,
+) -> None:
+    """Eliminate a participant who died in a deathless race.
+
+    Server-authoritative counterpart of ``POST /races/{id}/abandon``: the
+    mod only reports the death count in ``status_update``; the guard here
+    re-checks state in-session so concurrent transitions collapse to a
+    no-op.
+    """
+    race_transitioned = False
+
+    async with session_maker() as db:
+        participant = await _load_participant(db, participant_id)
+        if not participant:
+            return
+        race = participant.race
+        if (
+            not race.deathless
+            or race.status != RaceStatus.RUNNING
+            or participant.status != ParticipantStatus.PLAYING
+        ):
+            return
+
+        participant.status = ParticipantStatus.ABANDONED
+        await db.commit()
+        logger.info("Deathless elimination: %s", participant.id)
+
+        participant = await _load_participant(db, participant_id)
+        if not participant:
+            return
+
+        display = participant.user.twitch_display_name or participant.user.twitch_username
+        death_public_json = await persist_system_chat(
+            db,
+            participant.race_id,
+            ChatChannel.PUBLIC,
+            f"{display} died (deathless race).",
+        )
+
+        race_transitioned = await check_race_auto_finish(db, participant.race)
+        race_finished_public_json: str | None = None
+        if race_transitioned:
+            logger.info("Race finished: %s", participant.race_id)
+            race_finished_public_json = await persist_system_chat(
+                db, participant.race_id, ChatChannel.PUBLIC, "The race has finished."
+            )
+        await db.commit()
+
+    # Session closed. All broadcasts use detached objects.
+
+    if race_transitioned:
+        # Push race_state to spectators BEFORE status change so the client
+        # receives status=finished + zone_history atomically in one message.
+        await broadcast_race_state_update(participant.race_id, participant.race)
+        await manager.broadcast_race_status(participant.race_id, "finished")
+        fire_race_finished_notifications(participant.race)
+
+    await manager.broadcast_leaderboard(
+        participant.race_id,
+        participant.race.participants,
+        graph_json=_get_graph_json(participant),
+        daily_date=participant.race.daily_date,
+    )
+
+    # Unlock the PUBLIC channel for the eliminated participant before
+    # broadcasting so they receive their own elimination notice.
+    room = manager.get_room(participant.race_id)
+    if room:
+        room.set_participant_status(participant.user_id, ParticipantStatus.ABANDONED)
+        await room.broadcast_chat_public(death_public_json, participant.race)
+        if race_finished_public_json is not None:
+            await room.broadcast_chat_public(race_finished_public_json, participant.race)
 
 
 # ---------------------------------------------------------------------------

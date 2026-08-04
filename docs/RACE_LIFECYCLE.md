@@ -120,12 +120,13 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 - Calls `check_race_auto_finish()` for the race.
 - Implementation note: the finish handler uses two separate DB sessions to avoid nested-session deadlocks in SQLite tests. The `event_flag` handler commits progress, exits its session, then calls `handle_finished()` in a new session.
 
-**REGISTERED / READY / PLAYING → ABANDONED**: four paths:
+**REGISTERED / READY / PLAYING → ABANDONED**: five paths:
 
 1. **Inactivity monitor** (PLAYING): background loop checks every 60s for participants with `last_igt_change_at < now - 30min`. Marks them `ABANDONED` and triggers auto-finish check. Daily-seed races are skipped entirely (`Race.daily_date IS NOT NULL`) because their async 24h window makes inactivity meaningless.
 2. **No-show monitor** (REGISTERED/READY): same loop also catches participants who never started playing. The cutoff is per-participant: both `Race.started_at < now - 30min` AND `Participant.created_at < now - 30min` must hold (equivalent to `max(started_at, created_at) < now - 30min`). This ensures a late-joiner is not abandoned the moment they register, and an early registrant is not abandoned the moment the race starts. When `late_join_window_minutes` is set, the `started_at` anchor is pushed to the window close: the participant is abandoned only once `started_at + late_join_window_minutes < now - 30min`, so a registrant who plans to connect during the window is not swept while it is still open. Skipped entirely when `race_duration_minutes` is set: the hard-close loop sweeps non-terminal participants at the deadline via `finalize_race`.
 3. **Hard-close loop** (REGISTERED/READY/PLAYING): when `close_expired_races` or `close_late_join_done_races` finalizes a race, `finalize_race` moves any remaining non-terminal participant to `ABANDONED`.
 4. **Voluntary abandon**: `POST /races/{id}/abandon` (participant). Accepts REGISTERED, READY, or PLAYING status. Triggers auto-finish check.
+5. **Deathless elimination** (PLAYING): on a race with `deathless` set, the first positive death-count delta seen by the `status_update` handler transitions the participant to `ABANDONED` (`handle_deathless_death`). Triggers auto-finish check.
 
 ### Terminal States
 
