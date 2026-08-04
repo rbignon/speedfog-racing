@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.3";
+pub const PROTOCOL_VERSION: &str = "1.4";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -214,6 +214,10 @@ pub struct RaceInfo {
     pub race_ends_at: Option<String>,
     #[serde(default)]
     pub private_dag: bool,
+    /// Deathless race: the server abandons a participant on their first
+    /// in-race death. The mod shows a local death banner and an overlay tag.
+    #[serde(default)]
+    pub deathless: bool,
     #[serde(default)]
     pub countdown_seconds: u32,
     /// Current seed id of the race. Lets the mod detect that its loaded seed
@@ -426,7 +430,7 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"auth""#));
         assert!(json.contains(r#""mod_token":"test123""#));
-        assert!(json.contains(r#""protocol_version":"1.3""#));
+        assert!(json.contains(r#""protocol_version":"1.4""#));
         assert!(json.contains(&format!(r#""mod_version":"{}""#, env!("CARGO_PKG_VERSION"))));
     }
 
@@ -1500,5 +1504,18 @@ mod tests {
             serde_json::from_str::<ParticipantStatus>("\"spectating\"").unwrap(),
             ParticipantStatus::Unknown
         );
+    }
+
+    #[test]
+    fn race_info_deathless_defaults_false() {
+        // Old-server wire contract: payload without the field.
+        let race: RaceInfo =
+            serde_json::from_str(r#"{"id":"r1","name":"x","status":"running"}"#).unwrap();
+        assert!(!race.deathless);
+
+        let race: RaceInfo =
+            serde_json::from_str(r#"{"id":"r1","name":"x","status":"running","deathless":true}"#)
+                .unwrap();
+        assert!(race.deathless);
     }
 }

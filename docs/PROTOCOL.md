@@ -106,7 +106,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.3**. It is defined in
+release numbers. Current: **1.4**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -118,6 +118,7 @@ Bump rules:
 
 Version history:
 
+- **1.4** - deathless race option: `deathless` boolean on the `race` object (RaceInfo), default false. When true, the server abandons a participant on their first in-race death; the mod shows a local death banner and a "DEATHLESS" overlay tag.
 - **1.3** - error codes and TTL display semantics: `code` field on `error` messages (optional, absent on legacy errors); five codes with display categories (blocking: `wrong_save`, `fresh_save_required`; waiting: `race_not_running`, `countdown`, `session_inactive`). Server re-sends the error on every rejected message while the condition holds (~1s); mod displays coded conditions for 3 seconds after receipt. Close codes expanded with `4008` (rate limit), `1000` (race reset, non-permanent), `4001` (race deleted, permanent).
 - **1.2** - quit-out penalty and tracking: `quit_out` boolean field on `zone_query` (optional, omitted when false); `quit_out_penalty_ms` integer field on `race` (default 2000, 0 disables). See the [`auth_ok`](#auth_ok) note for when the mod applies the penalty.
 - **1.1** - chat reactions and replies (spectator connection only): `chat_reaction` / `chat_reaction_update` messages; `id`, `reply_to`, `reactions` fields on `chat_message`. No mod-side change.
@@ -448,7 +449,7 @@ Race status changed. Broadcast to all mods and spectators. Includes `started_at`
 
 A refreshed [RaceInfo](#raceinfo) snapshot broadcast to all mods and spectators whenever a race-level field changes outside the normal lifecycle messages. Receivers replace their cached RaceInfo wholesale (no per-field merge). Emitted in three situations:
 
-- The organizer issues a `PATCH /races/{id}` that mutates a tracked field (`name`, `is_public`, `open_registration`, `max_participants`, `scheduled_at`, `late_join_window_minutes`, `race_duration_minutes`, `private_dag`, `custom_rules`). No-op PATCHes do not broadcast.
+- The organizer issues a `PATCH /races/{id}` that mutates a tracked field (`name`, `is_public`, `open_registration`, `max_participants`, `scheduled_at`, `late_join_window_minutes`, `race_duration_minutes`, `private_dag`, `deathless`, `custom_rules`). No-op PATCHes do not broadcast.
 - The race transitions from `setup` to `running` (`POST /races/{id}/start`). At that point `started_at` becomes non-null and `race_ends_at` becomes computable; the broadcast lets mods that authed in `setup` pick up the new deadlines without reconnecting.
 - The seed is rerolled (`POST /races/{id}/reroll-seed`). `race_state` carries the new full seed to spectators, but mods are not on that channel, so the `race_info_update` is what delivers the new `seed_id` to a connected mod, letting it raise the "SEED OUTDATED" banner mid-session (not just at the next `auth_ok`).
 
@@ -1094,9 +1095,10 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 | `started_at`        | `string?` | ISO 8601 timestamp of effective gameplay start (server sets it to `now + countdown_seconds` at race launch) |
 | `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                                                                 |
 | `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff)                                     |
+| `deathless`         | `bool`    | Deathless race: first in-race death abandons the participant (server-side); default false                   |
 | `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                       |
 
-**Note:** The mod's overlay reads `id`, `name`, `status`, `race_ends_at` (countdown warning when less than 1h remains), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
+**Note:** The mod's overlay reads `id`, `name`, `status`, `race_ends_at` (countdown warning when less than 1h remains), `deathless` (for overlay tag display), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
 
 ### SeedInfo
 
