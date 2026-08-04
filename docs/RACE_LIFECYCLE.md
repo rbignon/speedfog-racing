@@ -72,6 +72,17 @@ The deferred-close handoff between auto-finish and hard-close looks like this:
 
 Both hard-close paths use the same optimistic-lock pattern as `check_race_auto_finish`, so concurrent transitions from `/finish`, the inactivity monitor, or the other hard-close path collapse to a single winner without duplicate finalization side effects: chat messages, notifications, and reward grants.
 
+### Deathless
+
+`deathless` (bool, default false, editable in SETUP only): when set, the first
+death of a PLAYING participant during a RUNNING race transitions them to
+`ABANDONED` server-side, from the same `status_update` ingestion path that
+already computes the death-count delta. Side effects mirror
+`POST /races/{id}/abandon`: public system chat message, public-chat unlock,
+leaderboard and race_state broadcasts, auto-finish check. Deaths are still
+attributed to the current zone before the transition. Daily seeds never set
+this option.
+
 ---
 
 ## Participant Status

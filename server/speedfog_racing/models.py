@@ -269,6 +269,9 @@ class Race(Base):
     private_dag: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    deathless: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     # Daily Seed marker: NULL for regular races, the UTC rotation date for
     # the one race auto-created per day. Combined with the partial unique
     # index above, this enforces at most one daily per day.

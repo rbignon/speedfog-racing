@@ -172,6 +172,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         registration_closes_at=registration_closes_at,
         race_ends_at=race_ends_at,
         private_dag=race.private_dag,
+        deathless=race.deathless,
         custom_rules=race.custom_rules,
         daily_date=race.daily_date,
         exclude_from_stats=race.exclude_from_stats,
@@ -301,6 +302,7 @@ async def create_race(
         late_join_window_minutes=request.late_join_window_minutes,
         race_duration_minutes=request.race_duration_minutes,
         private_dag=request.private_dag,
+        deathless=request.deathless,
         custom_rules=(request.custom_rules or "").strip() or None,
     )
     db.add(race)
@@ -552,6 +554,7 @@ async def update_race(
         race.race_duration_minutes,
         race.private_dag,
         race.custom_rules,
+        race.deathless,
     )
 
     # is_public can be changed at any status
@@ -646,6 +649,15 @@ async def update_race(
             )
         race.private_dag = bool(request.private_dag)
 
+    # deathless: SETUP only
+    if "deathless" in request.model_fields_set:
+        if race.status != RaceStatus.SETUP:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="deathless can only be edited in SETUP status",
+            )
+        race.deathless = bool(request.deathless)
+
     # custom_rules: SETUP or RUNNING only (descriptive text, blank -> None)
     if "custom_rules" in request.model_fields_set:
         if race.status == RaceStatus.FINISHED:
@@ -697,6 +709,7 @@ async def update_race(
         race.race_duration_minutes,
         race.private_dag,
         race.custom_rules,
+        race.deathless,
     )
     if post_snapshot != pre_snapshot:
         await broadcast_race_info_update(race)

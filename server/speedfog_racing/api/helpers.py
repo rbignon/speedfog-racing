@@ -207,6 +207,7 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         registration_closes_at=registration_closes_at,
         race_ends_at=race_ends_at,
         private_dag=race.private_dag,
+        deathless=race.deathless,
         custom_rules=race.custom_rules,
         daily_date=race.daily_date,
         exclude_from_stats=race.exclude_from_stats,

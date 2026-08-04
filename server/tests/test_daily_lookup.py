@@ -43,6 +43,7 @@ def _daily_race(*, organizer: User, **overrides) -> Race:
         is_public=True,
         open_registration=True,
         private_dag=False,
+        deathless=False,
         daily_date=date(2026, 4, 27),
         exclude_from_stats=True,
         started_at=started,

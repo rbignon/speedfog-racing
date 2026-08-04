@@ -110,6 +110,7 @@ def _make_race(
     late_join_window_minutes=None,
     race_duration_minutes=None,
     private_dag=False,
+    deathless=False,
 ):
     organizer = _make_user()
     race = Race(
@@ -125,6 +126,7 @@ def _make_race(
         late_join_window_minutes=late_join_window_minutes,
         race_duration_minutes=race_duration_minutes,
         private_dag=private_dag,
+        deathless=deathless,
         exclude_from_stats=False,
         created_at=datetime.now(UTC),
     )
