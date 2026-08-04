@@ -10,6 +10,7 @@
     rules?: string | null;
     customRules?: string | null;
     tips?: string[] | null;
+    deathless?: boolean;
   }
 
   let {
@@ -21,6 +22,7 @@
     rules = null,
     customRules = null,
     tips = null,
+    deathless = false,
   }: Props = $props();
 
   const ruleLines = $derived(
@@ -59,6 +61,9 @@
         <li>Quit-outs are allowed</li>
         <li>Using other mods is not allowed</li>
         <li>Skips are allowed</li>
+        {#if deathless}
+          <li>Deathless: dying once eliminates you from the race</li>
+        {/if}
       </ul>
     </div>
 

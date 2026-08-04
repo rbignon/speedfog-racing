@@ -79,6 +79,8 @@
   let rulesInput = $state("");
   let rulesError = $state<string | null>(null);
   let rulesSaving = $state(false);
+  let deathlessSaving = $state(false);
+  let deathlessError = $state<string | null>(null);
   let selectedParticipantIds = $state<Set<string>>(new Set());
   let showDownloadModal = $state(false);
   let deleting = $state(false);
@@ -534,6 +536,13 @@
   let livePrivateDag = $derived(
     raceStore.race?.private_dag ?? initialRace.private_dag,
   );
+  let liveDeathless = $derived(
+    raceStore.race?.deathless ?? initialRace.deathless,
+  );
+  const DEATHLESS_RULE = "Deathless: dying once eliminates you from the race";
+  let displayRuleLines = $derived(
+    liveDeathless ? [DEATHLESS_RULE, ...customRuleLines] : customRuleLines,
+  );
   let liveOpenRegistration = $derived(
     raceStore.race?.open_registration ?? initialRace.open_registration,
   );
@@ -817,6 +826,19 @@
       rulesError = e instanceof Error ? e.message : "Failed to update";
     } finally {
       rulesSaving = false;
+    }
+  }
+
+  async function saveDeathless(value: boolean) {
+    deathlessSaving = true;
+    deathlessError = null;
+    try {
+      await updateRace(initialRace.id, { deathless: value });
+      initialRace = await fetchRace(initialRace.id);
+    } catch (e) {
+      deathlessError = e instanceof Error ? e.message : "Failed to update";
+    } finally {
+      deathlessSaving = false;
     }
   }
 
@@ -1392,6 +1414,30 @@
               </div>
             {/if}
           {/if}
+          {#if liveDeathless || (isOrganizer && raceStatus === "setup")}
+            <div class="info-item">
+              <span class="label">Deathless</span>
+              <span class="value">
+                {liveDeathless ? "Enabled" : "Disabled"}
+                {#if isOrganizer && raceStatus === "setup"}
+                  <button
+                    class="btn-edit"
+                    onclick={() => saveDeathless(!liveDeathless)}
+                    disabled={deathlessSaving}
+                  >
+                    {deathlessSaving
+                      ? "..."
+                      : liveDeathless
+                        ? "Disable"
+                        : "Enable"}
+                  </button>
+                {/if}
+              </span>
+              {#if deathlessError}
+                <span class="schedule-error">{deathlessError}</span>
+              {/if}
+            </div>
+          {/if}
           {#if startedAt}
             <div class="info-item">
               <span class="label">Started</span>
@@ -1401,7 +1447,7 @@
         </div>
       </div>
 
-      {#if customRuleLines.length > 0 || (isOrganizer && canEditRules)}
+      {#if displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
         <div class="race-rules-card">
           <div class="race-rules-head">
             <h3>Race Rules</h3>
@@ -1439,9 +1485,9 @@
             {#if rulesError}
               <span class="schedule-error">{rulesError}</span>
             {/if}
-          {:else if customRuleLines.length > 0}
+          {:else if displayRuleLines.length > 0}
             <ul class="race-rules-list">
-              {#each customRuleLines as line}
+              {#each displayRuleLines as line}
                 <li>{line}</li>
               {/each}
             </ul>
@@ -1491,6 +1537,7 @@
         error={downloadError}
         rules={initialRace.pool_config?.rules ?? null}
         customRules={liveCustomRules}
+        deathless={liveDeathless}
         onClose={() => (showDownloadModal = false)}
         onDownload={handleDownload}
       />
