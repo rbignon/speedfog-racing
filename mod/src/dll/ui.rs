@@ -181,6 +181,7 @@ impl RaceTracker {
                     self.render_waiting_line(ui);
                     self.render_player_status(ui, max_width, &mut bufs);
                     self.render_race_ends_warning(ui, max_width, &mut bufs);
+                    self.render_deathless_indicator(ui, max_width);
                     self.render_exits(ui, max_width);
                     if !self.config.server.training && self.show_leaderboard {
                         ui.separator();
@@ -288,6 +289,21 @@ impl RaceTracker {
                         ui.text_colored(self.cached_colors.gold, &bufs.banner_text);
                     }
                 }
+            }
+        }
+    }
+
+    /// Static right-aligned "DEATHLESS" tag while a deathless race is
+    /// running, keeping the one-life rule visible in-game. Constant text,
+    /// no per-frame allocation.
+    fn render_deathless_indicator(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
+        if let Some(race_info) = self.race_info() {
+            if race_info.status == RaceStatus::Running && race_info.deathless {
+                let text = "DEATHLESS";
+                let text_width = ui.calc_text_size(text)[0];
+                let y = ui.cursor_pos()[1];
+                ui.set_cursor_pos([max_width - text_width, y]);
+                ui.text_colored(self.cached_colors.gold, text);
             }
         }
     }
