@@ -795,6 +795,10 @@ async def handle_deathless_death(
         graph_json=_get_graph_json(participant),
         daily_date=participant.race.daily_date,
     )
+    if not race_transitioned:
+        # Parity with POST /races/{id}/abandon: push race_state so spectators
+        # see the elimination even when it doesn't end the race.
+        await broadcast_race_state_update(participant.race_id, participant.race)
 
     # Unlock the PUBLIC channel for the eliminated participant before
     # broadcasting so they receive their own elimination notice.

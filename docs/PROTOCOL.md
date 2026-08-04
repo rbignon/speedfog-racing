@@ -1098,7 +1098,7 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 | `deathless`         | `bool`    | Deathless race: first in-race death abandons the participant (server-side); default false                   |
 | `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                       |
 
-**Note:** The mod's overlay reads `id`, `name`, `status`, `race_ends_at` (countdown warning when less than 1h remains), `deathless` (for overlay tag display), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
+**Note:** The mod's overlay reads `id`, `name`, `status`, `race_ends_at` (countdown warning when less than 1h remains), `deathless` (overlay tag and local death banner), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
 
 ### SeedInfo
 
