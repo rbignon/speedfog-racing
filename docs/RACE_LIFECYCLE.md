@@ -83,6 +83,12 @@ leaderboard and race_state broadcasts, auto-finish check. Deaths are still
 attributed to the current zone before the transition. Daily seeds never set
 this option.
 
+An eliminated participant (ABANDONED with at least one death in a deathless
+race) is labeled "Dead" on the web leaderboard, "DEAD" on the OBS overlay,
+and "dead" in the in-game leaderboard. Independently of deathless, the
+in-game overlay freezes an abandoned player's own IGT display at the
+server-recorded value and shows it in red.
+
 ---
 
 ## Participant Status

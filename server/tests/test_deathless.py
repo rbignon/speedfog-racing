@@ -301,7 +301,7 @@ async def test_deathless_death_eliminates_and_keeps_race_running(
     assert p1.status == ParticipantStatus.ABANDONED
     assert p2.status == ParticipantStatus.PLAYING
     assert race.status == RaceStatus.RUNNING
-    assert any("died (deathless race)." in m.message for m in messages)
+    assert any(m.message == "Player DL died." for m in messages)
 
 
 async def test_deathless_death_last_alive_finishes_race(dl_async_session, dl_organizer, dl_player):
@@ -339,7 +339,7 @@ async def test_deathless_death_last_alive_finishes_race(dl_async_session, dl_org
         )
 
     assert race.status == RaceStatus.FINISHED
-    died = [m for m in messages if "died (deathless race)." in m.message]
+    died = [m for m in messages if m.message == "Player DL died."]
     finished = [m for m in messages if m.message == "The race has finished."]
     assert len(died) == 1
     assert len(finished) == 1

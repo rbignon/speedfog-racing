@@ -768,7 +768,7 @@ async def handle_deathless_death(
             db,
             participant.race_id,
             ChatChannel.PUBLIC,
-            f"{display} died (deathless race).",
+            f"{display} died.",
         )
 
         race_transitioned = await check_race_auto_finish(db, participant.race)
