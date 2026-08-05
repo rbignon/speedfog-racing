@@ -18,6 +18,9 @@
     // window, private-DAG flag, organizer override). The IGT, status, and
     // identity remain visible regardless.
     showRunDetails?: boolean;
+    // Deathless race: an abandoned participant with at least one death was
+    // eliminated by the rule, shown as "Dead" instead of "Abandoned".
+    deathless?: boolean;
     selectedIds?: Set<string>;
     onToggle?: (id: string, ctrlKey: boolean) => void;
     onClearSelection?: () => void;
@@ -29,6 +32,7 @@
     mode = "running",
     zoneNames = null,
     showRunDetails = false,
+    deathless = false,
     selectedIds,
     onToggle,
     onClearSelection,
@@ -115,6 +119,8 @@
         {@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
         {@const isPlaying = participant.status === "playing"}
         {@const isAbandoned = participant.status === "abandoned"}
+        {@const isDead =
+          isAbandoned && deathless && participant.death_count > 0}
         {@const isFinished = participant.status === "finished"}
         {@const isPreRace =
           participant.status === "ready" || participant.status === "registered"}
@@ -212,7 +218,7 @@
             </div>
             {#if isAbandoned}
               <span class="zone abandoned-label">
-                <span>Abandoned</span>
+                <span>{isDead ? "Dead" : "Abandoned"}</span>
                 {#if totalLayers}
                   <span class="abandoned-layers"
                     >{Math.min(

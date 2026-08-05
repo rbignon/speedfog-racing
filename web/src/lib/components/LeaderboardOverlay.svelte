@@ -9,6 +9,7 @@
     totalLayers?: number | null;
     mode?: "running" | "finished";
     lines?: number | null;
+    deathless?: boolean;
   }
 
   let {
@@ -16,6 +17,7 @@
     totalLayers = null,
     mode = "running",
     lines = null,
+    deathless = false,
   }: Props = $props();
 
   let visibleParticipants = $derived(
@@ -121,7 +123,9 @@
             <span class="deaths">{participant.death_count}</span>
           {/if}
         {:else if participant.status === "abandoned"}
-          <span class="dnf">DNF</span>
+          <span class="dnf"
+            >{deathless && participant.death_count > 0 ? "DEAD" : "DNF"}</span
+          >
         {:else}
           <span class="waiting">{participant.status}</span>
         {/if}

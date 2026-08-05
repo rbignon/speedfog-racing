@@ -903,6 +903,7 @@
             mode={raceStatus === "finished" ? "finished" : "running"}
             {zoneNames}
             {showRunDetails}
+            deathless={liveDeathless}
             selectedIds={selectedParticipantIds}
             onToggle={handleLeaderboardToggle}
             onClearSelection={clearSelection}

@@ -9,6 +9,7 @@
   let { data } = $props();
 
   let raceStatus = $derived(raceStore.race?.status ?? data.race.status);
+  let deathless = $derived(raceStore.race?.deathless ?? data.race.deathless);
   let liveSeed = $derived(raceStore.seed);
   let totalLayers = $derived(
     liveSeed?.total_layers ?? data.race.seed_total_layers,
@@ -44,6 +45,7 @@
     {totalLayers}
     {mode}
     {lines}
+    {deathless}
   />
 </div>
 
