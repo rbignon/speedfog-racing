@@ -304,9 +304,10 @@ impl RaceTracker {
     /// 3-line player status:
     /// Line 1: `● RaceName               HH:MM:SS` (name dimmed, right side highlighted)
     ///         Right side shows: WAITING (setup, gold), countdown/GO! (start, gold/emerald),
-    ///         IGT (running, purple), or finished IGT (emerald/danger-dark on abandon).
+    ///         IGT (running, purple), frozen IGT in danger-dark if abandoned, or finished IGT (emerald).
     /// Line 2: `  ZoneName                    X/Y` (X/Y gold while playing, emerald on finish)
-    /// Line 3: `  tier X, normally Y   [☠]N`     (tier gold; deaths white)
+    /// Line 3: `  tier X, normally Y   DEATHLESS [☠]N` (tier gold; DEATHLESS tag (gold) appears
+    ///         during running deathless race and flips to red DEAD once local player died)
     fn render_player_status(
         &self,
         ui: &hudhook::imgui::Ui,
