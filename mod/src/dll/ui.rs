@@ -181,7 +181,6 @@ impl RaceTracker {
                     self.render_waiting_line(ui);
                     self.render_player_status(ui, max_width, &mut bufs);
                     self.render_race_ends_warning(ui, max_width, &mut bufs);
-                    self.render_deathless_indicator(ui, max_width);
                     self.render_exits(ui, max_width);
                     if !self.config.server.training && self.show_leaderboard {
                         ui.separator();
@@ -204,6 +203,15 @@ impl RaceTracker {
     /// Write the IGT display string into a buffer.
     fn write_igt(&self, buf: &mut String) {
         if self.am_i_finished() {
+            if let Some(me) = self.my_participant().filter(|p| p.igt_ms > 0) {
+                write_time_u32(buf, me.igt_ms as u32);
+            } else {
+                buf.push_str("--:--:--");
+            }
+        } else if self.machine.am_i_abandoned() {
+            // Abandoned: the server froze this participant's IGT when the
+            // abandon landed; the live memory value keeps ticking and no
+            // longer counts for the race.
             if let Some(me) = self.my_participant().filter(|p| p.igt_ms > 0) {
                 write_time_u32(buf, me.igt_ms as u32);
             } else {
@@ -293,21 +301,6 @@ impl RaceTracker {
         }
     }
 
-    /// Static right-aligned "DEATHLESS" tag while a deathless race is
-    /// running, keeping the one-life rule visible in-game. Constant text,
-    /// no per-frame allocation.
-    fn render_deathless_indicator(&self, ui: &hudhook::imgui::Ui, max_width: f32) {
-        if let Some(race_info) = self.race_info() {
-            if race_info.status == RaceStatus::Running && race_info.deathless {
-                let text = "DEATHLESS";
-                let text_width = ui.calc_text_size(text)[0];
-                let y = ui.cursor_pos()[1];
-                ui.set_cursor_pos([max_width - text_width, y]);
-                ui.text_colored(self.cached_colors.gold, text);
-            }
-        }
-    }
-
     /// 3-line player status:
     /// Line 1: `● RaceName               HH:MM:SS` (name dimmed, right side highlighted)
     ///         Right side shows: WAITING (setup, gold), countdown/GO! (start, gold/emerald),
@@ -353,29 +346,36 @@ impl RaceTracker {
                 gold
             }
             Some(RaceStatus::Running) => {
-                let countdown_secs = self.machine.race_state.countdown_end.and_then(|end| {
-                    end.checked_duration_since(std::time::Instant::now())
-                        .map(|remaining| remaining.as_secs() + 1)
-                });
-                if let Some(secs) = countdown_secs {
-                    write!(buf_right, "{}", secs).ok();
-                    gold
-                } else if let Some(go_start) = self
-                    .machine
-                    .race_state
-                    .countdown_end
-                    .or(self.machine.race_state.race_started_at)
-                {
-                    if go_start.elapsed() < Duration::from_secs(3) {
-                        buf_right.push_str("GO!");
-                        success
+                if i_abandoned {
+                    // Frozen server IGT (write_igt picks the source), in the
+                    // same red used once the race is finished.
+                    self.write_igt(buf_right);
+                    c.danger_dark
+                } else {
+                    let countdown_secs = self.machine.race_state.countdown_end.and_then(|end| {
+                        end.checked_duration_since(std::time::Instant::now())
+                            .map(|remaining| remaining.as_secs() + 1)
+                    });
+                    if let Some(secs) = countdown_secs {
+                        write!(buf_right, "{}", secs).ok();
+                        gold
+                    } else if let Some(go_start) = self
+                        .machine
+                        .race_state
+                        .countdown_end
+                        .or(self.machine.race_state.race_started_at)
+                    {
+                        if go_start.elapsed() < Duration::from_secs(3) {
+                            buf_right.push_str("GO!");
+                            success
+                        } else {
+                            self.write_igt(buf_right);
+                            purple
+                        }
                     } else {
                         self.write_igt(buf_right);
                         purple
                     }
-                } else {
-                    self.write_igt(buf_right);
-                    purple
                 }
             }
             Some(RaceStatus::Finished) => {
@@ -461,7 +461,7 @@ impl RaceTracker {
         ui.same_line_with_pos(max_width - right_width);
         ui.text_colored(right_color, &buf_right);
 
-        // --- Line 3: tier info (left), death icon + count (right) ---
+        // --- Line 3: tier info (left), deathless tag + death icon + count (right) ---
         buf_right.clear();
         buf_left.clear();
 
@@ -470,11 +470,35 @@ impl RaceTracker {
         let font_height = ui.text_line_height();
         let icon_size = font_height;
         let icon_gap = 2.0;
-        let right_total = if self.death_icon.is_some() {
-            icon_size + icon_gap + ui.calc_text_size(&buf_right)[0]
-        } else {
-            ui.calc_text_size(&buf_right)[0]
+
+        // Deathless tag, left of the death counter: "DEATHLESS" while the
+        // rule is in force, flipped to a red "DEAD" once the local player
+        // has died (local banner latch, or server-confirmed elimination
+        // after a mod restart).
+        let deathless_tag: Option<(&str, [f32; 4])> = match self.race_info() {
+            Some(r) if r.status == RaceStatus::Running && r.deathless => {
+                let dead = self.machine.deathless_banner_shown
+                    || self.my_participant().is_some_and(|p| {
+                        p.status == ParticipantStatus::Abandoned && p.death_count > 0
+                    });
+                if dead {
+                    Some(("DEAD", c.danger))
+                } else {
+                    Some(("DEATHLESS", gold))
+                }
+            }
+            _ => None,
         };
+        let tag_width = deathless_tag
+            .map(|(t, _)| ui.calc_text_size(t)[0] + gap)
+            .unwrap_or(0.0);
+
+        let right_total = tag_width
+            + if self.death_icon.is_some() {
+                icon_size + icon_gap + ui.calc_text_size(&buf_right)[0]
+            } else {
+                ui.calc_text_size(&buf_right)[0]
+            };
 
         let current_layer = frozen_layer
             .or_else(|| me.map(|p| p.current_layer))
@@ -509,6 +533,10 @@ impl RaceTracker {
         ui.text_colored(tier_color, &tier_truncated);
 
         ui.same_line_with_pos(max_width - right_total);
+        if let Some((text, color)) = deathless_tag {
+            ui.text_colored(color, text);
+            ui.same_line_with_spacing(0.0, gap);
+        }
         if let Some(ref icon) = self.death_icon {
             Image::new(icon.texture_id(), [icon_size, icon_size]).build(ui);
             ui.same_line_with_spacing(0.0, icon_gap);
@@ -783,6 +811,7 @@ impl RaceTracker {
         let race_finished = self
             .race_info()
             .is_some_and(|r| r.status == RaceStatus::Finished);
+        let race_deathless = self.race_info().map(|r| r.deathless).unwrap_or(false);
         let spacing = ui.calc_text_size(" ")[0];
         // Access fields directly (not through &self methods) so the borrow
         // checker can see they are disjoint from leaderboard_cache.
@@ -850,6 +879,8 @@ impl RaceTracker {
                 p.current_layer,
                 total_layers,
                 p.igt_ms,
+                race_deathless,
+                p.death_count,
             );
             cache.max_right_width = cache
                 .max_right_width

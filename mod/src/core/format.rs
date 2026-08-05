@@ -33,15 +33,18 @@ pub fn format_time_into(buf: &mut String, ms: i32) {
 /// Write the right-column text for a participant into an existing buffer.
 ///
 /// Returns the finish time for `finished`, layer progress (`N/total`) for
-/// `playing`, and the raw status label for any other state (registered,
-/// ready, abandoned). Keeps pre-launch states visible once the race is
-/// running so "ready" doesn't silently become `1/LAYERS`.
+/// `playing`, "dead" for a deathless elimination (abandoned with at least
+/// one death in a deathless race), and the raw status label for any other
+/// state (registered, ready, abandoned). Keeps pre-launch states visible
+/// once the race is running so "ready" doesn't silently become `1/LAYERS`.
 pub fn write_participant_right_text(
     buf: &mut String,
     status: ParticipantStatus,
     current_layer: i32,
     total_layers: i32,
     igt_ms: i32,
+    deathless: bool,
+    death_count: i32,
 ) {
     match status {
         ParticipantStatus::Finished => format_time_into(buf, igt_ms),
@@ -49,6 +52,7 @@ pub fn write_participant_right_text(
             let display = (current_layer + 1).min(total_layers);
             write!(buf, "{}/{}", display, total_layers).ok();
         }
+        ParticipantStatus::Abandoned if deathless && death_count > 0 => buf.push_str("dead"),
         _ => buf.push_str(status.as_str()),
     }
 }
@@ -446,21 +450,29 @@ mod tests {
     #[test]
     fn test_right_text_finished_shows_time() {
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, ParticipantStatus::Finished, 5, 5, 125_000);
+        write_participant_right_text(
+            &mut buf,
+            ParticipantStatus::Finished,
+            5,
+            5,
+            125_000,
+            false,
+            0,
+        );
         assert_eq!(buf, "02:05");
     }
 
     #[test]
     fn test_right_text_playing_shows_layer_progress() {
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, ParticipantStatus::Playing, 0, 5, 1_000);
+        write_participant_right_text(&mut buf, ParticipantStatus::Playing, 0, 5, 1_000, false, 0);
         assert_eq!(buf, "1/5");
     }
 
     #[test]
     fn test_right_text_playing_caps_at_total() {
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, ParticipantStatus::Playing, 10, 5, 1_000);
+        write_participant_right_text(&mut buf, ParticipantStatus::Playing, 10, 5, 1_000, false, 0);
         assert_eq!(buf, "5/5");
     }
 
@@ -469,21 +481,59 @@ mod tests {
         // Even when the race is running (non-zero layer), a ready player
         // must keep showing the "ready" label instead of a misleading "1/LAYERS".
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, ParticipantStatus::Ready, 0, 5, 0);
+        write_participant_right_text(&mut buf, ParticipantStatus::Ready, 0, 5, 0, false, 0);
         assert_eq!(buf, "ready");
     }
 
     #[test]
     fn test_right_text_registered_shows_status_label() {
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, ParticipantStatus::Registered, 0, 5, 0);
+        write_participant_right_text(&mut buf, ParticipantStatus::Registered, 0, 5, 0, false, 0);
         assert_eq!(buf, "registered");
     }
 
     #[test]
     fn test_right_text_abandoned_shows_status_label() {
         let mut buf = String::new();
-        write_participant_right_text(&mut buf, ParticipantStatus::Abandoned, 2, 5, 45_000);
+        write_participant_right_text(
+            &mut buf,
+            ParticipantStatus::Abandoned,
+            2,
+            5,
+            45_000,
+            false,
+            3,
+        );
+        assert_eq!(buf, "abandoned");
+    }
+
+    #[test]
+    fn test_right_text_deathless_elimination_shows_dead() {
+        let mut buf = String::new();
+        write_participant_right_text(
+            &mut buf,
+            ParticipantStatus::Abandoned,
+            2,
+            5,
+            45_000,
+            true,
+            1,
+        );
+        assert_eq!(buf, "dead");
+    }
+
+    #[test]
+    fn test_right_text_deathless_abandon_without_death_stays_abandoned() {
+        let mut buf = String::new();
+        write_participant_right_text(
+            &mut buf,
+            ParticipantStatus::Abandoned,
+            2,
+            5,
+            45_000,
+            true,
+            0,
+        );
         assert_eq!(buf, "abandoned");
     }
 
