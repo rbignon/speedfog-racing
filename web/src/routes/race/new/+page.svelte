@@ -48,14 +48,16 @@
   let selectedConfig = $derived(pools[poolName]?.pool_config ?? null);
   let selectedAvailable = $derived(pools[poolName]?.available ?? 0);
 
-  // Counts advanced options that deviate from their defaults (late join is on by default).
-  let advancedCount = $derived(
-    (autoEndEnabled ? 1 : 0) +
-      (lateJoinEnabled ? 0 : 1) +
-      (deathless ? 1 : 0) +
-      (privateDag ? 1 : 0) +
-      (customRules.trim() ? 1 : 0),
-  );
+  // Advanced-options state grid shown inside the trigger: one entry per
+  // option, checked when the option is active for this race (actual
+  // state, not deviation from defaults, so "late joiners" starts checked).
+  let advancedOptions = $derived([
+    { label: "late joiners", active: lateJoinEnabled },
+    { label: "auto-end", active: autoEndEnabled },
+    { label: "deathless", active: deathless },
+    { label: "private map", active: privateDag },
+    { label: "custom rules", active: customRules.trim() !== "" },
+  ]);
 
   $effect(() => {
     if (auth.initialized && !authChecked) {
@@ -324,14 +326,19 @@
           aria-expanded={showAdvanced}
           aria-controls="advanced-panel"
         >
-          <span class="advanced-chevron">{showAdvanced ? "▼" : "▸"}</span>
-          <span class="advanced-label">Advanced options</span>
-          <span class="advanced-summary">
-            {#if advancedCount > 0}
-              {advancedCount} set
-            {:else}
-              late joiners · auto-end · deathless · private map · custom rules
-            {/if}
+          <span class="advanced-header">
+            <span class="advanced-chevron">{showAdvanced ? "▼" : "▸"}</span>
+            <span class="advanced-label">Advanced options</span>
+          </span>
+          <span class="advanced-summary-grid">
+            {#each advancedOptions as opt (opt.label)}
+              <span class="advanced-option" class:active={opt.active}>
+                <span class="advanced-option-check"
+                  >{opt.active ? "✓" : ""}</span
+                >
+                {opt.label}
+              </span>
+            {/each}
           </span>
         </button>
 
@@ -695,7 +702,8 @@
 
   .advanced-trigger {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     gap: 0.5rem;
     padding: 0.75rem 1rem;
     background: transparent;
@@ -725,9 +733,34 @@
     font-weight: 500;
   }
 
-  .advanced-summary {
-    margin-left: auto;
+  .advanced-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .advanced-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.15rem 1rem;
+    padding-left: 1.25rem;
     color: var(--color-text-disabled);
+  }
+
+  .advanced-option {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .advanced-option.active {
+    color: var(--color-text);
+  }
+
+  .advanced-option-check {
+    width: 1em;
+    color: var(--color-success);
+    text-align: center;
   }
 
   .advanced-panel {
