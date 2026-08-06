@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { goto } from "$app/navigation";
   import { auth } from "$lib/stores/auth.svelte";
   import {
@@ -306,12 +307,15 @@
 
   let currentWeekday = $derived(todayWeekday());
 
-  async function handleScheduleChange(weekday: number, poolName: string) {
+  async function handleScheduleChange(
+    weekday: number,
+    select: HTMLSelectElement,
+  ) {
     const key = `daily_${weekday}`;
     actionLoading = { ...actionLoading, [key]: true };
     try {
       const updated = await updateAdminDailySchedule(weekday, {
-        pool_name: poolName,
+        pool_name: select.value,
       });
       const idx = dailySchedule.findIndex(
         (row) => row.weekday === updated.weekday,
@@ -323,18 +327,30 @@
     } catch (e) {
       error =
         e instanceof Error ? e.message : "Failed to update daily schedule.";
-      // Reload to revert the optimistic <select> value to the persisted one.
+      // Reload, then write the persisted value back onto the element
+      // directly: Svelte caches the last value it rendered and skips the
+      // DOM write when a re-render lands on that same value, so the user's
+      // rejected choice would otherwise stay visible. The tick() makes sure
+      // the reloaded options are in the DOM before the value is assigned.
       await loadDailySchedule();
+      await tick();
+      const row = dailySchedule.find((r) => r.weekday === weekday);
+      if (row) select.value = row.pool_name;
     } finally {
       actionLoading = { ...actionLoading, [key]: false };
     }
   }
 
-  async function handleDeathlessChange(weekday: number, deathless: boolean) {
+  async function handleDeathlessChange(
+    weekday: number,
+    input: HTMLInputElement,
+  ) {
     const key = `daily_${weekday}`;
     actionLoading = { ...actionLoading, [key]: true };
     try {
-      const updated = await updateAdminDailySchedule(weekday, { deathless });
+      const updated = await updateAdminDailySchedule(weekday, {
+        deathless: input.checked,
+      });
       const idx = dailySchedule.findIndex(
         (row) => row.weekday === updated.weekday,
       );
@@ -345,8 +361,11 @@
     } catch (e) {
       error =
         e instanceof Error ? e.message : "Failed to update daily schedule.";
-      // Reload to revert the optimistic checkbox to the persisted value.
+      // Same DOM write-back as handleScheduleChange, for the same reason.
       await loadDailySchedule();
+      await tick();
+      const row = dailySchedule.find((r) => r.weekday === weekday);
+      if (row) input.checked = row.deathless;
     } finally {
       actionLoading = { ...actionLoading, [key]: false };
     }
@@ -1076,7 +1095,7 @@
                     value={row.pool_name}
                     disabled={actionLoading[`daily_${row.weekday}`]}
                     onchange={(e) =>
-                      handleScheduleChange(row.weekday, e.currentTarget.value)}
+                      handleScheduleChange(row.weekday, e.currentTarget)}
                   >
                     {#each dailyAvailablePools as opt (opt.name)}
                       <option value={opt.name}>{opt.display_name}</option>
@@ -1094,10 +1113,7 @@
                     checked={row.deathless}
                     disabled={actionLoading[`daily_${row.weekday}`]}
                     onchange={(e) =>
-                      handleDeathlessChange(
-                        row.weekday,
-                        e.currentTarget.checked,
-                      )}
+                      handleDeathlessChange(row.weekday, e.currentTarget)}
                     aria-label={`Deathless for ${DAY_LABELS[row.weekday]}`}
                   />
                 </td>
