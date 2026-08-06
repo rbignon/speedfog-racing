@@ -1156,7 +1156,7 @@
   }
 
   /* Accordion */
-  .see-also {
+  p.see-also {
     margin-top: 1rem;
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
@@ -1177,7 +1177,7 @@
     font-weight: 500;
     cursor: pointer;
     transition: all var(--transition);
-    margin: 0.5rem 0;
+    margin-top: 0.5rem;
     text-align: left;
   }
 
