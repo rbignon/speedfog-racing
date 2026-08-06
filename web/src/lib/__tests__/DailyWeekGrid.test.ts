@@ -43,6 +43,7 @@ const mockWeek: DailyWeekResponse = {
         qualifies: true,
       },
       freeze_protected: false,
+      deathless: false,
     },
     {
       weekday: 1,
@@ -58,6 +59,7 @@ const mockWeek: DailyWeekResponse = {
       podium: [],
       my_result: null,
       freeze_protected: false,
+      deathless: false,
     },
     {
       weekday: 2,
@@ -73,6 +75,7 @@ const mockWeek: DailyWeekResponse = {
       podium: [],
       my_result: null,
       freeze_protected: false,
+      deathless: false,
     },
     {
       weekday: 3,
@@ -88,6 +91,7 @@ const mockWeek: DailyWeekResponse = {
       podium: [],
       my_result: null,
       freeze_protected: false,
+      deathless: false,
     },
     {
       weekday: 4,
@@ -103,6 +107,7 @@ const mockWeek: DailyWeekResponse = {
       podium: [],
       my_result: null,
       freeze_protected: false,
+      deathless: false,
     },
     {
       weekday: 5,
@@ -118,6 +123,7 @@ const mockWeek: DailyWeekResponse = {
       podium: [],
       my_result: null,
       freeze_protected: false,
+      deathless: false,
     },
     {
       weekday: 6,
@@ -133,6 +139,7 @@ const mockWeek: DailyWeekResponse = {
       podium: [],
       my_result: null,
       freeze_protected: false,
+      deathless: false,
     },
   ],
   has_earlier: true,
@@ -722,6 +729,7 @@ describe("cellStrip", () => {
       podium: [],
       my_result: null,
       freeze_protected: false,
+      deathless: false,
       ...overrides,
     };
   }

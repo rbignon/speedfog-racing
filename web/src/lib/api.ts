@@ -321,6 +321,7 @@ export interface DailyWeekDay {
   podium: DailyPodiumEntry[];
   my_result: DailyMyResult | null;
   freeze_protected: boolean;
+  deathless: boolean;
 }
 
 export interface WeeklyLeaderboardUser {

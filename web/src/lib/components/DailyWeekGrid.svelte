@@ -243,10 +243,30 @@
         {#if day.state === "missing_past"}
           <span class="muted">No daily</span>
         {:else if day.state === "future"}
-          <span class="pool">{day.pool_display_name ?? "TBD"}</span>
+          <span class="pool">
+            {day.pool_display_name ?? "TBD"}
+            {#if day.deathless}
+              <span
+                class="deathless"
+                title="Deathless"
+                role="img"
+                aria-label="Deathless">💀</span
+              >
+            {/if}
+          </span>
           <span class="countdown">Opens in {countdown(day.started_at)}</span>
         {:else}
-          <span class="pool">{day.pool_display_name ?? "TBD"}</span>
+          <span class="pool">
+            {day.pool_display_name ?? "TBD"}
+            {#if day.deathless}
+              <span
+                class="deathless"
+                title="Deathless"
+                role="img"
+                aria-label="Deathless">💀</span
+              >
+            {/if}
+          </span>
           <div class="body">
             {#if day.state === "today"}
               {#if day.race_id === null}
@@ -407,6 +427,11 @@
     font-weight: 600;
     color: var(--color-text);
     font-size: var(--font-size-sm);
+  }
+
+  .pool .deathless {
+    font-size: var(--font-size-xs);
+    cursor: default;
   }
 
   .body {

@@ -129,6 +129,7 @@ function dayCell(overrides: Partial<DailyWeekDay>): DailyWeekDay {
     podium: [],
     my_result: null,
     freeze_protected: false,
+    deathless: false,
     ...overrides,
   };
 }

@@ -564,6 +564,7 @@
             selectedIds={selectedParticipantIds}
             onToggle={handleLeaderboardToggle}
             onClearSelection={clearSelection}
+            deathless={initialRace.deathless}
           />
         {:else if weekLeaderboardData}
           <!-- Stale-while-revalidate: keep the current week visible while a
@@ -630,6 +631,12 @@
           <ShareButtons />
           {#if initialRace.seed_number}
             <span class="seed-badge">Seed {initialRace.seed_number}</span>
+          {/if}
+          {#if initialRace.deathless}
+            <span
+              class="deathless-badge"
+              title="Your first death eliminates you">💀 Deathless</span
+            >
           {/if}
           <span class="daily-pill" class:ended={dailyEnded}>
             {dailyEnded ? "Ended" : countdownLabel}
@@ -816,6 +823,7 @@
       rules={initialRace.pool_config?.rules ?? null}
       customRules={initialRace.custom_rules ?? null}
       actionLabel="Download Daily Seed Pack"
+      deathless={initialRace.deathless}
     />
   {/if}
 
@@ -1115,6 +1123,14 @@
     border-radius: var(--radius-sm);
     padding: 0.2rem 0.5rem;
     color: var(--color-text-secondary);
+  }
+
+  .deathless-badge {
+    font-size: var(--font-size-xs);
+    border: 1px solid var(--color-danger);
+    color: var(--color-danger);
+    border-radius: var(--radius-sm);
+    padding: 0.2rem 0.5rem;
   }
 
   .daily-pill {
