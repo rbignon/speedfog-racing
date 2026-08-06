@@ -231,6 +231,7 @@ class AdminDailyScheduleEntry(BaseModel):
     weekday: int
     pool_name: str
     pool_display_name: str
+    deathless: bool
 
 
 class AdminDailySchedulePoolOption(BaseModel):
@@ -256,9 +257,13 @@ class AdminDailyScheduleResponse(BaseModel):
 
 
 class UpdateDailyScheduleRequest(BaseModel):
-    """Request body for PATCH ``/admin/daily-schedule/{weekday}``."""
+    """Partial request body for PATCH ``/admin/daily-schedule/{weekday}``.
 
-    pool_name: str
+    Omitted fields leave the schedule row unchanged.
+    """
+
+    pool_name: str | None = None
+    deathless: bool | None = None
 
 
 def _is_training_pool(pool: Pool) -> bool:
@@ -282,6 +287,7 @@ async def admin_list_daily_schedule(
             weekday=row.weekday,
             pool_name=row.pool_name,
             pool_display_name=format_pool_display_name(row.pool),
+            deathless=row.deathless,
         )
         for row in rows
     ]
@@ -309,25 +315,28 @@ async def admin_update_daily_schedule(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ) -> AdminDailyScheduleEntry:
-    """Set the pool used for the given weekday. The change applies to the next
-    Daily Seed created for that weekday (i.e. next week if the weekday is
-    today, since today's race has already been emitted)."""
-    pool = await get_pool(db, request.pool_name)
-    if pool is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Pool {request.pool_name!r} does not exist",
-        )
-    if not pool.enabled:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Pool {request.pool_name!r} is disabled",
-        )
-    if _is_training_pool(pool):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Pool {request.pool_name!r} is a training pool",
-        )
+    """Update the pool and/or deathless flag for the given weekday; omitted
+    fields are left unchanged. The change applies to the next Daily Seed
+    created for that weekday (i.e. next week if the weekday is today, since
+    today's race has already been emitted)."""
+    pool: Pool | None = None
+    if request.pool_name is not None:
+        pool = await get_pool(db, request.pool_name)
+        if pool is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Pool {request.pool_name!r} does not exist",
+            )
+        if not pool.enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Pool {request.pool_name!r} is disabled",
+            )
+        if _is_training_pool(pool):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Pool {request.pool_name!r} is a training pool",
+            )
 
     row = await db.get(DailySeedSchedule, weekday)
     if row is None:
@@ -335,13 +344,18 @@ async def admin_update_daily_schedule(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Schedule row for weekday={weekday} is missing",
         )
-    row.pool_name = pool.name
-    await db.commit()
-    return AdminDailyScheduleEntry(
+    if pool is not None:
+        row.pool_name = pool.name
+    if request.deathless is not None:
+        row.deathless = request.deathless
+    entry = AdminDailyScheduleEntry(
         weekday=row.weekday,
-        pool_name=pool.name,
-        pool_display_name=format_pool_display_name(pool),
+        pool_name=row.pool_name,
+        pool_display_name=format_pool_display_name(pool if pool is not None else row.pool),
+        deathless=row.deathless,
     )
+    await db.commit()
+    return entry
 
 
 # =============================================================================

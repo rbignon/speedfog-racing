@@ -1318,6 +1318,7 @@ async def test_admin_list_daily_schedule(test_client, admin_user, daily_schedule
         assert [row["weekday"] for row in schedule] == [0, 1, 2, 3, 4, 5, 6]
         assert all(row["pool_name"] == "standard" for row in schedule)
         assert all(row["pool_display_name"] == "Standard" for row in schedule)
+        assert all(row["deathless"] is False for row in schedule)
 
         available = body["available_pools"]
         names = {opt["name"] for opt in available}
@@ -1402,6 +1403,60 @@ async def test_admin_update_daily_schedule_unknown_pool(
         row = await db.get(DailySeedSchedule, 0)
         assert row is not None
         assert row.pool_name == "standard"
+
+
+@pytest.mark.asyncio
+async def test_admin_update_daily_schedule_deathless_only(
+    test_client, admin_user, daily_schedule_pools, async_session
+):
+    """PATCH with only ``deathless`` flips the flag and keeps the pool."""
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/daily-schedule/3",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"deathless": True},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["weekday"] == 3
+        assert body["pool_name"] == "standard"
+        assert body["pool_display_name"] == "Standard"
+        assert body["deathless"] is True
+
+    async with async_session() as db:
+        row = await db.get(DailySeedSchedule, 3)
+        assert row is not None
+        assert row.pool_name == "standard"
+        assert row.deathless is True
+
+
+@pytest.mark.asyncio
+async def test_admin_update_daily_schedule_pool_only_keeps_deathless(
+    test_client, admin_user, daily_schedule_pools, async_session
+):
+    """PATCH with only ``pool_name`` does not reset the deathless flag."""
+    async with async_session() as db:
+        row = await db.get(DailySeedSchedule, 4)
+        assert row is not None
+        row.deathless = True
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/daily-schedule/4",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"pool_name": "sprint"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["pool_name"] == "sprint"
+        assert body["deathless"] is True
+
+    async with async_session() as db:
+        row = await db.get(DailySeedSchedule, 4)
+        assert row is not None
+        assert row.pool_name == "sprint"
+        assert row.deathless is True
 
 
 @pytest.mark.asyncio
