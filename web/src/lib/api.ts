@@ -1367,6 +1367,7 @@ export interface AdminDailyScheduleEntry {
   weekday: number;
   pool_name: string;
   pool_display_name: string;
+  deathless: boolean;
 }
 
 export interface AdminDailySchedulePoolOption {
@@ -1391,14 +1392,15 @@ export async function fetchAdminDailySchedule(): Promise<AdminDailyScheduleRespo
 }
 
 /**
- * Set the pool for a given weekday in the Daily Seed schedule.
+ * Update the pool and/or deathless flag for a given weekday in the Daily
+ * Seed schedule. Omitted fields are left unchanged.
  *
  * The change applies to the next Daily Seed created for that weekday;
  * today's already-emitted race is unaffected.
  */
 export async function updateAdminDailySchedule(
   weekday: number,
-  poolName: string,
+  changes: { pool_name?: string; deathless?: boolean },
 ): Promise<AdminDailyScheduleEntry> {
   const response = await fetch(`${API_BASE}/admin/daily-schedule/${weekday}`, {
     method: "PATCH",
@@ -1406,7 +1408,7 @@ export async function updateAdminDailySchedule(
       ...getAuthHeaders(),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ pool_name: poolName }),
+    body: JSON.stringify(changes),
   });
   return handleResponse<AdminDailyScheduleEntry>(response);
 }

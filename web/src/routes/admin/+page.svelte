@@ -310,7 +310,9 @@
     const key = `daily_${weekday}`;
     actionLoading = { ...actionLoading, [key]: true };
     try {
-      const updated = await updateAdminDailySchedule(weekday, poolName);
+      const updated = await updateAdminDailySchedule(weekday, {
+        pool_name: poolName,
+      });
       const idx = dailySchedule.findIndex(
         (row) => row.weekday === updated.weekday,
       );
@@ -322,6 +324,28 @@
       error =
         e instanceof Error ? e.message : "Failed to update daily schedule.";
       // Reload to revert the optimistic <select> value to the persisted one.
+      await loadDailySchedule();
+    } finally {
+      actionLoading = { ...actionLoading, [key]: false };
+    }
+  }
+
+  async function handleDeathlessChange(weekday: number, deathless: boolean) {
+    const key = `daily_${weekday}`;
+    actionLoading = { ...actionLoading, [key]: true };
+    try {
+      const updated = await updateAdminDailySchedule(weekday, { deathless });
+      const idx = dailySchedule.findIndex(
+        (row) => row.weekday === updated.weekday,
+      );
+      if (idx !== -1) {
+        dailySchedule[idx] = updated;
+      }
+      error = null;
+    } catch (e) {
+      error =
+        e instanceof Error ? e.message : "Failed to update daily schedule.";
+      // Reload to revert the optimistic checkbox to the persisted value.
       await loadDailySchedule();
     } finally {
       actionLoading = { ...actionLoading, [key]: false };
@@ -1035,6 +1059,7 @@
             <tr>
               <th>Day</th>
               <th>Pool</th>
+              <th>Deathless</th>
             </tr>
           </thead>
           <tbody>
@@ -1062,6 +1087,19 @@
                       </option>
                     {/if}
                   </select>
+                </td>
+                <td class="deathless-cell">
+                  <input
+                    type="checkbox"
+                    checked={row.deathless}
+                    disabled={actionLoading[`daily_${row.weekday}`]}
+                    onchange={(e) =>
+                      handleDeathlessChange(
+                        row.weekday,
+                        e.currentTarget.checked,
+                      )}
+                    aria-label={`Deathless for ${DAY_LABELS[row.weekday]}`}
+                  />
                 </td>
               </tr>
             {/each}
