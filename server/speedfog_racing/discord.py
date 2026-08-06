@@ -429,6 +429,9 @@ async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> N
         f"[Play now]({daily_url})",
     ]
 
+    if race.deathless:
+        description_lines.insert(1, "💀 **Deathless**: your first death eliminates you.")
+
     if previous_race is not None:
         finishers = sorted(
             [p for p in previous_race.participants if p.status == ParticipantStatus.FINISHED],

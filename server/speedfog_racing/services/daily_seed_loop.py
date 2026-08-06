@@ -133,6 +133,7 @@ async def create_daily_seed_if_needed(
             open_registration=True,
             max_participants=None,
             private_dag=False,
+            deathless=schedule.deathless,
             late_join_window_minutes=1440,
             race_duration_minutes=1440,
             status=RaceStatus.RUNNING,

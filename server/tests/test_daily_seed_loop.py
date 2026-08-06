@@ -42,13 +42,15 @@ async def ds_async_session_maker(ds_async_engine):
     return async_sessionmaker(ds_async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def _seed_pool_and_system_user(session_maker, *, seeds: int = 3) -> None:
+async def _seed_pool_and_system_user(
+    session_maker, *, seeds: int = 3, deathless: bool = False
+) -> None:
     """Mirror the production-side bootstrapping: schedule rows, system user,
     and a few AVAILABLE seeds in the standard pool so the loop has something
     to assign."""
     async with session_maker() as db:
         for weekday in range(7):
-            db.add(DailySeedSchedule(weekday=weekday, pool_name="standard"))
+            db.add(DailySeedSchedule(weekday=weekday, pool_name="standard", deathless=deathless))
         db.add(
             User(
                 twitch_id="system:daily",
@@ -97,6 +99,7 @@ async def test_daily_tick_creates_running_daily_at_strict_0800(ds_async_session_
     assert created.late_join_window_minutes == 1440
     assert created.race_duration_minutes == 1440
     assert created.exclude_from_stats is True
+    assert created.deathless is False
     assert created.is_public is True
     assert created.open_registration is True
     assert created.seed_id is not None  # a seed was assigned
@@ -110,6 +113,14 @@ async def test_daily_tick_is_idempotent(ds_async_session_maker) -> None:
     second = await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
     assert first is not None
     assert second is None
+
+
+@pytest.mark.asyncio
+async def test_daily_tick_applies_schedule_deathless(ds_async_session_maker) -> None:
+    await _seed_pool_and_system_user(ds_async_session_maker, deathless=True)
+    created = await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
+    assert created is not None
+    assert created.deathless is True
 
 
 @pytest.mark.asyncio
