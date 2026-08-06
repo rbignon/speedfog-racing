@@ -80,8 +80,12 @@ death of a PLAYING participant during a RUNNING race transitions them to
 already computes the death-count delta. Side effects mirror
 `POST /races/{id}/abandon`: public system chat message, public-chat unlock,
 leaderboard and race_state broadcasts, auto-finish check. Deaths are still
-attributed to the current zone before the transition. Daily seeds never set
-this option.
+attributed to the current zone before the transition. Daily Seeds set it
+from the per-weekday `daily_seed_schedule.deathless` flag. On a daily,
+eliminating a participant who has not yet qualified for the streak also
+applies the eager close-day used by manual abandon, and an
+elimination-triggered auto-finish posts "The daily seed is over." instead
+of the regular finished message.
 
 An eliminated participant (ABANDONED with at least one death in a deathless
 race) is labeled "Dead" on the web leaderboard, "DEAD" on the OBS overlay,

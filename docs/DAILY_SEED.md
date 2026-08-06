@@ -51,9 +51,10 @@ Both `daily_date` and `exclude_from_stats` are exposed on `RaceResponse` and `Ra
 ```
 weekday    int   primary key   -- 0 = Monday, 6 = Sunday
 pool_name  text  not null      -- FK pools.name
+deathless  bool  not null default false  -- next daily for this weekday is deathless
 ```
 
-The Alembic migration seeds the seven rows with `pool_name = 'standard'`. Admins rotate themes from the `Daily` tab in `/admin` (see "Pool Rotation Schedule" below). The pool name capitalized is the theme label rendered in UI and Discord.
+The Alembic migration seeds the seven rows with `pool_name = 'standard'`. Admins rotate themes from the `Daily` tab in `/admin` (see "Pool Rotation Schedule" below). The pool name capitalized is the theme label rendered in UI and Discord. `deathless` follows the same per-weekday rotation: the flag is copied onto the race at creation time (see the Tick procedure below) and, once set on the race, behaves exactly like a manually configured deathless race (see [Deathless](RACE_LIFECYCLE.md#deathless)).
 
 A weekday-based pattern (Monday = X, Tuesday = Y, ...) gives the community a recognizable rhythm. Per-date overrides are out of scope.
 
@@ -135,6 +136,7 @@ Each tick (`create_daily_seed_if_needed`) does:
    status                    = RUNNING
    started_at                = datetime(today, 08:00, UTC)
    seeds_released_at         = started_at
+   deathless                 = schedule.deathless
    ```
 
    `assign_seed_to_race` picks a seed in the same transaction. The whole `add` / `flush` / `assign` / `commit` is wrapped in an `IntegrityError` guard: PostgreSQL enforces the partial unique index at flush time, so a concurrent tick (e.g. on boot) loses its INSERT and falls through to a clean rollback + INFO log.
@@ -161,12 +163,14 @@ Each tick (`create_daily_seed_if_needed`) does:
 
 ## Pool Rotation Schedule
 
-The schedule is data, not code: `daily_seed_schedule` rows define which pool runs on which weekday. Admins edit the rotation from the `Daily` tab in `/admin`, which calls:
+The schedule is data, not code: `daily_seed_schedule` rows define which pool runs on which weekday, and whether that day's daily is deathless. Admins edit the rotation from the `Daily` tab in `/admin`, which calls:
 
 - `GET /api/admin/daily-schedule` -> the seven rows plus the list of pools eligible to be assigned (enabled, non-training).
-- `PATCH /api/admin/daily-schedule/{weekday}` with `{ "pool_name": "<name>" }` -> updates one row, validating that the pool exists, is enabled, and is not a training pool.
+- `PATCH /api/admin/daily-schedule/{weekday}` with a partial body `{ "pool_name": "<name>", "deathless": <bool> }` (omitted fields unchanged) -> updates one row; when `pool_name` is present it is validated (exists, enabled, not a training pool).
 
-A change to the row for the _current_ weekday does not affect today's already-emitted Daily Seed (the seed was assigned at creation time and is stored on the race row); it takes effect the next time that weekday rolls around. The admin UI surfaces this with a `Today` badge and an inline note.
+The admin UI exposes a per-weekday Deathless checkbox next to the pool select on each row, driving the `deathless` field of the same PATCH call.
+
+A change to the row for the _current_ weekday does not affect today's already-emitted Daily Seed (both `pool_name` and `deathless` were read at creation time and are stored on the race row); it takes effect the next time that weekday rolls around. The admin UI surfaces this with a `Today` badge and an inline note.
 
 The pool must exist in `pools` and be `enabled = True`; otherwise the next 08:00 tick logs an error and skips creation. The fallback seeded by the migration is `standard` for all seven weekdays.
 
@@ -176,12 +180,12 @@ The pool must exist in `pools` and be `enabled = True`; otherwise the next 08:00
 
 Discovery surface for Daily Seeds. All four live under `/api/daily`.
 
-| Endpoint                        | Returns              | Description                                                                                                                                                                                                                  |
-| ------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/daily/today`          | `RaceResponse`       | The current rotation day's daily, or 404 if creation has not happened yet.                                                                                                                                                   |
-| `GET /api/daily/{yyyy-mm-dd}`   | `RaceDetailResponse` | Look up by rotation date. Used by `/daily/[date]`.                                                                                                                                                                           |
-| `GET /api/daily/recent?limit=N` | `RaceListResponse`   | Past dailies (`daily_date IS NOT NULL AND daily_date < today`) ordered by date desc. `limit` clamped to `[1, 30]`, default 7.                                                                                                |
-| `GET /api/daily/week`           | `DailyWeekResponse`  | The seven calendar-week cells (Mon..Sun ISO order) consumed by the home, dashboard, and daily-detail grid. Optional `?date=YYYY-MM-DD` query parameter anchors the returned week on the date's ISO week (defaults to today). |
+| Endpoint                        | Returns              | Description                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/daily/today`          | `RaceResponse`       | The current rotation day's daily, or 404 if creation has not happened yet.                                                                                                                                                                                                                                                                                                                       |
+| `GET /api/daily/{yyyy-mm-dd}`   | `RaceDetailResponse` | Look up by rotation date. Used by `/daily/[date]`.                                                                                                                                                                                                                                                                                                                                               |
+| `GET /api/daily/recent?limit=N` | `RaceListResponse`   | Past dailies (`daily_date IS NOT NULL AND daily_date < today`) ordered by date desc. `limit` clamped to `[1, 30]`, default 7.                                                                                                                                                                                                                                                                    |
+| `GET /api/daily/week`           | `DailyWeekResponse`  | The seven calendar-week cells (Mon..Sun ISO order) consumed by the home, dashboard, and daily-detail grid. Optional `?date=YYYY-MM-DD` query parameter anchors the returned week on the date's ISO week (defaults to today). Each cell carries `deathless`, read from the race when one exists for that day and from the schedule row otherwise, so `future` cells preview the upcoming setting. |
 
 Route resolution is unambiguous: `today` and `recent` are literal segments, `{daily_date}` only matches strings parseable as `%Y-%m-%d` (otherwise 404). The "today" lookup uses `daily_date_for(now_utc)` so it switches over at exactly 08:00 UTC.
 
@@ -254,6 +258,8 @@ Rendered on `/` (variant `home`, replaces the previous banner) and `/dashboard` 
 | `past`         | Placement-1 finisher only (medal + name + IGT, single line) and the participants count. The rest of the API-supplied podium is unused so the cell stays one row tall. |
 | `today`        | "Daily seed incoming" or "X players" placeholder. Never renders a winner row even after the first finisher comes in, to avoid spoiling the in-progress race.          |
 | `future`       | Greyed out, pool from `daily_seed_schedule`, "Opens in" countdown that adapts to the remaining time (`Xd Yh` -> `Xh YYm` -> `Xm YYs` -> `Xs`).                        |
+
+A skull icon (💀) renders next to the pool name whenever the cell's `deathless` flag is set, on every cell that shows a pool name (today, past, and future), so the icon previews a scheduled deathless day before it goes live.
 
 The `today` cell uses the standard neutral border with a soft gold outer glow and a small gold "TODAY" header badge. Both `today` and any played `past` cell carry a full-width bottom strip whose label and color depend on the viewer's participant status:
 
