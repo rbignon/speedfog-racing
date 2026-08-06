@@ -549,6 +549,7 @@ class DailyWeekDay(BaseModel):
     podium: list[DailyPodiumEntry]
     my_result: DailyMyResult | None
     freeze_protected: bool = False
+    deathless: bool = False
 
 
 class DailyWeekResponse(BaseModel):

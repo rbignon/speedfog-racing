@@ -238,6 +238,7 @@ async def get_daily_week(
                     podium=_build_podium(ranked),
                     my_result=_my_result(race.participants, ranked, user, starters_count),
                     freeze_protected=d in freeze_dates,
+                    deathless=race.deathless,
                 )
             )
             continue
@@ -266,6 +267,7 @@ async def get_daily_week(
                 podium=[],
                 my_result=None,
                 freeze_protected=d in freeze_dates,
+                deathless=schedule_row.deathless if schedule_row else False,
             )
         )
 

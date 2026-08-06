@@ -1,6 +1,6 @@
 """Tests for GET /api/daily/week."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -550,3 +550,61 @@ async def test_week_endpoint_has_earlier_false_when_no_earlier_daily(
     response = await dw_test_client.get("/api/daily/week")
     assert response.status_code == 200, response.text
     assert response.json()["has_earlier"] is False
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_deathless_from_schedule_fallback(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    """Cells without a race row (future, missing_past) take the deathless
+    flag from the schedule; a cell with a race uses the race's own flag."""
+    today = daily_date_for(datetime.now(UTC))
+
+    async with dw_async_session_maker() as db:
+        for weekday in range(7):
+            db.add(DailySeedSchedule(weekday=weekday, pool_name="standard", deathless=True))
+        organizer = _user()
+        db.add(organizer)
+        await db.flush()
+        # Today's race exists and is NOT deathless: the race row wins over
+        # the schedule flag.
+        db.add(_daily_race(organizer=organizer, the_date=today, deathless=False))
+        await db.commit()
+
+    response = await dw_test_client.get("/api/daily/week")
+    assert response.status_code == 200, response.text
+    days = response.json()["days"]
+
+    assert days[today.weekday()]["deathless"] is False
+    for i in range(today.weekday()):
+        assert days[i]["deathless"] is True  # missing_past -> schedule flag
+    for i in range(today.weekday() + 1, 7):
+        assert days[i]["deathless"] is True  # future -> schedule flag
+
+
+@pytest.mark.asyncio
+async def test_week_endpoint_deathless_from_past_race(
+    dw_test_client, dw_async_session_maker
+) -> None:
+    """A past daily's own deathless flag survives without any schedule row."""
+    anchor = date(2026, 4, 20)  # a Monday, safely in the past
+
+    async with dw_async_session_maker() as db:
+        organizer = _user()
+        db.add(organizer)
+        await db.flush()
+        db.add(
+            _daily_race(
+                organizer=organizer,
+                the_date=date(2026, 4, 21),
+                status=RaceStatus.FINISHED,
+                deathless=True,
+            )
+        )
+        await db.commit()
+
+    response = await dw_test_client.get(f"/api/daily/week?date={anchor.isoformat()}")
+    assert response.status_code == 200, response.text
+    days = response.json()["days"]
+    assert days[1]["deathless"] is True
+    assert days[0]["deathless"] is False  # missing_past, no schedule row
