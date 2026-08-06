@@ -1,6 +1,6 @@
 """Deathless race option: plumbing (Task 1) and enforcement (Task 2)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -472,3 +472,188 @@ async def test_death_delta_no_elimination_on_plain_race(
         participant, became_active=False, death_delta=1, history_changed=False
     )
     elim.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Task 4 (daily deathless): elimination parity on Daily Seeds
+# ---------------------------------------------------------------------------
+
+DAILY_DATE = date(2026, 8, 5)
+
+
+async def _make_daily_running_race(
+    session_factory,
+    *,
+    organizer_id,
+    players,
+    suffix: str,
+    started_at=None,
+    qualified: bool = False,
+):
+    """Daily variant of ``_make_running_race``: sets ``daily_date`` plus the
+    24h windows the creation loop uses. ``qualified`` controls whether the
+    participants' zone_history has crossed the first fog gate (the streak
+    qualification predicate needs >= 2 entries)."""
+    history = [{"node_id": "node_a", "igt_ms": 0, "type": "spawn"}]
+    if qualified:
+        history.append({"node_id": "node_b", "igt_ms": 30000, "type": "zone"})
+    async with session_factory() as db:
+        seed = await _make_seed(db, suffix=suffix)
+        race = Race(
+            name=f"Daily deathless {suffix}",
+            organizer_id=organizer_id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=started_at or datetime.now(UTC),
+            deathless=True,
+            daily_date=DAILY_DATE,
+            late_join_window_minutes=1440,
+            race_duration_minutes=1440,
+            exclude_from_stats=True,
+        )
+        db.add(race)
+        await db.flush()
+        participant_ids = []
+        for user_id, p_status in players:
+            p = Participant(
+                race_id=race.id,
+                user_id=user_id,
+                status=p_status,
+                current_zone="node_a",
+                zone_history=list(history),
+                igt_ms=60000,
+                death_count=1,
+            )
+            db.add(p)
+            await db.flush()
+            participant_ids.append(p.id)
+        await db.commit()
+        return race.id, participant_ids
+
+
+async def _give_streak(session_factory, user_id, *, current: int = 3, best: int = 5) -> None:
+    async with session_factory() as db:
+        user = await db.get(User, user_id)
+        user.daily_current_streak = current
+        user.daily_best_streak = best
+        user.daily_freeze_count = 0
+        user.daily_last_qualifying_date = DAILY_DATE - timedelta(days=1)
+        await db.commit()
+
+
+async def test_deathless_daily_elimination_breaks_unqualified_streak(
+    dl_async_session, dl_organizer, dl_player, monkeypatch
+):
+    from speedfog_racing.websocket.race.manager import manager
+    from speedfog_racing.websocket.race.mod import handle_deathless_death
+
+    unicasts = []
+
+    async def _record_unicast(race_id, user_id, **kwargs):
+        unicasts.append((race_id, user_id, kwargs))
+
+    monkeypatch.setattr(manager, "send_daily_streak_update_to_user", _record_unicast)
+
+    await _give_streak(dl_async_session, dl_player.id)
+    race_id, (p1_id,) = await _make_daily_running_race(
+        dl_async_session,
+        organizer_id=dl_organizer.id,
+        players=[(dl_player.id, ParticipantStatus.PLAYING)],
+        suffix="daily_streak",
+    )
+
+    await handle_deathless_death(dl_async_session, p1_id)
+
+    async with dl_async_session() as db:
+        p1 = (await db.execute(select(Participant).where(Participant.id == p1_id))).scalar_one()
+        user = await db.get(User, dl_player.id)
+
+    assert p1.status == ParticipantStatus.ABANDONED
+    assert user.daily_current_streak == 0
+    assert user.daily_best_streak == 5
+    assert unicasts == [
+        (
+            race_id,
+            dl_player.id,
+            {"current": 0, "best": 5, "freeze_count": 0, "freeze_consumed_for": None},
+        )
+    ]
+
+
+async def test_deathless_daily_elimination_after_qualification_keeps_streak(
+    dl_async_session, dl_organizer, dl_player
+):
+    from speedfog_racing.websocket.race.mod import handle_deathless_death
+
+    await _give_streak(dl_async_session, dl_player.id)
+    _race_id, (p1_id,) = await _make_daily_running_race(
+        dl_async_session,
+        organizer_id=dl_organizer.id,
+        players=[(dl_player.id, ParticipantStatus.PLAYING)],
+        suffix="daily_qual",
+        qualified=True,
+    )
+
+    await handle_deathless_death(dl_async_session, p1_id)
+
+    async with dl_async_session() as db:
+        p1 = (await db.execute(select(Participant).where(Participant.id == p1_id))).scalar_one()
+        user = await db.get(User, dl_player.id)
+
+    assert p1.status == ParticipantStatus.ABANDONED
+    assert user.daily_current_streak == 3
+
+
+async def test_deathless_daily_elimination_does_not_autofinish_during_window(
+    dl_async_session, dl_organizer, dl_player
+):
+    from speedfog_racing.websocket.race.mod import handle_deathless_death
+
+    race_id, (p1_id,) = await _make_daily_running_race(
+        dl_async_session,
+        organizer_id=dl_organizer.id,
+        players=[(dl_player.id, ParticipantStatus.PLAYING)],
+        suffix="daily_window",
+    )
+
+    await handle_deathless_death(dl_async_session, p1_id)
+
+    async with dl_async_session() as db:
+        race = (await db.execute(select(Race).where(Race.id == race_id))).scalar_one()
+        messages = (
+            (await db.execute(select(ChatMessage).where(ChatMessage.race_id == race_id)))
+            .scalars()
+            .all()
+        )
+
+    assert race.status == RaceStatus.RUNNING
+    assert not any(m.message == "The daily seed is over." for m in messages)
+    assert not any(m.message == "The race has finished." for m in messages)
+
+
+async def test_deathless_daily_elimination_autofinish_uses_daily_wording(
+    dl_async_session, dl_organizer, dl_player
+):
+    from speedfog_racing.websocket.race.mod import handle_deathless_death
+
+    race_id, (p1_id,) = await _make_daily_running_race(
+        dl_async_session,
+        organizer_id=dl_organizer.id,
+        players=[(dl_player.id, ParticipantStatus.PLAYING)],
+        suffix="daily_over",
+        started_at=datetime.now(UTC) - timedelta(hours=25),
+    )
+
+    await handle_deathless_death(dl_async_session, p1_id)
+
+    async with dl_async_session() as db:
+        race = (await db.execute(select(Race).where(Race.id == race_id))).scalar_one()
+        messages = (
+            (await db.execute(select(ChatMessage).where(ChatMessage.race_id == race_id)))
+            .scalars()
+            .all()
+        )
+
+    assert race.status == RaceStatus.FINISHED
+    assert any(m.message == "The daily seed is over." for m in messages)
+    assert not any(m.message == "The race has finished." for m in messages)

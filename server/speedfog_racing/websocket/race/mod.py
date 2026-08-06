@@ -24,7 +24,11 @@ from speedfog_racing.models import (
     RaceStatus,
 )
 from speedfog_racing.rewards.service import RewardsService
-from speedfog_racing.services.daily_streak_service import apply_qualification_to_user
+from speedfog_racing.services.daily_streak_service import (
+    apply_close_day_to_user,
+    apply_qualification_to_user,
+    qualifies_for_streak,
+)
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
@@ -771,12 +775,28 @@ async def handle_deathless_death(
             f"{display} died.",
         )
 
+        # Parity with POST /races/{id}/abandon on dailies: settle the streak
+        # now for a player eliminated before qualifying, instead of leaving a
+        # stale streak display until the next 08:00 rotation tick.
+        streak_result = None
+        if participant.race.daily_date is not None and not qualifies_for_streak(
+            participant.zone_history
+        ):
+            streak_result = await apply_close_day_to_user(
+                db, user_id=participant.user_id, daily_date=participant.race.daily_date
+            )
+
         race_transitioned = await check_race_auto_finish(db, participant.race)
         race_finished_public_json: str | None = None
         if race_transitioned:
             logger.info("Race finished: %s", participant.race_id)
+            finished_msg = (
+                "The daily seed is over."
+                if participant.race.daily_date is not None
+                else "The race has finished."
+            )
             race_finished_public_json = await persist_system_chat(
-                db, participant.race_id, ChatChannel.PUBLIC, "The race has finished."
+                db, participant.race_id, ChatChannel.PUBLIC, finished_msg
             )
         await db.commit()
 
@@ -808,6 +828,17 @@ async def handle_deathless_death(
         await room.broadcast_chat_public(death_public_json, participant.race)
         if race_finished_public_json is not None:
             await room.broadcast_chat_public(race_finished_public_json, participant.race)
+
+    if streak_result is not None:
+        streak_state, freeze_used = streak_result
+        await manager.send_daily_streak_update_to_user(
+            participant.race_id,
+            participant.user_id,
+            current=streak_state.current_streak,
+            best=streak_state.best_streak,
+            freeze_count=streak_state.freeze_count,
+            freeze_consumed_for=participant.race.daily_date if freeze_used else None,
+        )
 
 
 # ---------------------------------------------------------------------------
