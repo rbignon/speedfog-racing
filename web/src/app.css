@@ -367,6 +367,76 @@ h4 {
   box-shadow: none;
 }
 
+/* Signals: status as a small mark + mono caps label (replaces .badge pills;
+ * hollow ring = not ridden yet, dot = moving, square = terminal). */
+.signal {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.signal::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+}
+
+.signal-open {
+  color: var(--color-success);
+}
+
+.signal-open::before {
+  border: 2px solid var(--color-success);
+  border-radius: 50%;
+}
+
+.signal-running {
+  color: var(--color-danger);
+}
+
+.signal-running::before {
+  background: var(--color-danger);
+  border-radius: 50%;
+}
+
+.signal-finished {
+  color: var(--color-info);
+}
+
+.signal-finished::before {
+  background: var(--color-info);
+}
+
+.signal-setup {
+  color: var(--color-text-secondary);
+}
+
+.signal-setup::before {
+  border: 2px solid var(--color-text-secondary);
+  border-radius: 50%;
+}
+
+/* Chips: bordered mono caps for secondary facts (role, seed, tier) */
+.chip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.25rem 0.55rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
 /* Badges */
 .badge {
   padding: 0.2rem 0.6rem;

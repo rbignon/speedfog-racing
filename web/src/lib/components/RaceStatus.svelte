@@ -9,7 +9,7 @@
 </script>
 
 <div class="race-status">
-  <span class="badge badge-{status}">{statusLabel(status)}</span>
+  <span class="signal signal-{status}">{statusLabel(status)}</span>
 </div>
 
 <style>

@@ -1,10 +1,9 @@
 <script lang="ts">
-  import type { Race, RaceStatus } from "$lib/api";
+  import type { Race } from "$lib/api";
   import { goto } from "$app/navigation";
   import { raceDisplayDate } from "$lib/utils/time";
   import { formatPoolName } from "$lib/utils/format";
   import { isFrogTitle, statusLabel } from "$lib/format";
-  import LiveIndicator from "./LiveIndicator.svelte";
 
   let {
     race,
@@ -30,19 +29,6 @@
       : null,
   );
 
-  function statusBorderClass(status: RaceStatus): string {
-    switch (status) {
-      case "setup":
-        return "border-setup";
-      case "running":
-        return "border-running";
-      case "finished":
-        return "border-finished";
-      default:
-        return "";
-    }
-  }
-
   const roleLabels: Record<string, string> = {
     organizing: "Organizing",
     participating: "Participating",
@@ -60,172 +46,180 @@
     (race.open_registration && race.status === "setup") ||
       (race.status === "running" && race.can_join),
   );
+  let routeState = $derived(
+    race.status === "finished"
+      ? "finished"
+      : race.status === "running"
+        ? "running"
+        : race.open_registration
+          ? "open"
+          : "setup",
+  );
 </script>
 
 <a
   href="/race/{race.id}"
-  class="race-card {statusBorderClass(race.status)}"
+  class="race-card"
   class:compact={variant === "compact"}
   class:joinable={race.can_join}
 >
-  <div class="card-content">
-    <div class="race-header">
-      <div class="race-title">
-        {#if isRunning}
-          <LiveIndicator dotOnly />
-        {/if}
-        {#if isFrog}
-          <img src="/badges/frog.svg" alt="" class="frog-icon" />
-        {/if}
-        <span class="race-name" class:frog={isFrog}>{race.name}</span>
-      </div>
-      <div class="race-badges">
-        {#if showOpenBadge}
-          <span class="badge badge-open">Open</span>
-        {/if}
-        {#if effectiveRole}
-          <span class="badge badge-role">{effectiveRole}</span>
-        {/if}
-        <span class="badge badge-{race.status}">{statusLabel(race.status)}</span
-        >
-      </div>
-    </div>
-
-    {#if race.participant_previews.length > 0}
-      <div class="avatar-row" class:has-winner={winner}>
-        <div class="avatar-stack">
-          {#each race.participant_previews as user}
-            {#if user.twitch_avatar_url}
-              <img
-                src={user.twitch_avatar_url}
-                alt={user.twitch_display_name || user.twitch_username}
-                class="avatar"
-              />
-            {:else}
-              <span class="avatar avatar-placeholder">
-                {(user.twitch_display_name || user.twitch_username)
-                  .charAt(0)
-                  .toUpperCase()}
-              </span>
-            {/if}
-          {/each}
-          {#if overflowCount > 0}
-            <span class="avatar avatar-overflow">+{overflowCount}</span>
+  <div class="route route-{routeState}" aria-hidden="true">
+    <span class="line"></span>
+    <span class="m-start"></span>
+    {#if routeState !== "setup"}
+      <span class="m-end"></span>
+    {/if}
+    {#if isRunning}
+      <span class="m-train"></span>
+    {/if}
+  </div>
+  <div class="card-inner">
+    <div class="card-content">
+      <div class="race-header">
+        <div class="race-title">
+          {#if isFrog}
+            <img src="/badges/frog.svg" alt="" class="frog-icon" />
           {/if}
+          <span class="race-name" class:frog={isFrog}>{race.name}</span>
         </div>
-        {#if winner}
-          <div class="winner-info">
-            <svg
-              class="trophy-icon"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              width="16"
-              height="16"
-            >
-              <path
-                d="M12 2C9.24 2 7 4.24 7 7h-3c-1.1 0-2 .9-2 2v2c0 2.21 1.79 4 4 4h.68A7.01 7.01 0 0012 19.87V22H8v2h8v-2h-4v-2.13A7.01 7.01 0 0017.32 15H18c2.21 0 4-1.79 4-4V9c0-1.1-.9-2-2-2h-3c0-2.76-2.24-5-5-5zM4 11V9h3v4.83C5.17 13.1 4 11.65 4 11zm16 0c0 1.65-1.17 3.1-3 3.83V9h3v2z"
-              />
-            </svg>
-            {#if winner.twitch_avatar_url}
-              <img
-                src={winner.twitch_avatar_url}
-                alt=""
-                class="winner-avatar"
-              />
-            {/if}
-            <span class="winner-name"
-              >{winner.twitch_display_name || winner.twitch_username}</span
-            >
-          </div>
-        {/if}
-        <span class="relative-time">{relativeTime}</span>
-      </div>
-    {:else}
-      <div class="avatar-row">
-        <span class="no-participants">No players yet</span>
-        <span class="relative-time">{relativeTime}</span>
-      </div>
-    {/if}
-
-    {#if isRunning && race.casters.length > 0}
-      <div class="caster-row">
-        <svg
-          class="twitch-icon"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          width="14"
-          height="14"
-        >
-          <path
-            d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"
-          />
-        </svg>
-        {#each race.casters as caster, i}
-          {#if i > 0}<span class="caster-sep">&middot;</span>{/if}
-          <button
-            class="caster-name"
-            onclick={(e: MouseEvent) => {
-              e.preventDefault();
-              e.stopPropagation();
-              window.open(
-                `https://twitch.tv/${caster.user.twitch_username}`,
-                "_blank",
-                "noopener,noreferrer",
-              );
-            }}
-            >{caster.user.twitch_display_name ||
-              caster.user.twitch_username}</button
+        <div class="race-signals">
+          {#if showOpenBadge}
+            <span class="signal signal-open">Open</span>
+          {/if}
+          {#if effectiveRole}
+            <span class="chip">{effectiveRole}</span>
+          {/if}
+          <span class="signal signal-{race.status}"
+            >{statusLabel(race.status)}</span
           >
-        {/each}
+        </div>
       </div>
-    {/if}
 
-    <div class="race-meta">
-      <span>
+      <div class="race-meta">
         {race.participant_count}{#if race.max_participants && race.status == "setup"}/{race.max_participants}{/if}
         player{race.participant_count !== 1 ? "s" : ""}
         {#if race.pool_name}
           &middot; {formatPoolName(race.pool_name)}
         {/if}
-      </span>
-      <span class="race-organizer">
-        by
-        {#if race.organizer.twitch_avatar_url}
-          <img
-            src={race.organizer.twitch_avatar_url}
-            alt=""
-            class="organizer-avatar"
-          />
-        {/if}
-        <button
-          class="organizer-link"
-          onclick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            goto(`/user/${race.organizer.twitch_username}`);
-          }}
-        >
-          {displayName}
-        </button>
-      </span>
+      </div>
+
+      {#if isRunning && race.casters.length > 0}
+        <div class="caster-row">
+          <svg
+            class="twitch-icon"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            width="14"
+            height="14"
+          >
+            <path
+              d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"
+            />
+          </svg>
+          {#each race.casters as caster, i}
+            {#if i > 0}<span class="caster-sep">&middot;</span>{/if}
+            <button
+              class="caster-name"
+              onclick={(e: MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.open(
+                  `https://twitch.tv/${caster.user.twitch_username}`,
+                  "_blank",
+                  "noopener,noreferrer",
+                );
+              }}
+              >{caster.user.twitch_display_name ||
+                caster.user.twitch_username}</button
+            >
+          {/each}
+        </div>
+      {/if}
+
+      <div class="card-foot" class:has-winner={winner}>
+        <div class="crew">
+          {#if race.participant_previews.length > 0}
+            <div class="avatar-stack">
+              {#each race.participant_previews as user}
+                {#if user.twitch_avatar_url}
+                  <img
+                    src={user.twitch_avatar_url}
+                    alt={user.twitch_display_name || user.twitch_username}
+                    class="avatar"
+                  />
+                {:else}
+                  <span class="avatar avatar-placeholder">
+                    {(user.twitch_display_name || user.twitch_username)
+                      .charAt(0)
+                      .toUpperCase()}
+                  </span>
+                {/if}
+              {/each}
+              {#if overflowCount > 0}
+                <span class="avatar avatar-overflow">+{overflowCount}</span>
+              {/if}
+            </div>
+            {#if winner}
+              <span class="winner-info">
+                <span class="place">1st</span>
+                {#if winner.twitch_avatar_url}
+                  <img
+                    src={winner.twitch_avatar_url}
+                    alt=""
+                    class="winner-avatar"
+                  />
+                {/if}
+                <span class="winner-name"
+                  >{winner.twitch_display_name || winner.twitch_username}</span
+                >
+              </span>
+            {:else if race.status === "finished"}
+              <span class="no-finishers">No finishers</span>
+            {/if}
+          {:else}
+            <span class="no-participants">No players yet</span>
+          {/if}
+        </div>
+        <span class="byline">
+          by
+          {#if race.organizer.twitch_avatar_url}
+            <img
+              src={race.organizer.twitch_avatar_url}
+              alt=""
+              class="organizer-avatar"
+            />
+          {/if}
+          <button
+            class="organizer-link"
+            onclick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              goto(`/user/${race.organizer.twitch_username}`);
+            }}
+          >
+            {displayName}
+          </button>
+          <span class="ago">&middot; {relativeTime}</span>
+        </span>
+      </div>
+      {#if race.status === "running" && race.open_registration && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
+        <div class="late-join-note">
+          Joinable until {new Date(
+            race.registration_closes_at,
+          ).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })}
+        </div>
+      {/if}
     </div>
-    {#if race.status === "running" && race.open_registration && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
-      <div class="late-join-note">
-        Joinable until {new Date(
-          race.registration_closes_at,
-        ).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        })}
+    {#if race.can_join}
+      <div class="join-strip">
+        <span class="join-strip-text">Join</span>
       </div>
     {/if}
   </div>
-  {#if race.can_join}
-    <div class="join-strip">
-      <span class="join-strip-text">Join</span>
-    </div>
-  {/if}
 </a>
 
 <style>
@@ -234,44 +228,164 @@
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    padding: 1rem 1.25rem;
+    padding: 0;
     text-decoration: none;
     color: inherit;
     min-width: 0;
-    transition:
-      border-color var(--transition),
-      box-shadow var(--transition);
+    overflow: hidden;
+    transition: border-color var(--transition);
   }
 
   .race-card:hover {
     border-color: var(--color-purple);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
-  .race-card.compact {
-    padding: 0.75rem 1rem;
+  /* Route line: the card's top edge encodes status */
+  .route {
+    position: relative;
+    height: 14px;
   }
 
-  /* Status left-border accents */
-  .border-setup {
-    border-left: 3px solid var(--color-info);
+  .route .line {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    top: 6px;
+    border-top: 2px solid var(--color-text-disabled);
   }
 
-  .border-running {
-    border-left: 3px solid var(--color-danger);
+  .route .m-start {
+    position: absolute;
+    left: 8px;
+    top: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--color-text-disabled);
+    background: var(--color-surface);
   }
 
-  .border-finished {
-    border-left: 3px solid var(--color-success);
+  .route .m-end {
+    position: absolute;
+    right: 8px;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+  }
+
+  .route-setup .line {
+    border-top-style: dashed;
+    border-top-color: var(--color-border);
+  }
+
+  .route-open .line {
+    border-top-style: dashed;
+    border-top-color: var(--color-success);
+  }
+
+  .route-open .m-start {
+    border-color: var(--color-success);
+  }
+
+  .route-open .m-end,
+  .route-running .m-end {
+    top: 1px;
+    width: 10px;
+    height: 10px;
+    background: var(--color-surface);
+  }
+
+  .route-open .m-end {
+    border: 2px solid var(--color-success);
+  }
+
+  .route-running .line {
+    border-top-color: var(--color-danger);
+  }
+
+  .route-running .m-start {
+    border-color: var(--color-danger);
+  }
+
+  .route-running .m-end {
+    border: 2px solid var(--color-danger);
+  }
+
+  .route-finished .line {
+    border-top-color: var(--color-info);
+  }
+
+  .route-finished .m-start {
+    border-color: var(--color-info);
+  }
+
+  .route-finished .m-end {
+    background: var(--color-info);
+  }
+
+  /* Traveling dot: a full-track element whose painted dot rides on a
+   * compositor-only transform (never animate left/top in a card list). */
+  .route .m-train {
+    position: absolute;
+    left: 14px;
+    right: 20px;
+    top: 4px;
+    height: 6px;
+    pointer-events: none;
+  }
+
+  .route .m-train::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      circle 3px at 3px 3px,
+      var(--color-danger) 98%,
+      transparent
+    );
+    background-repeat: no-repeat;
+    animation: ride 3.2s linear infinite;
+  }
+
+  @keyframes ride {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(calc(100% - 6px));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .route .m-train {
+      display: none;
+    }
+  }
+
+  .card-inner {
+    min-width: 0;
+  }
+
+  .joinable .card-inner {
+    display: flex;
+  }
+
+  .card-content {
+    min-width: 0;
+    flex: 1;
+    padding: 0.15rem 1.1rem 0.9rem;
+  }
+
+  .compact .card-content {
+    padding: 0.1rem 0.9rem 0.7rem;
   }
 
   /* Header row */
   .race-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
+    align-items: baseline;
+    gap: 0.75rem;
   }
 
   .race-title {
@@ -282,8 +396,11 @@
   }
 
   .race-name {
-    font-size: 1.05rem;
-    font-weight: 500;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: 0.035em;
+    text-transform: uppercase;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -299,73 +416,19 @@
     flex-shrink: 0;
   }
 
-  .race-badges {
+  .race-signals {
     display: flex;
-    gap: 0.4rem;
+    align-items: center;
+    gap: 0.5rem;
     flex-shrink: 0;
   }
 
-  .badge-role {
-    background: rgba(107, 114, 128, 0.2);
-    color: var(--color-text-secondary);
-  }
-
-  /* Avatar row */
-  .avatar-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-  }
-
-  .avatar-stack {
-    display: flex;
-    align-items: center;
-    min-width: 126px;
-  }
-
-  .avatar {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    border: 2px solid var(--color-surface);
-    margin-left: -6px;
-    object-fit: cover;
-  }
-
-  .avatar:first-child {
-    margin-left: 0;
-  }
-
-  .avatar-placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-surface-elevated);
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-  }
-
-  .avatar-overflow {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-surface-elevated);
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-  }
-
-  .no-participants {
+  /* Meta row */
+  .race-meta {
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    color: var(--color-text-disabled);
-    font-style: italic;
-  }
-
-  .relative-time {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-disabled);
+    color: var(--color-text-secondary);
+    margin-top: 0.1rem;
   }
 
   /* Caster row */
@@ -375,7 +438,7 @@
     gap: 0.35rem;
     font-size: var(--font-size-xs);
     color: var(--color-twitch, #9146ff);
-    margin-bottom: 0.5rem;
+    margin-top: 0.5rem;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -404,20 +467,79 @@
     text-decoration: underline;
   }
 
-  /* Winner info (inline in avatar row) */
+  /* Foot row: crew + winner on the left, byline on the right */
+  .card-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0.8rem;
+  }
+
+  .crew {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+  }
+
+  .avatar-stack {
+    display: flex;
+    align-items: center;
+  }
+
+  .avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid var(--color-surface);
+    margin-left: -6px;
+    object-fit: cover;
+  }
+
+  .avatar:first-child {
+    margin-left: 0;
+  }
+
+  .avatar-placeholder,
+  .avatar-overflow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface-elevated);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+
+  .no-participants {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-disabled);
+    font-style: italic;
+  }
+
+  .no-finishers {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+  }
+
   .winner-info {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    color: var(--color-gold);
     min-width: 0;
     overflow: hidden;
   }
 
-  .trophy-icon {
+  .winner-info .place {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--color-gold);
     flex-shrink: 0;
-    width: 16px;
-    height: 16px;
   }
 
   .winner-avatar {
@@ -435,63 +557,13 @@
     text-overflow: ellipsis;
   }
 
-  /* Joinable card layout */
-  .race-card.joinable {
-    display: flex;
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .card-content {
-    min-width: 0;
-  }
-
-  .joinable .card-content {
-    flex: 1;
-    padding: 1rem 1.25rem;
-  }
-
-  .joinable.compact .card-content {
-    padding: 0.75rem 1rem;
-  }
-
-  .join-strip {
-    width: 64px;
-    background: rgba(16, 185, 129, 0.12);
-    border-left: 1px solid rgba(16, 185, 129, 0.25);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .join-strip-text {
-    color: var(--color-success);
-    font-weight: 700;
-    font-size: var(--font-size-sm);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-  }
-
-  /* Meta row */
-  .race-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-  }
-
-  .late-join-note {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-disabled);
-    margin-top: 0.25rem;
-  }
-
-  .race-organizer {
+  .byline {
     display: flex;
     align-items: center;
     gap: 0.35rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
   }
 
   .organizer-avatar {
@@ -511,15 +583,46 @@
 
   .organizer-link:hover {
     color: var(--color-purple);
-    text-decoration: underline;
+  }
+
+  .ago {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+  }
+
+  .late-join-note {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-disabled);
+    margin-top: 0.25rem;
+  }
+
+  /* Joinable card layout */
+  .join-strip {
+    width: 64px;
+    background: rgba(74, 174, 140, 0.12);
+    border-left: 1px solid rgba(74, 174, 140, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .join-strip-text {
+    color: var(--color-success);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--font-size-base);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   @media (max-width: 640px) {
-    .avatar-row.has-winner {
+    .card-foot.has-winner .crew {
       flex-wrap: wrap;
     }
 
-    .avatar-row.has-winner .winner-info {
+    .card-foot.has-winner .winner-info {
       order: -1;
       width: 100%;
       margin-bottom: 0.35rem;
