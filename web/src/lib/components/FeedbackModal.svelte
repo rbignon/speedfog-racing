@@ -161,6 +161,9 @@
     margin: 0;
     color: var(--color-gold);
     font-size: var(--font-size-lg);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
   .close-btn {
