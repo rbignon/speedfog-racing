@@ -178,7 +178,7 @@
             >{#if visitor.outcome === "backed"}↩{:else if visitor.outcome === "playing" && !data.raceFinished}⏳{:else if visitor.outcome === "abandoned" || (visitor.outcome === "playing" && data.raceFinished)}✗{/if}</span
           >
           <span class="visitor-deaths"
-            >{#if visitor.deaths}💀 {visitor.deaths}{/if}</span
+            >{#if visitor.deaths}&dagger; {visitor.deaths}{/if}</span
           >
           <span class="visitor-weapons">
             {#if visitor.weapons && visitor.weapons.length > 0}
@@ -219,9 +219,9 @@
   .node-popup {
     position: fixed;
     z-index: 100;
-    background: linear-gradient(135deg, #162032 0%, #0f1923 100%);
-    border: 1px solid var(--color-border, #253550);
-    border-radius: 8px;
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
     padding: 12px 16px;
     min-width: 200px;
     max-width: 320px;
@@ -273,19 +273,30 @@
   }
 
   .type-badge {
-    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.07em;
   }
 
   .tier-badge {
-    font-size: 0.75rem;
-    color: var(--color-gold, #c8a44e);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    border: 1px solid rgba(200, 164, 78, 0.4);
+    border-radius: var(--radius-sm);
+    padding: 0 0.3rem;
   }
 
   .layer-badge {
-    font-size: 0.75rem;
-    color: var(--color-text-secondary, #9ca3af);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
     margin-left: auto;
   }
 
@@ -296,10 +307,11 @@
   }
 
   .boss-label {
-    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--color-text-disabled, #6b7280);
+    letter-spacing: 0.07em;
+    color: var(--color-text-secondary);
   }
 
   .popup-section {
@@ -309,10 +321,12 @@
   }
 
   .section-title {
-    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: var(--color-text-disabled, #6b7280);
+    color: var(--color-text-secondary);
     margin-bottom: 4px;
   }
 
@@ -352,9 +366,9 @@
   }
 
   .conn-text {
-    font-size: 0.7rem;
-    color: var(--color-text-disabled, #6b7280);
-    font-style: italic;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--color-text-secondary);
     line-height: 1.3;
   }
 
@@ -414,7 +428,9 @@
   }
 
   .visitor-deaths {
-    color: var(--color-danger, #ef4444);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--color-danger);
   }
 
   .visitor-weapons {
@@ -423,7 +439,9 @@
   }
 
   .visitor-duration {
-    color: var(--color-text-secondary, #9ca3af);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
     justify-self: end;
   }
 
