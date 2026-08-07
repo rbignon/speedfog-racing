@@ -29,6 +29,8 @@ What changed versus charter v1, in one list:
 | Surface elevated | Blue-grey (hover, modals) | `#1C2A3F` |
 | Border           | Subtle blue-grey          | `#253550` |
 
+**Layering rule.** Background is the page ground. Surface is anything that holds content: fixed regions (the hero band, the race-page rails and chat sidebar) as well as plates (cards, panels, tables). Elevated is transient only (hover states, menus, modals, popups). Large regions are never flattened onto the page ground; a hairline border alone is not enough to give a rail its spatial identity.
+
 ### Accents
 
 | Role               | Color            | Hex       |
