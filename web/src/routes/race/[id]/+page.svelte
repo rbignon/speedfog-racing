@@ -1640,8 +1640,10 @@
   .sidebar-section h2 {
     color: var(--color-gold);
     margin: 0 0 1rem 0;
-    font-size: var(--font-size-lg);
+    font-size: 1.05rem;
     font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
   }
 
   .leaderboard-header {

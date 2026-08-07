@@ -635,7 +635,7 @@
           {#if initialRace.deathless}
             <span
               class="deathless-badge"
-              title="Your first death eliminates you">💀 Deathless</span
+              title="Your first death eliminates you">Deathless</span
             >
           {/if}
           <span class="daily-pill" class:ended={dailyEnded}>
@@ -936,8 +936,10 @@
 
   .leaderboard-header h2 {
     color: var(--color-gold);
-    font-size: var(--font-size-lg);
+    font-size: 1.05rem;
     font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
     margin: 0;
   }
 
@@ -954,8 +956,10 @@
     padding: 0.15rem 0.4rem;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    font-family: inherit;
-    font-size: var(--font-size-xs, 11px);
+    font-family: var(--font-mono);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    font-size: 0.65rem;
   }
 
   .lb-tab.active {
@@ -1093,19 +1097,23 @@
 
   .daily-title .kicker {
     display: block;
-    color: var(--color-gold);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
+    font-family: var(--font-mono);
+    color: var(--color-text-secondary);
+    font-size: 0.7rem;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     margin-bottom: 0.25rem;
   }
 
   .daily-title h1 {
     margin: 0;
     color: var(--color-text);
-    font-size: var(--font-size-2xl);
-    font-weight: 600;
+    font-size: 1.9rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    line-height: 1.12;
   }
 
   .daily-meta-right {
@@ -1126,7 +1134,10 @@
   }
 
   .deathless-badge {
-    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
     border: 1px solid var(--color-danger);
     color: var(--color-danger);
     border-radius: var(--radius-sm);
@@ -1138,7 +1149,11 @@
     border: 1px solid var(--color-success);
     color: var(--color-success);
     border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
 
   .daily-pill.ended {
