@@ -367,6 +367,61 @@ h4 {
   box-shadow: none;
 }
 
+/* Forms: charter defaults at element level. :where() keeps specificity at
+ * (0,0,1) so any component's scoped styles keep winning property by
+ * property. */
+input:where(
+  :not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):not(
+    [type="file"],
+    [type="submit"],
+    [type="button"]
+  )
+),
+select,
+textarea {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  padding: 0.45rem 0.65rem;
+}
+
+input:where(
+    :not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):not(
+      [type="file"],
+      [type="submit"],
+      [type="button"]
+    )
+  ):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-purple);
+  box-shadow: 0 0 0 1px var(--color-purple);
+}
+
+::placeholder {
+  color: var(--color-text-disabled);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--color-purple);
+}
+
+/* Tables: mono caps micro-label headers (cells stay page-owned) */
+th {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  text-align: left;
+}
+
 /* Signals: status as a small mark + mono caps label (replaces .badge pills;
  * hollow ring = not ridden yet, dot = moving, square = terminal). */
 .signal {
