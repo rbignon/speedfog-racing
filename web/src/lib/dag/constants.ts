@@ -76,31 +76,36 @@ export const LABEL_OFFSET_Y = 18;
 // Player color palette (for future live tracking steps)
 // =============================================================================
 
+// Retuned toward the charter's navy/brass temperature (2026-08-07): same
+// tier structure and hue slots as the original Tailwind-400 set, slightly
+// desaturated and warmed; lemon pushed away from brass, violet away from
+// fog, red away from ember. Mutual contrast validated on bundled 5px
+// parallel traces and 3px rail borders.
 export const PLAYER_COLORS = [
   // Tier 1: anchor hues, maximum mutual contrast
-  "#38BDF8", // 0  sky blue
-  "#FB7185", // 1  rose
-  "#4ADE80", // 2  green
-  "#FB923C", // 3  orange
-  "#A78BFA", // 4  violet
-  "#FACC15", // 5  yellow
+  "#45AEE0", // 0  sky blue
+  "#E9718C", // 1  rose
+  "#55CE82", // 2  green
+  "#EE9550", // 3  orange
+  "#9184E8", // 4  violet
+  "#EFD35D", // 5  lemon
   // Tier 2: secondary hues, fill the gaps
-  "#2DD4BF", // 6  teal
-  "#E879F9", // 7  fuchsia
-  "#F87171", // 8  red
-  "#A3E635", // 9  lime
+  "#3EC4AE", // 6  teal
+  "#D876E3", // 7  fuchsia
+  "#D95C63", // 8  crimson
+  "#A8D84C", // 9  lime
   // Tier 3: tertiary hues, intermediate positions
-  "#818CF8", // 10 indigo
-  "#34D399", // 11 emerald
-  "#FBBF24", // 12 amber
-  "#F472B6", // 13 pink
-  "#22D3EE", // 14 cyan
+  "#7B87E8", // 10 indigo
+  "#47C495", // 11 emerald
+  "#E5B24A", // 12 amber
+  "#E070AC", // 13 pink
+  "#3FC3DE", // 14 cyan
   // Tier 4: lighter variants of anchors
-  "#7DD3FC", // 15 light blue
-  "#FCA5A5", // 16 light red
-  "#86EFAC", // 17 light green
-  "#FDBA74", // 18 light orange
-  "#C4B5FD", // 19 lavender
+  "#8CC8EE", // 15 light blue
+  "#EDA2A2", // 16 light red
+  "#92DFAC", // 17 light green
+  "#EFB683", // 18 light orange
+  "#ABA3EC", // 19 lavender
 ];
 
 // =============================================================================
