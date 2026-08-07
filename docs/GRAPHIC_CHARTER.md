@@ -146,17 +146,17 @@ Radius `--radius-md` (3px), display face, caps.
 
 The standard clickable card (races, dailies). Radius `--radius-lg` (2px), surface background, `1px` border, hover border fog. A 2px **route line** rides the card's actual top border (the hairline stays visible at the corners, outside the line's insets; markers straddle the edge, punched with the surface color), so full-height side elements like the Join strip reach the top edge. The line's style encodes status:
 
-- **Open**: dashed verdigris line, hollow ring at both ends (the route is not ridden yet).
+- **Open**: dashed verdigris line, hollow ring at the start and hollow terminal square at the end (the route is not ridden yet).
 - **Running**: solid ember line, small dot traveling along it (CSS animation; respect `prefers-reduced-motion`), hollow terminal.
 - **Finished**: solid steel line, filled square terminal at the right end.
 
 Status text is a **signal**, not a pill: a 7px square/ring in the status color + mono caps label, right-aligned on the title row. Signals reuse the existing status labels: `■ Finished` (steel), `● Live` (ember), `○ Open` (verdigris), and `○ Upcoming` (secondary grey ring) for a closed setup race, whose route line is dashed border-grey with no terminal. A joinable card keeps its verdigris `Join` strip on the right edge; the viewer's role renders as a bordered mono chip. Card anatomy: title row (display caps + signals), meta row (mono: `N players · Mode`), foot row (avatar stack + winner `1st Name` or `No finishers` on the left; `by organizer · time ago` on the right, time in mono).
 
-The old vocabulary (8px radius, colored `border-left`, translucent pill chips) is retired; `.badge-*` classes in `app.css` remain only until every consumer migrates to signals. The route-line vocabulary itself (`.route`, `.route-open/-running/-finished/-setup`, tight variant, `--route-hole` punch-through for elevated hosts) lives in `app.css` and is shared by cards and the timetable; its traveling dot animates a transform only and disappears under `prefers-reduced-motion`.
+The old vocabulary (8px radius, colored `border-left`, translucent pill chips) is retired; `.badge-*` classes in `app.css` remain only until every consumer migrates to signals. The route-line vocabulary (`.route`, `.route-open/-running/-finished/-setup`, `--route-hole` punch-through) lives in `app.css` and serves the route-line cards; the timetable's continuous week line is its own scoped implementation in `DailyWeekGrid`. The traveling dot animates a transform only and disappears under `prefers-reduced-motion`.
 
 ### Daily timetable
 
-The week grid is a timetable: one continuous bordered plate with 7 equal columns (`minmax(150px, 1fr)`, horizontal scroll below that) and hairline column separators. Across the plate's top runs **one continuous week line**: a brass start triangle before the first day, one hollow station centered on each day (punched with its cell's background), and a brass terminal square after the last day, hollow until the whole week is ridden. Each day colors its own segment: verdigris when the viewer finished that seed, steel for a closed day without them, ember with the traveling dot for today in progress (the dot stops and the segment turns verdigris once today's seed is done), dashed border-grey for future or missing days; the hairline column separators crossing the line read as tick marks. Day + player count in mono micro-labels, mode name in display caps (a deathless day carries a mono ember `DEATHLESS` micro-label), winner line in mono (`1st Name · IGT`). The today cell sits on elevated surface (the old gold glow is retired); the toolbar keeps the streak/freeze info (mono, `❄` in text form, no flame) and the weekly winners under a mono brass `1st` tag.
+The week grid is a timetable: one continuous bordered plate with 7 equal columns (`minmax(150px, 1fr)`, horizontal scroll below that) and hairline column separators. Across the plate's top runs **one continuous week line**: a brass start triangle before the first day, one hollow station centered on each day (punched with its cell's background), and a brass terminal square after the last day, hollow until the week is over. Each day colors its own segment: verdigris when the viewer finished that seed, steel for a closed day without them, ember with the traveling dot for today in progress (the dot stops and the segment turns verdigris once today's seed is done), dashed border-grey for future or missing days; the hairline column separators crossing the line read as tick marks. Day + player count in mono micro-labels, mode name in display caps (a deathless day carries a mono ember `DEATHLESS` micro-label), winner line in mono (`1st Name · IGT`). The today cell sits on elevated surface (the old gold glow is retired); the toolbar keeps the streak/freeze info (mono, `❄` in text form, no flame) and the weekly winners under a mono brass `1st` tag.
 
 **The today cell is the button**: the whole cell is one link, with a full-width strip pinned to its bottom edge. Strip hue taxonomy (kept from v1 behavior, hexes retuned):
 
@@ -258,6 +258,7 @@ Authoritative token block in `web/src/app.css` (self-hosted `@font-face` declara
   --color-danger: #dc6a51; /* ember */
   --color-danger-dark: #b5462f;
   --color-info: #7ba2cc; /* steel */
+  --color-frost: #9fd6e8; /* streak freeze: icy, paler than steel */
 
   /* Player line colors are NOT tokens: the 20-hue PLAYER_COLORS palette in
    * web/src/lib/dag/constants.ts is the single source of truth (see the

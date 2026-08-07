@@ -150,7 +150,8 @@
     return "wl-future";
   }
 
-  /* The terminal square fills once the whole week has been ridden. */
+  /* The terminal square fills once the week is over (time-based, not
+   * participation-based: a week of missed days still closes). */
   let weekOver = $derived.by(() => {
     const last = displayedWeek.days[displayedWeek.days.length - 1];
     return last != null && last.state !== "future" && last.state !== "today";
@@ -502,6 +503,16 @@
     height: 6px;
     pointer-events: none;
     overflow: hidden;
+  }
+
+  /* Keep the dot on the line where the first/last cells inset it for the
+   * brass start and terminal markers. */
+  .wl-first .wl-train {
+    left: 14px;
+  }
+
+  .wl-last .wl-train {
+    right: 14px;
   }
 
   .wl-train::before {

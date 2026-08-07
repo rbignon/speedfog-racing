@@ -162,6 +162,11 @@ describe("DailyWeekGrid", () => {
     });
     const todayCell = container.querySelector('[data-cell-state="today"]');
     expect(todayCell).not.toBeNull();
+    // Unfinished today: the traveling dot rides its segment, and the
+    // current week's terminal square stays hollow.
+    expect(todayCell?.querySelector(".wl .wl-train")).not.toBeNull();
+    expect(container.querySelector(".wl-term")).not.toBeNull();
+    expect(container.querySelector(".wl-term.filled")).toBeNull();
   });
 
   it("renders the finished strip score on a past cell", () => {
@@ -684,6 +689,8 @@ describe("DailyWeekGrid", () => {
       container.querySelector('[data-cell-date="2026-04-20"]'),
     ).not.toBeNull();
     expect(container.querySelector('[data-cell-date="2026-04-27"]')).toBeNull();
+    // A fully past week closes its line: the terminal square fills.
+    expect(container.querySelector(".wl-term.filled")).not.toBeNull();
 
     // Parent rebinds with a same-week_start (live patch on the original
     // week): the user must remain on the earlier week they navigated to.
