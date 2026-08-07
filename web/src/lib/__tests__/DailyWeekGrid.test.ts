@@ -164,14 +164,13 @@ describe("DailyWeekGrid", () => {
     expect(todayCell).not.toBeNull();
   });
 
-  it("renders the finished strip on a past cell split into icon + score", () => {
+  it("renders the finished strip score on a past cell", () => {
     const { container } = render(DailyWeekGrid, {
       props: { week: mockWeek, variant: "home" },
     });
     const pastCell = container.querySelector('[data-cell-state="past"]');
     const strip = pastCell?.querySelector(".strip");
     expect(strip?.classList.contains("strip-finished")).toBe(true);
-    expect(strip?.querySelector(".strip-icon")?.textContent ?? "").toBe("✓");
     expect(strip?.querySelector(".strip-score")?.textContent ?? "").toMatch(
       /2\/3/,
     );
@@ -370,7 +369,6 @@ describe("DailyWeekGrid", () => {
     const todayCell = container.querySelector('[data-cell-state="today"]');
     const strip = todayCell?.querySelector(".strip");
     expect(strip?.classList.contains("strip-finished")).toBe(true);
-    expect(strip?.querySelector(".strip-icon")?.textContent ?? "").toBe("✓");
     expect(strip?.querySelector(".strip-score")?.textContent ?? "").toMatch(
       /4\/17/,
     );
@@ -738,7 +736,7 @@ describe("cellStrip", () => {
     const day = makeDay({ freeze_protected: true });
     expect(cellStrip(day, null)).toEqual({
       kind: "label",
-      text: "❄️ Freeze",
+      text: "❄ Freeze",
       variant: "freeze",
     });
   });
@@ -839,7 +837,7 @@ describe("DailyWeekGrid: winners block", () => {
     expect(container.querySelector(".grid-winners")).toBeNull();
   });
 
-  it("renders the trophy and Alice for one winner", () => {
+  it("renders the 1st tag and Alice for one winner", () => {
     const { container } = render(DailyWeekGrid, {
       props: {
         week: fixtureWithWinners([makeWinner(0, "Alice")]),
@@ -847,7 +845,7 @@ describe("DailyWeekGrid: winners block", () => {
       },
     });
     const block = container.querySelector(".grid-winners");
-    expect(block?.textContent ?? "").toMatch(/🏆/);
+    expect(block?.textContent ?? "").toMatch(/1st/);
     expect(block?.textContent ?? "").toMatch(/Alice/);
   });
 

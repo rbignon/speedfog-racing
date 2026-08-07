@@ -161,11 +161,10 @@
   <div class="grid-toolbar">
     <span class="streak-info">
       {#if displayedWeek.my_streak && displayedWeek.my_streak.current > 0}
-        <span aria-hidden="true">🔥</span>
         <span>{displayedWeek.my_streak.current}-day streak</span>
         {#if displayedWeek.my_streak.freeze_count > 0}
           <span class="sep" aria-hidden="true">·</span>
-          <span aria-hidden="true">❄️</span>
+          <span aria-hidden="true">❄</span>
           <span>
             {displayedWeek.my_streak.freeze_count}
             freeze{displayedWeek.my_streak.freeze_count !== 1 ? "s" : ""}
@@ -176,7 +175,7 @@
     <div class="grid-right">
       {#if displayedWeek.winners && displayedWeek.winners.length > 0}
         <span class="grid-winners">
-          <span class="trophy" aria-hidden="true">🏆</span>
+          <span class="place">1st</span>
           {#if displayedWeek.winners.length === 1}
             <UserLink user={displayedWeek.winners[0].user} showBadge />
           {:else if displayedWeek.winners.length === 2}
@@ -228,10 +227,33 @@
         data-cell-state={day.state}
         data-cell-date={day.date}
       >
+        {#if day.state === "today"}
+          <div class="route route-tight route-running" aria-hidden="true">
+            <span class="line"></span><span class="m-start"></span><span
+              class="m-end"
+            ></span><span class="m-train"></span>
+          </div>
+        {:else if day.state === "past"}
+          <div
+            class="route route-tight route-finished"
+            class:route-hollow={!day.podium.some((e) => e.placement === 1)}
+            aria-hidden="true"
+          >
+            <span class="line"></span><span class="m-start"></span><span
+              class="m-end"
+            ></span>
+          </div>
+        {:else if day.state === "future"}
+          <div class="route route-tight route-setup" aria-hidden="true">
+            <span class="line"></span><span class="m-start"></span>
+          </div>
+        {:else}
+          <div class="route route-tight" aria-hidden="true"></div>
+        {/if}
         <div class="header">
           <span class="weekday">{WEEKDAY_LABELS[day.weekday]}</span>
           {#if day.state === "today"}
-            <span class="badge today">Today</span>
+            <span class="today-label">Today</span>
           {:else if day.state === "past" && day.starters_count > 0}
             <span class="meta">
               {day.starters_count}
@@ -246,11 +268,8 @@
           <span class="pool">
             {day.pool_display_name ?? "TBD"}
             {#if day.deathless}
-              <span
-                class="deathless"
-                title="Deathless"
-                role="img"
-                aria-label="Deathless">💀</span
+              <span class="deathless" title="Dying once eliminates you"
+                >Deathless</span
               >
             {/if}
           </span>
@@ -259,11 +278,8 @@
           <span class="pool">
             {day.pool_display_name ?? "TBD"}
             {#if day.deathless}
-              <span
-                class="deathless"
-                title="Deathless"
-                role="img"
-                aria-label="Deathless">💀</span
+              <span class="deathless" title="Dying once eliminates you"
+                >Deathless</span
               >
             {/if}
           </span>
@@ -282,7 +298,7 @@
                 day.podium.find((e) => e.placement === 1) ?? null}
               {#if winner}
                 <div class="winner">
-                  <span class="medal" aria-hidden="true">🥇</span>
+                  <span class="place">1st</span>
                   <span class="name"
                     >{winner.twitch_display_name ??
                       winner.twitch_username}</span
@@ -303,16 +319,12 @@
             <span class="strip strip-{strip.variant}">{strip.text}</span>
           {:else if strip?.kind === "finished"}
             <span class="strip strip-finished">
-              <span class="strip-icon" aria-hidden="true">✓</span>
               <span class="strip-score">{strip.score}</span>
             </span>
           {:else if strip?.kind === "dnf"}
-            <span class="strip strip-finished">
-              <span class="strip-icon" aria-hidden="true">✓</span>
-              <span class="strip-score"
-                >{strip.igt ? `DNF · ${strip.igt}` : "DNF"}</span
-              >
-            </span>
+            <span class="strip strip-dnf"
+              >{strip.igt ? `DNF · ${strip.igt}` : "DNF"}</span
+            >
           {:else}
             <span class="strip strip-placeholder" aria-hidden="true"
               >&nbsp;</span
@@ -333,71 +345,59 @@
     margin-bottom: 0;
   }
 
+  /* One continuous timetable: hairline column separators inside a single
+   * bordered plate, horizontal scroll below 7 * 150px. */
   .grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(150px, 1fr));
-    gap: 0.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
     overflow-x: auto;
-    /* overflow-x: auto computes overflow-y to auto too, which would
-       clip the today cell's outer gold glow at the top/bottom edges.
-       Pad so the glow has breathing room before clipping. */
-    padding: 0.25rem 0;
   }
 
   .cell {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    padding: 0.75rem 0.875rem;
+    padding: 0 0.875rem 0.75rem;
     min-height: 150px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    min-width: 0;
+    border-left: 1px solid var(--color-border);
     text-decoration: none;
     color: inherit;
-    transition: border-color var(--transition);
-  }
-  a.cell:hover {
-    border-color: var(--color-purple);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition: background var(--transition);
   }
 
-  .cell.today {
-    box-shadow: 0 0 20px rgba(200, 164, 78, 0.18);
+  .cell:first-child {
+    border-left: none;
   }
-  a.cell.today:hover {
-    box-shadow:
-      0 0 20px rgba(200, 164, 78, 0.18),
-      0 2px 8px rgba(0, 0, 0, 0.2);
+
+  .cell > :global(.route) {
+    flex: none;
+    margin: 0 -0.35rem 0.1rem;
+  }
+
+  a.cell:hover,
+  .cell.today,
+  .cell.selected {
+    background: var(--color-surface-elevated);
+  }
+
+  a.cell:hover > :global(.route),
+  .cell.today > :global(.route),
+  .cell.selected > :global(.route) {
+    --route-hole: var(--color-surface-elevated);
   }
 
   .cell.future,
   .cell.missing-past {
-    border-style: dashed;
     opacity: 0.55;
     cursor: not-allowed;
   }
 
   .cell.selected {
-    background: var(--color-surface-elevated);
     box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45);
-  }
-  .cell.today.selected {
-    box-shadow:
-      inset 0 2px 6px rgba(0, 0, 0, 0.45),
-      0 0 20px rgba(200, 164, 78, 0.18);
-  }
-  a.cell.selected:hover {
-    border-color: var(--color-purple);
-    box-shadow:
-      inset 0 2px 6px rgba(0, 0, 0, 0.45),
-      0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-  a.cell.today.selected:hover {
-    box-shadow:
-      inset 0 2px 6px rgba(0, 0, 0, 0.45),
-      0 0 20px rgba(200, 164, 78, 0.18),
-      0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .header {
@@ -405,32 +405,48 @@
     justify-content: space-between;
     align-items: baseline;
   }
-  .weekday {
-    font-size: var(--font-size-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 600;
-    color: var(--color-text-secondary);
-  }
+
+  .weekday,
   .meta {
-    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
     color: var(--color-text-secondary);
   }
-  .badge.today {
-    padding: 0;
-    font-size: var(--font-size-xs);
+
+  .today-label {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
     color: var(--color-gold);
-    font-weight: 600;
   }
 
   .pool {
+    min-width: 0;
+    font-family: var(--font-display);
     font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
     color: var(--color-text);
-    font-size: var(--font-size-sm);
+  }
+
+  .cell.future .pool {
+    color: var(--color-text-secondary);
   }
 
   .pool .deathless {
-    font-size: var(--font-size-xs);
+    display: inline-block;
+    margin-left: 0.3rem;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-danger);
     cursor: default;
   }
 
@@ -441,77 +457,104 @@
     justify-content: center;
     min-height: 0;
   }
+
   .winner {
     display: flex;
     gap: 0.35rem;
     align-items: baseline;
+    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
   }
+
+  .winner .place {
+    flex: none;
+    font-size: 0.7rem;
+    color: var(--color-gold);
+  }
+
   .winner .name {
     color: var(--color-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
   .winner .igt {
     margin-left: auto;
     color: var(--color-text-secondary);
-    font-variant-numeric: tabular-nums;
   }
+
+  /* Strips: the cell's bottom edge carries my state (hue taxonomy from
+   * cellStrip; solid verdigris = the action, everything else quiet). */
   .strip {
-    margin-top: auto;
-    padding: 0.4rem 0.5rem;
+    margin: auto -0.875rem -0.75rem;
+    padding: 0.34rem 0.5rem 0.42rem;
     text-align: center;
-    font-weight: 700;
-    font-size: var(--font-size-sm);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.09em;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    border-radius: 0 0 calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px);
-    margin-left: -0.875rem;
-    margin-right: -0.875rem;
-    margin-bottom: -0.75rem;
   }
+
   .strip-play-now {
-    background: rgba(16, 185, 129, 0.12);
-    color: var(--color-success);
+    background: var(--color-success);
+    color: #0d1a15;
   }
-  .strip-finished {
-    background: rgba(107, 114, 128, 0.18);
-    color: var(--color-success);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-left: 0.875rem;
-    padding-right: 0.875rem;
-    letter-spacing: 0.04em;
-    font-variant-numeric: tabular-nums;
+
+  a.cell:hover .strip-play-now {
+    background: #5fc2a0;
   }
+
   .strip-in-progress {
-    background: rgba(245, 158, 11, 0.14);
-    color: #f59e0b;
+    background: rgba(200, 164, 78, 0.16);
+    color: var(--color-gold);
   }
+
+  .strip-freeze {
+    background: rgba(123, 162, 204, 0.16);
+    color: var(--color-info);
+  }
+
   .strip-abandoned {
-    background: rgba(107, 114, 128, 0.18);
+    background: rgba(135, 145, 160, 0.14);
     color: var(--color-text-disabled);
   }
-  .strip-freeze {
-    background: rgba(59, 130, 246, 0.18);
-    color: #3b82f6;
+
+  .strip-finished,
+  .strip-dnf {
+    background: rgba(135, 145, 160, 0.14);
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
   }
+
+  .strip-finished {
+    color: var(--color-success);
+  }
+
+  .strip-dnf {
+    color: var(--color-text-secondary);
+  }
+
   .strip-placeholder {
     visibility: hidden;
   }
+
   .countdown {
     margin-top: auto;
-    color: var(--color-text);
-    font-variant-numeric: tabular-nums;
-    font-size: var(--font-size-sm);
+    padding-bottom: 0.2rem;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
     text-align: center;
   }
+
   .muted {
-    color: var(--color-text-disabled);
-    font-style: italic;
+    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
   }
 
   @media (max-width: 640px) {
@@ -528,45 +571,55 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.35rem;
   }
+
   .streak-info {
     display: inline-flex;
     gap: 0.25rem;
     align-items: baseline;
-    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
     color: var(--color-text-secondary);
-    font-variant-numeric: tabular-nums;
   }
+
   .streak-info .sep {
     margin: 0 0.25rem;
     color: var(--color-text-disabled);
   }
+
   .grid-right {
     display: inline-flex;
     align-items: center;
     gap: 0.7rem;
   }
+
   .grid-winners {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    color: var(--color-gold);
+    gap: 0.35rem;
+    color: var(--color-text);
     font-size: var(--font-size-sm);
     font-weight: 500;
-    font-variant-numeric: tabular-nums;
   }
-  .grid-winners .trophy {
-    font-size: inherit;
+
+  .grid-winners .place {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--color-gold);
   }
+
   .grid-winners .and,
   .grid-winners .extra {
     color: var(--color-text-secondary);
   }
+
   .week-nav {
     display: flex;
     gap: 0.25rem;
   }
+
   .nav-btn {
     appearance: none;
     background: transparent;
@@ -586,10 +639,12 @@
       color var(--transition),
       border-color var(--transition);
   }
+
   .nav-btn:hover:not(:disabled) {
     color: var(--color-purple);
     border-color: var(--color-purple);
   }
+
   .nav-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;

@@ -437,6 +437,156 @@ h4 {
   white-space: nowrap;
 }
 
+/* Route lines: a card or timetable cell's top edge encodes status.
+ * Same vocabulary as signals: dashed = not ridden, dot = moving,
+ * filled square = terminal reached. Hollow markers punch through with
+ * --route-hole (defaults to surface; set it when the host is elevated). */
+.route {
+  position: relative;
+  height: 14px;
+}
+
+.route .line {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 6px;
+  border-top: 2px solid var(--color-text-disabled);
+}
+
+.route .m-start {
+  position: absolute;
+  left: 8px;
+  top: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--color-text-disabled);
+  background: var(--route-hole, var(--color-surface));
+}
+
+.route .m-end {
+  position: absolute;
+  right: 8px;
+  top: 3px;
+  width: 8px;
+  height: 8px;
+}
+
+/* Tight variant for narrow hosts (timetable cells) */
+.route-tight .line {
+  left: 6px;
+  right: 6px;
+}
+
+.route-tight .m-start {
+  left: 0;
+}
+
+.route-tight .m-end {
+  right: 0;
+}
+
+.route-setup .line {
+  border-top-style: dashed;
+  border-top-color: var(--color-border);
+}
+
+.route-open .line {
+  border-top-style: dashed;
+  border-top-color: var(--color-success);
+}
+
+.route-open .m-start {
+  border-color: var(--color-success);
+}
+
+.route-open .m-end,
+.route-running .m-end,
+.route-hollow .m-end {
+  top: 1px;
+  width: 10px;
+  height: 10px;
+  background: var(--route-hole, var(--color-surface));
+}
+
+.route-open .m-end {
+  border: 2px solid var(--color-success);
+}
+
+.route-running .line {
+  border-top-color: var(--color-danger);
+}
+
+.route-running .m-start {
+  border-color: var(--color-danger);
+}
+
+.route-running .m-end {
+  border: 2px solid var(--color-danger);
+}
+
+.route-finished .line {
+  border-top-color: var(--color-info);
+}
+
+.route-finished .m-start {
+  border-color: var(--color-info);
+}
+
+.route-finished .m-end {
+  background: var(--color-info);
+}
+
+.route-finished.route-hollow .m-end {
+  background: var(--route-hole, var(--color-surface));
+  border: 2px solid var(--color-info);
+}
+
+/* Traveling dot: a full-track element whose painted dot rides on a
+ * compositor-only transform (never animate left/top in a list). */
+.route .m-train {
+  position: absolute;
+  left: 14px;
+  right: 20px;
+  top: 4px;
+  height: 6px;
+  pointer-events: none;
+}
+
+.route-tight .m-train {
+  left: 6px;
+  right: 12px;
+}
+
+.route .m-train::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle 3px at 3px 3px,
+    var(--color-danger) 98%,
+    transparent
+  );
+  background-repeat: no-repeat;
+  animation: route-ride 3.2s linear infinite;
+}
+
+@keyframes route-ride {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(100% - 6px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route .m-train {
+    display: none;
+  }
+}
+
 /* Badges */
 .badge {
   padding: 0.2rem 0.6rem;

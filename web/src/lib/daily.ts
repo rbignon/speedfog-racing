@@ -185,7 +185,7 @@ export function cellStrip(
   currentStreak: number = 0,
 ): CellStrip {
   if (day.freeze_protected) {
-    return { kind: "label", text: "❄️ Freeze", variant: "freeze" };
+    return { kind: "label", text: "❄ Freeze", variant: "freeze" };
   }
   if (day.state === "today") {
     const r = day.my_result;
