@@ -598,6 +598,20 @@ th {
   border: 2px solid var(--color-info);
 }
 
+/* A route the viewer has ridden to the terminal (their finished daily):
+ * accomplishment reads in verdigris. */
+.route-done .line {
+  border-top-color: var(--color-success);
+}
+
+.route-done .m-start {
+  border-color: var(--color-success);
+}
+
+.route-done .m-end {
+  background: var(--color-success);
+}
+
 /* Traveling dot: a full-track element whose painted dot rides on a
  * compositor-only transform (never animate left/top in a list). */
 .route .m-train {

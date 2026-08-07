@@ -178,6 +178,42 @@ describe("DailyWeekGrid", () => {
     expect(pastCell?.querySelector(".me")).toBeNull();
   });
 
+  it("renders the viewer's finished days as verdigris done routes", () => {
+    const week: DailyWeekResponse = {
+      ...mockWeek,
+      days: mockWeek.days.map((d) =>
+        d.state === "today"
+          ? {
+              ...d,
+              my_result: {
+                status: "finished",
+                placement: 4,
+                total_starters: 17,
+                igt_ms: 2_468_000,
+                death_count: 0,
+                qualifies: true,
+              },
+            }
+          : d,
+      ),
+    };
+    const { container } = render(DailyWeekGrid, {
+      props: { week, variant: "home" },
+    });
+    // Past cell: mockWeek's first past day carries a finished my_result.
+    const pastRoute = container.querySelector(
+      '[data-cell-state="past"] .route',
+    );
+    expect(pastRoute?.classList.contains("route-done")).toBe(true);
+    expect(pastRoute?.classList.contains("route-hollow")).toBe(false);
+    // Today finished: done route, and the traveling dot stops.
+    const todayRoute = container.querySelector(
+      '[data-cell-state="today"] .route',
+    );
+    expect(todayRoute?.classList.contains("route-done")).toBe(true);
+    expect(todayRoute?.querySelector(".m-train")).toBeNull();
+  });
+
   it("renders the abandoned strip on a past abandoned cell", () => {
     const week: DailyWeekResponse = {
       ...mockWeek,

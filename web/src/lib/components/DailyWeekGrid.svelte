@@ -136,6 +136,11 @@
     return null;
   }
 
+  /** The viewer finished this day's seed: their route reads in verdigris. */
+  function myDone(day: DailyWeekDay): boolean {
+    return day.my_result?.status === "finished";
+  }
+
   let scrollContainer: HTMLDivElement | undefined = $state();
   onMount(() => {
     const el = scrollContainer;
@@ -228,15 +233,23 @@
         data-cell-date={day.date}
       >
         {#if day.state === "today"}
-          <div class="route route-tight route-running" aria-hidden="true">
+          <div
+            class="route route-tight {myDone(day)
+              ? 'route-done'
+              : 'route-running'}"
+            aria-hidden="true"
+          >
             <span class="line"></span><span class="m-start"></span><span
               class="m-end"
-            ></span><span class="m-train"></span>
+            ></span>{#if !myDone(day)}<span class="m-train"></span>{/if}
           </div>
         {:else if day.state === "past"}
           <div
-            class="route route-tight route-finished"
-            class:route-hollow={!day.podium.some((e) => e.placement === 1)}
+            class="route route-tight {myDone(day)
+              ? 'route-done'
+              : 'route-finished'}"
+            class:route-hollow={!myDone(day) &&
+              !day.podium.some((e) => e.placement === 1)}
             aria-hidden="true"
           >
             <span class="line"></span><span class="m-start"></span><span
@@ -319,6 +332,7 @@
             <span class="strip strip-{strip.variant}">{strip.text}</span>
           {:else if strip?.kind === "finished"}
             <span class="strip strip-finished">
+              <span class="strip-icon" aria-hidden="true">✓</span>
               <span class="strip-score">{strip.score}</span>
             </span>
           {:else if strip?.kind === "dnf"}
@@ -531,7 +545,15 @@
   }
 
   .strip-finished {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.4rem;
     color: var(--color-success);
+  }
+
+  .strip-finished .strip-icon {
+    font-weight: 600;
   }
 
   .strip-dnf {
