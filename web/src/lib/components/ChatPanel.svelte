@@ -64,7 +64,7 @@
       color: "#C8A44E",
       label: "Boss Slayer",
     },
-    resilient: { icon: "\uD83D\uDCAA", color: "#C8A44E", label: "Resilient" },
+    resilient: { icon: "\uD83D\uDCAA", color: "#7BA2CC", label: "Resilient" },
     explorer: { icon: "\uD83C\uDF10", color: "#7BA2CC", label: "Explorer" },
     pathfinder: { icon: "\uD83E\uDDED", color: "#A99BC9", label: "Pathfinder" },
     rage_quitter: {

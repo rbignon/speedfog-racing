@@ -607,6 +607,9 @@ th {
   top: 4px;
   height: 6px;
   pointer-events: none;
+  /* The transformed ::before spans the whole track, so without clipping it
+   * would extend the scrollable overflow past the host's right edge. */
+  overflow: hidden;
 }
 
 .route-tight .m-train {

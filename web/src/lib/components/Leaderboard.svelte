@@ -303,7 +303,7 @@
     color: transparent;
     cursor: pointer;
     opacity: 0.4;
-    /* Tighten the gap to the rank badge (the row gap is 0.75rem). */
+    /* Tighten the gap to the rank column (the row gap is 0.6rem). */
     margin-right: -0.25rem;
     transition:
       opacity var(--transition),
@@ -451,9 +451,9 @@
 
   /* Fixed-width time column so the gap that follows lands in the same place on
      every row, independent of time length (M:SS vs H:MM:SS) or death count.
-     Sized to fit a single-digit-hour H:MM:SS at --font-size-sm; a 10h+ run
-     would grow past it and nudge only that row's gap, which is implausible
-     for this domain. */
+     Sized to fit a single-digit-hour H:MM:SS at the mono stats size; a 10h+
+     run would grow past it and nudge only that row's gap, which is
+     implausible for this domain. */
   .time {
     flex: 0 0 auto;
     min-width: 3.4rem;

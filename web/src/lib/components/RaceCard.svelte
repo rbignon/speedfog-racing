@@ -471,7 +471,7 @@
 
   .late-join-note {
     font-size: var(--font-size-xs);
-    color: var(--color-text-disabled);
+    color: var(--color-text-secondary);
     margin-top: 0.25rem;
   }
 

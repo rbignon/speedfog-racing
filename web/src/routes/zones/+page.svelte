@@ -208,11 +208,11 @@
       aria-label="Search zones"
       bind:value={search}
     />
-    <div class="chip-row">
+    <div class="filter-chip-row">
       <button
         type="button"
-        class="chip"
-        class:chip-active={filterLegacy}
+        class="filter-chip"
+        class:filter-chip-active={filterLegacy}
         aria-pressed={filterLegacy}
         onclick={() => (filterLegacy = !filterLegacy)}
       >
@@ -220,8 +220,8 @@
       </button>
       <button
         type="button"
-        class="chip"
-        class:chip-active={filterMinor}
+        class="filter-chip"
+        class:filter-chip-active={filterMinor}
         aria-pressed={filterMinor}
         onclick={() => (filterMinor = !filterMinor)}
       >
@@ -229,8 +229,8 @@
       </button>
       <button
         type="button"
-        class="chip"
-        class:chip-active={filterHasSkips}
+        class="filter-chip"
+        class:filter-chip-active={filterHasSkips}
         aria-pressed={filterHasSkips}
         onclick={() => (filterHasSkips = !filterHasSkips)}
       >
@@ -434,13 +434,13 @@
     border-color: var(--color-purple);
   }
 
-  .chip-row {
+  .filter-chip-row {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
 
-  .chip {
+  .filter-chip {
     background: transparent;
     border: 1px solid var(--color-border);
     color: var(--color-text-secondary);
@@ -453,18 +453,18 @@
     transition: all var(--transition);
   }
 
-  .chip:hover {
+  .filter-chip:hover {
     border-color: var(--color-purple);
     color: var(--color-purple-hover);
   }
 
-  .chip-active {
+  .filter-chip-active {
     background: rgba(200, 164, 78, 0.15);
     border-color: var(--color-gold);
     color: var(--color-gold);
   }
 
-  .chip-active:hover {
+  .filter-chip-active:hover {
     border-color: var(--color-gold);
     color: var(--color-gold);
   }
