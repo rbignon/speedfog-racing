@@ -152,7 +152,7 @@
     font-size: 1.35rem;
     font-weight: 700;
     color: var(--color-text);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     letter-spacing: -0.01em;
   }
 
@@ -186,12 +186,12 @@
   .pill-runs {
     color: var(--color-text-secondary);
     font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .pill-best {
     color: var(--color-gold);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     font-weight: 600;
   }
 

@@ -320,7 +320,7 @@
   .stat-item .value {
     font-weight: 600;
     font-size: var(--font-size-lg);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .section h3 {

@@ -737,9 +737,8 @@
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     color: var(--color-text);
-    font-family: var(--font-family);
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    font-variant-numeric: tabular-nums;
     padding: 0.35rem 0;
     cursor: pointer;
     transition:

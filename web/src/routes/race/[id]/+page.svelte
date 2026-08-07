@@ -1807,11 +1807,10 @@
   }
 
   .elapsed-clock {
+    font-family: var(--font-mono);
     font-size: var(--font-size-lg);
     font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--color-warning, #f59e0b);
-    font-family: var(--font-mono);
+    color: var(--color-warning);
   }
 
   .organizer {
@@ -1864,7 +1863,7 @@
 
   .value {
     font-weight: 500;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .seed-badge {
@@ -2128,7 +2127,7 @@
       0 0 20px rgba(245, 158, 11, 0.5),
       0 2px 4px rgba(0, 0, 0, 0.8);
     animation: countdown-pulse 1s ease-out infinite;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   @keyframes countdown-pulse {
@@ -2260,7 +2259,7 @@
     color: var(--color-warning, #c8a44e);
     font-size: var(--font-size-xs);
     font-weight: 500;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     white-space: nowrap;
   }
 

@@ -171,7 +171,7 @@
     font-size: var(--font-size-xs);
     font-weight: 600;
     color: var(--color-text-secondary);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .card-link {
@@ -191,7 +191,7 @@
     font-size: var(--font-size-2xl);
     font-weight: 700;
     line-height: 1;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     color: var(--accent);
     letter-spacing: -0.02em;
   }

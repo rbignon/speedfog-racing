@@ -253,7 +253,7 @@
     color: var(--color-text-secondary);
     padding: 0.1rem 0.5rem;
     border-radius: var(--radius-sm);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .trait-players {
@@ -272,7 +272,7 @@
 
   .trait-rank {
     font-weight: 700;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
   }
 
@@ -316,7 +316,7 @@
 
   .trait-score {
     text-align: right;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
   }

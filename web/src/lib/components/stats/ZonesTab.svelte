@@ -331,7 +331,7 @@
 
   .bar-value {
     font-size: var(--font-size-sm);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     color: var(--color-text-secondary);
     flex-shrink: 0;
   }

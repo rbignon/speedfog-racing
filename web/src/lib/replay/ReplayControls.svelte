@@ -151,7 +151,6 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
-    font-variant-numeric: tabular-nums;
     min-width: 3rem;
     text-align: center;
     flex-shrink: 0;

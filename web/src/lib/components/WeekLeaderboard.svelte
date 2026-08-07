@@ -112,7 +112,7 @@
 
   .rank {
     color: var(--color-text-secondary);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     font-weight: 600;
     text-align: right;
     padding-right: 0.25rem;
@@ -146,13 +146,13 @@
   .sub-left {
     color: var(--color-text-secondary);
     font-size: var(--font-size-xs, 11px);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     margin-top: 1px;
   }
 
   .right {
     text-align: right;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .points {

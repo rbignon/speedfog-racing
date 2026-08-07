@@ -1876,7 +1876,7 @@
 
   .num-cell {
     text-align: center;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .date-cell {
@@ -2160,7 +2160,7 @@
   }
 
   .mono {
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .load-more {
@@ -2264,7 +2264,7 @@
     font-size: var(--font-size-lg);
     font-weight: 600;
     color: var(--color-text);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .feedback-filters {
@@ -2285,7 +2285,7 @@
   .rating-cell {
     color: var(--color-gold);
     white-space: nowrap;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .comment-cell {
@@ -2339,7 +2339,7 @@
     font-weight: 700;
     color: var(--color-text);
     margin: 0.25rem 0;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .kpi-gold {
@@ -2405,7 +2405,7 @@
   .analytics-table th.num,
   .analytics-table td.num {
     text-align: right;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .analytics-table .rank-col {
@@ -2438,7 +2438,7 @@
   }
 
   .analytics-table .runs-value {
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     flex-shrink: 0;
   }
 

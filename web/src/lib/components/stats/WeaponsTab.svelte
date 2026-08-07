@@ -213,7 +213,7 @@
 
   .num {
     text-align: right;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .top-player-info {

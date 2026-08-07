@@ -470,7 +470,7 @@
 
   .gap {
     flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .gap.ahead {
@@ -484,7 +484,7 @@
   .finished-time {
     color: var(--color-success);
     font-weight: 500;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .status-text {

@@ -93,6 +93,6 @@
 
   .value {
     font-weight: 500;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 </style>

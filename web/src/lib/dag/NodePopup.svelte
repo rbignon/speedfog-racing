@@ -399,7 +399,7 @@
     gap: 2px 6px;
     align-items: center;
     font-size: 0.8rem;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .visitor-name {

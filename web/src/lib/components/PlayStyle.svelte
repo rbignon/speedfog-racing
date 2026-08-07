@@ -216,7 +216,7 @@
   .trait-score {
     font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     text-align: right;
   }
 

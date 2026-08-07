@@ -186,7 +186,7 @@
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
   .layer {

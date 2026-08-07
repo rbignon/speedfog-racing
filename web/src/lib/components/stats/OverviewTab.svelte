@@ -321,7 +321,7 @@
     font-size: var(--font-size-2xl);
     font-weight: 700;
     line-height: 1;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
     color: var(--accent);
     letter-spacing: -0.02em;
   }
