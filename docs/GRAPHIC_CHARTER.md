@@ -40,7 +40,7 @@ What changed versus charter v1, in one list:
 | Fog (secondary)    | Misty heliotrope | `#A99BC9` |
 | Fog (hover)        | Light heliotrope | `#C0B4DC` |
 
-**Brass usage (exhaustive list):** logo glyph and the "Racing" half of the wordmark, section header device + title, primary CTA button, start/terminal markers and today's route line accents, 1st-place markers (`1st` labels, finish board place tags), the amber "running" daily strip. Nowhere else.
+**Brass usage (exhaustive list):** logo glyph and the "Racing" half of the wordmark, section header device + title, primary CTA button, the hero underline's and the DAG's start/terminal markers, the week line's playing-state segment and dot, 1st-place markers (`1st` labels, finish board place tags), the amber "running" daily strip. Nowhere else. (The week line's own edge markers and the finish board's terminal squares are state- or player-colored, not brass.)
 
 **Fog usage:** interactive hover states (card borders, secondary buttons), links, focus rings, boss diamonds on the DAG, radio/checkbox checked states (outside player-colored contexts).
 

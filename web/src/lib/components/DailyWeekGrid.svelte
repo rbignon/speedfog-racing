@@ -408,7 +408,8 @@
   /* Week line: one continuous route across the plate's top edge. Each cell
    * carries its own full-width segment (the 1px column separators read as
    * tick marks on the line) with a centered station; the first cell adds
-   * the brass start triangle, the last one the brass terminal square. */
+   * the start triangle, the last one the terminal square, each in its rim
+   * segment's color. */
   .wl {
     flex: none;
     position: relative;
@@ -507,7 +508,7 @@
   }
 
   /* Keep the dot on the line where the first/last cells inset it for the
-   * brass start and terminal markers. */
+   * start and terminal markers. */
   .wl-first .wl-train {
     left: 14px;
   }
