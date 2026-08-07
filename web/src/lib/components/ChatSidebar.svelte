@@ -380,11 +380,12 @@
   }
 
   .chat-title {
-    font-size: var(--font-size-sm);
+    font-family: var(--font-display);
+    font-size: var(--font-size-base);
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--color-text-secondary);
+    letter-spacing: 0.09em;
+    color: var(--color-gold);
     padding: 0 0.75rem;
   }
 
@@ -401,10 +402,11 @@
     border: none;
     border-bottom: 2px solid transparent;
     cursor: pointer;
+    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.09em;
     color: var(--color-text-secondary);
     transition:
       color var(--transition),
@@ -417,8 +419,8 @@
   }
 
   .tab.active {
-    color: var(--color-primary);
-    border-bottom-color: var(--color-primary);
+    color: var(--color-text);
+    border-bottom-color: var(--color-gold);
   }
 
   .tab.disabled {

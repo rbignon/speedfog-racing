@@ -53,23 +53,23 @@
     string,
     { icon: string; color: string; label: string }
   > = {
-    rusher: { icon: "\u26A1", color: "#EF4444", label: "Rusher" },
+    rusher: { icon: "\u26A1", color: "#DC6A51", label: "Rusher" },
     cautious: {
       icon: "\uD83D\uDEE1\uFE0F",
-      color: "#10B981",
+      color: "#4AAE8C",
       label: "Cautious",
     },
     boss_slayer: {
       icon: "\u2694\uFE0F",
-      color: "#FBBF24",
+      color: "#C8A44E",
       label: "Boss Slayer",
     },
     resilient: { icon: "\uD83D\uDCAA", color: "#C8A44E", label: "Resilient" },
-    explorer: { icon: "\uD83C\uDF10", color: "#3B82F6", label: "Explorer" },
-    pathfinder: { icon: "\uD83E\uDDED", color: "#A78BFA", label: "Pathfinder" },
+    explorer: { icon: "\uD83C\uDF10", color: "#7BA2CC", label: "Explorer" },
+    pathfinder: { icon: "\uD83E\uDDED", color: "#A99BC9", label: "Pathfinder" },
     rage_quitter: {
       icon: "\uD83D\uDCA5",
-      color: "#DC2626",
+      color: "#B5462F",
       label: "Rage Quitter",
     },
   };
@@ -373,9 +373,9 @@
     left: 50%;
     transform: translateX(-50%);
     background: var(--color-purple);
-    color: #fff;
+    color: #14100a;
     border: none;
-    border-radius: 999px;
+    border-radius: var(--radius-md);
     font-family: var(--font-family);
     font-size: var(--font-size-xs);
     font-weight: 600;
@@ -399,14 +399,15 @@
 
   .system-message {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
     padding: 0.25rem 0;
   }
 
   .system-text {
-    font-size: var(--font-size-sm);
-    font-style: italic;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
     color: var(--color-text-secondary);
   }
 
@@ -501,12 +502,13 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    background: var(--color-surface-elevated);
+    background: none;
     border: 1px solid var(--color-border);
-    border-radius: 999px;
+    border-radius: var(--radius-sm);
     padding: 0.05rem 0.45rem;
+    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
-    color: var(--color-text);
+    color: var(--color-text-secondary);
     cursor: pointer;
     transition: border-color var(--transition);
   }
@@ -592,21 +594,24 @@
   }
 
   .badge {
+    font-family: var(--font-mono);
     font-size: 0.6rem;
-    font-weight: 700;
+    font-weight: 500;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    padding: 0.1rem 0.3rem;
-    border-radius: 3px;
+    padding: 0 0.28rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
   }
 
   .badge-organizer {
-    background: rgba(200, 164, 78, 0.2);
+    border-color: rgba(200, 164, 78, 0.4);
     color: var(--color-gold);
   }
 
   .badge-caster {
-    background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
+    border-color: rgba(220, 106, 81, 0.4);
+    color: var(--color-danger);
   }
 
   .badge-trait {
@@ -635,8 +640,9 @@
   }
 
   .timestamp {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-disabled);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--color-text-secondary);
     flex-shrink: 0;
   }
 
@@ -659,9 +665,9 @@
 
   .chat-input {
     flex: 1;
-    background: var(--color-surface-elevated);
+    background: var(--color-bg);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     color: var(--color-text);
     font-family: var(--font-family);
     font-size: var(--font-size-sm);
@@ -673,6 +679,7 @@
 
   .chat-input:focus {
     border-color: var(--color-purple);
+    box-shadow: 0 0 0 1px var(--color-purple);
   }
 
   .chat-input::placeholder {
@@ -680,13 +687,15 @@
   }
 
   .send-btn {
-    background: var(--color-purple);
-    color: #fff;
+    background: var(--color-gold);
+    color: #14100a;
     border: none;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-family);
-    font-size: var(--font-size-sm);
+    border-radius: var(--radius-md);
+    font-family: var(--font-display);
+    font-size: 0.85rem;
     font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
     padding: 0.4rem 0.75rem;
     cursor: pointer;
     transition: background var(--transition);
@@ -694,7 +703,7 @@
   }
 
   .send-btn:hover:not(:disabled) {
-    background: var(--color-purple-hover);
+    background: var(--color-gold-hover);
   }
 
   .send-btn:disabled {
