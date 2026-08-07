@@ -199,30 +199,30 @@
   }
 
   .igt.finished {
-    color: #4ade80;
+    color: #4aae8c;
     opacity: 1;
   }
 
   .deaths {
-    color: #f87171;
+    color: #dc6a51;
     opacity: 0.9;
   }
 
   .deaths::before {
-    content: "\1F480";
+    content: "\2020";
     margin-right: 0.15em;
   }
 
   .gap.ahead {
-    color: #4ade80;
+    color: #4aae8c;
   }
 
   .gap.behind {
-    color: #f87171;
+    color: #dc6a51;
   }
 
   .dnf {
-    color: #9ca3af;
+    color: #8791a0;
     font-style: italic;
   }
 
