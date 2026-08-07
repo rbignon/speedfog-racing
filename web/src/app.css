@@ -502,6 +502,9 @@ th {
 .route {
   position: relative;
   height: 14px;
+  /* Decorative: the straddling markers must not widen the host link's
+   * hit area (adjacent cards' route boxes can overlap in tight grids). */
+  pointer-events: none;
 }
 
 .route .line {
