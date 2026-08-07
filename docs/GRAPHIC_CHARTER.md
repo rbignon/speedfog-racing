@@ -113,16 +113,16 @@ Three faces, three roles. All self-hosted (latin + latin-ext subsets in `web/sta
 
 The DAG's own iconography, reused as the app's structural language. Draw these as CSS shapes or tiny inline SVGs, never emoji:
 
-| Glyph                   | Meaning                                        |
-| ----------------------- | ---------------------------------------------- |
-| Filled triangle (brass) | Start                                          |
-| Hollow ring             | Zone / station; also "not ridden yet" terminal |
-| Diamond (fog)           | Boss                                           |
-| Filled square           | Terminal / finished                            |
-| Moving dot on a line    | Race in progress                               |
-| Dashed line             | Not started / upcoming                         |
-| `†` (dagger, ember)     | Deaths                                         |
-| `DNF` (mono)            | Abandoned, in data rows                        |
+| Glyph                   | Meaning                                             |
+| ----------------------- | --------------------------------------------------- |
+| Filled triangle (brass) | Start                                               |
+| Hollow ring             | Zone / station (terminal squares are always filled) |
+| Diamond (fog)           | Boss                                                |
+| Filled square           | Terminal / finished                                 |
+| Moving dot on a line    | Race in progress                                    |
+| Dashed line             | Not started / upcoming                              |
+| `†` (dagger, ember)     | Deaths                                              |
+| `DNF` (mono)            | Abandoned, in data rows                             |
 
 **Section header device**: a small station ring + line segment in brass, followed by the display-caps title. This is the only decoration section titles get.
 
@@ -146,8 +146,8 @@ Radius `--radius-md` (3px), display face, caps.
 
 The standard clickable card (races, dailies). Radius `--radius-lg` (2px), surface background, `1px` border, hover border fog. A 2px **route line** rides the card's actual top border, spanning nearly its full width (markers sit just inside the corners and straddle the edge, punched with the surface color), so full-height side elements like the Join strip reach the top edge. The line's style encodes status:
 
-- **Open**: dashed verdigris line, hollow ring at the start and hollow terminal square at the end (the route is not ridden yet).
-- **Running**: solid ember line, small dot traveling along it (CSS animation; respect `prefers-reduced-motion`), hollow terminal.
+- **Open**: dashed verdigris line, hollow ring at the start, filled terminal square at the end.
+- **Running**: solid ember line, small dot traveling along it (CSS animation; respect `prefers-reduced-motion`), filled terminal.
 - **Finished**: solid steel line, filled square terminal at the right end.
 
 Status text is a **signal**, not a pill: a 7px square/ring in the status color + mono caps label, right-aligned on the title row. Signals reuse the existing status labels: `■ Finished` (steel), `● Live` (ember), `○ Open` (verdigris), and `○ Upcoming` (secondary grey ring) for a closed setup race, whose route line is dashed border-grey with no terminal. A joinable card keeps its verdigris `Join` strip on the right edge; the viewer's role renders as a bordered mono chip. Card anatomy: title row (display caps + signals), meta row (mono: `N players · Mode`), foot row (avatar stack + winner `1st Name` or `No finishers` on the left; `by organizer · time ago` on the right, time in mono).

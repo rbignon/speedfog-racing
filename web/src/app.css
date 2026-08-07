@@ -548,16 +548,10 @@ th {
   border-color: var(--color-success);
 }
 
-.route-open .m-end,
-.route-running .m-end {
-  top: 1px;
-  width: 10px;
-  height: 10px;
-  background: var(--route-hole, var(--color-surface));
-}
-
+/* Terminal squares are always filled, in the segment's color (only the
+ * start ring stays hollow: the station you board from). */
 .route-open .m-end {
-  border: 2px solid var(--color-success);
+  background: var(--color-success);
 }
 
 .route-running .line {
@@ -569,7 +563,7 @@ th {
 }
 
 .route-running .m-end {
-  border: 2px solid var(--color-danger);
+  background: var(--color-danger);
 }
 
 .route-finished .line {
