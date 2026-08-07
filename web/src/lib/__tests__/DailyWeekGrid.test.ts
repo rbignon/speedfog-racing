@@ -181,21 +181,28 @@ describe("DailyWeekGrid", () => {
   it("renders the viewer's finished days as verdigris done routes", () => {
     const week: DailyWeekResponse = {
       ...mockWeek,
-      days: mockWeek.days.map((d) =>
-        d.state === "today"
-          ? {
-              ...d,
-              my_result: {
-                status: "finished",
-                placement: 4,
-                total_starters: 17,
-                igt_ms: 2_468_000,
-                death_count: 0,
-                qualifies: true,
-              },
-            }
-          : d,
-      ),
+      days: mockWeek.days.map((d) => {
+        if (d.state === "today") {
+          return {
+            ...d,
+            my_result: {
+              status: "finished",
+              placement: 4,
+              total_starters: 17,
+              igt_ms: 2_468_000,
+              death_count: 0,
+              qualifies: true,
+            },
+          };
+        }
+        // Strip the winner from the past finished day: the viewer's done
+        // route must stay filled even when the day has no overall winner
+        // (otherwise the hollow-terminal branch would kick in).
+        if (d.state === "past" && d.my_result?.status === "finished") {
+          return { ...d, podium: [] };
+        }
+        return d;
+      }),
     };
     const { container } = render(DailyWeekGrid, {
       props: { week, variant: "home" },

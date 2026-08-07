@@ -32,9 +32,10 @@
   }
 
   function placeLabel(placement: number): string {
-    if (placement === 1) return "1st";
-    if (placement === 2) return "2nd";
-    if (placement === 3) return "3rd";
+    if (placement % 100 >= 11 && placement % 100 <= 13) return `${placement}th`;
+    if (placement % 10 === 1) return `${placement}st`;
+    if (placement % 10 === 2) return `${placement}nd`;
+    if (placement % 10 === 3) return `${placement}rd`;
     return `${placement}th`;
   }
 </script>
@@ -56,7 +57,10 @@
         </span>
         <span class="m">
           {#if item.type === "race_participant" || item.type === "daily_participant"}
-            {#if item.status === "finished" && item.placement}
+            <!-- item.status is the RACE status: a finished run inside a
+                 still-running race (every daily for 24h) already carries its
+                 placement, so the placement always wins over the state. -->
+            {#if item.placement}
               <span class="place" class:first={item.placement === 1}
                 >{placeLabel(item.placement)}/{item.total_starters}</span
               >
@@ -94,6 +98,8 @@
           {:else if item.type === "training"}
             {#if item.status === "active"}
               <span>Active</span>
+            {:else if item.status === "abandoned"}
+              <span class="dnf">DNF</span>
             {/if}
             {#if item.igt_ms > 0}
               <span>{formatIgt(item.igt_ms)}</span>

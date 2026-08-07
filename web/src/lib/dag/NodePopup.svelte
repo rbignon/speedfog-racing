@@ -393,13 +393,13 @@
     flex-shrink: 0;
   }
 
+  /* Names stay in the UI face; only the digit cells below go mono. */
   .visitor-grid {
     display: grid;
     grid-template-columns: auto 1fr auto auto auto auto;
     gap: 2px 6px;
     align-items: center;
     font-size: 0.8rem;
-    font-family: var(--font-mono);
   }
 
   .visitor-name {
