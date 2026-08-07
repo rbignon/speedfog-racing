@@ -147,13 +147,13 @@ The standard clickable card (races, dailies). Radius `--radius-lg` (2px), surfac
 - **Running**: solid ember line, small dot traveling along it (CSS animation; respect `prefers-reduced-motion`), hollow terminal.
 - **Finished**: solid steel line, filled square terminal at the right end.
 
-Status text is a **signal**, not a pill: a 7px square/ring in the status color + mono caps label (`■ FINISHED`, `● RUNNING`, `○ OPEN`), right-aligned on the title row. Card anatomy: title row (display caps + signal), meta row (mono: `N players · Mode · extras`), foot row (avatar disc stack + winner `1st Name` or `No finishers` on the left; `by organizer · time ago` in mono on the right).
+Status text is a **signal**, not a pill: a 7px square/ring in the status color + mono caps label, right-aligned on the title row. Signals reuse the existing status labels: `■ Finished` (steel), `● Live` (ember), `○ Open` (verdigris), and `○ Upcoming` (secondary grey ring) for a closed setup race, whose route line is dashed border-grey with no terminal. A joinable card keeps its verdigris `Join` strip on the right edge; the viewer's role renders as a bordered mono chip. Card anatomy: title row (display caps + signals), meta row (mono: `N players · Mode`), foot row (avatar stack + winner `1st Name` or `No finishers` on the left; `by organizer · time ago` on the right, time in mono).
 
-The old vocabulary (8px radius, colored `border-left`, translucent pill chips) is retired; `.badge-*` classes in `app.css` remain only until every consumer migrates to signals.
+The old vocabulary (8px radius, colored `border-left`, translucent pill chips) is retired; `.badge-*` classes in `app.css` remain only until every consumer migrates to signals. The route-line vocabulary itself (`.route`, `.route-open/-running/-finished/-setup`, tight variant, `--route-hole` punch-through for elevated hosts) lives in `app.css` and is shared by cards and the timetable; its traveling dot animates a transform only and disappears under `prefers-reduced-motion`.
 
 ### Daily timetable
 
-The week grid is a timetable: 7 equal columns (`min-width: 0`), hairline separators, each cell topped by a small route line (steel solid + square for closed days with a winner, ember + dot for today, dashed border-grey for future days). Day + player count in mono micro-labels, mode name in display caps, winner line in mono (`1st Name · IGT`).
+The week grid is a timetable: one continuous bordered plate with 7 equal columns (`minmax(150px, 1fr)`, horizontal scroll below that) and hairline column separators, each cell topped by a small route line (steel solid + filled square for closed days with a winner, hollow square without one, ember + dot for today, dashed border-grey for future days). Day + player count in mono micro-labels, mode name in display caps (a deathless day carries a mono ember `DEATHLESS` micro-label), winner line in mono (`1st Name · IGT`). The today cell sits on elevated surface (the old gold glow is retired); the toolbar keeps the streak/freeze info (mono, `❄` in text form, no flame) and the weekly winners under a mono brass `1st` tag.
 
 **The today cell is the button**: the whole cell is one link, with a full-width strip pinned to its bottom edge. Strip hue taxonomy (kept from v1 behavior, hexes retuned):
 
@@ -162,9 +162,11 @@ The week grid is a timetable: 7 equal columns (`min-width: 0`), hairline separat
 | `Play now` / `Keep streak`        | Solid verdigris, near-black text (the action) |
 | `In progress`                     | Translucent brass, brass text                 |
 | `❄ Freeze`                        | Translucent steel, steel text                 |
-| Finished result (`12/30 · 41:07`) | Translucent slate, verdigris text, justified  |
-| `DNF · IGT`                       | Translucent slate, muted text                 |
+| Finished result (`12/30 · 41:07`) | Translucent slate, verdigris mono text        |
+| `DNF · IGT`                       | Translucent slate, secondary mono text        |
 | `Abandoned`                       | Translucent slate, disabled text              |
+
+Label strips use the display face in caps; result strips (finished, DNF) drop to mono and carry no check icon, the hue does the talking.
 
 ### Leaderboard rails (race / daily)
 
@@ -182,6 +184,8 @@ Vertical list, one entry per participant:
 Three columns `1st / 2nd / 3rd` on a surface panel: place tag in mono brass caps, name in the display face through the name template (original case, never uppercased), IGT in mono (winner column larger), sub-line `+delta · † deaths`. Each column's top edge carries the player's line color with a small terminal square. With fewer than three finishers, render only the existing columns (the board never shows empty slots).
 
 ### Forms
+
+Element-level defaults in `app.css` (wrapped in `:where()` so any component's scoped styles keep winning) carry the input baseline and the native checkbox/radio `accent-color`; components only style what they need to differ.
 
 - **Input**: `--color-bg` fill, `1px` border, radius `--radius-md`; focus: fog border + 1px fog ring.
 - **Select**: input-shaped, `▾` chevron; menu on elevated surface, selected option in translucent fog.
