@@ -224,6 +224,7 @@
 
 <style>
   .race-card {
+    position: relative;
     display: block;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
@@ -232,8 +233,16 @@
     text-decoration: none;
     color: inherit;
     min-width: 0;
-    overflow: hidden;
     transition: border-color var(--transition);
+  }
+
+  /* The route rides the card's real top border (the border stays visible
+   * at the corners, outside the line's insets); markers straddle the edge. */
+  .race-card > :global(.route) {
+    position: absolute;
+    top: -7px;
+    left: 0;
+    right: 0;
   }
 
   .race-card:hover {
@@ -251,11 +260,11 @@
   .card-content {
     min-width: 0;
     flex: 1;
-    padding: 0.15rem 1.1rem 0.9rem;
+    padding: 0.8rem 1.1rem 0.9rem;
   }
 
   .compact .card-content {
-    padding: 0.1rem 0.9rem 0.7rem;
+    padding: 0.6rem 0.9rem 0.7rem;
   }
 
   /* Header row */

@@ -141,6 +141,21 @@
     return day.my_result?.status === "finished";
   }
 
+  /* The week is one continuous metro line across the plate's top: each
+   * day contributes its segment, colored by what happened on it. */
+  function wlClass(day: DailyWeekDay): string {
+    if (myDone(day)) return "wl-done";
+    if (day.state === "today") return "wl-today";
+    if (day.state === "past") return "wl-closed";
+    return "wl-future";
+  }
+
+  /* The terminal square fills once the whole week has been ridden. */
+  let weekOver = $derived.by(() => {
+    const last = displayedWeek.days[displayedWeek.days.length - 1];
+    return last != null && last.state !== "future" && last.state !== "today";
+  });
+
   let scrollContainer: HTMLDivElement | undefined = $state();
   onMount(() => {
     const el = scrollContainer;
@@ -218,7 +233,7 @@
     </div>
   </div>
   <div class="grid" bind:this={scrollContainer}>
-    {#each displayedWeek.days as day (day.date)}
+    {#each displayedWeek.days as day, dayIndex (day.date)}
       {@const href = hrefFor(day)}
       <svelte:element
         this={href ? "a" : "div"}
@@ -232,37 +247,24 @@
         data-cell-state={day.state}
         data-cell-date={day.date}
       >
-        {#if day.state === "today"}
-          <div
-            class="route route-tight {myDone(day)
-              ? 'route-done'
-              : 'route-running'}"
-            aria-hidden="true"
-          >
-            <span class="line"></span><span class="m-start"></span><span
-              class="m-end"
-            ></span>{#if !myDone(day)}<span class="m-train"></span>{/if}
-          </div>
-        {:else if day.state === "past"}
-          <div
-            class="route route-tight {myDone(day)
-              ? 'route-done'
-              : 'route-finished'}"
-            class:route-hollow={!myDone(day) &&
-              !day.podium.some((e) => e.placement === 1)}
-            aria-hidden="true"
-          >
-            <span class="line"></span><span class="m-start"></span><span
-              class="m-end"
-            ></span>
-          </div>
-        {:else if day.state === "future"}
-          <div class="route route-tight route-setup" aria-hidden="true">
-            <span class="line"></span><span class="m-start"></span>
-          </div>
-        {:else}
-          <div class="route route-tight" aria-hidden="true"></div>
-        {/if}
+        <div
+          class="wl {wlClass(day)}"
+          class:wl-first={dayIndex === 0}
+          class:wl-last={dayIndex === displayedWeek.days.length - 1}
+          aria-hidden="true"
+        >
+          {#if dayIndex === 0}
+            <span class="wl-start"></span>
+          {/if}
+          <span class="wl-line"></span>
+          <span class="wl-station"></span>
+          {#if day.state === "today" && !myDone(day)}
+            <span class="wl-train"></span>
+          {/if}
+          {#if dayIndex === displayedWeek.days.length - 1}
+            <span class="wl-term" class:filled={weekOver}></span>
+          {/if}
+        </div>
         <div class="header">
           <span class="weekday">{WEEKDAY_LABELS[day.weekday]}</span>
           {#if day.state === "today"}
@@ -387,21 +389,138 @@
     border-left: none;
   }
 
-  .cell > :global(.route) {
-    flex: none;
-    margin: 0 -0.35rem 0.1rem;
-  }
-
   a.cell:hover,
   .cell.today,
   .cell.selected {
     background: var(--color-surface-elevated);
+    --wl-hole: var(--color-surface-elevated);
   }
 
-  a.cell:hover > :global(.route),
-  .cell.today > :global(.route),
-  .cell.selected > :global(.route) {
-    --route-hole: var(--color-surface-elevated);
+  /* Week line: one continuous route across the plate's top edge. Each cell
+   * carries its own full-width segment (the 1px column separators read as
+   * tick marks on the line) with a centered station; the first cell adds
+   * the brass start triangle, the last one the brass terminal square. */
+  .wl {
+    flex: none;
+    position: relative;
+    height: 14px;
+    margin: 0 -0.875rem 0.1rem;
+  }
+
+  .wl-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 6px;
+    border-top: 2px solid;
+  }
+
+  .wl-first .wl-line {
+    left: 14px;
+  }
+
+  .wl-last .wl-line {
+    right: 14px;
+  }
+
+  .wl-done .wl-line {
+    border-top-color: var(--color-success);
+  }
+
+  .wl-closed .wl-line {
+    border-top-color: var(--color-info);
+  }
+
+  .wl-today .wl-line {
+    border-top-color: var(--color-danger);
+  }
+
+  .wl-future .wl-line {
+    border-top-style: dashed;
+    border-top-color: var(--color-border);
+  }
+
+  .wl-station {
+    position: absolute;
+    left: 50%;
+    top: 2px;
+    width: 10px;
+    height: 10px;
+    margin-left: -5px;
+    border-radius: 50%;
+    border: 2px solid;
+    background: var(--wl-hole, var(--color-surface));
+  }
+
+  .wl-done .wl-station {
+    border-color: var(--color-success);
+  }
+
+  .wl-closed .wl-station {
+    border-color: var(--color-info);
+  }
+
+  .wl-today .wl-station {
+    border-color: var(--color-danger);
+  }
+
+  .wl-future .wl-station {
+    border-color: var(--color-text-disabled);
+  }
+
+  .wl-start {
+    position: absolute;
+    left: 2px;
+    top: 1px;
+    width: 0;
+    height: 0;
+    border-left: 10px solid var(--color-gold);
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+  }
+
+  .wl-term {
+    position: absolute;
+    right: 2px;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+    border: 2px solid var(--color-gold);
+    background: var(--wl-hole, var(--color-surface));
+  }
+
+  .wl-term.filled {
+    border: none;
+    background: var(--color-gold);
+  }
+
+  .wl-train {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 4px;
+    height: 6px;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .wl-train::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      circle 3px at 3px 3px,
+      var(--color-danger) 98%,
+      transparent
+    );
+    background-repeat: no-repeat;
+    animation: route-ride 3.2s linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wl-train {
+      display: none;
+    }
   }
 
   .cell.future,
@@ -526,8 +645,8 @@
   }
 
   .strip-freeze {
-    background: rgba(123, 162, 204, 0.16);
-    color: var(--color-info);
+    background: rgba(159, 214, 232, 0.14);
+    color: var(--color-frost);
   }
 
   .strip-abandoned {

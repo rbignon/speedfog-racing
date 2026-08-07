@@ -64,6 +64,9 @@ Disabled grey is for genuinely disabled or decorative elements only. Information
 | Finished            | Steel     | `#7BA2CC` |
 | Draft / Muted       | Slate     | `#8791A0` |
 | Danger (dark)       | Ember dk  | `#B5462F` |
+| Streak freeze       | Frost     | `#9FD6E8` |
+
+Frost exists so ice never borrows steel: "finished" owns the medium blue everywhere (signals, cards, week-line segments), while the freeze strip reads as a paler, colder cyan.
 
 ### Player lines
 
@@ -141,7 +144,7 @@ Radius `--radius-md` (3px), display face, caps.
 
 ### Route-line cards
 
-The standard clickable card (races, dailies). Radius `--radius-lg` (2px), surface background, `1px` border, hover border fog. The top edge carries a 2px **route line** whose style encodes status:
+The standard clickable card (races, dailies). Radius `--radius-lg` (2px), surface background, `1px` border, hover border fog. A 2px **route line** rides the card's actual top border (the hairline stays visible at the corners, outside the line's insets; markers straddle the edge, punched with the surface color), so full-height side elements like the Join strip reach the top edge. The line's style encodes status:
 
 - **Open**: dashed verdigris line, hollow ring at both ends (the route is not ridden yet).
 - **Running**: solid ember line, small dot traveling along it (CSS animation; respect `prefers-reduced-motion`), hollow terminal.
@@ -153,7 +156,7 @@ The old vocabulary (8px radius, colored `border-left`, translucent pill chips) i
 
 ### Daily timetable
 
-The week grid is a timetable: one continuous bordered plate with 7 equal columns (`minmax(150px, 1fr)`, horizontal scroll below that) and hairline column separators, each cell topped by a small route line (steel solid + filled square for closed days with a winner, hollow square without one, ember + dot for today, dashed border-grey for future days). Day + player count in mono micro-labels, mode name in display caps (a deathless day carries a mono ember `DEATHLESS` micro-label), winner line in mono (`1st Name · IGT`). The today cell sits on elevated surface (the old gold glow is retired); the toolbar keeps the streak/freeze info (mono, `❄` in text form, no flame) and the weekly winners under a mono brass `1st` tag.
+The week grid is a timetable: one continuous bordered plate with 7 equal columns (`minmax(150px, 1fr)`, horizontal scroll below that) and hairline column separators. Across the plate's top runs **one continuous week line**: a brass start triangle before the first day, one hollow station centered on each day (punched with its cell's background), and a brass terminal square after the last day, hollow until the whole week is ridden. Each day colors its own segment: verdigris when the viewer finished that seed, steel for a closed day without them, ember with the traveling dot for today in progress (the dot stops and the segment turns verdigris once today's seed is done), dashed border-grey for future or missing days; the hairline column separators crossing the line read as tick marks. Day + player count in mono micro-labels, mode name in display caps (a deathless day carries a mono ember `DEATHLESS` micro-label), winner line in mono (`1st Name · IGT`). The today cell sits on elevated surface (the old gold glow is retired); the toolbar keeps the streak/freeze info (mono, `❄` in text form, no flame) and the weekly winners under a mono brass `1st` tag.
 
 **The today cell is the button**: the whole cell is one link, with a full-width strip pinned to its bottom edge. Strip hue taxonomy (kept from v1 behavior, hexes retuned):
 
@@ -161,7 +164,7 @@ The week grid is a timetable: one continuous bordered plate with 7 equal columns
 | --------------------------------- | --------------------------------------------- |
 | `Play now` / `Keep streak`        | Solid verdigris, near-black text (the action) |
 | `In progress`                     | Translucent brass, brass text                 |
-| `❄ Freeze`                        | Translucent steel, steel text                 |
+| `❄ Freeze`                        | Translucent frost, frost text                 |
 | Finished result (`12/30 · 41:07`) | Translucent slate, verdigris mono text        |
 | `DNF · IGT`                       | Translucent slate, secondary mono text        |
 | `Abandoned`                       | Translucent slate, disabled text              |

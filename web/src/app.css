@@ -191,6 +191,7 @@
   --color-danger: #dc6a51; /* ember */
   --color-danger-dark: #b5462f;
   --color-info: #7ba2cc; /* steel */
+  --color-frost: #9fd6e8; /* streak freeze: icy, paler than steel */
 
   /* Player line colors are not tokens: the 20-hue PLAYER_COLORS palette in
    * src/lib/dag/constants.ts is the single source of truth, consumed via each
@@ -492,10 +493,12 @@ th {
   white-space: nowrap;
 }
 
-/* Route lines: a card or timetable cell's top edge encodes status.
- * Same vocabulary as signals: dashed = not ridden, dot = moving,
- * filled square = terminal reached. Hollow markers punch through with
- * --route-hole (defaults to surface; set it when the host is elevated). */
+/* Route lines: the card's top border becomes the line (consumers position
+ * .route over their real border; markers straddle the edge). Same
+ * vocabulary as signals: dashed = not ridden, dot = moving, filled
+ * square = terminal reached. Hollow markers punch through with
+ * --route-hole (defaults to surface). The timetable's continuous week
+ * line is its own wl-* implementation in DailyWeekGrid. */
 .route {
   position: relative;
   height: 14px;
@@ -528,20 +531,6 @@ th {
   height: 8px;
 }
 
-/* Tight variant for narrow hosts (timetable cells) */
-.route-tight .line {
-  left: 6px;
-  right: 6px;
-}
-
-.route-tight .m-start {
-  left: 0;
-}
-
-.route-tight .m-end {
-  right: 0;
-}
-
 .route-setup .line {
   border-top-style: dashed;
   border-top-color: var(--color-border);
@@ -557,8 +546,7 @@ th {
 }
 
 .route-open .m-end,
-.route-running .m-end,
-.route-hollow .m-end {
+.route-running .m-end {
   top: 1px;
   width: 10px;
   height: 10px;
@@ -593,25 +581,6 @@ th {
   background: var(--color-info);
 }
 
-.route-finished.route-hollow .m-end {
-  background: var(--route-hole, var(--color-surface));
-  border: 2px solid var(--color-info);
-}
-
-/* A route the viewer has ridden to the terminal (their finished daily):
- * accomplishment reads in verdigris. */
-.route-done .line {
-  border-top-color: var(--color-success);
-}
-
-.route-done .m-start {
-  border-color: var(--color-success);
-}
-
-.route-done .m-end {
-  background: var(--color-success);
-}
-
 /* Traveling dot: a full-track element whose painted dot rides on a
  * compositor-only transform (never animate left/top in a list). */
 .route .m-train {
@@ -624,11 +593,6 @@ th {
   /* The transformed ::before spans the whole track, so without clipping it
    * would extend the scrollable overflow past the host's right edge. */
   overflow: hidden;
-}
-
-.route-tight .m-train {
-  left: 6px;
-  right: 12px;
 }
 
 .route .m-train::before {
