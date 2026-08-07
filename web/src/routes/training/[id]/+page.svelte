@@ -285,7 +285,9 @@
         {#if session.seed_number}
           <span class="seed-badge">Seed {session.seed_number}</span>
         {/if}
-        <span class="badge badge-{status}">{status}</span>
+        <span class="signal signal-{status}"
+          >{status === "abandoned" ? "DNF" : status}</span
+        >
       </div>
     </div>
 

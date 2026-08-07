@@ -645,11 +645,11 @@
 
   .strip-play-now {
     background: var(--color-success);
-    color: #0d1a15;
+    color: var(--color-ink-on-accent);
   }
 
   a.cell:hover .strip-play-now {
-    background: #5fc2a0;
+    background: var(--color-success-hover);
   }
 
   .strip-in-progress {

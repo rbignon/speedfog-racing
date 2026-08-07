@@ -193,6 +193,10 @@
   --color-info: #7ba2cc; /* steel */
   --color-frost: #9fd6e8; /* streak freeze: icy, paler than steel */
 
+  /* Ink on accent fills (primary buttons, action strips, checked boxes) */
+  --color-ink-on-accent: #14100a;
+  --color-success-hover: #5fc2a0; /* verdigris action hover */
+
   /* Player line colors are not tokens: the 20-hue PLAYER_COLORS palette in
    * src/lib/dag/constants.ts is the single source of truth, consumed via each
    * participant's color_index. */
@@ -214,7 +218,7 @@
   --font-size-xl: 1.5rem;
   --font-size-2xl: 1.75rem;
 
-  /* Spacing. Near-sharp by design: sm = badges, md = buttons/inputs,
+  /* Spacing. Near-sharp by design: sm = chips, md = buttons/inputs,
    * lg = cards. lg < md is intentional (plates are sharper than controls). */
   --radius-sm: 2px;
   --radius-md: 3px;
@@ -310,12 +314,12 @@ h4 {
 
 .btn-primary {
   background: var(--color-gold);
-  color: #14100a;
+  color: var(--color-ink-on-accent);
 }
 
 .btn-primary:hover {
   background: var(--color-gold-hover);
-  color: #14100a;
+  color: var(--color-ink-on-accent);
   box-shadow: var(--glow-gold);
 }
 
@@ -423,8 +427,9 @@ th {
   text-align: left;
 }
 
-/* Signals: status as a small mark + mono caps label (replaces .badge pills;
- * hollow ring = not ridden yet, dot = moving, square = terminal). */
+/* Signals: status as a small mark + mono caps label (the retired .badge
+ * pills' successor; hollow ring = not ridden yet, dot = moving,
+ * square = terminal). */
 .signal {
   display: inline-flex;
   align-items: center;
@@ -477,6 +482,58 @@ th {
 .signal-setup::before {
   border: 2px solid var(--color-text-secondary);
   border-radius: 50%;
+}
+
+.signal-active {
+  color: var(--color-warning);
+}
+
+.signal-active::before {
+  background: var(--color-warning);
+  border-radius: 50%;
+}
+
+.signal-abandoned {
+  color: var(--color-text-secondary);
+}
+
+.signal-abandoned::before {
+  background: var(--color-text-secondary);
+}
+
+.signal-playing {
+  color: var(--color-warning);
+}
+
+.signal-playing::before {
+  background: var(--color-warning);
+  border-radius: 50%;
+}
+
+.signal-ready {
+  color: var(--color-success);
+}
+
+.signal-ready::before {
+  border: 2px solid var(--color-success);
+  border-radius: 50%;
+}
+
+.signal-registered {
+  color: var(--color-text-secondary);
+}
+
+.signal-registered::before {
+  border: 2px solid var(--color-text-secondary);
+  border-radius: 50%;
+}
+
+.signal-cancelled {
+  color: var(--color-text-disabled);
+}
+
+.signal-cancelled::before {
+  background: var(--color-text-disabled);
 }
 
 /* Chips: bordered mono caps for secondary facts (role, seed, tier) */
@@ -618,67 +675,4 @@ th {
   .route .m-train {
     display: none;
   }
-}
-
-/* Badges */
-.badge {
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-/* Race status badges */
-.badge-open {
-  background: rgba(74, 174, 140, 0.15);
-  color: var(--color-success);
-}
-
-.badge-setup {
-  background: rgba(123, 162, 204, 0.15);
-  color: var(--color-info);
-}
-
-.badge-running {
-  background: rgba(220, 106, 81, 0.15);
-  color: var(--color-danger);
-}
-
-.badge-finished {
-  background: rgba(74, 174, 140, 0.15);
-  color: var(--color-success);
-}
-
-/* Participant status badges */
-.badge-registered {
-  background: rgba(119, 128, 140, 0.2);
-  color: var(--color-text-disabled);
-}
-
-.badge-ready {
-  background: rgba(74, 174, 140, 0.15);
-  color: var(--color-success);
-}
-
-.badge-playing {
-  background: rgba(200, 164, 78, 0.15);
-  color: var(--color-warning);
-}
-
-.badge-abandoned {
-  background: rgba(119, 128, 140, 0.2);
-  color: var(--color-text-disabled);
-}
-
-.badge-cancelled {
-  background: rgba(119, 128, 140, 0.15);
-  color: var(--color-text-disabled);
-}
-
-/* Training status badges */
-.badge-active {
-  background: rgba(200, 164, 78, 0.15);
-  color: var(--color-warning);
 }

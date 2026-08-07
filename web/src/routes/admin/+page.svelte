@@ -1492,7 +1492,7 @@
                     <span class="activity-badge daily-active">Active</span>
                   {/if}
                 {/if}
-                <span class="badge badge-{item.status}"
+                <span class="signal signal-{item.status}"
                   >{statusLabel(item.status)}</span
                 >
               </div>
@@ -1587,7 +1587,7 @@
                   </div>
                 </td>
                 <td>
-                  <span class="badge badge-{race.status}"
+                  <span class="signal signal-{race.status}"
                     >{statusLabel(race.status)}</span
                   >
                 </td>

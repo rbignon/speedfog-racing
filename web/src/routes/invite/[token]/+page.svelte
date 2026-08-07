@@ -52,7 +52,7 @@
       </div>
       <div class="detail">
         <span class="label">Status</span>
-        <span class="badge badge-{invite.race_status}"
+        <span class="signal signal-{invite.race_status}"
           >{invite.race_status}</span
         >
       </div>

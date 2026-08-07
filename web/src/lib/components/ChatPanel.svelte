@@ -373,7 +373,7 @@
     left: 50%;
     transform: translateX(-50%);
     background: var(--color-purple);
-    color: #14100a;
+    color: var(--color-ink-on-accent);
     border: none;
     border-radius: var(--radius-md);
     font-family: var(--font-family);
@@ -690,7 +690,7 @@
 
   .send-btn {
     background: var(--color-gold);
-    color: #14100a;
+    color: var(--color-ink-on-accent);
     border: none;
     border-radius: var(--radius-md);
     font-family: var(--font-display);

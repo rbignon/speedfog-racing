@@ -382,9 +382,9 @@
                 </div>
                 <div class="active-badges">
                   {#if activeRaceRole(race)}
-                    <span class="badge badge-role">{activeRaceRole(race)}</span>
+                    <span class="chip">{activeRaceRole(race)}</span>
                   {/if}
-                  <span class="badge badge-{race.status}"
+                  <span class="signal signal-{race.status}"
                     >{statusLabel(race.status)}</span
                   >
                 </div>
@@ -473,7 +473,7 @@
                     formatPoolName(session.pool_name)}</span
                 >
                 <div class="active-badges">
-                  <span class="badge badge-training-ghost">Solo</span>
+                  <span class="chip">Solo</span>
                 </div>
               </div>
               <div class="training-stats">
@@ -837,16 +837,6 @@
     display: flex;
     gap: 0.4rem;
     flex-shrink: 0;
-  }
-
-  .badge-role {
-    background: rgba(107, 114, 128, 0.2);
-    color: var(--color-text-secondary);
-  }
-
-  .badge-training-ghost {
-    background: rgba(169, 155, 201, 0.15);
-    color: var(--color-purple);
   }
 
   /* Avatar row */

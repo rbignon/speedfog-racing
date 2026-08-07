@@ -323,7 +323,7 @@
     opacity: 1;
     background: var(--player-color);
     border-color: var(--player-color);
-    color: #14100a;
+    color: var(--color-ink-on-accent);
   }
 
   .clear-pill {

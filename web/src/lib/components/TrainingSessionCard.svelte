@@ -12,7 +12,9 @@
     <span class="card-title"
       >{session.pool_display_name || formatPoolName(session.pool_name)}</span
     >
-    <span class="badge badge-{session.status}">{session.status}</span>
+    <span class="signal signal-{session.status}"
+      >{session.status === "abandoned" ? "DNF" : session.status}</span
+    >
   </div>
 
   <div class="card-stats">

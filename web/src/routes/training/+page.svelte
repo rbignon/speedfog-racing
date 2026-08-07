@@ -230,8 +230,10 @@
                   </a>
                 </td>
                 <td>
-                  <span class="badge badge-{session.status}"
-                    >{session.status}</span
+                  <span class="signal signal-{session.status}"
+                    >{session.status === "abandoned"
+                      ? "DNF"
+                      : session.status}</span
                   >
                 </td>
                 <td class="mono"
