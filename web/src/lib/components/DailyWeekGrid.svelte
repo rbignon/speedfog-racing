@@ -155,13 +155,6 @@
     return "wl-future";
   }
 
-  /* The terminal square fills once the week is over (time-based, not
-   * participation-based: a week of missed days still closes). */
-  let weekOver = $derived.by(() => {
-    const last = displayedWeek.days[displayedWeek.days.length - 1];
-    return last != null && last.state !== "future" && last.state !== "today";
-  });
-
   let scrollContainer: HTMLDivElement | undefined = $state();
   onMount(() => {
     const el = scrollContainer;
@@ -269,7 +262,7 @@
               <span class="wl-train"></span>
             {/if}
             {#if dayIndex === displayedWeek.days.length - 1}
-              <span class="wl-term" class:filled={weekOver}></span>
+              <span class="wl-term"></span>
             {/if}
           </div>
           <div class="header">
@@ -425,12 +418,35 @@
     margin: -8px -0.875rem 0.1rem;
   }
 
+  /* Each state sets the segment hue once; line, station, and the edge
+   * markers (start triangle / terminal square, which take the first and
+   * last day's color) all read it. */
+  .wl-done {
+    --wl-color: var(--color-success);
+  }
+
+  .wl-closed {
+    --wl-color: var(--color-info);
+  }
+
+  .wl-today {
+    --wl-color: var(--color-danger);
+  }
+
+  .wl-playing {
+    --wl-color: var(--color-warning);
+  }
+
+  .wl-future {
+    --wl-color: var(--color-text-disabled);
+  }
+
   .wl-line {
     position: absolute;
     left: 0;
     right: 0;
     top: 6px;
-    border-top: 2px solid;
+    border-top: 2px solid var(--wl-color);
   }
 
   .wl-first .wl-line {
@@ -441,22 +457,7 @@
     right: 14px;
   }
 
-  .wl-done .wl-line {
-    border-top-color: var(--color-success);
-  }
-
-  .wl-closed .wl-line {
-    border-top-color: var(--color-info);
-  }
-
-  .wl-today .wl-line {
-    border-top-color: var(--color-danger);
-  }
-
-  .wl-playing .wl-line {
-    border-top-color: var(--color-warning);
-  }
-
+  /* The dashed not-yet line stays dimmer than its station */
   .wl-future .wl-line {
     border-top-style: dashed;
     border-top-color: var(--color-border);
@@ -470,28 +471,8 @@
     height: 10px;
     margin-left: -5px;
     border-radius: 50%;
-    border: 2px solid;
+    border: 2px solid var(--wl-color);
     background: var(--wl-hole, var(--color-surface));
-  }
-
-  .wl-done .wl-station {
-    border-color: var(--color-success);
-  }
-
-  .wl-closed .wl-station {
-    border-color: var(--color-info);
-  }
-
-  .wl-today .wl-station {
-    border-color: var(--color-danger);
-  }
-
-  .wl-playing .wl-station {
-    border-color: var(--color-warning);
-  }
-
-  .wl-future .wl-station {
-    border-color: var(--color-text-disabled);
   }
 
   .wl-start {
@@ -500,24 +481,19 @@
     top: 1px;
     width: 0;
     height: 0;
-    border-left: 10px solid var(--color-gold);
+    border-left: 10px solid var(--wl-color);
     border-top: 6px solid transparent;
     border-bottom: 6px solid transparent;
   }
 
+  /* Always filled, like the hero underline's terminal */
   .wl-term {
     position: absolute;
     right: 2px;
     top: 3px;
     width: 8px;
     height: 8px;
-    border: 2px solid var(--color-gold);
-    background: var(--wl-hole, var(--color-surface));
-  }
-
-  .wl-term.filled {
-    border: none;
-    background: var(--color-gold);
+    background: var(--wl-color);
   }
 
   .wl-train {
@@ -546,20 +522,11 @@
     inset: 0;
     background: radial-gradient(
       circle 3px at 3px 3px,
-      var(--color-danger) 98%,
+      var(--wl-color) 98%,
       transparent
     );
     background-repeat: no-repeat;
     animation: route-ride 3.2s linear infinite;
-  }
-
-  .wl-playing .wl-train::before {
-    background: radial-gradient(
-      circle 3px at 3px 3px,
-      var(--color-warning) 98%,
-      transparent
-    );
-    background-repeat: no-repeat;
   }
 
   @media (prefers-reduced-motion: reduce) {
