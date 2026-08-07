@@ -521,7 +521,7 @@
 
   .reaction-pill.mine {
     border-color: var(--color-purple);
-    background: rgba(139, 92, 246, 0.12);
+    background: rgba(169, 155, 201, 0.12);
   }
 
   .reply-bar {
@@ -555,7 +555,7 @@
 
   @keyframes chat-flash {
     0% {
-      background: rgba(139, 92, 246, 0.25);
+      background: rgba(169, 155, 201, 0.25);
     }
     100% {
       background: transparent;

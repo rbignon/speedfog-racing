@@ -768,7 +768,7 @@
     flex-direction: column;
     gap: 1.25rem;
     padding-left: 1rem;
-    border-left: 2px solid rgba(139, 92, 246, 0.3);
+    border-left: 2px solid rgba(169, 155, 201, 0.3);
   }
 
   .error {

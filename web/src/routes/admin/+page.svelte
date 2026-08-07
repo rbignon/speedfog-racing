@@ -1887,7 +1887,7 @@
 
   .pool-name {
     font-weight: 500;
-    font-family: var(--font-family-mono, monospace);
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
   }
 
@@ -2121,7 +2121,7 @@
   }
 
   .activity-badge.training {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(169, 155, 201, 0.15);
     color: var(--color-purple);
   }
 

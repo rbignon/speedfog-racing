@@ -308,7 +308,7 @@
     gap: 0.25rem;
     padding: 0.2rem 0.5rem;
     font-size: 11px;
-    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-family: var(--font-mono);
     color: var(--player-color);
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
     pointer-events: none;

@@ -1,3 +1,172 @@
+/* Self-hosted fonts (latin + latin-ext subsets, files in static/fonts/) */
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/barlow-400-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/barlow-400-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/barlow-500-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/barlow-500-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/barlow-600-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/barlow-600-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/barlow-condensed-500-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/barlow-condensed-500-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/barlow-condensed-600-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/barlow-condensed-600-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/barlow-condensed-700-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/barlow-condensed-700-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Spline Sans Mono";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/spline-sans-mono-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Spline Sans Mono";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/spline-sans-mono-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   /* Foundations */
   --color-bg: #0f1923;
@@ -8,20 +177,31 @@
   /* Accents */
   --color-gold: #c8a44e;
   --color-gold-hover: #ddb95f;
-  --color-purple: #8b5cf6;
-  --color-purple-hover: #a78bfa;
+  --color-purple: #a99bc9; /* "fog": interactive accent (hover, links) */
+  --color-purple-hover: #c0b4dc;
 
   /* Text */
   --color-text: #e8e6e1;
-  --color-text-secondary: #9ca3af;
-  --color-text-disabled: #6b7280;
+  --color-text-secondary: #96a0ad;
+  --color-text-disabled: #77808c;
 
   /* Semantic */
-  --color-success: #10b981;
+  --color-success: #4aae8c; /* verdigris */
   --color-warning: #c8a44e;
-  --color-danger: #ef4444;
-  --color-danger-dark: #dc2626;
-  --color-info: #3b82f6;
+  --color-danger: #dc6a51; /* ember */
+  --color-danger-dark: #b5462f;
+  --color-info: #7ba2cc; /* steel */
+
+  /* Player lines: per-participant identity colors, threaded through rail
+   * borders, map traces, finish board and chat dots (never the name itself,
+   * which belongs to the equipped name template). */
+  --color-line-1: #4aae8c;
+  --color-line-2: #c8a44e;
+  --color-line-3: #a99bc9;
+  --color-line-4: #d96a6a;
+  --color-line-5: #7ba2cc;
+  --color-line-6: #c98f65;
+  --color-line-7: #8791a0;
 
   /* Twitch */
   --color-twitch: #6441a5;
@@ -29,7 +209,10 @@
 
   /* Typography */
   --font-family:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-mono:
+    "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.8rem;
   --font-size-base: 0.9375rem;
@@ -37,10 +220,11 @@
   --font-size-xl: 1.5rem;
   --font-size-2xl: 1.75rem;
 
-  /* Spacing */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  /* Spacing. Near-sharp by design: sm = badges, md = buttons/inputs,
+   * lg = cards. lg < md is intentional (plates are sharper than controls). */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 2px;
 
   /* Breakpoints (for reference, CSS custom properties cannot be used in @media)
    * --breakpoint-sm: 640px   content pages (about, new, manage, invite, homepage)
@@ -149,14 +333,14 @@ a:hover {
 }
 
 .btn-danger {
-  background: var(--color-danger-dark, #dc2626);
-  border: 1px solid var(--color-danger-dark, #dc2626);
+  background: var(--color-danger-dark);
+  border: 1px solid var(--color-danger-dark);
   color: #fff;
 }
 
 .btn-danger:hover {
-  background: var(--color-danger, #ef4444);
-  border-color: var(--color-danger, #ef4444);
+  background: var(--color-danger);
+  border-color: var(--color-danger);
 }
 
 .btn-lg {
@@ -190,33 +374,33 @@ a:hover {
 
 /* Race status badges */
 .badge-open {
-  background: rgba(16, 185, 129, 0.15);
+  background: rgba(74, 174, 140, 0.15);
   color: var(--color-success);
 }
 
 .badge-setup {
-  background: rgba(59, 130, 246, 0.15);
+  background: rgba(123, 162, 204, 0.15);
   color: var(--color-info);
 }
 
 .badge-running {
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(220, 106, 81, 0.15);
   color: var(--color-danger);
 }
 
 .badge-finished {
-  background: rgba(16, 185, 129, 0.15);
+  background: rgba(74, 174, 140, 0.15);
   color: var(--color-success);
 }
 
 /* Participant status badges */
 .badge-registered {
-  background: rgba(107, 114, 128, 0.2);
+  background: rgba(119, 128, 140, 0.2);
   color: var(--color-text-disabled);
 }
 
 .badge-ready {
-  background: rgba(16, 185, 129, 0.15);
+  background: rgba(74, 174, 140, 0.15);
   color: var(--color-success);
 }
 
@@ -226,12 +410,12 @@ a:hover {
 }
 
 .badge-abandoned {
-  background: rgba(107, 114, 128, 0.2);
+  background: rgba(119, 128, 140, 0.2);
   color: var(--color-text-disabled);
 }
 
 .badge-cancelled {
-  background: rgba(107, 114, 128, 0.15);
+  background: rgba(119, 128, 140, 0.15);
   color: var(--color-text-disabled);
 }
 

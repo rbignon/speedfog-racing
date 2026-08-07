@@ -123,7 +123,7 @@
 
   .participant-card.current-user {
     border-left: 3px solid var(--color-purple);
-    background: rgba(139, 92, 246, 0.06);
+    background: rgba(169, 155, 201, 0.06);
   }
 
   .status-dot {

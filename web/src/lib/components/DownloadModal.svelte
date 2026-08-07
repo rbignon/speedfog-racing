@@ -208,7 +208,7 @@
     background: var(--color-bg);
     padding: 0.1rem 0.4rem;
     border-radius: var(--radius-sm);
-    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
   }
 

@@ -142,7 +142,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-family: var(--font-mono);
   }
 
   .row {

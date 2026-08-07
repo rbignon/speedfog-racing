@@ -106,7 +106,7 @@
   }
 
   .row.me {
-    background: rgba(139, 92, 246, 0.1);
+    background: rgba(169, 155, 201, 0.1);
     border-radius: var(--radius-sm);
   }
 

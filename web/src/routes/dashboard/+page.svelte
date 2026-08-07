@@ -948,7 +948,7 @@
   }
 
   .badge-training-ghost {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(169, 155, 201, 0.15);
     color: var(--color-purple);
   }
 
@@ -1146,7 +1146,7 @@
   }
 
   .badge-training {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(169, 155, 201, 0.15);
     color: var(--color-purple);
   }
 

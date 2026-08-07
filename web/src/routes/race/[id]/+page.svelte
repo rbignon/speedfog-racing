@@ -1811,7 +1811,7 @@
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     color: var(--color-warning, #f59e0b);
-    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-family: var(--font-mono);
   }
 
   .organizer {
@@ -1868,7 +1868,7 @@
   }
 
   .seed-badge {
-    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     background: var(--color-surface);
     border: 1px solid var(--color-border);
@@ -1968,7 +1968,7 @@
     margin-top: 0.75rem;
     border: 2px solid var(--color-purple);
     border-radius: var(--radius-sm);
-    background: rgba(139, 92, 246, 0.1);
+    background: rgba(169, 155, 201, 0.1);
     color: var(--color-purple);
     font-family: var(--font-family);
     font-size: var(--font-size-base);
@@ -1978,7 +1978,7 @@
   }
 
   .sidebar-download-btn:hover:not(:disabled) {
-    background: rgba(139, 92, 246, 0.2);
+    background: rgba(169, 155, 201, 0.2);
     border-color: var(--color-purple-hover);
     color: var(--color-purple-hover);
   }

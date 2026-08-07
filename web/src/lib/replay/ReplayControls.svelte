@@ -148,7 +148,7 @@
   }
 
   .time-display {
-    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
     font-variant-numeric: tabular-nums;

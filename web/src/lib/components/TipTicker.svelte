@@ -102,7 +102,7 @@
   }
 
   .ticker-count {
-    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     color: var(--color-text-disabled, #6b7280);
   }
