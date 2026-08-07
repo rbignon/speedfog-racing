@@ -110,8 +110,11 @@
   h1 {
     margin: 0 0 1.5rem 0;
     color: var(--color-text);
-    font-size: var(--font-size-2xl);
-    font-weight: 600;
+    font-family: var(--font-display);
+    font-size: 1.9rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
   }
 
   .invite-details {
@@ -129,9 +132,10 @@
 
   .label {
     color: var(--color-text-secondary);
-    font-size: 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.09em;
     font-weight: 500;
   }
 

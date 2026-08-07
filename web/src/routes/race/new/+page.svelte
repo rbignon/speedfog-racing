@@ -480,8 +480,11 @@
 
   h1 {
     color: var(--color-text);
-    font-size: var(--font-size-2xl);
-    font-weight: 600;
+    font-family: var(--font-display);
+    font-size: 1.9rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
     margin-bottom: 2rem;
   }
 
@@ -498,8 +501,10 @@
   }
 
   .form-group > :is(label, span):first-child {
+    font-family: var(--font-mono);
     font-weight: 500;
-    font-size: var(--font-size-sm);
+    font-size: 0.7rem;
+    letter-spacing: 0.09em;
     color: var(--color-text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -628,8 +633,10 @@
 
   .role-col > span:first-child,
   .visibility-col > span:first-child {
+    font-family: var(--font-mono);
     font-weight: 500;
-    font-size: var(--font-size-sm);
+    font-size: 0.7rem;
+    letter-spacing: 0.09em;
     color: var(--color-text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.05em;

@@ -246,7 +246,11 @@
   }
 
   h1 {
-    font-size: var(--font-size-2xl);
+    font-family: var(--font-display);
+    font-size: 1.9rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
     margin-bottom: 1.5rem;
   }
 
@@ -263,11 +267,11 @@
     border: none;
     border-bottom: 2px solid transparent;
     color: var(--color-text-secondary);
-    font-family: var(--font-family);
-    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
     font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.09em;
     cursor: pointer;
     transition:
       color 0.15s,
@@ -279,8 +283,8 @@
   }
 
   .tab.active {
-    color: var(--color-purple);
-    border-bottom-color: var(--color-purple);
+    color: var(--color-text);
+    border-bottom-color: var(--color-gold);
   }
 
   .setting-group {
