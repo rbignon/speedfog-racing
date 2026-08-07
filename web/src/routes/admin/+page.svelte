@@ -1593,9 +1593,7 @@
                 </td>
                 <td>
                   <span
-                    class="badge {race.is_public
-                      ? 'vis-public'
-                      : 'vis-private'}"
+                    class="chip {race.is_public ? 'vis-public' : 'vis-private'}"
                     >{race.is_public ? "Public" : "Private"}</span
                   >
                 </td>
@@ -1758,8 +1756,6 @@
     font-weight: 500;
     letter-spacing: 0.09em;
     text-transform: uppercase;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     cursor: pointer;
     transition:
       color 0.15s,
@@ -1962,7 +1958,7 @@
   }
 
   .role-badge.admin {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(220, 106, 81, 0.15);
     color: var(--color-danger);
   }
 
@@ -2091,12 +2087,11 @@
   /* Visibility badges in the Races tab. Private is warning-tinted so the
      races an admin can't otherwise see stand out. */
   .vis-public {
-    background: rgba(156, 163, 175, 0.15);
     color: var(--color-text-secondary);
   }
 
   .vis-private {
-    background: rgba(200, 164, 78, 0.15);
+    border-color: rgba(200, 164, 78, 0.4);
     color: var(--color-warning);
   }
 
@@ -2132,7 +2127,7 @@
 
   .activity-badge.daily {
     background: rgba(45, 212, 191, 0.15);
-    color: #2dd4bf;
+    color: #3ec4ae;
   }
 
   .activity-badge.daily-active {
@@ -2598,7 +2593,7 @@
   }
 
   .heatmap-legend-purple {
-    background: linear-gradient(to right, #0d1117, rgba(139, 92, 246, 0.9));
+    background: linear-gradient(to right, #0d1117, rgba(169, 155, 201, 0.9));
   }
 
   @media (max-width: 640px) {

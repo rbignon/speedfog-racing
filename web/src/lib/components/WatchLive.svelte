@@ -50,8 +50,8 @@
 
 <style>
   .watch-live {
-    background: rgba(233, 25, 22, 0.1);
-    border: 1px solid rgba(233, 25, 22, 0.25);
+    background: rgba(220, 106, 81, 0.1);
+    border: 1px solid rgba(220, 106, 81, 0.25);
     border-radius: var(--radius-sm);
     padding: 0.75rem;
     margin-bottom: 0.75rem;
@@ -93,7 +93,7 @@
   }
 
   .caster-card:hover {
-    background: rgba(233, 25, 22, 0.15);
+    background: rgba(220, 106, 81, 0.15);
   }
 
   .caster-avatar {
@@ -108,7 +108,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(233, 25, 22, 0.12);
+    background: rgba(220, 106, 81, 0.12);
     color: var(--color-danger);
     font-size: var(--font-size-sm);
     font-weight: 600;

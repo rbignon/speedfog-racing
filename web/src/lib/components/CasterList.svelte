@@ -234,7 +234,7 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-purple);
-    background: rgba(168, 85, 247, 0.15);
+    background: rgba(169, 155, 201, 0.15);
     padding: 0.1rem 0.35rem;
     border-radius: 3px;
     font-weight: 600;

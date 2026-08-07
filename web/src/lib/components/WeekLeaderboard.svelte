@@ -172,7 +172,7 @@
   }
 
   .deaths::before {
-    content: "💀 ";
+    content: "† ";
   }
 
   .deaths {

@@ -565,8 +565,8 @@
     gap: 0.75rem;
     padding: 0.875rem 1.25rem;
     margin-bottom: 1.5rem;
-    background: rgba(59, 130, 246, 0.1);
-    border: 1px solid rgba(59, 130, 246, 0.25);
+    background: rgba(123, 162, 204, 0.1);
+    border: 1px solid rgba(123, 162, 204, 0.25);
     border-radius: var(--radius-lg);
   }
 

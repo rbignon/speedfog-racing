@@ -338,7 +338,7 @@
   }
 
   .role-badge.admin {
-    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(220, 106, 81, 0.4);
     color: var(--color-danger);
   }
 

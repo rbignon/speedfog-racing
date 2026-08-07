@@ -149,20 +149,20 @@
     {
       key: "players",
       label: "Active players",
-      accent: "#22c55e",
-      accentSoft: "rgba(34, 197, 94, 0.36)",
+      accent: "#4aae8c",
+      accentSoft: "rgba(74, 174, 140, 0.36)",
     },
     {
       key: "deaths",
       label: "Total deaths",
-      accent: "#ef4444",
-      accentSoft: "rgba(239, 68, 68, 0.36)",
+      accent: "#dc6a51",
+      accentSoft: "rgba(220, 106, 81, 0.36)",
     },
     {
       key: "hours",
       label: "Hours raced",
       accent: "var(--color-purple)",
-      accentSoft: "rgba(139, 92, 246, 0.36)",
+      accentSoft: "rgba(169, 155, 201, 0.36)",
     },
   ] as const;
 

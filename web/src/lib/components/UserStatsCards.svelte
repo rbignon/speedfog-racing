@@ -58,8 +58,8 @@
       label: "Daily",
       value: profile.stats.daily_count,
       series: padSeries(profile.stats.weekly.daily),
-      accent: "#2dd4bf",
-      accentSoft: "rgba(45, 212, 191, 0.36)",
+      accent: "var(--color-success)",
+      accentSoft: "rgba(74, 174, 140, 0.36)",
       emptyCopy: "Never daily",
     },
     {
@@ -67,8 +67,8 @@
       label: "Solo",
       value: profile.stats.training_count,
       series: padSeries(profile.stats.weekly.solo),
-      accent: "var(--color-purple)",
-      accentSoft: "rgba(139, 92, 246, 0.36)",
+      accent: "var(--color-info)",
+      accentSoft: "rgba(123, 162, 204, 0.36)",
       emptyCopy: "Never solo",
     },
     {
@@ -76,8 +76,8 @@
       label: "Organized",
       value: profile.stats.organized_count,
       series: padSeries(profile.stats.weekly.organized),
-      accent: "#f59e0b",
-      accentSoft: "rgba(245, 158, 11, 0.36)",
+      accent: "var(--color-purple)",
+      accentSoft: "rgba(169, 155, 201, 0.36)",
       emptyCopy: "Never organized",
     },
   ]);

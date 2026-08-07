@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { statusLabel } from "$lib/format";
   import { auth } from "$lib/stores/auth.svelte";
   import { acceptInvite, getTwitchLoginUrl } from "$lib/api";
 
@@ -53,7 +54,7 @@
       <div class="detail">
         <span class="label">Status</span>
         <span class="signal signal-{invite.race_status}"
-          >{invite.race_status}</span
+          >{statusLabel(invite.race_status)}</span
         >
       </div>
       <div class="detail">

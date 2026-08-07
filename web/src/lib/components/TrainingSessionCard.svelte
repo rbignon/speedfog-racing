@@ -19,7 +19,9 @@
   <div class="route route-{routeState}" aria-hidden="true">
     <span class="line"></span>
     <span class="m-start"></span>
-    <span class="m-end"></span>
+    {#if routeState !== "setup"}
+      <span class="m-end"></span>
+    {/if}
     {#if session.status === "active"}
       <span class="m-train"></span>
     {/if}

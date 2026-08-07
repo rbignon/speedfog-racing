@@ -507,7 +507,6 @@
     letter-spacing: 0.09em;
     color: var(--color-text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
   }
 
   input[type="text"] {
@@ -639,7 +638,6 @@
     letter-spacing: 0.09em;
     color: var(--color-text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
   }
 
   .registration-row {
