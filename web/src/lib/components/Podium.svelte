@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { WsParticipant } from "$lib/websocket";
   import { PLAYER_COLORS } from "$lib/dag/constants";
+  import { rewards } from "$lib/stores/rewards.svelte";
+  import { formatGapCompact } from "$lib/gap";
 
   interface Props {
     participants: WsParticipant[];
@@ -12,7 +14,7 @@
     participants.filter((p) => p.status === "finished").slice(0, 3),
   );
 
-  const MEDALS = ["🥇", "🥈", "🥉"];
+  const PLACE_TAGS = ["1st", "2nd", "3rd"];
 
   function formatIgt(ms: number): string {
     const totalSeconds = Math.floor(ms / 1000);
@@ -29,34 +31,52 @@
     return PLAYER_COLORS[p.color_index % PLAYER_COLORS.length];
   }
 
-  // Visual order: [2nd, 1st, 3rd] for classic podium layout
-  let podiumOrder = $derived.by(() => {
-    if (finishers.length < 2)
-      return finishers.map((f, i) => ({ finisher: f, place: i }));
-    const order: { finisher: WsParticipant; place: number }[] = [];
-    if (finishers.length >= 2) order.push({ finisher: finishers[1], place: 1 });
-    order.push({ finisher: finishers[0], place: 0 });
-    if (finishers.length >= 3) order.push({ finisher: finishers[2], place: 2 });
-    return order;
-  });
-
-  const HEIGHTS = [160, 120, 100];
+  // Names render through the equipped name template; without one they stay
+  // default ink (the player's line color lives on the column's top edge).
+  function nameStyleFor(p: WsParticipant): string {
+    const id = p.equipped_name_template_id;
+    const t = !id || id === "default" ? null : rewards.lookupTemplate(id);
+    const parts: string[] = [];
+    if (t?.gradient) {
+      parts.push(
+        `background: linear-gradient(90deg, ${t.gradient[0]}, ${t.gradient[1]});`,
+        "-webkit-background-clip: text;",
+        "background-clip: text;",
+        "color: transparent;",
+        "padding-inline-end: 0.1em;",
+      );
+    } else if (t?.color) {
+      parts.push(`color: ${t.color};`);
+    }
+    if (t?.name_css) {
+      parts.push(t.name_css);
+    }
+    return parts.join(" ");
+  }
 </script>
 
 {#if finishers.length > 0}
-  <div class="podium">
-    {#each podiumOrder as { finisher, place } (finisher.id)}
-      <div class="podium-column" style="--bar-height: {HEIGHTS[place]}px;">
-        <span class="medal">{MEDALS[place]}</span>
-        <span class="podium-name">
+  <div class="finish-board">
+    {#each finishers as finisher, place (finisher.id)}
+      <div
+        class="fb-col"
+        class:win={place === 0}
+        style="--line: {playerColor(finisher)}"
+      >
+        <span class="fb-place">{PLACE_TAGS[place]}</span>
+        <div class="fb-name" style={nameStyleFor(finisher)}>
           {finisher.twitch_display_name || finisher.twitch_username}
-        </span>
-        <span class="podium-time">{formatIgt(finisher.igt_ms)}</span>
-        {#if finisher.death_count > 0}
-          <span class="podium-deaths">💀 {finisher.death_count}</span>
-        {/if}
-        <div class="podium-bar" style="background: {playerColor(finisher)};">
-          <span class="podium-place">{place + 1}</span>
+        </div>
+        <div class="fb-time">{formatIgt(finisher.igt_ms)}</div>
+        <div class="fb-sub">
+          {#if place > 0}
+            {formatGapCompact(finisher.igt_ms - finishers[0].igt_ms)}
+          {/if}
+          {#if place > 0 && finisher.death_count > 0}&middot;{/if}
+          {#if finisher.death_count > 0}
+            &dagger; {finisher.death_count}
+            death{finisher.death_count !== 1 ? "s" : ""}
+          {/if}
         </div>
       </div>
     {/each}
@@ -64,65 +84,99 @@
 {/if}
 
 <style>
-  .podium {
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    gap: 0.5rem;
-    max-width: 500px;
-    margin: 0 auto;
-    padding: 1.5rem 1rem 0;
+  .finish-board {
+    display: grid;
+    grid-auto-columns: 1fr;
+    grid-auto-flow: column;
+    flex-shrink: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    overflow: hidden;
   }
 
-  .podium-column {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
-    flex: 1;
+  .fb-col {
+    position: relative;
+    padding: 1rem 1.1rem 0.85rem;
+    border-left: 1px solid var(--color-border);
     min-width: 0;
   }
 
-  .medal {
-    font-size: 1.5rem;
+  .fb-col:first-child {
+    border-left: none;
   }
 
-  .podium-name {
+  /* The player's line runs along the column's top edge, closed by a
+   * small terminal square. */
+  .fb-col::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--line);
+  }
+
+  .fb-col::after {
+    content: "";
+    position: absolute;
+    top: 5px;
+    right: 8px;
+    width: 7px;
+    height: 7px;
+    background: var(--line);
+  }
+
+  .fb-place {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+  }
+
+  .fb-name {
+    font-family: var(--font-display);
     font-weight: 600;
-    font-size: var(--font-size-sm);
-    white-space: nowrap;
+    font-size: 1.2rem;
+    letter-spacing: 0.02em;
+    margin: 0.05rem 0 0.1rem;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
-    text-align: center;
+    white-space: nowrap;
   }
 
-  .podium-time {
-    font-size: var(--font-size-sm);
-    color: var(--color-success);
-    font-variant-numeric: tabular-nums;
-    font-weight: 500;
+  .fb-time {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    color: var(--color-text);
   }
 
-  .podium-deaths {
-    font-size: var(--font-size-sm);
-    color: var(--color-danger, #ef4444);
+  .fb-col.win .fb-time {
+    font-size: 1.25rem;
   }
 
-  .podium-bar {
-    width: 100%;
-    height: var(--bar-height);
-    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding-top: 0.5rem;
-    opacity: 0.85;
+  .fb-sub {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--color-text-secondary);
+    margin-top: 2px;
+    min-height: 1em;
   }
 
-  .podium-place {
-    font-size: var(--font-size-lg);
-    font-weight: 700;
-    color: var(--color-surface, #1a1a2e);
+  @media (max-width: 640px) {
+    .finish-board {
+      grid-auto-flow: row;
+    }
+
+    .fb-col {
+      border-left: none;
+      border-top: 1px solid var(--color-border);
+    }
+
+    .fb-col:first-child {
+      border-top: none;
+    }
   }
 </style>
