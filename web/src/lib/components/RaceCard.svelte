@@ -236,13 +236,14 @@
     transition: border-color var(--transition);
   }
 
-  /* The route rides the card's real top border (the border stays visible
-   * at the corners, outside the line's insets); markers straddle the edge. */
+  /* The route rides the card's real top border; the negative side offsets
+   * pull the line's 14px insets back so it spans nearly the whole border,
+   * markers sitting just inside the corners and straddling the edge. */
   .race-card > :global(.route) {
     position: absolute;
     top: -7px;
-    left: 0;
-    right: 0;
+    left: -7px;
+    right: -7px;
   }
 
   .race-card:hover {

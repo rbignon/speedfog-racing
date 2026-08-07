@@ -216,6 +216,33 @@ describe("DailyWeekGrid", () => {
     expect(container.querySelectorAll(".wl")).toHaveLength(7);
   });
 
+  it("renders today's segment in brass while the viewer is riding the seed", () => {
+    const week: DailyWeekResponse = {
+      ...mockWeek,
+      days: mockWeek.days.map((d) =>
+        d.state === "today"
+          ? {
+              ...d,
+              my_result: {
+                status: "playing",
+                placement: null,
+                total_starters: 9,
+                igt_ms: 600_000,
+                death_count: 2,
+                qualifies: false,
+              },
+            }
+          : d,
+      ),
+    };
+    const { container } = render(DailyWeekGrid, {
+      props: { week, variant: "home" },
+    });
+    const todaySeg = container.querySelector('[data-cell-state="today"] .wl');
+    expect(todaySeg?.classList.contains("wl-playing")).toBe(true);
+    expect(todaySeg?.querySelector(".wl-train")).not.toBeNull();
+  });
+
   it("renders the abandoned strip on a past abandoned cell", () => {
     const week: DailyWeekResponse = {
       ...mockWeek,

@@ -142,10 +142,15 @@
   }
 
   /* The week is one continuous metro line across the plate's top: each
-   * day contributes its segment, colored by what happened on it. */
+   * day contributes its segment, colored by what happened on it. Today
+   * distinguishes "the seed is on" (ember) from "the viewer is riding it"
+   * (brass, the charter's playing hue) from "ridden" (verdigris). */
   function wlClass(day: DailyWeekDay): string {
     if (myDone(day)) return "wl-done";
-    if (day.state === "today") return "wl-today";
+    if (day.state === "today") {
+      const r = day.my_result;
+      return r && r.status !== "abandoned" ? "wl-playing" : "wl-today";
+    }
     if (day.state === "past") return "wl-closed";
     return "wl-future";
   }
@@ -233,123 +238,125 @@
       </div>
     </div>
   </div>
-  <div class="grid" bind:this={scrollContainer}>
-    {#each displayedWeek.days as day, dayIndex (day.date)}
-      {@const href = hrefFor(day)}
-      <svelte:element
-        this={href ? "a" : "div"}
-        href={href ?? undefined}
-        class="cell"
-        class:past={day.state === "past"}
-        class:today={day.state === "today"}
-        class:future={day.state === "future"}
-        class:missing-past={day.state === "missing_past"}
-        class:selected={day.date === selectedDate}
-        data-cell-state={day.state}
-        data-cell-date={day.date}
-      >
-        <div
-          class="wl {wlClass(day)}"
-          class:wl-first={dayIndex === 0}
-          class:wl-last={dayIndex === displayedWeek.days.length - 1}
-          aria-hidden="true"
+  <div class="grid-plate">
+    <div class="grid" bind:this={scrollContainer}>
+      {#each displayedWeek.days as day, dayIndex (day.date)}
+        {@const href = hrefFor(day)}
+        <svelte:element
+          this={href ? "a" : "div"}
+          href={href ?? undefined}
+          class="cell"
+          class:past={day.state === "past"}
+          class:today={day.state === "today"}
+          class:future={day.state === "future"}
+          class:missing-past={day.state === "missing_past"}
+          class:selected={day.date === selectedDate}
+          data-cell-state={day.state}
+          data-cell-date={day.date}
         >
-          {#if dayIndex === 0}
-            <span class="wl-start"></span>
-          {/if}
-          <span class="wl-line"></span>
-          <span class="wl-station"></span>
-          {#if day.state === "today" && !myDone(day)}
-            <span class="wl-train"></span>
-          {/if}
-          {#if dayIndex === displayedWeek.days.length - 1}
-            <span class="wl-term" class:filled={weekOver}></span>
-          {/if}
-        </div>
-        <div class="header">
-          <span class="weekday">{WEEKDAY_LABELS[day.weekday]}</span>
-          {#if day.state === "today"}
-            <span class="today-label">Today</span>
-          {:else if day.state === "past" && day.starters_count > 0}
-            <span class="meta">
-              {day.starters_count}
-              {day.starters_count === 1 ? "player" : "players"}
-            </span>
-          {/if}
-        </div>
-
-        {#if day.state === "missing_past"}
-          <span class="muted">No daily</span>
-        {:else if day.state === "future"}
-          <span class="pool">
-            {day.pool_display_name ?? "TBD"}
-            {#if day.deathless}
-              <span class="deathless" title="Dying once eliminates you"
-                >Deathless</span
-              >
+          <div
+            class="wl {wlClass(day)}"
+            class:wl-first={dayIndex === 0}
+            class:wl-last={dayIndex === displayedWeek.days.length - 1}
+            aria-hidden="true"
+          >
+            {#if dayIndex === 0}
+              <span class="wl-start"></span>
             {/if}
-          </span>
-          <span class="countdown">Opens in {countdown(day.started_at)}</span>
-        {:else}
-          <span class="pool">
-            {day.pool_display_name ?? "TBD"}
-            {#if day.deathless}
-              <span class="deathless" title="Dying once eliminates you"
-                >Deathless</span
-              >
+            <span class="wl-line"></span>
+            <span class="wl-station"></span>
+            {#if day.state === "today" && !myDone(day)}
+              <span class="wl-train"></span>
             {/if}
-          </span>
-          <div class="body">
-            {#if day.state === "today"}
-              {#if day.race_id === null}
-                <span class="muted">Daily seed incoming</span>
-              {:else if day.participants_count > 0}
-                <span class="muted">
-                  {day.participants_count}
-                  {day.participants_count === 1 ? "player" : "players"}
-                </span>
-              {/if}
-            {:else}
-              {@const winner =
-                day.podium.find((e) => e.placement === 1) ?? null}
-              {#if winner}
-                <div class="winner">
-                  <span class="place">1st</span>
-                  <span class="name"
-                    >{winner.twitch_display_name ??
-                      winner.twitch_username}</span
-                  >
-                  <span class="igt">{formatIgt(winner.igt_ms)}</span>
-                </div>
-              {:else}
-                <span class="muted">No finishers</span>
-              {/if}
+            {#if dayIndex === displayedWeek.days.length - 1}
+              <span class="wl-term" class:filled={weekOver}></span>
             {/if}
           </div>
-          {@const strip = cellStrip(
-            day,
-            selectedDate,
-            displayedWeek.my_streak?.current ?? 0,
-          )}
-          {#if strip?.kind === "label"}
-            <span class="strip strip-{strip.variant}">{strip.text}</span>
-          {:else if strip?.kind === "finished"}
-            <span class="strip strip-finished">
-              <span class="strip-icon" aria-hidden="true">✓</span>
-              <span class="strip-score">{strip.score}</span>
+          <div class="header">
+            <span class="weekday">{WEEKDAY_LABELS[day.weekday]}</span>
+            {#if day.state === "today"}
+              <span class="today-label">Today</span>
+            {:else if day.state === "past" && day.starters_count > 0}
+              <span class="meta">
+                {day.starters_count}
+                {day.starters_count === 1 ? "player" : "players"}
+              </span>
+            {/if}
+          </div>
+
+          {#if day.state === "missing_past"}
+            <span class="muted">No daily</span>
+          {:else if day.state === "future"}
+            <span class="pool">
+              {day.pool_display_name ?? "TBD"}
+              {#if day.deathless}
+                <span class="deathless" title="Dying once eliminates you"
+                  >Deathless</span
+                >
+              {/if}
             </span>
-          {:else if strip?.kind === "dnf"}
-            <span class="strip strip-dnf"
-              >{strip.igt ? `DNF · ${strip.igt}` : "DNF"}</span
-            >
+            <span class="countdown">Opens in {countdown(day.started_at)}</span>
           {:else}
-            <span class="strip strip-placeholder" aria-hidden="true"
-              >&nbsp;</span
-            >
+            <span class="pool">
+              {day.pool_display_name ?? "TBD"}
+              {#if day.deathless}
+                <span class="deathless" title="Dying once eliminates you"
+                  >Deathless</span
+                >
+              {/if}
+            </span>
+            <div class="body">
+              {#if day.state === "today"}
+                {#if day.race_id === null}
+                  <span class="muted">Daily seed incoming</span>
+                {:else if day.participants_count > 0}
+                  <span class="muted">
+                    {day.participants_count}
+                    {day.participants_count === 1 ? "player" : "players"}
+                  </span>
+                {/if}
+              {:else}
+                {@const winner =
+                  day.podium.find((e) => e.placement === 1) ?? null}
+                {#if winner}
+                  <div class="winner">
+                    <span class="place">1st</span>
+                    <span class="name"
+                      >{winner.twitch_display_name ??
+                        winner.twitch_username}</span
+                    >
+                    <span class="igt">{formatIgt(winner.igt_ms)}</span>
+                  </div>
+                {:else}
+                  <span class="muted">No finishers</span>
+                {/if}
+              {/if}
+            </div>
+            {@const strip = cellStrip(
+              day,
+              selectedDate,
+              displayedWeek.my_streak?.current ?? 0,
+            )}
+            {#if strip?.kind === "label"}
+              <span class="strip strip-{strip.variant}">{strip.text}</span>
+            {:else if strip?.kind === "finished"}
+              <span class="strip strip-finished">
+                <span class="strip-icon" aria-hidden="true">✓</span>
+                <span class="strip-score">{strip.score}</span>
+              </span>
+            {:else if strip?.kind === "dnf"}
+              <span class="strip strip-dnf"
+                >{strip.igt ? `DNF · ${strip.igt}` : "DNF"}</span
+              >
+            {:else}
+              <span class="strip strip-placeholder" aria-hidden="true"
+                >&nbsp;</span
+              >
+            {/if}
           {/if}
-        {/if}
-      </svelte:element>
-    {/each}
+        </svelte:element>
+      {/each}
+    </div>
   </div>
 </section>
 
@@ -363,13 +370,21 @@
   }
 
   /* One continuous timetable: hairline column separators inside a single
-   * bordered plate, horizontal scroll below 7 * 150px. */
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(7, minmax(150px, 1fr));
+   * bordered plate, horizontal scroll below 7 * 150px. The plate carries
+   * the border; the scroller inside extends its scrollport 8px upward
+   * (padding-top + negative margin), which is what lets the week line
+   * ride the plate's top border without being clipped by overflow-x. */
+  .grid-plate {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(150px, 1fr));
+    padding-top: 8px;
+    margin-top: -8px;
     overflow-x: auto;
   }
 
@@ -405,7 +420,9 @@
     flex: none;
     position: relative;
     height: 14px;
-    margin: 0 -0.875rem 0.1rem;
+    /* Pull the segment up into the scroller's extra top padding so the
+     * line lands on the plate's border and the stations straddle it. */
+    margin: -8px -0.875rem 0.1rem;
   }
 
   .wl-line {
@@ -436,6 +453,10 @@
     border-top-color: var(--color-danger);
   }
 
+  .wl-playing .wl-line {
+    border-top-color: var(--color-warning);
+  }
+
   .wl-future .wl-line {
     border-top-style: dashed;
     border-top-color: var(--color-border);
@@ -463,6 +484,10 @@
 
   .wl-today .wl-station {
     border-color: var(--color-danger);
+  }
+
+  .wl-playing .wl-station {
+    border-color: var(--color-warning);
   }
 
   .wl-future .wl-station {
@@ -526,6 +551,15 @@
     );
     background-repeat: no-repeat;
     animation: route-ride 3.2s linear infinite;
+  }
+
+  .wl-playing .wl-train::before {
+    background: radial-gradient(
+      circle 3px at 3px 3px,
+      var(--color-warning) 98%,
+      transparent
+    );
+    background-repeat: no-repeat;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -722,8 +756,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    /* The week line's stations straddle the plate's top border below;
+     * keep enough air for their upper halves. */
     gap: 1rem;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.6rem;
   }
 
   .streak-info {
