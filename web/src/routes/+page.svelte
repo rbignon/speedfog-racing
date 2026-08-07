@@ -13,7 +13,6 @@
   } from "$lib/api";
   import MetroDagAnimated from "$lib/dag/MetroDagAnimated.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
-  import LiveIndicator from "$lib/components/LiveIndicator.svelte";
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
@@ -156,7 +155,7 @@
   {#if !loadingRaces}
     {#if liveRaces.length > 0}
       <section class="public-races">
-        <SectionTitle><LiveIndicator dotOnly /> Live Races</SectionTitle>
+        <SectionTitle>Live Races</SectionTitle>
         <div class="race-grid">
           {#each liveRaces as race}
             <RaceCard {race} />
@@ -204,7 +203,7 @@
         {/each}
       </div>
       <div class="see-all">
-        <a href="/races" class="see-all-link">See all results</a>
+        <a href="/races" class="see-all-link">See all races</a>
       </div>
     </section>
   {/if}

@@ -2,7 +2,6 @@
   import { onMount } from "svelte";
   import { fetchRaces, fetchRacesPaginated, type Race } from "$lib/api";
   import RaceCard from "$lib/components/RaceCard.svelte";
-  import LiveIndicator from "$lib/components/LiveIndicator.svelte";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
 
   const FINISHED_PAGE_SIZE = 10;
@@ -70,7 +69,7 @@
   {:else}
     {#if liveRaces.length > 0}
       <section class="race-section">
-        <SectionTitle><LiveIndicator dotOnly /> Live Races</SectionTitle>
+        <SectionTitle>Live Races</SectionTitle>
         <div class="race-grid">
           {#each liveRaces as race}
             <RaceCard {race} />

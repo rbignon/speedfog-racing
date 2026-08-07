@@ -639,10 +639,12 @@
     color: var(--color-purple-hover);
   }
 
+  /* One grey step below the message/system text, so the metadata reads as
+   * a different layer than the content. */
   .timestamp {
     font-family: var(--font-mono);
     font-size: 0.65rem;
-    color: var(--color-text-secondary);
+    color: var(--color-text-disabled);
     flex-shrink: 0;
   }
 
