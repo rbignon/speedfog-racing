@@ -64,7 +64,7 @@
     margin: 0 0 0.5rem 0;
     font-size: var(--font-size-sm);
     font-weight: 600;
-    color: #f87171;
+    color: var(--color-danger);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
@@ -109,7 +109,7 @@
     align-items: center;
     justify-content: center;
     background: rgba(233, 25, 22, 0.12);
-    color: #f87171;
+    color: var(--color-danger);
     font-size: var(--font-size-sm);
     font-weight: 600;
   }

@@ -178,7 +178,7 @@
         y={snap.y - RACER_DOT_RADIUS - 8}
         text-anchor="middle"
         font-size="22"
-        fill={leaderChanged ? "#FACC15" : "#C8A44E"}
+        fill={leaderChanged ? "#EFD35D" : "#C8A44E"}
         class="leader-star"
         class:flash={leaderChanged}>&#x2B51;</text
       >

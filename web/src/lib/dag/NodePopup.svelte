@@ -463,6 +463,6 @@
   }
 
   .codex-link:hover {
-    color: var(--color-purple-hover, #a78bfa);
+    color: var(--color-purple-hover);
   }
 </style>
