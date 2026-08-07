@@ -280,34 +280,47 @@ a:hover {
   color: var(--color-purple-hover);
 }
 
+/* Headings speak the display face (signage voice); caps are applied
+ * per-component, never here (usernames inside headings keep their case). */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  line-height: 1.2;
+}
+
 /* Buttons */
 .btn {
-  padding: 0.5rem 1rem;
-  border: none;
+  padding: 0.45rem 1.1rem 0.55rem;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
   text-decoration: none;
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
-  font-weight: 500;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  line-height: 1.2;
   display: inline-block;
   transition: all var(--transition);
 }
 
 .btn-primary {
   background: var(--color-gold);
-  color: var(--color-bg);
+  color: #14100a;
 }
 
 .btn-primary:hover {
   background: var(--color-gold-hover);
-  color: var(--color-bg);
+  color: #14100a;
   box-shadow: var(--glow-gold);
 }
 
 .btn-secondary {
   background: transparent;
-  border: 1px solid var(--color-border);
+  border-color: var(--color-border);
   color: var(--color-text);
 }
 
@@ -326,21 +339,20 @@ a:hover {
 }
 
 .btn-danger {
-  background: var(--color-danger-dark);
-  border: 1px solid var(--color-danger-dark);
-  color: #fff;
+  background: transparent;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .btn-danger:hover {
-  background: var(--color-danger);
+  background: rgba(220, 106, 81, 0.12);
   border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .btn-lg {
-  padding: 0.85rem 2.5rem;
-  font-size: 1.05rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  padding: 0.7rem 2.2rem 0.8rem;
+  font-size: 1.2rem;
 }
 
 .btn-primary.btn-lg {

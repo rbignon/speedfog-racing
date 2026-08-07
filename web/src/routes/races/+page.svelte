@@ -3,6 +3,7 @@
   import { fetchRaces, fetchRacesPaginated, type Race } from "$lib/api";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import LiveIndicator from "$lib/components/LiveIndicator.svelte";
+  import SectionTitle from "$lib/components/SectionTitle.svelte";
 
   const FINISHED_PAGE_SIZE = 10;
 
@@ -69,7 +70,7 @@
   {:else}
     {#if liveRaces.length > 0}
       <section class="race-section">
-        <h2><LiveIndicator dotOnly /> Live Races</h2>
+        <SectionTitle><LiveIndicator dotOnly /> Live Races</SectionTitle>
         <div class="race-grid">
           {#each liveRaces as race}
             <RaceCard {race} />
@@ -80,7 +81,7 @@
 
     {#if upcomingRaces.length > 0}
       <section class="race-section">
-        <h2>Upcoming Races</h2>
+        <SectionTitle>Upcoming Races</SectionTitle>
         <div class="race-grid">
           {#each upcomingRaces as race}
             <RaceCard {race} />
@@ -110,7 +111,7 @@
   {/if}
 
   <section class="race-section">
-    <h2>Recent Races</h2>
+    <SectionTitle>Recent Races</SectionTitle>
     {#if loadingFinished}
       <p class="loading">Loading results...</p>
     {:else if finishedRaces.length === 0}
@@ -146,24 +147,17 @@
   }
 
   h1 {
-    color: var(--color-gold);
-    font-size: var(--font-size-xl);
+    font-family: var(--font-display);
+    font-size: 1.9rem;
     font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-text);
     margin: 0 0 1.5rem;
   }
 
   .race-section {
     margin-bottom: 2rem;
-  }
-
-  h2 {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0 0 1rem;
-    color: var(--color-gold);
-    font-size: var(--font-size-lg);
-    font-weight: 600;
   }
 
   .race-grid {

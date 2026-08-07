@@ -15,6 +15,7 @@
   import RaceCard from "$lib/components/RaceCard.svelte";
   import LiveIndicator from "$lib/components/LiveIndicator.svelte";
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
+  import SectionTitle from "$lib/components/SectionTitle.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
 
@@ -109,7 +110,11 @@
     <MetroDagAnimated graphJson={heroSeed} />
   </div>
   <div class="hero-cta">
-    <h1>SpeedFog Racing</h1>
+    <h1>SpeedFog <span class="brass">Racing</span></h1>
+    <div class="route-hero" aria-hidden="true">
+      <span class="tri"></span><span class="line"></span><span class="ring"
+      ></span><span class="term"></span>
+    </div>
     <p class="hero-tagline">
       Competitive Elden Ring racing through randomized fog gates
     </p>
@@ -133,15 +138,10 @@
     </div>
     <a
       href="https://discord.gg/Qmw67J3mR9"
-      class="btn btn-discord"
+      class="hero-discord"
       target="_blank"
       rel="noopener noreferrer"
     >
-      <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"
-        ><path
-          d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"
-        /></svg
-      >
       Join the community on Discord
     </a>
   </div>
@@ -150,13 +150,13 @@
 <main class="public-section">
   <RewardsBanner />
   {#if dailyWeek}
-    <h2 class="daily-seed-title">Daily Seed</h2>
+    <SectionTitle>Daily Seed</SectionTitle>
     <DailyWeekGrid week={dailyWeek} variant="home" />
   {/if}
   {#if !loadingRaces}
     {#if liveRaces.length > 0}
       <section class="public-races">
-        <h2><LiveIndicator dotOnly /> Live Races</h2>
+        <SectionTitle><LiveIndicator dotOnly /> Live Races</SectionTitle>
         <div class="race-grid">
           {#each liveRaces as race}
             <RaceCard {race} />
@@ -167,7 +167,7 @@
 
     {#if upcomingRaces.length > 0}
       <section class="public-races">
-        <h2>Upcoming Races</h2>
+        <SectionTitle>Upcoming Races</SectionTitle>
         <div class="race-grid">
           {#each upcomingRaces as race}
             <RaceCard {race} />
@@ -197,7 +197,7 @@
 
   {#if !loadingRecent && recentRaces.length > 0}
     <section class="public-races">
-      <h2>Recent Races</h2>
+      <SectionTitle>Recent Races</SectionTitle>
       <div class="race-grid">
         {#each recentRaces as race}
           <RaceCard {race} />
@@ -251,16 +251,73 @@
   }
 
   .hero-cta h1 {
-    font-size: clamp(1.5rem, 4vw, 2.5rem);
+    font-family: var(--font-display);
+    font-size: clamp(2.2rem, 6vw, 3.6rem);
     font-weight: 700;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    line-height: 1.05;
+    color: var(--color-text);
+    margin: 0;
+  }
+
+  .hero-cta h1 .brass {
+    font-weight: 600;
     color: var(--color-gold);
-    margin: 0 0 0.5rem;
+  }
+
+  /* Brass route underline: triangle -> ring -> terminal square */
+  .route-hero {
+    position: relative;
+    width: min(400px, 70vw);
+    height: 16px;
+    margin: 0.55rem 0 0;
+  }
+
+  .route-hero .line {
+    position: absolute;
+    left: 16px;
+    right: 18px;
+    top: 7px;
+    border-top: 2px solid var(--color-gold);
+  }
+
+  .route-hero .tri {
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 0;
+    height: 0;
+    border-left: 10px solid var(--color-gold);
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+  }
+
+  .route-hero .ring {
+    position: absolute;
+    left: 50%;
+    top: 2px;
+    width: 12px;
+    height: 12px;
+    margin-left: -6px;
+    border-radius: 50%;
+    border: 2px solid var(--color-gold);
+    background: var(--color-surface);
+  }
+
+  .route-hero .term {
+    position: absolute;
+    right: 2px;
+    top: 3px;
+    width: 10px;
+    height: 10px;
+    background: var(--color-gold);
   }
 
   .hero-tagline {
     color: var(--color-text-secondary);
     font-size: clamp(0.85rem, 2vw, 1.1rem);
-    margin: 0 0 1.5rem;
+    margin: 1.1rem 0 1.5rem;
   }
 
   .hero-buttons {
@@ -271,28 +328,16 @@
     justify-content: center;
   }
 
-  .btn-discord {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 1.75rem;
+  .hero-discord {
+    margin-top: 1.5rem;
     color: var(--color-text-secondary);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: transparent;
     text-decoration: none;
     font-size: var(--font-size-sm);
-    padding: 0.45rem 1.2rem;
-    border-radius: 999px;
-    transition:
-      color 0.15s ease,
-      border-color 0.15s ease,
-      background 0.15s ease;
+    transition: color 0.15s ease;
   }
 
-  .btn-discord:hover {
-    color: #5865f2;
-    border-color: #5865f2;
-    background: rgba(88, 101, 242, 0.08);
+  .hero-discord:hover {
+    color: var(--color-purple-hover);
   }
 
   /* Public races */
@@ -307,16 +352,6 @@
   .public-races {
     margin-bottom: 2rem;
     margin-top: 2rem;
-  }
-
-  h2 {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0 0 1rem;
-    color: var(--color-gold);
-    font-size: var(--font-size-lg);
-    font-weight: 600;
   }
 
   .race-grid {

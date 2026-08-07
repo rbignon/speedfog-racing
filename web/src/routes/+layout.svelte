@@ -27,6 +27,14 @@
   let joinableCount = $state(0);
   let dailyUnplayed = $state(false);
 
+  let adminActive = $derived(page.url.pathname.startsWith("/admin"));
+  let soloActive = $derived(page.url.pathname.startsWith("/training"));
+  let dailyActive = $derived(page.url.pathname.startsWith("/daily"));
+  let racesActive = $derived(
+    page.url.pathname.startsWith("/races") ||
+      page.url.pathname.startsWith("/race/"),
+  );
+
   let userMenuOpen = $state(false);
   let userMenuEl: HTMLDivElement | undefined = $state();
 
@@ -91,9 +99,26 @@
   <div class="app" class:app-fixed={isImmersivePage}>
     <header>
       <div class="header-content">
-        <a href={auth.isLoggedIn ? "/dashboard" : "/"} class="logo"
-          >SpeedFog Racing</a
-        >
+        <a href={auth.isLoggedIn ? "/dashboard" : "/"} class="logo">
+          <svg width="30" height="30" viewBox="0 0 36 32" aria-hidden="true">
+            <path class="g-solid" d="M4 12.5 L11 16 L4 19.5 Z" />
+            <path class="g-line" d="M11 16 L15 12 H24 L28 16" />
+            <path class="g-line" d="M11 16 L15 20 H24 L28 16" />
+            <circle class="g-ring" cx="19.5" cy="12" r="2.6" />
+            <rect
+              class="g-boss"
+              x="17.7"
+              y="18.2"
+              width="3.6"
+              height="3.6"
+              transform="rotate(45 19.5 20)"
+            />
+            <rect class="g-solid" x="28" y="13.5" width="5" height="5" />
+          </svg>
+          <span class="wordmark"
+            >SpeedFog <span class="brass">Racing</span></span
+          >
+        </a>
         <nav>
           <a
             href="https://discord.gg/Qmw67J3mR9"
@@ -134,16 +159,36 @@
           {#if auth.isLoggedIn}
             <NavUserSearch />
             {#if auth.isAdmin}
-              <a href="/admin" class="btn btn-secondary">Admin</a>
+              <a
+                href="/admin"
+                class="nav-link"
+                class:active={adminActive}
+                aria-current={adminActive ? "page" : undefined}>Admin</a
+              >
             {/if}
-            <a href="/training" class="btn btn-secondary">Solo</a>
-            <a href="/daily" class="btn btn-secondary btn-with-badge">
+            <a
+              href="/training"
+              class="nav-link"
+              class:active={soloActive}
+              aria-current={soloActive ? "page" : undefined}>Solo</a
+            >
+            <a
+              href="/daily"
+              class="nav-link"
+              class:active={dailyActive}
+              aria-current={dailyActive ? "page" : undefined}
+            >
               Daily
               {#if dailyUnplayed}
                 <span class="nav-dot" aria-label="Daily seed not played"></span>
               {/if}
             </a>
-            <a href="/races" class="btn btn-secondary btn-with-badge">
+            <a
+              href="/races"
+              class="nav-link"
+              class:active={racesActive}
+              aria-current={racesActive ? "page" : undefined}
+            >
               Races
               {#if joinableCount > 0}
                 <span class="nav-badge">{joinableCount}</span>
@@ -292,18 +337,66 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 2rem 1rem 1.5rem;
+    padding: 0.7rem 2rem 0.7rem 1.5rem;
   }
 
   .logo {
-    margin: 0;
-    font-size: var(--font-size-xl);
-    font-weight: 700;
-    color: var(--color-gold);
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
     text-decoration: none;
   }
 
-  .logo:hover {
+  .logo svg {
+    display: block;
+    flex: none;
+  }
+
+  .logo .g-solid {
+    fill: var(--color-gold);
+  }
+
+  .logo .g-line {
+    fill: none;
+    stroke: var(--color-gold);
+    stroke-width: 2;
+  }
+
+  .logo .g-ring {
+    fill: var(--color-bg);
+    stroke: var(--color-gold);
+    stroke-width: 1.8;
+  }
+
+  .logo .g-boss {
+    fill: var(--color-purple);
+  }
+
+  .logo:hover .g-solid {
+    fill: var(--color-gold-hover);
+  }
+
+  .logo:hover .g-line,
+  .logo:hover .g-ring {
+    stroke: var(--color-gold-hover);
+  }
+
+  .wordmark {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 21px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+
+  .wordmark .brass {
+    font-weight: 600;
+    color: var(--color-gold);
+  }
+
+  .logo:hover .wordmark .brass {
     color: var(--color-gold-hover);
   }
 
@@ -311,6 +404,36 @@
     display: flex;
     align-items: center;
     gap: 1rem;
+  }
+
+  .nav-link {
+    position: relative;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    padding: 0.45rem 0.8rem 0.55rem;
+  }
+
+  .nav-link:hover {
+    color: var(--color-text);
+  }
+
+  .nav-link.active {
+    color: var(--color-text);
+  }
+
+  .nav-link.active::after {
+    content: "";
+    position: absolute;
+    left: 0.8rem;
+    right: 0.8rem;
+    bottom: 4px;
+    height: 2px;
+    background: var(--color-gold);
   }
 
   .nav-icon {
@@ -339,14 +462,10 @@
     color: #5865f2;
   }
 
-  .btn-with-badge {
-    position: relative;
-  }
-
   .nav-badge {
     position: absolute;
-    top: -7px;
-    right: -7px;
+    top: -3px;
+    right: -6px;
     background: var(--color-success);
     color: var(--color-bg);
     font-size: 0.6rem;
@@ -363,10 +482,10 @@
 
   .nav-dot {
     position: absolute;
-    top: -3px;
-    right: -3px;
-    width: 8px;
-    height: 8px;
+    top: 2px;
+    right: 0;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: var(--color-success);
   }
@@ -487,7 +606,7 @@
   }
 
   .footer-links a {
-    color: var(--color-text-disabled);
+    color: var(--color-text-secondary);
     text-decoration: none;
     font-size: var(--font-size-sm);
     transition: color 0.2s ease;
@@ -515,9 +634,8 @@
       gap: 0.5rem;
     }
 
-    .logo {
-      font-size: var(--font-size-lg);
-      white-space: nowrap;
+    .wordmark {
+      font-size: 18px;
     }
 
     nav {
@@ -527,6 +645,16 @@
     nav :global(.btn) {
       font-size: var(--font-size-sm);
       padding: 0.4rem 0.75rem;
+    }
+
+    .nav-link {
+      font-size: 15px;
+      padding-inline: 0.4rem;
+    }
+
+    .nav-link.active::after {
+      left: 0.4rem;
+      right: 0.4rem;
     }
 
     .user-menu-name {

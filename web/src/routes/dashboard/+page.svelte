@@ -23,6 +23,7 @@
   import LiveIndicator from "$lib/components/LiveIndicator.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
+  import SectionTitle from "$lib/components/SectionTitle.svelte";
   import UserStatsCards from "$lib/components/UserStatsCards.svelte";
 
   let profile: UserProfile | null = $state(null);
@@ -394,14 +395,14 @@
     {/if}
 
     {#if dailyWeek}
-      <h2 class="daily-seed-title">Daily Seed</h2>
+      <SectionTitle>Daily Seed</SectionTitle>
       <DailyWeekGrid week={dailyWeek} variant="dashboard" />
     {/if}
 
     <!-- Active Now Section (hidden when empty) -->
     {#if activeRaces.length > 0 || activeTraining.length > 0}
       <section class="active-section">
-        <h2>Active Now</h2>
+        <SectionTitle>Active Now</SectionTitle>
         <div class="active-cards">
           {#each activeRaces as race}
             {@const overflowCount = Math.max(
@@ -549,7 +550,7 @@
     <!-- Races to Join Section -->
     {#if joinableRaces.length > 0}
       <section class="joinable-section">
-        <h2>Races to Join</h2>
+        <SectionTitle>Races to Join</SectionTitle>
         <div class="joinable-cards">
           {#each joinableRaces as race}
             <RaceCard {race} />
@@ -564,7 +565,7 @@
     <!-- Recent Activity Section -->
     {#if activity && activity.items.length > 0}
       <section class="activity-section">
-        <h2>Recent Activity</h2>
+        <SectionTitle>Recent Activity</SectionTitle>
         <div class="activity-list">
           {#each activity.items as item}
             <a href={activityLink(item)} class="activity-row">
@@ -863,13 +864,6 @@
   }
 
   /* Sections */
-  h2 {
-    margin: 0 0 1rem;
-    color: var(--color-gold);
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-  }
-
   /* Active Now */
   .active-section {
     margin-bottom: 2rem;

@@ -352,7 +352,7 @@
 
         {#if status === "active"}
           <button
-            class="btn btn-danger-outline"
+            class="btn btn-danger"
             onclick={() => (showAbandonConfirm = true)}
           >
             Abandon
@@ -764,17 +764,6 @@
 
   .tip-banner {
     margin: 0.75rem 0;
-  }
-
-  /* Danger outline button */
-  :global(.btn-danger-outline) {
-    background: transparent;
-    color: var(--color-danger);
-    border: 1px solid var(--color-danger);
-  }
-
-  :global(.btn-danger-outline:hover) {
-    background: rgba(220, 38, 38, 0.1);
   }
 
   :global(.btn-sm) {
