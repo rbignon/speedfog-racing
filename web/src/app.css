@@ -623,6 +623,18 @@ th {
   background: var(--color-danger);
 }
 
+.route-playing .line {
+  border-top-color: var(--color-warning);
+}
+
+.route-playing .m-start {
+  border-color: var(--color-warning);
+}
+
+.route-playing .m-end {
+  background: var(--color-warning);
+}
+
 .route-finished .line {
   border-top-color: var(--color-info);
 }
@@ -660,6 +672,15 @@ th {
   );
   background-repeat: no-repeat;
   animation: route-ride 3.2s linear infinite;
+}
+
+.route-playing .m-train::before {
+  background: radial-gradient(
+    circle 3px at 3px 3px,
+    var(--color-warning) 98%,
+    transparent
+  );
+  background-repeat: no-repeat;
 }
 
 @keyframes route-ride {

@@ -11,6 +11,7 @@
   } from "$lib/api";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import PoolTabs from "$lib/components/PoolTabs.svelte";
+  import SectionTitle from "$lib/components/SectionTitle.svelte";
   import TrainingSessionCard from "$lib/components/TrainingSessionCard.svelte";
   import { timeAgo } from "$lib/utils/time";
   import { formatPoolName } from "$lib/utils/format";
@@ -128,17 +129,19 @@
   <!-- Active Sessions or Pool Selection -->
   <section class="section">
     {#if loadingPools || loadingSessions}
-      <h2>Start a Run</h2>
+      <SectionTitle>Start a Run</SectionTitle>
       <p class="loading">Loading...</p>
     {:else if activeSessions.length > 0}
-      <h2>Active Run{activeSessions.length > 1 ? "s" : ""}</h2>
+      <SectionTitle
+        >Active Run{activeSessions.length > 1 ? "s" : ""}</SectionTitle
+      >
       <div class="active-sessions">
         {#each activeSessions as session (session.id)}
           <TrainingSessionCard {session} />
         {/each}
       </div>
     {:else}
-      <h2>Start a Run</h2>
+      <SectionTitle>Start a Run</SectionTitle>
       {#if sortedPools.length === 0}
         <p class="empty">No game modes available.</p>
       {:else}
@@ -202,7 +205,7 @@
 
   <!-- History -->
   <section class="section">
-    <h2>History</h2>
+    <SectionTitle>History</SectionTitle>
     {#if loadingSessions}
       <p class="loading">Loading sessions...</p>
     {:else if sessions.length === 0}
@@ -264,9 +267,12 @@
   }
 
   h1 {
-    color: var(--color-gold);
-    font-size: var(--font-size-2xl);
+    font-family: var(--font-display);
+    font-size: 1.9rem;
     font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-text);
     margin: 0 0 0.25rem;
   }
 
@@ -296,13 +302,6 @@
 
   .section {
     margin-bottom: 2.5rem;
-  }
-
-  h2 {
-    color: var(--color-gold);
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    margin: 0 0 1rem;
   }
 
   .loading {
