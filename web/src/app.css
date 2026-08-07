@@ -192,16 +192,9 @@
   --color-danger-dark: #b5462f;
   --color-info: #7ba2cc; /* steel */
 
-  /* Player lines: per-participant identity colors, threaded through rail
-   * borders, map traces, finish board and chat dots (never the name itself,
-   * which belongs to the equipped name template). */
-  --color-line-1: #4aae8c;
-  --color-line-2: #c8a44e;
-  --color-line-3: #a99bc9;
-  --color-line-4: #d96a6a;
-  --color-line-5: #7ba2cc;
-  --color-line-6: #c98f65;
-  --color-line-7: #8791a0;
+  /* Player line colors are not tokens: the 20-hue PLAYER_COLORS palette in
+   * src/lib/dag/constants.ts is the single source of truth, consumed via each
+   * participant's color_index. */
 
   /* Twitch */
   --color-twitch: #6441a5;

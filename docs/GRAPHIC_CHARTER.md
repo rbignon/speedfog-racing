@@ -50,6 +50,8 @@ What changed versus charter v1, in one list:
 | Secondary | Blue-tinted grey | `#96A0AD` |
 | Disabled  | Slate grey       | `#77808C` |
 
+Disabled grey is for genuinely disabled or decorative elements only. Informational data (timestamps, deltas, dates, meta rows) never drops below secondary: on surface, disabled grey sits at the 4:1 contrast floor and anything darker fails it at data sizes.
+
 ### Semantic
 
 | Status              | Name      | Hex       |
@@ -63,19 +65,9 @@ What changed versus charter v1, in one list:
 
 ### Player lines
 
-Each race participant gets a line color, assigned by join order, the way a metro line keeps its color across the whole network. It appears on: results rail left borders, map traces, finish board column lines and terminal marks, chat/popup identity dots, and the checked state of the map-filter checkboxes. It **never** colors the player's name (names belong to name templates).
+Each race participant gets a line color, assigned by join order (the server-side `color_index`), the way a metro line keeps its color across the whole network. It appears on: results rail left borders, map traces, finish board column lines and terminal marks, chat/popup identity dots, and the checked state of the map-filter checkboxes. It **never** colors the player's name (names belong to name templates).
 
-| Index | Hex       |
-| ----- | --------- |
-| 1     | `#4AAE8C` |
-| 2     | `#C8A44E` |
-| 3     | `#A99BC9` |
-| 4     | `#D96A6A` |
-| 5     | `#7BA2CC` |
-| 6     | `#C98F65` |
-| 7     | `#8791A0` |
-
-Brass and verdigris double as line colors on purpose; on a metro map, hue reuse is normal. Cycle the palette past seven participants.
+The palette is the existing 20-hue `PLAYER_COLORS` in `web/src/lib/dag/constants.ts`, the single source of truth for every consumer. Twenty hues, not seven: dailies routinely exceed 20 participants, and bundled parallel map traces sit 5px apart, so mutual contrast is functional, not decorative. Saturated hues are kept on purpose (they read on navy, and real metro lines are saturated). The current values predate this charter (Tailwind-400 hexes); retune them lightly toward the navy/brass temperature when the new components start consuming them, keeping the tier structure and keeping tier 1 (the first six, the only ones most races ever show) clear of brass, ember and fog lookalikes. Cycle the palette past twenty participants.
 
 ---
 
@@ -105,6 +97,7 @@ Three faces, three roles. All self-hosted (latin + latin-ext subsets in `web/sta
 ### Principles
 
 - **Caps diet.** Letterspaced uppercase survives only in two places: display-face titles/buttons, and mono micro-labels inside data panels (seed params, table headers, signals). Section titles never use the free-floating grey eyebrow pattern; they use the line device.
+- **Usernames are never uppercased.** `text-transform` never applies to a player name: casing is part of the identity, and name templates style it deliberately. Display-face contexts (finish board, titles) render names in the display face with their original case. Race names and other non-name titles may be uppercased.
 - Digits that align in columns always go through `--font-mono` (the face is tabular by design; `font-variant-numeric` is no longer needed for new code).
 - Line-height: `1.5` body, `1.1`-`1.2` display.
 - All transitions `0.2s ease`, never more.
@@ -184,7 +177,7 @@ Vertical list, one entry per participant:
 
 ### Finish board (podium)
 
-Three columns `1st / 2nd / 3rd` on a surface panel: place tag in mono brass caps, name in display caps through the name template, IGT in mono (winner column larger), sub-line `+delta · † deaths`. Each column's top edge carries the player's line color with a small terminal square. With fewer than three finishers, render only the existing columns (the board never shows empty slots).
+Three columns `1st / 2nd / 3rd` on a surface panel: place tag in mono brass caps, name in the display face through the name template (original case, never uppercased), IGT in mono (winner column larger), sub-line `+delta · † deaths`. Each column's top edge carries the player's line color with a small terminal square. With fewer than three finishers, render only the existing columns (the board never shows empty slots).
 
 ### Forms
 
@@ -196,11 +189,13 @@ Three columns `1st / 2nd / 3rd` on a surface panel: place tag in mono brass caps
 
 ### DAG / map
 
-The map keeps its full richness: generous node sizes (they are click targets), rotated zone labels, fog boss diamonds, dagger death marks, faint base network behind bundled player traces (parallel offsets, 45° elbows). Abandoned traces end on a hollow ring mid-network. Node popup on elevated surface, radius `--radius-lg`: zone title, mono meta row (`BOSS ARENA` / brass-bordered `TIER n` chip / `DEPTH n`; `FINAL BOSS` label in brass), caps `ENTRANCES` / `EXITS` sections with `←`/`→` arrows and mono `to:`/`from:` sub-notes, and a `VISITED BY` section listing per-player line-color dot + name + `† deaths · time` (DNF rows dimmed).
+The SVG rendering (nodes, traces, animations, and its own color constants in `web/src/lib/dag/constants.ts`) is deliberately **out of the refresh's scope**: the current representation is kept as-is, and any cosmetic realignment is re-evaluated only once the rest of the refresh has shipped. It already speaks the network language: generous node sizes (they are click targets), rotated zone labels, boss diamonds, faint base network behind bundled player traces (parallel offsets, 45° elbows), abandoned traces ending on a hollow ring mid-network.
+
+The HTML node popup does adopt the charter, but only through tokens (fonts, surface, border), keeping its structure: elevated surface, radius `--radius-lg`, zone title, mono meta row (`BOSS ARENA` / brass-bordered `TIER n` chip / `DEPTH n`; `FINAL BOSS` label in brass), caps `ENTRANCES` / `EXITS` sections with `←`/`→` arrows and mono `to:`/`from:` sub-notes, and a `VISITED BY` section listing per-player line-color dot + name + `† deaths · time` (DNF rows dimmed).
 
 ### Chat
 
-System messages in mono `11px` muted with right-aligned timestamps. User messages: identity disc in the player's line color, name through the name template, mono timestamp, plain body. `ORG` tag as a small brass-bordered mono chip. Reactions as small bordered mono chips.
+System messages in mono `11px` muted with right-aligned timestamps. User messages: identity disc in the player's line color (slate for non-participants, e.g. spectators in public chat), name through the name template, mono timestamp, plain body. `ORG` tag as a small brass-bordered mono chip. Reactions as small bordered mono chips; the emoji itself is user content, not chrome, and is kept as-is next to its mono count.
 
 ---
 
@@ -255,14 +250,9 @@ Authoritative token block in `web/src/app.css` (self-hosted `@font-face` declara
   --color-danger-dark: #b5462f;
   --color-info: #7ba2cc; /* steel */
 
-  /* Player lines */
-  --color-line-1: #4aae8c;
-  --color-line-2: #c8a44e;
-  --color-line-3: #a99bc9;
-  --color-line-4: #d96a6a;
-  --color-line-5: #7ba2cc;
-  --color-line-6: #c98f65;
-  --color-line-7: #8791a0;
+  /* Player line colors are NOT tokens: the 20-hue PLAYER_COLORS palette in
+   * web/src/lib/dag/constants.ts is the single source of truth (see the
+   * "Player lines" section). */
 
   /* Twitch */
   --color-twitch: #6441a5;
