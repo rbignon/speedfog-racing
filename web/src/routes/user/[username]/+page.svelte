@@ -10,10 +10,8 @@
     type ActivityTimeline,
     type UserTraitsResponse,
   } from "$lib/api";
-  import { statusLabel } from "$lib/format";
-  import { formatPoolName } from "$lib/utils/format";
-  import { formatIgt } from "$lib/utils/training";
   import { rewards } from "$lib/stores/rewards.svelte";
+  import ActivityList from "$lib/components/ActivityList.svelte";
   import UserStatsCards from "$lib/components/UserStatsCards.svelte";
   import ModeStats from "$lib/components/ModeStats.svelte";
   import PlayStyle from "$lib/components/PlayStyle.svelte";
@@ -114,20 +112,6 @@
       day: "numeric",
       year: "numeric",
     });
-  }
-
-  function placementLabel(p: number): string {
-    if (p === 1) return "1st";
-    if (p === 2) return "2nd";
-    if (p === 3) return "3rd";
-    return `${p}th`;
-  }
-
-  function placementClass(p: number | null): string {
-    if (p === 1) return "gold";
-    if (p === 2) return "silver";
-    if (p === 3) return "bronze";
-    return "";
   }
 </script>
 
@@ -241,117 +225,7 @@
         {#if activity.items.length === 0}
           <p class="empty">No activity yet.</p>
         {:else}
-          <div class="timeline">
-            {#each activity.items as item (item.type + "-" + ("race_id" in item ? item.race_id : "session_id" in item ? item.session_id : "") + "-" + item.date)}
-              <div class="activity-card">
-                <span class="activity-date">{formatFullDate(item.date)}</span>
-                {#if item.type === "race_participant"}
-                  <div class="activity-body">
-                    <div class="badge-row">
-                      <span class="activity-badge participant">Race</span>
-                      {#if item.is_organizer}
-                        <span class="activity-badge organizer">Organized</span>
-                      {/if}
-                      <span class="badge badge-{item.status}"
-                        >{statusLabel(item.status)}</span
-                      >
-                    </div>
-                    <a href="/race/{item.race_id}" class="activity-title">
-                      {item.race_name}
-                    </a>
-                    <div class="activity-details">
-                      {#if item.placement}
-                        <span
-                          class="placement {placementClass(item.placement)}"
-                        >
-                          {placementLabel(item.placement)} / {item.total_starters}
-                        </span>
-                      {:else if item.status === "finished"}
-                        <span class="placement-dnf"
-                          >DNF / {item.total_starters}</span
-                        >
-                      {/if}
-                      <span class="mono">{formatIgt(item.igt_ms)}</span>
-                      <span>{item.death_count} deaths</span>
-                    </div>
-                  </div>
-                {:else if item.type === "race_organizer"}
-                  <div class="activity-body">
-                    <div class="badge-row">
-                      <span class="activity-badge organizer">Organized</span>
-                      <span class="badge badge-{item.status}"
-                        >{statusLabel(item.status)}</span
-                      >
-                    </div>
-                    <a href="/race/{item.race_id}" class="activity-title">
-                      {item.race_name}
-                    </a>
-                    <div class="activity-details">
-                      <span>{item.participant_count} players</span>
-                    </div>
-                  </div>
-                {:else if item.type === "race_caster"}
-                  <div class="activity-body">
-                    <div class="badge-row">
-                      <span class="activity-badge caster">Casted</span>
-                      <span class="badge badge-{item.status}"
-                        >{statusLabel(item.status)}</span
-                      >
-                    </div>
-                    <a href="/race/{item.race_id}" class="activity-title">
-                      {item.race_name}
-                    </a>
-                  </div>
-                {:else if item.type === "training"}
-                  <div class="activity-body">
-                    <div class="badge-row">
-                      <span class="activity-badge training">Solo</span>
-                      <span class="badge badge-{item.status}"
-                        >{statusLabel(item.status)}</span
-                      >
-                    </div>
-                    <a
-                      href="/training/{item.session_id}"
-                      class="activity-title"
-                    >
-                      {item.pool_display_name || formatPoolName(item.pool_name)}
-                    </a>
-                    <div class="activity-details">
-                      <span class="mono">{formatIgt(item.igt_ms)}</span>
-                      <span>{item.death_count} deaths</span>
-                    </div>
-                  </div>
-                {:else if item.type === "daily_participant"}
-                  <div class="activity-body">
-                    <div class="badge-row">
-                      <span class="activity-badge daily">Daily</span>
-                      {#if item.status === "running"}
-                        <span class="activity-badge daily-active">Active</span>
-                      {/if}
-                    </div>
-                    <a href="/daily/{item.daily_date}" class="activity-title">
-                      {item.pool_display_name || formatPoolName(item.pool_name)}
-                    </a>
-                    <div class="activity-details">
-                      {#if item.placement}
-                        <span
-                          class="placement {placementClass(item.placement)}"
-                        >
-                          {placementLabel(item.placement)} / {item.total_starters}
-                        </span>
-                      {:else if item.status === "finished"}
-                        <span class="placement-dnf"
-                          >DNF / {item.total_starters}</span
-                        >
-                      {/if}
-                      <span class="mono">{formatIgt(item.igt_ms)}</span>
-                      <span>{item.death_count} deaths</span>
-                    </div>
-                  </div>
-                {/if}
-              </div>
-            {/each}
-          </div>
+          <ActivityList items={activity.items} formatDate={formatFullDate} />
 
           {#if activity.has_more}
             <button
@@ -517,126 +391,6 @@
     font-style: italic;
   }
 
-  .timeline {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .activity-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-  }
-
-  .activity-date {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    white-space: nowrap;
-    min-width: 6rem;
-    padding-top: 0.15rem;
-  }
-
-  .activity-body {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    flex: 1;
-  }
-
-  .activity-badge {
-    font-size: 0.65rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.1rem 0.4rem;
-    border-radius: var(--radius-sm);
-    width: fit-content;
-  }
-
-  .activity-badge.participant {
-    background: rgba(200, 164, 78, 0.15);
-    color: var(--color-gold);
-  }
-
-  .activity-badge.organizer {
-    background: rgba(200, 164, 78, 0.15);
-    color: var(--color-gold);
-  }
-
-  .activity-badge.caster {
-    background: rgba(200, 164, 78, 0.15);
-    color: var(--color-gold);
-  }
-
-  .activity-badge.training {
-    background: rgba(169, 155, 201, 0.15);
-    color: var(--color-purple);
-  }
-
-  .activity-badge.daily {
-    background: rgba(45, 212, 191, 0.15);
-    color: #2dd4bf;
-  }
-
-  .activity-badge.daily-active {
-    background: rgba(200, 164, 78, 0.15);
-    color: var(--color-gold);
-  }
-
-  .badge-row {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .activity-title {
-    color: var(--color-text);
-    text-decoration: none;
-    font-weight: 600;
-  }
-
-  .activity-title:hover {
-    color: var(--color-purple);
-    text-decoration: underline;
-  }
-
-  .activity-details {
-    display: flex;
-    gap: 0.75rem;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-  }
-
-  .placement {
-    font-weight: 600;
-  }
-
-  .placement.gold {
-    color: var(--color-gold);
-  }
-
-  .placement.silver {
-    color: #c0c0c0;
-  }
-
-  .placement.bronze {
-    color: #cd7f32;
-  }
-
-  .placement-dnf {
-    font-weight: 600;
-    color: var(--color-text-disabled);
-  }
-
-  .mono {
-    font-variant-numeric: tabular-nums;
-  }
-
   .load-more {
     margin-top: 1rem;
     width: 100%;
@@ -645,15 +399,6 @@
   @media (max-width: 640px) {
     .profile-page {
       padding: 1rem;
-    }
-
-    .activity-card {
-      flex-direction: column;
-      gap: 0.25rem;
-    }
-
-    .activity-date {
-      min-width: auto;
     }
   }
 </style>

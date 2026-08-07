@@ -9,7 +9,6 @@
     fetchJoinableRaces,
     fetchDailyWeek,
     type UserProfile,
-    type ActivityItem,
     type ActivityTimeline,
     type Race,
     type TrainingSession,
@@ -23,6 +22,7 @@
   import LiveIndicator from "$lib/components/LiveIndicator.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
+  import ActivityList from "$lib/components/ActivityList.svelte";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import UserStatsCards from "$lib/components/UserStatsCards.svelte";
 
@@ -146,49 +146,6 @@
     } finally {
       loadingMore = false;
     }
-  }
-
-  function activityLink(item: ActivityItem): string {
-    if (item.type === "training") return `/training/${item.session_id}`;
-    if (item.type === "daily_participant") return `/daily/${item.daily_date}`;
-    return `/race/${item.race_id}`;
-  }
-
-  function activityLabel(item: ActivityItem): string {
-    if (item.type === "race_participant") return item.race_name;
-    if (item.type === "race_organizer") return item.race_name;
-    if (item.type === "race_caster") return item.race_name;
-    if (item.type === "training")
-      return item.pool_display_name || formatPoolName(item.pool_name);
-    if (item.type === "daily_participant")
-      return item.pool_display_name || formatPoolName(item.pool_name);
-    return "";
-  }
-
-  function activityBadge(item: ActivityItem): string {
-    if (item.type === "race_participant") {
-      if (item.status === "finished" && item.placement)
-        return placementMedal(item.placement);
-      if (item.status === "finished") return "Raced";
-      if (item.status === "running") return "Racing";
-      return "Joined";
-    }
-    if (item.type === "race_organizer") return "Organized";
-    if (item.type === "race_caster") return "Casted";
-    if (item.type === "training") return "Solo";
-    if (item.type === "daily_participant") {
-      if (item.status === "finished" && item.placement)
-        return placementMedal(item.placement);
-      return "Daily";
-    }
-    return "";
-  }
-
-  function placementMedal(placement: number): string {
-    if (placement === 1) return "1st";
-    if (placement === 2) return "2nd";
-    if (placement === 3) return "3rd";
-    return `${placement}th`;
   }
 
   function activeRaceRole(race: Race): string {
@@ -566,61 +523,7 @@
     {#if activity && activity.items.length > 0}
       <section class="activity-section">
         <SectionTitle>Recent Activity</SectionTitle>
-        <div class="activity-list">
-          {#each activity.items as item}
-            <a href={activityLink(item)} class="activity-row">
-              <span
-                class="activity-badge badge-{item.type === 'training'
-                  ? 'training'
-                  : item.type === 'daily_participant'
-                    ? 'daily'
-                    : item.status}">{activityBadge(item)}</span
-              >
-              <div class="activity-content">
-                <span class="activity-name">
-                  {activityLabel(item)}
-                  {#if item.type === "race_participant" && item.is_organizer}
-                    <span class="organizer-tag">Organized</span>
-                  {/if}
-                </span>
-                <span class="activity-details">
-                  {#if item.type === "race_participant"}
-                    {#if item.status === "finished" && item.placement}
-                      {placementMedal(item.placement)}/{item.total_starters}
-                      &middot;
-                    {:else if item.status === "finished"}
-                      DNF &middot;
-                    {:else if item.status !== "setup"}
-                      {item.total_starters} players &middot;
-                    {/if}
-                    {#if item.igt_ms > 0}
-                      {formatIgt(item.igt_ms)} &middot; {item.death_count} deaths
-                    {/if}
-                  {:else if item.type === "race_organizer"}
-                    {item.participant_count} player{item.participant_count !== 1
-                      ? "s"
-                      : ""}
-                  {:else if item.type === "training"}
-                    {#if item.igt_ms > 0}
-                      {formatIgt(item.igt_ms)} &middot; {item.death_count} deaths
-                    {/if}
-                  {:else if item.type === "daily_participant"}
-                    {#if item.status === "finished" && item.placement}
-                      {placementMedal(item.placement)}/{item.total_starters}
-                      &middot;
-                    {:else if item.status === "finished"}
-                      DNF &middot;
-                    {/if}
-                    {#if item.igt_ms > 0}
-                      {formatIgt(item.igt_ms)} &middot; {item.death_count} deaths
-                    {/if}
-                  {/if}
-                </span>
-              </div>
-              <span class="activity-time">{timeAgo(item.date)}</span>
-            </a>
-          {/each}
-        </div>
+        <ActivityList items={activity.items} formatDate={timeAgo} />
         {#if activity.has_more}
           <button
             class="btn btn-secondary load-more"
@@ -1103,87 +1006,6 @@
   /* Recent Activity */
   .activity-section {
     margin-bottom: 2rem;
-  }
-
-  .activity-list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .activity-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid var(--color-border);
-    text-decoration: none;
-    color: inherit;
-    transition: background var(--transition);
-  }
-
-  .activity-row:hover {
-    background: var(--color-surface);
-  }
-
-  .activity-row:last-child {
-    border-bottom: none;
-  }
-
-  .activity-badge {
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.15em 0.5em;
-    border-radius: var(--radius-sm);
-    flex-shrink: 0;
-  }
-
-  .badge-training {
-    background: rgba(169, 155, 201, 0.15);
-    color: var(--color-purple);
-  }
-
-  .badge-daily {
-    background: rgba(45, 212, 191, 0.15);
-    color: #2dd4bf;
-  }
-
-  .activity-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    min-width: 0;
-  }
-
-  .activity-name {
-    color: var(--color-text);
-    font-size: var(--font-size-sm);
-  }
-
-  .organizer-tag {
-    margin-left: 0.4rem;
-    padding: 0.05rem 0.35rem;
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--color-text-secondary);
-    background: var(--color-surface-2, rgba(255, 255, 255, 0.06));
-    border-radius: var(--radius-sm);
-  }
-
-  .activity-details {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .activity-time {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-disabled);
-    flex-shrink: 0;
   }
 
   .load-more {
