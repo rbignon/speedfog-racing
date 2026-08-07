@@ -12,6 +12,7 @@
   } from "$lib/api";
   import { rewards } from "$lib/stores/rewards.svelte";
   import ActivityList from "$lib/components/ActivityList.svelte";
+  import SectionTitle from "$lib/components/SectionTitle.svelte";
   import UserStatsCards from "$lib/components/UserStatsCards.svelte";
   import ModeStats from "$lib/components/ModeStats.svelte";
   import PlayStyle from "$lib/components/PlayStyle.svelte";
@@ -207,21 +208,21 @@
 
     {#if traits}
       <section class="play-style-section">
-        <h2>Play Style</h2>
+        <SectionTitle>Play Style</SectionTitle>
         <PlayStyle {traits} />
       </section>
     {/if}
 
     {#if poolStats && poolStats.pools.length > 0}
       <section class="mode-stats-section">
-        <h2>Mode Stats</h2>
+        <SectionTitle>Mode Stats</SectionTitle>
         <ModeStats pools={poolStats.pools} />
       </section>
     {/if}
 
     {#if activity}
       <section class="activity-section">
-        <h2>Activity</h2>
+        <SectionTitle>Activity</SectionTitle>
         {#if activity.items.length === 0}
           <p class="empty">No activity yet.</p>
         {:else}
@@ -310,27 +311,29 @@
 
   .profile-name-row h1 {
     margin: 0;
-    font-size: var(--font-size-2xl);
+    font-size: 1.9rem;
     font-weight: 700;
-    color: var(--color-gold);
+    color: var(--color-text);
   }
 
   .role-badge {
-    font-size: var(--font-size-xs);
-    padding: 0.15rem 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid transparent;
     border-radius: var(--radius-sm);
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
   }
 
   .role-badge.organizer {
-    background: rgba(168, 85, 247, 0.15);
+    border-color: rgba(169, 155, 201, 0.4);
     color: var(--color-purple);
   }
 
   .role-badge.caster {
-    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(123, 162, 204, 0.4);
     color: var(--color-info);
   }
 
@@ -375,15 +378,6 @@
   .play-style-section,
   .mode-stats-section {
     margin-bottom: 2.5rem;
-  }
-
-  .play-style-section h2,
-  .mode-stats-section h2,
-  .activity-section h2 {
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    margin: 0 0 1rem 0;
-    color: var(--color-gold);
   }
 
   .empty {

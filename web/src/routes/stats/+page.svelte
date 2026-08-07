@@ -111,8 +111,11 @@
 
   .page-header h1 {
     margin: 0 0 0.35rem 0;
-    font-size: var(--font-size-2xl);
+    font-family: var(--font-display);
+    font-size: 1.9rem;
     font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
     color: var(--color-text);
   }
 
@@ -134,9 +137,11 @@
     border: none;
     border-bottom: 2px solid transparent;
     color: var(--color-text-secondary);
-    font-family: var(--font-family);
-    font-size: var(--font-size-base);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
     font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
     padding: 0.65rem 1.25rem;
     cursor: pointer;
     transition: all var(--transition);
@@ -147,12 +152,12 @@
   }
 
   .tab-active {
-    color: var(--color-gold);
+    color: var(--color-text);
     border-bottom-color: var(--color-gold);
   }
 
   .tab-active:hover {
-    color: var(--color-gold);
+    color: var(--color-text);
   }
 
   .tab-panel {
