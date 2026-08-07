@@ -590,8 +590,8 @@
             {
               label: "Active players",
               data: data.active_users.counts,
-              borderColor: "#22c55e",
-              backgroundColor: "rgba(34,197,94,0.15)",
+              borderColor: "#4aae8c",
+              backgroundColor: "rgba(74,174,140,0.15)",
               borderWidth: 2,
               fill: true,
               tension: 0.3,
@@ -615,8 +615,8 @@
           datasets: [
             {
               data: data.weekly.new_users,
-              backgroundColor: "rgba(139,92,246,0.6)",
-              borderColor: "#8b5cf6",
+              backgroundColor: "rgba(169,155,201,0.6)",
+              borderColor: "#a99bc9",
               borderWidth: 1,
             },
           ],
@@ -645,15 +645,15 @@
             {
               label: "Daily",
               data: data.weekly.daily,
-              backgroundColor: "rgba(56,189,248,0.6)",
-              borderColor: "#38bdf8",
+              backgroundColor: "rgba(123,162,204,0.6)",
+              borderColor: "#7ba2cc",
               borderWidth: 1,
             },
             {
               label: "Solo",
               data: data.weekly.solo,
-              backgroundColor: "rgba(139,92,246,0.6)",
-              borderColor: "#8b5cf6",
+              backgroundColor: "rgba(169,155,201,0.6)",
+              borderColor: "#a99bc9",
               borderWidth: 1,
             },
           ],
@@ -683,15 +683,15 @@
             {
               label: "Finished",
               data: data.weekly.solo_finished,
-              backgroundColor: "rgba(34,197,94,0.5)",
-              borderColor: "#22c55e",
+              backgroundColor: "rgba(74,174,140,0.5)",
+              borderColor: "#4aae8c",
               borderWidth: 1,
             },
             {
               label: "Abandoned",
               data: data.weekly.solo_abandoned,
-              backgroundColor: "rgba(239,68,68,0.5)",
-              borderColor: "#ef4444",
+              backgroundColor: "rgba(220,106,81,0.5)",
+              borderColor: "#dc6a51",
               borderWidth: 1,
             },
           ],
@@ -743,8 +743,8 @@
             datasets: [
               {
                 data: data.timezones.map((t) => t.count),
-                backgroundColor: "rgba(139,92,246,0.6)",
-                borderColor: "#8b5cf6",
+                backgroundColor: "rgba(169,155,201,0.6)",
+                borderColor: "#a99bc9",
                 borderWidth: 1,
               },
             ],
@@ -1260,7 +1260,7 @@
               {#each analytics.heatmaps.solo[rowIdx] as val}
                 <div
                   class="heatmap-cell"
-                  style="background: rgba(139,92,246,{(val / soloMax) * 0.9})"
+                  style="background: rgba(169,155,201,{(val / soloMax) * 0.9})"
                   title={String(val)}
                 ></div>
               {/each}
@@ -1732,8 +1732,11 @@
 
   h1 {
     color: var(--color-text);
-    font-size: var(--font-size-2xl);
-    font-weight: 600;
+    font-family: var(--font-display);
+    font-size: 1.9rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
     margin-bottom: 1.5rem;
   }
 
@@ -1750,9 +1753,11 @@
     border: none;
     border-bottom: 2px solid transparent;
     color: var(--color-text-secondary);
-    font-family: var(--font-family);
-    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
     font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     cursor: pointer;
@@ -1766,8 +1771,8 @@
   }
 
   .tab.active {
-    color: var(--color-purple);
-    border-bottom-color: var(--color-purple);
+    color: var(--color-text);
+    border-bottom-color: var(--color-gold);
   }
 
   .error {
@@ -2061,7 +2066,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--color-success, #22c55e);
+    background: var(--color-success, #4aae8c);
   }
 
   .activity-title:hover {
@@ -2225,11 +2230,11 @@
   }
 
   .recalc-message.success {
-    color: var(--color-success, #22c55e);
+    color: var(--color-success, #4aae8c);
   }
 
   .recalc-message.error {
-    color: var(--color-danger, #ef4444);
+    color: var(--color-danger, #dc6a51);
   }
 
   .reported-section {
