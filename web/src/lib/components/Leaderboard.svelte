@@ -70,10 +70,9 @@
     return rewards.lookupTemplate(id);
   }
 
-  function nameStyleFor(
-    participant: WsParticipant,
-    fallbackColor: string,
-  ): string {
+  // The player's line color never colors the name: without a template the
+  // name stays default ink, the line lives on the row's left border.
+  function nameStyleFor(participant: WsParticipant): string {
     const t = templateFor(participant);
     const parts: string[] = [];
     if (t?.gradient) {
@@ -86,8 +85,6 @@
       );
     } else if (t?.color) {
       parts.push(`color: ${t.color};`);
-    } else {
-      parts.push(`color: ${fallbackColor};`);
     }
     if (t?.name_css) {
       parts.push(t.name_css);
@@ -134,9 +131,7 @@
           class="participant"
           class:abandoned={isAbandoned}
           class:selected={isSelected}
-          style="--player-color: {color}; border-left: 3px solid {color}; {backgroundStyleFor(
-            participant,
-          )}"
+          style="--player-color: {color}; {backgroundStyleFor(participant)}"
           onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
           role={onToggle ? "button" : undefined}
           tabindex={onToggle ? 0 : undefined}
@@ -157,9 +152,7 @@
               >{#if isSelected}✓{/if}</button
             >
           {/if}
-          <span class="rank" style="background: {color}; color: #1a1a2e;"
-            >{index + 1}</span
-          >
+          <span class="rank">{index + 1}.</span>
           <div class="info">
             <div class="name-row">
               <span class="name name-container">
@@ -167,7 +160,7 @@
                   href="/user/{participant.twitch_username}"
                   target="_blank"
                   class="name-link"
-                  style={nameStyleFor(participant, color)}
+                  style={nameStyleFor(participant)}
                   onclick={(e) => e.stopPropagation()}
                 >
                   {#if mode === "running" && (isPlaying || isPreRace)}
@@ -218,7 +211,7 @@
             </div>
             {#if isAbandoned}
               <span class="zone abandoned-label">
-                <span>{isDead ? "Dead" : "Abandoned"}</span>
+                <span>{isDead ? "Dead" : "DNF"}</span>
                 {#if totalLayers}
                   <span class="abandoned-layers"
                     >{Math.min(
@@ -293,12 +286,12 @@
   }
 
   .select-box {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
     flex-shrink: 0;
     padding: 0;
-    border-radius: 4px;
-    border: 1.5px solid var(--color-text-disabled);
+    border-radius: 2px;
+    border: 1px solid var(--color-border);
     background: transparent;
     display: flex;
     align-items: center;
@@ -330,7 +323,7 @@
     opacity: 1;
     background: var(--player-color);
     border-color: var(--player-color);
-    color: #1a1a2e;
+    color: #14100a;
   }
 
   .clear-pill {
@@ -371,9 +364,9 @@
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
     overflow-y: auto;
     flex: 1;
+    border-top: 1px solid var(--color-border);
   }
 
   .list.has-selection {
@@ -382,15 +375,25 @@
   }
 
   .participant {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    background: var(--color-bg);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border);
-    transition: border-color var(--transition);
+    gap: 0.6rem;
+    padding: 0.55rem 0.5rem 0.6rem 0.9rem;
+    border-bottom: 1px solid var(--color-border);
+    transition: background var(--transition);
     cursor: pointer;
+  }
+
+  /* The player's metro line: a 3px inset bar, never the name itself */
+  .participant::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 9px;
+    bottom: 9px;
+    width: 3px;
+    background: var(--player-color);
   }
 
   .participant:hover {
@@ -402,20 +405,15 @@
   }
 
   .participant.abandoned {
-    opacity: 0.5;
+    opacity: 0.55;
   }
 
   .rank {
-    width: 24px;
-    height: 24px;
-    background: var(--color-border);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: var(--font-size-sm);
-    font-weight: bold;
+    width: 20px;
     flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-align: right;
     color: var(--color-text-secondary);
   }
 
@@ -446,9 +444,9 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
     color: var(--color-text-secondary);
-    font-variant-numeric: tabular-nums;
   }
 
   /* Fixed-width time column so the gap that follows lands in the same place on
@@ -502,20 +500,19 @@
 
   .points-earned {
     color: var(--color-success);
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
+    font-weight: 500;
     flex-shrink: 0;
     margin-left: auto;
   }
 
   .death-count {
-    color: var(--color-danger, #ef4444);
-    font-size: var(--font-size-sm);
+    color: var(--color-danger);
   }
 
   .death-count::before {
-    content: "💀 ";
+    content: "† ";
     margin-left: 0.25em;
   }
 
@@ -529,7 +526,8 @@
 
   .abandoned-layers {
     flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
   }
 
   .name-row {
@@ -544,9 +542,8 @@
   }
 
   .layer-fraction {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
     color: var(--color-text-secondary);
     flex-shrink: 0;
     margin-left: auto;

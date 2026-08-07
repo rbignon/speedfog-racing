@@ -70,7 +70,7 @@ describe("Leaderboard: +XX indicator (finished mode)", () => {
     // ...it sits on the Abandoned line instead.
     expect(
       container.querySelector(".abandoned-label")?.textContent ?? "",
-    ).toMatch(/Abandoned.*12\/12/s);
+    ).toMatch(/DNF.*12\/12/s);
   });
 
   it("keeps the ✓ behavior in running mode", () => {
