@@ -392,10 +392,13 @@
   }
 
   .page-header h1 {
-    margin: 0 0 0.35rem 0;
-    font-size: var(--font-size-2xl);
+    font-family: var(--font-display);
+    font-size: 1.9rem;
     font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
     color: var(--color-text);
+    margin: 0 0 0.35rem 0;
   }
 
   .subtitle {

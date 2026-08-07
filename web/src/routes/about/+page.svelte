@@ -1,5 +1,6 @@
 <script lang="ts">
   import { PUBLIC_BASE_URL } from "$env/static/public";
+  import SectionTitle from "$lib/components/SectionTitle.svelte";
   import MetroDag from "$lib/dag/MetroDag.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
 </script>
@@ -20,7 +21,7 @@
   </header>
 
   <section class="section">
-    <h2>What is SpeedFog?</h2>
+    <SectionTitle>What is SpeedFog?</SectionTitle>
     <p>
       The <a
         href="https://www.nexusmods.com/eldenring/mods/3295"
@@ -43,7 +44,7 @@
   </section>
 
   <section class="section">
-    <h2>Key Features</h2>
+    <SectionTitle>Key Features</SectionTitle>
     <div class="feature-grid">
       <div class="feature-card">
         <strong>Balanced Paths</strong>
@@ -92,7 +93,7 @@
   </section>
 
   <section class="section">
-    <h2>How Races Work</h2>
+    <SectionTitle>How Races Work</SectionTitle>
     <div class="steps">
       <div class="step">
         <span class="step-number">1</span>
@@ -138,7 +139,7 @@
   </section>
 
   <section class="section">
-    <h2>The Route Map</h2>
+    <SectionTitle>The Route Map</SectionTitle>
     <p>
       Every seed generates a unique route map, a network of fog gates connecting
       zones across the Lands Between. SpeedFog Racing displays it as a
@@ -161,7 +162,7 @@
   </section>
 
   <section class="section">
-    <h2>In-Game</h2>
+    <SectionTitle>In-Game</SectionTitle>
     <p>
       During a race, a compact <strong>overlay</strong> sits in the corner of
       your screen, no need to alt-tab. It shows your race name, in-game time,
@@ -209,9 +210,12 @@
   }
 
   .about-hero h1 {
-    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-family: var(--font-display);
+    font-size: 1.9rem;
     font-weight: 700;
-    color: var(--color-gold);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-text);
     margin: 0 0 0.75rem;
   }
 
@@ -224,13 +228,6 @@
   /* Sections */
   .section {
     margin-top: 3rem;
-  }
-
-  .section h2 {
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-    color: var(--color-gold);
-    margin: 0 0 1rem;
   }
 
   .section p {

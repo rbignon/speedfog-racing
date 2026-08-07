@@ -1,5 +1,6 @@
 <script lang="ts">
   import { PUBLIC_BASE_URL } from "$env/static/public";
+  import SectionTitle from "$lib/components/SectionTitle.svelte";
   import EmphasisText from "$lib/components/EmphasisText.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
   import {
@@ -40,7 +41,7 @@
 
   {#each sections as section}
     <section class="section" id={section.category}>
-      <h2>{section.label}</h2>
+      <SectionTitle>{section.label}</SectionTitle>
       {#each section.items as item}
         <div class="change">
           <h3>{item.title}</h3>
@@ -76,9 +77,12 @@
   }
 
   .game-changes-hero h1 {
-    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-family: var(--font-display);
+    font-size: 1.9rem;
     font-weight: 700;
-    color: var(--color-gold);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-text);
     margin: 0 0 0.5rem;
   }
 
@@ -91,13 +95,6 @@
   /* Sections */
   .section {
     margin-top: 2.5rem;
-  }
-
-  .section h2 {
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-    color: var(--color-gold);
-    margin: 0 0 1rem;
   }
 
   .change {

@@ -151,9 +151,12 @@
   }
 
   .changelog-hero h1 {
-    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-family: var(--font-display);
+    font-size: 1.9rem;
     font-weight: 700;
-    color: var(--color-gold);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-text);
     margin: 0 0 0.5rem;
   }
 

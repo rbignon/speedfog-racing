@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { PUBLIC_BASE_URL } from "$env/static/public";
+  import SectionTitle from "$lib/components/SectionTitle.svelte";
   import { fetchPoolStats, type PoolStats, type PoolInfo } from "$lib/api";
   import MetroDag from "$lib/dag/MetroDag.svelte";
   import PoolTabs from "$lib/components/PoolTabs.svelte";
@@ -137,7 +138,7 @@
 
   <!-- ==================== QUICK START ==================== -->
   <section class="section" id="quick-start">
-    <h2>Quick Start</h2>
+    <SectionTitle>Quick Start</SectionTitle>
 
     <p class="pick-path">Log in with Twitch, then pick your path:</p>
 
@@ -200,7 +201,7 @@
 
   <!-- ==================== GAME RULES ==================== -->
   <section class="section" id="game-rules">
-    <h2>Game Rules</h2>
+    <SectionTitle>Game Rules</SectionTitle>
 
     <h3>Starting the Run</h3>
     <p>
@@ -332,7 +333,7 @@
 
   <!-- ==================== GAME MODES ==================== -->
   <section class="section" id="game-modes">
-    <h2>Game Modes</h2>
+    <SectionTitle>Game Modes</SectionTitle>
     <p>
       Each mode has its own balance of duration, difficulty, and resources.
       <strong>Standard</strong> is the default; other modes twist the formula.
@@ -367,7 +368,7 @@
 
   <!-- ==================== DURING THE RACE ==================== -->
   <section class="section" id="during-the-race">
-    <h2>During the Race</h2>
+    <SectionTitle>During the Race</SectionTitle>
 
     <div class="overlay-layout">
       <div class="overlay-text">
@@ -486,7 +487,7 @@
 
   <!-- ==================== FAQ ==================== -->
   <section class="section" id="faq">
-    <h2>FAQ</h2>
+    <SectionTitle>FAQ</SectionTitle>
 
     <h3>Gameplay</h3>
 
@@ -705,7 +706,7 @@
 
   <!-- ==================== ORGANIZING ==================== -->
   <section class="section" id="organizing">
-    <h2>Organizing a Race</h2>
+    <SectionTitle>Organizing a Race</SectionTitle>
 
     <ol>
       <li>
@@ -845,7 +846,7 @@
 
   <!-- ==================== CASTING ==================== -->
   <section class="section" id="casting">
-    <h2>Casting &amp; Spectating</h2>
+    <SectionTitle>Casting &amp; Spectating</SectionTitle>
 
     <h3>Spectators</h3>
     <p>
@@ -919,9 +920,12 @@
   }
 
   .help-hero h1 {
-    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-family: var(--font-display);
+    font-size: 1.9rem;
     font-weight: 700;
-    color: var(--color-gold);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-text);
     margin: 0 0 0.5rem;
   }
 
@@ -980,15 +984,6 @@
   /* Sections */
   .section {
     margin-top: 3rem;
-  }
-
-  .section h2 {
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-    color: var(--color-gold);
-    margin: 0 0 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--color-border);
   }
 
   .section h3 {
