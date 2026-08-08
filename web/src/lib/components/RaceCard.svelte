@@ -242,8 +242,8 @@
   .race-card > :global(.route) {
     position: absolute;
     top: -7px;
-    left: -7px;
-    right: -7px;
+    left: -10px;
+    right: -10px;
   }
 
   .race-card:hover {

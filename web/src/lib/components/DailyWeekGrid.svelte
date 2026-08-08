@@ -444,18 +444,18 @@
 
   .wl-line {
     position: absolute;
-    left: 0;
+    left: -1px;
     right: 0;
     top: 6px;
     border-top: 2px solid var(--wl-color);
   }
 
   .wl-first .wl-line {
-    left: 14px;
+    left: 9px;
   }
 
   .wl-last .wl-line {
-    right: 14px;
+    right: 9px;
   }
 
   /* The dashed not-yet line stays dimmer than its station */
@@ -478,7 +478,7 @@
 
   .wl-start {
     position: absolute;
-    left: 2px;
+    left: 0px;
     top: 1px;
     width: 0;
     height: 0;
@@ -490,7 +490,7 @@
   /* Always filled, like the hero underline's terminal */
   .wl-term {
     position: absolute;
-    right: 2px;
+    right: 0px;
     top: 3px;
     width: 8px;
     height: 8px;
