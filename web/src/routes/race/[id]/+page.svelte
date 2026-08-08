@@ -1791,7 +1791,7 @@
   }
 
   .race-header h1.frog {
-    color: #3e9e5c;
+    color: #5cb168;
   }
 
   .race-header h1 .frog-icon {

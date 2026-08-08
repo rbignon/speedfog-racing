@@ -297,7 +297,7 @@
   }
 
   .race-name.frog {
-    color: #3e9e5c;
+    color: #5cb168;
   }
 
   .frog-icon {

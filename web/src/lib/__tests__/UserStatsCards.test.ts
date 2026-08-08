@@ -106,7 +106,9 @@ describe("UserStatsCards", () => {
       profile,
       streakDisplay: "best",
     });
-    expect(container.querySelector(".streak-badge")?.textContent).toBe("🏆 42");
+    expect(container.querySelector(".streak-badge")?.textContent).toBe(
+      "BEST 42",
+    );
   });
 
   it("renders no badge when streakDisplay is omitted", () => {
@@ -153,7 +155,7 @@ describe("streakBadgeText", () => {
   it("returns trophy badge for best display mode with positive best", () => {
     expect(
       streakBadgeText({ current: 0, best: 42, freeze_count: 0 }, "best"),
-    ).toBe("🏆 42");
+    ).toBe("BEST 42");
   });
 
   it("returns null for zero current under current mode", () => {

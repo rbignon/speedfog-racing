@@ -19,7 +19,6 @@
   import { formatIgt } from "$lib/utils/training";
   import { formatPoolName } from "$lib/utils/format";
   import { statusLabel } from "$lib/format";
-  import LiveIndicator from "$lib/components/LiveIndicator.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
   import ActivityList from "$lib/components/ActivityList.svelte";
@@ -403,9 +402,6 @@
               </div>
               <div class="active-card-header">
                 <div class="active-title">
-                  {#if race.status === "running"}
-                    <LiveIndicator dotOnly />
-                  {/if}
                   <span class="active-name">{race.name}</span>
                 </div>
                 <div class="active-badges">

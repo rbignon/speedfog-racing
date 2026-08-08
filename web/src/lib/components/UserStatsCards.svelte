@@ -6,7 +6,7 @@
     mode: "current" | "best" | null,
   ): string | null {
     if (mode === "current" && streak.current > 0) return `🔥 ${streak.current}`;
-    if (mode === "best" && streak.best > 0) return `🏆 ${streak.best}`;
+    if (mode === "best" && streak.best > 0) return `BEST ${streak.best}`;
     return null;
   }
 </script>

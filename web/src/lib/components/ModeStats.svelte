@@ -96,11 +96,7 @@
   .hero {
     position: relative;
     padding: 1.5rem 1.5rem 1.4rem;
-    background: linear-gradient(
-      160deg,
-      var(--color-surface) 0%,
-      var(--color-surface-elevated) 100%
-    );
+    background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     overflow: hidden;
