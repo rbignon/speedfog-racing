@@ -56,7 +56,7 @@ def rasterize_svg(svg: str) -> bytes:
     return bytes(resvg_py.svg_to_bytes(svg_string=svg, font_dirs=[str(_FONT_DIR)]))
 
 
-_MAX_RACE_NAME = 36
+_MAX_RACE_NAME = 28
 _MAX_AVATARS = 6
 
 
