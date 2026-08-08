@@ -567,7 +567,7 @@
   function renderCharts(data: AdminAnalytics) {
     destroyCharts();
     const gridColor = "rgba(255,255,255,0.06)";
-    const tickColor = "#888";
+    const tickColor = "#96a0ad";
     const defaultScales = {
       x: {
         grid: { display: false },
@@ -615,8 +615,8 @@
           datasets: [
             {
               data: data.weekly.new_users,
-              backgroundColor: "rgba(169,155,201,0.6)",
-              borderColor: "#a99bc9",
+              backgroundColor: "rgba(74,174,140,0.6)",
+              borderColor: "#4aae8c",
               borderWidth: 1,
             },
           ],
@@ -634,7 +634,18 @@
         type: "bar",
         data: {
           labels: data.weekly.weeks,
+          /* Category hues follow the app-wide markers (race = brass,
+           * daily = verdigris, solo = steel). Brass sits between the two
+           * cooler hues in the stack so adjacent segments stay apart for
+           * every kind of color vision. */
           datasets: [
+            {
+              label: "Daily",
+              data: data.weekly.daily,
+              backgroundColor: "rgba(74,174,140,0.6)",
+              borderColor: "#4aae8c",
+              borderWidth: 1,
+            },
             {
               label: "Races",
               data: data.weekly.races,
@@ -643,17 +654,10 @@
               borderWidth: 1,
             },
             {
-              label: "Daily",
-              data: data.weekly.daily,
-              backgroundColor: "rgba(123,162,204,0.6)",
-              borderColor: "#7ba2cc",
-              borderWidth: 1,
-            },
-            {
               label: "Solo",
               data: data.weekly.solo,
-              backgroundColor: "rgba(169,155,201,0.6)",
-              borderColor: "#a99bc9",
+              backgroundColor: "rgba(123,162,204,0.6)",
+              borderColor: "#7ba2cc",
               borderWidth: 1,
             },
           ],
@@ -743,8 +747,8 @@
             datasets: [
               {
                 data: data.timezones.map((t) => t.count),
-                backgroundColor: "rgba(169,155,201,0.6)",
-                borderColor: "#a99bc9",
+                backgroundColor: "rgba(74,174,140,0.6)",
+                borderColor: "#4aae8c",
                 borderWidth: 1,
               },
             ],
@@ -1187,7 +1191,7 @@
           <canvas bind:this={newUsersCanvas}></canvas>
         </div>
         <div class="chart-box">
-          <div class="chart-title">Races, Daily & Solo per Week</div>
+          <div class="chart-title">Daily, Races & Solo per Week</div>
           <canvas bind:this={raceSoloCanvas}></canvas>
         </div>
         <div class="chart-box">
@@ -1247,7 +1251,7 @@
         </div>
 
         <div class="heatmap-box">
-          <div class="heatmap-title heatmap-purple">
+          <div class="heatmap-title heatmap-steel">
             Solo <span class="heatmap-tz">(UTC)</span>
           </div>
           <div class="heatmap-grid">
@@ -1260,7 +1264,7 @@
               {#each analytics.heatmaps.solo[rowIdx] as val}
                 <div
                   class="heatmap-cell"
-                  style="background: rgba(169,155,201,{(val / soloMax) * 0.9})"
+                  style="background: rgba(123,162,204,{(val / soloMax) * 0.9})"
                   title={String(val)}
                 ></div>
               {/each}
@@ -1268,7 +1272,7 @@
           </div>
           <div class="heatmap-legend">
             <span>0</span>
-            <div class="heatmap-legend-bar heatmap-legend-purple"></div>
+            <div class="heatmap-legend-bar heatmap-legend-steel"></div>
             <span>{soloMax}</span>
           </div>
         </div>
@@ -2530,8 +2534,8 @@
     color: var(--color-gold);
   }
 
-  .heatmap-purple {
-    color: var(--color-purple);
+  .heatmap-steel {
+    color: var(--color-info);
   }
 
   .heatmap-tz {
@@ -2589,11 +2593,19 @@
   }
 
   .heatmap-legend-gold {
-    background: linear-gradient(to right, #0d1117, rgba(200, 164, 78, 0.9));
+    background: linear-gradient(
+      to right,
+      var(--color-bg),
+      rgba(200, 164, 78, 0.9)
+    );
   }
 
-  .heatmap-legend-purple {
-    background: linear-gradient(to right, #0d1117, rgba(169, 155, 201, 0.9));
+  .heatmap-legend-steel {
+    background: linear-gradient(
+      to right,
+      var(--color-bg),
+      rgba(123, 162, 204, 0.9)
+    );
   }
 
   @media (max-width: 640px) {

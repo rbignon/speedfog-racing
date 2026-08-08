@@ -137,7 +137,11 @@
     height: 8px;
     border-radius: 4px;
     max-width: 120px;
-    background: linear-gradient(to right, #0d1117, rgba(200, 164, 78, 0.9));
+    background: linear-gradient(
+      to right,
+      var(--color-bg),
+      rgba(200, 164, 78, 0.9)
+    );
   }
 
   .heatmap-caption {
