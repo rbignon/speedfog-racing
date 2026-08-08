@@ -86,6 +86,17 @@ Three faces, three roles. All self-hosted (latin + latin-ext subsets in `web/sta
 | UI      | Barlow (`--font-family`)            | 400 / 500 / 600    | Body text, descriptions, chat, form values                                  |
 | Data    | Spline Sans Mono (`--font-mono`)    | 400-600 (variable) | IGT, deltas, seeds, dates, ranks, counts, signals, micro-labels             |
 
+Loading: the `@font-face` declarations live in `web/static/fonts/fonts.css`,
+linked statically from `app.html`, deliberately outside the Vite/SvelteKit CSS
+pipeline (in dev, SvelteKit swaps its inline anti-FOUC copy of the route CSS
+for Vite's injected copy at hydration; removing a stylesheet deregisters its
+faces and every text on screen flashes). Faces are
+declared with `font-display: fallback` (never `swap`; the app is
+client-rendered, so faces load at consumption after first paint, and `swap`
+turns that window into a visible system-font flash). The latin files
+(Barlow 400/500/600, Barlow Condensed 600/700, the mono) are preloaded in
+`app.html`; latin-ext stays lazy. `/fonts/` is served long-cached by nginx.
+
 ### Scale
 
 | Element                | Font    | Size             | Weight | Notes                                    |
@@ -231,7 +242,7 @@ The logo replaces the former gold-Inter text logo everywhere (header, OG images,
 
 ## CSS Custom Properties
 
-Authoritative token block in `web/src/app.css` (self-hosted `@font-face` declarations above it):
+Authoritative token block in `web/src/app.css` (self-hosted `@font-face` declarations in `web/static/fonts/fonts.css`):
 
 ```css
 :root {
