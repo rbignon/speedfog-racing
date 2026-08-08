@@ -139,10 +139,40 @@ STATIC_FACES = [
 MONO_WEIGHTS = [400, 500, 600]
 
 
+def _family_for_stem(stem: str) -> str:
+    """Derive the canonical family name resvg should key a face under."""
+    if stem.startswith("barlow-condensed"):
+        return "Barlow Condensed"
+    if stem.startswith("barlow-"):
+        return "Barlow"
+    if stem.startswith("spline-sans-mono"):
+        return "Spline Sans Mono"
+    raise ValueError(f"unrecognized font stem: {stem!r}")
+
+
+def _set_family_name(font: TTFont, family: str) -> None:
+    """Normalize nameID 1 (family) and 16 (typographic family) to ``family``.
+
+    Some Google Fonts static cuts (e.g. the Barlow Condensed SemiBold TTF)
+    use legacy naming where nameID 1 embeds the weight ("Barlow Condensed
+    SemiBold") and there is no nameID 16. resvg's fontdb groups faces by
+    nameID 16 when present, else nameID 1, so a weight-suffixed nameID 1
+    splits that weight into its own family and font-weight lookups against
+    the shared family skip right past it. Pinning both IDs to the same
+    family on every emitted face keeps all weights queryable together, with
+    OS/2 usWeightClass doing the weight selection.
+    """
+    name_table = font["name"]
+    for name_id in (1, 16):
+        name_table.setName(family, name_id, 3, 1, 0x409)
+        name_table.setName(family, name_id, 1, 0, 0)
+
+
 def convert_server_fonts() -> None:
     SERVER_FONTS.mkdir(parents=True, exist_ok=True)
     for stem in STATIC_FACES:
         font = TTFont(str(WEB_FONTS / f"{stem}.woff2"))
+        _set_family_name(font, _family_for_stem(stem))
         font.flavor = None
         font.save(str(SERVER_FONTS / f"{stem}.ttf"))
     for subset in ("latin", "latin-ext"):
@@ -154,6 +184,7 @@ def convert_server_fonts() -> None:
                 )
             # resvg's fontdb matches by OS/2 weight; make the pin explicit
             font["OS/2"].usWeightClass = wght
+            _set_family_name(font, "Spline Sans Mono")
             font.flavor = None
             font.save(str(SERVER_FONTS / f"spline-sans-mono-{wght}-{subset}.ttf"))
 
