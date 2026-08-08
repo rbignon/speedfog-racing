@@ -40,7 +40,7 @@ What changed versus charter v1, in one list:
 | Fog (secondary)    | Misty heliotrope | `#A99BC9` |
 | Fog (hover)        | Light heliotrope | `#C0B4DC` |
 
-**Brass usage (exhaustive list):** logo glyph and the "Racing" half of the wordmark, section header device + title, primary CTA button, the hero underline's and the DAG's start/terminal markers, the week line's playing-state segment and dot, 1st-place markers (`1st` labels, finish board place tags), the amber "running" daily strip. Nowhere else. (The week line's own edge markers and the finish board's terminal squares are state- or player-colored, not brass.)
+**Brass usage (exhaustive list):** the "Racing" half of the wordmark, section header device + title, primary CTA button, the hero underline's and the DAG's start/terminal markers, the week line's playing-state segment and dot, 1st-place markers (`1st` labels, finish board place tags), the amber "running" daily strip. Nowhere else. (The week line's own edge markers and the finish board's terminal squares are state- or player-colored, not brass.)
 
 **Fog usage:** interactive hover states (secondary buttons), links, focus rings, boss diamonds on the DAG, radio/checkbox checked states (outside player-colored contexts). Route-line cards are the exception: they hover in their own line's status hue, not fog.
 
@@ -222,12 +222,13 @@ System messages in mono `11px` muted with right-aligned timestamps. User message
 
 ## Logo
 
-Network glyph + wordmark:
+Wordmark only; the v1 network glyph is retired everywhere (header, favicon, OG images):
 
-- **Glyph**: start triangle forking into two branches (station ring on one, fog boss diamond on the other) merging into a terminal square. Brass strokes, one fog accent. Doubles as favicon and loading mark. The current geometry is a v1; iterate before final asset production.
-- **Wordmark**: `SPEEDFOG` in Barlow Condensed 700 caps, primary text color; `RACING` same size, weight 600, brass. Header lockup = glyph + wordmark; hero variant adds a brass route underline (triangle → ring → square).
+- **Wordmark**: `SPEEDFOG` in Barlow Condensed 700 caps, primary text color; `RACING` same size, weight 600, brass. The header lockup is the wordmark alone; the hero variant adds a brass route underline (triangle → ring → square).
+- **Favicon**: the `SF` initials in Barlow Condensed 700 with the wordmark's double color (S primary, F brass) on a background-color plate, corner radius 112/512. Letterforms are outlined to paths: SVG favicons render without webfont access.
+- **OG images**: the static share card centers the wordmark, the hero route underline and the tagline on the background color. The dynamic per-race and per-daily cards (server-rendered) carry the wordmark header, charter faces and greys, a status-colored route line on the top edge and a mono status signal; accents map setup -> verdigris, running -> ember, finished -> steel, daily -> brass.
 
-The logo replaces the former gold-Inter text logo everywhere (header, OG images, favicon).
+`tools/generate_brand_assets.py` regenerates the static assets and the TTF conversions the server needs to rasterize the dynamic cards.
 
 ---
 
