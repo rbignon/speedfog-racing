@@ -288,6 +288,7 @@
                 >
               {/if}
             </span>
+            <div class="body"></div>
             <span class="countdown">Opens in {countdown(day.started_at)}</span>
           {:else}
             <span class="pool">
@@ -312,8 +313,8 @@
                 {@const winner =
                   day.podium.find((e) => e.placement === 1) ?? null}
                 {#if winner}
+                  <span class="place">1st</span>
                   <div class="winner">
-                    <span class="place">1st</span>
                     <span class="name"
                       >{winner.twitch_display_name ??
                         winner.twitch_username}</span
@@ -334,7 +335,7 @@
               <span class="strip strip-{strip.variant}">{strip.text}</span>
             {:else if strip?.kind === "finished"}
               <span class="strip strip-finished">
-                <span class="strip-icon" aria-hidden="true">✓</span>
+                <span class="strip-icon" aria-hidden="true">✔</span>
                 <span class="strip-score">{strip.score}</span>
               </span>
             {:else if strip?.kind === "dnf"}
@@ -460,8 +461,7 @@
 
   /* The dashed not-yet line stays dimmer than its station */
   .wl-future .wl-line {
-    border-top-style: dashed;
-    border-top-color: var(--color-border);
+    border-top-color: var(--wl-color);
   }
 
   .wl-station {
@@ -561,10 +561,14 @@
     color: var(--color-text-secondary);
   }
 
+  .weekday {
+    font-weight: 600;
+  }
+
   .today-label {
     font-family: var(--font-mono);
     font-size: 0.65rem;
-    font-weight: 500;
+    font-weight: 600;
     letter-spacing: 0.09em;
     text-transform: uppercase;
     color: var(--color-gold);
@@ -600,8 +604,10 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: end;
     min-height: 0;
+    margin-top: 0.5em;
+    margin-bottom: 1em;
   }
 
   .winner {
@@ -612,9 +618,11 @@
     font-size: var(--font-size-xs);
   }
 
-  .winner .place {
+  .place {
     flex: none;
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
+    text-align: center;
+    font-family: var(--font-mono);
     color: var(--color-gold);
   }
 
@@ -636,20 +644,16 @@
     margin: auto -0.875rem -0.75rem;
     padding: 0.34rem 0.5rem 0.42rem;
     text-align: center;
-    font-family: var(--font-display);
+    font-family: var(--font-mono);
     font-weight: 600;
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     letter-spacing: 0.09em;
     text-transform: uppercase;
   }
 
   .strip-play-now {
-    background: var(--color-success);
-    color: var(--color-ink-on-accent);
-  }
-
-  a.cell:hover .strip-play-now {
-    background: var(--color-success-hover);
+    background: rgba(74, 174, 140, 0.12);
+    color: var(--color-success);
   }
 
   .strip-in-progress {
@@ -679,7 +683,9 @@
   .strip-finished {
     display: flex;
     align-items: baseline;
-    justify-content: center;
+    justify-content: space-between;
+    padding-left: .874rem;
+    padding-right: .874rem;
     gap: 0.4rem;
     color: var(--color-success);
   }
@@ -697,8 +703,8 @@
   }
 
   .countdown {
-    margin-top: auto;
-    padding-bottom: 0.2rem;
+    margin: auto -0.875rem -0.75rem;
+    padding: 0.34rem 0.5rem 0.42rem;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
@@ -788,7 +794,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-family: inherit;
+    font-family: var(--font-mono);
     font-size: 0.95rem;
     line-height: 1;
     transition:
