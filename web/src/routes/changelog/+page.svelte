@@ -104,7 +104,7 @@
   </header>
 
   {#each entries as entry, i}
-    <section class="version" class:latest={i === 0}>
+    <section class="version">
       <div class="version-header">
         <h2>
           {entry.version}
@@ -199,31 +199,33 @@
     margin-bottom: 0.75rem;
   }
 
+  /* Version numbers and dates are data: they run through the mono face */
   .version-header h2 {
+    font-family: var(--font-mono);
     font-size: var(--font-size-xl);
     font-weight: 600;
     color: var(--color-gold);
     margin: 0;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
   }
 
   .version-header time {
-    color: var(--color-text-disabled);
+    font-family: var(--font-mono);
+    color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     white-space: nowrap;
   }
 
+  /* A superlative micro-label, not a pill */
   .latest-badge {
-    font-size: var(--font-size-xs);
-    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    background: var(--color-gold);
-    color: var(--color-bg);
-    padding: 0.1em 0.45em;
-    border-radius: 4px;
+    letter-spacing: 0.09em;
+    color: var(--color-gold);
   }
 
   .version h3 {
@@ -268,11 +270,6 @@
 
   .version li :global(a:hover) {
     text-decoration: underline;
-  }
-
-  .version.latest {
-    border-left: 3px solid var(--color-gold);
-    padding-left: 1.25rem;
   }
 
   @media (max-width: 640px) {
